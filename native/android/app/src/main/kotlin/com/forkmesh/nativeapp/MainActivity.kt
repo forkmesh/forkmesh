@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
+import com.forkmesh.nativeapp.core.AppVisibility
 import com.forkmesh.nativeapp.feature.Features
 import com.forkmesh.nativeapp.feature.chat.ChatPrivacy
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -62,16 +63,28 @@ class MainActivity : ComponentActivity() {
         Features.onIntent(AppNavigation.navigator, intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        AppLifecycle.setVisibility(AppVisibility.INACTIVE)
+    }
+
     override fun onResume() {
         super.onResume()
+        AppLifecycle.setVisibility(AppVisibility.RESUMED)
         AppLifecycle.setForeground(true)
     }
 
     override fun onPause() {
         AppLifecycle.setForeground(false)
+        AppLifecycle.setVisibility(AppVisibility.INACTIVE)
         FmUserActivity.flush()
         com.forkmesh.nativeapp.feature.account.settings.DataFolderFeature.syncSoon()
         super.onPause()
+    }
+
+    override fun onStop() {
+        AppLifecycle.setVisibility(AppVisibility.HIDDEN)
+        super.onStop()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

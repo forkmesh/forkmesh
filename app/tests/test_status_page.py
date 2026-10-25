@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -51,6 +52,8 @@ URLS = ROOT / "src" / "urls.py"
 URLS_TEXT = URLS.read_text(encoding="utf-8")
 
 DAY_MS = 86400000
+LEGACY_STATUS_TABLE_RE = re.compile(
+    r"\bsystem_status_(?:minute|hourly|daily)\b")
 
 
 def _load(*names, extra_globals=None):
@@ -276,18 +279,6 @@ def _sample_env(
             "INSERT INTO system_status_daily_batch",
         )):
             return
-        # Legacy shapes retained for isolated compatibility fixtures.
-        if sql.startswith("INSERT INTO system_status_daily"):
-            for i in range(0, len(args), 3):
-                inserted.append({"system": args[i + 1], "failure": args[i + 2]})
-        elif sql.startswith("INSERT INTO system_status_hourly"):
-            for i in range(0, len(args), 4):
-                hourly.append({"system": args[i + 1], "failure": args[i + 2],
-                               "reason": args[i + 3]})
-        elif sql.startswith("INSERT INTO system_status_minute"):
-            for i in range(0, len(args), 4):
-                minutely.append({"system": args[i + 1], "ok": args[i + 2],
-                                 "reason": args[i + 3]})
 
     async def noop(*_a, **_k):
         return None
@@ -1530,24 +1521,57 @@ def test_ensure_schema_skips_ddl_when_fingerprint_matches():
 
 # --- status_history ----------------------------------------------------------
 
+_STATUS_BATCH_BUCKET_KEYS = {
+    "minute": "minute_ts", "hour": "hour_ts", "day": "day_ts"}
+_STATUS_BATCH_CODEC = {}
+
+
+def _status_batch_rows(bucket, rows):
+    # Fold per-system fixture rows into the one-row-per-bucket batch shape the
+    # status readers decode. A row that already carries "data" is a raw batch
+    # row and passes through untouched (for deliberately invalid payloads).
+    if "encode" not in _STATUS_BATCH_CODEC:
+        _STATUS_BATCH_CODEC["encode"] = _load()["_status_batch_encode"]
+    key = _STATUS_BATCH_BUCKET_KEYS[bucket]
+    raw = []
+    buckets = {}
+    for row in rows:
+        if "data" in row:
+            raw.append(dict(row))
+            continue
+        if bucket == "minute":
+            item = {"ok": int(row.get("ok") or 0) == 1,
+                    "reason": row.get("reason") or None}
+        else:
+            item = {"checks": int(row["checks"]),
+                    "failures": int(row["failures"])}
+            if bucket == "hour":
+                item["reason"] = row.get("reason") or None
+        buckets.setdefault(int(row[key]), {})[row["system"]] = item
+    return raw + [
+        {key: bucket_ts,
+         "data": _STATUS_BATCH_CODEC["encode"](bucket, systems)}
+        for bucket_ts, systems in sorted(buckets.items())
+    ]
+
+
 def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
                  core_rows=(), runner_rows=(), metric_rows=()):
     async def noop(*_a, **_k):
         return None
 
+    minute_batches = _status_batch_rows("minute", minute_rows)
+    hour_batches = _status_batch_rows("hour", hour_rows)
+    day_batches = _status_batch_rows("day", rows)
+
     async def d1_all(_env, sql, *_args):
         if "system_status_minute_batch" in sql:
-            return []
+            return list(minute_batches)
         if "system_status_hourly_batch" in sql:
-            return []
+            return list(hour_batches)
         if "system_status_daily_batch" in sql:
-            return []
-        if "system_status_minute" in sql:
-            return list(minute_rows)
-        if "system_status_hourly" in sql:
-            return list(hour_rows)
-        if "system_status_daily" in sql:
-            return list(rows)
+            return list(day_batches)
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "mirror_https_endpoints" in sql:
             return list(mirror_rows)
         if "FROM cluster_members" in sql:
@@ -2456,11 +2480,17 @@ def test_mirror_without_recent_online_signal_is_omitted_from_world_status():
 
 def test_retired_mirror_history_does_not_resurrect_status_rows():
     cur_minute = (_Clock.value // MINUTE_MS) * MINUTE_MS
-    minute_rows = [
-        {"minute_ts": cur_minute, "system": "mirror:" + mirror,
-         "ok": 0, "reason": "old retired-node failure"}
-        for mirror in ("mirror2", "mirror14")
-    ]
+    minute_rows = [{
+        "minute_ts": cur_minute,
+        "data": json.dumps({
+            "schemaVersion": 1,
+            "systems": {
+                "mirror:" + mirror: {
+                    "ok": False, "reason": "old retired-node failure"}
+                for mirror in ("mirror2", "mirror14")
+            },
+        }),
+    }]
     out = _run_history([], minute_rows=minute_rows)
     assert all(s["id"] != "mirror:mirror2" for s in out["systems"])
     assert all(s["id"] != "mirror:mirror14" for s in out["systems"])
@@ -3004,27 +3034,25 @@ def test_release_rows_inherit_the_history_of_the_checks_they_replaced():
     assert decoded["release_macos"] == {"checks": 900, "failures": 9}
 
 
-def test_mid_hour_cutover_compacts_legacy_and_batch_minutes_once():
+def test_hour_compaction_rebuilds_from_batch_minutes_only():
     current_hour = (_Clock.value // HOUR_MS) * HOUR_MS
     target = current_hour - HOUR_MS
     writes = []
-    holder = {}
+    queries = []
+    minute_batches = _status_batch_rows("minute", [
+        {
+            "minute_ts": target + index * MINUTE_MS,
+            "system": "website", "ok": 0 if index in (4, 52) else 1,
+            "reason": {4: "early outage", 52: "late outage"}.get(index),
+        }
+        for index in range(60)
+    ])
 
-    async def d1_first(_env, _sql, *_args):
-        return None
-
-    async def d1_all(_env, sql, *_args):
+    async def d1_all(_env, sql, *args):
+        queries.append((sql, args))
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "system_status_minute_batch" in sql:
-            return holder["batch"]
-        if "system_status_minute" in sql:
-            return [
-                {
-                    "minute_ts": target + index * MINUTE_MS,
-                    "system": "website", "ok": 0 if index == 4 else 1,
-                    "reason": "legacy outage" if index == 4 else None,
-                }
-                for index in range(30)
-            ]
+            return list(minute_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3032,52 +3060,40 @@ def test_mid_hour_cutover_compacts_legacy_and_batch_minutes_once():
 
     runtime = _load(
         "_compact_status_hour",
-        extra_globals={"d1_first": d1_first, "d1_all": d1_all,
-                       "d1_run": d1_run},
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run},
     )
-    holder["batch"] = [
-        {
-            "minute_ts": target + index * MINUTE_MS,
-            "data": runtime["_status_batch_encode"]("minute", {
-                "website": {
-                    "ok": index != 52,
-                    "reason": "batch outage" if index == 52 else None,
-                },
-            }),
-        }
-        for index in range(30, 60)
-    ]
     asyncio.run(runtime["_compact_status_hour"](
         object(), current_hour, current_hour + MINUTE_MS))
+    assert [args for _sql, args in queries] == [
+        (target, target + 59 * MINUTE_MS)]
     assert len(writes) == 1
     assert "system_status_hourly_batch" in writes[0][0]
+    assert writes[0][1][0] == target
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["website"] == {
-        "checks": 60, "failures": 2, "reason": "batch outage"}
+        "checks": 60, "failures": 2, "reason": "late outage"}
 
 
-def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
+def test_day_compaction_sums_each_batch_hour_once():
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     target = current_day - DAY_MS
     writes = []
-    holder = {}
+    queries = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": target + index * HOUR_MS,
+            "system": "api", "checks": 60,
+            "failures": {3: 1, 19: 2}.get(index, 0),
+            "reason": "batch failure" if index in (3, 19) else None,
+        }
+        for index in range(24)
+    ])
 
-    async def d1_first(_env, _sql, *_args):
-        return None
-
-    async def d1_all(_env, sql, *_args):
+    async def d1_all(_env, sql, *args):
+        queries.append((sql, args))
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "system_status_hourly_batch" in sql:
-            return holder["batch"]
-        if "system_status_hourly" in sql:
-            return [
-                {
-                    "hour_ts": target + index * HOUR_MS,
-                    "system": "api", "checks": 60,
-                    "failures": 1 if index == 3 else 0,
-                    "reason": "legacy failure" if index == 3 else None,
-                }
-                for index in range(12)
-            ]
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3085,24 +3101,12 @@ def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
 
     runtime = _load(
         "_compact_status_day",
-        extra_globals={"d1_first": d1_first, "d1_all": d1_all,
-                       "d1_run": d1_run},
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run},
     )
-    holder["batch"] = [
-        {
-            "hour_ts": target + index * HOUR_MS,
-            "data": runtime["_status_batch_encode"]("hour", {
-                "api": {
-                    "checks": 60,
-                    "failures": 2 if index == 19 else 0,
-                    "reason": "batch failure" if index == 19 else None,
-                },
-            }),
-        }
-        for index in range(12, 24)
-    ]
     asyncio.run(runtime["_compact_status_day"](
         object(), current_day, current_day + MINUTE_MS))
+    assert [args for _sql, args in queries] == [
+        (target, target + 23 * HOUR_MS)]
     assert len(writes) == 1
     assert "system_status_daily_batch" in writes[0][0]
     payload = json.loads(writes[0][1][1])
@@ -3110,23 +3114,32 @@ def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
         "checks": 1440, "failures": 3}
 
 
-def test_day_compaction_clamps_duplicate_legacy_minute_checks():
+def test_day_compaction_ignores_an_overfull_hour_batch():
+    # An hour batch holds at most 60 minute checks. One claiming more is
+    # rejected by the strict decoder instead of inflating the day bucket.
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     target = current_day - DAY_MS
     writes = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": target + index * HOUR_MS,
+            "system": "api", "checks": 60, "failures": 60,
+            "reason": "outage",
+        }
+        for index in range(23)
+    ]) + [{
+        "hour_ts": target + 23 * HOUR_MS,
+        "data": json.dumps({
+            "schemaVersion": 1,
+            "systems": {"api": {
+                "checks": 61, "failures": 61, "reason": "duplicate"}},
+        }),
+    }]
 
     async def d1_all(_env, sql, *_args):
-        if "FROM system_status_hourly WHERE" in sql:
-            return [
-                {
-                    "hour_ts": target + index * HOUR_MS,
-                    "system": "api",
-                    "checks": 61,
-                    "failures": 61,
-                    "reason": "duplicate cron delivery",
-                }
-                for index in range(24)
-            ]
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3141,8 +3154,8 @@ def test_day_compaction_clamps_duplicate_legacy_minute_checks():
 
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["api"] == {
-        "checks": 1440,
-        "failures": 1440,
+        "checks": 1380,
+        "failures": 1380,
     }
 
 
@@ -3151,9 +3164,19 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
     oldest_missing = current_hour - 8 * HOUR_MS
     newer_missing = current_hour - 2 * HOUR_MS
     discovery_args = []
+    minute_args = []
     writes = []
+    minute_batches = _status_batch_rows("minute", [
+        {
+            "minute_ts": oldest_missing + index * MINUTE_MS,
+            "system": "website", "ok": 0 if index in (10, 20) else 1,
+            "reason": "outage" if index in (10, 20) else None,
+        }
+        for index in range(60)
+    ])
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT hour_ts FROM system_status_hourly_batch" in sql
             and " IN (" in sql
@@ -3164,14 +3187,12 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
                 for candidate in args
                 if candidate not in {oldest_missing, newer_missing}
             ]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": oldest_missing,
-                "system": "website",
-                "checks": 60,
-                "failures": 2,
-                "reason": "legacy outage",
-            }]
+        # A backfilled hour is rebuilt from raw minutes, never copied from
+        # an hour record.
+        assert "system_status_hourly_batch" not in sql, sql
+        if "FROM system_status_minute_batch WHERE" in sql:
+            minute_args.append(args)
+            return list(minute_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3187,13 +3208,15 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
     assert len(discovery_args) == 24
     assert discovery_args[0] == current_hour - 24 * HOUR_MS
     assert discovery_args[-1] == current_hour - HOUR_MS
+    assert minute_args == [
+        (oldest_missing, oldest_missing + 59 * MINUTE_MS)]
     assert len(writes) == 1
     assert writes[0][1][0] == oldest_missing
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["website"] == {
         "checks": 60,
         "failures": 2,
-        "reason": "legacy outage",
+        "reason": "outage",
     }
 
 
@@ -3203,8 +3226,19 @@ def test_later_day_compaction_backfills_oldest_missing_history_bucket():
     newer_missing = current_day - 3 * DAY_MS
     discovery_args = []
     writes = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": oldest_missing + index * HOUR_MS,
+            "system": "api",
+            "checks": 60,
+            "failures": 1 if index == 5 else 0,
+            "reason": "batch failure" if index == 5 else None,
+        }
+        for index in range(24)
+    ])
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT day_ts FROM system_status_daily_batch" in sql
             and " IN (" in sql
@@ -3215,17 +3249,8 @@ def test_later_day_compaction_backfills_oldest_missing_history_bucket():
                 for candidate in args
                 if candidate not in {oldest_missing, newer_missing}
             ]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [
-                {
-                    "hour_ts": oldest_missing + index * HOUR_MS,
-                    "system": "api",
-                    "checks": 60,
-                    "failures": 1 if index == 5 else 0,
-                    "reason": "legacy failure" if index == 5 else None,
-                }
-                for index in range(24)
-            ]
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3257,26 +3282,29 @@ def test_first_five_minutes_refresh_latest_hour_and_day_without_gap_scan():
     day_target = current_day - DAY_MS
     discovery_queries = []
     writes = []
+    minute_batches = _status_batch_rows("minute", [{
+        "minute_ts": hour_target,
+        "system": "website",
+        "ok": 1,
+        "reason": None,
+    }])
+    hour_batches = _status_batch_rows("hour", [{
+        "hour_ts": day_target,
+        "system": "api",
+        "checks": 60,
+        "failures": 0,
+        "reason": None,
+    }])
 
     async def d1_all(_env, sql, *_args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if " IN (" in sql:
             discovery_queries.append(sql)
             return []
-        if "FROM system_status_minute WHERE" in sql:
-            return [{
-                "minute_ts": hour_target,
-                "system": "website",
-                "ok": 1,
-                "reason": None,
-            }]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": day_target,
-                "system": "api",
-                "checks": 60,
-                "failures": 0,
-                "reason": None,
-            }]
+        if "FROM system_status_minute_batch WHERE" in sql:
+            return list(minute_batches)
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3293,17 +3321,35 @@ def test_first_five_minutes_refresh_latest_hour_and_day_without_gap_scan():
 
     assert discovery_queries == []
     assert [args[0] for _sql, args in writes] == [hour_target, day_target]
+    assert json.loads(writes[0][1][1])["systems"] == {
+        "website": {"checks": 1, "failures": 0, "reason": None}}
+    assert json.loads(writes[1][1][1])["systems"] == {
+        "api": {"checks": 60, "failures": 0}}
 
 
 def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     repaired_hour = current_day - HOUR_MS
     writes = []
+    minute_batches = _status_batch_rows("minute", [{
+        "minute_ts": repaired_hour,
+        "system": "api",
+        "ok": 0,
+        "reason": "late outage",
+    }])
+    hour_batches = _status_batch_rows("hour", [{
+        "hour_ts": repaired_hour,
+        "system": "api",
+        "checks": 1,
+        "failures": 1,
+        "reason": "late outage",
+    }])
 
     async def noop(*_args, **_kwargs):
         return None
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT hour_ts FROM system_status_hourly_batch" in sql
             and " IN (" in sql
@@ -3312,21 +3358,10 @@ def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
                 {"hour_ts": candidate}
                 for candidate in args if candidate != repaired_hour
             ]
-        if "FROM system_status_minute WHERE" in sql:
-            return [{
-                "minute_ts": repaired_hour,
-                "system": "api",
-                "ok": 0,
-                "reason": "late outage",
-            }]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": repaired_hour,
-                "system": "api",
-                "checks": 1,
-                "failures": 1,
-                "reason": "late outage",
-            }]
+        if "FROM system_status_minute_batch WHERE" in sql:
+            return list(minute_batches)
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3348,13 +3383,20 @@ def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
     assert [args[0] for _sql, args in compact_writes] == [
         repaired_hour, current_day - DAY_MS,
     ]
+    assert json.loads(compact_writes[0][1][1])["systems"] == {
+        "api": {"checks": 1, "failures": 1, "reason": "late outage"}}
+    assert json.loads(compact_writes[1][1][1])["systems"] == {
+        "api": {"checks": 1, "failures": 1}}
 
 
-def test_same_minute_batch_overlays_matching_legacy_and_keeps_disjoint_system():
+def test_minute_batch_reads_and_writes_use_only_the_batch_bucket():
     minute = (_Clock.value // MINUTE_MS) * MINUTE_MS
+    queries = []
+    writes = []
     holder = {}
 
     async def d1_all(_env, sql, *_args):
+        queries.append(sql)
         if "system_status_minute_batch" in sql:
             return [{"minute_ts": minute, "data": holder["body"]}]
         return [
@@ -3364,15 +3406,28 @@ def test_same_minute_batch_overlays_matching_legacy_and_keeps_disjoint_system():
              "reason": None},
         ]
 
-    runtime = _load("_status_minute_records", extra_globals={"d1_all": d1_all})
+    async def d1_run(_env, sql, *args):
+        writes.append((sql, args))
+
+    runtime = _load(
+        "_status_minute_records", "_write_status_minute_batch",
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run})
     holder["body"] = runtime["_status_batch_encode"]("minute", {
         "website": {"ok": True, "reason": None},
     })
     rows = asyncio.run(runtime["_status_minute_records"](
         object(), minute, minute))
-    by_system = {row["system"]: row for row in rows}
-    assert by_system["website"]["ok"] == 1
-    assert by_system["api"]["ok"] == 1
+    assert rows == [
+        {"minute_ts": minute, "system": "website", "ok": 1, "reason": None}]
+
+    asyncio.run(runtime["_write_status_minute_batch"](
+        object(), minute, {"website": {"ok": False, "reason": "down"}}))
+    assert len(queries) == 1
+    assert "FROM system_status_minute_batch " in queries[0]
+    assert len(writes) == 1
+    assert writes[0][0].startswith("INSERT INTO system_status_minute_batch ")
+    assert json.loads(writes[0][1][1])["systems"] == {
+        "website": {"ok": False, "reason": "down"}}
 
 
 def test_deploy_roster_ignores_historical_mirrors():
@@ -3459,29 +3514,29 @@ def test_status_history_queries_only_exact_bounded_windows():
         },
     )
     asyncio.run(runtime["status_history"](object()))
+    assert not any(
+        LEGACY_STATUS_TABLE_RE.search(sql) for sql, _args in queries)
     table_windows = {}
     for sql, args in queries:
         for table in (
-            "system_status_daily", "system_status_daily_batch",
-            "system_status_hourly", "system_status_hourly_batch",
-            "system_status_minute", "system_status_minute_batch",
+            "system_status_daily_batch",
+            "system_status_hourly_batch",
+            "system_status_minute_batch",
         ):
             if f"FROM {table} " in sql:
+                assert table not in table_windows, table
                 table_windows[table] = args[:2]
     assert set(table_windows) == {
-        "system_status_daily", "system_status_daily_batch",
-        "system_status_hourly", "system_status_hourly_batch",
-        "system_status_minute", "system_status_minute_batch",
+        "system_status_daily_batch",
+        "system_status_hourly_batch",
+        "system_status_minute_batch",
     }
-    for table in ("system_status_daily", "system_status_daily_batch"):
-        start, end = table_windows[table]
-        assert end - start == 28 * DAY_MS
-    for table in ("system_status_hourly", "system_status_hourly_batch"):
-        start, end = table_windows[table]
-        assert 0 <= end - start <= 23 * HOUR_MS
-    for table in ("system_status_minute", "system_status_minute_batch"):
-        start, end = table_windows[table]
-        assert end - start == 59 * MINUTE_MS
+    start, end = table_windows["system_status_daily_batch"]
+    assert end - start == 28 * DAY_MS
+    start, end = table_windows["system_status_hourly_batch"]
+    assert 0 <= end - start <= 23 * HOUR_MS
+    start, end = table_windows["system_status_minute_batch"]
+    assert end - start == 59 * MINUTE_MS
 
 
 def test_free_plan_known_recurring_write_budget_keeps_incident_margin():
@@ -3525,9 +3580,7 @@ def test_free_plan_known_recurring_write_budget_keeps_incident_margin():
     assert 100_000 - recurring - privacy_transition_ceiling > 57_000
     # Steady status projection rows: 29 days + <=24 hours + 60 minutes.
     assert (29 + 24 + 60) * 1440 < 200_000
-    assert "INSERT INTO system_status_minute (" not in ENTRY_TEXT
-    assert "INSERT INTO system_status_hourly (" not in ENTRY_TEXT
-    assert "INSERT INTO system_status_daily (" not in ENTRY_TEXT
+    assert not LEGACY_STATUS_TABLE_RE.search(ENTRY_TEXT)
 
 
 def test_every_status_probe_runs_every_minute():
@@ -3545,21 +3598,48 @@ def test_every_status_probe_runs_every_minute():
         "STATUS_SYNTHETIC_HEALTHY_INTERVAL_MS"] == 60_000
 
 
-def test_legacy_hourly_cleanup_preserves_rollout_day_write_headroom():
-    sample_source = ENTRY_TEXT[
-        ENTRY_TEXT.index("async def record_status_sample"):
-        ENTRY_TEXT.index("async def status_history")
-    ]
-    prune = sample_source[
-        sample_source.index(
-            '"DELETE FROM system_status_hourly WHERE hour_ts < ?"'
-        ):
-        sample_source.index(
-            '"DELETE FROM system_status_minute WHERE minute_ts < ?"'
-        )
-    ]
-    assert "day_ts - STATUS_HISTORY_RETAIN_MS" in prune
-    assert "day_ts - STATUS_DAY_MS" not in prune
+def test_top_of_hour_retention_prunes_only_batch_status_tables():
+    now = (_Clock.value // HOUR_MS) * HOUR_MS
+    day_ts = (now // DAY_MS) * DAY_MS
+    writes = []
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    async def d1_all(_env, sql, *_args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
+        return []
+
+    async def d1_run(_env, sql, *args):
+        writes.append((" ".join(sql.split()), args))
+
+    runtime = _load(
+        "record_status_compaction",
+        extra_globals={"ensure_schema": noop, "d1_all": d1_all,
+                       "d1_run": d1_run},
+    )
+    asyncio.run(runtime["record_status_compaction"](object(), now=now))
+    retain = runtime["STATUS_HISTORY_RETAIN_MS"]
+    minute_retain = runtime["STATUS_MINUTE_RETAIN_MS"]
+    prunes = {
+        sql.split()[2]: args for sql, args in writes
+        if sql.startswith("DELETE FROM ")
+    }
+    assert prunes == {
+        "system_status_daily_batch": (day_ts - retain,),
+        "system_status_hourly_batch": (day_ts - retain,),
+        "system_status_minute_batch": (now - minute_retain,),
+        "system_status_sample_claim": (now - minute_retain,),
+        "durable_object_abort_minute": (now - retain,),
+    }
+    assert not any(
+        LEGACY_STATUS_TABLE_RE.search(sql) for sql, _args in writes)
+
+    writes.clear()
+    asyncio.run(runtime["record_status_compaction"](
+        object(), now=now + MINUTE_MS))
+    assert writes
+    assert not any(sql.startswith("DELETE FROM ") for sql, _args in writes)
 
 
 def test_status_monitor_state_upsert_skips_unchanged_heartbeats():
@@ -4219,14 +4299,27 @@ def test_worker_exposes_status_route_and_schema():
     assert 'url.path in ("/api/status", "/api/status/")' in ENTRY_TEXT
     assert "async def status_history" in ENTRY_TEXT
     assert "async def record_status_sample" in ENTRY_TEXT
-    assert "CREATE TABLE IF NOT EXISTS system_status_daily" in ENTRY_TEXT
-    assert "CREATE TABLE IF NOT EXISTS system_status_hourly" in ENTRY_TEXT
+    assert not re.search(
+        r"CREATE TABLE IF NOT EXISTS system_status_(?:minute|hourly|daily)\b",
+        ENTRY_TEXT)
     assert "CREATE TABLE IF NOT EXISTS system_status_minute_batch" in ENTRY_TEXT
     assert "CREATE TABLE IF NOT EXISTS system_status_hourly_batch" in ENTRY_TEXT
     assert "CREATE TABLE IF NOT EXISTS system_status_daily_batch" in ENTRY_TEXT
     assert "idx_system_status_daily_day" not in ENTRY_TEXT
     assert "idx_system_status_hourly_hour" not in ENTRY_TEXT
     assert "idx_system_status_minute_ts" not in ENTRY_TEXT
+
+
+def test_status_code_and_runtime_schema_name_only_the_batch_status_tables():
+    for name in ("status_monitoring.py", "schema.py"):
+        source = (ROOT / "src" / name).read_text(encoding="utf-8")
+        assert not LEGACY_STATUS_TABLE_RE.search(source), name
+        for table in (
+            "system_status_minute_batch",
+            "system_status_hourly_batch",
+            "system_status_daily_batch",
+        ):
+            assert table in source, (name, table)
 
 
 def test_cron_samples_status_every_tick():

@@ -14,6 +14,8 @@ body.preview #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-wi
 body.staged.waiting #remote,body.staged.remote-off #remote{opacity:0}
 body.staged.waiting #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-width:none;aspect-ratio:auto;border-radius:0}
 body.staged.mini #local{opacity:0}
+body.placed:not(.preview):not(.waiting) #local{left:var(--fm-lx);top:var(--fm-ly);right:auto;bottom:auto;width:var(--fm-lw);height:var(--fm-lh);max-width:none;aspect-ratio:auto;border-radius:12px;outline:1px solid rgba(255,255,255,.35);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+body.placed.settle:not(.preview):not(.waiting) #local{transition:left .35s cubic-bezier(.2,.9,.3,1.08),top .35s cubic-bezier(.2,.9,.3,1.08)}
 </style>
 </head>
 <body class="audio">
@@ -10240,6 +10242,17 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       local.srcObject = null;
       return true;
     },
+  };
+
+  window.fmCallPlaceLocal = (x, y, width, height, settle) => {
+    const style = document.body.style;
+    style.setProperty("--fm-lx", Number(x) + "px");
+    style.setProperty("--fm-ly", Number(y) + "px");
+    style.setProperty("--fm-lw", Number(width) + "px");
+    style.setProperty("--fm-lh", Number(height) + "px");
+    document.body.classList.toggle("settle", Boolean(settle));
+    document.body.classList.add("placed");
+    return true;
   };
 
   window.fmCall = (id, name, args) => {
