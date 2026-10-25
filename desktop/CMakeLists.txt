@@ -1719,6 +1719,23 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-ui-kit-tests
+        tests/test_ui_kit.cpp
+        src/Theme.h
+        src/DesignTokens.h
+        src/DesignTokens.cpp
+        src/UiKit.h
+        src/UiKit.cpp
+        resources/icons.qrc
+        ${FORKMESH_THEME_QRC}
+    )
+    target_link_libraries(forkmesh-ui-kit-tests PRIVATE Qt6::Widgets Qt6::Svg)
+    target_include_directories(forkmesh-ui-kit-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-ui-kit-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-ui-gallery
         tests/ui_gallery.cpp
         src/Theme.h
@@ -4074,6 +4091,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-project-invite-tests)
     add_test(NAME forkmesh-stats-dashboard-tests
              COMMAND forkmesh-stats-dashboard-tests)
+    add_test(NAME forkmesh-ui-kit-tests
+             COMMAND forkmesh-ui-kit-tests)
+    set_tests_properties(forkmesh-ui-kit-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-font-sizing-tests
              COMMAND forkmesh-font-sizing-tests)
     set_tests_properties(forkmesh-font-sizing-tests PROPERTIES
