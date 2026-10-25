@@ -66,14 +66,20 @@ private, unversioned state and it holds them in memory.
 - **Registration.** When a Claude Code agent reaches a finished state
   (`updateAgentStatusCell` -> `noteClaudeDesktopCandidate`, once per
   `finishedAtMs`), ForkMesh reads the latest session id off-thread, places
-  the transcript, saves it as `AgentSession::claudeDesktopSessionId`
-  (`meta.json` key `claudeDesktopSessionId`) and opens the deep link. Links
-  go out one every 2 s. A session already registered under the same id is
+  the transcript and opens the deep link. Links go out one every 2 s, and an
+  agent that is running again by then is skipped. Once the link is launched
+  the id is saved as `AgentSession::claudeAppSessionId` (`meta.json` key
+  `claudeAppSessionId`); a session already registered under the same id is
   not linked again, so archiving it in the Claude app sticks.
+- **Launching the link.** On Linux ForkMesh runs `xdg-open` itself (macOS:
+  `open`). `QDesktopServices::openUrl` passed only the first 5 of 24 links
+  on 2026-10-24 and dropped the rest without an error; Windows still uses it.
+  The first build saved ids under `claudeDesktopSessionId` before the link
+  went out, so that key is ignored.
 - **Existing agents.** 90 s after start (and when the setting is switched
   on), `backfillClaudeDesktopSessions` links every account project folder
   into `~/.claude/projects` and registers every stored, finished Claude Code
-  agent that has no `claudeDesktopSessionId` yet.
+  agent that has no `claudeAppSessionId` yet.
 - **By hand.** "Open in Claude app" in the Agents list and Sessions context
   menus registers the agent if needed and switches the Claude app to it.
   External (terminal) Claude rows work too.
@@ -103,4 +109,4 @@ private, unversioned state and it holds them in memory.
   runs locally and then registers like any other; a run another node already
   started stays there.
 - **Phone and web** list agents through the relay and are unchanged; the
-  saved `claudeDesktopSessionId` is local metadata.
+  saved `claudeAppSessionId` is local metadata.

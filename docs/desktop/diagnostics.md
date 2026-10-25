@@ -165,6 +165,35 @@ platform's normal termination request. If the kernel denies that request, the
 detail dialog requests administrator permission through PolicyKit or a masked
 sudo password prompt and passes it to the privileged termination command.
 
+Between the gauges and the share strips, two cards describe the processor and
+the kernel's tuning (`desktopprocs::readMachine` / `refreshMachine`):
+
+- **Cores**: the CPU model (trademarks and "N-Core Processor" removed by
+  `shortCpuModel`), physical cores and threads, the P/E split, L3 size, base
+  and peak clock, then one bar per online thread. Each bar's height is that
+  thread's busy share since the last sample (per-CPU lines of `/proc/stat`,
+  `applyCpuTicks`), and the strip under it is the core temperature
+  (green / amber from 75 °C / red from 90 °C). Threads are grouped by kind:
+  `/sys/devices/cpu_core/cpus` are P-cores and `/sys/devices/cpu_atom/cpus`
+  E-cores on Intel hybrid chips; other machines show one group. The header
+  gives the average clock (`scaling_cur_freq`) and the package temperature.
+  Temperatures come from the `coretemp` hwmon (`Package id N`, `Core N`
+  matched to each thread's `topology/core_id`) or `k10temp`/`zenpower`
+  (`Tctl`/`Tdie`, package only).
+- **CPU and memory settings**: governor (a mix is listed per governor) and
+  scaling driver with its `intel_pstate`/`amd_pstate` status, energy
+  performance preference, the allowed clock range and turbo (`no_turbo` or
+  `cpufreq/boost`; turbo off shows amber), pressure stall (`/proc/pressure`
+  `some avg10`; amber when memory or I/O reaches 10 % or CPU 50 %),
+  transparent huge pages and defrag, swappiness, zswap and swap devices,
+  overcommit mode, dirty ratios, `vfs_cache_pressure`, kernel release, uptime,
+  SMT and NUMA nodes. Hovering a row explains the setting.
+
+Topology, model, cache and temperature sensor paths are read once; clocks,
+governors, temperatures and settings are re-read every sample (about 200 small
+sysfs reads on a 32-thread machine). Every reader takes a root folder so the
+tests feed it a fake `/sys` and `/proc` tree.
+
 #### From a phone (`diag.process`, `diag.processStop`)
 
 The phone's **Memory** list (`diag.processes`) carries the same role
