@@ -37,7 +37,10 @@ switches reach every WebEngine view in the process, agent browser windows
 included. They are merged into `QTWEBENGINE_CHROMIUM_FLAGS`: the user's own
 switches are kept and come after ours, so they can override, and a user
 `--disable-features=` list is folded into ours (Chromium keeps only the last
-copy of a switch). Set `FORKMESH_BROWSER_KEEP_GOOGLE=1` to skip it.
+copy of a switch). Qt WebEngine splits that variable on plain spaces with no
+quoting, so the merge splits it the same way; a switch whose value needs a
+space has to go on the command line instead. Set
+`FORKMESH_BROWSER_KEEP_GOOGLE=1` to skip it.
 
 | Switch | Stops |
 | --- | --- |
