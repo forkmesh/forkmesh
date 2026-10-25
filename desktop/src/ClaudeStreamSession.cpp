@@ -219,6 +219,7 @@ void ClaudeStreamSession::launch()
     m_launchedPermissionMode = m_permissionMode;
     m_pendingPermissionMode.clear();
     m_pendingPermissionRequestId.clear();
+    m_unannouncedFromMode.clear();
     m_launchedBypassing = m_permissionMode == QLatin1String(kBypassPermissionsMode);
     if (m_launchedBypassing)
         cmd += QStringLiteral(" --dangerously-skip-permissions");
@@ -448,6 +449,12 @@ bool ClaudeStreamSession::setPermissionMode(const QString &permissionMode)
                           QStringLiteral("set_permission_mode")},
                          {QStringLiteral("mode"), mode}}}}))
         return false;
+    if (m_unannouncedFromMode.isEmpty())
+        m_unannouncedFromMode = m_permissionMode.isEmpty()
+                                    ? QStringLiteral("default")
+                                    : m_permissionMode;
+    else if (m_unannouncedFromMode == mode)
+        m_unannouncedFromMode.clear();
     m_permissionMode = mode;
     m_pendingPermissionMode = mode;
     m_pendingPermissionRequestId = requestId;
@@ -469,8 +476,10 @@ void ClaudeStreamSession::notePermissionModeResponse(const QJsonObject &ev)
     // what the process is really enforcing: the mode is stored on the session
     // either way, so the next launch still carries it.
     if (response.value(QStringLiteral("subtype")).toString() ==
-        QLatin1String("error"))
+        QLatin1String("error")) {
         m_permissionMode = m_launchedPermissionMode;
+        m_unannouncedFromMode.clear();
+    }
     m_pendingPermissionMode.clear();
     m_pendingPermissionRequestId.clear();
 }
@@ -479,7 +488,12 @@ bool ClaudeStreamSession::sendUserText(const QString &text)
 {
     if (text.trimmed().isEmpty())
         return true; // nothing to deliver, so nothing failed to arrive
-    return writeUserTurn(text);
+    const QString notice = forkmesh::claudecontrol::permissionModeChangeNotice(
+        m_unannouncedFromMode, m_permissionMode);
+    if (!writeUserTurn(notice + text))
+        return false;
+    m_unannouncedFromMode.clear();
+    return true;
 }
 
 bool ClaudeStreamSession::sendCommand(const AgentRuntimeCommand &command)

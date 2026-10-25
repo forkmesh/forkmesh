@@ -5347,6 +5347,16 @@ function scheduleHudFacePortrait(key) {
   }
 }
 
+const WORLD_GENIE_SPIDER_KEY = "forkmesh.world.genie";
+
+function worldGenieSpiderShown() {
+  try {
+    return localStorage.getItem(WORLD_GENIE_SPIDER_KEY) !== "off";
+  } catch (_) {
+    return true;
+  }
+}
+
 function worldTemplate(identity, settings, mode, landmarkCapabilities) {
   const accountSession = readSession();
   const signedInName =
@@ -5644,6 +5654,8 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 alt=""
                 ${shirtAvatarSource ? "" : "hidden"}
               />
+              <canvas class="world-shirt-live" data-world-shirt-live width="128" height="128" aria-hidden="true" hidden></canvas>
+              <span class="world-on-air" data-world-on-air aria-hidden="true" hidden><span class="world-on-air-dot"></span>On air</span>
             </button>
           </nav>
         </header>
@@ -5834,6 +5846,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
 
         <section class="world-channels" data-world-channels role="dialog" aria-label="Channels, voice rooms and direct messages" hidden></section>
         <div class="world-voice-audio" data-world-voice-audio hidden></div>
+        <div class="world-reaction-pops" data-world-reaction-pops aria-hidden="true"></div>
         <section
           class="world-hud-island"
           data-world-hud-island
@@ -5860,6 +5873,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <button type="button" data-world-tool="emote-sparkle" data-dashboard-chat-emote="sparkle" title="Sparkle" aria-label="Sparkle">${worldIconSvg("sparkle")}</button>
               <button type="button" data-world-tool="jetpack" data-world-jetpack-toggle title="Put on jetpack" aria-label="Put on jetpack" aria-pressed="false">${worldIconSvg("rocket")}</button>
             </div>
+            <figure class="world-voice-chart" data-world-voice-chart hidden><canvas width="248" height="112" role="img" aria-label="Live diagnostics"></canvas><figcaption>Live diagnostics · 30 s</figcaption></figure>
             <button class="world-voice-perf" type="button" data-world-voice-perf data-grade="unknown" title="Voice and video performance" aria-label="Voice and video performance and diagnostic report" hidden><span class="world-voice-perf-dot" aria-hidden="true"></span><span data-world-voice-perf-text>…</span></button>
             <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Channels, voice rooms, Office rooms and direct messages" aria-label="Open channels, voice rooms, Office rooms and direct messages">${worldIconSvg("hash")}</button>
             <button
@@ -6726,6 +6740,14 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 data-world-face-image
                 ${settings.faceImage ? "checked" : ""}
                 ${signedInName ? "" : "disabled"}
+              />
+            </label>
+            <label class="world-privacy-option">
+              <span>Show the Genie spider</span>
+              <input
+                type="checkbox"
+                data-world-genie-spider
+                ${worldGenieSpiderShown() ? "checked" : ""}
               />
             </label>
             <label class="world-avatar-upload">
@@ -14508,6 +14530,15 @@ class ForkMeshWorld extends HTMLElement {
         this.setFaceImage(faceImage.checked);
         return;
       }
+      const genieSpider = event.target.closest("[data-world-genie-spider]");
+      if (genieSpider) {
+        try {
+          localStorage.setItem(WORLD_GENIE_SPIDER_KEY, genieSpider.checked ? "on" : "off");
+        } catch (_) {}
+        this.world?.setGenieSpiderEnabled?.(genieSpider.checked);
+        this.notice(genieSpider.checked ? "The Genie spider is back in the World." : "The Genie spider is taking a nap. Turn it back on here any time.");
+        return;
+      }
       const avatarUpload = event.target.closest("[data-world-avatar-upload]");
       if (avatarUpload) {
         const file = avatarUpload.files?.[0];
@@ -15056,6 +15087,9 @@ class ForkMeshWorld extends HTMLElement {
     });
     this.$("[data-world-voice-open]")?.addEventListener("click", () => {
       void this.ensureVoice().then((voice) => voice?.openPanel());
+    });
+    this.$("[data-world-voice-chart]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel(true));
     });
     this.$("[data-world-voice-perf]")?.addEventListener("click", () => {
       void this.ensureVoice().then((voice) => voice?.openPanel(true));
@@ -33958,6 +33992,19 @@ class ForkMeshWorld extends HTMLElement {
 
   syncWorldVoicePeers() {
     this.syncWorldBubbles();
+    this.onAirPeers ||= new Set();
+    for (const player of this.remotePlayers.values()) {
+      const live = Boolean(player.mic || player.cam);
+      if (live === this.onAirPeers.has(player.id)) continue;
+      if (live) this.onAirPeers.add(player.id);
+      else this.onAirPeers.delete(player.id);
+      this.world?.setAvatarOnAir?.(player.id, live);
+    }
+    for (const id of this.onAirPeers) {
+      if (this.remotePlayers.has(id)) continue;
+      this.onAirPeers.delete(id);
+      this.world?.setAvatarOnAir?.(id, false);
+    }
     const talking = [...this.remotePlayers.values()].filter((player) => player.voice || player.words);
     if (!talking.length) return;
     const apply = (puppets) => {
@@ -33986,11 +34033,44 @@ class ForkMeshWorld extends HTMLElement {
       const target = String(message.target || "");
       const toSelf = Boolean(target) && target === this.serverPeerId;
       this.world?.playAvatarReaction?.(from, toSelf ? "self" : target || from, emoji);
+      const name = this.remotePlayers.get(from)?.name || "Someone";
+      this.popWorldReaction(emoji, from, name, { big: toSelf });
       if (toSelf) {
         const name = this.remotePlayers.get(from)?.name || "Someone";
         this.notice(`${emoji} ${name} reacted to what you said.`);
       }
     });
+  }
+
+  ensureReactionPops() {
+    if (this.reactionPops) return Promise.resolve(this.reactionPops);
+    this.reactionPopsPromise ||= import("./world-reaction-pops.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.reactionPops = module.createReactionPops({
+          layer: () => this.$("[data-world-reaction-pops]"),
+          reducedMotion: Boolean(
+            window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches,
+          ),
+        });
+        return this.reactionPops;
+      })
+      .catch(() => {
+        this.reactionPopsPromise = null;
+        return null;
+      });
+    return this.reactionPopsPromise;
+  }
+
+  popWorldReaction(emoji, peerId, label = "", { big = false } = {}) {
+    void this.ensureReactionPops().then((pops) => {
+      pops?.pop(emoji, {
+        point: this.world?.avatarScreenPoint?.(peerId) || null,
+        label,
+        big,
+      });
+    });
+    this.world?.reactGenieSpider?.(emoji);
   }
 
   sendVoiceFrame(frame) {
@@ -34043,6 +34123,8 @@ class ForkMeshWorld extends HTMLElement {
         if (this.destroyed) return null;
         this.avatarPuppets = module.createAvatarPuppets({
           world: () => this.world,
+          ownPhoto: () => this.ownFacePhoto(),
+          onSelfFace: (canvas) => this.paintHudLiveFace(canvas),
         });
         this.avatarPuppetsTimer = window.setInterval(
           () => this.avatarPuppets?.tick(),
@@ -34055,6 +34137,41 @@ class ForkMeshWorld extends HTMLElement {
         return null;
       });
     return this.avatarPuppetsPromise;
+  }
+
+  ownFacePhoto() {
+    if (this.settings?.faceImagePreference === "generated") return null;
+    const png = String(readSession()?.avatarPng || "");
+    if (!png) return null;
+    if (this.ownFacePhotoSource !== png) {
+      this.ownFacePhotoSource = png;
+      this.ownFacePhotoImage = null;
+      if (png.length <= 90_000 && /^[A-Za-z0-9+/=]+$/.test(png)) {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = `data:image/png;base64,${png}`;
+        this.ownFacePhotoImage = image;
+      }
+    }
+    const image = this.ownFacePhotoImage;
+    return image?.complete && image.naturalWidth ? image : null;
+  }
+
+  paintHudLiveFace(canvas) {
+    const live = this.$("[data-world-shirt-live]");
+    const still = this.$("[data-world-shirt-avatar]");
+    if (!live) return;
+    if (!canvas) {
+      live.hidden = true;
+      if (still) still.style.visibility = "";
+      return;
+    }
+    const context = live.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, live.width, live.height);
+    context.drawImage(canvas, 0, 0, live.width, live.height);
+    if (live.hidden) live.hidden = false;
+    if (still && still.style.visibility !== "hidden") still.style.visibility = "hidden";
   }
 
   ensureVoice() {
@@ -34082,6 +34199,7 @@ class ForkMeshWorld extends HTMLElement {
       documentRef: document,
       session: () => readSession(),
       selfId: () => this.serverPeerId,
+      popReaction: (emoji, label) => this.popWorldReaction(emoji, "self", label, { big: true }),
       players: () => this.remotePlayers,
       world: () => this.world,
       puppets: () => this.avatarPuppets,
@@ -34094,6 +34212,7 @@ class ForkMeshWorld extends HTMLElement {
       audioHost: () => this.$("[data-world-voice-audio]"),
       panelElement: () => this.$("[data-world-voice-panel]"),
       perfElement: () => this.$("[data-world-voice-perf]"),
+      chartElement: () => this.$("[data-world-voice-chart]"),
       syncButtons: (state) => this.syncVoiceButtons(state),
       syncBubbles: () => {
         this.worldBubbleKey = "";
@@ -34193,6 +34312,14 @@ class ForkMeshWorld extends HTMLElement {
       camButton.title = cam
         ? "Turn the camera off"
         : "Camera: your face, head and hands move your avatar";
+    }
+    const onAir = this.$("[data-world-on-air]");
+    if (onAir) {
+      const live = Boolean(mic || cam);
+      if (onAir.hidden === live) onAir.hidden = !live;
+      onAir.dataset.media = mic && cam ? "audio-video" : cam ? "video" : "audio";
+      this.$("[data-world-shirt-badge]")?.toggleAttribute("data-on-air", live);
+      this.world?.setAvatarOnAir?.("self", live);
     }
     const open = this.$("[data-world-voice-open]");
     if (open) {

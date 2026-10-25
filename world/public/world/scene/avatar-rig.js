@@ -6,6 +6,7 @@ export const AVATAR_RIG_STALE_MS = 1500;
 export const AVATAR_RIG_SPAN_UNITS = 0.3;
 export const AVATAR_RIG_EYE_Y = 3.4;
 export const AVATAR_RIG_HAND_Z = -0.48;
+export const AVATAR_RIG_DEPTH_UNITS = 0.5;
 export const WORD_BADGE_COLORS = Object.freeze({
   talking: { fill: "#1f7a4d", ring: "#7cf2b0", text: "#f2fff8" },
   recent: { fill: "#7a5512", ring: "#ffcf6e", text: "#fff8e8" },
@@ -33,7 +34,7 @@ export function rigHandTarget(hand) {
   return {
     x: clamp(-(Number(hand?.x) || 0) * k, -1.6, 1.6),
     y: clamp(AVATAR_RIG_EYE_Y - (Number(hand?.y) || 0) * k, 1.2, 4.4),
-    z: AVATAR_RIG_HAND_Z,
+    z: clamp(AVATAR_RIG_HAND_Z - (Number(hand?.z) || 0) * AVATAR_RIG_DEPTH_UNITS, -1.3, -0.2),
   };
 }
 
@@ -225,6 +226,62 @@ export function syncAvatarWordBadge(THREE, avatar, speech) {
   badge.userData.state = state;
   paintWordBadge(badge.userData.canvas.getContext("2d"), words, state);
   badge.material.map.needsUpdate = true;
+}
+
+function paintOnAirSign(context) {
+  context.clearRect(0, 0, 160, 48);
+  context.fillStyle = "#b91c1c";
+  context.strokeStyle = "#fecaca";
+  context.lineWidth = 4;
+  context.beginPath();
+  context.roundRect(3, 3, 154, 42, 10);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.arc(26, 24, 7, 0, Math.PI * 2);
+  context.fill();
+  context.font = "800 24px system-ui, sans-serif";
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  context.fillText("ON AIR", 42, 25);
+}
+
+export function syncAvatarOnAir(THREE, avatar, on) {
+  const data = avatar?.userData;
+  const parent = data?.highDetail;
+  if (!parent) return false;
+  if (!on) {
+    if (data.onAirSign) data.onAirSign.visible = false;
+    return true;
+  }
+  let sign = data.onAirSign;
+  if (!sign) {
+    const canvas = globalThis.document?.createElement?.("canvas");
+    if (!canvas) return false;
+    canvas.width = 160;
+    canvas.height = 48;
+    paintOnAirSign(canvas.getContext("2d"));
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    sign = new THREE.Mesh(
+      resources.primitive(THREE, "PlaneGeometry", 0.6, 0.18),
+      resources.uniqueMaterial(THREE, { map: texture, transparent: true, depthWrite: false, toneMapped: false }, "MeshBasicMaterial"),
+    );
+    sign.name = "forkmesh-on-air-sign";
+    sign.position.set(0, 1.62, -0.5);
+    sign.rotation.y = Math.PI;
+    sign.renderOrder = 6;
+    parent.add(sign);
+    data.onAirSign = sign;
+  }
+  sign.visible = true;
+  return true;
+}
+
+export function animateOnAirSign(sign, time) {
+  if (!sign?.visible || !sign.material) return;
+  sign.material.opacity = Math.sin(time * 0.006) > -0.35 ? 1 : 0.25;
 }
 
 export function setAvatarFaceSource(THREE, avatar, canvas) {

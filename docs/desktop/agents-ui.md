@@ -36,6 +36,20 @@ work inside a repository; the tour and the composer's Models link keep their
 own handling. Before 2026-10-23 a click with no repository open did nothing,
 which left a checked Agents button over an unchanged page in both designs.
 
+### Usage page: install a missing CLI (2026-10-25)
+
+When `forkmesh::agentcli::installed("claude")` or `("codex")` finds no CLI, that
+provider's section on the Usage page says "Not installed on this desktop" and
+shows **Install Claude Code** or **Install Codex**
+(`agentUsagePageInstallClaude` / `agentUsagePageInstallCodex`); its terminal
+buttons are disabled, since they would only fail. The button runs the same
+install as Settings -> Apps (`installSuggestedApp`, npm with
+`@anthropic-ai/claude-code` or `@openai/codex`, after a confirmation). Without
+npm it is disabled and the page shows the reason; while an install runs it
+reads "Installing…", and a failed install leaves its last output line
+(`m_suggestedAppInstallProblems`) under the button. `refreshSuggestedApps`
+redraws the Usage page, so the button goes away once the install finishes.
+
 ### Usage page: Refresh and reset times (2026-10-19)
 
 The `usage` Market package's page is `MainWindow::buildAgentUsagePage`

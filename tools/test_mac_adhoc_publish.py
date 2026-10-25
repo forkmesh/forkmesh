@@ -8,8 +8,22 @@ INFO = {"title": "ForkMesh", "version": "1.4.0", "build": "18", "bundle": "com.f
 
 
 def email(build):
-    message = mac_adhoc_publish.build_email("to@example.com", INFO, build, "PAGE", "INSTALL", "IPA")
+    message = mac_adhoc_publish.build_email("to@example.com", INFO, build, "PAGE")
     return (message.get_body(("plain",)).get_content(), message.get_body(("html",)).get_content())
+
+
+def test_email_links_only_the_install_page():
+    message = mac_adhoc_publish.build_email(
+        "to@example.com", INFO, {"commit": "c", "subject": "s"},
+        "https://forkmesh.com/ios-install.html?build=18&v=abc#abc")
+    text = message.get_body(("plain",)).get_content()
+    page = message.get_body(("html",)).get_content()
+    for body in (text, page):
+        assert "https://forkmesh.com/ios-install.html?build=18" in body
+        assert "itms-services" not in body
+        assert ".ipa" not in body
+    assert message["Auto-Submitted"] == "auto-generated"
+    assert message["Feedback-ID"] == "ios_build:forkmesh"
 
 
 def test_email_says_how_long_the_build_took():
@@ -100,8 +114,7 @@ def test_the_email_leaves_a_mail_log_note_with_its_body(monkeypatch):
     monkeypatch.setattr(mac_adhoc_publish.subprocess, "run", run)
     monkeypatch.setattr(mac_adhoc_publish.time, "time", lambda: 1790664203.0)
     message = mac_adhoc_publish.build_email(
-        "jett@forkmesh.com", INFO, {"commit": "c3f94cc775e67190", "subject": "s"},
-        "PAGE", "INSTALL", "IPA")
+        "jett@forkmesh.com", INFO, {"commit": "c3f94cc775e67190", "subject": "s"}, "PAGE")
     mac_adhoc_publish.send(("fmnext-n1", "192.0.2.1", []), message)
     assert calls[0][0].startswith("/usr/sbin/sendmail ")
     assert calls[1][0] == mac_adhoc_publish.RQLITE_EXECUTE

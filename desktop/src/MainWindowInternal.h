@@ -213,9 +213,7 @@
 #include <unistd.h>
 #endif
 
-#ifndef FORKMESH_SOURCE_DIR
-#define FORKMESH_SOURCE_DIR ""
-#endif
+#include "SourceDir.h"
 
 namespace forkmesh::localcontrol::agentops {
 struct UsageWindow;
@@ -1904,6 +1902,7 @@ private:
 
 constexpr int kResourceSparklineSide = 34;
 constexpr int kResourceSparklineCompactSide = 19;
+constexpr qint64 kDebugStallChartMaxMs = 2000;
 
 class ResourceSparkline : public QWidget
 {

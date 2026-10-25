@@ -11,6 +11,7 @@
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
 #include "../src/AgentWorktree.h"
+#include "../src/AgentCliLocator.h"
 #include "../src/AgentRunTable.h"
 #include "../src/AgentToolEfficiencyBoard.h"
 #include "../src/AgentGuardrailBoard.h"
@@ -932,7 +933,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
         const QStringList activityTileNames = {
             QStringLiteral("debugUptimeTile"),
             QStringLiteral("debugNetworkActivityTile"),
-            QStringLiteral("debugLogActivityTile")};
+            QStringLiteral("debugLogActivityTile"),
+            QStringLiteral("debugStallTile")};
         bool activityTilesReady = true;
         for (const QString &name : activityTileNames) {
             QWidget *tile = window.findChild<QWidget *>(name);
@@ -942,8 +944,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
                                  !tile->toolTip().isEmpty();
         }
         check(activityTilesReady,
-              QStringLiteral("the debug strip exposes live uptime, network and "
-                             "log activity tiles"));
+              QStringLiteral("the debug strip exposes live uptime, network, "
+                             "log and UI stall tiles"));
 
         // Qt's own machinery now has a live row beside the process-resource
         // chart. Deep event delivery accounting is scoped to this expanded
@@ -14261,6 +14263,34 @@ void checkCommandApprovalWithoutGitWait(MainWindow &window)
               .arg(approval));
 }
 
+void checkAgentUsageInstallButtons(MainWindow &window)
+{
+    window.testOpenAgentUsagePage();
+    QApplication::processEvents();
+    QWidget *usagePage = window.findChild<QWidget *>(QStringLiteral("agentUsagePage"));
+    const auto button = [usagePage](const QString &name) {
+        return usagePage ? usagePage->findChild<QPushButton *>(name) : nullptr;
+    };
+    const bool claudeInstalled = forkmesh::agentcli::installed(QStringLiteral("claude"));
+    const bool codexInstalled = forkmesh::agentcli::installed(QStringLiteral("codex"));
+    QPushButton *installClaude = button(QStringLiteral("agentUsagePageInstallClaude"));
+    QPushButton *installCodex = button(QStringLiteral("agentUsagePageInstallCodex"));
+    QPushButton *terminalClaude = button(QStringLiteral("agentUsagePageTerminalClaude"));
+    QPushButton *terminalCodex = button(QStringLiteral("agentUsagePageTerminalCodex"));
+    check(usagePage && (installClaude != nullptr) == !claudeInstalled &&
+              (installCodex != nullptr) == !codexInstalled &&
+              (!installClaude ||
+               installClaude->text() == QStringLiteral("Install Claude Code")) &&
+              (!installCodex || installCodex->text() == QStringLiteral("Install Codex")) &&
+              terminalClaude && terminalClaude->isEnabled() == claudeInstalled &&
+              terminalCodex && terminalCodex->isEnabled() == codexInstalled,
+          QString("the Usage page offers Install Claude Code or Install Codex "
+                  "only when that CLI is missing, and disables its terminal "
+                  "buttons until then (claude=%1 codex=%2)")
+              .arg(claudeInstalled)
+              .arg(codexInstalled));
+}
+
 void checkAgentUsageHoverCard(MainWindow &window)
 {
     const bool codexDefault =
@@ -20425,6 +20455,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         window.resize(1440, 900);
         window.show();
         QApplication::processEvents();
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
@@ -29429,6 +29460,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       "provider switch (providers=%1)")
                   .arg(usageProviders.join(QLatin1Char(','))));
 
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
 
         if (savedDefaultProvider.isValid())
