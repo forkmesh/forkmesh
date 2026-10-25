@@ -27,7 +27,8 @@
      "title": "iPhone",
      "items": [
       "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
-      "The iPhone app stays signed in to your instances after the phone restarts."
+      "The iPhone app stays signed in to your instances after the phone restarts.",
+      "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow."
      ]
     },
     {
