@@ -102,6 +102,12 @@ QPushButton#quickAddGenieButton {
 QPushButton#quickAddGenieButton:hover {
     background: @surfaceActive; border-color: @borderStrong; color: @fg;
 }
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: @accent; border-color: @accent; color: @onAccent; font-weight: 600;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"]:hover {
+    background: @accentHover; border-color: @accentHover; color: @onAccent;
+}
 QPushButton#teammateBriefingGenerate, QPushButton#teammateBriefingRunAgain {
     color: @onAccent; background-color: @accent; border: 1px solid @accent;
     border-radius: 8px; font-weight: 600;
