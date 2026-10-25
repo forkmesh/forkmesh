@@ -10,7 +10,8 @@
     {
      "title": "iPhone",
      "items": [
-      "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock."
+      "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
+      "The iPhone app stays signed in to your instances after the phone restarts."
      ]
     },
     {
