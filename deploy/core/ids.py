@@ -1379,7 +1379,7 @@ class Alerter:
         subject = "[fmnext-ids %s] %s: %s" % (
             incident["severity"], incident["node"], incident["summary"])
         payload = {"from": {"email": mail.get("from") or
-                            "no-reply@forkmesh.com", "name": "ForkMesh IDS"},
+                            "founders@forkmesh.com", "name": "ForkMesh IDS"},
                    "to": [{"email": to}], "subject": subject[:200],
                    "text": json.dumps(incident, indent=2, sort_keys=True,
                                       default=str)[:6000],
