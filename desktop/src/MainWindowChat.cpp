@@ -3114,6 +3114,20 @@ QWidget *MainWindow::buildStatusBar()
     logActivityTile->setUnit(QStringLiteral("/s"));
     debugTiles.append(logActivityTile);
 
+    auto *stallTile = new ResourceSparkline(
+        QStringLiteral("STALL"), debugContent, kResourceSparklineCompactSide, 60);
+    m_debugStallTile = stallTile;
+    stallTile->setObjectName(QStringLiteral("debugStallTile"));
+    stallTile->setAccessibleName(QStringLiteral("Live UI stall chart"));
+    stallTile->setToolTip(
+        QStringLiteral("UI stalls: the longest time the window froze each second"));
+    stallTile->setUnit(QStringLiteral("ms"));
+    stallTile->addSample(0, kDebugStallChartMaxMs, QStringLiteral("0ms"));
+    stallTile->onClicked = [this] {
+        openFullLogForText(QStringLiteral("UI stalled"));
+    };
+    debugTiles.append(stallTile);
+
     const struct {
         const char *name;
         const char *label;

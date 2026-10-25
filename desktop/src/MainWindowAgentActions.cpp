@@ -1220,6 +1220,64 @@ void MainWindow::sendAgentToolImprovementsToAgent()
                  false, QString(), forkmesh::kLocalOperationNoticeKind);
 }
 
+void MainWindow::startTranscriptCoverageAgent()
+{
+    if (!m_agentTranscript)
+        return;
+    QVector<forkmesh::transcriptcoverage::Gap> gaps;
+    int busyAgent = 0;
+    for (const forkmesh::transcriptcoverage::Gap &gap : m_agentTranscript->coverageGaps()) {
+        const int handedTo = m_transcriptCoverageAgents.value(gap.key);
+        if (handedTo > 0 && findAgentSession(handedTo)) {
+            busyAgent = handedTo;
+            continue;
+        }
+        gaps.append(gap);
+    }
+    if (gaps.isEmpty()) {
+        if (busyAgent > 0) {
+            flashMessage(QStringLiteral("Agent #%1 is already adding these entries "
+                                        "to the transcript.")
+                             .arg(busyAgent),
+                         false, QString(), forkmesh::kLocalOperationNoticeKind);
+            showAgentSession(busyAgent);
+        }
+        return;
+    }
+    const int repoIndex = stallReportRepoIndex();
+    if (repoIndex < 0) {
+        flashMessage(QStringLiteral("No ForkMesh checkout is available to run an "
+                                    "agent in."),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    const QString provider = defaultAgentProvider();
+    const QString model =
+        provider == QLatin1String("claude-code")
+            ? QSettings().value(kClaudeCodeModelSetting).toString()
+            : (agentIsCodexProvider(provider)
+                   ? codexChatGptModelId(
+                         QSettings().value(kCodexModelSetting).toString())
+                   : QString());
+    QString sessionLabel = QStringLiteral("agent session #%1").arg(m_selectedAgentSessionId);
+    if (const AgentSession *shown = findAgentSession(m_selectedAgentSessionId))
+        sessionLabel += QStringLiteral(" (%1)").arg(agentProviderName(shown->provider));
+    const int sessionId = startAdHocAgentForRepo(
+        repoIndex, forkmesh::transcriptcoverage::agentPrompt(gaps, sessionLabel),
+        provider, /*createPr=*/false, model,
+        QStringLiteral("Show missing raw log entries in the transcript"));
+    if (sessionId <= 0)
+        return;
+    for (const forkmesh::transcriptcoverage::Gap &gap : std::as_const(gaps))
+        m_transcriptCoverageAgents.insert(gap.key, sessionId);
+    flashMessage(QStringLiteral("Started a %1 agent to add %2 missing kind%3 of "
+                                "entries to the transcript.")
+                     .arg(agentProviderName(provider))
+                     .arg(gaps.size())
+                     .arg(gaps.size() == 1 ? QString() : QStringLiteral("s")),
+                 false, QString(), forkmesh::kLocalOperationNoticeKind);
+}
+
 QWidget *MainWindow::buildAgentEfficiencyPage()
 {
     auto *page = new QWidget;

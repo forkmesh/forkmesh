@@ -343,14 +343,22 @@ the dot took width and the churn bars were hard to read).
   none. Since 2026-10-25 its border is the token flow (`AgentTokenRing`): two
   1 pt dashed lanes, tokens in on the outer lane and tokens out on the inner
   one, moving in opposite directions while the agent is active. Each lane's
-  colour and speed follow its rate: grey idle, blue slow, green steady, orange
-  fast, red very fast (`AgentTokenPace`; output steps at 1, 15, 60 and 200
+  colour follows its rate: grey idle, blue slow, green steady, orange fast,
+  red very fast (`AgentTokenPace`; output steps at 1, 15, 60 and 200
   tokens/s, input at ten times that because each request re-reads the
-  context). The phone measures the rate from how the totals grow between list
-  updates (`AgentTokenSampler`: gaps count as at most 8 s, and the rate drops
-  to idle after 10 s with no growth). With no token counts the border is a
-  hairline. Reduce Motion keeps the lanes still, and they pause while the tab is
-  hidden.
+  context). Its speed follows the rate smoothly, 4 pt/s at 1 token/s plus
+  4 pt/s per tenfold, at most 24 (`AgentTokenPace.travel`), and the dash
+  position adds up frame by frame (`AgentTokenClock`), so a change of speed
+  does not make the dashes jump. The phone measures the rate from how the
+  totals grow: once a second from the desktop vitals feed's `agentTokens`
+  while it watches the desktop (see NAVIGATION.md, agent token charts), and
+  on each list update otherwise (`AgentTokenSampler`: gaps count as at most
+  8 s; a second with no growth halves the rate every 1.5 s, down to idle below
+  0.5 tokens/s, so bursty arrivals glide instead of stopping each second; the
+  rate drops to idle after 10 s with no growth). Asked for on 2026-10-25: the
+  ring should move with tokens as they are sent and received. With no token
+  counts the border is a hairline. Reduce Motion keeps the lanes still, and
+  they pause while the tab is hidden.
 - The totals come from the desktop row's `tokensIn` and `tokensOut`: for Claude
   sessions the desktop adds each assistant message's input (fresh, cache
   written and cache read) and output once per message id
