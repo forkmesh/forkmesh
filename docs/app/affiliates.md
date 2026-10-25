@@ -94,6 +94,23 @@ Commission is paid by hand. Once a lead is `won` and the plan has stayed paid
 for 30 days, email the affiliate at their account address, pay them, then set
 the lead to `paid`.
 
+### Tax forms (not yet in the public terms)
+
+The public `/affiliates` page does not name a tax form yet. The owner decided
+on 2026-10-25:
+
+- **Companies can be paid**, not only individuals. The tax-form line from the
+  Revenue Contest's unapproved decision D6 therefore needs W-8BEN-E added:
+  "Payment requires a completed Form W-9 (US persons), W-8BEN (non-US
+  individuals) or W-8BEN-E (non-US entities); payments may be subject to tax
+  reporting or withholding."
+- **No licensed tax professional has reviewed that wording.** It came from
+  the CPA teammate, who asked for that review before it is approved.
+
+Get that review before the line goes on `/affiliates` or the first commission
+is paid. No referral has been completed yet, so nobody has been paid under the
+current terms.
+
 ## Data
 
 `affiliates.data` and `affiliate_leads.data` are sealed with the row key; the
