@@ -281,6 +281,8 @@ private:
     void admitStored(Connection &conn);
     bool needsAccountCheck(const Connection &conn) const;
     bool admitsBeforeCheck(const Connection &conn) const;
+    bool claimsUnconfirmedUser(const Connection &conn) const;
+    void confirmClaimedUser(Connection &conn);
     void settleAccountCheck(Connection &conn, AccountCheck verdict);
     void refuseRelayed(Connection &conn, const QString &reason);
     void recheckAccount(int connectionId);
