@@ -9121,6 +9121,11 @@ private:
     void notifyRepoWorkflowsChanged();
     void openWorkflowInPage(const QString &repo, const QString &workflowId);
     void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
+    QJsonObject accountWorkflowPinInfo(const QString &workflowId) const;
+    QPixmap accountWorkflowIcon(int side) const;
+    void runAccountWorkflowFromRail(const QString &workflowId);
+    void runAccountWorkflowAction(const QString &workflowId, const QString &action, const QJsonObject &payload,
+                                  const forkmesh::market::NativePackageReplyHandler &done);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
