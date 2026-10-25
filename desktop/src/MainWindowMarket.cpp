@@ -2159,6 +2159,14 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box)
     if (natural.isValid() && !natural.isEmpty())
         reader.setScaledSize(natural.scaled(box, Qt::KeepAspectRatio));
     QImage image = reader.read();
+    if (image.isNull()) {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const QByteArray bytes = file.read(16 * 1024 * 1024);
+            if (forkmesh::ui::diffBytesAreWebp(bytes))
+                image = forkmesh::ui::diffDecodeWebp(bytes);
+        }
+    }
     if (!image.isNull() &&
         (image.width() > box.width() || image.height() > box.height()))
         image = image.scaled(box, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -3369,16 +3377,12 @@ bool MainWindow::setPackageInstalled(const QString &id, bool installed,
                 continue;
             const PackageManifest *removed = m_packageRegistry->package(removedId);
             const QString name = removed && !removed->name.isEmpty() ? removed->name : removedId;
-            kept << QStringLiteral("%1: %2").arg(name, QDir::toNativeSeparators(folder));
+            kept << QStringLiteral("%1 in %2").arg(name, QDir::toNativeSeparators(folder));
         }
-        if (!kept.isEmpty()) {
-            QMessageBox::information(
-                this, QStringLiteral("Plugin data kept"),
-                QStringLiteral("The plugin is removed, but its data stays on disk:\n\n%1\n\n"
-                               "Install the plugin again to use it, or delete the folder "
-                               "yourself if you no longer need it.")
-                    .arg(kept.join(QLatin1Char('\n'))));
-        }
+        if (!kept.isEmpty())
+            flashMessage(QStringLiteral("Plugin removed; its data stays on disk (%1). Install it "
+                                        "again to use it, or delete the folder yourself.")
+                             .arg(kept.join(QStringLiteral("; "))));
     }
 
     if (themePackage) {
