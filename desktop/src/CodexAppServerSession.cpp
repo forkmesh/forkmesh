@@ -8,6 +8,7 @@
 #include "AgentJail.h"
 #include "AgentResources.h"
 #include "VirtualMachineRuntime.h"
+#include "TranscriptCoverage.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -1591,14 +1592,7 @@ void CodexAppServerSession::emitUsage(const QJsonObject &params)
 
 bool CodexAppServerSession::isToolItem(const QString &type)
 {
-    static const QSet<QString> types{
-        QStringLiteral("commandExecution"), QStringLiteral("fileChange"),
-        QStringLiteral("mcpToolCall"), QStringLiteral("dynamicToolCall"),
-        QStringLiteral("collabAgentToolCall"), QStringLiteral("webSearch"),
-        QStringLiteral("imageView"), QStringLiteral("imageGeneration"),
-        QStringLiteral("plan"), QStringLiteral("subAgentActivity"),
-        QStringLiteral("sleep")};
-    return types.contains(type);
+    return forkmesh::transcriptcoverage::isCodexToolItem(type);
 }
 
 QString CodexAppServerSession::toolName(const QJsonObject &item)

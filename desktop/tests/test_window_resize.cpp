@@ -5165,6 +5165,50 @@ void checkChatReceiptMark()
           QStringLiteral("clearing the mark hides it"));
 }
 
+void checkTranscriptCoverageIndicator()
+{
+    const auto ev = [](const char *json) {
+        return QJsonDocument::fromJson(QByteArray(json)).object();
+    };
+    ClaudeTranscriptView transcript;
+    transcript.resize(720, 500);
+    transcript.show();
+    QApplication::processEvents();
+    auto *pill = transcript.findChild<QToolButton *>(
+        QStringLiteral("transcriptCoverageGaps"));
+    transcript.handleEvent(ev(R"({"type":"result","subtype":"success","result":"ok"})"));
+    check(pill && pill->isHidden(),
+          QStringLiteral("a transcript that draws every raw log entry has no "
+                         "coverage pill"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done"})"));
+    transcript.handleEvent(ev(R"({"type":"system","subtype":"permission_denied"})"));
+    QApplication::processEvents();
+    const QRect area = transcript.viewport()->geometry();
+    check(pill && !pill->isHidden() && pill->text().contains(QStringLiteral("2 missing")) &&
+              area.contains(pill->geometry()) &&
+              pill->geometry().top() < area.top() + 20 &&
+              pill->geometry().right() > area.right() - 30,
+          QStringLiteral("raw log entries the transcript skips show a red pill "
+                         "at the top right with the number of missing kinds"));
+    check(transcript.coverageGaps().size() == 2 &&
+              transcript.coverageGaps().first().count == 2,
+          QStringLiteral("the transcript keeps each missing kind with its count"));
+    transcript.noteRawLine(QStringLiteral(R"({"method":"model/rerouted","params":{}})"));
+    check(pill && pill->text().contains(QStringLiteral("3 missing")),
+          QStringLiteral("a Codex raw log line the transcript drops adds a kind"));
+    int activated = 0;
+    QObject::connect(&transcript, &ClaudeTranscriptView::coverageGapsActivated,
+                     [&activated] { ++activated; });
+    if (pill)
+        pill->click();
+    check(activated == 1,
+          QStringLiteral("clicking the coverage pill asks for an agent"));
+    transcript.clear();
+    check(pill && pill->isHidden() && transcript.coverageGaps().isEmpty(),
+          QStringLiteral("clearing the transcript clears its coverage pill"));
+}
+
 void checkChatRecipientLabel()
 {
     ChatMessage message;
@@ -16112,6 +16156,10 @@ else:
         app.arguments().contains(QStringLiteral("--footer-overlay-only"));
     const bool errorAlertOnly =
         app.arguments().contains(QStringLiteral("--error-alert-only"));
+    if (app.arguments().contains(QStringLiteral("--transcript-coverage-only"))) {
+        checkTranscriptCoverageIndicator();
+        return failures == 0 ? 0 : 1;
+    }
     if (app.arguments().contains(QStringLiteral("--recipient-label-only"))) {
         checkChatRecipientLabel();
         checkChatReceiptMark();
@@ -20400,6 +20448,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
 
     checkChatUsernameProfile(window);
     checkChatVideoAttachmentPlays();
+    checkTranscriptCoverageIndicator();
     checkChatRecipientLabel();
     checkChatReceiptMark();
     checkCalendarActivityRendering(window);

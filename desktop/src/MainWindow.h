@@ -15057,6 +15057,8 @@ private:
     // nothing has been recorded, so there is nothing to launch on.
     QString agentToolImprovementsFixPrompt() const;
     void sendAgentToolImprovementsToAgent();
+    void startTranscriptCoverageAgent();
+    QHash<QString, int> m_transcriptCoverageAgents;
     QWidget *buildAgentGuardrailPage();
     void scheduleAgentGuardrailRefresh();
     void refreshAgentGuardrailBoard();

@@ -221,6 +221,9 @@ void MainWindow::renderTranscriptForSession(int sessionId)
     m_agentTranscript->clear();
     if (openingSession)
         m_agentTranscript->jumpToBottom();
+    if (const AgentSession *session = findAgentSession(sessionId);
+        session && agentIsCodexProvider(session->provider))
+        m_agentTranscript->noteRawLog(m_streamRaw.value(sessionId));
     m_renderedTranscriptSession = -1;
     m_renderedTranscriptCount = -1;
     m_renderedExternalSession = -1; // the shared view no longer holds an external

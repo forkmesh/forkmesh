@@ -450,6 +450,56 @@ margin `layoutPromptDeck()` reserves, and shows the last prompt in one line
 **Raw log jump.** Clicking a row's gutter switches to Raw at the line of the
 event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
 
+**Transcript coverage (2026-10-25).** The transcript should show everything
+the raw log holds. `forkmesh::transcriptcoverage` (`src/TranscriptCoverage.*`)
+checks every event the view is given (`handleEvent`, and
+`accumulateStatsOnly` for the turns a long replay skips), and for Codex runs
+every JSON-RPC line of the raw log (`noteRawLog` when the transcript is
+rebuilt, `noteRawLine` while the run streams). Any kind that draws nothing is a
+gap: an unknown event type, `system` subtype, assistant or user content block,
+stream event or delta, Codex notification or Codex item. A red **● N
+missing** pill (`transcriptCoverageGaps`) then shows at the top right of the
+transcript. Its tooltip lists each kind and count. Clicking it starts an agent
+in the ForkMesh checkout (`stallReportRepoIndex()`), with the default provider
+and model from Settings, like the Tool efficiency page's **Send to agent**. The
+prompt (`transcriptcoverage::agentPrompt`) names each kind with one clipped
+example. The agent either draws the kind or adds it to the unshown lists below
+with a reason here, then updates `TranscriptCoverage.cpp` and
+`tests/test_transcript_coverage.cpp` so the pill stops flagging it. A kind
+already handed to an agent that still exists is not sent again; a second click
+opens that agent.
+
+These are deliberately not drawn, because another surface shows them or they
+are bookkeeping:
+
+- Usage page: `rate_limit_event`, `_codex_rate_limits`, Codex `account/*`.
+- Host control protocol: `control_request`, `control_response`,
+  `control_cancel_request`, `keep_alive`. Prompts arrive as their own card
+  events.
+- Sub-sessions list: `system` `task_started`, `task_updated`,
+  `task_progress`, `background_tasks_changed`.
+- Agent name: `system/session_title_changed`.
+- Only `status: compacting` has a row; other `system/status` events only
+  update state.
+- Claude Code `.jsonl` bookkeeping: `summary`, `file-history-snapshot`,
+  `queue-operation`, `custom-title`, `ai-title`, `last-prompt`, and
+  `isMeta` lines.
+- Subagent work: any event with a `parent_tool_use_id`, and sidechain
+  events. The subagent's card summarizes it.
+- Prompt echoes: user `text` blocks and string content. The prompt row
+  shows them.
+- Streamed `input_json_delta` and `signature_delta`: the finished assistant
+  message draws the tool call.
+- Codex `thread/status/changed`, `thread/archived`, `thread/unarchived`,
+  `thread/closed`, `serverRequest/resolved`, `skills/changed`,
+  `app/list/updated`, `mcpServer/oauthLogin/completed`,
+  `fuzzyFileSearch/*`, and the legacy `codex/event/*` duplicates.
+
+Stderr, non-JSON lines and lines the bounded raw buffer cut are never judged.
+A Claude run's raw lines are the events themselves, so only Codex raw lines are
+checked. `CodexAppServerSession::isToolItem` reads the same Codex tool item
+list (`transcriptcoverage::isCodexToolItem`), so the two cannot drift.
+
 **Scrolling.**
 
 - The follow-tail latch (`m_stickBottom`) changes only on

@@ -402,7 +402,7 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         handleCliRuntimeEvent(sid, ev, guardrails);
     };
     auto onRaw =
-        [this, sid, providerCredentialValues](
+        [this, sid, codex, providerCredentialValues](
             const QString &rawLine) {
         const QString line = redactProviderCredentials(
             rawLine, providerCredentialValues);
@@ -410,6 +410,9 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         appendBoundedStreamRaw(m_streamRaw[sid], line + QLatin1String("\n\n"));
         if (sid == m_selectedAgentSessionId)
             appendAgentRawLog(line + QStringLiteral("\n\n"));
+        if (codex && m_agentTranscript &&
+            (m_renderedTranscriptSession == sid || m_agentTranscriptRenderSession == sid))
+            m_agentTranscript->noteRawLine(line);
     };
     auto onStderr =
         [this, sid, providerCredentialValues](
