@@ -127,7 +127,13 @@ Everything is in `desktop/`.
   beside the rail, split into labelled groups, and sorted (custom, by name, by
   use, or by badge count). Buttons can move between the rail, the repository
   tab bar and the Code toolbar, and any button that opens a page can be dropped
-  into the rail as a shortcut. All of this is stored as JSON under `ui/*`
+  into the rail as a shortcut. Moving works by drag in both directions: a
+  repository tab or Code toolbar button dragged onto the rail moves there, and
+  a rail icon dragged onto the bar it may live in (the repository tab bar, or
+  the Code toolbar for a Code toolbar button) moves back
+  (`handleButtonPanelDrop`, which outlines the bar while the icon is over it
+  and calls `moveButtonToPanel`). A bar the icon may not live in refuses the
+  drag, so the drop keeps the same rules as the "Move to …" menu. All of this is stored as JSON under `ui/*`
   settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
 - **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
@@ -153,7 +159,13 @@ Everything is in `desktop/`.
   under the left rail, at the right edge and in the status bar
   (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
   [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
-  A strip with no pins is hidden.
+  A strip with no pins is hidden. A pin can be dragged from any strip to any
+  other, or to another place in its own strip: while a pin is dragged all four
+  strips show with a dashed outline, even empty ones, and a line marks where it
+  will land (`handleWorkflowPinEvent`). The drop saves the new order with
+  `rw::movePin`, which keeps the pin's slot among the pins of the target strip.
+  Strips do not rebuild during a drag (`m_workflowPinDragging`), because a
+  rebuild deletes the pin buttons, the dragged one included.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's

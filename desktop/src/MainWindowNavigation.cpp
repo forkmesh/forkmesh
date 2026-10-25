@@ -3247,6 +3247,21 @@ void MainWindow::placeMovableButtons()
 {
     if (!m_appNavigationRailLayout)
         return;
+    if (!m_buttonPanelDropHook)
+        m_buttonPanelDropHook = new RailEventHook(
+            [this](QObject *watched, QEvent *event) {
+                return handleButtonPanelDrop(watched, event);
+            },
+            this);
+    for (QBoxLayout *bar : {static_cast<QBoxLayout *>(m_repoTabRowLayout),
+                            static_cast<QBoxLayout *>(m_repoCodeBarLayout)}) {
+        QWidget *panel = bar ? bar->parentWidget() : nullptr;
+        if (!panel || panel->property("forkmeshButtonDropHooked").toBool())
+            continue;
+        panel->setProperty("forkmeshButtonDropHooked", true);
+        panel->setAcceptDrops(true);
+        panel->installEventFilter(m_buttonPanelDropHook);
+    }
     const QVariantMap placement =
         QSettings().value(kButtonPlacementSetting).toMap();
     const auto place = [&](const QString &key, QWidget *widget,
@@ -3422,6 +3437,99 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     applyRailOrder();
     applyRailCaptionPreference();
     updateRepoActivityRail();
+}
+
+QWidget *MainWindow::testRepoTabRowPanel() const
+{
+    return m_repoTabRowLayout ? m_repoTabRowLayout->parentWidget() : nullptr;
+}
+
+QWidget *MainWindow::movableButtonForRailKey(const QString &railKey) const
+{
+    if (railKey.isEmpty())
+        return nullptr;
+    const auto matches = [&railKey](const QString &key, QWidget *widget) {
+        return widget && (key == railKey ||
+                          widget->property("forkmeshRailKey").toString() == railKey);
+    };
+    for (const auto &[key, widget] : railHomeButtons())
+        if (matches(key, widget))
+            return widget;
+    for (const auto &[key, widget] :
+         m_repoTabRowTabs + m_repoTabRowActions + m_repoCodeBarButtons)
+        if (matches(key, widget.data()))
+            return widget.data();
+    return nullptr;
+}
+
+bool MainWindow::handleButtonPanelDrop(QObject *watched, QEvent *event)
+{
+    auto *panel = qobject_cast<QWidget *>(watched);
+    if (!panel)
+        return false;
+    const QEvent::Type type = event->type();
+    if (type == QEvent::DragLeave) {
+        showButtonPanelDropZone(panel, false);
+        return false;
+    }
+    if (type == QEvent::Resize) {
+        if (QWidget *zone = panel->findChild<QWidget *>(
+                QStringLiteral("buttonPanelDropZone"), Qt::FindDirectChildrenOnly))
+            zone->setGeometry(panel->rect());
+        return false;
+    }
+    if (type != QEvent::DragEnter && type != QEvent::DragMove &&
+        type != QEvent::Drop)
+        return false;
+    auto *drop = static_cast<QDropEvent *>(event);
+    const QMimeData *mime = drop->mimeData();
+    if (!mime || !mime->hasFormat(kRailItemMimeType))
+        return false;
+    QWidget *button =
+        movableButtonForRailKey(QString::fromUtf8(mime->data(kRailItemMimeType)));
+    if (!button || !isInRail(button))
+        return false;
+    const QString key = button->property("forkmeshButtonKey").toString();
+    const QString target =
+        button->property("forkmeshButtonHome").toString() == kButtonPanelRepoCode
+            ? kButtonPanelRepoCode
+            : kButtonPanelRepoTabs;
+    QBoxLayout *layout = buttonPanelLayout(target);
+    if (key.isEmpty() || !layout || layout->parentWidget() != panel)
+        return false;
+    drop->setDropAction(Qt::MoveAction);
+    drop->accept();
+    if (type != QEvent::Drop) {
+        showButtonPanelDropZone(panel, true);
+        return true;
+    }
+    showButtonPanelDropZone(panel, false);
+    QTimer::singleShot(0, this,
+                       [this, key, target] { moveButtonToPanel(key, target); });
+    return true;
+}
+
+void MainWindow::showButtonPanelDropZone(QWidget *panel, bool show)
+{
+    QWidget *zone = panel->findChild<QWidget *>(
+        QStringLiteral("buttonPanelDropZone"), Qt::FindDirectChildrenOnly);
+    if (!show) {
+        if (zone)
+            zone->hide();
+        return;
+    }
+    if (!zone) {
+        auto *frame = new QFrame(panel);
+        frame->setObjectName(QStringLiteral("buttonPanelDropZone"));
+        frame->setAttribute(Qt::WA_TransparentForMouseEvents);
+        frame->setStyleSheet(Theme::remapSheet(QStringLiteral(
+            "QFrame#buttonPanelDropZone { background: transparent;"
+            " border: 1px dashed #2ea043; border-radius: 6px; }")));
+        zone = frame;
+    }
+    zone->setGeometry(panel->rect());
+    zone->raise();
+    zone->show();
 }
 
 void MainWindow::resetButtonPlacement()
