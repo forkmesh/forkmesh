@@ -190,3 +190,27 @@ func TestMergeExecutorRefusesASyncedHeadItCannotResolve(t *testing.T) {
 		t.Fatalf("an unresolvable synced head merged: %+v", result)
 	}
 }
+
+func TestMergeExecutorMergesARevisionSentAfterTheBranchWasSynced(t *testing.T) {
+	f := newMergeFixture(t)
+	run(t, f.source, "git", "checkout", "-q", "-b", "revision", f.mainOid)
+	writeFile(t, filepath.Join(f.source, "revision.txt"), "revision two\n")
+	run(t, f.source, "git", "add", "revision.txt")
+	run(t, f.source, "git", "commit", "-q", "-m", "revision two")
+	revision := run(t, f.source, "git", "rev-parse", "HEAD")
+	patch := run(t, f.source, "git", "diff", "--binary", f.mainOid, revision)
+	run(t, f.source, "git", "checkout", "-q", "main")
+	f.publishPatchPull(t, "", patch, "headBaseOid: "+f.mainOid, "headOid: "+revision,
+		"syncedHeadOid: "+f.featureOid, "revision: 2")
+	result := f.request(t, "execute", "merge", map[string]any{"expectedHeadOid": f.pullsOid})
+	if result["status"] != "merged" {
+		t.Fatalf("a patch revision newer than the synced branch did not merge: %+v", result)
+	}
+	baseAfter := result["baseAfter"].(string)
+	if f.show(t, baseAfter, "revision.txt") != "revision two" {
+		t.Fatalf("the merge %s does not carry the reviewed revision", baseAfter)
+	}
+	if gitIsAncestor(context.Background(), f.bare, f.featureOid, baseAfter) {
+		t.Fatalf("the merge %s took the stale synced branch head %s", baseAfter, f.featureOid)
+	}
+}
