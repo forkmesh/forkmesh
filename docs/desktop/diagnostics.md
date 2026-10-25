@@ -68,10 +68,20 @@ The desktop has no toasts or floating cards; information is shown inline.
   (`MainWindow::showPageNotice`, `#pageNoticeArea`): `kit::InlineNotice` rows
   above the page stack, keyed to the page they were raised on
   (`currentNoticePage`: the section, or `0:<owner>/<name>:<tab>`).
-- No countdown: a newer message replaces an older confirmation; errors stay
-  until cleared, at most three per page (`kPageNoticesPerPage`), 60 in all.
-  Rows have Copy, clear, **View output** for failed runs and an **Open**
-  action (`noticeDestination`); text over 600 characters is shortened.
+- A newer message replaces an older confirmation; errors stack, at most three
+  per page (`kPageNoticesPerPage`), 60 in all. Rows have Copy, clear,
+  **View output** for failed runs and an **Open** action
+  (`noticeDestination`); text over 600 characters is shortened.
+- Every row, confirmation or error, closes itself after 5 s
+  (`m_pageNoticeCountdownMs`). A ring around its clear button
+  (`kit::CountdownCloseButton`) fills clockwise as the time runs out, blue for
+  a confirmation and red for an error. Hovering the row pauses the countdown
+  (`InlineNotice::enterEvent` / `leaveEvent`) so a message can be read or
+  copied; it resumes when the pointer leaves. The time already spent is kept
+  per notice (`PageNotice::countdownElapsedMs`), so a re-render of the strip,
+  or leaving the page and coming back, does not restart it; the clock only
+  runs while the row is shown. Errors are still filed on the Pings page, so
+  an error that closed itself can be read there.
 - One operation, one Pings row: notices raised inside a `PingThreadScope`
   share a key (`m_pingThreadKey`) and `refileThreadPing` rewrites that row in
   place instead of filing another. A branch merge (`mergePingThread(dir,
