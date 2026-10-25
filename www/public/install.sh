@@ -1247,7 +1247,8 @@ pkg_config_probe() {
 # are checked. This needs no pkg-config, compiler or build tool, so it stays
 # accurate on a host the installer has not finished setting up.
 have_qt6_cmake_package() {
-  local root cfg cmake_dir
+  local root cfg cmake_dir module found
+  local modules="${*:-Widgets Svg}"
   # shellcheck disable=SC2086
   for root in ${CMAKE_PREFIX_PATH:+${CMAKE_PREFIX_PATH//[:;]/ }} \
               ${Qt6_DIR:+$Qt6_DIR} \
@@ -1258,10 +1259,11 @@ have_qt6_cmake_package() {
                "$root"/lib/*/cmake/Qt6/Qt6Config.cmake; do
       [ -f "$cfg" ] || continue
       cmake_dir="$(dirname "$(dirname "$cfg")")"
-      if [ -f "$cmake_dir/Qt6Widgets/Qt6WidgetsConfig.cmake" ] &&
-         [ -f "$cmake_dir/Qt6Svg/Qt6SvgConfig.cmake" ]; then
-        return 0
-      fi
+      found=1
+      for module in $modules; do
+        [ -f "$cmake_dir/Qt6$module/Qt6${module}Config.cmake" ] || found=0
+      done
+      [ "$found" = 1 ] && return 0
     done
   done
   return 1
@@ -1285,6 +1287,13 @@ have_qt6_dev() {
   # with "Installed qt6-base-dev qt6-svg-dev but 'qt' is still unavailable" on a
   # machine that was ready to build. Look for the CMake packages instead.
   have_qt6_cmake_package
+}
+
+have_qt6_webengine() {
+  if pkg_config_probe --exists Qt6WebEngineWidgets 2>/dev/null; then
+    return 0
+  fi
+  have_qt6_cmake_package WebEngineWidgets
 }
 
 have_openssl_dev() {
@@ -1355,6 +1364,38 @@ emoji_font_package() {
     zypper)  echo noto-coloremoji-fonts ;;
     apk)     echo font-noto-emoji ;;
   esac
+}
+
+webengine_package() {
+  case "$PM" in
+    apt)     echo qt6-webengine-dev ;;
+    dnf|yum) echo qt6-qtwebengine-devel ;;
+    pacman)  echo qt6-webengine ;;
+    zypper)  echo qt6-webengine-devel ;;
+    apk)     echo qt6-qtwebengine-dev ;;
+  esac
+}
+
+ensure_webengine() {
+  [ "$(uname -s)" = "Linux" ] || return 0
+  if [ "$(id -u)" -eq 0 ] && [ -z "${DISPLAY:-}" ] &&
+     [ -z "${WAYLAND_DISPLAY:-}" ] &&
+     [ -n "${FORKMESH_TUNNEL_HOSTNAME:-}" ]; then
+    return 0
+  fi
+  if have_qt6_webengine; then
+    say "  Qt WebEngine: already present"
+    return 0
+  fi
+  local pkg; pkg="$(webengine_package)"
+  if [ "${FORKMESH_NO_INSTALL_DEPS:-0}" = "1" ] || [ -z "$pkg" ] ||
+     { [ "$PM" != "brew" ] && ! need_sudo; }; then
+    warn "Qt WebEngine is not installed, so YouTube, the Browser tab and agent browser windows open outside ForkMesh. Install your distribution's Qt 6 WebEngine development package${pkg:+ ($pkg)} and rebuild."
+    return 0
+  fi
+  say "Installing Qt WebEngine ($pkg) so YouTube and web pages play inside ForkMesh"
+  pm_install "$pkg" ||
+    warn "Could not install $pkg via $PM; YouTube, the Browser tab and agent browser windows open outside ForkMesh until it is installed."
 }
 
 ensure_emoji_font() {
@@ -2035,6 +2076,7 @@ fi
 # component is genuinely absent.
 ensure qt have_qt6_dev
 ensure openssl have_openssl_dev
+ensure_webengine
 ensure_emoji_font
 # detail records which prerequisites had to be installed ("none" = all present),
 # so the funnel shows how often a machine already met the requirements.

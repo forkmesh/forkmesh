@@ -186,10 +186,15 @@
           <time class="when" datetime="2026-10-25">October 25, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Projects</h3>
+          <ul>
+            <li>Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs.</li>
+          </ul>
           <h3>Agents</h3>
           <ul>
             <li>Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.</li>
             <li>Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings &gt; Agents.</li>
+            <li>Merging an agent no longer leaves a second agent with the same name in the Agents list.</li>
             <li>The desktop Agents workspace picks up Claude Code desktop's keys: Ctrl+Tab between sessions, Ctrl+Shift+D, Ctrl+` and Ctrl+Shift+B for the diff, terminal and browser, Shift+Tab to change the permission mode, and Ctrl+/ to list them all.</li>
             <li>Drop files on the desktop prompt to attach images or mention files, type / to open the command menu, and open a session's folder in VS Code, Cursor, Zed or your file manager from its menu.</li>
             <li>A .worktreeinclude file in your repository now copies the ignored files it lists, such as .env, into each new agent worktree.</li>
@@ -201,11 +206,16 @@
             <li>Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included.</li>
             <li>The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings.</li>
           </ul>
+          <h3>Settings</h3>
+          <ul>
+            <li>Desktop Settings now has a Halloween theme section under General that search finds, with the switch for everyone and its turn-off time for administrators and moderators, and the heading you jumped to lights up on the page like its entry in the list.</li>
+          </ul>
           <h3>iPhone</h3>
           <ul>
             <li>With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.</li>
             <li>The iPhone app stays signed in to your instances after the phone restarts.</li>
             <li>Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow.</li>
+            <li>Send to agent on a failed run's log now sends the failing step and the end of the log, where the error is, instead of its first lines.</li>
           </ul>
           <h3>Desktop</h3>
           <ul>
@@ -213,6 +223,22 @@
             <li>A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.</li>
             <li>A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.</li>
             <li>The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.</li>
+            <li>A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.</li>
+            <li>Rebuild &amp; restart is faster: it keeps its own compile cache that agent builds no longer push out, a new commit no longer recompiles two of the app's largest files, and the restart notice says how many compiles came from the cache.</li>
+            <li>The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint.</li>
+            <li>Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.</li>
+            <li>Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.</li>
+            <li>When ForkMesh finds a disk labelled TMP that is not set to mount at startup, it asks for your password once and adds it to /etc/fstab, so the fast scratch disk is there after every reboot.</li>
+            <li>The Linux installer now installs Qt WebEngine, so YouTube, the Browser tab and agent browser windows play inside the app, and the next rebuild picks it up without clearing the build.</li>
+          </ul>
+          <h3>Server</h3>
+          <ul>
+            <li>Emails from ForkMesh now come from founders@forkmesh.com, so replying to one reaches the team.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Signing up now sends your verification email once, instead of a new one each time the request was repeated.</li>
+            <li>The affiliate program's terms now say which tax form to send before a commission is paid: W-9 for US persons, W-8BEN for non-US individuals or W-8BEN-E for non-US companies.</li>
           </ul>
         </div>
       </section>

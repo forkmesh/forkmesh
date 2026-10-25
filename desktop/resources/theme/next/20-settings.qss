@@ -42,6 +42,7 @@ QListWidget#settingsNav {
 #settingsMainColumn, #settingsFooterSlot { background: transparent; }
 #settingsSectionsContent QLabel#settingsSectionTitle {
     color: @fg; font-size: 16px; font-weight: 600; background: transparent;
+    padding: 1px 6px; border-radius: 6px;
 }
 #settingsSectionsContent QLabel#settingsSectionIcon { background: transparent; }
 #settingsSectionsContent QToolButton#settingsSectionToggle { border-radius: 6px; }
@@ -132,3 +133,9 @@ QWidget[nextTableRow="true"] #suggestedAppStatusProblem {
 #settingsPackagePlaces { background: transparent; }
 QFrame[nextGroupBox="true"] QLabel#settingsPlacesCaption { color: @fgSubtle; font-size: 12px; }
 QFrame[nextGroupBox="true"] QLabel#settingsPlacesName { color: @fg; font-size: 13px; }
+
+#settingsSectionsContent QWidget QLabel#sectionLabel { padding: 1px 6px; border-radius: 4px; }
+#settingsSectionsContent QLabel#settingsSectionTitle[settingsLit="true"],
+#settingsSectionsContent QWidget QLabel#sectionLabel[settingsLit="true"] {
+    color: @accentFg; background-color: @accentSubtle;
+}

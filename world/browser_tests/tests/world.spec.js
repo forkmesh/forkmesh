@@ -1581,7 +1581,8 @@ async function measureWorldInputResponses(page) {
       );
 
       const camera = [];
-      const cameraSamples = sampleCount + (software ? 1 : 0);
+      const cameraWarmups = software ? 2 : 0;
+      const cameraSamples = sampleCount + cameraWarmups;
       for (let sample = 0; sample < cameraSamples; sample += 1) {
         const rect = canvas.getBoundingClientRect();
         const startX = rect.left + rect.width * 0.42;
@@ -1629,7 +1630,7 @@ async function measureWorldInputResponses(page) {
         await settleFrames();
       }
 
-      if (software) camera.shift();
+      camera.splice(0, cameraWarmups);
       const avatar = [];
       // Synthetic PointerEvents do not enter the browser's active-pointer
       // registry, so capture would throw before the real thumbstick handler
