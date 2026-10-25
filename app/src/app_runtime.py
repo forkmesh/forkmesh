@@ -1206,8 +1206,8 @@ class Default:
             await _not_found_log.record_response(self.env, request, url)
         if status >= 500:
             # An offline node's content being re-requested (502/503/504 on a
-            # tunnel path) is expected in a P2P network — host_presence and
-            # the /status git_hosting signal already reflect it. Logging every
+            # tunnel path) is expected in a P2P network — the /status
+            # git_hosting signal already reflects it. Logging every
             # hit cost a blocking Sentry call + a D1 write per response (a
             # single offline node's release blob generated hundreds of noise
             # rows a day and drowned out real failures). A 500 on the same

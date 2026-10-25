@@ -4984,6 +4984,7 @@ private:
     void renderNotesList(const QString &selectId = QString(),
                          bool reselect = true);
     void selectNote(const QString &id, const QString &storage);
+    void showOpenedNoteView();
     void createNote();
     void saveNote();
     void deleteNote();
@@ -7302,6 +7303,7 @@ private:
     void openRepoAgentsList();
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
+    void refreshAgentDots();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();
@@ -14605,6 +14607,11 @@ private:
     // Sessions whose handoff POST is still in flight, so a second click on the
     // button cannot queue the same continuation twice.
     QSet<int> m_agentCloudHandoffsInFlight;
+    QSet<int> m_claudeDesktopPending;
+    QSet<QString> m_claudeDesktopChecked;
+    QStringList m_claudeDesktopLinkQueue;
+    QTimer *m_claudeDesktopLinkTimer = nullptr;
+    bool m_claudeDesktopBackfillRunning = false;
     QPlainTextEdit *m_agentLog = nullptr;
     QStackedWidget *m_agentOutputStack = nullptr; // log (0) | embedded terminal (1)
     TerminalWidget *m_agentTerminal = nullptr;  // Claude Code runs here
@@ -15156,6 +15163,13 @@ private:
     bool publishAgentHandoffBranch(const AgentCloudHandoff &plan,
                                    int sessionId, QString *error);
     void moveAgentSessionToCloud(int sessionId);
+    bool claudeDesktopSessionsEnabled() const;
+    QString claudeDesktopBlocker(int sessionId);
+    void addAgentToClaudeDesktop(int sessionId, bool open);
+    void noteClaudeDesktopCandidate(const AgentSession &session);
+    void backfillClaudeDesktopSessions();
+    void queueClaudeDesktopLink(const QString &cliSessionId, bool front);
+    void pumpClaudeDesktopLinks();
     void finishAgentCloudHandoff(int sessionId, const QString &branch,
                                  const QJsonObject &payload);
     void showAgentListContextMenu(const QPoint &viewportPos);

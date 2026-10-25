@@ -129,6 +129,7 @@ struct AgentSession {
     // can still tell that the finished local run and the website's row are one
     // run and show it once. Empty for a run started on this desktop.
     QString webSessionId;
+    QString claudeDesktopSessionId;
     QString claudeImportId;
     QString claudeImportPath;
     QString claudeImportCwd;
@@ -320,6 +321,9 @@ public:
     QString readLog(const AgentSession &session) const;
     void appendEvent(const AgentSession &session, const QJsonObject &ev) const;
     QList<QJsonObject> loadEvents(const AgentSession &session) const;
+    QList<QJsonObject> loadRecentEvents(const AgentSession &session,
+                                        qint64 tailBytes) const;
+    static constexpr qint64 kLatestOutputTailBytes = 512 * 1024;
     void clearEvents(const AgentSession &session) const;
     // Event and human-log appends each use one shared serial background lane. This
     // callback runs on context's thread after every write queued before it has

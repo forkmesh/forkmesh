@@ -75,25 +75,25 @@ ADMIN_DATABASE_AUDIT_FINDINGS = {
     "forkmesh_d1_migrations": (
         "drop", "Pre-wrangler migration tracker; d1_migrations is live."),
     "system_status_minute": (
-        "drop-after-readers",
-        "Superseded by *_batch; the dual-read in _status_minute_records "
-        "still queries it. Remove the read, then drop."),
+        "drop",
+        "Superseded by system_status_minute_batch; its reads, prunes and "
+        "schema.py DDL left in 0294's deploy. Drop it in the next one."),
     "system_status_hourly": (
-        "drop-after-readers",
-        "Superseded by system_status_hourly_batch and drained, but "
-        "_status_hour_records still reads it. Remove the read, then drop."),
+        "drop",
+        "Superseded by system_status_hourly_batch; its reads, prunes and "
+        "schema.py DDL left in 0294's deploy. Drop it in the next one."),
     "system_status_daily": (
-        "drop-after-readers",
-        "Superseded by system_status_daily_batch and drained, but "
-        "_status_day_records still reads it. Remove the read, then drop."),
+        "drop",
+        "Superseded by system_status_daily_batch; its reads, prunes and "
+        "schema.py DDL left in 0294's deploy. Drop it in the next one."),
     "telemetry": (
         "drop-after-export",
         "Plaintext desktop crash summaries with no reader since b417261a1 "
         "(2026-07-25). Export, confirm with the owner, then drop."),
     "host_presence": (
-        "drop-after-readers",
-        "No writer since repository sockets retired; entry.py readers still "
-        "send ~9.9k queries a week against an empty table."),
+        "drop",
+        "No writer since repository sockets retired; its readers and "
+        "schema.py DDL left in 0294's deploy. Drop it in the next one."),
     "bounty_wallet": (
         "custody", "Legacy custody; drop once the custody record is signed "
                     "off."),
@@ -128,17 +128,9 @@ ADMIN_DATABASE_AUDIT_FINDINGS = {
                "database."),
     "sensitive_audit_log": (
         "hot", "5.3 MB, mostly per-ping organization.task_agent_status "
-               "rows."),
+               "rows; that status is now written only on a real "
+               "transition."),
 }
-for _runtime_only_table in (
-        "agent_prompts", "ai_ask_rate", "catalog_rev", "clone_sticky",
-        "issue_seq", "login_attempts", "online_hourly_nodes", "relay_self",
-        "repo_agents", "repo_deletions", "repository_monitor_state",
-        "signup_rate"):
-    ADMIN_DATABASE_AUDIT_FINDINGS.setdefault(_runtime_only_table, (
-        "runtime-only",
-        "Created only by schema.py at runtime; needs a catch-up migration so "
-        "a fresh database built from migrations has it."))
 for _plugin_table in (
         "crm_contacts", "crm_email_sends", "crm_mail_messages",
         "crm_settings", "marketing_ads", "marketing_content",
@@ -147,7 +139,7 @@ for _plugin_table in (
     ADMIN_DATABASE_AUDIT_FINDINGS.setdefault(_plugin_table, (
         "plugin", "Owned by a marketplace plugin's lifecycle, not app "
                   "migrations."))
-del _runtime_only_table, _plugin_table
+del _plugin_table
 
 # A plaintext column whose name says it holds a credential. Hashes, digests,
 # identifiers and timestamps about a secret are not the secret.
