@@ -47,6 +47,15 @@ run #7903 (`03273107bf0a`) ended "did not pick up this run within 3 minutes"
 with the agent idle. An agent that sees no runs never deploys, so it cannot
 take this fix by self-update; run `install` by hand once.
 
+Nobody did at first, so run #7909 (`8c5d2f9147ba`, the merge carrying the fix)
+timed out the same way. The installed copy was still the one from
+`7f97e703ff` (2026-10-14), older than self-update itself, so it could never
+have picked up the change on its own. `install` was run by hand at 22:39 after
+a staged `self-check`. The copy it replaced is in `bin/node-deploy.previous/`.
+The workflow's timeout now ends with a `FAILED: ... Fix: ...` line, so the
+Ping names the stale-copy case and the `install` command, not only
+`systemctl --user status`.
+
 ## Trigger
 
 - **Only `main`** of the served repository, and only commits on the source
