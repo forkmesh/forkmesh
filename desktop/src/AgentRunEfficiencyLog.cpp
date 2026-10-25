@@ -319,6 +319,8 @@ void AgentRunEfficiencyLog::finish(OpenRun run, const QJsonObject &result, qint6
     if (m_runs.size() > kMaxRuns)
         m_runs.remove(0, m_runs.size() - kMaxRuns);
     appendLine(record);
+    if (runFinished)
+        runFinished(record);
     if (changed)
         changed();
 }

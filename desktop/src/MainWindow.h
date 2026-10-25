@@ -65,6 +65,7 @@
 #include "StatsDashboard.h"
 #include "CodeHealth.h" // codehealth::Report is held by value below
 #include "RepoStatsStore.h" // RepoRatchetReading is held by value below
+#include "AgentPerformanceHistory.h"
 #include "AgentRunEfficiencyLog.h"
 #include "AgentToolEfficiencyLedger.h"
 #include "AgentGuardrailLedger.h"
@@ -324,6 +325,7 @@ class GenieDesktopStage;
 struct AgentModelGitHistory;
 class AgentToolUsageTable;
 class AgentRunTable;
+class AgentPerformanceCharts;
 class AgentGuardrailBoard;
 class SettingsSectionsView;
 class PingSettingsPanel;
@@ -3018,6 +3020,17 @@ public:
         return m_agentToolImprovements.get();
     }
     AgentRunEfficiencyLog *testAgentRunLog() const { return m_agentRunLog.get(); }
+    AgentPerformanceHistory *testAgentPerformanceHistory() const
+    {
+        return m_agentPerformance.get();
+    }
+    AgentPerformanceCharts *testAgentPerformanceCharts()
+    {
+        ensureAgentEfficiencyPage();
+        return m_agentPerformanceCharts;
+    }
+    void testSampleAgentPerformance() { sampleAgentPerformance(); }
+    void testShowAgentEfficiencyView(int index) { showAgentEfficiencyView(index); }
     AgentRunTable *testAgentRunTable()
     {
         ensureAgentEfficiencyPage();
@@ -14794,6 +14807,11 @@ private:
     QPushButton *m_agentEfficiencyRunsViewButton = nullptr;
     AgentRunTable *m_agentRunTable = nullptr;
     std::unique_ptr<AgentRunEfficiencyLog> m_agentRunLog;
+    std::unique_ptr<AgentPerformanceHistory> m_agentPerformance;
+    AgentPerformanceCharts *m_agentPerformanceCharts = nullptr;
+    QPushButton *m_agentEfficiencyTrendsViewButton = nullptr;
+    QTimer *m_agentPerformanceTimer = nullptr;
+    QTimer *m_agentPerformanceSaveTimer = nullptr;
     QHash<int, QStringList> m_agentRunDisabledFamilies;
     QLabel *m_agentEfficiencyLive = nullptr;
     QTimer *m_agentEfficiencyRefreshTimer = nullptr;
@@ -15040,6 +15058,8 @@ private:
     // The efficiency page's Tools view: every tool and command, sortable.
     void showAgentToolUsageTable(bool on);
     void showAgentEfficiencyView(int index);
+    void sampleAgentPerformance();
+    void scheduleAgentPerformanceSave();
     void noteAgentRunToolConfig(int sessionId, const QJsonObject &launchOptions);
     // Transcript command chips (ClaudeTranscriptView::CommandApproval): the
     // resolver that decides each chip, and the dialog a chip opens listing

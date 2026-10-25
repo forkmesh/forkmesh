@@ -1253,6 +1253,10 @@ set(FORKMESH_APP_SOURCES
     src/AgentRunEfficiencyLog.cpp
     src/AgentRunTable.h
     src/AgentRunTable.cpp
+    src/AgentPerformanceHistory.h
+    src/AgentPerformanceHistory.cpp
+    src/AgentPerformanceCharts.h
+    src/AgentPerformanceCharts.cpp
     src/AgentModelStats.h
     src/AgentModelStats.cpp
     src/AgentModelTable.h
@@ -2736,6 +2740,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentToolImprovementLog.cpp
         src/AgentRunEfficiencyLog.h
         src/AgentRunEfficiencyLog.cpp
+        src/AgentPerformanceHistory.h
+        src/AgentPerformanceHistory.cpp
     )
     target_link_libraries(forkmesh-agent-tool-efficiency-tests PRIVATE Qt6::Core)
     if(APPLE)

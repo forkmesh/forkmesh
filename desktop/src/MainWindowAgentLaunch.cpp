@@ -3058,7 +3058,8 @@ void MainWindow::startClaudeCodeTerminal(AgentSession &session, const Issue &iss
         env << agentIntakeEnv(session.id);
     }
     claudeSettings = forkmesh::agentrules::claudeSettingsWithAllowRules(
-        claudeSettings, agentRunRules(session.id).allowedToolRules);
+        forkmesh::agentrules::claudeSettingsWithReadGuard(claudeSettings),
+        agentRunRules(session.id).allowedToolRules);
     if (!claudeSettings.isEmpty())
         claudeArguments << QStringLiteral("--settings '%1'").arg(claudeSettings);
     cmd = forkmesh::agentnet::withClaudeArguments(cmd, claudeArguments.join(QLatin1Char(' ')));
