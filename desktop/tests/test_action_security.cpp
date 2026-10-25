@@ -279,28 +279,6 @@ int main(int argc, char **argv)
               "fatal: '/sandbox/source' already exists\n")),
           "checkout does not retry an occupied destination");
 
-    {
-        ActionStore logStore(temp.filePath(QStringLiteral("log-order")));
-        ActionRun logged;
-        logged.id = 7;
-        logged.owner = QStringLiteral("me");
-        logged.name = QStringLiteral("log-order");
-        check(logStore.saveRun(logged), "log-order fixture run is saved");
-        QString expected;
-        for (int line = 0; line < 2000; ++line) {
-            const QString text = QStringLiteral("line %1").arg(line);
-            logStore.appendLog(logged, text);
-            expected += text + QLatin1Char('\n');
-        }
-        check(logStore.readLog(logged) == expected,
-              "queued run log lines read back complete and in order");
-        logStore.appendLog(logged, QStringLiteral("last"));
-        check(logStore.deleteRun(logged) &&
-                  !QFileInfo::exists(logStore.logPath(logged)),
-              "deleting a run waits for its queued log lines, so none "
-              "recreate the folder");
-    }
-
     // Pre-v2 storage replaced every non [A-Za-z0-9.-] character with "_".
     // These two distinct repositories therefore shared both run and approval
     // storage. The v2 key must split their records without copying that
@@ -471,6 +449,40 @@ int main(int argc, char **argv)
         third = cacheStore.createRun(third);
         check(third.id == second.id + 1,
               "deleting a run does not recycle its id within the process");
+
+        QString expected;
+        for (int i = 0; i < 200; ++i) {
+            const QString line = QStringLiteral("line %1").arg(i);
+            cacheStore.appendLog(third, line);
+            expected += line + QLatin1Char('\n');
+            if (i % 50 == 0)
+                check(cacheStore.readLog(third) == expected,
+                      "a log read while appends are queued sees every line in order");
+        }
+        third.status = ActionStatus::Success;
+        cacheStore.saveRun(third);
+        ActionStore::flushWrites();
+        QFile writtenLog(cacheStore.logPath(third));
+        check(writtenLog.open(QIODevice::ReadOnly) &&
+                  QString::fromUtf8(writtenLog.readAll()) == expected,
+              "queued log appends reach log.txt in order once flushed");
+        QFile writtenMeta(QFileInfo(cacheStore.logPath(third)).absolutePath() +
+                          QStringLiteral("/meta.json"));
+        check(writtenMeta.open(QIODevice::ReadOnly) &&
+                  ActionRun::fromJson(QJsonDocument::fromJson(writtenMeta.readAll()).object())
+                          .status == ActionStatus::Success,
+              "the last queued meta.json write is the one on disk");
+
+        ActionRun fourth = first;
+        fourth.name = QStringLiteral("four");
+        fourth = cacheStore.createRun(fourth);
+        const QString fourthDir = QFileInfo(cacheStore.logPath(fourth)).absolutePath();
+        for (int i = 0; i < 50; ++i)
+            cacheStore.appendLog(fourth, QStringLiteral("doomed %1").arg(i));
+        check(cacheStore.deleteRun(fourth), "a run with queued writes deletes");
+        ActionStore::flushWrites();
+        check(!QFileInfo::exists(fourthDir),
+              "queued writes for a deleted run do not recreate its directory");
     }
 
     const QString repository = temp.filePath(QStringLiteral("repository"));

@@ -9,7 +9,6 @@
 #include <QAction>
 #include <QDateTime>
 #include <QFile>
-#include <QFileInfo>
 #include <QFont>
 #include <QJsonArray>
 #include <QJsonDocument>

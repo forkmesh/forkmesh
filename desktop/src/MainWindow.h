@@ -11569,11 +11569,8 @@ private:
     QString m_cloudLogMonitorIdleReason;
     QWidget *m_globalOverlayHost = nullptr;
     void setupGenieSpider();
-    double genieSpot(const QString &key) const;
-    void flushGenieSpot();
     void flushDeferredSettings();
     int m_lastRepoDetailTabPending = -1;
-    QHash<QString, double> m_genieSpotPending;
     bool genieSpiderShown() const;
     void setGenieSpiderShown(bool shown);
     void installGeniePetHost();

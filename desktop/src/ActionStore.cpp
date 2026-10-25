@@ -1,6 +1,5 @@
 #include "ActionStore.h"
 #include "HiddenTerms.h"
-#include "OrderedAppendWriter.h"
 #include "SafeDelete.h"
 
 #include <QCoreApplication>
@@ -22,15 +21,11 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QSettings>
+#include <QThreadPool>
+#include <QWaitCondition>
 #include <QtConcurrentRun>
 
 namespace {
-
-forkmesh::OrderedAppendWriter &actionLogWriter()
-{
-    static forkmesh::OrderedAppendWriter writer;
-    return writer;
-}
 
 QString legacySanitize(const QString &owner, const QString &name)
 {
@@ -69,6 +64,133 @@ bool runDirectoryMatches(const QString &directory, const ActionRun &run)
     const ActionRun stored = ActionRun::fromJson(document.object());
     return stored.id == run.id && stored.owner == run.owner &&
            stored.name == run.name;
+}
+
+struct RunFileWrite {
+    QByteArray bytes;
+    bool append = false;
+    QString legacyDir;
+    ActionRun run;
+};
+
+struct RunFileQueue {
+    QMutex mutex;
+    QWaitCondition changed;
+    QHash<QString, RunFileWrite> pending;
+    QHash<QString, quint64> written;
+    QStringList order;
+    QString inFlight;
+    bool draining = false;
+};
+
+RunFileQueue &runFileQueue()
+{
+    static RunFileQueue instance;
+    return instance;
+}
+
+QThreadPool &runFilePool()
+{
+    static QThreadPool *pool = [] {
+        auto *made = new QThreadPool;
+        made->setMaxThreadCount(1);
+        qAddPostRoutine(&ActionStore::flushWrites);
+        return made;
+    }();
+    return *pool;
+}
+
+void commitRunFile(const QString &path, const RunFileWrite &write)
+{
+    const QFileInfo target(path);
+    QString directory = target.absolutePath();
+    if (!QFileInfo::exists(directory) && !write.legacyDir.isEmpty() &&
+        runDirectoryMatches(write.legacyDir, write.run))
+        directory = write.legacyDir;
+    QDir().mkpath(directory);
+    QFile file(directory + QLatin1Char('/') + target.fileName());
+    const QIODevice::OpenMode mode =
+        write.append ? QIODevice::Append
+                     : QIODevice::WriteOnly | QIODevice::Truncate;
+    if (file.open(mode))
+        file.write(write.bytes);
+}
+
+void drainRunFiles()
+{
+    RunFileQueue &queue = runFileQueue();
+    for (;;) {
+        QString path;
+        RunFileWrite write;
+        {
+            QMutexLocker lock(&queue.mutex);
+            if (!queue.inFlight.isEmpty())
+                ++queue.written[queue.inFlight];
+            queue.inFlight.clear();
+            queue.changed.wakeAll();
+            if (queue.order.isEmpty()) {
+                queue.draining = false;
+                return;
+            }
+            path = queue.order.takeFirst();
+            write = queue.pending.take(path);
+            queue.inFlight = path;
+        }
+        commitRunFile(path, write);
+    }
+}
+
+void queueRunFile(const QString &path, const QByteArray &bytes, bool append,
+                  const QString &legacyDir, const ActionRun &run)
+{
+    RunFileQueue &queue = runFileQueue();
+    QMutexLocker lock(&queue.mutex);
+    auto it = queue.pending.find(path);
+    if (it == queue.pending.end()) {
+        queue.order.append(path);
+        ActionRun identity;
+        identity.id = run.id;
+        identity.owner = run.owner;
+        identity.name = run.name;
+        queue.pending.insert(path, RunFileWrite{bytes, append, legacyDir, identity});
+    } else if (append) {
+        it->bytes += bytes;
+    } else {
+        it->bytes = bytes;
+    }
+    if (queue.draining)
+        return;
+    queue.draining = true;
+    runFilePool().start(drainRunFiles);
+}
+
+void forgetRunFiles(const QStringList &directories)
+{
+    RunFileQueue &queue = runFileQueue();
+    QMutexLocker lock(&queue.mutex);
+    const auto inside = [&directories](const QString &path) {
+        for (const QString &directory : directories)
+            if (path.startsWith(directory + QLatin1Char('/')))
+                return true;
+        return false;
+    };
+    for (auto it = queue.pending.begin(); it != queue.pending.end();) {
+        if (inside(it.key()) ||
+            (!it->legacyDir.isEmpty() && directories.contains(it->legacyDir))) {
+            queue.order.removeOne(it.key());
+            queue.written.remove(it.key());
+            it = queue.pending.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    while (!queue.inFlight.isEmpty() && inside(queue.inFlight))
+        queue.changed.wait(&queue.mutex);
+}
+
+QString canonicalLogKey(const QString &runDirectory)
+{
+    return runDirectory + QStringLiteral("/log.txt");
 }
 
 QString approvalKey(const QString &repoKey)
@@ -518,6 +640,7 @@ void ActionStore::ensureRunCacheLoadedLocked() const
 {
     if (m_runCacheLoaded)
         return;
+    flushWrites();
     // Repository-key migration has to finish before the scan below, or runs
     // still under a legacy directory name would be cached from the old path.
     migrateLegacyRecords();
@@ -574,13 +697,9 @@ ActionRun ActionStore::createRun(ActionRun run)
 
 bool ActionStore::saveRun(const ActionRun &run) const
 {
-    const QString directory = existingRunDir(run);
-    QDir().mkpath(directory);
-    QFile f(directory + QStringLiteral("/meta.json"));
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return false;
-    f.write(QJsonDocument(run.toJson()).toJson(QJsonDocument::Indented));
-    f.close();
+    queueRunFile(runDir(run) + QStringLiteral("/meta.json"),
+                 QJsonDocument(run.toJson()).toJson(QJsonDocument::Indented),
+                 false, legacyRunDir(run), run);
     QMutexLocker lock(&m_runCacheMutex);
     if (m_runCacheLoaded)
         m_runCache.insert(run.id, run);
@@ -591,9 +710,9 @@ bool ActionStore::saveRun(const ActionRun &run) const
 
 bool ActionStore::deleteRun(const ActionRun &run) const
 {
-    flushLog(run);
     bool removed = true;
     const QString canonicalPath = runDir(run);
+    forgetRunFiles({canonicalPath, legacyRunDir(run)});
     if (QDir(canonicalPath).exists())
         removed = forkmesh::safedelete::removeTree(
             canonicalPath, QFileInfo(canonicalPath).absolutePath());
@@ -630,8 +749,12 @@ void ActionStore::deleteRunsInBackground(const QList<ActionRun> &runs) const
     };
     QList<Doomed> doomed;
     doomed.reserve(runs.size());
-    for (const ActionRun &run : runs)
+    QStringList directories;
+    for (const ActionRun &run : runs) {
         doomed.append({runDir(run), legacyRunDir(run), run});
+        directories << doomed.last().canonical << doomed.last().legacy;
+    }
+    forgetRunFiles(directories);
     {
         QMutexLocker lock(&m_runCacheMutex);
         if (m_runCacheLoaded)
@@ -652,21 +775,49 @@ void ActionStore::deleteRunsInBackground(const QList<ActionRun> &runs) const
 
 void ActionStore::appendLog(const ActionRun &run, const QString &text) const
 {
-    actionLogWriter().appendLog(logPath(run), text);
-}
-
-void ActionStore::flushLog(const ActionRun &run) const
-{
-    actionLogWriter().flushPath(logPath(run));
+    QByteArray bytes = text.toUtf8();
+    if (!text.endsWith(QLatin1Char('\n')))
+        bytes.append('\n');
+    queueRunFile(canonicalLogKey(runDir(run)), bytes, true, legacyRunDir(run), run);
 }
 
 QString ActionStore::readLog(const ActionRun &run) const
 {
-    flushLog(run);
-    QFile f(logPath(run));
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-        return QString();
-    return QString::fromUtf8(f.readAll());
+    const QString key = canonicalLogKey(runDir(run));
+    const QString path = logPath(run);
+    const auto readFile = [&path] {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly | QIODevice::Text) ? f.readAll()
+                                                             : QByteArray();
+    };
+    RunFileQueue &queue = runFileQueue();
+    for (int attempt = 0;; ++attempt) {
+        QByteArray tail;
+        quint64 written = 0;
+        {
+            QMutexLocker lock(&queue.mutex);
+            while (queue.inFlight == key)
+                queue.changed.wait(&queue.mutex);
+            written = queue.written.value(key);
+            const auto pending = queue.pending.constFind(key);
+            if (pending != queue.pending.cend())
+                tail = pending->bytes;
+            if (attempt >= 3)
+                return QString::fromUtf8(readFile() + tail);
+        }
+        const QByteArray bytes = readFile();
+        QMutexLocker lock(&queue.mutex);
+        if (queue.inFlight != key && queue.written.value(key) == written)
+            return QString::fromUtf8(bytes + tail);
+    }
+}
+
+void ActionStore::flushWrites()
+{
+    RunFileQueue &queue = runFileQueue();
+    QMutexLocker lock(&queue.mutex);
+    while (queue.draining)
+        queue.changed.wait(&queue.mutex);
 }
 
 QString ActionStore::logPath(const ActionRun &run) const

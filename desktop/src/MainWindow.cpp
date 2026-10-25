@@ -167,6 +167,7 @@ MainWindow::~MainWindow()
             m_agentToolLedger->saveLater();
     }
     forkmesh::diskwrite::flush();
+    ActionStore::flushWrites();
     flushRepositorySyncTimes();
     flushDeferredSettings();
 
@@ -1506,7 +1507,6 @@ void MainWindow::refreshThemedIcons()
 
 void MainWindow::flushDeferredSettings()
 {
-    flushGenieSpot();
     if (m_lastRepoDetailTabPending >= 0) {
         forkmesh::settings::put(QSettings(), kLastRepoDetailTabSetting,
                                 m_lastRepoDetailTabPending);

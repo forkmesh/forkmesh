@@ -10596,7 +10596,7 @@ void MainWindow::finishSearchPageRun()
     const SavedSearchRun run = store.recordRun(saved->id, keys, counts,
                                                QDateTime::currentMSecsSinceEpoch(),
                                                true);
-    store.save();
+    store.saveLater();
     evaluateSecurityAlarms();
     for (const QString &key : run.newKeys) {
         QTreeWidgetItem *row = rowsByKey.value(key);
@@ -11205,7 +11205,7 @@ void MainWindow::runNextSavedSearchAlertCheck()
                     const bool pertinent = search->securityPertinent;
                     const SavedSearchRun run = store.recordRun(
                         id, keys, counts, QDateTime::currentMSecsSinceEpoch(), false);
-                    store.save();
+                    store.saveLater();
                     evaluateSecurityAlarms();
                     if (alerts && !run.baseline && !run.newKeys.isEmpty()) {
                         QMap<QString, int> newByKind;
