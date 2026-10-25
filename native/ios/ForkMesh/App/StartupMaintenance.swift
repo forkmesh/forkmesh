@@ -6,7 +6,8 @@ import Foundation
 enum StartupMaintenance {
     static func eraseLeftoversOfADeletedApp() {
         let reset: FreshInstallReset = FreshInstallReset(
-            prefs: UserDefaultsBackend(), eraseKeychain: KeychainBackend.eraseAll)
+            prefs: UserDefaultsBackend(), eraseKeychain: KeychainBackend.eraseAll,
+            isKeychainLocked: KeychainBackend.isLockedUntilFirstUnlock)
         switch reset.run() {
         case .alreadyInstalled:
             break

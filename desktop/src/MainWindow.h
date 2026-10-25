@@ -1004,6 +1004,10 @@ public:
     QString testPageNoticeOpenText() const;
     void testClickPageNoticeOpen();
     void testClickPageNoticeClear();
+    void testSetPageNoticeCountdownMs(int ms) { m_pageNoticeCountdownMs = ms; }
+    bool testPageNoticeCountingDown() const;
+    bool testPageNoticeCountdownPaused() const;
+    void testHoverPageNotice(bool inside);
     QString testCurrentNoticePage() const { return currentNoticePage(); }
     void testClearPageNotices()
     {
@@ -1927,6 +1931,11 @@ public:
                                         const QString &header) const;
     void testSelectUsersRow(int row);
     void testSelectUsersQuarantineRow(int row);
+    void testClickUsersRow(int row) { openUsersDetail(m_usersTable, row); }
+    void testClickUsersQuarantineRow(int row)
+    {
+        openUsersDetail(m_usersQuarantineTable, row);
+    }
     QStringList testSelectedUsersActionTargets() const
     {
         return selectedUsersActionTargets();
@@ -3901,6 +3910,8 @@ private:
     void cacheActiveAccountSession(const QString &instanceUrl);
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
+    QStringList accountDesktopKeysForSession(
+        const forkmesh::accounts::CachedSession &session);
     QString currentAccountInstanceUrl() const;
     QString accountSessionTokenForUrl(const QUrl &url) const;
     QString activeAccountSessionToken() const;
@@ -6085,6 +6096,11 @@ private:
     void deleteSelectedUsers();
     void deleteNextSelectedUser();
     void finishUsersDeleteBatch();
+    QWidget *buildUsersDetailPanel();
+    void openUsersDetail(QTableWidget *table, int row);
+    void followUsersDetailSelection(QTableWidget *table);
+    void renderUsersDetail();
+    void closeUsersDetail();
 
     QWidget *buildFilesSection();
     QLayout *buildFilesEditorBar();
@@ -9121,6 +9137,11 @@ private:
     void notifyRepoWorkflowsChanged();
     void openWorkflowInPage(const QString &repo, const QString &workflowId);
     void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
+    QJsonObject accountWorkflowPinInfo(const QString &workflowId) const;
+    QPixmap accountWorkflowIcon(int side) const;
+    void runAccountWorkflowFromRail(const QString &workflowId);
+    void runAccountWorkflowAction(const QString &workflowId, const QString &action, const QJsonObject &payload,
+                                  const forkmesh::market::NativePackageReplyHandler &done);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
@@ -9636,6 +9657,7 @@ private:
     void scmStageAll();
     void scmUnstageAll();
     void scmDiscardAll();
+    void applyScmChangeBlock(const QUrl &url);
     void scmCommit();
     void scmCommitAndPush();
     void scmStageAllCommitAndPush();
@@ -10682,6 +10704,7 @@ private:
         QString kind;
         int actionRunId = -1;
         qint64 pingId = 0;
+        int countdownElapsedMs = 0;
     };
     struct NoticeDestination {
         NotificationLink link;
@@ -11582,6 +11605,7 @@ private:
     QList<QPointer<QWidget>> m_pageNoticeRows;
     QStringList m_recentNotices;
     quint64 m_nextPageNoticeId = 1;
+    int m_pageNoticeCountdownMs = 5000;
     QString m_renderedNoticePage;
     QWidget *m_errorBorderOverlay = nullptr;
     QTimer *m_errorBorderTimer = nullptr;
@@ -12491,6 +12515,10 @@ private:
     QTabWidget *m_usersTabs = nullptr;
     QTableWidget *m_usersTable = nullptr;
     QTableWidget *m_usersQuarantineTable = nullptr;
+    QFrame *m_usersDetailPanel = nullptr;
+    QScrollArea *m_usersDetailScroll = nullptr;
+    QTableWidget *m_usersDetailTable = nullptr;
+    QString m_usersDetailName;
     QWidget *m_usersSignupReferralCodePanel = nullptr;
     QLabel *m_usersSignupReferralCodeStatus = nullptr;
     QLineEdit *m_usersSignupReferralCodeEdit = nullptr;
@@ -14859,6 +14887,8 @@ private:
     QHash<int, QString> m_streamRaw;
     QHash<int, qint64> m_sessionTokens; // live token total per session, for the list
     QHash<int, forkmesh::transcripttools::OutputTokenCounter> m_sessionOutputTokens;
+    QHash<int, forkmesh::transcripttools::InputTokenCounter> m_sessionInputTokens;
+    QHash<int, QPair<qint64, qint64>> m_sessionTokenFlow;
     QHash<int, AgentScannerState> m_scannerStates;
     QHash<int, AgentSpinState> m_agentSpinStates; // fireball orbit, per session
     QElapsedTimer m_agentSpinClock; // real time between fireball animation frames

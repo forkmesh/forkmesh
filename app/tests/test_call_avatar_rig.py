@@ -107,6 +107,26 @@ out.states = [speech.speakerState({ talking: true }), speech.speakerState({ last
 const anchors = wire.RIG_TEMPLATE.map(([x, y]) => [64 + x * 30, 50 + y * 30]);
 const moved = puppet.puppetTargets(anchors, Float32Array.from({ length: 136 }, (_, i) => (i === 66 * 2 + 1 ? 0.5 : 0)));
 out.puppet = [moved[66][1] - anchors[66][1], moved[0][1] - anchors[0][1]];
+
+const pair = rig.assignHandSides([{ side: "right", x: 2, y: 1, curl: [0, 0, 0, 0, 0], roll: 0 }, { side: "right", x: -1.5, y: 1, curl: [0, 0, 0, 0, 0], roll: 0 }]);
+out.pairSides = pair.map((hand) => [hand.side, hand.x]);
+out.stickySide = rig.assignHandSides([{ side: "right", x: 0.3, y: 1, curl: [0, 0, 0, 0, 0], roll: 0 }], [{ side: "left", x: -0.2, y: 1 }])[0].side;
+const smoother = rig.createHandSmoother({ holdMs: 300 });
+const still = { side: "left", x: 0, y: 0, z: 0, curl: [0, 0, 0, 0, 0], roll: 0 };
+smoother.smooth([still], 0);
+const jitter = smoother.smooth([{ ...still, x: 0.2 }], 40);
+const held = smoother.smooth([], 200);
+const dropped = smoother.smooth([], 600);
+out.smoothing = [Math.round(jitter[0].x * 1000) / 1000, held.length, dropped.length];
+const frame = rig.imageFrame(640, 360);
+out.imageFrame = [frame.mid, Math.round(frame.span * 10) / 10];
+const span = 60;
+const near = { points: Array.from({ length: 21 }, () => [0, 0]), palm: span * 1.5 * 1.6 };
+const far = { points: Array.from({ length: 21 }, () => [0, 0]), palm: span * 1.5 * 0.7 };
+out.depth = [rig.handDepth(near, { span }), rig.handDepth(far, { span })].map((v) => Math.round(v * 100) / 100);
+const deep = wire.decodeRig(wire.encodeRig({ yaw: 0, pitch: 0, roll: 0, hands: [{ side: "left", x: 1, y: 2, z: 0.6, curl: [0, 0, 0, 0, 0], roll: 0 }] }));
+const legacy = wire.decodeRig({ v: 1, p: [0, 0, 0], h: [[0, 20, 40, 0, 0, 0, 0, 0, 0]] });
+out.wireDepth = [deep.hands[0].z, legacy.hands[0].z, wire.encodeRig({ yaw: 0, pitch: 0, roll: 0, hands: [{ side: "left", x: 1, y: 2, z: 0.6, curl: [0, 0, 0, 0, 0], roll: 0 }] }).h[0].length];
 console.log(JSON.stringify(out));
 '''
 
@@ -153,6 +173,29 @@ def test_words_are_counted_from_syllables_without_recognising_speech():
 def test_the_photo_puppet_moves_only_the_points_that_moved():
     assert _run()["puppet"][1] == 0
     assert abs(_run()["puppet"][0] - 15) < 0.01
+
+
+def test_two_hands_take_opposite_sides_and_one_hand_keeps_its_side():
+    data = _run()
+    assert data["pairSides"] == [["right", -1.5], ["left", 2]]
+    assert data["stickySide"] == "left"
+
+
+def test_hands_are_smoothed_held_briefly_and_then_dropped():
+    x, held, dropped = _run()["smoothing"]
+    assert 0 < x < 0.2
+    assert held == 1 and dropped == 0
+
+
+def test_hands_without_a_face_use_the_image_frame_and_carry_depth():
+    data = _run()
+    assert data["imageFrame"] == [[320, 144], 70.4]
+    near, far = data["depth"]
+    assert near == 0.6 and far == -0.3
+    assert data["wireDepth"] == [0.6, 0, 10]
+    tracker = (PUBLIC / "chat-call-hand-tracker.js").read_text(encoding="utf-8")
+    assert "roi.followed ? HAND_KEEP_SCORE : HAND_SCORE" in tracker
+    assert "rois.length ? REDETECT_MS : SEARCH_MS" in tracker
 
 
 def _header(path):

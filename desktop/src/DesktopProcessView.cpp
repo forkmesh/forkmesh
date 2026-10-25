@@ -10,7 +10,10 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QResizeEvent>
 #include <QSet>
+#include <QSignalBlocker>
+#include <QSlider>
 #include <QTimer>
 #include <QToolTip>
 
@@ -25,6 +28,9 @@ constexpr qreal kMargin = 12.0;
 constexpr qreal kGap = 10.0;
 constexpr qreal kHeaderHeight = 44.0;
 constexpr qreal kGaugesHeight = 84.0;
+constexpr qreal kGovernanceHeight = 58.0;
+constexpr qreal kSliderHeight = 20.0;
+constexpr int kGovernanceCommitMs = 500;
 constexpr qreal kMachineHeight = 132.0;
 constexpr qreal kSharesHeight = 76.0;
 constexpr qreal kTableRow = 36.0;
@@ -130,13 +136,49 @@ DesktopProcessView::DesktopProcessView(QWidget *parent) : QWidget(parent)
     m_timer = new QTimer(this);
     m_timer->setInterval(kSampleMs);
     connect(m_timer, &QTimer::timeout, this, [this] { sampleNow(); });
+    auto makeSlider = [this](const QString &name, const QString &label,
+                             const QString &tip) {
+        auto *slider = new QSlider(Qt::Horizontal, this);
+        slider->setObjectName(name);
+        slider->setAccessibleName(label);
+        slider->setToolTip(tip);
+        slider->setSingleStep(1);
+        slider->setPageStep(5);
+        slider->setCursor(Qt::PointingHandCursor);
+        slider->hide();
+        connect(slider, &QSlider::valueChanged, this, [this] { previewGovernance(); });
+        connect(slider, &QSlider::sliderReleased, this, [this] { commitGovernance(); });
+        return slider;
+    };
+    m_cpuSlider = makeSlider(
+        QStringLiteral("desktopCpuGovernanceSlider"), QStringLiteral("Agent CPU limit"),
+        QStringLiteral("Drag to set how much of this computer's CPU agents, their "
+                       "builds and tests may use. The rest is kept for the desktop "
+                       "and your other programs, and the governor lowers the agents' "
+                       "cap further while other programs are busy."));
+    m_memorySlider = makeSlider(
+        QStringLiteral("desktopMemoryGovernanceSlider"),
+        QStringLiteral("Agent memory limit"),
+        QStringLiteral("Drag to set how much memory agents may use before they are "
+                       "slowed down. The rest is kept for the desktop and your other "
+                       "programs; under a memory stall the newest build is paused "
+                       "until it clears."));
+    m_governanceCommit = new QTimer(this);
+    m_governanceCommit->setSingleShot(true);
+    m_governanceCommit->setInterval(kGovernanceCommitMs);
+    connect(m_governanceCommit, &QTimer::timeout, this, [this] {
+        if (!m_cpuSlider->isSliderDown() && !m_memorySlider->isSliderDown())
+            commitGovernance();
+    });
     setMinimumHeight(sizeHint().height());
 }
 
 QSize DesktopProcessView::sizeHint() const
 {
-    const qreal height = 2 * kMargin + kHeaderHeight + kGaugesHeight + kMachineHeight +
-                         kSharesHeight + 22 + kTableRow * (kRows + 1) + 4 * kGap;
+    qreal height = 2 * kMargin + kHeaderHeight + kGaugesHeight + kMachineHeight +
+                   kSharesHeight + 22 + kTableRow * (kRows + 1) + 4 * kGap;
+    if (governanceShown())
+        height += kGovernanceHeight + kGap;
     return QSize(900, int(std::ceil(height)));
 }
 
@@ -161,6 +203,14 @@ void DesktopProcessView::hideEvent(QHideEvent *event)
 {
     QWidget::hideEvent(event);
     m_timer->stop();
+    if (m_governanceCommit->isActive())
+        commitGovernance();
+}
+
+void DesktopProcessView::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    placeGovernanceSliders();
 }
 
 void DesktopProcessView::sampleNow()
@@ -168,6 +218,7 @@ void DesktopProcessView::sampleNow()
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     desktopprocs::Snapshot snapshot =
         sampleSource ? sampleSource(now) : m_sampler.sample(now);
+    refreshGovernance();
     setSnapshot(snapshot);
     if (sampleSource)
         return;
@@ -194,7 +245,124 @@ void DesktopProcessView::setSnapshot(const desktopprocs::Snapshot &snapshot)
         if (memory >= 0.0)
             pushHistory(m_memHistory, memory);
     }
+    placeGovernanceSliders();
     update();
+}
+
+bool DesktopProcessView::governanceShown() const
+{
+    return governanceSource && m_governance.available;
+}
+
+qreal DesktopProcessView::gaugeWidth(qreal areaWidth) const
+{
+    return (areaWidth - 4 * kGap) / 5;
+}
+
+QRectF DesktopProcessView::governanceArea() const
+{
+    const QRectF inner = QRectF(rect()).adjusted(kMargin, kMargin, -kMargin, -kMargin);
+    return QRectF(inner.left(), inner.top() + kHeaderHeight + kGap + kGaugesHeight + kGap,
+                  inner.width(), kGovernanceHeight);
+}
+
+void DesktopProcessView::refreshGovernance()
+{
+    if (m_governanceCommit->isActive() || m_cpuSlider->isSliderDown() ||
+        m_memorySlider->isSliderDown())
+        return;
+    m_governance = governanceSource ? governanceSource(-1, -1) : Governance();
+    {
+        const QSignalBlocker cpuBlocker(m_cpuSlider);
+        const QSignalBlocker memoryBlocker(m_memorySlider);
+        for (QSlider *slider : {m_cpuSlider, m_memorySlider})
+            slider->setRange(100 - m_governance.maxReservePercent,
+                             100 - m_governance.minReservePercent);
+        m_cpuSlider->setValue(100 - m_governance.cpuReservePercent);
+        m_memorySlider->setValue(100 - m_governance.memoryReservePercent);
+    }
+    setMinimumHeight(sizeHint().height());
+    placeGovernanceSliders();
+    update();
+}
+
+void DesktopProcessView::placeGovernanceSliders()
+{
+    const bool shown = governanceShown() && m_snapshot.valid;
+    m_cpuSlider->setVisible(shown);
+    m_memorySlider->setVisible(shown);
+    if (!shown)
+        return;
+    const QRectF area = governanceArea();
+    const qreal width = gaugeWidth(area.width());
+    const qreal top = area.top() + QFontMetricsF(font()).height() + 2;
+    m_cpuSlider->setGeometry(
+        QRectF(area.left() + 10, top, width - 20, kSliderHeight).toRect());
+    m_memorySlider->setGeometry(
+        QRectF(area.left() + width + kGap + 10, top, width - 20, kSliderHeight).toRect());
+}
+
+void DesktopProcessView::previewGovernance()
+{
+    if (!governanceSource)
+        return;
+    m_governance = governanceSource(100 - m_memorySlider->value(),
+                                    100 - m_cpuSlider->value());
+    m_governanceCommit->start();
+    update();
+}
+
+void DesktopProcessView::commitGovernance()
+{
+    m_governanceCommit->stop();
+    if (!governanceSource)
+        return;
+    const int memory = 100 - m_memorySlider->value();
+    const int cpu = 100 - m_cpuSlider->value();
+    const Governance saved = governanceSource(-1, -1);
+    if (onGovernanceChanged &&
+        (memory != saved.memoryReservePercent || cpu != saved.cpuReservePercent))
+        onGovernanceChanged(memory, cpu);
+    refreshGovernance();
+}
+
+void DesktopProcessView::paintGovernance(QPainter &p, const QRectF &area)
+{
+    const QFontMetricsF metrics(font());
+    QFont small = forkmesh::scaledFont(font(), 0.85);
+    const QFontMetricsF smallMetrics(small);
+    const qreal width = gaugeWidth(area.width());
+    auto cell = [&](int index, const QString &label, const QSlider *slider,
+                    const QString &text) {
+        const QRectF box(area.left() + index * (width + kGap) + 10, area.top(),
+                         width - 20, area.height());
+        const QRectF line(box.left(), box.top(), box.width(), metrics.height());
+        p.setFont(font());
+        p.setPen(ink(170));
+        p.drawText(line, Qt::AlignLeft | Qt::AlignVCenter, label);
+        QFont bold = font();
+        bold.setBold(true);
+        p.setFont(bold);
+        p.setPen(ink());
+        p.drawText(line, Qt::AlignRight | Qt::AlignVCenter,
+                   QStringLiteral("%1%").arg(slider->value()));
+        p.setFont(small);
+        p.setPen(ink(160));
+        const qreal top = line.bottom() + 2 + kSliderHeight + 2;
+        p.drawText(QRectF(box.left(), top, box.width(), smallMetrics.height()),
+                   Qt::AlignLeft | Qt::AlignTop,
+                   smallMetrics.elidedText(text, Qt::ElideRight, box.width()));
+        m_hits.append({box, slider->toolTip() + QStringLiteral("\n\n") + text});
+    };
+    cell(0, QStringLiteral("Agent CPU limit"), m_cpuSlider, m_governance.cpuText);
+    cell(1, QStringLiteral("Agent memory limit"), m_memorySlider, m_governance.memoryText);
+    const QRectF note(area.left() + 2 * (width + kGap) + 10, area.top(),
+                      area.width() - 2 * (width + kGap) - 10, area.height());
+    p.setFont(small);
+    p.setPen(ink(150));
+    p.drawText(note, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, m_governance.note);
+    m_hits.append({note, m_governance.note});
+    p.setFont(font());
 }
 
 void DesktopProcessView::setSortColumn(SortColumn column)
@@ -297,6 +465,10 @@ void DesktopProcessView::paintEvent(QPaintEvent *)
     }
     paintGauges(p, QRectF(inner.left(), y, inner.width(), kGaugesHeight));
     y += kGaugesHeight + kGap;
+    if (governanceShown()) {
+        paintGovernance(p, QRectF(inner.left(), y, inner.width(), kGovernanceHeight));
+        y += kGovernanceHeight + kGap;
+    }
     if (m_snapshot.machine.valid) {
         const qreal unit = (inner.width() - 4 * kGap) / 5;
         const qreal coresWidth = 3 * unit + 2 * kGap;
