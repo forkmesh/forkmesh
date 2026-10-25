@@ -26,8 +26,10 @@ LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
 PUBLIC_BASE = "https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256"
 INSTALL_PAGE = "https://forkmesh.com/ios-install.html"
 DEFAULT_TO = "jett@forkmesh.com"
-SENDER = "no-reply@forkmesh.com"
+SENDER = "founders@forkmesh.com"
+BOUNCE_SENDER = "no-reply@forkmesh.com"
 MAIL_LOG_SOURCE = "the Mac ad hoc build tool"
+MAIL_KIND = "ios_build"
 MAIL_LOG_BODY = 400
 TESTERS_COMMAND = "/usr/local/sbin/fmnext-app-ops early-ios-testers all"
 PING_COMMAND = "/usr/local/sbin/fmnext-app-ops ios-build-ping"
@@ -144,7 +146,7 @@ def duration_line(build: dict) -> str:
     return line + "."
 
 
-def build_email(to: str, info: dict, build: dict, page: str, install: str, ipa_url: str) -> EmailMessage:
+def build_email(to: str, info: dict, build: dict, page: str) -> EmailMessage:
     label = f"{info['title']} {info['version']} ({info['build']})"
     commit = build["commit"][:12]
     message = EmailMessage()
@@ -153,24 +155,24 @@ def build_email(to: str, info: dict, build: dict, page: str, install: str, ipa_u
     message["Subject"] = f"Ad hoc iPhone build: {label} at {commit}"
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = make_msgid(domain="forkmesh.com")
+    message["Auto-Submitted"] = "auto-generated"
+    message["X-ForkMesh-Kind"] = MAIL_KIND
+    message["Feedback-ID"] = f"{MAIL_KIND}:forkmesh"
     took = duration_line(build)
     text = (f"{label} built on the local Mac from {commit}: {build['subject']}\n"
             + (f"{took}\n" if took else "") + "\n"
             + f"Install (open on the registered iPhone):\n{page}\n\n"
-            f"Direct install link, for Safari:\n{install}\n\n"
-            f"IPA: {ipa_url}\n\n"
             "Ad hoc builds install only on devices registered with the team.\n")
     message.set_content(text)
     message.add_alternative(
         "<p><b>%s</b> built on the local Mac from <code>%s</code>: %s</p>%s"
         "<p><a href=\"%s\" style=\"display:inline-block;padding:10px 18px;background:#18181b;"
         "color:#fff;border-radius:8px;text-decoration:none\">Install on this iPhone</a></p>"
-        "<p>The button opens the install page; tap Install there. Direct link for Safari:"
-        "<br><code>%s</code></p><p><a href=\"%s\">Download the IPA</a></p>"
+        "<p>The button opens the install page; tap Install there.</p>"
         "<p>Ad hoc builds install only on devices registered with the team.</p>"
         % (html.escape(label), html.escape(commit), html.escape(build["subject"]),
            "<p>%s</p>" % html.escape(took) if took else "",
-           html.escape(page), html.escape(install), html.escape(ipa_url)),
+           html.escape(page)),
         subtype="html")
     return message
 
@@ -205,7 +207,7 @@ def send(host: tuple[str, str, list[str]], message: EmailMessage) -> None:
     try:
         result = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", *options, f"root@{ip}",
-             f"/usr/sbin/sendmail -t -f {SENDER}"],
+             f"/usr/sbin/sendmail -t -f {BOUNCE_SENDER}"],
             input=message.as_bytes(), capture_output=True, timeout=120, check=False)
     except (OSError, subprocess.SubprocessError) as error:
         raise SystemExit(f"sendmail on {ip} failed: {type(error).__name__}")
@@ -403,7 +405,7 @@ def main(argv=None) -> int:
     for address in recipients:
         if address in sent:
             continue
-        message = build_email(address, info, build, page, install, ipa_url)
+        message = build_email(address, info, build, page)
         on_any_host(hosts, lambda host, m=message: send(host, m))
         sent.append(address)
         record(False)

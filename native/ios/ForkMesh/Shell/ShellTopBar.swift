@@ -417,6 +417,7 @@ struct ShellStatusDots: View {
 struct ShellIslandStatusDots: View {
     static let islandInset: CGFloat = 54
     static let islandBottom: CGFloat = 48
+    static let islandHeight: CGFloat = 37
     static let islandWidth: CGFloat = 126
     static let clockClear: CGFloat = 12
     static let earHeight: CGFloat = 12
@@ -431,6 +432,7 @@ struct ShellIslandStatusDots: View {
     var desktops: [ShellDesktopLight] = []
     var desktopLoad: DesktopStrain? = nil
     var buildMac: BuildMacLight? = nil
+    var agentTokens: Bool = false
 
     static let stackOverlap: CGFloat = -4
 
@@ -489,6 +491,11 @@ struct ShellIslandStatusDots: View {
                         .frame(width: earWidth)
                         .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
                         .frame(width: frame.width, alignment: .topTrailing)
+                    if agentTokens {
+                        ShellIslandTokenCharts(height: ShellIslandStatusDots.earHeight)
+                            .frame(width: frame.width)
+                            .padding(.top, gap + ShellIslandStatusDots.islandHeight)
+                    }
                 }
                 .frame(width: frame.width, alignment: .topLeading)
                 .offset(y: -frame.minY)

@@ -102,7 +102,7 @@ set_source_files_properties(src/SourceDir.cpp PROPERTIES
 # include; configure_file rewrites it only when the version actually changes,
 # so a bump recompiles just those files. The build commit, which changes with
 # every commit anywhere in the checkout, is in ForkMeshBuildCommit.h, read by
-# main.cpp and MainWindowHostInstall.cpp only; in ForkMeshVersion.h it made
+# the one-function src/DesktopBuildCommit.cpp only; in ForkMeshVersion.h it made
 # every commit recompile the 17 files (the heaviest MainWindow units among
 # them) that only want the version.
 configure_file(
@@ -360,6 +360,10 @@ if(TARGET Qt6::WebEngineWidgets)
 else()
     message(STATUS "Qt6 WebEngine not found: agent browser windows open in the "
                    "system browser instead")
+    if(Qt6_DIR AND IS_DIRECTORY "${Qt6_DIR}")
+        get_filename_component(FORKMESH_QT6_CMAKE_ROOT "${Qt6_DIR}" DIRECTORY)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FORKMESH_QT6_CMAKE_ROOT}")
+    endif()
 endif()
 
 function(forkmesh_link_webengine target)
@@ -655,6 +659,8 @@ endif()
 set(FORKMESH_APP_SOURCES
     src/SourceDir.h
     src/SourceDir.cpp
+    src/DesktopBuildCommit.h
+    src/DesktopBuildCommit.cpp
     src/AgentFolders.h
     src/AgentFolders.cpp
     src/Http3Get.h
@@ -1168,6 +1174,8 @@ set(FORKMESH_APP_SOURCES
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
     src/ClaudeTranscriptTools.cpp
+    src/TranscriptCoverage.h
+    src/TranscriptCoverage.cpp
     src/ClaudeSessionScan.h
     src/ClaudeSessionScan.cpp
     src/ClaudeSessionImport.h
@@ -2719,6 +2727,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentToolPolicy.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/VirtualMachineRuntime.h
         src/VirtualMachineRuntime.cpp
     )
@@ -2786,6 +2796,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2839,6 +2851,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/ClaudeControlProtocol.h
         src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
@@ -3072,6 +3086,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-claude-transcript-tools-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-claude-transcript-tools-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-transcript-coverage-tests
+        tests/test_transcript_coverage.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
+    )
+    target_include_directories(forkmesh-transcript-coverage-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-transcript-coverage-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-transcript-coverage-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3899,6 +3926,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/CodexTranscriptStyle.h
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
@@ -4419,6 +4448,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-claude-transcript-tools-tests
         COMMAND forkmesh-claude-transcript-tools-tests)
+    add_test(NAME forkmesh-transcript-coverage-tests
+        COMMAND forkmesh-transcript-coverage-tests)
     add_test(NAME forkmesh-org-agent-job-attachments-tests
         COMMAND forkmesh-org-agent-job-attachments-tests)
     add_test(NAME forkmesh-local-control-prompt-images-tests

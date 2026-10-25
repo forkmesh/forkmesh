@@ -40,6 +40,7 @@
 #include <QColor>
 #include <QColorDialog>
 #include <QCompleter>
+#include <QDateTimeEdit>
 #include <QDesktopServices>
 #include <QFormLayout>
 #include <QJsonArray>
@@ -886,7 +887,7 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildQuickSetupTab(); }, "Quick Setup", "rocket");
 
-    addTab(buildSettingsGeneralTab(parts), "General", "gear");
+    const int generalTabIndex = addTab(buildSettingsGeneralTab(parts), "General", "gear");
 
     m_suggestedAppsSettingsTabIndex =
         addLazyTab([this] { return buildSuggestedAppsTab(); }, "Apps", "terminal");
@@ -968,10 +969,13 @@ QWidget *MainWindow::buildSettingsSection()
     // scrolls past.
     connect(sections, &SettingsSectionsView::sectionActivated, this,
             [this](int) { scheduleNavRecord(); });
-    connect(sections, &SettingsSectionsView::sectionRevealed, this, [this](int index) {
-        if (index == m_suggestedAppsSettingsTabIndex)
-            refreshSuggestedApps();
-    });
+    connect(sections, &SettingsSectionsView::sectionRevealed, this,
+            [this, generalTabIndex](int index) {
+                if (index == m_suggestedAppsSettingsTabIndex)
+                    refreshSuggestedApps();
+                if (index == generalTabIndex)
+                    refreshSeasonSettings();
+            });
     // The organization roster is an account-scoped network read, so it waits
     // for its section to come into view rather than firing with every
     // Settings open.
@@ -3396,11 +3400,12 @@ void MainWindow::buildSettingsAgentProviderParts(SettingsSectionParts &parts)
     }
     workspaceNameModelCombo->setCurrentIndex(
         workspaceNameModelIndex >= 0 ? workspaceNameModelIndex : 0);
+    workspaceNameModelCombo->setObjectName("workspaceNameModelCombo");
     workspaceNameModelCombo->setToolTip(
-        "Optionally send each new ad-hoc task to the selected Cloudflare "
-        "Workers AI model for a short semantic branch/worktree name. The "
-        "coding prompt is not rewritten, and local naming is used if the "
-        "request fails.");
+        "The Cloudflare Workers AI model that names each new ad-hoc task's "
+        "branch/worktree and title when Cloudflare naming is on. The coding "
+        "prompt is not rewritten, and local naming is used if the request "
+        "fails.");
     connect(workspaceNameModelCombo, &QComboBox::currentIndexChanged, this,
             [workspaceNameModelCombo] {
                 QSettings().setValue(
@@ -3747,13 +3752,14 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
     agentForm->setLabelAlignment(Qt::AlignLeft);
     agentForm->setSpacing(8);
     auto *agentTitleCheck = new QCheckBox(
-        "Ask Claude Code or Codex to title each run started from a prompt");
+        "Ask Claude Code or Codex to name each run started from a prompt");
     agentTitleCheck->setObjectName("agentTitleFromAgentCheck");
     agentTitleCheck->setToolTip(
-        "A run starts at once with a title cut from its prompt, then the "
-        "agent's own CLI (Claude Haiku, or Codex at low effort) reads the "
-        "whole prompt and writes a short descriptive title for the Agents "
-        "list. Other agents keep the title cut from the prompt.");
+        "Before a Claude Code or Codex run starts, its own CLI reads the "
+        "prompt and writes a short title and branch name, the way Claude's "
+        "desktop app names Code sessions: a small fast model first (Claude "
+        "Haiku, GPT-5.4-Mini), then the run's own model if that fails. Other "
+        "agents keep the title cut from the prompt.");
     agentTitleCheck->setChecked(
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool());
     connect(agentTitleCheck, &QCheckBox::toggled, this, [](bool on) {
@@ -3762,6 +3768,21 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
 
     agentForm->addRow("Default agent", m_defaultAgentProviderCombo);
     agentForm->addRow("Agent titles", agentTitleCheck);
+    auto *cloudflareNamingCheck =
+        new QCheckBox("Use Cloudflare AI for branch, worktree and run names");
+    cloudflareNamingCheck->setObjectName("agentCloudflareNamingCheck");
+    cloudflareNamingCheck->setToolTip(
+        "Off: Claude Code and Codex name their own runs. On: the Cloudflare "
+        "Workers AI model below names them instead.");
+    cloudflareNamingCheck->setChecked(
+        QSettings().value(kAgentCloudflareNamingSetting, false).toBool());
+    workspaceNameModelCombo->setEnabled(cloudflareNamingCheck->isChecked());
+    connect(cloudflareNamingCheck, &QCheckBox::toggled, this,
+            [workspaceNameModelCombo](bool on) {
+                QSettings().setValue(kAgentCloudflareNamingSetting, on);
+                workspaceNameModelCombo->setEnabled(on);
+            });
+    agentForm->addRow("Cloudflare naming", cloudflareNamingCheck);
     agentForm->addRow("Branch/worktree names", workspaceNameModelCombo);
     agentForm->addRow("Composer models", m_composerModelVisibilityList);
     agentForm->addRow("Max running agents", m_maxRunningAgentsEdit);
@@ -4323,6 +4344,240 @@ void MainWindow::buildSettingsFooterParts(SettingsSectionParts &parts)
     parts.footerRow = footerRow;
 }
 
+namespace {
+
+QNetworkReply *sendSeasonSettingsRequest(QNetworkAccessManager *network, QUrl url,
+                                         const QString &token, const QJsonObject *body)
+{
+    url.setPath(QStringLiteral("/api/season/settings"));
+    url.setQuery(QString());
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                         QNetworkRequest::AlwaysNetwork);
+    request.setTransferTimeout(15000);
+    request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    request.setRawHeader(QByteArrayLiteral("Authorization"),
+                         QByteArrayLiteral("Bearer ") + token.toUtf8());
+    if (!body)
+        return network->get(request);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    return network->post(request, QJsonDocument(*body).toJson(QJsonDocument::Compact));
+}
+
+QString seasonSettingsErrorText(const QString &code)
+{
+    if (code == QLatin1String("forbidden"))
+        return QStringLiteral("Only platform administrators and moderators can change this.");
+    if (code == QLatin1String("unauthorized"))
+        return QStringLiteral("Sign in again to change this.");
+    if (code == QLatin1String("invalid_until"))
+        return QStringLiteral("Pick a time between 5 minutes and 60 days from now.");
+    return QStringLiteral("That didn't save. Try again.");
+}
+
+QDateTime defaultSeasonEnd()
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime end(QDate(now.date().year(), 11, 1), QTime(0, 0));
+    return end > now.addSecs(60 * 60) ? end : now.addDays(1);
+}
+
+} // namespace
+
+QWidget *MainWindow::buildHalloweenSettings()
+{
+    auto *box = new QWidget;
+    auto *layout = new QVBoxLayout(box);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    auto *hint = new QLabel(QStringLiteral(
+        "Turns the green buttons, status dots and activity graph orange, hangs a spider "
+        "web, puts a witch hat on profile pictures and dresses up the Genie."));
+    hint->setObjectName(QStringLiteral("statusLine"));
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    auto *local = new QCheckBox(QStringLiteral("Use the Halloween theme on this desktop"));
+    local->setObjectName(QStringLiteral("halloweenLocalCheck"));
+    local->setToolTip(QStringLiteral(
+        "Switches this desktop's colour theme to Halloween. Untick it to go back to the "
+        "theme you had before."));
+    m_halloweenLocalCheck = local;
+    connect(local, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_themeCombo)
+            return;
+        const QString current = m_themeCombo->currentData().toString();
+        if (on && current != kHalloweenTheme)
+            m_themeBeforeHalloween = current;
+        QString wanted = on ? kHalloweenTheme : m_themeBeforeHalloween;
+        if (!on && (wanted.isEmpty() || wanted == kHalloweenTheme ||
+                    m_themeCombo->findData(wanted) < 0))
+            wanted = QStringLiteral("system");
+        const int index = m_themeCombo->findData(wanted);
+        if (index >= 0)
+            m_themeCombo->setCurrentIndex(index);
+        syncHalloweenLocalCheck();
+    });
+    if (m_themeCombo) {
+        connect(m_themeCombo, &QComboBox::currentIndexChanged, local,
+                [this](int) { syncHalloweenLocalCheck(); });
+    }
+    layout->addWidget(local);
+    syncHalloweenLocalCheck();
+
+    auto *admin = new QWidget;
+    admin->setObjectName(QStringLiteral("seasonAdminBox"));
+    auto *adminColumn = new QVBoxLayout(admin);
+    adminColumn->setContentsMargins(0, 6, 0, 0);
+    adminColumn->setSpacing(6);
+    auto *everyone = new QCheckBox(
+        QStringLiteral("Turn on the Halloween theme for everyone on this ForkMesh"));
+    everyone->setObjectName(QStringLiteral("seasonEveryoneCheck"));
+    everyone->setToolTip(QStringLiteral(
+        "Dresses up the ForkMesh website for every visitor until the time below. Only "
+        "platform administrators and moderators see this setting."));
+    m_seasonEveryoneCheck = everyone;
+    connect(everyone, &QCheckBox::clicked, this, [this](bool on) { saveSeasonSettings(on); });
+    adminColumn->addWidget(everyone);
+    auto *untilRow = new QHBoxLayout;
+    untilRow->setContentsMargins(0, 0, 0, 0);
+    untilRow->setSpacing(8);
+    auto *until = new QDateTimeEdit(defaultSeasonEnd());
+    until->setObjectName(QStringLiteral("seasonUntilEdit"));
+    until->setCalendarPopup(true);
+    until->setDisplayFormat(QLocale().dateTimeFormat(QLocale::ShortFormat));
+    until->setAccessibleName(QStringLiteral("Turn off automatically"));
+    until->setToolTip(QStringLiteral(
+        "When the Halloween theme turns itself off for everyone: between 5 minutes and "
+        "60 days from now."));
+    m_seasonUntilEdit = until;
+    connect(until, &QDateTimeEdit::editingFinished, this, [this] {
+        if (m_seasonSettings.value(QStringLiteral("season")).toString() ==
+            QLatin1String("halloween"))
+            saveSeasonSettings(true);
+    });
+    untilRow->addWidget(new QLabel(QStringLiteral("Turn off automatically")));
+    untilRow->addWidget(until);
+    untilRow->addStretch(1);
+    adminColumn->addLayout(untilRow);
+    auto *status = new QLabel;
+    status->setObjectName(QStringLiteral("statusLine"));
+    status->setWordWrap(true);
+    m_seasonStatusLabel = status;
+    adminColumn->addWidget(status);
+    admin->hide();
+    m_seasonAdminBox = admin;
+    layout->addWidget(admin);
+    return box;
+}
+
+void MainWindow::syncHalloweenLocalCheck()
+{
+    if (!m_halloweenLocalCheck)
+        return;
+    const QSignalBlocker blocker(m_halloweenLocalCheck);
+    m_halloweenLocalCheck->setChecked(
+        m_themeCombo && m_themeCombo->currentData().toString() == kHalloweenTheme);
+}
+
+void MainWindow::refreshSeasonSettings()
+{
+    if (!m_seasonAdminBox || m_seasonBusy || !m_networkAccess)
+        return;
+    const QUrl url = catalogApiUrl();
+    const QString token = accountSessionTokenForUrl(url);
+    if (token.isEmpty()) {
+        m_seasonAdminBox->hide();
+        return;
+    }
+    QNetworkReply *reply = sendSeasonSettingsRequest(m_networkAccess, url, token, nullptr);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject data = QJsonDocument::fromJson(reply->readAll()).object();
+        if (!m_seasonAdminBox || m_seasonBusy)
+            return;
+        if (reply->error() == QNetworkReply::NoError && status == 200 &&
+            data.value(QStringLiteral("ok")).toBool()) {
+            m_seasonSettings = data;
+            m_seasonAdminBox->show();
+            renderSeasonSettings();
+        } else if (status == 401 || status == 403) {
+            m_seasonAdminBox->hide();
+        }
+    });
+}
+
+void MainWindow::saveSeasonSettings(bool on)
+{
+    if (!m_seasonUntilEdit || m_seasonBusy || !m_networkAccess)
+        return;
+    const QUrl url = catalogApiUrl();
+    const QString token = accountSessionTokenForUrl(url);
+    if (token.isEmpty()) {
+        renderSeasonSettings(seasonSettingsErrorText(QStringLiteral("unauthorized")));
+        return;
+    }
+    const QJsonObject body{
+        {QStringLiteral("season"), on ? QStringLiteral("halloween") : QString()},
+        {QStringLiteral("until"),
+         on ? double(m_seasonUntilEdit->dateTime().toMSecsSinceEpoch()) : 0.0},
+    };
+    m_seasonBusy = true;
+    if (m_seasonEveryoneCheck)
+        m_seasonEveryoneCheck->setEnabled(false);
+    if (m_seasonStatusLabel)
+        m_seasonStatusLabel->setText(QString::fromUtf8("Saving\xE2\x80\xA6"));
+    QNetworkReply *reply = sendSeasonSettingsRequest(m_networkAccess, url, token, &body);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        m_seasonBusy = false;
+        if (m_seasonEveryoneCheck)
+            m_seasonEveryoneCheck->setEnabled(true);
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject data = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() == QNetworkReply::NoError && status == 200 &&
+            data.value(QStringLiteral("ok")).toBool()) {
+            m_seasonSettings = data;
+            renderSeasonSettings();
+            return;
+        }
+        renderSeasonSettings(
+            seasonSettingsErrorText(data.value(QStringLiteral("error")).toString()));
+    });
+}
+
+void MainWindow::renderSeasonSettings(const QString &message)
+{
+    const bool on = m_seasonSettings.value(QStringLiteral("season")).toString() ==
+                    QLatin1String("halloween");
+    const QDateTime until = QDateTime::fromMSecsSinceEpoch(
+        qint64(m_seasonSettings.value(QStringLiteral("until")).toDouble()));
+    if (m_seasonEveryoneCheck) {
+        const QSignalBlocker blocker(m_seasonEveryoneCheck);
+        m_seasonEveryoneCheck->setChecked(on);
+    }
+    if (m_seasonUntilEdit && message.isEmpty()) {
+        const QSignalBlocker blocker(m_seasonUntilEdit);
+        m_seasonUntilEdit->setDateTime(on ? until : defaultSeasonEnd());
+    }
+    if (!m_seasonStatusLabel)
+        return;
+    if (!message.isEmpty()) {
+        m_seasonStatusLabel->setText(message);
+        return;
+    }
+    const QString by = m_seasonSettings.value(QStringLiteral("by")).toString();
+    m_seasonStatusLabel->setText(
+        on ? QStringLiteral("On for everyone until %1%2.")
+                 .arg(QLocale().toString(until, QLocale::ShortFormat),
+                      by.isEmpty() ? QString() : QStringLiteral(", turned on by @%1").arg(by))
+           : QStringLiteral("Off. Turn it on to dress up ForkMesh for everyone. Only "
+                            "platform administrators and moderators see this setting."));
+}
+
 // Settings > General.
 QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
 {
@@ -4357,6 +4612,12 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     appearanceGroup->addWidget(parts.verboseNetLogCheck);
     appearanceGroup->addWidget(parts.reportErrorsCheck);
     appearanceGroup->addWidget(parts.sponsoredMessagesCheck);
+
+    auto *halloweenLabel = new QLabel("HALLOWEEN THEME");
+    halloweenLabel->setObjectName("sectionLabel");
+    auto *halloweenGroup = generalTab->addSection();
+    halloweenGroup->addLayout(settingsHeading(halloweenLabel, "moon"));
+    halloweenGroup->addWidget(buildHalloweenSettings());
 
     auto *soundGroup = generalTab->addSection();
     soundGroup->addLayout(settingsHeading(parts.soundLabel, "unmute"));
@@ -5538,6 +5799,30 @@ void MainWindow::refreshSuggestedApps()
                 .arg(found)
                 .arg(apps.size()));
     }
+    scheduleAgentUsagePagesRefresh();
+}
+
+bool MainWindow::suggestedAppInstalling(const QString &id) const
+{
+    return m_suggestedAppInstallProcess &&
+           m_suggestedAppInstallProcess->state() != QProcess::NotRunning &&
+           m_suggestedAppInstallingId == id;
+}
+
+QString MainWindow::suggestedAppInstallManager(const QString &id,
+                                               QString *blocker) const
+{
+    const auto *app = forkmesh::environment::suggestedAppById(id);
+    if (!app) {
+        if (blocker)
+            *blocker = QStringLiteral("ForkMesh does not know how to install this tool.");
+        return {};
+    }
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        *app, availableSuggestedAppInstallers());
+    if (blocker)
+        *blocker = plan.unavailableReason;
+    return plan.managerName;
 }
 
 void MainWindow::testSuggestedApp(const QString &id)
@@ -5684,6 +5969,7 @@ void MainWindow::installSuggestedApp(const QString &id)
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_suggestedAppInstallProcess = process;
     m_suggestedAppInstallingId = id;
+    m_suggestedAppInstallProblems.remove(id);
     auto output = std::make_shared<QString>();
     refreshSuggestedApps();
     if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
@@ -5734,6 +6020,8 @@ void MainWindow::installSuggestedApp(const QString &id)
                 logSystem(QStringLiteral("Suggested app %1 install failed (exit %2).")
                               .arg(name)
                               .arg(exitCode));
+                m_suggestedAppInstallProblems.insert(
+                    id, tail.isEmpty() ? QStringLiteral("exit %1").arg(exitCode) : tail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,
@@ -5755,6 +6043,9 @@ void MainWindow::installSuggestedApp(const QString &id)
                 process->deleteLater();
                 refreshSuggestedApps();
                 logSystem(QStringLiteral("Could not start the %1 installer.").arg(name));
+                m_suggestedAppInstallProblems.insert(
+                    id, detail.isEmpty() ? QStringLiteral("the installer did not start")
+                                         : detail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,

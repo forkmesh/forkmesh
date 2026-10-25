@@ -2,6 +2,7 @@ import FMAgentWatch
 import FMAgents
 import FMApi
 import FMBase
+import FMDesktopRemote
 import SwiftUI
 
 struct AgentLineRow: View {
@@ -345,28 +346,42 @@ struct AgentTokenRing: View {
     let line: AgentLine
     let radius: CGFloat
     @State private var sampler = AgentTokenSampler()
+    @State private var clock = AgentTokenClock()
+    @State private var live: DesktopAgentTokens?
 
     private static let width: CGFloat = 1
     private static let dash: [CGFloat] = [2.5, 2]
     private static let settleAfter: Duration = .seconds(10)
+    private static let holdEvery: Duration = .seconds(1)
 
-    private var reading: [Int] { [line.tokensIn, line.tokensOut] }
+    private var reading: [Int] {
+        let fed = live?.totals ?? []
+        guard fed.count == 2 else { return [line.tokensIn, line.tokensOut] }
+        return [max(line.tokensIn, fed[0]), max(line.tokensOut, fed[1])]
+    }
 
     private var inPace: AgentTokenPace { line.isActive ? sampler.inPace : .idle }
 
     private var outPace: AgentTokenPace { line.isActive ? sampler.outPace : .idle }
 
-    private var moving: Bool { !reduceMotion && (inPace != .idle || outPace != .idle) }
+    private var inTravel: Double { line.isActive ? sampler.inTravel : 0 }
+
+    private var outTravel: Double { line.isActive ? sampler.outTravel : 0 }
+
+    private var moving: Bool { !reduceMotion && (inTravel > 0 || outTravel > 0) }
 
     var body: some View {
+        let now = reading
         Group {
-            if line.tokensIn > 0 || line.tokensOut > 0 {
+            if now[0] > 0 || now[1] > 0 {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !moving || tabHidden)) {
                     (context: TimelineViewDefaultContext) in
-                    let time = moving ? context.date.timeIntervalSinceReferenceDate : 0
+                    let phase = clock.advance(
+                        to: context.date.timeIntervalSinceReferenceDate, running: moving && !tabHidden,
+                        inTravel: inTravel, outTravel: outTravel, wrap: Double(Self.dash.reduce(0, +)))
                     ZStack {
-                        lane(inset: Self.width / 2, pace: inPace, phase: -time * inPace.travel)
-                        lane(inset: Self.width * 1.5, pace: outPace, phase: time * outPace.travel)
+                        lane(inset: Self.width / 2, pace: inPace, phase: phase.in)
+                        lane(inset: Self.width * 1.5, pace: outPace, phase: phase.out)
                     }
                 }
             } else {
@@ -374,23 +389,29 @@ struct AgentTokenRing: View {
                     .stroke(fm.border, lineWidth: 0.5)
             }
         }
-        .onChange(of: reading, initial: true) { (_: [Int], now: [Int]) in
-            sampler.sample(tokensIn: now[0], tokensOut: now[1], atMs: Int(Date().timeIntervalSince1970 * 1000))
+        .onChange(of: now, initial: true) { (_: [Int], next: [Int]) in
+            sampler.sample(tokensIn: next[0], tokensOut: next[1], atMs: Int(Date().timeIntervalSince1970 * 1000))
         }
-        .task(id: reading) {
+        .onChange(of: line.desktopSessionId, initial: true) { (_: Int, session: Int) in
+            live = session > 0 ? DesktopRemoteFeature.vitals?.agentTokens(session) : nil
+        }
+        .task(id: now) {
             try? await Task.sleep(for: Self.settleAfter)
             if !Task.isCancelled { sampler.settle() }
+        }
+        .task(id: line.isActive) {
+            guard line.isActive else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.holdEvery)
+                if Task.isCancelled { return }
+                sampler.hold(atMs: Int(Date().timeIntervalSince1970 * 1000))
+            }
         }
     }
 
     private func lane(inset: CGFloat, pace: AgentTokenPace, phase: Double) -> some View {
-        let pattern = Self.dash.reduce(0, +)
-        return RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: inset)
-            .stroke(
-                tint(pace),
-                style: StrokeStyle(
-                    lineWidth: Self.width, dash: Self.dash,
-                    dashPhase: CGFloat(phase.truncatingRemainder(dividingBy: Double(pattern)))))
+        RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: inset)
+            .stroke(tint(pace), style: StrokeStyle(lineWidth: Self.width, dash: Self.dash, dashPhase: CGFloat(phase)))
     }
 
     private func tint(_ pace: AgentTokenPace) -> Color {
@@ -401,6 +422,22 @@ struct AgentTokenRing: View {
         case .fast: return fm.warning
         case .blazing: return fm.danger
         }
+    }
+}
+
+final class AgentTokenClock {
+    private var last: Double?
+    private var inPhase = 0.0
+    private var outPhase = 0.0
+
+    func advance(to now: Double, running: Bool, inTravel: Double, outTravel: Double, wrap: Double) -> (in: Double, out: Double) {
+        if running, let last {
+            let elapsed = min(max(now - last, 0), 0.25)
+            inPhase = (inPhase - elapsed * inTravel).truncatingRemainder(dividingBy: wrap)
+            outPhase = (outPhase + elapsed * outTravel).truncatingRemainder(dividingBy: wrap)
+        }
+        last = running ? now : nil
+        return (inPhase, outPhase)
     }
 }
 

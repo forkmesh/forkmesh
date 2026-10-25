@@ -11,6 +11,7 @@
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
 #include "../src/AgentWorktree.h"
+#include "../src/AgentCliLocator.h"
 #include "../src/AgentRunTable.h"
 #include "../src/AgentToolEfficiencyBoard.h"
 #include "../src/AgentGuardrailBoard.h"
@@ -41,7 +42,6 @@
 #include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
-#include "ForkMeshBuildCommit.h"
 #include "ForkMeshVersion.h"
 
 #include <chrono>
@@ -932,7 +932,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
         const QStringList activityTileNames = {
             QStringLiteral("debugUptimeTile"),
             QStringLiteral("debugNetworkActivityTile"),
-            QStringLiteral("debugLogActivityTile")};
+            QStringLiteral("debugLogActivityTile"),
+            QStringLiteral("debugStallTile")};
         bool activityTilesReady = true;
         for (const QString &name : activityTileNames) {
             QWidget *tile = window.findChild<QWidget *>(name);
@@ -942,8 +943,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
                                  !tile->toolTip().isEmpty();
         }
         check(activityTilesReady,
-              QStringLiteral("the debug strip exposes live uptime, network and "
-                             "log activity tiles"));
+              QStringLiteral("the debug strip exposes live uptime, network, "
+                             "log and UI stall tiles"));
 
         // Qt's own machinery now has a live row beside the process-resource
         // chart. Deep event delivery accounting is scoped to this expanded
@@ -2387,6 +2388,11 @@ void checkPingsPageLayout(MainWindow &window)
     QTableWidgetItem *type = pings->item(probeRow, 0);
     check(type && !type->icon().isNull(),
           QStringLiteral("every Ping has a category icon in its Type cell"));
+    QTableWidgetItem *status = pings->item(probeRow, 6);
+    check(type && !type->data(Qt::UserRole + 10).toBool() && status &&
+              !status->icon().isNull(),
+          QStringLiteral("a desktop ping is marked local and its Status cell "
+                         "shows the local/cloud icon"));
 
     QTableWidgetItem *detail = pings->item(probeRow, 3);
     check(detail && detail->text().size() < 260 &&
@@ -5163,6 +5169,54 @@ void checkChatReceiptMark()
     channel.setReceiptMark(ReceiptMark::None);
     check(mark && mark->isHidden(),
           QStringLiteral("clearing the mark hides it"));
+}
+
+void checkTranscriptCoverageIndicator()
+{
+    const auto ev = [](const char *json) {
+        return QJsonDocument::fromJson(QByteArray(json)).object();
+    };
+    ClaudeTranscriptView transcript;
+    transcript.resize(720, 500);
+    transcript.show();
+    QApplication::processEvents();
+    auto *pill = transcript.findChild<QToolButton *>(
+        QStringLiteral("transcriptCoverageGaps"));
+    transcript.handleEvent(ev(R"({"type":"result","subtype":"success","result":"ok"})"));
+    check(pill && pill->isHidden(),
+          QStringLiteral("a transcript that draws every raw log entry has no "
+                         "coverage pill"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done"})"));
+    transcript.handleEvent(ev(R"({"type":"system","subtype":"permission_denied"})"));
+    QApplication::processEvents();
+    const QRect area = transcript.viewport()->geometry();
+    check(pill && !pill->isHidden() && pill->text().contains(QStringLiteral("2 missing")) &&
+              area.contains(pill->geometry()) &&
+              pill->geometry().top() < area.top() + 20 &&
+              pill->geometry().right() > area.right() - 30,
+          QStringLiteral("raw log entries the transcript skips show a red pill "
+                         "at the top right with the number of missing kinds"));
+    check(transcript.coverageGaps().size() == 2 &&
+              transcript.coverageGaps().first().count == 2,
+          QStringLiteral("the transcript keeps each missing kind with its count"));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("claude"), QStringLiteral("plain stdout words")));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("codex"), QStringLiteral(R"({"method":"model/rerouted","params":{}})")));
+    check(pill && pill->text().contains(QStringLiteral("4 missing")),
+          QStringLiteral("Claude Code and Codex output lines that never became "
+                         "a transcript event add kinds"));
+    int activated = 0;
+    QObject::connect(&transcript, &ClaudeTranscriptView::coverageGapsActivated,
+                     [&activated] { ++activated; });
+    if (pill)
+        pill->click();
+    check(activated == 1,
+          QStringLiteral("clicking the coverage pill asks for an agent"));
+    transcript.clear();
+    check(pill && pill->isHidden() && transcript.coverageGaps().isEmpty(),
+          QStringLiteral("clearing the transcript clears its coverage pill"));
 }
 
 void checkChatRecipientLabel()
@@ -9753,6 +9807,97 @@ void pumpMemoryPage(int ms)
         QApplication::processEvents(QEventLoop::AllEvents, 20);
 }
 
+void checkAddProjectDialog(MainWindow &window)
+{
+    window.testSetDirectoryInstances(QJsonDocument::fromJson(R"([
+        {"name": "Tea House", "url": "https://tea.example.com/", "listed": true,
+         "status": "online"},
+        {"name": "Unlisted", "url": "https://unlisted.example.com/", "listed": false}
+    ])").array());
+    auto *menuButton = window.findChild<QPushButton *>(QStringLiteral("projectMenuButton"));
+    check(menuButton, QStringLiteral("the project menu button exists"));
+    if (!menuButton)
+        return;
+    bool opened = false;
+    bool noDescription = false;
+    bool accountOff = false;
+    QStringList packs;
+    QString checkedPack;
+    int directoryRows = -1;
+    QString filledAddress;
+    QTimer::singleShot(100, &window, [&] {
+        auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+        QAction *add = nullptr;
+        for (QAction *action : menu ? menu->actions() : QList<QAction *>())
+            if (action->text().startsWith(QStringLiteral("Add project")))
+                add = action;
+        if (!add) {
+            if (menu)
+                menu->close();
+            return;
+        }
+        QTimer::singleShot(150, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog || dialog->objectName() != QStringLiteral("addProjectDialog")) {
+                if (dialog)
+                    dialog->reject();
+                return;
+            }
+            opened = true;
+            noDescription = true;
+            for (QLineEdit *edit : dialog->findChildren<QLineEdit *>())
+                if (edit->placeholderText().contains(QStringLiteral("What is it for")))
+                    noDescription = false;
+            auto *identity =
+                dialog->findChild<QCheckBox *>(QStringLiteral("addProjectShareIdentity"));
+            accountOff = identity && !identity->isChecked();
+            for (QRadioButton *radio : dialog->findChildren<QRadioButton *>()) {
+                packs.append(radio->text());
+                if (radio->isChecked())
+                    checkedPack = radio->text();
+            }
+            auto *list = dialog->findChild<QListWidget *>(QStringLiteral("addProjectDirectory"));
+            directoryRows = list ? list->count() : -1;
+            dialog->resize(dialog->sizeHint());
+            const QString shot = qEnvironmentVariable("FORKMESH_ADD_PROJECT_SHOT");
+            if (!shot.isEmpty())
+                dialog->grab().save(shot + QStringLiteral("-empty.png"));
+            for (int row = 0; list && row < list->count(); ++row) {
+                if (list->item(row)->data(Qt::UserRole).toString() !=
+                    QStringLiteral("tea.example.com"))
+                    continue;
+                QWidget *rowWidget = list->itemWidget(list->item(row));
+                for (QPushButton *button : rowWidget->findChildren<QPushButton *>())
+                    if (button->text() == QStringLiteral("Add"))
+                        button->click();
+            }
+            auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("addProjectInstance"));
+            filledAddress = address ? address->text() : QString();
+            if (!shot.isEmpty())
+                dialog->grab().save(shot + QStringLiteral("-added.png"));
+            dialog->reject();
+        });
+        menu->close();
+        add->trigger();
+    });
+    menuButton->click();
+    QApplication::processEvents();
+    check(opened, QStringLiteral("Add project… opens the add project dialog"));
+    check(noDescription, QStringLiteral("the add project dialog no longer asks what it is for"));
+    check(accountOff, QStringLiteral("Use my account in this project starts unchecked"));
+    check(packs == QStringList({QStringLiteral("Minimal"), QStringLiteral("Standard"),
+                                QStringLiteral("Everything")}) &&
+              checkedPack == QStringLiteral("Standard"),
+          QStringLiteral("plugins are the phone's three packs, Standard first picked (got %1, %2)")
+              .arg(packs.join(QLatin1Char(',')), checkedPack));
+    check(directoryRows == 2,
+          QStringLiteral("the directory lists ForkMesh and listed instances only (got %1)")
+              .arg(directoryRows));
+    check(filledAddress == QStringLiteral("tea.example.com"),
+          QStringLiteral("Add on a directory instance fills its address (got %1)")
+              .arg(filledAddress));
+}
+
 void checkProjectSettingsPage(MainWindow &window)
 {
     QTemporaryDir sandbox;
@@ -12021,6 +12166,159 @@ protected:
     }
 };
 
+void checkSettingsOutline(MainWindow &window, bool next)
+{
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    if (next) {
+        settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+        MainWindow::applyTheme();
+    }
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    settleAnimations();
+
+    auto *sections =
+        window.findChild<SettingsSectionsView *>(QStringLiteral("settingsSections"));
+    auto *nav = window.findChild<QListWidget *>(QStringLiteral("settingsNav"));
+    check(sections && nav && nav->count() == sections->count(),
+          QStringLiteral("every Settings section has its entry in the list on the left"));
+    if (!sections || !nav)
+        return;
+    sections->setCollapsedTitles({});
+    settleAnimations();
+
+    QStringList unlisted;
+    QStringList unlit;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->isSectionHidden(i))
+            continue;
+        sections->setCurrentIndex(i);
+        settleAnimations(250);
+        QWidget *body = sections->widget(i);
+        const QString section = sections->tabText(i);
+        if (nav->item(i)->text() != section || nav->currentRow() != i)
+            unlisted << QStringLiteral("%1 (list entry)").arg(section);
+        auto *lit = qobject_cast<QLabel *>(sections->litHeading());
+        if (!lit || !lit->property("settingsLit").toBool() || !lit->isVisibleTo(&window))
+            unlit << section;
+        if (!body)
+            continue;
+        const QStringList listed = sections->subSectionTitles(i);
+        QStringList headings;
+        int cards = 0;
+        const QList<QWidget *> children =
+            body->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+        for (QWidget *card : children) {
+            if (!card->property("sectionCard").toBool() || !card->isVisibleTo(body))
+                continue;
+            ++cards;
+            QString heading;
+            for (QLabel *label : card->findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+                if (label->isVisibleTo(card)) {
+                    heading = label->text();
+                    break;
+                }
+            }
+            if (heading.isEmpty()) {
+                QString first;
+                for (QWidget *inner : card->findChildren<QWidget *>()) {
+                    if (auto *button = qobject_cast<QAbstractButton *>(inner);
+                        button && !button->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = button->text();
+                        break;
+                    }
+                    if (auto *label = qobject_cast<QLabel *>(inner);
+                        label && !label->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = label->text().left(40);
+                        break;
+                    }
+                }
+                unlisted << QStringLiteral("%1 > card without a heading (%2)").arg(section, first);
+                continue;
+            }
+            headings << heading;
+        }
+        if (cards >= 2 && listed.size() != headings.size())
+            unlisted << QStringLiteral("%1 > list [%2] page [%3]")
+                            .arg(section, listed.join(QStringLiteral(", ")),
+                                 headings.join(QStringLiteral(", ")));
+    }
+    for (const QString &line : std::as_const(unlisted))
+        std::fprintf(stderr, "  settings outline: %s\n", qPrintable(line));
+    check(unlisted.isEmpty(),
+          QStringLiteral("every group on the Settings page is listed on the left, in "
+                         "the same order and under the same heading"));
+    for (const QString &line : std::as_const(unlit))
+        std::fprintf(stderr, "  settings heading not lit: %s\n", qPrintable(line));
+    check(unlit.isEmpty(),
+          QStringLiteral("jumping to a section lights its heading on the page, as its "
+                         "entry is lit in the list"));
+
+    const QString shots = qEnvironmentVariable("FORKMESH_SETTINGS_SHOT");
+    int generalIndex = -1;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->tabText(i) == QLatin1String("General"))
+            generalIndex = i;
+    }
+    sections->setCurrentIndex(generalIndex);
+    settleAnimations();
+    if (!shots.isEmpty())
+        window.grab().save(shots + QStringLiteral("-general.png"));
+
+    auto *localHalloween =
+        window.findChild<QCheckBox *>(QStringLiteral("halloweenLocalCheck"));
+    sections->setSearchText(QStringLiteral("halloween"));
+    settleAnimations();
+    const QList<QWidget *> hits = sections->searchHits();
+    check(sections->visibleSectionTitles().contains(QStringLiteral("General")) &&
+              localHalloween && hits.contains(localHalloween),
+          QStringLiteral("searching Settings for halloween finds the Halloween theme "
+                         "switch in General"));
+    if (!shots.isEmpty()) {
+        sections->nextSearchHit();
+        settleAnimations();
+        window.grab().save(shots + QStringLiteral("-search.png"));
+    }
+    sections->setSearchText(QString());
+    settleAnimations();
+
+    auto *themeCombo = window.findChild<QComboBox *>(QStringLiteral("appThemeCombo"));
+    if (localHalloween && themeCombo) {
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("light")));
+        settleAnimations(100);
+        localHalloween->setChecked(true);
+        settleAnimations(100);
+        const bool on = settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("halloween");
+        localHalloween->setChecked(false);
+        settleAnimations(100);
+        check(on && settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("light") &&
+                  !localHalloween->isChecked(),
+              QStringLiteral("the Halloween switch in Settings turns the theme on and "
+                             "back to the one chosen before"));
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("halloween")));
+        settleAnimations(100);
+        check(localHalloween->isChecked(),
+              QStringLiteral("picking Halloween in the theme list ticks the Halloween switch"));
+    }
+    auto *adminBox = window.findChild<QWidget *>(QStringLiteral("seasonAdminBox"));
+    check(adminBox && !adminBox->isVisibleTo(&window),
+          QStringLiteral("the switch for everyone stays hidden from an account that "
+                         "cannot manage it"));
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    if (next)
+        settings.remove(QStringLiteral("app/design"));
+}
+
 void checkThemeSwitchRepolish(MainWindow &window)
 {
     window.testEnableSessionStartBypass(true);
@@ -14213,6 +14511,34 @@ void checkCommandApprovalWithoutGitWait(MainWindow &window)
               .arg(approval));
 }
 
+void checkAgentUsageInstallButtons(MainWindow &window)
+{
+    window.testOpenAgentUsagePage();
+    QApplication::processEvents();
+    QWidget *usagePage = window.findChild<QWidget *>(QStringLiteral("agentUsagePage"));
+    const auto button = [usagePage](const QString &name) {
+        return usagePage ? usagePage->findChild<QPushButton *>(name) : nullptr;
+    };
+    const bool claudeInstalled = forkmesh::agentcli::installed(QStringLiteral("claude"));
+    const bool codexInstalled = forkmesh::agentcli::installed(QStringLiteral("codex"));
+    QPushButton *installClaude = button(QStringLiteral("agentUsagePageInstallClaude"));
+    QPushButton *installCodex = button(QStringLiteral("agentUsagePageInstallCodex"));
+    QPushButton *terminalClaude = button(QStringLiteral("agentUsagePageTerminalClaude"));
+    QPushButton *terminalCodex = button(QStringLiteral("agentUsagePageTerminalCodex"));
+    check(usagePage && (installClaude != nullptr) == !claudeInstalled &&
+              (installCodex != nullptr) == !codexInstalled &&
+              (!installClaude ||
+               installClaude->text() == QStringLiteral("Install Claude Code")) &&
+              (!installCodex || installCodex->text() == QStringLiteral("Install Codex")) &&
+              terminalClaude && terminalClaude->isEnabled() == claudeInstalled &&
+              terminalCodex && terminalCodex->isEnabled() == codexInstalled,
+          QString("the Usage page offers Install Claude Code or Install Codex "
+                  "only when that CLI is missing, and disables its terminal "
+                  "buttons until then (claude=%1 codex=%2)")
+              .arg(claudeInstalled)
+              .arg(codexInstalled));
+}
+
 void checkAgentUsageHoverCard(MainWindow &window)
 {
     const bool codexDefault =
@@ -16112,6 +16438,10 @@ else:
         app.arguments().contains(QStringLiteral("--footer-overlay-only"));
     const bool errorAlertOnly =
         app.arguments().contains(QStringLiteral("--error-alert-only"));
+    if (app.arguments().contains(QStringLiteral("--transcript-coverage-only"))) {
+        checkTranscriptCoverageIndicator();
+        return failures == 0 ? 0 : 1;
+    }
     if (app.arguments().contains(QStringLiteral("--recipient-label-only"))) {
         checkChatRecipientLabel();
         checkChatReceiptMark();
@@ -16197,6 +16527,8 @@ else:
         app.arguments().contains(QStringLiteral("--memory-only"));
     const bool projectSettingsOnly =
         app.arguments().contains(QStringLiteral("--project-settings-only"));
+    const bool addProjectOnly =
+        app.arguments().contains(QStringLiteral("--add-project-only"));
     const bool agentCodeOnly =
         app.arguments().contains(QStringLiteral("--agent-code-only"));
     const bool workspaceDesignOnly =
@@ -16782,6 +17114,12 @@ else:
         return failures == 0 ? 0 : 1;
     }
 
+    if (app.arguments().contains(QStringLiteral("--settings-outline-only"))) {
+        checkSettingsOutline(window, app.arguments().contains(QStringLiteral("--next")));
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (app.arguments().contains(QStringLiteral("--theme-switch-only"))) {
         checkThemeSwitchRepolish(window);
         stopChildProcesses(window);
@@ -16878,6 +17216,12 @@ else:
 
     if (projectSettingsOnly) {
         checkProjectSettingsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (addProjectOnly) {
+        checkAddProjectDialog(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -20373,6 +20717,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         window.resize(1440, 900);
         window.show();
         QApplication::processEvents();
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
@@ -20400,6 +20745,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
 
     checkChatUsernameProfile(window);
     checkChatVideoAttachmentPlays();
+    checkTranscriptCoverageIndicator();
     checkChatRecipientLabel();
     checkChatReceiptMark();
     checkCalendarActivityRendering(window);
@@ -23130,8 +23476,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // fallback, restarts in place, and checks both the reported version and
     // exact source revision before the per-host pane can turn green.
     {
-        const QString expectedBuildCommit =
-            QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+        const QString expectedBuildCommit = forkmesh::desktopBuildCommit();
         const QRegularExpression exactCommit(
             QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
         const bool buildIsCommitted =
@@ -29376,6 +29721,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       "provider switch (providers=%1)")
                   .arg(usageProviders.join(QLatin1Char(','))));
 
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
 
         if (savedDefaultProvider.isValid())

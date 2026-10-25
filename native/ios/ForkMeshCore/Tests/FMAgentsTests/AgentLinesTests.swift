@@ -213,7 +213,7 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(AgentTokenPace.allCases.map(\.travel), AgentTokenPace.allCases.map(\.travel).sorted())
     }
 
-    func testTokenSamplerMeasuresGrowthBetweenSamplesAndCapsLongGaps() {
+    func testTokenSamplerMeasuresGrowthFadesWhenItStopsAndCapsLongGaps() {
         var sampler = AgentTokenSampler()
         sampler.sample(tokensIn: 1_000, tokensOut: 100, atMs: 10_000)
         XCTAssertEqual(sampler.outPace, .idle)
@@ -222,15 +222,47 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
         XCTAssertEqual(sampler.outPace, .steady)
         sampler.sample(tokensIn: 3_000, tokensOut: 200, atMs: 13_000)
-        XCTAssertEqual(sampler.outPace, .idle)
+        let faded = 50 * pow(0.5, 1 / AgentTokenSampler.halfLifeSeconds)
+        XCTAssertEqual(sampler.outPerSecond, faded, accuracy: 0.001)
+        XCTAssertEqual(sampler.outPace, .steady)
         sampler.sample(tokensIn: 3_000, tokensOut: 1_000, atMs: 73_000)
+        XCTAssertEqual(sampler.outPerSecond, (faded + 100) / 2, accuracy: 0.001)
+        for second in 1...20 {
+            sampler.sample(tokensIn: 3_000, tokensOut: 1_000, atMs: 73_000 + second * 1_000)
+        }
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        XCTAssertEqual(sampler.outPace, .idle)
+        XCTAssertEqual(sampler.outTravel, 0)
+        sampler.sample(tokensIn: 3_000, tokensOut: 1_200, atMs: 95_000)
         XCTAssertEqual(sampler.outPerSecond, 100, accuracy: 0.001)
-        sampler.sample(tokensIn: 3_000, tokensOut: 1_200, atMs: 75_000)
-        XCTAssertEqual(sampler.outPerSecond, 100, accuracy: 0.001)
-        sampler.sample(tokensIn: 0, tokensOut: 0, atMs: 76_000)
+        XCTAssertEqual(sampler.outTravel, 12, accuracy: 0.001)
+        sampler.sample(tokensIn: 0, tokensOut: 0, atMs: 96_000)
         XCTAssertEqual(sampler.inPerSecond, 0)
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        sampler.sample(tokensIn: 10, tokensOut: 400, atMs: 97_000)
+        XCTAssertGreaterThan(sampler.outPerSecond, 0)
         sampler.settle()
         XCTAssertEqual(sampler.outPerSecond, 0)
+    }
+
+    func testTokenSamplerHoldFadesTheRateWithoutNewTotals() {
+        var sampler = AgentTokenSampler()
+        sampler.hold(atMs: 1_000)
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        sampler.sample(tokensIn: 0, tokensOut: 0, atMs: 1_000)
+        sampler.sample(tokensIn: 0, tokensOut: 100, atMs: 2_000)
+        sampler.hold(atMs: 3_500)
+        XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
+        sampler.sample(tokensIn: 0, tokensOut: 150, atMs: 4_500)
+        XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
+    }
+
+    func testTokenTravelGrowsWithTheRateUpToACap() {
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 0.5, input: false), 0)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1, input: false), 4, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 100, input: false), 12, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1_000, input: true), 12, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1e9, input: false), AgentTokenPace.maxTravel)
     }
 
     func testEagleDialogIsTheLatestFinishedProseTheAgentSaid() {

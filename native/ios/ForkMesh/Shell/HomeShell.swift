@@ -758,7 +758,8 @@ struct HomeShell: View {
                         lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
                         desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,
                         desktops: Services.get(ShellLocalDesktopBridge.self)?.desktopLights ?? [],
-                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light)
+                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light,
+                        agentTokens: agentsOn)
                 }
             }
             .overlay { hubDropdown }
