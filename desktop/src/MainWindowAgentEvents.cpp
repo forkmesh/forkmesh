@@ -2474,7 +2474,7 @@ void MainWindow::onScannerTick()
             continue;
         anyActive = true;
     }
-    refreshAgentDotMatrix();
+    refreshAgentDots();
     if (!anyActive && m_scannerTimer)
         m_scannerTimer->stop();
 }
