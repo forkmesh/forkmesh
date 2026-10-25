@@ -7165,6 +7165,17 @@ void MainWindow::refreshQuickAddSendToChannelButton()
     button->setAccessibleName(channel.isEmpty()
                                   ? QStringLiteral("Send to chat")
                                   : QStringLiteral("Send to %1").arg(channel));
+    const bool target = !channel.isEmpty() && !promptChatRoom().isEmpty() &&
+                        !quickAddPackagePromptTarget();
+    if (button->property("enterTarget").toBool() != target) {
+        button->setProperty("enterTarget", target);
+        if (button->style()) {
+            button->style()->unpolish(button);
+            button->style()->polish(button);
+        }
+        button->update();
+        tintComposerActionButton(button);
+    }
 }
 
 int MainWindow::promptChannelUserCount(const QString &conversation) const

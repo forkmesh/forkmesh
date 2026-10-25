@@ -705,6 +705,7 @@ struct MainWindow::SettingsSectionParts {
     QCheckBox *issueModelMentionsCheck = nullptr;
     QCheckBox *excludeExternalClaudeCheck = nullptr;
     QCheckBox *publishAgentsToWebCheck = nullptr;
+    QCheckBox *claudeDesktopSessionsCheck = nullptr;
     QLabel *notifyLabel = nullptr;
     QHBoxLayout *pingPauseRow = nullptr;
     QCheckBox *nativeSystemNotificationsCheck = nullptr;
@@ -1728,11 +1729,26 @@ void MainWindow::buildSettingsAgentBehaviourParts(SettingsSectionParts &parts)
         QSettings().setValue(kPublishAgentsToWebSetting, enabled);
     });
 
+    auto *claudeDesktopSessionsCheck =
+        new QCheckBox("Add Claude Code agents to the Claude app");
+    claudeDesktopSessionsCheck->setObjectName(QStringLiteral("claudeDesktopSessionsCheck"));
+    claudeDesktopSessionsCheck->setChecked(claudeDesktopSessionsEnabled());
+    claudeDesktopSessionsCheck->setToolTip(
+        "When a Claude Code agent finishes, add its session to the Claude "
+        "desktop app's Code tab so it can be read and resumed there. The Claude "
+        "app switches to each session it adds. Codex agents stay in ForkMesh.");
+    connect(claudeDesktopSessionsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        QSettings().setValue(kClaudeDesktopSessionsSetting, enabled);
+        if (enabled)
+            backfillClaudeDesktopSessions();
+    });
+
     parts.autoSwitchToAgentCheck = autoSwitchToAgentCheck;
     parts.terminalTranscriptOutputCheck = terminalTranscriptOutputCheck;
     parts.issueModelMentionsCheck = issueModelMentionsCheck;
     parts.excludeExternalClaudeCheck = excludeExternalClaudeCheck;
     parts.publishAgentsToWebCheck = publishAgentsToWebCheck;
+    parts.claudeDesktopSessionsCheck = claudeDesktopSessionsCheck;
 }
 
 // Settings > Pings > PINGS: pause, delivery and the per-kind alert switches.
@@ -4440,6 +4456,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     agentBehaviourGroup->addWidget(parts.issueModelMentionsCheck);
     agentBehaviourGroup->addWidget(parts.excludeExternalClaudeCheck);
     agentBehaviourGroup->addWidget(parts.publishAgentsToWebCheck);
+    agentBehaviourGroup->addWidget(parts.claudeDesktopSessionsCheck);
 
     auto *nodeStatsGroup = generalTab->addSection();
     nodeStatsGroup->addLayout(settingsHeading(parts.nodeStatsLabel, "graph"));

@@ -976,6 +976,10 @@ void syncDataTable(QTableView *table, bool next)
                 fitted.append(column);
             }
             horizontal->setHighlightSections(false);
+            const int fitRows = horizontal->resizeContentsPrecision();
+            state.insert(QStringLiteral("fitRows"), fitRows);
+            if (fitRows < 0 || fitRows > kDataTableFitRows)
+                horizontal->setResizeContentsPrecision(kDataTableFitRows);
         }
         state.insert(QStringLiteral("fitted"), fitted);
         state.insert(QStringLiteral("wordWrap"), table->wordWrap());
@@ -1003,6 +1007,9 @@ void syncDataTable(QTableView *table, bool next)
         if (horizontal) {
             horizontal->setHighlightSections(
                 state.value(QStringLiteral("highlight")).toBool());
+            if (state.contains(QStringLiteral("fitRows")))
+                horizontal->setResizeContentsPrecision(
+                    state.value(QStringLiteral("fitRows")).toInt());
             const QVariantList fitted = state.value(QStringLiteral("fitted")).toList();
             for (const QVariant &column : fitted) {
                 if (column.toInt() < horizontal->count())

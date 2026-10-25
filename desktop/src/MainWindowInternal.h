@@ -337,6 +337,8 @@ struct DiffRenderAppearance {
     qreal dpr = 1.0;
     QMap<QString, QString> colorRemap;
     QString treeIconDir;
+    bool changeArrows = false;
+    int changeArrowsStagedFiles = 0;
 };
 DiffRenderAppearance currentDiffRenderAppearance();
 // One compact score in the branch review's merge-health strip. Scores are
@@ -537,6 +539,7 @@ int diffPageCountForTest(QTextEdit *view);
 void showDiffPageForTest(QTextEdit *view, int page);
 int diffWindowFirstPageForTest(QTextEdit *view);
 int diffLoadedPageViewportYForTest(QTextEdit *view, int page);
+bool diffScrollBarGeometryForTest(QTextEdit *view, int *value, int *maximum);
 #endif
 bool autoMarkViewedOnScrollPref();
 void setAutoMarkViewedOnScrollPref(bool on);
@@ -4870,6 +4873,7 @@ const QString kClaudeCodeProvider = QStringLiteral("claude-code");
 const QString kAgentDonePingKind = QStringLiteral("agent-done");
 constexpr int kAgentDoneSummaryChars = 400;
 const QString kAgentDoneAlertSetting = QStringLiteral("notifications/agentDone");
+const QString kClaudeDesktopSessionsSetting = QStringLiteral("agents/claudeDesktopSessions");
 const QString kAgentStartPingSetting = QStringLiteral("notifications/agentStart");
 
 bool agentIsClaudeProvider(const QString &provider);

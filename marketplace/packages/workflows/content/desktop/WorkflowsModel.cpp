@@ -286,6 +286,177 @@ QJsonArray mergeRuns(const QHash<QString, QJsonArray> &byWorkflow,
     return merged;
 }
 
+QJsonArray unifiedWorkflows(const QJsonArray &account, const QHash<QString, QJsonArray> &runsByWorkflow,
+                            const QJsonArray &local, const QJsonArray &pins)
+{
+    QHash<QString, QString> accountPins;
+    for (const QJsonValue &value : pins) {
+        const QJsonObject pin = value.toObject();
+        if (text(pin, "repo") == QLatin1String(kAccountRepo))
+            accountPins.insert(text(pin, "workflow"), text(pin, "rail"));
+    }
+    QJsonArray entries;
+    for (const QJsonValue &value : local) {
+        QJsonObject entry = value.toObject();
+        const bool agent = entry.value(QStringLiteral("specialAgent")).toBool();
+        const QJsonArray recent = entry.value(QStringLiteral("recentRuns")).toArray();
+        const QJsonObject last = recent.isEmpty() ? QJsonObject() : recent.first().toObject();
+        entry.insert(QStringLiteral("key"), QStringLiteral("local:%1|%2").arg(text(entry, "repo"), text(entry, "id")));
+        entry.insert(QStringLiteral("source"), QStringLiteral("local"));
+        entry.insert(QStringLiteral("kind"), agent ? QStringLiteral("agent") : QStringLiteral("desktop"));
+        entry.insert(QStringLiteral("kindLabel"), agent ? QStringLiteral("Special agent") : QStringLiteral("Desktop workflow"));
+        entry.insert(QStringLiteral("place"), text(entry, "repo"));
+        entry.insert(QStringLiteral("lastOutput"), text(entry, "lastSummary"));
+        entry.insert(QStringLiteral("lastOutputFile"), text(last, "outputFile"));
+        entry.insert(QStringLiteral("lastRunId"), text(last, "id"));
+        entry.remove(QStringLiteral("recentRuns"));
+        entries.append(entry);
+    }
+    for (const QJsonValue &value : account) {
+        const QJsonObject summary = value.toObject();
+        const QString id = text(summary, "id");
+        const QString type = text(summary, "trigger");
+        const bool active = summary.value(QStringLiteral("active")).toBool();
+        QString trigger = triggerLabel(type);
+        if (type == QLatin1String("core.schedule") && !everyText(int(integer(summary, "scheduleMinutes"))).isEmpty())
+            trigger = everyText(int(integer(summary, "scheduleMinutes")));
+        const QJsonArray runs = runsByWorkflow.value(id);
+        int failed = 0;
+        for (const QJsonValue &run : runs)
+            failed += text(run.toObject(), "status") == QLatin1String("error") ? 1 : 0;
+        const QJsonObject last = runs.isEmpty() ? QJsonObject() : runs.first().toObject();
+        QJsonObject entry{{QStringLiteral("key"), QStringLiteral("account:") + id},
+                          {QStringLiteral("source"), QStringLiteral("account")},
+                          {QStringLiteral("kind"), QStringLiteral("account")},
+                          {QStringLiteral("kindLabel"), QStringLiteral("On ForkMesh")},
+                          {QStringLiteral("id"), id},
+                          {QStringLiteral("repo"), QString::fromLatin1(kAccountRepo)},
+                          {QStringLiteral("place"), QStringLiteral("Your account")},
+                          {QStringLiteral("name"), text(summary, "name")},
+                          {QStringLiteral("trigger"), trigger},
+                          {QStringLiteral("triggerType"), type},
+                          {QStringLiteral("enabled"), active},
+                          {QStringLiteral("hasSchedule"), type == QLatin1String("core.schedule")},
+                          {QStringLiteral("scheduleActive"), active && type == QLatin1String("core.schedule")},
+                          {QStringLiteral("steps"), summary.value(QStringLiteral("nodes")).toInt()},
+                          {QStringLiteral("lastRunAt"), summary.value(QStringLiteral("lastRunAt"))},
+                          {QStringLiteral("lastStatus"), text(summary, "lastStatus")},
+                          {QStringLiteral("nextRunAt"), active ? summary.value(QStringLiteral("nextRunAt")) : QJsonValue(0)},
+                          {QStringLiteral("updatedAt"), summary.value(QStringLiteral("updatedAt"))},
+                          {QStringLiteral("pinned"), accountPins.value(id)},
+                          {QStringLiteral("lastOutput"), last.isEmpty() ? QString() : runOutputText(last)},
+                          {QStringLiteral("lastRunId"), text(last, "id")}};
+        if (!runs.isEmpty()) {
+            entry.insert(QStringLiteral("runs"), int(runs.size()));
+            entry.insert(QStringLiteral("failedRuns"), failed);
+        }
+        entries.append(entry);
+    }
+    return entries;
+}
+
+bool workflowMatches(const QJsonObject &entry, const QString &needle, const QString &scope)
+{
+    if (scope == QLatin1String("agent") && text(entry, "kind") != QLatin1String("agent"))
+        return false;
+    if (scope == QLatin1String("desktop") && text(entry, "source") != QLatin1String("local"))
+        return false;
+    if (scope == QLatin1String("account") && text(entry, "source") != QLatin1String("account"))
+        return false;
+    if (scope == QLatin1String("failing") && text(entry, "lastStatus") != QLatin1String("error") &&
+        text(entry, "error").isEmpty())
+        return false;
+    if (scope == QLatin1String("pinned") && text(entry, "pinned").isEmpty())
+        return false;
+    const QString wanted = needle.trimmed();
+    if (wanted.isEmpty())
+        return true;
+    for (const char *key : {"name", "description", "trigger", "place", "kindLabel", "lastOutput"})
+        if (text(entry, key).contains(wanted, Qt::CaseInsensitive))
+            return true;
+    return false;
+}
+
+void sortWorkflows(QJsonArray &entries, const QString &order)
+{
+    QList<QJsonObject> list;
+    for (const QJsonValue &value : std::as_const(entries))
+        list.append(value.toObject());
+    const auto byName = [](const QJsonObject &a, const QJsonObject &b) {
+        return text(a, "name").compare(text(b, "name"), Qt::CaseInsensitive) < 0;
+    };
+    if (order == QLatin1String("recent")) {
+        std::stable_sort(list.begin(), list.end(), [&byName](const QJsonObject &a, const QJsonObject &b) {
+            const qint64 left = integer(a, "lastRunAt");
+            const qint64 right = integer(b, "lastRunAt");
+            return left != right ? left > right : byName(a, b);
+        });
+    } else if (order == QLatin1String("next")) {
+        std::stable_sort(list.begin(), list.end(), [&byName](const QJsonObject &a, const QJsonObject &b) {
+            const qint64 left = integer(a, "nextRunAt");
+            const qint64 right = integer(b, "nextRunAt");
+            if ((left > 0) != (right > 0))
+                return left > 0;
+            return left != right ? left < right : byName(a, b);
+        });
+    } else if (order == QLatin1String("kind")) {
+        const auto rank = [](const QJsonObject &entry) {
+            const QString kind = text(entry, "kind");
+            return kind == QLatin1String("agent") ? 0 : kind == QLatin1String("desktop") ? 1 : 2;
+        };
+        std::stable_sort(list.begin(), list.end(), [&byName, &rank](const QJsonObject &a, const QJsonObject &b) {
+            return rank(a) != rank(b) ? rank(a) < rank(b) : byName(a, b);
+        });
+    } else {
+        std::stable_sort(list.begin(), list.end(), byName);
+    }
+    entries = QJsonArray();
+    for (const QJsonObject &entry : std::as_const(list))
+        entries.append(entry);
+}
+
+QJsonArray statsWorkflows(const QJsonArray &entries)
+{
+    QJsonArray rows;
+    for (const QJsonValue &value : entries) {
+        const QJsonObject entry = value.toObject();
+        QString trigger = text(entry, "triggerType");
+        if (trigger.isEmpty())
+            trigger = entry.value(QStringLiteral("hasSchedule")).toBool() &&
+                              entry.value(QStringLiteral("scheduleActive")).toBool()
+                          ? QStringLiteral("core.schedule")
+                          : QStringLiteral("core.manual");
+        rows.append(QJsonObject{{QStringLiteral("name"), text(entry, "name")},
+                                {QStringLiteral("active"), entry.value(QStringLiteral("enabled")).toBool()},
+                                {QStringLiteral("trigger"), trigger},
+                                {QStringLiteral("nodes"), entry.value(QStringLiteral("steps")).toInt()},
+                                {QStringLiteral("nextRunAt"), entry.value(QStringLiteral("nextRunAt"))},
+                                {QStringLiteral("lastRunAt"), entry.value(QStringLiteral("lastRunAt"))}});
+    }
+    return rows;
+}
+
+QString workflowStateText(const QJsonObject &entry)
+{
+    if (!text(entry, "error").isEmpty())
+        return QStringLiteral("Needs a fix");
+    if (entry.value(QStringLiteral("running")).toBool())
+        return text(entry, "runningStep").isEmpty() ? QStringLiteral("Running")
+                                                    : QStringLiteral("Running · %1").arg(text(entry, "runningStep"));
+    if (entry.value(QStringLiteral("agentWorking")).toBool())
+        return QStringLiteral("Agent working");
+    if (!entry.value(QStringLiteral("enabled")).toBool())
+        return QStringLiteral("Off");
+    const QString status = text(entry, "lastStatus");
+    if (status == QLatin1String("error"))
+        return QStringLiteral("Failed");
+    if (status == QLatin1String("success"))
+        return QStringLiteral("Succeeded");
+    if (status == QLatin1String("stopped"))
+        return QStringLiteral("Stopped");
+    return integer(entry, "lastRunAt") > 0 ? QStringLiteral("On") : QStringLiteral("Not run yet");
+}
+
 void Catalog::load(const QJsonObject &catalog)
 {
     m_types.clear();

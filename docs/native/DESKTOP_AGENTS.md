@@ -20,6 +20,23 @@ ten minutes.
   (newest first), then the account's desktops; the last one that answered is
   tried first. `link()` dials up to four at once and keeps the first that
   completes the handshake with the expected key.
+- **Several desktops running (iOS, 2026-10-25).** The user can pick which
+  desktop the phone uses: on the Desktops page (Other desktops, tap one) or in
+  the composer's "Where it runs" sheet, which lists one row per desktop.
+  `choose(key:)` stores the key in `desktop/preferred-key`. From then on
+  `link()` dials only that desktop, `currentLink` ignores a LAN or relay
+  channel to any other one, and a relay channel to another desktop is closed.
+  A preferred key that is no longer one of the account's desktops is ignored.
+  `presence` records whether each desktop answered: every dial in the race
+  counts, and `checkDesktops()` dials the desktops it has no channel to and
+  closes each channel again. It runs when the Desktops page loads or is
+  pulled to refresh, and after `warm()` connects when the account has more
+  than one desktop, at most every five minutes. `choices` turns that into
+  `ShellDesktopLight` rows. Two desktops with the same node name get the first
+  six characters of their key added to the name. The icon above the clock
+  draws the desktop in use, with the other desktops stacked behind it, each
+  with its own dot. The core nodes are stacked the same way. Before this the
+  phone took whichever desktop answered first and showed only that one.
 - The desktop approves the phone without a code because its key is an enabled
   `owner_sign` device of the same account (`checkLocalControlAccountDevice`),
   records it in `data/local_control/paired-devices.json` as

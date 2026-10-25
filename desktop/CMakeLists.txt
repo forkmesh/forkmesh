@@ -506,6 +506,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
     src/MainWindowAgentCloud.cpp
+    src/MainWindowClaudeDesktop.cpp
     src/MainWindowAgentActions.cpp
     src/MainWindowAgentModels.cpp
     src/MainWindowAgentFeed.cpp
@@ -634,17 +635,20 @@ set_target_properties(forkmesh-resources PROPERTIES
     AUTOMOC OFF
     JOB_POOL_COMPILE forkmesh_heavy)
 
-option(FORKMESH_BROWSER_PANE "Embed Qt WebEngine in the workspace Browser tab" OFF)
-add_library(forkmesh-browser-pane STATIC src/WorkspaceBrowserPane.cpp)
+option(FORKMESH_BROWSER_PANE "Embed the ungoogled Qt WebEngine browser in the workspace Browser tab and side browser" ON)
+add_library(forkmesh-browser-pane STATIC
+    src/WorkspaceBrowserPane.cpp
+    src/BrowserPrivacy.h
+    src/BrowserPrivacy.cpp)
 target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::Widgets)
 set_target_properties(forkmesh-browser-pane PROPERTIES AUTOMOC OFF)
 if(FORKMESH_BROWSER_PANE)
-    find_package(Qt6 6.4 QUIET COMPONENTS WebEngineWidgets)
-    if(Qt6WebEngineWidgets_FOUND)
+    if(TARGET Qt6::WebEngineWidgets)
         target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::WebEngineWidgets)
         target_compile_definitions(forkmesh-browser-pane PRIVATE FORKMESH_HAVE_WEBENGINE)
+        message(STATUS "Browser pane: the Browser tab embeds ungoogled Qt WebEngine")
     else()
-        message(WARNING "FORKMESH_BROWSER_PANE is on but Qt WebEngine Widgets was not found; the Browser tab opens pages in the system browser")
+        message(STATUS "Browser pane: Qt WebEngine Widgets not found; the Browser tab opens pages in the system browser")
     endif()
 endif()
 
@@ -809,6 +813,8 @@ set(FORKMESH_APP_SOURCES
     src/CodeHealth.cpp
     src/DiffIntraLine.h
     src/DiffIntraLine.cpp
+    src/DiffChangeBlock.h
+    src/DiffChangeBlock.cpp
     src/ComponentHealthBoard.h
     src/ComponentHealthBoard.cpp
     src/MainWindowComponentHealth.cpp
@@ -1019,6 +1025,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentStore.cpp
     src/AgentCloudSessions.h
     src/AgentCloudSessions.cpp
+    src/ClaudeDesktopSessions.h
+    src/ClaudeDesktopSessions.cpp
     src/AgentCloudStream.h
     src/AgentCloudStream.cpp
     src/RunnerLogin.h
@@ -2155,6 +2163,19 @@ if(FORKMESH_BUILD_TESTS)
 
     # Per-repository index-writing git queue, index.lock liveness and the
     # merge timeout (docs/desktop/git-locking.md), against real repositories.
+    qt_add_executable(forkmesh-browser-privacy-tests
+        tests/test_browser_privacy.cpp
+        src/BrowserPrivacy.h
+        src/BrowserPrivacy.cpp
+    )
+    target_include_directories(forkmesh-browser-privacy-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-browser-privacy-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-browser-privacy-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-git-index-queue-tests
         tests/test_git_index_queue.cpp
         src/GitIndexQueue.h
@@ -2204,6 +2225,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-diff-intra-line-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-diff-intra-line-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-diff-change-block-tests
+        tests/test_diff_change_block.cpp
+        src/DiffChangeBlock.h
+        src/DiffChangeBlock.cpp
+    )
+    target_include_directories(forkmesh-diff-change-block-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-diff-change-block-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-diff-change-block-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -2842,6 +2876,18 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-agent-cloud-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-agent-cloud-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-claude-desktop-sessions-tests
+        tests/test_claude_desktop_sessions.cpp
+        src/ClaudeDesktopSessions.h
+        src/ClaudeDesktopSessions.cpp
+    )
+    target_include_directories(forkmesh-claude-desktop-sessions-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-claude-desktop-sessions-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-claude-desktop-sessions-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
     qt_add_executable(forkmesh-agent-cloud-stream-tests
@@ -4002,6 +4048,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-codex-tests forkmesh-agent-transport-tests
         forkmesh-agent-recycle-tests
         forkmesh-agent-cloud-tests
+        forkmesh-claude-desktop-sessions-tests
         forkmesh-agent-cloud-stream-tests
         forkmesh-agent-workspace-name-tests
         forkmesh-local-control-tests
@@ -4019,6 +4066,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
+        forkmesh-browser-privacy-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests
@@ -4329,6 +4377,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-agent-recycle-tests)
     add_test(NAME forkmesh-agent-cloud-tests
         COMMAND forkmesh-agent-cloud-tests)
+    add_test(NAME forkmesh-claude-desktop-sessions-tests
+        COMMAND forkmesh-claude-desktop-sessions-tests)
     add_test(NAME forkmesh-agent-cloud-stream-tests
         COMMAND forkmesh-agent-cloud-stream-tests)
     add_test(NAME forkmesh-agent-workspace-name-tests
@@ -4378,6 +4428,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-public-mirror-tests)
     add_test(NAME forkmesh-upstream-sync-tests
              COMMAND forkmesh-upstream-sync-tests)
+    add_test(NAME forkmesh-browser-privacy-tests
+             COMMAND forkmesh-browser-privacy-tests)
     add_test(NAME forkmesh-git-index-queue-tests
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
@@ -4570,6 +4622,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-boundary-tests
         forkmesh-agent-recycle-tests
         forkmesh-agent-cloud-tests
+        forkmesh-claude-desktop-sessions-tests
         forkmesh-agent-cloud-stream-tests
         forkmesh-agent-workspace-name-tests
         forkmesh-local-control-attachments-tests
@@ -4586,6 +4639,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
+        forkmesh-browser-privacy-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests
