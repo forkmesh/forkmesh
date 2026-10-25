@@ -2732,6 +2732,8 @@ void MainWindow::buildAgentOutputViews(QWidget *detailPane)
             [this](const QString &answer) { sendPromptToSelectedAgent(answer); });
     connect(m_agentTranscript, &ClaudeTranscriptView::rawLogRequested, this,
             &MainWindow::showAgentRawLogEvent);
+    connect(m_agentTranscript, &ClaudeTranscriptView::coverageGapsActivated, this,
+            &MainWindow::startTranscriptCoverageAgent);
 
     m_agentOutputStack = new QStackedWidget;
     m_agentOutputStack->addWidget(m_agentLog);        // page 0: raw / piped log

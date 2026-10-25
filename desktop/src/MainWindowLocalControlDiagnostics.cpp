@@ -182,7 +182,22 @@ void MainWindow::sampleHostVitals()
     diagctl::appendVitals(m_hostVitals, sample);
     if (m_hostVitalsWatchers.isEmpty() || !m_localControl)
         return;
-    const QJsonObject data = diagctl::vitalsSampleJson(sample);
+    QJsonObject data = diagctl::vitalsSampleJson(sample);
+    qint64 tokensIn = 0;
+    qint64 tokensOut = 0;
+    QJsonObject agentTokens;
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        const QPair<qint64, qint64> flow = m_sessionTokenFlow.value(session.id);
+        const qint64 in = qMax<qint64>(flow.first, session.promptTokens);
+        const qint64 out = qMax<qint64>(flow.second, session.completionTokens);
+        tokensIn += in;
+        tokensOut += out;
+        if ((in > 0 || out > 0) && isStoppableAgentSession(session.id))
+            agentTokens.insert(QString::number(session.id), QJsonArray{double(in), double(out)});
+    }
+    data.insert(QStringLiteral("tokensIn"), double(tokensIn));
+    data.insert(QStringLiteral("tokensOut"), double(tokensOut));
+    data.insert(QStringLiteral("agentTokens"), agentTokens);
     for (auto it = m_hostVitalsWatchers.begin(); it != m_hostVitalsWatchers.end();) {
         if (m_localControl->sendEventTo(*it, QStringLiteral("diag.vitals"), data))
             ++it;
