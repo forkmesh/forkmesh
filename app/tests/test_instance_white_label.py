@@ -434,17 +434,15 @@ def test_the_changelog_link_shows_on_an_instance_and_the_page_is_bundled():
     assert 'href="/changelog"' not in instance_features.chrome_css(branded)
     off = [item for item in instance_features.describe(branded) if not item["enabled"]]
     assert "/changelog" not in {path for item in off for path in item["paths"]}
-    assert "changelog.html" in build_site_assets.BACKEND_ASSETS
+    assert {"changelog.html", "changelog.js"} <= set(build_site_assets.BACKEND_ASSETS)
     assert static_routes.external_site_delivery(
         "/changelog", "https://code.example.com", "https://code.example.com",
         ()) == ("local", "")
     page = (ROOT.parent / "www" / "public" / "changelog.html").read_text(encoding="utf-8")
     assert not re.search(r"""(?:src|href|fetch\()\s*=?\s*["']https?://(?:[a-z0-9-]+\.)*forkmesh\.com""",
                          page)
-    assert "changelog.json" not in page
-    entries = json.loads((ROOT.parent / "changelog" / "changelog.json").read_text(
-        encoding="utf-8"))["entries"]
-    assert entries and entries[0]["title"] in page
+    assert 'data-source="/changelog.json"' in page
+    assert '<script src="/changelog.js?v=${version}" defer></script>' in page
 
 
 def test_brand_tool_drops_forkmesh_property_links_from_the_chrome():
