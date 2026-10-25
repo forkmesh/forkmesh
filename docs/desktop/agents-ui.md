@@ -36,6 +36,20 @@ work inside a repository; the tour and the composer's Models link keep their
 own handling. Before 2026-10-23 a click with no repository open did nothing,
 which left a checked Agents button over an unchanged page in both designs.
 
+### Usage page: install a missing CLI (2026-10-25)
+
+When `forkmesh::agentcli::installed("claude")` or `("codex")` finds no CLI, that
+provider's section on the Usage page says "Not installed on this desktop" and
+shows **Install Claude Code** or **Install Codex**
+(`agentUsagePageInstallClaude` / `agentUsagePageInstallCodex`); its terminal
+buttons are disabled, since they would only fail. The button runs the same
+install as Settings -> Apps (`installSuggestedApp`, npm with
+`@anthropic-ai/claude-code` or `@openai/codex`, after a confirmation). Without
+npm it is disabled and the page shows the reason; while an install runs it
+reads "Installing…", and a failed install leaves its last output line
+(`m_suggestedAppInstallProblems`) under the button. `refreshSuggestedApps`
+redraws the Usage page, so the button goes away once the install finishes.
+
 ### Usage page: Refresh and reset times (2026-10-19)
 
 The `usage` Market package's page is `MainWindow::buildAgentUsagePage`
@@ -232,7 +246,11 @@ The mapping from requests to cards and from answers to responses is pure code
 in `ClaudeControlProtocol.{h,cpp}`; `MainWindowAgentClaudeControl.cpp` puts it
 on screen. Shapes were checked against Claude Code 2.1.309.
 
-**Names.** On the first `system/init` of each process the desktop sends
+**Names.** A run started from a prompt is usually named before launch by a
+one-shot `claude -p`, Haiku first and then the run's own model (see
+[../agents/README.md](../agents/README.md#local-runs-desktop)); that name
+goes in as `title` and is sent again with `rename_session`, like a name you
+gave it. Otherwise, on the first `system/init` of each process the desktop sends
 `generate_session_title` with the prompt (`persist: true`), so the run is named
 by its own Claude Code session and the name is saved in the session's
 transcript; a resumed session gets its saved name back instead of a new one.
@@ -241,10 +259,10 @@ of ours) renames the run at any time; a repeated name changes nothing.
 `titledBy` records `Claude Code session` or `Claude Code rename`. The run is
 renamed only when its title came from its prompt or from an earlier namer:
 issue runs keep the issue title and a caller's name (a PR review, a conflict
-fix) stays. The one-shot `claude -p --model haiku` namer
-(`requestAgentTitle`) no longer runs for Claude Code, so the two never race;
-a queued or held Claude run shows its prompt title until it starts. Settings >
-Agents > "Agent titles" turns Claude's naming off too.
+fix) stays. The pre-launch namer finishes before the session starts and
+`generate_session_title` is skipped for its name, so the two never race. A held
+Claude run shows its prompt title until it starts. Settings > Agents > "Agent
+titles" turns Claude's naming off too.
 
 **Rename.** The agent list's context menu has **Rename…**. The new name is
 saved with `titledBy` `You` (no namer overrides it) and sent to a running
@@ -449,6 +467,68 @@ margin `layoutPromptDeck()` reserves, and shows the last prompt in one line
 
 **Raw log jump.** Clicking a row's gutter switches to Raw at the line of the
 event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
+
+**Transcript coverage (2026-10-25).** The transcript should show everything
+the raw log holds. `forkmesh::transcriptcoverage` (`src/TranscriptCoverage.*`)
+checks every event the view is given (`handleEvent`, and
+`accumulateStatsOnly` for the turns a long replay skips). Any kind that draws
+nothing is a gap: an unknown event type, `system` subtype, assistant or user
+content block, stream event or delta.
+
+Some raw log lines never become an event, so the sessions record them. Each
+one becomes a `_local_raw_line` event that is stored with the session, so the
+check survives a redraw or a restart. The kind is worked out again from the
+stored line each time, so a fix also clears old sessions. Lines longer than
+16,000 characters keep only the fields that name their kind.
+
+- Claude Code (`ClaudeStreamSession::noteDroppedLine`): stdout that is not
+  JSON, and control requests that `handleControlLine` consumes without a
+  card. Those are requests ForkMesh refuses (`hook_callback`, …) and dialogs it
+  cannot answer (`request_user_dialog` of an unsupported `dialog_kind`).
+  Answers to ForkMesh's own control requests and stale cancels are
+  bookkeeping.
+- Codex (`CodexAppServerSession::noteUnshownMessage`): notifications that
+  `handleNotification` falls through, items that are neither tool cards nor
+  drawn items, and server requests it refuses. A red **● N
+missing** pill (`transcriptCoverageGaps`) then shows at the top right of the
+transcript. Its tooltip lists each kind and count. Clicking it starts an agent
+in the ForkMesh checkout (`stallReportRepoIndex()`), with the default provider
+and model from Settings, like the Tool efficiency page's **Send to agent**. The
+prompt (`transcriptcoverage::agentPrompt`) names each kind with one clipped
+example. The agent either draws the kind or adds it to the unshown lists below
+with a reason here, then updates `TranscriptCoverage.cpp` and
+`tests/test_transcript_coverage.cpp` so the pill stops flagging it. A kind
+already handed to an agent that still exists is not sent again; a second click
+opens that agent.
+
+These are deliberately not drawn, because another surface shows them or they
+are bookkeeping:
+
+- Usage page: `rate_limit_event`, `_codex_rate_limits`, Codex `account/*`.
+- Host control protocol: `control_request`, `control_response`,
+  `control_cancel_request`, `keep_alive`. Prompts arrive as their own card
+  events.
+- Sub-sessions list: `system` `task_started`, `task_updated`,
+  `task_progress`, `background_tasks_changed`.
+- Agent name: `system/session_title_changed`.
+- Only `status: compacting` has a row; other `system/status` events only
+  update state.
+- Claude Code `.jsonl` bookkeeping: `summary`, `file-history-snapshot`,
+  `queue-operation`, `custom-title`, `ai-title`, `last-prompt`, and
+  `isMeta` lines.
+- Subagent work: any event with a `parent_tool_use_id`, and sidechain
+  events. The subagent's card summarizes it.
+- Prompt echoes: user `text` blocks and string content. The prompt row
+  shows them.
+- Streamed `input_json_delta` and `signature_delta`: the finished assistant
+  message draws the tool call.
+- Codex `thread/status/changed`, `thread/archived`, `thread/unarchived`,
+  `thread/closed`, `serverRequest/resolved`, `skills/changed`,
+  `app/list/updated`, `mcpServer/oauthLogin/completed`,
+  `fuzzyFileSearch/*`, and the legacy `codex/event/*` duplicates.
+
+Stderr is never judged. `CodexAppServerSession::isToolItem` reads the same Codex tool item
+list (`transcriptcoverage::isCodexToolItem`), so the two cannot drift.
 
 **Scrolling.**
 
