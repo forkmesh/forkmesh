@@ -1,689 +1,296 @@
 {
- "schema": 2,
- "entries": [
-  {
-   "date": "2026-10-25",
-   "version": "",
-   "title": "",
-   "pitch": "",
-   "sections": [
-    {
-     "title": "Projects",
-     "items": [
-      "You can now delete your own pull request reviews (an approval or change request keeps its verdict and loses only its text), and edit or delete your inline comments right in the Files changed tab.",
-      "Open pull requests no longer show a block of AI instructions: a Diff and files box links the diff, the patch and every changed file, and Summarize in ChatGPT opens ChatGPT asking for a summary of the pull request."
-     "title": "Calls",
-     "items": [
-      "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.",
-      "Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings > Agents.",
-      "Merging an agent no longer leaves a second agent with the same name in the Agents list."
-     ]
-    },
-    {
-     "title": "World",
-     "items": [
-      "When your microphone or camera is on, a live chart scrolls your frame rate, mic level, tracking time and round trip, and a blinking On air sign shows under your face in the corner and on your avatar.",
-      "Your camera now moves your uploaded avatar photo instead of the drawn face, both on your body and in the top-right corner, and arms and hands follow you more steadily, including how far forward you reach.",
-      "Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included.",
-      "The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings."
-     ]
-    },
-    {
-     "title": "Settings",
-     "items": [
-      "Desktop Settings now has a Halloween theme section under General that search finds, with the switch for everyone and its turn-off time for administrators and moderators, and the heading you jumped to lights up on the page like its entry in the list."
-     ]
-    },
-    {
-     "title": "iPhone",
-     "items": [
-      "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
-      "The iPhone app stays signed in to your instances after the phone restarts.",
-      "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow.",
-      "Send to agent on a failed run's log now sends the failing step and the end of the log, where the error is, instead of its first lines."
-     ]
-    },
-    {
-     "title": "Desktop",
-     "items": [
-      "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.",
-      "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.",
-      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.",
-      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.",
-      "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.",
-      "Rebuild & restart is faster: it keeps its own compile cache that agent builds no longer push out, a new commit no longer recompiles two of the app's largest files, and the restart notice says how many compiles came from the cache."
-      "The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint.",
-      "Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.",
-      "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.",
-      "When ForkMesh finds a disk labelled TMP that is not set to mount at startup, it asks for your password once and adds it to /etc/fstab, so the fast scratch disk is there after every reboot.",
-      "The Linux installer now installs Qt WebEngine, so YouTube, the Browser tab and agent browser windows play inside the app, and the next rebuild picks it up without clearing the build."
-     ]
-    },
-    {
-     "title": "Server",
-     "items": [
-      "Emails from ForkMesh now come from founders@forkmesh.com, so replying to one reaches the team."
-     ]
-    },
-    {
-     "title": "Other improvements",
-     "items": [
-      "Signing up now sends your verification email once, instead of a new one each time the request was repeated.",
-      "The affiliate program's terms now say which tax form to send before a commission is paid: W-9 for US persons, W-8BEN for non-US individuals or W-8BEN-E for non-US companies."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-10-24",
-   "version": "",
-   "title": "",
-   "pitch": "",
-   "sections": [
-    {
-     "title": "Market",
-     "items": [
-      "The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one.",
-      "In the desktop Market you can switch between a grid and a list, and clicking a package opens its details in a pane on the right."
-     ]
-    },
-    {
-     "title": "Calls",
-     "items": [
-      "Direct calls can use your avatar as your face, and group calls now apply your chosen face and voice on every connection."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "Mirrored issues link back to the original on GitHub or Gitea, show the imported avatars, and can list threads newest first with their last commenters (the Forum-style issue lists plugin).",
-      "Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place.",
-      "Instances can turn on Atom feeds of a repository's issues, a lite view of every thread that works without JavaScript, and a forum-style home page (the Feeds and lite view plugin); white label is an install setting.",
-      "Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin).",
-      "Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin).",
-      "Posts in other languages get a Translate bar that translates on your device or shows the instance's own English translation, and members can add their own translations (the Translations plugins).",
-      "Issue pages load faster on mirrored forums: imported avatars are cached, names are checked in one request per page, and Translate bars appear without slowing the thread.",
-      "Merging a pull request or updating its branch from the web shows each step live, from handing it to a mirror to publishing the result."
-     ]
-    },
-    {
-     "title": "Chat",
-     "items": [
-      "Links to a channel or direct message open it even on a freshly loaded chat page.",
-      "In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first.",
-      "Claude Code agents now show up as sessions in the Claude desktop app's Code tab, where you can read and resume them; use Open in Claude app from an agent's menu, or turn it off in Settings > Agents."
-     ]
-    },
-    {
-     "title": "World",
-     "items": [
-      "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page.",
-      "Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.",
-      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World.",
-      "Turning on your camera in the World now works; the browser no longer blocks it.",
-      "A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it."
-     ]
-    },
-    {
-     "title": "Settings",
-     "items": [
-      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick.",
-      "Instances can let people sign up without an email address, using a one-time recovery code, suggest random usernames, and appoint moderators who approve first posts, block accounts and lock threads.",
-      "Instances can use a GitHub-style theme that follows each visitor's light or dark system setting, and Settings, Appearance has a System choice."
-     ]
-    },
-    {
-     "title": "iPhone",
-     "items": [
-      "A new install asks for nothing at launch: a short screen explains which permissions may come up and why, and each one is asked only when you first use the feature that needs it."
-     ]
-    },
-    {
-     "title": "Desktop",
-     "items": [
-      "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.",
-      "In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up.",
-      "The debug bar's Report and Send diagnostic buttons are now one Diagnose button that turns red when it spots a performance, security or UI problem, and one click starts an agent with the model you have selected.",
-      "Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer.",
-      "The install line on the homepage has a small Binary / Source switch, so you can copy the command that compiles ForkMesh from source.",
-      "Switching theme or interface from the View menu is several times faster and no longer freezes the window for many seconds.",
-      "The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the pop-out button is gone: drag the prompt by any part of its body to move it anywhere or out into its own window, and resize it from any edge or corner.",
-      "The desktop app freezes less while the disk is busy: Action logs and run status, saved-search runs and quick-fix choices are written in the background, and the Genie spider no longer rewrites your settings each time it wanders.",
-      "Drag a pinned workflow between the top, left, right and bottom strips, and drag a left-rail icon back onto the repository tab bar or Code toolbar.",
-      "The desktop's View menu can reset the look to the default a fresh install starts with, or match the theme of the instance you are connected to.",
-      "A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports.",
-      "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.",
-      "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.",
-      "The desktop app uses less CPU while agents or Actions run, and the Team page opens without reading every teammate's whole transcript.",
-      "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
-      "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.",
-      "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
-      "Notes open in the rendered preview; switch to Write to edit.",
-      "Success and error notices close themselves after 5 seconds, with a ring around the close button that fills as the time runs out; hover a notice to keep it open.",
-      "The version at the bottom right of the desktop app now also shows the short commit the build is on.",
-      "The terminal button in the top bar now opens a shell straight away in a pane on the right, with tabs, a + button for another shell and a menu for Claude Code or Codex, and Codex started there can read and type into your shared terminals like Claude Code.",
-      "The Workflows page shows special agents and your workflows in one list, with list, thumbnail and compact grid views, the latest output and run, pin, schedule and on/off controls under every workflow, and any workflow can now be pinned to a rail or run with an assignment.",
-      "Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.",
-      "Long data tables no longer freeze for a second or two when a cell updates.",
-      "Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture.",
-      "On a large diff the scroll bar now shows where you are in the whole diff, so it no longer jumps up each time the next part loads, and dragging it moves through the entire diff.",
-      "The Git page's side-by-side diff has arrows between the two sides of each change: → reverts that change (or unstages it), ← stages it.",
-      "The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo.",
-      "Each ping on the desktop's Pings page shows the project's logo and a small icon saying whether it came from this desktop or your cloud inbox."
-     ]
-    },
-    {
-     "title": "Server",
-     "items": [
-      "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
-      "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
-      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.",
-      "Deploy nodes runs deploy again when Action sandboxes are on a TMP disk."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-10-23",
-   "version": "",
-   "title": "",
-   "pitch": "",
-   "sections": [
-    {
-     "title": "Market",
-     "items": [
-      "Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in.",
-      "On iPhone, Video Mix DJ Studio lets you hold a queued song for a menu that removes it, drags a queued song onto a deck as soon as you move your finger, and plays a song you add right away when nothing is playing."
-     ]
-    },
-    {
-     "title": "Calls",
-     "items": [
-      "iPhone video calls switch to the other person's picture as soon as it arrives, play through the loudspeaker, and the microphone test now plays back what you said."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
-      "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
-      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
-      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.",
-      "Anyone who can push to a pull request's branch can press Update branch to bring in the newest base branch; it says when the branch was synced, or that there are merge conflicts to resolve locally.",
-      "Only organization owners can merge pull requests and agent branches: contributors no longer see a green Ready to merge button or a Merge & clean up button for agent work.",
-      "A pull request from a fork no longer warns that it is commits behind when it still merges cleanly, and you are told when a pull request was opened on your fork because the original repository is a read-only mirror."
-     ]
-    },
-    {
-     "title": "Chat",
-     "items": [
-      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name.",
-      "A message from someone signed in on a new phone or browser no longer stays labelled Guest: it switches to their account name as soon as the server confirms the device.",
-      "When several new devices join a private chat at once, the iPhone shows one approval banner for all of them instead of one per device.",
-      "On iPhone, reinstalling ForkMesh and restoring your identity key from the projects folder keeps your safety numbers the same, so the people you chat with don't see a new device.",
-      "Typing a name to invite someone to a private channel, or to add people to a new channel, now suggests matching usernames as you type, and @mentions in chat, issues and pull requests suggest anyone on ForkMesh.",
-      "Calls are steadier: they reconnect by themselves after a network drop or silent audio, answering no longer fails quietly, voice is clearer at a higher quality, and a call that cannot connect says so after 30 seconds.",
-      "During a call, Back to chat shrinks the call into a small window you can drag anywhere and tap to reopen, and you see your own camera with the other person's name until their video arrives.",
-      "The call quality pill on iPhone now has the Diagnose button that turns red on a problem and explains the fixes, and the iPhone's pre-call check can record a microphone test."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
-      "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.",
-      "On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.",
-      "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back.",
-      "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."
-     ]
-    },
-    {
-     "title": "World",
-     "items": [
-      "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.",
-      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.",
-      "You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off."
-     ]
-    },
-    {
-     "title": "iPhone",
-     "items": [
-      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.",
-      "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line.",
-      "With Diagnostics on, each core node light and your desktop light now carry three tiny CPU, memory and disk bars in green, orange or red, the lights sit a little further from the screen's corner, and the desktop charts have left the top right.",
-      "In a Video Mix DJ Studio jam on iPhone, each queued song shows who added it and the date and time they added it."
-     ]
-    },
-    {
-     "title": "Android",
-     "items": [
-      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.",
-      "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.",
-      "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
-      "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
-      "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.",
-      "On Android, Home shows a spinner on each icon whose count is loading instead of a loading bar, keeps the repository counts from last time, and its long-press menu has Refresh everything.",
-      "On Android Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller.",
-      "On Android, with Status Page installed, tiny status dots sit in a thin strip under the status bar on every screen.",
-      "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete.",
-      "On Android, DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick.",
-      "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts.",
-      "On Android, the CRM shows each email's opens, clicks, read time, scroll depth, slide reach and the reader's mail app.",
-      "On Android, Genie auto-send can ask the paired desktop's Claude Code or Codex to write the email.",
-      "On Android, ping notifications lead with who acted and where, with what they wrote straight under it.",
-      "On Android, New project loads the checked instance's logo and can quick-add an instance from the ForkMesh directory.",
-      "On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk.",
-      "On Android, Agents Eagle rows drop the left agent dot and show a tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots."
-     ]
-    },
-    {
-     "title": "Desktop",
-     "items": [
-      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
-      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
-      "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.",
-      "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.",
-      "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone.",
-      "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back.",
-      "The new desktop design has a fresh Home with a prompt box, suggestions and a Needs you list, a calmer sidebar, top bar and team rail, and restyled Sessions, Code and CRM pages."
-     ]
-    },
-    {
-     "title": "Other improvements",
-     "items": [
-      "Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.",
-      "Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.",
-      "A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count.",
-      "Pings in the inbox now show the logo of the instance they came from, next to the ping's icon on the web and under it on the phone."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-10-22",
-   "version": "",
-   "title": "",
-   "pitch": "",
-   "sections": [
-    {
-     "title": "Market",
-     "items": [
-      "Every Market package has its own page on forkmesh.com, with its details, README, ratings and an install button, and its share link now opens that page.",
-      "Video Mix DJ Studio can repeat a deck, so one song plays over and over until you turn it off.",
-      "On iPhone, Video Mix DJ Studio's Repeat now really loops the song, and starts it again as soon as the sound ends, skipping the silence at both ends for a tight loop."
-     ]
-    },
-    {
-     "title": "Calls",
-     "items": [
-      "Every call and Office conversation now shows a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts.",
-      "A small round button next to the call quality pill turns red when your call has a problem; press it to see what is wrong, how to fix it, and a prompt for your AI assistant that gets better with every call.",
-      "Face filters now keep up with you: the face follows your head with much less lag, the lips move with your speech, and the filtered camera runs at 30 frames a second."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "ChatGPT and other AI assistants can now read a pull request link: the page includes the description, the conversation and the diff, and adding .diff to the address gives the raw diff.",
-      "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.",
-      "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.",
-      "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.",
-      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys.",
-      "The desktop pull request list marks a pull whose code is not on this computer with a faded cloud icon, and its hover text names the local branch that holds the code when it is."
-     ]
-    },
-    {
-     "title": "Chat",
-     "items": [
-      "Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop.",
-      "Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels.",
-      "Direct messages and private channels always go through the server's member-checked rooms, and the shared room carries only public messages; nobody can post, edit or delete as someone else.",
-      "Account names in chat are checked with the server, so an unverified sender shows as a guest, and a bot reply shows who asked for it.",
-      "Private channels can take webhooks, and webhook messages are marked server-visible.",
-      "Blocking someone now also stops their direct messages, pushes and calls at the server.",
-      "#mesh says that anyone nearby can read it and no longer shares your account name."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "The pinned last prompt above an agent's transcript no longer leaves an empty box under it on the phone, you can swipe it left and right to go through earlier and later prompts, and the desktop app and the website's agent session pages now pin it too.",
-      "Desktop agents can now offer to start a new session for side work, list and message your other agents and runners, send you notifications, click and type in their browser windows, and open small interactive widgets in ForkMesh, like Claude Code's desktop app.",
-      "The agent header shows your five most-used actions with the rest under a More menu, and the agent list's toolbar does the same, so neither overlaps or runs off the edge in a narrow window.",
-      "The prompt box shows the last three lines of the conversation it will reply to, its follow-up button now reads chat, the branch, cloud and vibe switches are icons on the right with an outline when on, and the send buttons have icons.",
-      "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
-      "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.",
-      "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once.",
-      "An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh.",
-      "A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another."
-     ]
-    },
-    {
-     "title": "World",
-     "items": [
-      "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.",
-      "Road edges now join continuously around the outer bike loop.",
-      "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops.",
-      "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now puts you in the ForkMesh World, with its people and town, without leaving the page or signing out.",
-      "Leaderboard Island's boards now stand on one ring, and each board refreshes only when you step onto the small glowing half-circle in front of it.",
-      "Move any World HUD button, such as Capture, Sound or an emote, between the top, left, right and bottom rails by dragging it or with the keyboard; it resizes to fit its new rail and the layout is remembered on this device."
-     ]
-    },
-    {
-     "title": "Settings",
-     "items": [
-      "Closing the web status editor now returns keyboard focus to the control that opened it.",
-      "Settings > Data on the iPhone can save your home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and shows everything ForkMesh keeps about you, your organizations and your repositories, with a full download and per-item delete.",
-      "A new Match the instance's theme option in Appearance makes the desktop and iPhone apps wear the colours your instance's admin picked."
-     ]
-    },
-    {
-     "title": "iPhone",
-     "items": [
-      "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.",
-      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.",
-      "On the iPhone Home screen, the number on each icon now sits beside the icon, so it no longer covers the name of the icon above it.",
-      "Merge all with AI on a repository's pull requests now reaches your desktop's copy instead of saying the desktop does not have that repository.",
-      "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk.",
-      "The Agents list's Eagle view drops the agent circle on the left; each row's image tile now shows lines added and removed as a green and red border, the file count and a status dot in a small pill, and blinking dots for the agent's background tasks."
-     ]
-    },
-    {
-     "title": "Android",
-     "items": [
-      "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.",
-      "On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call.",
-      "Calls ring an Android phone that has notifications turned off, as long as its background connection is on.",
-      "Removing a project on Android erases its chat history, and performance reports hide conversation and channel names.",
-      "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."
-     ]
-    },
-    {
-     "title": "Desktop",
-     "items": [
-      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
-      "Drag the right edge of the expanded sidebar to make it wider or narrower; double-click it to reset.",
-      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem.",
-      "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
-      "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
-      "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
-      "The desktop debug bar shows log icons only for the log types you record, draws every chart at one small size with a live detail card when you hover it, and overlaps the status dots without captions, as on the phone.",
-      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.",
-      "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.",
-      "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar.",
-      "New UI stall reports now go to the agent already working on stalls instead of starting another agent.",
-      "Fixed many of the pauses where the desktop window froze for a moment."
-     ]
-    },
-    {
-     "title": "Server",
-     "items": [
-      "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links.",
-      "Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task."
-     ]
-    },
-    {
-     "title": "Other improvements",
-     "items": [
-      "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin.",
-      "In the dark theme, text on blue buttons is now easier to read, the repository filter shows a focus outline, and the phone menu button is easier to tap."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-10-21",
-   "version": "",
-   "title": "Neighbours, stickers and runners",
-   "pitch": "Walk between ForkMesh Worlds, react to messages with stickers, and keep runners in hand from the desktop and the iPhone.",
-   "sections": [
-    {
-     "title": "Market",
-     "items": [
-      "Feed is a Market package, with its own screens on iPhone and Android.",
-      "NEXUS and runners joined the Market.",
-      "The CRM moves a contact to Contacted every time you reach out to them."
-     ]
-    },
-    {
-     "title": "Calls",
-     "items": [
-      "A missed-call line is posted when the caller hangs up before you answer.",
-      "Video calls you place to an iPhone now show the other person's camera and play their voice once they answer.",
-      "Call buttons fit small screens, and you can drag your own video to any corner of the call."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "An instance belongs to only one project.",
-      "Add your own instance from the Federated instances list.",
-      "An instance on a forkmesh.com address can reach its own domain, and an instance installed from a config file no longer removes itself when nobody signs in within five minutes."
-     ]
-    },
-    {
-     "title": "Chat",
-     "items": [
-      "Stick stickers on messages.",
-      "Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.",
-      "Each project keeps its own chat when you switch projects.",
-      "The iPhone no longer tells other devices the names of your private channels, so one project's channels stop turning up in another.",
-      "Chat on iPhone is snappier: closing Control Center no longer reconnects every conversation, and message lists, typing and the channel list redraw far less."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "Pause and resume runners from the new Runners pages on the desktop and the iPhone.",
-      "Your last prompt stays pinned above every agent transcript.",
-      "Scrolling back through a transcript no longer snaps to the bottom.",
-      "Review with AI uses the agent and model picked in the composer."
-     ]
-    },
-    {
-     "title": "World",
-     "items": [
-      "Walk from your World onto a neighbouring instance's hexagon and see its scene, without reloading.",
-      "Visitors can walk into a neighbour's Office.",
-      "Walk into an instance's hexagon, such as OWASP BLT, and you stand in its real World: its members, repositories, buildings and bug terrarium, with ForkMesh's town next door."
-     ]
-    },
-    {
-     "title": "Settings",
-     "items": [
-      "What's new in the app and forkmesh.com/changelog now show the same notes.",
-      "Instance and organization admins can add their own reactions under Settings, Reactions, GIFs & tips."
-     ]
-    },
-    {
-     "title": "iPhone",
-     "items": [
-      "AUTO DJ plays a related song people liked on the next deck."
-     ]
-    },
-    {
-     "title": "Server",
-     "items": [
-      "Issues and pull requests link up from Development and from \"fixes #N\" comments.",
-      "Mirrors fetch issue, pull request and discussion changes as soon as they are committed.",
-      "Delete branches one at a time or several at once.",
-      "Say thanks on any comment with the new gratitude reactions and Thank you sticker, reply with a GIF, or tip the author wallet to wallet with Solana Pay.",
-      "Issue search now looks through descriptions and comments, and the issue list stays quick with thousands of issues.",
-      "Pull requests whose code contains a byte-order mark or another invisible character are accepted and flagged instead of failing with a bad signature.",
-      "The code map no longer shows text files as binary at random."
-     ]
-    },
-    {
-     "title": "Other improvements",
-     "items": [
-      "Hidden Unicode characters are stripped from every input on the web, desktop, phones and server."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-10-13",
-   "version": "",
-   "title": "Face swap, a new Market and What's new",
-   "pitch": "Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed.",
-   "sections": [
-    {
-     "title": "Market",
-     "items": [
-      "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.",
-      "Packages you have installed now show as installed, every time."
-     ]
-    },
-    {
-     "title": "Calls",
-     "items": [
-      "Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.",
-      "Your voice changes to match the face you pick.",
-      "Blur your background during a call, or replace it with a picture of your own."
-     ]
-    },
-    {
-     "title": "Projects",
-     "items": [
-      "A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it."
-     ]
-    },
-    {
-     "title": "Settings",
-     "items": [
-      "Your app version and build number now show at the bottom of the You menu. Tap it to see what is new."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-07",
-   "version": "0.7.0",
-   "title": "The Living Code City",
-   "pitch": "ForkMesh becomes a shared three-dimensional developer world backed by independently operated repository mirrors.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**Everyone enters the World.** Guests and members share the Town Square, see live avatar movement, and can use the embedded public World chat without leaving the scene.",
-      "**Resilient repository routes.** Public smart-HTTP traffic is proxied through healthy, signed mirrors with automatic failover and round-robin selection.",
-      "**SSH Git access.** Users can register an OpenSSH public key and clone or push through the permission-checked Git gateway; private keys remain on their own device.",
-      "**Non-custodial community rewards.** Contributors can fund the transparent public Solana pool directly from a self-custodial wallet. ForkMesh never stores contributor or node-operator private keys.",
-      "**Privacy-safe identity.** Clothing badges use optional approximate country, browser, and operating-system symbols without publishing raw IP addresses or precise location.",
-      "**Operational clarity.** World notifications, repository integrity proofs, security scan scope, and infrastructure metaphors link back to the technical state they represent."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-06",
-   "version": "0.5.0",
-   "title": "The Agent Mesh",
-   "pitch": "The release where ForkMesh starts to feel alive. Open an issue, hand it to an AI agent, and watch a real pull request show up — all without leaving the mesh.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**Built-in coding agents.** Assign any issue to Claude Code or Codex from the issue detail or quick-add box. The agent works on your connected fork and opens a pull request when it's done.",
-      "**A real terminal, in the app.** A native VT100 terminal renders every agent and workflow run with full color output and emoji.",
-      "**Legacy issue bounties.** This release originally added a custodial issue-bounty flow. That flow has since been retired: please do not send funds to historical bounty addresses.",
-      "**VS Code Marketplace plugin.** Optionally browse issues and kick off ForkMesh agents from your editor without installing the plugin in the base desktop app.",
-      "**Profile pages.** Click any node to see its full public profile — repos, identity, and version.",
-      "**Hardened by default.** Tighter signup and relay security, with auto-publish off until you say so."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-06",
-   "version": "0.4.0",
-   "title": "Autonomous Agents",
-   "pitch": "Collaboration stopped being a one-person job.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**Parallel agents, no queue.** Run multiple agents at once across your issues.",
-      "**Continue the conversation.** Pick a session back up where it left off, with auto-PR creation on quick tasks.",
-      "**Live activity indicators.** See which agents are working right now.",
-      "**Issues and PRs that talk to each other.** Merge a PR and its linked issue closes itself; sync straight to main with one checkbox.",
-      "**One-click delegation.** Send any issue to your agent of choice — pre-filled and ready to go."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-06",
-   "version": "0.3.0",
-   "title": "Identity & Rewards",
-   "pitch": "ForkMesh added optional community-funded incentives for healthy mirror operators.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**Guest-first access.** Visitors enter the world immediately; registered accounts use email, password, and email verification.",
-      "**Solana payouts and contributions.** Publish a self-custodial payout address or voluntarily fund the public mainnet-beta community pool with a direct transfer signed in your own wallet. ForkMesh never receives a community member’s wallet key.",
-      "**Rewards for mirroring.** Eligible, integrity-verified nodes may be selected for a community incentive; participation, payment, and financial returns are never guaranteed.",
-      "**Network presence, done right.** Mirror-sync notices moved into a proper network log, with live connection alerts."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-06",
-   "version": "0.2.0",
-   "title": "Collaborate Anywhere",
-   "pitch": "The web caught up to the desktop, and ForkMesh went mobile.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**Pull requests.** Signed patch submissions, browsable on the web and mergeable from the client.",
-      "**Actions.** Run shell-step workflows on push on your own desktop, with the latest live log one click away.",
-      "**Releases and tags.** See your tags, mark the current one, and cut new releases in seconds.",
-      "**Browse before you mirror.** Explore files, commits, and rich diffs (images side by side) — no clone required.",
-      "**ForkMesh on your phone.** Browse repositories, follow activity, chat, and submit signed collaboration updates. The mobile app is an access client; Git mirroring remains a desktop/headless-node job.",
-      "**Fork with intent.** Choose exactly where a fork lands in your working tree."
-     ]
-    }
-   ]
-  },
-  {
-   "date": "2026-06",
-   "version": "0.1.0",
-   "title": "Genesis",
-   "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge.",
-   "sections": [
-    {
-     "title": "Highlights",
-     "items": [
-      "**A distributed mirror network.** Local Git mirrors, signed identities, and a Cloudflare relay that coordinates without ever holding your objects.",
-      "**A public catalog.** Public repositories and clearly labeled external stubs, with actively mirrored repository bytes streamed over HTTPS from a selected healthy origin.",
-      "**Issues that grow with you.** Open/closed states, priorities, custom fields, a Kanban board, and milestones with progress bars.",
-      "**Commit history and diffs**, viewable right in the browser.",
-      "**Authenticated shared-key room chat.** Genesis shipped client-encrypted transport whose default passphrase the relay could derive. Current public channels intentionally retain that integration-compatible boundary; private channels and direct messages now add automatic device-recipient encryption beyond it. Persisted frames remain limited to 500 per room for 7 days.",
-      "**One-click hand-off to your AI tools**, baked in from day one."
-     ]
-    }
-   ]
-  }
+ "schema": 3,
+ "releases": [
+  {"date": "2026-10-21", "title": "Neighbours, stickers and runners", "pitch": "Walk between ForkMesh Worlds, react to messages with stickers, and keep runners in hand from the desktop and the iPhone."},
+  {"date": "2026-10-13", "title": "Face swap, a new Market and What's new", "pitch": "Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed."},
+  {"date": "2026-07", "version": "0.7.0", "title": "The Living Code City", "pitch": "ForkMesh becomes a shared three-dimensional developer world backed by independently operated repository mirrors."},
+  {"date": "2026-06", "version": "0.5.0", "title": "The Agent Mesh", "pitch": "The release where ForkMesh starts to feel alive. Open an issue, hand it to an AI agent, and watch a real pull request show up — all without leaving the mesh."},
+  {"date": "2026-06", "version": "0.4.0", "title": "Autonomous Agents", "pitch": "Collaboration stopped being a one-person job."},
+  {"date": "2026-06", "version": "0.3.0", "title": "Identity & Rewards", "pitch": "ForkMesh added optional community-funded incentives for healthy mirror operators."},
+  {"date": "2026-06", "version": "0.2.0", "title": "Collaborate Anywhere", "pitch": "The web caught up to the desktop, and ForkMesh went mobile."},
+  {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
+ ],
+ "notes": [
+  {"date": "2026-10-25", "area": "Projects", "text": "You can now delete your own pull request reviews (an approval or change request keeps its verdict and loses only its text), and edit or delete your inline comments right in the Files changed tab."},
+  {"date": "2026-10-25", "area": "Projects", "text": "Open pull requests no longer show a block of AI instructions: a Diff and files box links the diff, the patch and every changed file, and Summarize in ChatGPT opens ChatGPT asking for a summary of the pull request."},
+  {"date": "2026-10-25", "area": "Calls", "text": "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."},
+  {"date": "2026-10-25", "area": "Projects", "text": "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."},
+  {"date": "2026-10-25", "area": "Agents", "text": "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."},
+  {"date": "2026-10-25", "area": "Agents", "text": "Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings > Agents."},
+  {"date": "2026-10-25", "area": "Agents", "text": "Merging an agent no longer leaves a second agent with the same name in the Agents list."},
+  {"date": "2026-10-25", "area": "World", "text": "When your microphone or camera is on, a live chart scrolls your frame rate, mic level, tracking time and round trip, and a blinking On air sign shows under your face in the corner and on your avatar."},
+  {"date": "2026-10-25", "area": "World", "text": "Your camera now moves your uploaded avatar photo instead of the drawn face, both on your body and in the top-right corner, and arms and hands follow you more steadily, including how far forward you reach."},
+  {"date": "2026-10-25", "area": "World", "text": "Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included."},
+  {"date": "2026-10-25", "area": "World", "text": "The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings."},
+  {"date": "2026-10-25", "area": "Settings", "text": "Desktop Settings now has a Halloween theme section under General that search finds, with the switch for everyone and its turn-off time for administrators and moderators, and the heading you jumped to lights up on the page like its entry in the list."},
+  {"date": "2026-10-25", "area": "iPhone", "text": "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock."},
+  {"date": "2026-10-25", "area": "iPhone", "text": "The iPhone app stays signed in to your instances after the phone restarts."},
+  {"date": "2026-10-25", "area": "iPhone", "text": "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow."},
+  {"date": "2026-10-25", "area": "iPhone", "text": "Send to agent on a failed run's log now sends the failing step and the end of the log, where the error is, instead of its first lines."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "Rebuild & restart is faster: it keeps its own compile cache that agent builds no longer push out, a new commit no longer recompiles two of the app's largest files, and the restart notice says how many compiles came from the cache."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "When ForkMesh finds a disk labelled TMP that is not set to mount at startup, it asks for your password once and adds it to /etc/fstab, so the fast scratch disk is there after every reboot."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "The Linux installer now installs Qt WebEngine, so YouTube, the Browser tab and agent browser windows play inside the app, and the next rebuild picks it up without clearing the build."},
+  {"date": "2026-10-25", "area": "Server", "text": "Emails from ForkMesh now come from founders@forkmesh.com, so replying to one reaches the team."},
+  {"date": "2026-10-25", "area": "Other improvements", "text": "Signing up now sends your verification email once, instead of a new one each time the request was repeated."},
+  {"date": "2026-10-25", "area": "Other improvements", "text": "The affiliate program's terms now say which tax form to send before a commission is paid: W-9 for US persons, W-8BEN for non-US individuals or W-8BEN-E for non-US companies."},
+  {"date": "2026-10-24", "area": "Market", "text": "The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one."},
+  {"date": "2026-10-24", "area": "Market", "text": "In the desktop Market you can switch between a grid and a list, and clicking a package opens its details in a pane on the right."},
+  {"date": "2026-10-24", "area": "Calls", "text": "Direct calls can use your avatar as your face, and group calls now apply your chosen face and voice on every connection."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Mirrored issues link back to the original on GitHub or Gitea, show the imported avatars, and can list threads newest first with their last commenters (the Forum-style issue lists plugin)."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Instances can turn on Atom feeds of a repository's issues, a lite view of every thread that works without JavaScript, and a forum-style home page (the Feeds and lite view plugin); white label is an install setting."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin)."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin)."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Posts in other languages get a Translate bar that translates on your device or shows the instance's own English translation, and members can add their own translations (the Translations plugins)."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Issue pages load faster on mirrored forums: imported avatars are cached, names are checked in one request per page, and Translate bars appear without slowing the thread."},
+  {"date": "2026-10-24", "area": "Projects", "text": "Merging a pull request or updating its branch from the web shows each step live, from handing it to a mirror to publishing the result."},
+  {"date": "2026-10-24", "area": "Chat", "text": "Links to a channel or direct message open it even on a freshly loaded chat page."},
+  {"date": "2026-10-24", "area": "Chat", "text": "In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with."},
+  {"date": "2026-10-24", "area": "Agents", "text": "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first."},
+  {"date": "2026-10-24", "area": "Agents", "text": "Claude Code agents now show up as sessions in the Claude desktop app's Code tab, where you can read and resume them; use Open in Claude app from an agent's menu, or turn it off in Settings > Agents."},
+  {"date": "2026-10-24", "area": "World", "text": "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page."},
+  {"date": "2026-10-24", "area": "World", "text": "Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count."},
+  {"date": "2026-10-24", "area": "World", "text": "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World."},
+  {"date": "2026-10-24", "area": "World", "text": "Turning on your camera in the World now works; the browser no longer blocks it."},
+  {"date": "2026-10-24", "area": "World", "text": "A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it."},
+  {"date": "2026-10-24", "area": "Settings", "text": "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."},
+  {"date": "2026-10-24", "area": "Settings", "text": "Instances can let people sign up without an email address, using a one-time recovery code, suggest random usernames, and appoint moderators who approve first posts, block accounts and lock threads."},
+  {"date": "2026-10-24", "area": "Settings", "text": "Instances can use a GitHub-style theme that follows each visitor's light or dark system setting, and Settings, Appearance has a System choice."},
+  {"date": "2026-10-24", "area": "iPhone", "text": "A new install asks for nothing at launch: a short screen explains which permissions may come up and why, and each one is asked only when you first use the feature that needs it."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The debug bar's Report and Send diagnostic buttons are now one Diagnose button that turns red when it spots a performance, security or UI problem, and one click starts an agent with the model you have selected."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The install line on the homepage has a small Binary / Source switch, so you can copy the command that compiles ForkMesh from source."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Switching theme or interface from the View menu is several times faster and no longer freezes the window for many seconds."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the pop-out button is gone: drag the prompt by any part of its body to move it anywhere or out into its own window, and resize it from any edge or corner."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The desktop app freezes less while the disk is busy: Action logs and run status, saved-search runs and quick-fix choices are written in the background, and the Genie spider no longer rewrites your settings each time it wanders."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Drag a pinned workflow between the top, left, right and bottom strips, and drag a left-rail icon back onto the repository tab bar or Code toolbar."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The desktop's View menu can reset the look to the default a fresh install starts with, or match the theme of the instance you are connected to."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The desktop app uses less CPU while agents or Actions run, and the Team page opens without reading every teammate's whole transcript."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Notes open in the rendered preview; switch to Write to edit."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Success and error notices close themselves after 5 seconds, with a ring around the close button that fills as the time runs out; hover a notice to keep it open."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The version at the bottom right of the desktop app now also shows the short commit the build is on."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The terminal button in the top bar now opens a shell straight away in a pane on the right, with tabs, a + button for another shell and a menu for Claude Code or Codex, and Codex started there can read and type into your shared terminals like Claude Code."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The Workflows page shows special agents and your workflows in one list, with list, thumbnail and compact grid views, the latest output and run, pin, schedule and on/off controls under every workflow, and any workflow can now be pinned to a rail or run with an assignment."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Long data tables no longer freeze for a second or two when a cell updates."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "On a large diff the scroll bar now shows where you are in the whole diff, so it no longer jumps up each time the next part loads, and dragging it moves through the entire diff."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The Git page's side-by-side diff has arrows between the two sides of each change: → reverts that change (or unstages it), ← stages it."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo."},
+  {"date": "2026-10-24", "area": "Desktop", "text": "Each ping on the desktop's Pings page shows the project's logo and a small icon saying whether it came from this desktop or your cloud inbox."},
+  {"date": "2026-10-24", "area": "Server", "text": "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address."},
+  {"date": "2026-10-24", "area": "Server", "text": "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so."},
+  {"date": "2026-10-24", "area": "Server", "text": "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."},
+  {"date": "2026-10-24", "area": "Server", "text": "Deploy nodes runs deploy again when Action sandboxes are on a TMP disk."},
+  {"date": "2026-10-23", "area": "Market", "text": "Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in."},
+  {"date": "2026-10-23", "area": "Market", "text": "On iPhone, Video Mix DJ Studio lets you hold a queued song for a menu that removes it, drags a queued song onto a deck as soon as you move your finger, and plays a song you add right away when nothing is playing."},
+  {"date": "2026-10-23", "area": "Calls", "text": "iPhone video calls switch to the other person's picture as soon as it arrives, play through the loudspeaker, and the microphone test now plays back what you said."},
+  {"date": "2026-10-23", "area": "Projects", "text": "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."},
+  {"date": "2026-10-23", "area": "Projects", "text": "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first."},
+  {"date": "2026-10-23", "area": "Projects", "text": "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change."},
+  {"date": "2026-10-23", "area": "Projects", "text": "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."},
+  {"date": "2026-10-23", "area": "Projects", "text": "Anyone who can push to a pull request's branch can press Update branch to bring in the newest base branch; it says when the branch was synced, or that there are merge conflicts to resolve locally."},
+  {"date": "2026-10-23", "area": "Projects", "text": "Only organization owners can merge pull requests and agent branches: contributors no longer see a green Ready to merge button or a Merge & clean up button for agent work."},
+  {"date": "2026-10-23", "area": "Projects", "text": "A pull request from a fork no longer warns that it is commits behind when it still merges cleanly, and you are told when a pull request was opened on your fork because the original repository is a read-only mirror."},
+  {"date": "2026-10-23", "area": "Chat", "text": "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."},
+  {"date": "2026-10-23", "area": "Chat", "text": "A message from someone signed in on a new phone or browser no longer stays labelled Guest: it switches to their account name as soon as the server confirms the device."},
+  {"date": "2026-10-23", "area": "Chat", "text": "When several new devices join a private chat at once, the iPhone shows one approval banner for all of them instead of one per device."},
+  {"date": "2026-10-23", "area": "Chat", "text": "On iPhone, reinstalling ForkMesh and restoring your identity key from the projects folder keeps your safety numbers the same, so the people you chat with don't see a new device."},
+  {"date": "2026-10-23", "area": "Chat", "text": "Typing a name to invite someone to a private channel, or to add people to a new channel, now suggests matching usernames as you type, and @mentions in chat, issues and pull requests suggest anyone on ForkMesh."},
+  {"date": "2026-10-23", "area": "Chat", "text": "Calls are steadier: they reconnect by themselves after a network drop or silent audio, answering no longer fails quietly, voice is clearer at a higher quality, and a call that cannot connect says so after 30 seconds."},
+  {"date": "2026-10-23", "area": "Chat", "text": "During a call, Back to chat shrinks the call into a small window you can drag anywhere and tap to reopen, and you see your own camera with the other person's name until their video arrives."},
+  {"date": "2026-10-23", "area": "Chat", "text": "The call quality pill on iPhone now has the Diagnose button that turns red on a problem and explains the fixes, and the iPhone's pre-call check can record a microphone test."},
+  {"date": "2026-10-23", "area": "Agents", "text": "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."},
+  {"date": "2026-10-23", "area": "Agents", "text": "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list."},
+  {"date": "2026-10-23", "area": "Agents", "text": "On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done."},
+  {"date": "2026-10-23", "area": "Agents", "text": "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back."},
+  {"date": "2026-10-23", "area": "Agents", "text": "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."},
+  {"date": "2026-10-23", "area": "World", "text": "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve."},
+  {"date": "2026-10-23", "area": "World", "text": "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside."},
+  {"date": "2026-10-23", "area": "World", "text": "You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off."},
+  {"date": "2026-10-23", "area": "iPhone", "text": "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."},
+  {"date": "2026-10-23", "area": "iPhone", "text": "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line."},
+  {"date": "2026-10-23", "area": "iPhone", "text": "With Diagnostics on, each core node light and your desktop light now carry three tiny CPU, memory and disk bars in green, orange or red, the lights sit a little further from the screen's corner, and the desktop charts have left the top right."},
+  {"date": "2026-10-23", "area": "iPhone", "text": "In a Video Mix DJ Studio jam on iPhone, each queued song shows who added it and the date and time they added it."},
+  {"date": "2026-10-23", "area": "Android", "text": "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh."},
+  {"date": "2026-10-23", "area": "Android", "text": "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, Home shows a spinner on each icon whose count is loading instead of a loading bar, keeps the repository counts from last time, and its long-press menu has Refresh everything."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, with Status Page installed, tiny status dots sit in a thin strip under the status bar on every screen."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, the CRM shows each email's opens, clicks, read time, scroll depth, slide reach and the reader's mail app."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, Genie auto-send can ask the paired desktop's Claude Code or Codex to write the email."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, ping notifications lead with who acted and where, with what they wrote straight under it."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, New project loads the checked instance's logo and can quick-add an instance from the ForkMesh directory."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk."},
+  {"date": "2026-10-23", "area": "Android", "text": "On Android, Agents Eagle rows drop the left agent dot and show a tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back."},
+  {"date": "2026-10-23", "area": "Desktop", "text": "The new desktop design has a fresh Home with a prompt box, suggestions and a Needs you list, a calmer sidebar, top bar and team rail, and restyled Sessions, Code and CRM pages."},
+  {"date": "2026-10-23", "area": "Other improvements", "text": "Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI."},
+  {"date": "2026-10-23", "area": "Other improvements", "text": "Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars."},
+  {"date": "2026-10-23", "area": "Other improvements", "text": "A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count."},
+  {"date": "2026-10-23", "area": "Other improvements", "text": "Pings in the inbox now show the logo of the instance they came from, next to the ping's icon on the web and under it on the phone."},
+  {"date": "2026-10-22", "area": "Market", "text": "Every Market package has its own page on forkmesh.com, with its details, README, ratings and an install button, and its share link now opens that page."},
+  {"date": "2026-10-22", "area": "Market", "text": "Video Mix DJ Studio can repeat a deck, so one song plays over and over until you turn it off."},
+  {"date": "2026-10-22", "area": "Market", "text": "On iPhone, Video Mix DJ Studio's Repeat now really loops the song, and starts it again as soon as the sound ends, skipping the silence at both ends for a tight loop."},
+  {"date": "2026-10-22", "area": "Calls", "text": "Every call and Office conversation now shows a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts."},
+  {"date": "2026-10-22", "area": "Calls", "text": "A small round button next to the call quality pill turns red when your call has a problem; press it to see what is wrong, how to fix it, and a prompt for your AI assistant that gets better with every call."},
+  {"date": "2026-10-22", "area": "Calls", "text": "Face filters now keep up with you: the face follows your head with much less lag, the lips move with your speech, and the filtered camera runs at 30 frames a second."},
+  {"date": "2026-10-22", "area": "Projects", "text": "ChatGPT and other AI assistants can now read a pull request link: the page includes the description, the conversation and the diff, and adding .diff to the address gives the raw diff."},
+  {"date": "2026-10-22", "area": "Projects", "text": "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests."},
+  {"date": "2026-10-22", "area": "Projects", "text": "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval."},
+  {"date": "2026-10-22", "area": "Projects", "text": "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them."},
+  {"date": "2026-10-22", "area": "Projects", "text": "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys."},
+  {"date": "2026-10-22", "area": "Projects", "text": "The desktop pull request list marks a pull whose code is not on this computer with a faded cloud icon, and its hover text names the local branch that holds the code when it is."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Direct messages and private channels always go through the server's member-checked rooms, and the shared room carries only public messages; nobody can post, edit or delete as someone else."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Account names in chat are checked with the server, so an unverified sender shows as a guest, and a bot reply shows who asked for it."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Private channels can take webhooks, and webhook messages are marked server-visible."},
+  {"date": "2026-10-22", "area": "Chat", "text": "Blocking someone now also stops their direct messages, pushes and calls at the server."},
+  {"date": "2026-10-22", "area": "Chat", "text": "#mesh says that anyone nearby can read it and no longer shares your account name."},
+  {"date": "2026-10-22", "area": "Agents", "text": "The pinned last prompt above an agent's transcript no longer leaves an empty box under it on the phone, you can swipe it left and right to go through earlier and later prompts, and the desktop app and the website's agent session pages now pin it too."},
+  {"date": "2026-10-22", "area": "Agents", "text": "Desktop agents can now offer to start a new session for side work, list and message your other agents and runners, send you notifications, click and type in their browser windows, and open small interactive widgets in ForkMesh, like Claude Code's desktop app."},
+  {"date": "2026-10-22", "area": "Agents", "text": "The agent header shows your five most-used actions with the rest under a More menu, and the agent list's toolbar does the same, so neither overlaps or runs off the edge in a narrow window."},
+  {"date": "2026-10-22", "area": "Agents", "text": "The prompt box shows the last three lines of the conversation it will reply to, its follow-up button now reads chat, the branch, cloud and vibe switches are icons on the right with an outline when on, and the send buttons have icons."},
+  {"date": "2026-10-22", "area": "Agents", "text": "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom."},
+  {"date": "2026-10-22", "area": "Agents", "text": "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts."},
+  {"date": "2026-10-22", "area": "Agents", "text": "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once."},
+  {"date": "2026-10-22", "area": "Agents", "text": "An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh."},
+  {"date": "2026-10-22", "area": "Agents", "text": "A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another."},
+  {"date": "2026-10-22", "area": "World", "text": "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices."},
+  {"date": "2026-10-22", "area": "World", "text": "Road edges now join continuously around the outer bike loop."},
+  {"date": "2026-10-22", "area": "World", "text": "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops."},
+  {"date": "2026-10-22", "area": "World", "text": "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now puts you in the ForkMesh World, with its people and town, without leaving the page or signing out."},
+  {"date": "2026-10-22", "area": "World", "text": "Leaderboard Island's boards now stand on one ring, and each board refreshes only when you step onto the small glowing half-circle in front of it."},
+  {"date": "2026-10-22", "area": "World", "text": "Move any World HUD button, such as Capture, Sound or an emote, between the top, left, right and bottom rails by dragging it or with the keyboard; it resizes to fit its new rail and the layout is remembered on this device."},
+  {"date": "2026-10-22", "area": "Settings", "text": "Closing the web status editor now returns keyboard focus to the control that opened it."},
+  {"date": "2026-10-22", "area": "Settings", "text": "Settings > Data on the iPhone can save your home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and shows everything ForkMesh keeps about you, your organizations and your repositories, with a full download and per-item delete."},
+  {"date": "2026-10-22", "area": "Settings", "text": "A new Match the instance's theme option in Appearance makes the desktop and iPhone apps wear the colours your instance's admin picked."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "On the iPhone Home screen, the number on each icon now sits beside the icon, so it no longer covers the name of the icon above it."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "Merge all with AI on a repository's pull requests now reaches your desktop's copy instead of saying the desktop does not have that repository."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk."},
+  {"date": "2026-10-22", "area": "iPhone", "text": "The Agents list's Eagle view drops the agent circle on the left; each row's image tile now shows lines added and removed as a green and red border, the file count and a status dot in a small pill, and blinking dots for the agent's background tasks."},
+  {"date": "2026-10-22", "area": "Android", "text": "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting."},
+  {"date": "2026-10-22", "area": "Android", "text": "On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call."},
+  {"date": "2026-10-22", "area": "Android", "text": "Calls ring an Android phone that has notifications turned off, as long as its background connection is on."},
+  {"date": "2026-10-22", "area": "Android", "text": "Removing a project on Android erases its chat history, and performance reports hide conversation and channel names."},
+  {"date": "2026-10-22", "area": "Android", "text": "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "Drag the right edge of the expanded sidebar to make it wider or narrower; double-click it to reset."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "The desktop debug bar shows log icons only for the log types you record, draws every chart at one small size with a live detail card when you hover it, and overlaps the status dots without captions, as on the phone."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "New UI stall reports now go to the agent already working on stalls instead of starting another agent."},
+  {"date": "2026-10-22", "area": "Desktop", "text": "Fixed many of the pauses where the desktop window froze for a moment."},
+  {"date": "2026-10-22", "area": "Server", "text": "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links."},
+  {"date": "2026-10-22", "area": "Server", "text": "Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task."},
+  {"date": "2026-10-22", "area": "Other improvements", "text": "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin."},
+  {"date": "2026-10-22", "area": "Other improvements", "text": "In the dark theme, text on blue buttons is now easier to read, the repository filter shows a focus outline, and the phone menu button is easier to tap."},
+  {"date": "2026-10-21", "area": "Market", "text": "Feed is a Market package, with its own screens on iPhone and Android."},
+  {"date": "2026-10-21", "area": "Market", "text": "NEXUS and runners joined the Market."},
+  {"date": "2026-10-21", "area": "Market", "text": "The CRM moves a contact to Contacted every time you reach out to them."},
+  {"date": "2026-10-21", "area": "Calls", "text": "A missed-call line is posted when the caller hangs up before you answer."},
+  {"date": "2026-10-21", "area": "Calls", "text": "Video calls you place to an iPhone now show the other person's camera and play their voice once they answer."},
+  {"date": "2026-10-21", "area": "Calls", "text": "Call buttons fit small screens, and you can drag your own video to any corner of the call."},
+  {"date": "2026-10-21", "area": "Projects", "text": "An instance belongs to only one project."},
+  {"date": "2026-10-21", "area": "Projects", "text": "Add your own instance from the Federated instances list."},
+  {"date": "2026-10-21", "area": "Projects", "text": "An instance on a forkmesh.com address can reach its own domain, and an instance installed from a config file no longer removes itself when nobody signs in within five minutes."},
+  {"date": "2026-10-21", "area": "Chat", "text": "Stick stickers on messages."},
+  {"date": "2026-10-21", "area": "Chat", "text": "Swipe left on a message for Message Info; your last sent message shows when it was delivered and read."},
+  {"date": "2026-10-21", "area": "Chat", "text": "Each project keeps its own chat when you switch projects."},
+  {"date": "2026-10-21", "area": "Chat", "text": "The iPhone no longer tells other devices the names of your private channels, so one project's channels stop turning up in another."},
+  {"date": "2026-10-21", "area": "Chat", "text": "Chat on iPhone is snappier: closing Control Center no longer reconnects every conversation, and message lists, typing and the channel list redraw far less."},
+  {"date": "2026-10-21", "area": "Agents", "text": "Pause and resume runners from the new Runners pages on the desktop and the iPhone."},
+  {"date": "2026-10-21", "area": "Agents", "text": "Your last prompt stays pinned above every agent transcript."},
+  {"date": "2026-10-21", "area": "Agents", "text": "Scrolling back through a transcript no longer snaps to the bottom."},
+  {"date": "2026-10-21", "area": "Agents", "text": "Review with AI uses the agent and model picked in the composer."},
+  {"date": "2026-10-21", "area": "World", "text": "Walk from your World onto a neighbouring instance's hexagon and see its scene, without reloading."},
+  {"date": "2026-10-21", "area": "World", "text": "Visitors can walk into a neighbour's Office."},
+  {"date": "2026-10-21", "area": "World", "text": "Walk into an instance's hexagon, such as OWASP BLT, and you stand in its real World: its members, repositories, buildings and bug terrarium, with ForkMesh's town next door."},
+  {"date": "2026-10-21", "area": "Settings", "text": "What's new in the app and forkmesh.com/changelog now show the same notes."},
+  {"date": "2026-10-21", "area": "Settings", "text": "Instance and organization admins can add their own reactions under Settings, Reactions, GIFs & tips."},
+  {"date": "2026-10-21", "area": "iPhone", "text": "AUTO DJ plays a related song people liked on the next deck."},
+  {"date": "2026-10-21", "area": "Server", "text": "Issues and pull requests link up from Development and from \"fixes #N\" comments."},
+  {"date": "2026-10-21", "area": "Server", "text": "Mirrors fetch issue, pull request and discussion changes as soon as they are committed."},
+  {"date": "2026-10-21", "area": "Server", "text": "Delete branches one at a time or several at once."},
+  {"date": "2026-10-21", "area": "Server", "text": "Say thanks on any comment with the new gratitude reactions and Thank you sticker, reply with a GIF, or tip the author wallet to wallet with Solana Pay."},
+  {"date": "2026-10-21", "area": "Server", "text": "Issue search now looks through descriptions and comments, and the issue list stays quick with thousands of issues."},
+  {"date": "2026-10-21", "area": "Server", "text": "Pull requests whose code contains a byte-order mark or another invisible character are accepted and flagged instead of failing with a bad signature."},
+  {"date": "2026-10-21", "area": "Server", "text": "The code map no longer shows text files as binary at random."},
+  {"date": "2026-10-21", "area": "Other improvements", "text": "Hidden Unicode characters are stripped from every input on the web, desktop, phones and server."},
+  {"date": "2026-10-13", "area": "Market", "text": "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install."},
+  {"date": "2026-10-13", "area": "Market", "text": "Packages you have installed now show as installed, every time."},
+  {"date": "2026-10-13", "area": "Calls", "text": "Face swap in video calls now covers your whole head, hair included, and follows your movements naturally."},
+  {"date": "2026-10-13", "area": "Calls", "text": "Your voice changes to match the face you pick."},
+  {"date": "2026-10-13", "area": "Calls", "text": "Blur your background during a call, or replace it with a picture of your own."},
+  {"date": "2026-10-13", "area": "Projects", "text": "A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it."},
+  {"date": "2026-10-13", "area": "Settings", "text": "Your app version and build number now show at the bottom of the You menu. Tap it to see what is new."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Everyone enters the World.** Guests and members share the Town Square, see live avatar movement, and can use the embedded public World chat without leaving the scene."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Resilient repository routes.** Public smart-HTTP traffic is proxied through healthy, signed mirrors with automatic failover and round-robin selection."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**SSH Git access.** Users can register an OpenSSH public key and clone or push through the permission-checked Git gateway; private keys remain on their own device."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Non-custodial community rewards.** Contributors can fund the transparent public Solana pool directly from a self-custodial wallet. ForkMesh never stores contributor or node-operator private keys."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Privacy-safe identity.** Clothing badges use optional approximate country, browser, and operating-system symbols without publishing raw IP addresses or precise location."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Operational clarity.** World notifications, repository integrity proofs, security scan scope, and infrastructure metaphors link back to the technical state they represent."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**Built-in coding agents.** Assign any issue to Claude Code or Codex from the issue detail or quick-add box. The agent works on your connected fork and opens a pull request when it's done."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**A real terminal, in the app.** A native VT100 terminal renders every agent and workflow run with full color output and emoji."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**Legacy issue bounties.** This release originally added a custodial issue-bounty flow. That flow has since been retired: please do not send funds to historical bounty addresses."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**VS Code Marketplace plugin.** Optionally browse issues and kick off ForkMesh agents from your editor without installing the plugin in the base desktop app."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**Profile pages.** Click any node to see its full public profile — repos, identity, and version."},
+  {"date": "2026-06", "version": "0.5.0", "area": "Highlights", "text": "**Hardened by default.** Tighter signup and relay security, with auto-publish off until you say so."},
+  {"date": "2026-06", "version": "0.4.0", "area": "Highlights", "text": "**Parallel agents, no queue.** Run multiple agents at once across your issues."},
+  {"date": "2026-06", "version": "0.4.0", "area": "Highlights", "text": "**Continue the conversation.** Pick a session back up where it left off, with auto-PR creation on quick tasks."},
+  {"date": "2026-06", "version": "0.4.0", "area": "Highlights", "text": "**Live activity indicators.** See which agents are working right now."},
+  {"date": "2026-06", "version": "0.4.0", "area": "Highlights", "text": "**Issues and PRs that talk to each other.** Merge a PR and its linked issue closes itself; sync straight to main with one checkbox."},
+  {"date": "2026-06", "version": "0.4.0", "area": "Highlights", "text": "**One-click delegation.** Send any issue to your agent of choice — pre-filled and ready to go."},
+  {"date": "2026-06", "version": "0.3.0", "area": "Highlights", "text": "**Guest-first access.** Visitors enter the world immediately; registered accounts use email, password, and email verification."},
+  {"date": "2026-06", "version": "0.3.0", "area": "Highlights", "text": "**Solana payouts and contributions.** Publish a self-custodial payout address or voluntarily fund the public mainnet-beta community pool with a direct transfer signed in your own wallet. ForkMesh never receives a community member’s wallet key."},
+  {"date": "2026-06", "version": "0.3.0", "area": "Highlights", "text": "**Rewards for mirroring.** Eligible, integrity-verified nodes may be selected for a community incentive; participation, payment, and financial returns are never guaranteed."},
+  {"date": "2026-06", "version": "0.3.0", "area": "Highlights", "text": "**Network presence, done right.** Mirror-sync notices moved into a proper network log, with live connection alerts."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**Pull requests.** Signed patch submissions, browsable on the web and mergeable from the client."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**Actions.** Run shell-step workflows on push on your own desktop, with the latest live log one click away."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**Releases and tags.** See your tags, mark the current one, and cut new releases in seconds."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**Browse before you mirror.** Explore files, commits, and rich diffs (images side by side) — no clone required."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**ForkMesh on your phone.** Browse repositories, follow activity, chat, and submit signed collaboration updates. The mobile app is an access client; Git mirroring remains a desktop/headless-node job."},
+  {"date": "2026-06", "version": "0.2.0", "area": "Highlights", "text": "**Fork with intent.** Choose exactly where a fork lands in your working tree."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**A distributed mirror network.** Local Git mirrors, signed identities, and a Cloudflare relay that coordinates without ever holding your objects."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**A public catalog.** Public repositories and clearly labeled external stubs, with actively mirrored repository bytes streamed over HTTPS from a selected healthy origin."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**Issues that grow with you.** Open/closed states, priorities, custom fields, a Kanban board, and milestones with progress bars."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**Commit history and diffs**, viewable right in the browser."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**Authenticated shared-key room chat.** Genesis shipped client-encrypted transport whose default passphrase the relay could derive. Current public channels intentionally retain that integration-compatible boundary; private channels and direct messages now add automatic device-recipient encryption beyond it. Persisted frames remain limited to 500 per room for 7 days."},
+  {"date": "2026-06", "version": "0.1.0", "area": "Highlights", "text": "**One-click hand-off to your AI tools**, baked in from day one."}
  ]
 }
