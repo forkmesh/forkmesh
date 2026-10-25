@@ -2717,12 +2717,16 @@ bool PullStore::isEditableComment(const PullEvent &ev)
     return editable.contains(ev.type);
 }
 
+bool PullStore::reviewKeepsVerdict(const PullEvent &ev)
+{
+    return ev.type == QLatin1String("review") &&
+           (ev.state == QLatin1String("approved") ||
+            ev.state == QLatin1String("changes_requested"));
+}
+
 bool PullStore::commentChangeApplies(const PullEvent &change, const PullEvent &target)
 {
     if (!isCommentChangeEvent(change) || !isEditableComment(target))
-        return false;
-    if (change.type == QLatin1String("comment-delete") &&
-        target.type == QLatin1String("review"))
         return false;
     if (!change.author.isEmpty() && change.author == target.author)
         return true;
@@ -2739,12 +2743,16 @@ QList<PullEvent> PullStore::foldCommentChanges(const QList<PullEvent> &events,
             indexById.insert(events.at(i).id, i);
     QHash<QString, PullEvent> edits;
     QSet<QString> deleted;
+    QSet<QString> cleared;
     for (const PullEvent &ev : events) {
         if (!isCommentChangeEvent(ev) || !indexById.contains(ev.target))
             continue;
-        if (!commentChangeApplies(ev, events.at(indexById.value(ev.target))))
+        const PullEvent &target = events.at(indexById.value(ev.target));
+        if (!commentChangeApplies(ev, target))
             continue;
-        if (ev.type == QLatin1String("comment-delete"))
+        if (ev.type == QLatin1String("comment-delete") && reviewKeepsVerdict(target))
+            cleared.insert(ev.target);
+        else if (ev.type == QLatin1String("comment-delete"))
             deleted.insert(ev.target);
         else if (!edits.contains(ev.target) || edits.value(ev.target).ts <= ev.ts)
             edits.insert(ev.target, ev);
@@ -2756,7 +2764,9 @@ QList<PullEvent> PullStore::foldCommentChanges(const QList<PullEvent> &events,
             continue;
         PullEvent shown = ev;
         const auto edit = edits.constFind(ev.id);
-        if (!ev.id.isEmpty() && edit != edits.constEnd()) {
+        if (!ev.id.isEmpty() && cleared.contains(ev.id)) {
+            shown.body.clear();
+        } else if (!ev.id.isEmpty() && edit != edits.constEnd()) {
             shown.body = edit->body;
             if (edited)
                 edited->insert(ev.id);
