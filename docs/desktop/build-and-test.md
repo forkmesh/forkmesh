@@ -300,6 +300,10 @@ delta search runs and the step stays within its CPU limit
   `forkmesh-no-environ-identifier`) fails on such declarations under
   `desktop/src`, `desktop/tests` and `desktop/packages`, allowing the POSIX
   global (`extern char **environ;`).
+- Cast `QChar::unicode()` to `uint` before passing it to the numeric
+  `QString::arg(value, width, base, fill)`. From Qt 6.9 (Homebrew's Qt on
+  macOS), `char16_t` matches no `arg` overload, so the build fails there but
+  still passes on Linux distributions that ship Qt 6.8.
 
 ## Known failures and traps
 

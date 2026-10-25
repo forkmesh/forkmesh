@@ -12553,7 +12553,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
 
     async def _send_package_smtp(self, outbound, footer=True):
         via = {"via": "postfix", "node": smtp_mail.node(),
-               "sender": "no-reply@forkmesh.com"}
+               "sender": smtp_mail.SENDER}
         sender = outbound.get("from") if isinstance(
             outbound.get("from"), dict) else {}
         recipients = [r.get("email") for r in outbound.get("to") or []
@@ -12575,8 +12575,8 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             html = outbound.get("html")
         try:
             message_id = await smtp_mail.send(self.env, smtp_mail.build(
-                "no-reply@forkmesh.com",
-                str(sender.get("name") or "ForkMesh"), recipients[0],
+                smtp_mail.SENDER,
+                str(sender.get("name") or smtp_mail.SENDER_NAME), recipients[0],
                 outbound.get("subject"), outbound.get("text"),
                 html, "package"))
         except Exception as error:
@@ -32817,7 +32817,7 @@ async def _send_email(env, to_email, subject, text, html=None,
         return False
     sender = (from_email or getattr(env, "MAIL_SENDER", "")
               or getattr(env, "MAILTRAP_SENDER", "")
-              or "no-reply@forkmesh.com").strip()
+              or smtp_mail.SENDER).strip()
     via = "postfix" if via_smtp else provider if token else ""
     node = smtp_mail.node() if via_smtp else ""
     body, body_html = text, html

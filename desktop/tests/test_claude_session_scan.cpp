@@ -327,6 +327,23 @@ int main(int argc, char **argv)
     check(detached && detached->gitBranch.isEmpty(),
           "a detached checkout names no branch, so refs/heads/HEAD is never probed");
 
+    const QString account = home.path() + QStringLiteral("/accounts/claude/a1");
+    const QString merged = repo + QStringLiteral("/.worktrees/8-merged");
+    QDir().mkpath(merged);
+    writeTranscript(account + QStringLiteral("/projects"), QStringLiteral("merged-agent"),
+                    {merged});
+    QFile::link(account + QStringLiteral("/projects/p-merged-agent"),
+                projects + QStringLiteral("/p-merged-agent"));
+    check(uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window))
+              .contains(QStringLiteral("merged-agent")),
+          "a transcript linked into ~/.claude/projects is seen without the account list");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window, {account}))
+               .contains(QStringLiteral("merged-agent")),
+          "a ForkMesh agent's transcript linked in for the Claude app is never an external row");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>{merged}, window))
+               .contains(QStringLiteral("merged-agent")),
+          "a merged agent's worktree stays ForkMesh's own after its stream is gone");
+
     importTests(home.path(), repo);
 
     if (failures == 0)
