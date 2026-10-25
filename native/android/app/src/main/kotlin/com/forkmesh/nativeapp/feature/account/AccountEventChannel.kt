@@ -56,7 +56,7 @@ class AccountEventChannel(
             startedState.value = loop.started
         }
         lifecycleJob = scope.launch {
-            AppLifecycle.foreground.collect { foreground -> loop.setForeground(foreground) }
+            AppLifecycle.visible.collect { visible -> loop.setForeground(visible) }
         }
     }
 

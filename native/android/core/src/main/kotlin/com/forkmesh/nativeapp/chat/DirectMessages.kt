@@ -468,18 +468,35 @@ class DirectMessageService(
         synchronized(lock) { sockets[DirectMessageFrames.conversationId(conversation)]?.socket != null }
 
     fun refresh() {
-        loading = true
-        notifyListeners()
+        val shows = records.isEmpty() && !loading
+        if (shows) {
+            loading = true
+            notifyListeners()
+        }
+        var changed = shows
         try {
             val payload = call("GET", "${DirectMessageFrames.ENDPOINT}?limit=${DirectMessageFrames.PAGE_LIMIT}", null)
+            val before = records
             apply(DirectMessageFrames.conversations(payload), replacing = true)
-            nextCursor = jsonText(payload["nextCursor"])
-            lastError = null
+            if (records != before) changed = true
+            val cursor = jsonText(payload["nextCursor"])
+            if (cursor != nextCursor) {
+                nextCursor = cursor
+                changed = true
+            }
+            if (lastError != null) {
+                lastError = null
+                changed = true
+            }
         } catch (error: Exception) {
-            lastError = error.message ?: error.toString()
+            val message = error.message ?: error.toString()
+            if (lastError != message) {
+                lastError = message
+                changed = true
+            }
         } finally {
-            loading = false
-            notifyListeners()
+            if (shows) loading = false
+            if (changed) notifyListeners()
         }
         keepOpen()
     }
@@ -515,7 +532,7 @@ class DirectMessageService(
                 history.remove(old.conversation)
                 viewOnce.forgetConversation(old.conversation)
             }
-            records = merged
+            if (records != merged) records = merged
             gone.mapNotNull { sockets.remove(it.id) }
         }
         for (holder in closing) holder.socket?.close()

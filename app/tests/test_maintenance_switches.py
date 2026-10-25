@@ -294,7 +294,7 @@ def test_get_side_writers_are_skipped_while_read_only():
     touch = lookup[lookup.index("if touch"):lookup.index("UPDATE account_sessions")]
     assert "not _read_only(env)" in touch
     stats = ast.unparse(_function(ENTRY_TREE, "network_stats"))
-    assert "if maintain_presence and (not _read_only(env)):" in stats
+    assert "d1_run(" not in stats
     for name in ("_write_error_log", "log_durable_object_abort"):
         body = _function(ENTRY_TREE, name).body
         first = [n for n in body if not isinstance(n, ast.Expr)

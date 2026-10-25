@@ -183,6 +183,7 @@ class ChatScreen : Screen() {
         val relay by ChatFeature.relaySnapshot.collectAsState()
         val mesh by ChatFeature.meshSnapshot.collectAsState()
         val foreground by AppLifecycle.foreground.collectAsState()
+        val visible by AppLifecycle.visible.collectAsState()
         FmQuietSounds()
         val messenger = LocalFmMessenger.current
         val pendingIssue by ChatDepth.pendingIssue.collectAsState()
@@ -216,13 +217,13 @@ class ChatScreen : Screen() {
             FmEmptyState(icon = "chat_bubble_outline", title = "Chat is starting", message = "Connecting to the relay room.")
             return
         }
-        val focusedConversation = if (foreground && !channelsOpen && DirectMessageFrames.isDirect(snapshot.currentConversation)) {
+        val focusedConversation = if (visible && !channelsOpen && DirectMessageFrames.isDirect(snapshot.currentConversation)) {
             snapshot.currentConversation
         } else {
             ""
         }
         LaunchedEffect(focusedConversation) { withContext(Dispatchers.IO) { ChatDepth.direct?.screenFocus(focusedConversation) } }
-        val liveConversation = if (foreground && DirectMessageFrames.isDirect(snapshot.currentConversation)) snapshot.currentConversation else ""
+        val liveConversation = if (visible && DirectMessageFrames.isDirect(snapshot.currentConversation)) snapshot.currentConversation else ""
         DisposableEffect(liveConversation) {
             if (liveConversation.isNotEmpty()) DirectLiveFeature.startSharing(liveConversation)
             onDispose { if (liveConversation.isNotEmpty()) DirectLiveFeature.stopSharing(liveConversation) }
@@ -517,6 +518,7 @@ class ChatScreen : Screen() {
                         }
                     }
                     DirectCallButtons(conversation)
+                    GroupCallButtons(conversation)
                 }
                 if (liveHere) {
                     DirectLivePartnerPhone(

@@ -4983,6 +4983,7 @@ private:
     void renderNotesList(const QString &selectId = QString(),
                          bool reselect = true);
     void selectNote(const QString &id, const QString &storage);
+    void showOpenedNoteView();
     void createNote();
     void saveNote();
     void deleteNote();
@@ -7296,6 +7297,7 @@ private:
     void openRepoAgentsList();
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
+    void refreshAgentDots();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();

@@ -557,6 +557,42 @@ returned, so summed frame totals overstate a function's own cost.
     `writeQueuedApprovals` (`ActionStore.cpp`) and RoomSeal's `storeValues`.
     A GUI-thread `QSettings()` waits on the lock for as long as their fsync
     takes.
+- **Idle frame rate, teammate output and firewall defaults (report #12,
+  2026-10-24).** The report showed 86 % CPU and about 2,500 paint events a
+  second with nobody using the window. Sampling the GUI thread with gdb
+  (40 stacks, `SIGWINCH` as the stop signal so a stray one is harmless) put
+  23 of them in `QWaylandWindow::waitForFrameSync` under `swapBuffers`, and a
+  breakpoint on `QWidgetRepaintManager::sync()` counted 59 frames a second.
+  Breaking on the first `QWidget::update()` after each frame named what kept
+  it going: the top-chrome Agents squares, the Actions strip and the Genie
+  spider, each on its own timer.
+  - `AgentDotMatrix` repainted from two unaligned timers: its own 60 ms sweep
+    and the 45 ms agent scanner tick, whose decaying activity meter changes
+    every beat, so `setDots` called `update()` 22 times a second. A change that
+    only moves a running square's meter is now stored for the next sweep frame
+    (`sameSquares`). The scanner tick calls `refreshAgentDots()`, which leaves
+    out `scheduleSessionsPageRefresh()`: the Sessions page does not read the
+    meter, and every beat re-queued its rebuild.
+  - The Agents squares and the Actions strip share one 60 ms clock
+    (`ChromeDotGrid::animationClock`, held through `holdAnimationClock` while
+    something runs), so their repaints land in the same frame. The strip used
+    40 ms while badges breathe and 90 ms for running cells; its phase steps
+    were scaled to keep the same speeds.
+  - `teammateLatestOutput` read and parsed the whole `events.jsonl` of a
+    teammate's session on the GUI thread for each Team page row (1.3 s stall
+    under `loadTeammatesPanel`; event files reach 15 MB). It and the
+    teammate-creator result now read the last 512 KB
+    (`AgentStore::loadRecentEvents`, `kLatestOutputTailBytes`), where the
+    latest assistant text is.
+  - `defaultApprovedFirewallRules()` parses the shipped rule list once; the
+    firewall page asked for it on every rebuild.
+  - No change: the `KebabHeaderView::sectionSizeFromContents` stalls under
+    `renderUsersPage` sampled FreeType loading a font's tables for the first
+    time. The `QSettings` fsync stalls under `syncMirrorActionsConfiguration`
+    and `noteEventTiming` are the worker-held lock described above. The 33 s
+    theme switch ran inside `QApplication::setStyleSheet` on about 8,000
+    widgets while a CI build loaded the machine; its binary was rebuilt
+    before the report, so the click could not be traced further.
 - **Data tables, action output bursts and firewall defaults (report #13,
   2026-10-24).** The running binary was built from current source.
   - An 8.6 s paint (`STALL-20261024T214153582-p2840065-0006`) and two
