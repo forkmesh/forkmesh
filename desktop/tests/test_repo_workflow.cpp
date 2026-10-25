@@ -257,7 +257,7 @@ int main(int argc, char **argv)
     check(parsePins(QStringLiteral("[{\"repo\":\"a/b\",\"workflow\":\"w\",\"rail\":\"nowhere\"}]")).isEmpty(),
           "an unknown rail is ignored");
 
-    const auto order = [](const QList<Pin> &list) {
+    const auto pinOrder = [](const QList<Pin> &list) {
         QStringList ids;
         for (const Pin &pin : list)
             ids << pin.workflowId + QLatin1Char('@') + pin.rail;
@@ -267,22 +267,22 @@ int main(int argc, char **argv)
     for (const QString &id : {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")})
         strips = pinWorkflow(strips, {QStringLiteral("o/r"), id, kRailTop});
     strips = pinWorkflow(strips, {QStringLiteral("o/r"), QStringLiteral("d"), kRailLeft});
-    check(order(movePin(strips, {QStringLiteral("O/R"), QStringLiteral("c"), kRailTop}, 0)) ==
+    check(pinOrder(movePin(strips, {QStringLiteral("O/R"), QStringLiteral("c"), kRailTop}, 0)) ==
               QLatin1String("c@top a@top b@top d@left"),
           "a pin dragged to the front of its own strip moves there and keeps its repository's spelling");
     check(movePin(strips, {QStringLiteral("O/R"), QStringLiteral("c"), kRailTop}, 0).first().repo ==
               QLatin1String("o/r"),
           "a moved pin keeps the repository it was saved with");
-    check(order(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailLeft}, 0)) ==
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailLeft}, 0)) ==
               QLatin1String("b@top c@top a@left d@left"),
           "a pin dragged onto the front of another strip lands before that strip's first pin");
-    check(order(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("d"), kRailTop}, 1)) ==
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("d"), kRailTop}, 1)) ==
               QLatin1String("a@top d@top b@top c@top"),
           "a pin dragged between two pins of another strip lands between them");
-    check(order(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailBottom}, 5)) ==
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailBottom}, 5)) ==
               QLatin1String("b@top c@top d@left a@bottom"),
           "a pin dragged onto an empty strip is the only pin there");
-    check(order(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("b"), kRailTop}, 9)) ==
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("b"), kRailTop}, 9)) ==
               QLatin1String("a@top c@top b@top d@left"),
           "a slot past the end puts the pin last in its strip");
     check(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), QStringLiteral("middle")}, 0) == strips,

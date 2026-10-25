@@ -1847,10 +1847,7 @@ public:
     void testBuildRepoDetailSection() { ensureRepoDetailSectionBuilt(); }
     QStringList testButtonPlacementMenuActions(const QString &key);
     QPushButton *testRepoPullsTab() const { return m_repoPullsTab; }
-    QWidget *testRepoTabRowPanel() const
-    {
-        return m_repoTabRowLayout ? m_repoTabRowLayout->parentWidget() : nullptr;
-    }
+    QWidget *testRepoTabRowPanel() const;
     QWidget *testWorkflowPinStrip(const QString &rail) const
     {
         return m_workflowPinStrips.value(rail);

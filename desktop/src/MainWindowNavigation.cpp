@@ -3439,6 +3439,11 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     updateRepoActivityRail();
 }
 
+QWidget *MainWindow::testRepoTabRowPanel() const
+{
+    return m_repoTabRowLayout ? m_repoTabRowLayout->parentWidget() : nullptr;
+}
+
 QWidget *MainWindow::movableButtonForRailKey(const QString &railKey) const
 {
     if (railKey.isEmpty())
