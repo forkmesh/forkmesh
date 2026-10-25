@@ -35,6 +35,8 @@
 #include "NetworkLogArchive.h" // netlog::Digest is held by value below
 #include "CrashLogScan.h"      // crashlog::Record is returned by value below
 #include "DiscussionInboxBackoff.h"
+#include "FastScratchDisk.h"
+#include "UsbLinkCheck.h"
 #include "NetworkBackoff.h"
 #include "DiscussionStore.h"
 #include "ForkMeshIdentity.h"
@@ -4788,6 +4790,11 @@ private:
     void startDiagnostics();
     static QString stallLogPath();
     void updateFooterDiagnostics();
+    void initFastScratchDisk();
+    void refreshFastScratchDisk(bool clean);
+    void updateFastDiskTiles();
+    void updateFastDiskSettingsPanel();
+    void eraseFastScratchDisk();
     void updateQtDiagnosticTiles();
     void showQtDiagnosticsDialog();
     void checkFileDescriptorPressure();
@@ -5264,6 +5271,7 @@ private:
                          QLineEdit *cfTokenEdit, QLineEdit *cfAccountEdit,
                          QLineEdit *vultrTokenEdit, QLabel *statusLabel);
     QWidget *buildDataSection();
+    QWidget *buildFastDiskTab();
     void refreshDataDirTable();
     void scanDataDirRow(quint64 generation, int row);
     void exportConfigData();
@@ -12862,6 +12870,19 @@ private:
     QWidget *m_debugUptimeTile = nullptr;
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
+    QWidget *m_debugTmpTile = nullptr;
+    QWidget *m_debugTmpDataTile = nullptr;
+    QWidget *m_debugUsbTile = nullptr;
+    QTimer *m_fastDiskTimer = nullptr;
+    forkmesh::fastdisk::Volume m_fastDiskVolume;
+    forkmesh::fastdisk::Usage m_fastDiskUsage;
+    QVector<forkmesh::usblink::Finding> m_usbFindings;
+    QSet<QString> m_usbWarned;
+    qint64 m_fastDiskLastCleanMs = 0;
+    bool m_fastDiskRefreshRunning = false;
+    QPointer<QLabel> m_fastDiskStatusLabel;
+    QPointer<QPushButton> m_fastDiskEraseButton;
+    QPointer<QCheckBox> m_fastDiskEnabledCheck;
     qint64 m_debugNetworkRequestTotal = 0;
     qint64 m_debugLastNetworkRequestTotal = -1;
     qint64 m_debugLastLogActivityTotal = -1;
