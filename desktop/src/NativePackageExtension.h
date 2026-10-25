@@ -111,6 +111,7 @@ struct NativePackageHost {
                        const QJsonObject &, NativePackageReplyHandler)>
         repositoryWorkflowAction;
     std::function<QString(const QString &)> publicPageUrl;
+    std::function<QString(const QString &)> webPageUrl;
     std::function<void(const QString &, bool)> flashMessage;
     std::function<void(const QString &)> reportError;
     std::function<void(const QString &)> logActivity;

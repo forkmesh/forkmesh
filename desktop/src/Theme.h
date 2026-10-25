@@ -624,7 +624,9 @@ QPushButton#repoTab:checked { color: #e6edf3; border-bottom: 2px solid #fd8c73; 
 #settingsNav::item { color: #8b949e; padding: 6px 10px; border-radius: 6px; margin: 1px 0; }
 #settingsNav::item:hover { background-color: #161b22; color: #e6edf3; }
 #settingsNav::item:selected { background-color: rgba(56, 139, 253, 0.15); color: #e6edf3; }
-#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #e6edf3; }
+#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #e6edf3; padding: 1px 6px; border-radius: 6px; }
+#settingsSectionTitle[settingsLit="true"] { color: #58a6ff; background-color: rgba(56, 139, 253, 0.15); }
+#sectionLabel[settingsLit="true"] { color: #58a6ff; }
 #settingsSectionRule { background-color: #21262d; }
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
@@ -2816,7 +2818,9 @@ QPushButton#repoTab:checked { color: #1f2328; border-bottom: 2px solid #fd8c73; 
 #settingsNav::item { color: #656d76; padding: 6px 10px; border-radius: 6px; margin: 1px 0; }
 #settingsNav::item:hover { background-color: #f6f8fa; color: #1f2328; }
 #settingsNav::item:selected { background-color: rgba(9, 105, 218, 0.1); color: #1f2328; }
-#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #1f2328; }
+#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #1f2328; padding: 1px 6px; border-radius: 6px; }
+#settingsSectionTitle[settingsLit="true"] { color: #0969da; background-color: rgba(9, 105, 218, 0.1); }
+#sectionLabel[settingsLit="true"] { color: #0969da; }
 #settingsSectionRule { background-color: #d8dee4; }
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }

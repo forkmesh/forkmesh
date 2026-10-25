@@ -18,6 +18,7 @@
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolButton>
@@ -48,6 +49,7 @@ constexpr int kNextSubHeight = 28;
 constexpr int kNextSubIndent = 16;
 const char kNextNavColors[] = "nextNavColors";
 const char kNextLayout[] = "nextLayout";
+const char kLitProperty[] = "settingsLit";
 
 QVariantMap nextNavColors(const QWidget *widget)
 {
@@ -638,6 +640,7 @@ int SettingsSectionsView::appendSection(QWidget *body,
     section.header = header;
     section.toggle = toggle;
     section.icon = icon;
+    section.titleLabel = titleLabel;
     section.build = std::move(build);
     section.title = title;
     section.iconName = iconName;
@@ -984,6 +987,32 @@ void SettingsSectionsView::syncNavSubs()
     } else if (relayout) {
         m_nav->doItemsLayout();
     }
+    syncLitHeading();
+}
+
+void SettingsSectionsView::syncLitHeading()
+{
+    QWidget *lit = nullptr;
+    if (m_current >= 0 && m_current < count() && !m_sections.at(m_current).frame->isHidden()) {
+        const QVector<SubSection> subs = visibleSubSections(m_current);
+        if (m_currentSub >= 0 && m_currentSub < subs.size())
+            lit = subs.at(m_currentSub).label;
+        else
+            lit = m_sections.at(m_current).titleLabel;
+    }
+    if (lit == m_litHeading)
+        return;
+    const auto mark = [](QWidget *widget, bool on) {
+        if (!widget)
+            return;
+        widget->setProperty(kLitProperty, on);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    };
+    mark(m_litHeading, false);
+    m_litHeading = lit;
+    mark(lit, true);
 }
 
 bool SettingsSectionsView::handleNavMouse(QEvent *event)

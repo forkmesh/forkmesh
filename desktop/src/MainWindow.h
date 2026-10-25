@@ -3376,6 +3376,8 @@ public:
     QString testBrowsedBranch() const { return m_repoBranch; }
     void testSwitchToAgentBranch(int sessionId) { switchToAgentBranch(sessionId); }
     int testCommitWorkspacePage() const;
+    void testApplyGitLayout() { applyGitLayout(); }
+    QString testGitLayoutState() const;
     QString testBranchDiffBranch() const { return m_branchDiffBranch; }
     QString testBranchDiffDragComment(const QString &path, int fromLine,
                                       int toLine);
@@ -4343,6 +4345,10 @@ private:
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
     void syncNativePackagePages();
+    void buildDeferredNativePackagePages();
+    void buildNextNativePackagePage(quint64 generation, int index);
+    void addNativePackagePage(const QString &id, const QString &entrypoint);
+    void finishNativePackagePages();
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
     QUrl nativePackageLinkUrl(const QString &id) const;
@@ -4671,6 +4677,7 @@ private:
     void updateRepoSwitcher();     // refresh top-bar repo label / count
     void refreshRepoSyncIndicators();
     void refreshSourceControlOutgoing();
+    void applyGitLayout();
     void updateScmCommitControlVisibility();
     void pushCurrentRepoUpstream();
     void undoLatestOutgoingCommit();
@@ -6670,7 +6677,8 @@ private:
     void drainDeferredActionWorkflowScans();
     void submitPullComment();                       // post a comment on the PR
     void editPullComment(int number, const QString &target, const QString &original);
-    void deletePullComment(int number, const QString &target);
+    void deletePullComment(int number, const QString &target,
+                           const QString &question = QString());
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
@@ -11157,6 +11165,10 @@ private:
         QString hostSearchQuery;
     };
     QList<NativePackagePage> m_nativePackagePages;
+    QList<QPair<QString, QString>> m_nativePackagePagesWanted;
+    quint64 m_nativePackagePagesGeneration = 0;
+    bool m_nativePackagePagesDeferred = false;
+    bool m_staggerNativePackagePages = false;
     QString m_packageDataTestFilePath;
     struct NativePackageChrome {
         QString id;
@@ -11521,6 +11533,11 @@ private:
     void setGenieWatch(const GenieWatch &watch);
     void noteGenieOrganizations(const QJsonArray &organizations);
     QWidget *buildGenieWatchSettings();
+    QWidget *buildHalloweenSettings();
+    void refreshSeasonSettings();
+    void saveSeasonSettings(bool on);
+    void renderSeasonSettings(const QString &message = QString());
+    void syncHalloweenLocalCheck();
     void noteGeniePage();
     void recordGenieVisit(const QString &page);
     void openGeniePage(const QString &page);
@@ -12569,6 +12586,14 @@ private:
     QLabel *m_autostartInfo = nullptr;
     QPushButton *m_autostartRemoveButton = nullptr;
     QComboBox *m_themeCombo = nullptr;
+    QPointer<QCheckBox> m_halloweenLocalCheck;
+    QPointer<QWidget> m_seasonAdminBox;
+    QPointer<QCheckBox> m_seasonEveryoneCheck;
+    QPointer<QDateTimeEdit> m_seasonUntilEdit;
+    QPointer<QLabel> m_seasonStatusLabel;
+    QJsonObject m_seasonSettings;
+    bool m_seasonBusy = false;
+    QString m_themeBeforeHalloween;
     forkmesh::ui::WindowBackdrop *m_windowBackdrop = nullptr;
     forkmesh::ui::WindowFade *m_windowFade = nullptr;
     QComboBox *m_defaultAgentProviderCombo = nullptr;

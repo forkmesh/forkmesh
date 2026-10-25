@@ -4616,6 +4616,10 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
         return forkmesh::market::nativePackagePublicPageUrl(catalogApiUrl(), path)
             .toString(QUrl::FullyEncoded);
     };
+    host.webPageUrl = [this](const QString &path) {
+        return forkmesh::market::nativePackageWebPageUrl(catalogApiUrl(), path)
+            .toString(QUrl::FullyEncoded);
+    };
     if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
         host.agentUsagePage = [this](QWidget *parent) {
             return buildAgentUsagePage(parent);
@@ -4735,7 +4739,7 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
 
 void MainWindow::syncNativePackagePages()
 {
-    if (!m_packageRegistry || !m_packageRegistry->isReady() ||
+    if (m_nativePackagePagesDeferred || !m_packageRegistry || !m_packageRegistry->isReady() ||
         !m_sectionStack || !m_appNavigationRailLayout || !m_navGroup)
         return;
 
@@ -4751,13 +4755,7 @@ void MainWindow::syncNativePackagePages()
             continue;
         desired.append({manifest.id, manifest.desktopEntrypoint});
     }
-    bool unchanged = desired.size() == m_nativePackagePages.size();
-    for (int index = 0; unchanged && index < desired.size(); ++index) {
-        unchanged = m_nativePackagePages.at(index).id == desired.at(index).first &&
-                    m_nativePackagePages.at(index).entrypoint ==
-                        desired.at(index).second;
-    }
-    if (unchanged)
+    if (desired == m_nativePackagePagesWanted)
         return;
 
     bool removingCurrent = false;
@@ -4790,16 +4788,57 @@ void MainWindow::syncNativePackagePages()
         }
     }
     m_nativePackagePages.clear();
+    m_nativePackagePagesWanted = desired;
+    const quint64 generation = ++m_nativePackagePagesGeneration;
+    if (m_staggerNativePackagePages) {
+        buildNextNativePackagePage(generation, 0);
+        return;
+    }
+    for (const auto &[id, entrypoint] : desired)
+        addNativePackagePage(id, entrypoint);
+    finishNativePackagePages();
+}
 
-    for (const auto &[id, entrypoint] : desired) {
+void MainWindow::buildDeferredNativePackagePages()
+{
+    if (!m_nativePackagePagesDeferred)
+        return;
+    m_nativePackagePagesDeferred = false;
+    m_staggerNativePackagePages = true;
+    syncNativePackagePages();
+    m_staggerNativePackagePages = false;
+}
+
+void MainWindow::buildNextNativePackagePage(quint64 generation, int index)
+{
+    if (generation != m_nativePackagePagesGeneration)
+        return;
+    if (index >= m_nativePackagePagesWanted.size()) {
+        forkmesh::logStartupTrace(
+            QStringLiteral("post-paint: %1 installed package pages built")
+                .arg(m_nativePackagePages.size()));
+        return;
+    }
+    const auto [id, entrypoint] = m_nativePackagePagesWanted.at(index);
+    addNativePackagePage(id, entrypoint);
+    finishNativePackagePages();
+    QTimer::singleShot(0, this, [this, generation, index] {
+        buildNextNativePackagePage(generation, index + 1);
+    });
+}
+
+void MainWindow::addNativePackagePage(const QString &id,
+                                      const QString &entrypoint)
+{
+    {
         const PackageManifest *manifest = m_packageRegistry->package(id);
         if (!manifest)
-            continue;
+            return;
         const forkmesh::market::NativePackageContribution *contribution =
             forkmesh::market::nativePackageContribution(
                 entrypoint, manifest->type);
         if (!contribution)
-            continue;
+            return;
         const forkmesh::market::NativePackageContribution contributionCopy =
             *contribution;
         if (!contribution->browserPath.isEmpty()) {
@@ -4817,14 +4856,14 @@ void MainWindow::syncNativePackagePages()
                     [this, id] { openNativePackageLink(id); });
             attachPackageRailMenu(link, entrypoint);
             m_nativePackagePages.append({id, entrypoint, link, nullptr});
-            continue;
+            return;
         }
         const forkmesh::market::NativePackageHost host =
             nativePackageHost(*manifest, contributionCopy);
         forkmesh::market::NativePackageWidget *widget =
             contribution->factory(host, m_sectionStack);
         if (!widget)
-            continue;
+            return;
         connect(this, &MainWindow::chatUserDirectoryChanged, widget,
                 [widget] { widget->userDirectoryChanged(); });
         widget->setProperty("forkmeshPackageId", id);
@@ -4853,6 +4892,10 @@ void MainWindow::syncNativePackagePages()
                 preparePackagePage(widget);
             });
     }
+}
+
+void MainWindow::finishNativePackagePages()
+{
     applyRailCaptionPreference(); // the new package pages joined the rail
     applyRailOrder();
     schedulePackageRailRefresh();

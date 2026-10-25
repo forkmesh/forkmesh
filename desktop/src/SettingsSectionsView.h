@@ -63,6 +63,7 @@ public:
 
     QStringList subSectionTitles(int index) const;
     int currentSubSection() const { return m_currentSub; }
+    QWidget *litHeading() const { return m_litHeading; }
     void setCurrentSubSection(int index, int sub);
 
     // Ctrl+F on the Settings page lands here (MainWindow::openPageFind).
@@ -109,6 +110,7 @@ private:
         QWidget *header = nullptr;
         QToolButton *toggle = nullptr;
         QLabel *icon = nullptr;
+        QLabel *titleLabel = nullptr;
         std::function<QWidget *()> build;
         QString title;
         QString iconName;
@@ -137,6 +139,7 @@ private:
     QVector<SubSection> visibleSubSections(int index);
     void updateCurrentSub();
     void syncNavSubs();
+    void syncLitHeading();
     bool handleNavMouse(QEvent *event);
     void buildPendingAbove(int index);
 
@@ -159,6 +162,7 @@ private:
     int m_navHoverSub = -2;
     int m_pendingJump = -1;
     QPointer<QWidget> m_pendingReveal;
+    QPointer<QWidget> m_litHeading;
     bool m_refreshQueued = false;
     bool m_jumping = false;
     bool m_syncingNav = false;
