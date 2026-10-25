@@ -162,11 +162,12 @@ QUrl urlFromInput(const QString &text)
     if (!hasScheme && (trimmed.contains(space) || !trimmed.contains(QLatin1Char('.'))))
         return searchUrl(trimmed);
     const QUrl url = QUrl::fromUserInput(trimmed);
+    const QString urlScheme = url.scheme().toLower();
+    if (url.isValid() && urlScheme != QLatin1String("http") &&
+        urlScheme != QLatin1String("https"))
+        return QUrl();
     if (!url.isValid() || url.host().isEmpty())
         return hasScheme ? QUrl() : searchUrl(trimmed);
-    const QString urlScheme = url.scheme().toLower();
-    if (urlScheme != QLatin1String("http") && urlScheme != QLatin1String("https"))
-        return QUrl();
     return url;
 }
 
