@@ -257,6 +257,48 @@ inline BuildProgress lastBuildProgress(const QString &text)
     return {};
 }
 
+inline QStringList compiledSources(const QString &text)
+{
+    static const QRegularExpression step(QStringLiteral(
+        "^\\[\\s*\\d+(?:/\\d+|%)\\]\\s+Building \\S+ object (\\S+)$"));
+    static const QRegularExpression lineBreak(QStringLiteral("[\\r\\n]"));
+    QStringList sources;
+    for (const QString &line : text.split(lineBreak, Qt::SkipEmptyParts)) {
+        const QRegularExpressionMatch m = step.match(line.trimmed());
+        if (!m.hasMatch())
+            continue;
+        QString source = m.captured(1);
+        if (const qsizetype dir = source.indexOf(QLatin1String(".dir/")); dir >= 0)
+            source = source.mid(dir + 5);
+        for (const QLatin1String suffix : {QLatin1String(".obj"), QLatin1String(".o")}) {
+            if (source.endsWith(suffix)) {
+                source.chop(suffix.size());
+                break;
+            }
+        }
+        if (!source.isEmpty() && !sources.contains(source))
+            sources.append(source);
+    }
+    return sources;
+}
+
+inline QString rebuiltSummary(const QStringList &sources)
+{
+    if (sources.isEmpty())
+        return QStringLiteral("No source changes since the last build; "
+                              "restarting the same build.");
+    constexpr int kNamed = 5;
+    QStringList names;
+    for (const QString &source : sources.mid(0, kNamed))
+        names.append(source.section(QLatin1Char('/'), -1));
+    QString list = names.join(QStringLiteral(", "));
+    if (sources.size() > kNamed)
+        list += QStringLiteral(" and %1 more").arg(sources.size() - kNamed);
+    return QStringLiteral("Rebuilt %1 changed file%2: %3")
+        .arg(sources.size())
+        .arg(sources.size() == 1 ? QString() : QStringLiteral("s"), list);
+}
+
 // The line beside the restart ring: progress, what the restart is doing, then
 // the estimate while it holds and the real elapsed time once it has not.
 inline QString countdownText(int percent, const QString &activity,
