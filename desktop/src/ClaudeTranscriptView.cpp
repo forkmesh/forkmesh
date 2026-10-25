@@ -3490,6 +3490,15 @@ ClaudeTranscriptView::ClaudeTranscriptView(QWidget *parent) : QScrollArea(parent
     connect(m_promptDeck, &PromptDeckBar::heightChanged, this,
             &ClaudeTranscriptView::layoutPromptDeck);
 
+    m_coverageButton = new QToolButton(this);
+    m_coverageButton->setObjectName(QStringLiteral("transcriptCoverageGaps"));
+    m_coverageButton->setCursor(Qt::PointingHandCursor);
+    m_coverageButton->setAutoRaise(true);
+    m_coverageButton->hide();
+    m_coverageButton->installEventFilter(this);
+    connect(m_coverageButton, &QToolButton::clicked, this,
+            &ClaudeTranscriptView::coverageGapsActivated);
+
     QScrollBar *sb = verticalScrollBar();
     connect(sb, &QScrollBar::actionTriggered, this, [this](int) {
         QScrollBar *b = verticalScrollBar();
@@ -3547,6 +3556,53 @@ void ClaudeTranscriptView::layoutPromptDeck()
     }
     if (atBottom)
         verticalScrollBar()->setValue(verticalScrollBar()->maximum());
+    layoutCoverageButton();
+}
+
+void ClaudeTranscriptView::noteCoverage(const QJsonObject &ev)
+{
+    if (m_coverage.noteEvent(ev))
+        refreshCoverageButton();
+}
+
+void ClaudeTranscriptView::refreshCoverageButton()
+{
+    if (!m_coverageButton)
+        return;
+    if (m_coverage.isEmpty()) {
+        m_coverageButton->hide();
+        return;
+    }
+    const int kinds = m_coverage.kindCount();
+    m_coverageButton->setText(
+        QStringLiteral("\u25CF %1 missing").arg(kinds));
+    m_coverageButton->setAccessibleName(
+        QStringLiteral("%1 kind%2 of raw log entries missing from the transcript")
+            .arg(kinds)
+            .arg(kinds == 1 ? QString() : QStringLiteral("s")));
+    m_coverageButton->adjustSize();
+    m_coverageButton->show();
+    layoutCoverageButton();
+}
+
+void ClaudeTranscriptView::layoutCoverageButton()
+{
+    if (!m_coverageButton || m_coverageButton->isHidden())
+        return;
+    const QRect area = viewport()->geometry();
+    const QSize size = m_coverageButton->sizeHint();
+    m_coverageButton->setGeometry(area.right() - size.width() - 8, area.top() + 6,
+                                  size.width(), size.height());
+    m_coverageButton->raise();
+}
+
+QString ClaudeTranscriptView::coverageToolTip() const
+{
+    return QStringLiteral(
+               "The raw log holds entries this transcript does not show:\n%1\n\n"
+               "Click to start an agent with the current settings that adds them "
+               "to the transcript.")
+        .arg(forkmesh::transcriptcoverage::summary(m_coverage.gaps()));
 }
 
 void ClaudeTranscriptView::queueLabelRelayout(CacheLabel *label)
@@ -3718,6 +3774,8 @@ void ClaudeTranscriptView::endBatchBuild()
 // Swallow them; endBatchBuild() delivers the one that counts.
 bool ClaudeTranscriptView::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_coverageButton && event && event->type() == QEvent::ToolTip)
+        m_coverageButton->setToolTip(coverageToolTip());
     if (m_batchBuildFrozen && watched == m_container && event &&
         event->type() == QEvent::LayoutRequest)
         return true;
@@ -3855,6 +3913,12 @@ void ClaudeTranscriptView::applyScheme(bool dark)
         m_jumpButtons->setButtonStyle(btnCss);
         m_jumpButtons->setTheme(dark);
     }
+    if (m_coverageButton)
+        m_coverageButton->setStyleSheet(QStringLiteral(
+            "QToolButton{background:%1;color:#ffffff;border:none;border-radius:10px;"
+            "padding:2px 9px;font-size:11px;font-weight:700;}"
+            "QToolButton:hover{background:%2;}")
+            .arg(m_p.del, QColor(m_p.del).darker(115).name()));
     if (m_promptDeck) {
         QColor tint(m_p.accent);
         tint.setAlphaF(dark ? 0.12 : 0.08);
@@ -3926,6 +3990,8 @@ void ClaudeTranscriptView::clear()
     emit statsChanged(0, 0.0);
     if (m_promptDeck)
         m_promptDeck->clearPrompts();
+    m_coverage.clear();
+    refreshCoverageButton();
     if (m_col->count() <= 1)
         return;
     QWidget *host = m_col->parentWidget();
@@ -4066,6 +4132,7 @@ void ClaudeTranscriptView::setSpeakerAvatars(const QPixmap &agent,
 
 void ClaudeTranscriptView::accumulateStatsOnly(const QJsonObject &ev)
 {
+    noteCoverage(ev);
     const QString type = ev.value(QStringLiteral("type")).toString();
     if (type == QLatin1String("_local_user") && m_promptDeck)
         m_promptDeck->addPrompt(ev.value(QStringLiteral("text")).toString());
@@ -4238,6 +4305,8 @@ void ClaudeTranscriptView::smoothScrollTo(int value)
 
 void ClaudeTranscriptView::handleEvent(const QJsonObject &ev, bool countStats)
 {
+    if (m_prependAt < 0)
+        noteCoverage(ev);
     m_eventTime = eventTime(ev);
     const auto restoreRowSource =
         qScopeGuard([this, outer = std::exchange(m_rowSource, ev)] {

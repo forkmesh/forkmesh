@@ -34,7 +34,9 @@ QString compactCount(qint64 value)
 
 QString MainWindow::claudeInitialSessionTitle(const AgentSession &session) const
 {
-    if (session.issueNumber > 0 || session.titledBy == kTitledByUser)
+    if (session.issueNumber > 0 || session.titledBy == kTitledByUser ||
+        forkmesh::agentwt::isPromptNamerLabel(session.titledBy,
+                                              agentProviderName(session.provider)))
         return session.issueTitle.trimmed();
     return QString();
 }
@@ -97,7 +99,9 @@ void MainWindow::requestClaudeSessionTitle(int sessionId)
     const AgentSession *session = findAgentSession(sessionId);
     if (!stream || !session || session->issueNumber > 0)
         return;
-    if (session->titledBy == kTitledByUser) {
+    if (session->titledBy == kTitledByUser ||
+        forkmesh::agentwt::isPromptNamerLabel(session->titledBy,
+                                              agentProviderName(session->provider))) {
         stream->renameSession(session->issueTitle);
         return;
     }
