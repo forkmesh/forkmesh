@@ -3197,6 +3197,11 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
           QStringLiteral("the prompt strip names the chat channel it is in (%1)")
               .arg(channelPicker ? channelPicker->text() : QStringLiteral("none")));
     if (channelPicker) {
+        const QString direct = QStringLiteral("@peer-cy");
+        window.testDeliverChatMessage(direct, QStringLiteral("peer-cy"),
+                                      QStringLiteral("cy"),
+                                      QStringLiteral("got a minute?"));
+        QApplication::processEvents();
         channelPicker->click();
         QApplication::processEvents();
         QMenu *channels = nullptr;
@@ -3218,6 +3223,27 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
               QStringLiteral("the channel menu lists each channel on one row with "
                              "its users and chats (%1)")
                   .arg(row ? row->text() : QStringLiteral("none")));
+        int directSection = -1;
+        int directRow = -1;
+        bool messagePerson = false;
+        if (channels) {
+            const QList<QAction *> actions = channels->actions();
+            for (int i = 0; i < actions.size(); ++i) {
+                if (actions.at(i)->isSeparator() &&
+                    actions.at(i)->text() == QLatin1String("Direct messages"))
+                    directSection = i;
+                if (actions.at(i)->data().toString() == direct)
+                    directRow = i;
+                if (actions.at(i)->objectName() ==
+                    QLatin1String("promptChannelMessagePerson"))
+                    messagePerson = true;
+            }
+        }
+        check(directSection >= 0 && directRow > directSection && messagePerson,
+              QStringLiteral("the channel menu lists direct messages under their own "
+                             "section and offers Message someone (section %1, row %2)")
+                  .arg(directSection)
+                  .arg(directRow));
         if (channels)
             channels->close();
         QApplication::processEvents();
