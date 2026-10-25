@@ -15915,6 +15915,36 @@ void checkGitCompactLayout(MainWindow &window)
     settle();
 }
 
+void runGitLayoutOnly(MainWindow &window)
+{
+    window.resize(1400, 900);
+    window.show();
+    QApplication::processEvents();
+    QTemporaryDir repo;
+    if (!initGitRepo(repo))
+        return;
+    QFile file(repo.path() + QStringLiteral("/readme.txt"));
+    file.open(QIODevice::WriteOnly);
+    file.write("tracked\n");
+    file.close();
+    runGitChecked(repo.path(), {"add", "readme.txt"});
+    runGitChecked(repo.path(), {"commit", "-m", "readme"});
+    QFile edited(repo.path() + QStringLiteral("/readme.txt"));
+    edited.open(QIODevice::Append);
+    edited.write("changed\n");
+    edited.close();
+    const int index = window.testAddLocalRepository("me", "gitlayout", repo.path());
+    window.testOpenRepository(index);
+    QApplication::processEvents();
+    window.testClickRailGitButton();
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 5000 &&
+           window.testBrowsedBranch() != QStringLiteral("main"))
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    checkGitCompactLayout(window);
+}
+
 int runWorkspaceSnapshots(MainWindow &window);
 
 int main(int argc, char *argv[])
@@ -16200,6 +16230,8 @@ else:
         app.arguments().contains(QStringLiteral("--users-detail-only"));
     const bool ledgerOnly =
         app.arguments().contains(QStringLiteral("--ledger-only"));
+    const bool gitLayoutOnly =
+        app.arguments().contains(QStringLiteral("--git-layout-only"));
     const bool pageFindOnly =
         app.arguments().contains(QStringLiteral("--page-find-only"));
     const bool savedSearchesOnly =
@@ -17306,6 +17338,11 @@ else:
     }
     if (ledgerOnly) {
         checkLedgerSection(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (gitLayoutOnly) {
+        runGitLayoutOnly(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

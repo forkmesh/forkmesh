@@ -4502,6 +4502,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-window-tests --diff-stream-only)
     add_test(NAME forkmesh-saved-searches-window-tests
              COMMAND forkmesh-window-tests --saved-searches-only)
+    add_test(NAME forkmesh-git-layout-window-tests
+             COMMAND forkmesh-window-tests --git-layout-only)
     add_test(NAME forkmesh-inline-diff-comments-window-tests
              COMMAND forkmesh-window-tests --inline-diff-comments-only)
     add_test(NAME forkmesh-diff-health-window-tests
@@ -4547,6 +4549,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-teammates-window-tests
         forkmesh-mirror-fleet-window-tests forkmesh-diff-stream-window-tests
         forkmesh-saved-searches-window-tests
+        forkmesh-git-layout-window-tests
         forkmesh-inline-diff-comments-window-tests
         forkmesh-diff-health-window-tests
         forkmesh-package-window-tests forkmesh-tip-notice-window-tests
