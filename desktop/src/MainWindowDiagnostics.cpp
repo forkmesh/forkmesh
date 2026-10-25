@@ -244,7 +244,8 @@ void MainWindow::startDiagnostics()
             QFile::rename(logPath, prev);
         }
         const QString buildInfo =
-            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src " FORKMESH_SOURCE_DIR ")");
+            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src ") + forkmesh::sourceDir() +
+            QStringLiteral(")");
         m_stallWatchdog->start(/*stallThresholdMs=*/500, logPath, buildInfo);
         if (!logPath.isEmpty())
             logSystem(QStringLiteral("UI-stall watchdog armed; reports append to %1")
@@ -1144,7 +1145,7 @@ int MainWindow::stallReportRepoIndex() const
     for (const RepositoryRecord &repo : m_repositories)
         checkouts.append(repo.localPath);
     const int own = forkmesh::paths::checkoutContaining(
-        checkouts, QStringLiteral(FORKMESH_SOURCE_DIR));
+        checkouts, forkmesh::sourceDir());
     return own >= 0 ? own : issuesRepoIndex();
 }
 
@@ -1333,7 +1334,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
     dr::Snapshot s;
     s.takenAtMs = QDateTime::currentMSecsSinceEpoch();
     s.version = QStringLiteral(FORKMESH_VERSION);
-    s.sourceDir = QStringLiteral(FORKMESH_SOURCE_DIR);
+    s.sourceDir = forkmesh::sourceDir();
     s.platform = QStringLiteral("%1 (%2, kernel %3), %4")
                      .arg(QSysInfo::prettyProductName(),
                           QSysInfo::currentCpuArchitecture(),

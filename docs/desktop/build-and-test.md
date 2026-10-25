@@ -102,9 +102,44 @@ same folder do not.
 a fresh `build/`, `rebuild` or a branch switch recompiles about 380 app sources
 (roughly 21 CPU-minutes, 4 to 5½ minutes on a 10-core, 16 GB Mac at five
 jobs). Install it with `brew install ccache`; the next run configures again
-because the stamp records ccache's path. `FORKMESH_SOURCE_DIR` puts the
-checkout path in every compile line, so separate checkouts do not share cached
-objects.
+because the stamp records ccache's path.
+
+Checkouts share cached objects, so a new agent worktree compiles only the files
+it changed. Before 2026-10-25 every agent configured a fresh tree in its scratch
+folder and compiled all ~380 app sources plus the tests, because each compile
+line carried that worktree's absolute path: the global
+`FORKMESH_SOURCE_DIR="<checkout>/desktop"` definition, the `-I`, source and PCH
+paths, and (in Debug) the build directory. `~/.ccache` sat at 85 % misses
+with its 5 GiB full. Now:
+
+- Only `src/SourceDir.cpp` gets `FORKMESH_SOURCE_DIR`; code reads
+  `forkmesh::sourceDir()` (`src/SourceDir.h`). That one file recompiles per
+  checkout. Targets that call it list `src/SourceDir.cpp`.
+- The ccache launcher passes `base_dir=<checkout>` and `hash_dir=false`, so
+  paths inside the checkout reach the hash, and the compiler, relative to the
+  build directory.
+- The precompiled header is named `<MainWindowInternal.h>`, so CMake's
+  `cmake_pch.hxx` holds no absolute path and the PCH matches across checkouts.
+- rcc writes each file's modification time into `qrc_*.cpp`, and a fresh
+  checkout stamps every file with the time it was made, so the ~30 resource
+  units (the 47 MB marketplace one among them) missed in every worktree.
+  `RULE_LAUNCH_CUSTOM` runs every custom command, AUTORCC included, under
+  `QT_RCC_SOURCE_DATE_OVERRIDE=1`, which pins that time.
+- Relative paths only match when the build tree sits at the same place in
+  every checkout: `desktop/build` (what run.sh and the commands below use).
+  A tree in the agent scratch folder still compiles everything. AGENTS.md
+  tells agents to build there.
+
+Measured 2026-10-25 on three fresh worktrees with one cache (Debug, three
+small test targets plus PCH-free and PCH app objects, 168 compiles): the
+second and third worktree hit 137 and 139. The misses were `SourceDir.cpp`
+and the `qrc_*.cpp` units from a tree configured before the rcc time was
+pinned; with it pinned, rcc writes the same 1-second time for every file and
+the third worktree hit all 27 regenerated resource units.
+
+With `hash_dir=false` a Debug object compiled in another checkout keeps that
+checkout's directory as its debug compile directory; debuggers find the source
+through the relative path, which is the same in every checkout.
 
 ### Step and timing log
 

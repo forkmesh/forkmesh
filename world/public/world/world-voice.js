@@ -6,10 +6,12 @@ import { callVoiceChoices, callVoicesSupported, rememberVoiceChoice, savedVoiceC
 import { createCallQualityMeter, diagnoseCall, diagnosticsEnvironment, gradeCallQuality, rtcStatsReader } from "/call-quality-meter.js";
 import { createSpeechMeter } from "/call-speech-meter.js";
 import { RIG_REACTIONS, RIG_SEND_HZ, encodeRig } from "/call-avatar-rig-wire.js";
+import { VOICE_CHART_HEIGHT, VOICE_CHART_SAMPLE_MS, VOICE_CHART_WIDTH, drawVoiceChart, pushVoiceSample, voiceChartSummary } from "./world-voice-chart.js";
 import { WORLD_VOICE_NAME_MAX, WORLD_VOICE_ROOM_RE, bubbleTag, cleanVoiceRoomName, randomHex, voiceRoomsFromPlayers, worldVoiceRoomLabel } from "./world-voice-rooms.js";
 
 export const WORLD_VOICE_HANDS_KEY = "forkmesh.world.voiceHands";
 export const WORLD_VOICE_VIDEO_KEY = "forkmesh.world.voiceVideo";
+export const WORLD_VOICE_CHART_KEY = "forkmesh.world.voiceChart";
 export const WORLD_VOICE_REACTIONS = Object.freeze(["thumbs_up", "clap", "heart", "laugh", "fire", "open_palm"]);
 
 const RIG_INTERVAL_MS = 1000 / RIG_SEND_HZ;
@@ -50,6 +52,7 @@ export function createWorldVoice(host) {
     cam: false,
     sendVideo: false,
     hands: true,
+    chart: true,
     joining: false,
     error: "",
     invites: new Map(),
@@ -70,7 +73,10 @@ export function createWorldVoice(host) {
   };
   try {
     state.hands = storage?.getItem(WORLD_VOICE_HANDS_KEY) !== "off";
+    state.chart = storage?.getItem(WORLD_VOICE_CHART_KEY) !== "off";
   } catch (_) {}
+  const chartSamples = [];
+  let chartSummaryAt = 0;
   let micStream = null;
   let camStream = null;
   let silentContext = null;
@@ -383,7 +389,7 @@ export function createWorldVoice(host) {
     const rig = frame.tracked
       ? { ...frame, talking: state.talking, level: state.level, words: state.words }
       : { yaw: 0, pitch: 0, roll: 0, deltas: null, hands: frame.hands || [], talking: state.talking, level: state.level, words: state.words };
-    host.puppets()?.local("self", rig);
+    host.puppets()?.local("self", state.anchors ? { ...rig, anchors: state.anchors } : rig);
     const now = scope.performance.now();
     if (now - state.lastRigSent < RIG_INTERVAL_MS) return;
     state.lastRigSent = now;
@@ -406,6 +412,7 @@ export function createWorldVoice(host) {
     const target = host.puppets()?.currentSpeaker(host.selfId()) || "";
     host.send({ type: "interaction", kind: "reaction", reaction: kind, target });
     host.world()?.playAvatarReaction?.("self", target || "self", RIG_REACTIONS[kind].emoji);
+    host.popReaction?.(RIG_REACTIONS[kind].emoji, `You · ${RIG_REACTIONS[kind].label}`);
     const name = target ? host.players().get(target)?.name || "the speaker" : "";
     host.notify(`${RIG_REACTIONS[kind].emoji} ${fromGesture ? "Gesture seen: " : ""}${RIG_REACTIONS[kind].label}${name ? ` sent to ${name}` : ""}.`);
   }
@@ -660,6 +667,54 @@ export function createWorldVoice(host) {
     if (state.room) void rejoin();
   }
 
+  function live() {
+    return Boolean(state.room || state.mic || state.cam);
+  }
+
+  function sampleChart() {
+    if (destroyed) return;
+    const figure = host.chartElement?.();
+    const visible = live() && state.chart;
+    if (figure && figure.hidden === visible) figure.hidden = !visible;
+    if (!live()) {
+      chartSamples.length = 0;
+      return;
+    }
+    const captureStats = capture?.stats() || null;
+    pushVoiceSample(chartSamples, {
+      at: Date.now(),
+      fps: frameTimes.length,
+      level: state.mic ? state.level : 0,
+      trackingMs: captureStats ? captureStats.faceMs + (captureStats.handsOn ? captureStats.handMs / 2 : 0) : null,
+      rttMs: meter?.latest?.rttMs ?? null,
+    });
+    if (!visible || !figure) return;
+    const canvas = figure.querySelector("canvas");
+    if (!canvas) return;
+    const ratio = Math.min(2, Math.max(1, Number(scope.devicePixelRatio) || 1));
+    if (canvas.width !== Math.round(VOICE_CHART_WIDTH * ratio)) {
+      canvas.width = Math.round(VOICE_CHART_WIDTH * ratio);
+      canvas.height = Math.round(VOICE_CHART_HEIGHT * ratio);
+    }
+    drawVoiceChart(canvas.getContext("2d"), chartSamples, { ratio });
+    const now = Date.now();
+    if (now - chartSummaryAt > 2000) {
+      chartSummaryAt = now;
+      const summary = `Live diagnostics, last 30 seconds: ${voiceChartSummary(chartSamples)}.`;
+      canvas.setAttribute("aria-label", summary);
+      figure.title = `${summary} Click for details and a diagnostic report.`;
+    }
+  }
+
+  function setChart(on) {
+    state.chart = Boolean(on);
+    try {
+      storage?.setItem(WORLD_VOICE_CHART_KEY, state.chart ? "on" : "off");
+    } catch (_) {}
+    sampleChart();
+    render();
+  }
+
   function renderPerf() {
     const pill = host.perfElement?.();
     if (!pill) return;
@@ -760,6 +815,13 @@ export function createWorldVoice(host) {
     handsBox.addEventListener("change", () => setHands(handsBox.checked));
     handsLabel.append(handsBox, documentRef.createTextNode(" Hand gestures send reactions"));
     options.append(handsLabel);
+    const chartLabel = element(documentRef, "label", "world-voice-check");
+    const chartBox = element(documentRef, "input");
+    chartBox.type = "checkbox";
+    chartBox.checked = state.chart;
+    chartBox.addEventListener("change", () => setChart(chartBox.checked));
+    chartLabel.append(chartBox, documentRef.createTextNode(" Show the live diagnostics chart"));
+    options.append(chartLabel);
     const videoLabel = element(documentRef, "label", "world-voice-check");
     const videoBox = element(documentRef, "input");
     videoBox.type = "checkbox";
@@ -836,6 +898,7 @@ export function createWorldVoice(host) {
 
   timers.push(scope.setInterval(audioRigTick, 100));
   timers.push(scope.setInterval(updatePerf, PERF_MS));
+  timers.push(scope.setInterval(sampleChart, VOICE_CHART_SAMPLE_MS));
   timers.push(scope.setInterval(syncBubbles, BUBBLE_SYNC_MS));
   rafId = scope.requestAnimationFrame?.(trackFrames) || 0;
 
@@ -855,6 +918,8 @@ export function createWorldVoice(host) {
     sendDiagnostics,
     diagnosticsReport,
     setHands,
+    setChart,
+    chartSamples: () => chartSamples.slice(),
     setSendVideo,
     rooms: () => voiceRoomsFromPlayers(host.players(), { ...state, name: selfName() }),
     get room() {
@@ -866,6 +931,8 @@ export function createWorldVoice(host) {
     render,
     destroy() {
       destroyed = true;
+      const figure = host.chartElement?.();
+      if (figure) figure.hidden = true;
       leave();
       closeMic();
       if (capture) stopCapture();

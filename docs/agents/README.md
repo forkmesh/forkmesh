@@ -50,7 +50,10 @@ follows a run through every layer. The desktop UI for agents is described in
   directory) and a scratch folder `.worktrees/.scratch/<worktree>`
   (`AgentScratch.h`). Runs launch with `FORKMESH_AGENT_SCRATCH` naming it and
   `TMPDIR`/`TMP`/`TEMP` pointing at its `tmp/`; the agent is told to keep
-  build trees, logs and throwaway files there. When a disk labelled `TMP` is
+  build trees, logs and throwaway files there, except a build folder the
+  project's own instructions put in the worktree (ForkMesh's `desktop/build`,
+  so ccache shares objects across worktrees:
+  [../desktop/build-and-test.md](../desktop/build-and-test.md#ccache)). When a disk labelled `TMP` is
   mounted, the scratch folder and the agents' `CCACHE_DIR` live on it instead
   ([../desktop/tmp-disk.md](../desktop/tmp-disk.md)).
 - **Resuming.** A resumed ad-hoc run reuses its saved branch and worktree. If

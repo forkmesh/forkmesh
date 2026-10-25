@@ -155,7 +155,7 @@ def test_avatars_with_a_live_rig_stay_full_detail_and_animate_every_frame():
 def test_puppets_paint_live_faces_and_reactions_use_one_vocabulary():
     assert "paintProceduralAvatarFace(context," in PUPPETS
     assert "createFacePuppet()" in PUPPETS
-    assert 'import { RIG_REACTIONS, decodeRig, rigTemplatePoints } from "/call-avatar-rig-wire.js";' in PUPPETS
+    assert 'import { RIG_REACTIONS, RIG_TEMPLATE, decodeRig, rigTemplatePoints } from "/call-avatar-rig-wire.js";' in PUPPETS
     assert "RIG_REACTIONS[kind]" in VOICE
 
 

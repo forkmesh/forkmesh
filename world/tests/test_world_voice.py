@@ -101,6 +101,12 @@ def test_rig_frames_are_bounded_numbers_only():
     assert "d" not in world.sanitize_rig(_rig(d=None))
 
 
+def test_rig_hands_may_carry_a_bounded_depth():
+    deep = world.sanitize_rig(_rig(h=[[0, 20, 40, 0, 0, 0, 0, 0, 0, 60], [1, 0, 0, 0, 0, 0, 0, 0, 0, 999]]))
+    assert deep["h"] == [[0, 20, 40, 0, 0, 0, 0, 0, 0, 60], [1, 0, 0, 0, 0, 0, 0, 0, 0, 255]]
+    assert world.sanitize_rig(_rig(h=[[0] * 11, [0] * 8]))["h"] == []
+
+
 def test_voice_signals_only_carry_call_presence_and_keys_for_the_senders_room():
     sender = _registered("peer_a")
     sender["voice"] = "bubble:0123456789abcdef"
