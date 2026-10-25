@@ -397,6 +397,7 @@ public:
                                 const QString &body, bool remove) const;
     static bool isCommentChangeEvent(const PullEvent &ev);
     static bool isEditableComment(const PullEvent &ev);
+    static bool reviewKeepsVerdict(const PullEvent &ev);
     static bool commentChangeApplies(const PullEvent &change, const PullEvent &target);
     static QList<PullEvent> foldCommentChanges(const QList<PullEvent> &events,
                                                QSet<QString> *edited = nullptr);
