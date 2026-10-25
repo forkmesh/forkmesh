@@ -156,6 +156,76 @@ int main(int argc, char **argv)
               "mount paths with spaces are unescaped");
     }
 
+    {
+        const QString uuids = root + QStringLiteral("/by-uuid");
+        const QString uuid = QStringLiteral("8c5a432c-6fe4-4e47-921e-03f2430f7a56");
+        QDir().mkpath(uuids);
+        QFile::link(device, uuids + QLatin1Char('/') + uuid);
+        const QString udev = root + QStringLiteral("/udev");
+        const QString sysBlock = root + QStringLiteral("/sys-block");
+        writeFile(sysBlock + QStringLiteral("/dev-nvme0n1p1/dev"), QByteArray("259:1\n"));
+        writeFile(udev + QStringLiteral("/b259:1"), QByteArray("S:disk/by-label/TMP\nE:ID_FS_TYPE=ext4\n"));
+        const QByteArray fstab("UUID=ab30 / ext4 errors=remount-ro 0 1\n");
+
+        check(volume.fsType == QStringLiteral("ext4"), "the probe reads the mounted file system type");
+        const fastdisk::BootMount mounted =
+            fastdisk::planBootMount(volume, fstab, QStringLiteral("/media/f/TMP"), 1001, 1001, uuids,
+                                    udev, sysBlock);
+        check(mounted.possible() && mounted.uuid == uuid && mounted.target == mount &&
+                  mounted.pass == 2,
+              "a mounted TMP disk missing from fstab keeps its current mount folder");
+        check(mounted.fstabLine() ==
+                  QStringLiteral("UUID=%1 %2 ext4 defaults,noatime,nofail,"
+                                 "x-systemd.device-timeout=10s 0 2")
+                      .arg(uuid, mount),
+              "the fstab line uses the UUID and nofail so a missing disk cannot stop boot");
+
+        fastdisk::Volume unmounted = volume;
+        unmounted.mountPoint.clear();
+        unmounted.fsType.clear();
+        const fastdisk::BootMount fresh =
+            fastdisk::planBootMount(unmounted, fstab, QStringLiteral("/media/f/TMP"), 1001, 1001,
+                                    uuids, udev, sysBlock);
+        check(fresh.possible() && fresh.target == QStringLiteral("/media/f/TMP") &&
+                  fresh.fsType == QStringLiteral("ext4"),
+              "an unmounted TMP disk gets the default folder and its udev file system type");
+
+        writeFile(udev + QStringLiteral("/b259:1"), QByteArray("E:ID_FS_TYPE=exfat\n"));
+        const fastdisk::BootMount exfat =
+            fastdisk::planBootMount(unmounted, fstab, QStringLiteral("/media/f/TMP"), 1001, 1002,
+                                    uuids, udev, sysBlock);
+        check(exfat.options.endsWith(QStringLiteral(",uid=1001,gid=1002")) && exfat.pass == 0,
+              "a file system without owners is mounted for the user");
+
+        for (const QByteArray &line :
+             {QByteArray("UUID=") + uuid.toUpper().toUtf8() + " /mnt/x ext4 defaults 0 2\n",
+              QByteArray("LABEL=TMP /mnt/x ext4 defaults 0 2\n"),
+              device.toUtf8() + " /mnt/x ext4 defaults 0 2\n"})
+            check(fastdisk::planBootMount(volume, fstab + line, QStringLiteral("/media/f/TMP"), 1001,
+                                          1001, uuids, udev, sysBlock)
+                          .configured,
+                  "an fstab entry by UUID, label or device counts as already set up");
+        check(!fastdisk::planBootMount(volume, fstab + "# UUID=" + uuid.toUtf8() + " /x ext4\n",
+                                       QStringLiteral("/media/f/TMP"), 1001, 1001, uuids, udev,
+                                       sysBlock)
+                   .configured,
+              "a commented-out fstab entry does not count");
+
+        check(fastdisk::defaultBootTarget(QStringLiteral("f")) == QStringLiteral("/media/f/TMP") &&
+                  fastdisk::defaultBootTarget(QStringLiteral("a b")) == QStringLiteral("/mnt/TMP") &&
+                  fastdisk::defaultBootTarget(QStringLiteral("..")) == QStringLiteral("/mnt/TMP"),
+              "the default mount folder is under /media/<user> only for a plain user name");
+        check(!fastdisk::safeMountTarget(QStringLiteral("/media/f/../etc")) &&
+                  !fastdisk::safeMountTarget(QStringLiteral("/media/f/My Disk")) &&
+                  !fastdisk::safeUuid(QStringLiteral("x; rm")),
+              "unsafe mount folders and UUIDs are refused");
+
+        const QStringList args = fastdisk::bootMountArguments(mounted);
+        check(args.size() == 7 && args.at(0) == QStringLiteral("sh") &&
+                  args.at(4) == mounted.fstabLine() && args.at(5) == mount && args.at(6) == uuid,
+              "the privileged helper gets the line, folder and UUID as separate arguments");
+    }
+
     check(fastdisk::activate(volume, false).isEmpty() && fastdisk::activeRoot().isEmpty(),
           "turned off in settings means not active");
     const QString active = fastdisk::activate(volume, true);

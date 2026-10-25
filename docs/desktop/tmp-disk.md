@@ -50,6 +50,39 @@ keeps the folder it launched with. Old scratch on the system disk is left for
 its worktree's normal removal, and old Action sandboxes there are still
 reclaimed at startup (`legacySandboxDir()`).
 
+### Mounting it at startup
+
+A disk the desktop auto-mounted when it was opened in the file manager is gone
+after a reboot until someone opens it again, and the first agent run then
+lands on the system disk. When the probe finds a `TMP` disk that
+`/etc/fstab` does not mention (by `UUID=`, `LABEL=TMP`, a `/dev/disk/by-*`
+link or the device itself; comments do not count), ForkMesh asks once, through
+`pkexec`, to add it:
+
+    UUID=<uuid> <folder> <type> defaults,noatime,nofail,x-systemd.device-timeout=10s 0 2
+
+- The folder is where the disk is mounted now, so active scratch paths stay
+  valid; an unmounted disk gets `/media/<user>/TMP` (`/mnt/TMP` when the user
+  name has unusual characters). The UUID comes from `/dev/disk/by-uuid`, the
+  type from the mount table or udev (`/run/udev/data`), `auto` otherwise.
+- `nofail` and the 10 second device timeout mean a missing disk cannot stop
+  the computer booting. vfat, exFAT and NTFS also get `uid=`/`gid=` of the
+  user, and only ext2/3/4 are checked at boot (pass `2`).
+- The helper script backs up `/etc/fstab` to `/etc/fstab.forkmesh-<time>`,
+  exits if the UUID is already there, appends the line, creates the folder,
+  reloads systemd and mounts the disk if it is not mounted. The line, folder
+  and UUID are passed as separate arguments; the UUID, folder and type are
+  checked against strict patterns before the prompt.
+- Cancelling the password prompt is remembered for that disk
+  (`storage/tmpBootMountDeclined`), so it is not asked again on every start;
+  Settings > TMP disk shows whether the disk mounts at startup and has
+  **Mount at startup…** while it does not. Without `pkexec` the notice gives
+  the `sudo` command instead. Nothing is asked while `storage/useTmpDisk` is
+  off.
+
+Code: `planBootMount()`, `fstabCovers()` and `bootMountArguments()` in
+`FastScratchDisk.h`, `setupFastDiskBootMount()` in `MainWindowFastDisk.cpp`.
+
 ### Keeping it clean
 
 At startup and then hourly, `cleanUnused()` removes:
