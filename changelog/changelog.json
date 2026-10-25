@@ -95,7 +95,8 @@
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
       "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.",
       "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
-      "Notes open in the rendered preview; switch to Write to edit."
+      "Notes open in the rendered preview; switch to Write to edit.",
+      "The Workflows page shows special agents and your workflows in one list, with list, thumbnail and compact grid views, the latest output and run, pin, schedule and on/off controls under every workflow, and any workflow can now be pinned to a rail or run with an assignment."
      ]
     },
     {

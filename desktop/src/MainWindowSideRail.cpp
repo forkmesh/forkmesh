@@ -503,7 +503,8 @@ bool MainWindow::dropOnSideRail(const QMimeData *mime, int index)
             const int repoIndex = repoIndexForKey(item.repo);
             rw::Workflow workflow;
             const bool pinned = !rw::pinnedRail(workflowPins(), item.repo, item.id).isEmpty();
-            if (!pinned && (repoIndex < 0 || !findRepoWorkflow(repoIndex, item.id, &workflow))) {
+            if (!pinned && item.repo != rw::kAccountRepo &&
+                (repoIndex < 0 || !findRepoWorkflow(repoIndex, item.id, &workflow))) {
                 flashMessage(QStringLiteral("Open %1 on this desktop to put its workflow on the "
                                             "side rail.")
                                  .arg(item.repo),
@@ -556,7 +557,18 @@ void MainWindow::refreshSideRail()
     int shown = 0;
     for (const sr::Item &item : sideRailItems()) {
         auto *button = new SideRailItemButton(item, host);
-        if (item.kind == sr::kWorkflowKind) {
+        if (item.kind == sr::kWorkflowKind && item.repo == rw::kAccountRepo) {
+            const QJsonObject info = accountWorkflowPinInfo(item.id);
+            const QString name = info.value(QStringLiteral("name")).toString().isEmpty()
+                                     ? QStringLiteral("Workflow")
+                                     : info.value(QStringLiteral("name")).toString();
+            button->setIcon(QIcon(accountWorkflowIcon(kSideRailIcon)));
+            button->setToolTip(QStringLiteral("%1 · on ForkMesh\nClick to run · right-click for more · drag to "
+                                              "reorder")
+                                   .arg(name));
+            button->setAccessibleName(QStringLiteral("Run %1").arg(name));
+            button->setStatus(info.value(QStringLiteral("status")).toString());
+        } else if (item.kind == sr::kWorkflowKind) {
             const int repoIndex = repoIndexForKey(item.repo);
             if (repoIndex < 0) {
                 delete button;

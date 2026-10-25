@@ -41,9 +41,11 @@ Classic.
   - Page and link items have **Move up**, **Move down** and **Remove from the
     side rail**.
 - **Drag and drop.** The item area accepts:
-  - `application/x-forkmesh-workflow` (`{"repo","id"}` JSON) from the
-    Workflows page's **On this desktop** table (`WorkflowDragTable` in the
-    Workflows package);
+  - `application/x-forkmesh-workflow` (`{"repo","id"}` JSON) from a card on
+    the Workflows page (`WorkflowCard` in the Workflows package, which also
+    adds the pin format so a card drops on the strips); an account workflow
+    uses the repository key `@account/workflows` and runs through the page
+    ([../app/workflows.md](../app/workflows.md#one-list-on-the-desktop));
   - `application/x-forkmesh-workflow-pin` (`repo\nid`) from a pin dragged off
     another strip (`startWorkflowPinDrag`); during that drag the side rail
     shows the same dashed outline as the strips. A workflow dragged off the
