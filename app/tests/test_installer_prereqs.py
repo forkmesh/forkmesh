@@ -234,3 +234,81 @@ def test_macos_age_fallback_is_version_and_checksum_pinned():
     assert source.index('got="$(_sha256_file "$archive")"') < source.index(
         'tar -xzf "$archive"'
     )
+
+
+def _webengine_probe(pinned_root):
+    package_probe = _function("have_qt6_cmake_package")
+    assert SYSTEM_ROOTS in package_probe, "prefix list moved; update SYSTEM_ROOTS"
+    package_probe = package_probe.replace(SYSTEM_ROOTS, f'"{pinned_root}"')
+    return (
+        "set -uo pipefail\n"
+        + _function("pkg_config_probe")
+        + package_probe
+        + _function("have_qt6_webengine")
+        + _probe_call("have_qt6_webengine")
+    )
+
+
+def test_webengine_probe_finds_the_cmake_package(tmp_path):
+    root = tmp_path / "prefix"
+    _qt_layout(root, multiarch=True)
+    module = root / "lib" / "x86_64-linux-gnu" / "cmake" / "Qt6WebEngineWidgets"
+    module.mkdir()
+    (module / "Qt6WebEngineWidgetsConfig.cmake").write_text("", encoding="utf-8")
+    result = _run(_webengine_probe(root), tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "FOUND" in result.stdout
+
+
+def test_webengine_probe_reports_a_qt_without_webengine(tmp_path):
+    root = tmp_path / "prefix"
+    _qt_layout(root, multiarch=True)
+    result = _run(_webengine_probe(root), tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "MISSING" in result.stdout
+
+
+def test_webengine_packages_per_package_manager(tmp_path):
+    script = "set -u\n" + _function("webengine_package") + (
+        'for PM in apt dnf pacman zypper apk brew; do '
+        'printf "%s=%s\\n" "$PM" "$(webengine_package)"; done\n'
+    )
+    result = _run(script, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == [
+        "apt=qt6-webengine-dev",
+        "dnf=qt6-qtwebengine-devel",
+        "pacman=qt6-webengine",
+        "zypper=qt6-webengine-devel",
+        "apk=qt6-qtwebengine-dev",
+        "brew=",
+    ]
+
+
+def test_failed_webengine_install_only_warns(tmp_path):
+    script = (
+        "set -uo pipefail\n"
+        "say() { echo \"SAY: $1\"; }\n"
+        "warn() { echo \"WARN: $1\"; }\n"
+        "die() { echo \"DIED: $1\"; exit 90; }\n"
+        "need_sudo() { return 0; }\n"
+        "have_qt6_webengine() { return 1; }\n"
+        "pm_install() { echo \"INSTALL: $*\"; return 1; }\n"
+        "uname() { echo Linux; }\n"
+        "PM=apt\nFORKMESH_NO_INSTALL_DEPS=0\n"
+        + _function("webengine_package")
+        + _function("ensure_webengine")
+        + "ensure_webengine\necho DONE\n"
+    )
+    result = _run(script, tmp_path, extra_env={"DISPLAY": ":0"})
+    assert result.returncode == 0, result.stderr
+    assert "INSTALL: qt6-webengine-dev" in result.stdout
+    assert "WARN: Could not install qt6-webengine-dev" in result.stdout
+    assert "DIED" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_source_build_installs_webengine_with_the_other_build_deps():
+    source = INSTALLER.read_text(encoding="utf-8")
+    deps = source.index("ensure qt have_qt6_dev\n")
+    assert deps < source.index("ensure_webengine\n", deps) < source.index('diag deps 1 "', deps)
