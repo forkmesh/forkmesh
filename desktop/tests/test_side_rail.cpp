@@ -186,6 +186,16 @@ static void testTerminalRequests()
     check(tb::launchCommand(tb::ClaudeKind, QString(), QStringLiteral("/tmp/it's.json"), false) ==
               QLatin1String("claude --mcp-config '/tmp/it'\\''s.json'"),
           "the Claude Code launch quotes its MCP config path");
+    check(tb::launchCommand(tb::CodexKind, QString(), QStringLiteral("/d/mcp-1.json"), false,
+                            QStringLiteral("/usr/bin/python3"), QStringLiteral("/s/my \"mcp\".py")) ==
+              QLatin1String("codex -c 'mcp_servers.forkmesh.command=\"/usr/bin/python3\"' "
+                            "-c 'mcp_servers.forkmesh.args=[\"/s/my \\\"mcp\\\".py\", "
+                            "\"--env-file\", \"/d/mcp-1.json\"]'"),
+          "a Codex terminal gets the ForkMesh MCP server through -c overrides and an env file");
+    check(tb::launchCommand(tb::CodexKind, QString(), QString(), false) == QLatin1String("codex"),
+          "Codex without a config file starts plainly");
+    check(tb::tomlString(QStringLiteral("a\\b\n")) == QLatin1String("\"a\\\\b\\u000a\""),
+          "TOML strings escape backslashes and control characters");
     check(tb::launchCommand(tb::ShellKind, QString(), QString(), false).contains(QStringLiteral("SHELL")),
           "a shell terminal runs the user's shell");
     check(tb::tailLines(QStringLiteral("a\nb\nc\n\n"), 2) == QLatin1String("b\nc"),

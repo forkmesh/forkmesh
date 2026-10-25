@@ -2,11 +2,11 @@
 
 On 2026-10-24 the desktop's right-hand team rail became a generic **side rail**.
 It no longer lists special agents by itself; it holds a terminal button, a
-browser button and whatever the user drags onto it. Terminals open as tabs on
-a **Terminals** page in the main window, and agents (including Claude Code
-started in one of those tabs) can read and type into them through the ForkMesh
-MCP server, the way Claude Code's desktop app lets a session drive its own
-panes.
+browser button and whatever the user drags onto it. Terminals open as tabs in
+a **terminal pane** on the right of the window (since 2026-10-24, before that
+on a full Terminals page), and agents (including Claude Code or Codex started
+in one of those tabs) can read and type into them through the ForkMesh MCP
+server, the way Claude Code's desktop app lets a session drive its own panes.
 
 ## Side rail
 
@@ -22,8 +22,8 @@ Classic.
   > Show the side rail on the right** (`ui/showSideRail`; the first read falls
   back to the old `ui/showTeammateRail`).
 - **Fixed buttons.** At the top: **Terminal** (`sideRailTerminalButton`,
-  opens the terminal launcher) and **Browser** (`sideRailBrowserButton`,
-  toggles the side browser). Under a hairline come the items, then a dashed
+  shows or hides the terminal pane, opening a shell when none is open) and
+  **Browser** (`sideRailBrowserButton`, toggles the side browser). Under a hairline come the items, then a dashed
   **+** tile (`sideRailAddButton`) whose menu adds a workflow from the current
   repository, a page from the left rail or a link, and offers **Open
   Workflows** and **Hide the side rail**.
@@ -94,28 +94,48 @@ dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their
 own browser windows (`open_browser_window`); the side browser is the user's.
 
-## Terminals page and launcher
+## Terminal pane and launcher
 
-Code: `desktop/src/MainWindowTerminals.cpp`, `TerminalTabsPage.*` (the page),
+Code: `desktop/src/MainWindowTerminals.cpp` (opening, launcher, agent
+requests), `MainWindowSideRail.cpp` (the pane, `revealTerminals`,
+`setSideRailTerminalsOpen`), `TerminalTabsPage.*` (tabs and header),
 `TerminalBridge.*` (request parsing, key names, launch commands) and
 `TerminalWidget` (the existing pty terminal, which gained `sendInput`,
 `plainText` and an `outputArrived` signal).
 
-- **Opening.** The top bar's terminal button (in Next `topTerminalButton`,
+- **One click.** The top bar's terminal button (in Next `topTerminalButton`,
   between the theme toggle and the side-rail toggle; in Classic a title-bar
-  button with the `terminalLauncherButton` property, before the view switcher),
-  the side rail's Terminal button and
-  the page's **New terminal** open the launcher (`QDialog#terminalLauncher`,
-  non-modal): **Run** shell, Claude Code, Codex or a command; **In** the
-  selected agent's worktree, the current repository, any local checkout or
-  home; **Share with agents**. The last choices are remembered under
-  `terminals/`.
-- **Page.** Section `kTerminalsSectionIndex` (30) is built on first use and
-  has no left-rail entry; the top-bar button shows how many tabs are open.
-  Tabs are closable and movable, at most 12. A shell tab `exec`s the user's
-  shell; the other kinds drop to an interactive shell when their program
-  exits, so the tab stays usable. **Shared with agents** / **Private** toggles
-  the current tab, and the header line shows the last thing an agent did in it.
+  button with the `terminalLauncherButton` property, before the view
+  switcher) and the side rail's Terminal button call `toggleTerminals`: with
+  no tab open they open a shell straight away in the pane; with tabs open
+  they show the pane, or hide it when it is showing. Hidden tabs keep
+  running. The user asked for a terminal that opens at once beside their
+  work, like an editor's terminal panel, rather than a dialog and a separate
+  page.
+- **Pane.** `#sideRailTerminalPanel` sits between the side browser and the
+  rail's button column. Its width is dragged on its left edge
+  (`#sideRailTerminalHandle`, 280 to 1200 px, `ui/sideRailTerminalWidth`,
+  default 560). The header has **Shared with agents** / **Private** for the
+  current tab, **+** (`terminalsNewButton`, a new shell in the current tab's
+  folder), a menu (`terminalsNewKindButton`) with **Shell**, **Claude Code**,
+  **Codex** and **Command or folder…** (the launcher), and **×** to hide the
+  pane. A line under it shows the last thing an agent did in the tab. Tabs
+  are closable and movable, at most 12; closing the last one hides the pane.
+  A shell tab `exec`s the user's shell; the other kinds drop to an
+  interactive shell when their program exits, so the tab stays usable.
+- **Default folder.** A new tab from the top bar or rail opens in the current
+  repository's checkout, else the launcher's last folder, else home; **+**
+  and the menu use the current tab's folder.
+- **Narrow windows.** The rail hides below 1000 px and in reduced view
+  modes. Then `revealTerminals` moves the same `TerminalTabsPage` (running
+  tabs and all) into section `kTerminalsSectionIndex` (30, no left-rail
+  entry) and shows it; the next reveal with room moves it back, and the
+  section then shows a note pointing at the pane.
+- **Launcher.** `QDialog#terminalLauncher` (non-modal, from the pane's menu
+  or the rail's **Open a terminal with options…**): **Run** shell, Claude
+  Code, Codex or a command; **In** the selected agent's worktree, the current
+  repository, any local checkout or home; **Share with agents**. The last
+  choices are remembered under `terminals/`.
 - **Environment.** Every tab gets `FORKMESH_AGENT_INTAKE` (the desktop's agent
   socket), its own `FORKMESH_AGENT_INTAKE_TOKEN` (`term.<random>`, kept in
   `m_terminalIntakeTokens` and dropped when the tab closes) and
@@ -127,6 +147,15 @@ Code: `desktop/src/MainWindowTerminals.cpp`, `TerminalTabsPage.*` (the page),
   `env`, because MCP clients do not pass their whole environment to stdio
   servers. That Claude Code session therefore has the ForkMesh MCP tools,
   including the terminal tools, without editing `.mcp.json`.
+- **Codex tabs** get the same file. Codex starts MCP servers with a scrubbed
+  environment and has no `--mcp-config`, so the tab runs
+  `codex -c 'mcp_servers.forkmesh.command="<python3>"' -c
+  'mcp_servers.forkmesh.args=["<forkmesh_mcp_server.py>", "--env-file",
+  "<data>/terminals/mcp-<id>.json"]'` (`launchCommand`, values written by
+  `tomlString`), and the server's `--env-file` copies the `FORKMESH_*` values
+  from that file's `mcpServers.forkmesh.env` into its environment
+  (`load_env_file`), so no token appears on a command line. On Windows a
+  Codex tab runs plain `codex`.
 - **Agent runs** (the Agents page's Claude Code runs) get the same file with
   their own session token (`<data>/core/agent-mcp/session-<id>.json`), so an
   agent can open and drive a tab without the user approving `.mcp.json`
@@ -163,5 +192,5 @@ Rules:
   desktop; input to a tab whose program exited is refused (`not_running`).
 - Like the window and hub tools, the terminal tools need the connector token
   once the node publishes an MCP connector.
-- An agent-opened tab does not switch the user's page; a notice names the
-  agent.
+- An agent-opened tab does not open the pane or switch the user's page; a
+  notice names the agent.

@@ -8,9 +8,11 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace forkmesh::ui {
@@ -21,44 +23,95 @@ TerminalTabsPage::TerminalTabsPage(QWidget *parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("terminalsPage"));
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 10, 12, 10);
-    layout->setSpacing(8);
+    layout->setContentsMargins(6, 4, 6, 6);
+    layout->setSpacing(4);
+
+    const auto headerButton = [](const char *name, const QString &text, const QString &tip) {
+        auto *button = new QPushButton(text);
+        button->setObjectName(QString::fromLatin1(name));
+        button->setCursor(Qt::PointingHandCursor);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setFixedSize(26, 24);
+        button->setToolTip(tip);
+        button->setAccessibleName(tip);
+        return button;
+    };
 
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
-    header->setSpacing(8);
+    header->setSpacing(4);
     auto *title = new QLabel(QStringLiteral("Terminals"));
     title->setObjectName(QStringLiteral("terminalsTitle"));
     header->addWidget(title);
-    m_status = new QLabel;
-    m_status->setObjectName(QStringLiteral("terminalsAgentStatus"));
-    m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    header->addWidget(m_status, 1);
+    header->addStretch(1);
     m_share = new QPushButton(QStringLiteral("Shared with agents"));
     m_share->setObjectName(QStringLiteral("terminalsShareButton"));
     m_share->setCheckable(true);
     m_share->setCursor(Qt::PointingHandCursor);
+    m_share->setFocusPolicy(Qt::NoFocus);
     m_share->setToolTip(QStringLiteral(
-        "When on, agents this desktop launched (and Claude Code started in a ForkMesh "
-        "terminal) can read this terminal and type into it through the ForkMesh MCP "
-        "terminal tools. Turn it off to keep this tab to yourself."));
+        "When on, agents this desktop launched (and Claude Code or Codex started in a "
+        "ForkMesh terminal) can read this terminal and type into it through the ForkMesh "
+        "MCP terminal tools. Turn it off to keep this tab to yourself."));
     header->addWidget(m_share);
-    m_new = new QPushButton(QStringLiteral("New terminal"));
-    m_new->setObjectName(QStringLiteral("terminalsNewButton"));
-    m_new->setCursor(Qt::PointingHandCursor);
-    m_new->setToolTip(QStringLiteral("Open the terminal launcher"));
+    m_new = headerButton("terminalsNewButton", QStringLiteral("+"),
+                         QStringLiteral("New terminal"));
     header->addWidget(m_new);
+    m_kinds = new QToolButton;
+    m_kinds->setObjectName(QStringLiteral("terminalsNewKindButton"));
+    m_kinds->setText(QStringLiteral("▾"));
+    m_kinds->setCursor(Qt::PointingHandCursor);
+    m_kinds->setFocusPolicy(Qt::NoFocus);
+    m_kinds->setFixedSize(26, 24);
+    m_kinds->setPopupMode(QToolButton::InstantPopup);
+    m_kinds->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    m_kinds->setToolTip(QStringLiteral("Open Claude Code, Codex or a command in a new tab"));
+    m_kinds->setAccessibleName(m_kinds->toolTip());
+    auto *kindsMenu = new QMenu(m_kinds);
+    kindsMenu->setObjectName(QStringLiteral("terminalsNewKindMenu"));
+    for (const QString &kind : bridge::kinds()) {
+        if (kind == bridge::CommandKind)
+            continue;
+        QAction *action = kindsMenu->addAction(bridge::kindLabel(kind));
+        action->setData(kind);
+        connect(action, &QAction::triggered, this, [this, kind] {
+            if (m_newTab)
+                m_newTab(kind);
+        });
+    }
+    kindsMenu->addSeparator();
+    connect(kindsMenu->addAction(QStringLiteral("Command or folder…")), &QAction::triggered,
+            this, [this] {
+                if (m_newTab)
+                    m_newTab(QString());
+            });
+    m_kinds->setMenu(kindsMenu);
+    header->addWidget(m_kinds);
+    m_hide = headerButton("terminalsHideButton", QStringLiteral("×"),
+                          QStringLiteral("Hide terminals; they keep running"));
+    m_hide->hide();
+    header->addWidget(m_hide);
     layout->addLayout(header);
+
+    m_status = new QLabel;
+    m_status->setObjectName(QStringLiteral("terminalsAgentStatus"));
+    m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_status->setWordWrap(true);
+    m_status->hide();
+    layout->addWidget(m_status);
 
     m_tabs = new QTabWidget;
     m_tabs->setObjectName(QStringLiteral("terminalsTabs"));
     m_tabs->setTabsClosable(true);
     m_tabs->setMovable(true);
     m_tabs->setDocumentMode(true);
+    m_tabs->setUsesScrollButtons(true);
+    m_tabs->setElideMode(Qt::ElideRight);
     layout->addWidget(m_tabs, 1);
 
     m_empty = new QLabel(QStringLiteral(
-        "No terminals open. Use New terminal, or the terminal button in the top bar."));
+        "No terminals open. Press + for a shell, or pick Claude Code or Codex from the menu "
+        "beside it."));
     m_empty->setObjectName(QStringLiteral("terminalsEmpty"));
     m_empty->setAlignment(Qt::AlignCenter);
     m_empty->setWordWrap(true);
@@ -66,7 +119,11 @@ TerminalTabsPage::TerminalTabsPage(QWidget *parent) : QWidget(parent)
 
     connect(m_new, &QPushButton::clicked, this, [this] {
         if (m_newTab)
-            m_newTab();
+            m_newTab(bridge::ShellKind);
+    });
+    connect(m_hide, &QPushButton::clicked, this, [this] {
+        if (m_hideHandler)
+            m_hideHandler();
     });
     connect(m_share, &QPushButton::toggled, this, [this](bool on) {
         const QString id = currentId();
@@ -90,7 +147,7 @@ TerminalTabsPage::~TerminalTabsPage()
             tab.terminal->stop();
 }
 
-void TerminalTabsPage::setNewTabHandler(std::function<void()> handler)
+void TerminalTabsPage::setNewTabHandler(std::function<void(const QString &kind)> handler)
 {
     m_newTab = std::move(handler);
 }
@@ -98,6 +155,30 @@ void TerminalTabsPage::setNewTabHandler(std::function<void()> handler)
 void TerminalTabsPage::setClosedHandler(std::function<void(const QString &)> handler)
 {
     m_closed = std::move(handler);
+}
+
+void TerminalTabsPage::setHideHandler(std::function<void()> handler)
+{
+    m_hideHandler = std::move(handler);
+    m_hide->setVisible(bool(m_hideHandler));
+}
+
+void TerminalTabsPage::setIcons(const Icons &icons)
+{
+    const auto apply = [](QAbstractButton *button, const QIcon &icon, const QString &text) {
+        button->setIcon(icon);
+        button->setIconSize(QSize(14, 14));
+        button->setText(icon.isNull() ? text : QString());
+    };
+    apply(m_new, icons.add, QStringLiteral("+"));
+    apply(m_kinds, icons.more, QStringLiteral("▾"));
+    apply(m_hide, icons.hide, QStringLiteral("×"));
+}
+
+void TerminalTabsPage::focusCurrent()
+{
+    if (QWidget *page = m_tabs->currentWidget())
+        page->setFocus(Qt::OtherFocusReason);
 }
 
 void TerminalTabsPage::setEmptyText(const QString &text)
@@ -295,9 +376,11 @@ void TerminalTabsPage::syncChrome()
         const QSignalBlocker blocker(m_share);
         m_share->setChecked(found && it->info.shared);
     }
+    m_share->setVisible(any);
     m_share->setText(found && !it->info.shared ? QStringLiteral("Private")
                                                : QStringLiteral("Shared with agents"));
     m_status->setText(found ? it->agentAction : QString());
+    m_status->setVisible(!m_status->text().isEmpty());
 }
 
 void TerminalTabsPage::retitle(const QString &id)
