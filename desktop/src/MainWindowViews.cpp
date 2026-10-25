@@ -155,8 +155,11 @@ void MainWindow::showViewModeMenu()
             applyTheme(m_packageRegistry.get());
         });
     }
-    QAction *matchInstance =
-        menu.addAction(QStringLiteral("Match the instance's theme"));
+    QString matchInstanceText = QStringLiteral("Match the instance's theme");
+    if (forkmesh::instancetheme::matchEnabled())
+        matchInstanceText += QStringLiteral(" (%1)").arg(
+            forkmesh::instancetheme::label(forkmesh::instancetheme::stored()));
+    QAction *matchInstance = menu.addAction(matchInstanceText);
     matchInstance->setObjectName(QStringLiteral("viewMenuMatchInstanceTheme"));
     matchInstance->setCheckable(true);
     matchInstance->setChecked(forkmesh::instancetheme::matchEnabled());
