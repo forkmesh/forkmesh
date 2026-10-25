@@ -176,6 +176,7 @@ bool isRail(const QString &rail);
 QList<Pin> parsePins(const QString &json);
 QString serializePins(const QList<Pin> &pins);
 QList<Pin> pinWorkflow(QList<Pin> pins, const Pin &pin);
+QList<Pin> movePin(QList<Pin> pins, const Pin &pin, int slot);
 QList<Pin> unpinWorkflow(QList<Pin> pins, const QString &repo, const QString &workflowId);
 QString pinnedRail(const QList<Pin> &pins, const QString &repo, const QString &workflowId);
 
