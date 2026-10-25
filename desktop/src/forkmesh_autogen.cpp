@@ -31,6 +31,7 @@
 #include "moc_MessageRow.cpp"
 #include "moc_NodeEventSocket.cpp"
 #include "moc_OfficeChannelMirror.cpp"
+#include "moc_OrganizationTaskStore.cpp"
 #include "moc_RemoveCoreNodeDialog.cpp"
 #include "moc_ScrollJumpButtons.cpp"
 #include "moc_ServerNode.cpp"

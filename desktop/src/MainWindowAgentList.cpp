@@ -540,7 +540,7 @@ void MainWindow::reloadAgents(AgentReloadScan scan)
     refreshBranchAgentButton();
     for (const AgentSession &session : std::as_const(m_agentSessions))
         syncOrgTaskAgentStatus(session.id);
-    refreshOrganizationTaskAgentRows();
+    notifyPackagesAgentSessionsChanged();
     updateAgentsNavBadge();
     maybeStartQueuedRebuild();
     updateAgentActionState();

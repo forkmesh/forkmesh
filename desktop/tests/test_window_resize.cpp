@@ -28,6 +28,7 @@
 #include "../src/LogTimelineChart.h"
 #include "OnboardingTour.h"
 #include "TimersClock.h"
+#include "TasksPage.h"
 #include "../src/PlatformLogFilter.h"
 #include "../src/PromptFlightOverlay.h"
 #include "../src/ProjectRegistry.h"
@@ -14047,6 +14048,14 @@ void checkAgentUnreadDot(MainWindow &window)
     window.testRefreshAgentTable();
 }
 
+forkmesh::tasks::TasksPage *showTestTasksPage(MainWindow &window)
+{
+    window.testShowNativePackage(QStringLiteral("tasks"));
+    QApplication::processEvents();
+    return dynamic_cast<forkmesh::tasks::TasksPage *>(
+        window.testNativePackagePage(QStringLiteral("tasks")));
+}
+
 void checkTaskListView(MainWindow &window)
 {
     const auto railPixels = [](const QImage &source) {
@@ -14071,8 +14080,12 @@ void checkTaskListView(MainWindow &window)
                          QStringLiteral("full"));
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
-    window.testReloadOrganizationTaskListView();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
+    tasks->reloadOrganizationTaskListView();
     QApplication::processEvents();
 
     const QString workingTask = QStringLiteral("d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4");
@@ -14143,16 +14156,16 @@ void checkTaskListView(MainWindow &window)
             return;
         window.grab().save(shot + QStringLiteral(".") + mode +
                            QStringLiteral(".page.png"));
-        window.testOrganizationTaskRowImage(personTask)
+        tasks->organizationTaskRowImage(personTask)
             .save(shot + QStringLiteral(".") + mode + QStringLiteral(".row.png"));
     };
 
-    const QImage fullRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage fullRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Full") &&
-              window.testOrganizationTaskListView() ==
+              tasks->organizationTaskListView() ==
                   forkmesh::ui::ListViewMode::Full &&
               fullRow.height() >= 52 && railPixels(fullRow) > 0 &&
-              window.testOrganizationTaskSpinTimerActive(),
+              tasks->organizationTaskSpinTimerActive(),
           QString("the Tasks page's View button starts on Full, the two-line "
                   "rows (height %1, rail %2)")
               .arg(fullRow.height())
@@ -14162,7 +14175,7 @@ void checkTaskListView(MainWindow &window)
     if (viewButton)
         viewButton->click();
     QApplication::processEvents();
-    const QImage compactRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage compactRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Compact") &&
               viewButton->toolTip().startsWith(QStringLiteral("Compact view: ")) &&
               viewButton->toolTip().endsWith(QStringLiteral("Click for Zen view")) &&
@@ -14172,7 +14185,7 @@ void checkTaskListView(MainWindow &window)
                   QStringLiteral("compact") &&
               compactRow.height() < fullRow.height() &&
               compactRow.height() >= 32 && railPixels(compactRow) > 0 &&
-              window.testOrganizationTaskSpinTimerActive(),
+              tasks->organizationTaskSpinTimerActive(),
           QString("a click steps the Tasks list to Compact, one line per task "
                   "kept in tasks/listView (height %1, rail %2)")
               .arg(compactRow.height())
@@ -14182,13 +14195,13 @@ void checkTaskListView(MainWindow &window)
     if (viewButton)
         viewButton->click();
     QApplication::processEvents();
-    const QImage zenRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage zenRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Zen") &&
               viewButton->toolTip().endsWith(QStringLiteral("Click for Full view")) &&
               QSettings().value(QStringLiteral("tasks/listView")).toString() ==
                   QStringLiteral("zen") &&
               zenRow.height() == compactRow.height() && railPixels(zenRow) == 0 &&
-              !window.testOrganizationTaskSpinTimerActive(),
+              !tasks->organizationTaskSpinTimerActive(),
           QString("a second click steps to Zen: no rail, priority or columns, "
                   "and no spinner timer (height %1, rail %2)")
               .arg(zenRow.height())
@@ -14197,10 +14210,10 @@ void checkTaskListView(MainWindow &window)
 
     QSettings().setValue(QStringLiteral("tasks/listView"),
                          QStringLiteral("compact"));
-    window.testReloadOrganizationTaskListView();
+    tasks->reloadOrganizationTaskListView();
     QApplication::processEvents();
     check(viewButton && viewButton->text() == QStringLiteral("Compact") &&
-              window.testOrganizationTaskRowImage(personTask).height() ==
+              tasks->organizationTaskRowImage(personTask).height() ==
                   compactRow.height(),
           QStringLiteral("the stored Tasks view is what the page opens with"));
     check(QSettings().value(QStringLiteral("agents/listView"),
@@ -14215,9 +14228,9 @@ void checkTaskListView(MainWindow &window)
     }
     QApplication::processEvents();
     check(viewButton && viewButton->text() == QStringLiteral("Full") &&
-              window.testOrganizationTaskRowImage(personTask).height() ==
+              tasks->organizationTaskRowImage(personTask).height() ==
                   fullRow.height() &&
-              window.testOrganizationTaskSpinTimerActive() &&
+              tasks->organizationTaskSpinTimerActive() &&
               QSettings().value(QStringLiteral("tasks/listView")).toString() ==
                   QStringLiteral("full"),
           QStringLiteral("stepping on returns the Tasks list to Full"));
@@ -14247,7 +14260,11 @@ void checkTaskAgentAvatar(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
     QApplication::processEvents();
 
     const QString runningTask = QStringLiteral("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1");
@@ -14303,7 +14320,7 @@ void checkTaskAgentAvatar(MainWindow &window)
     QApplication::processEvents();
 
     const QImage localFace =
-        window.testOrganizationTaskAgentFace(runningTask).toImage();
+        tasks->organizationTaskAgentFacePicture(runningTask).toImage();
     const QImage expectedLocal = forkmesh::ui::agentStatusModelIcon(session)
                                      .pixmap(localFace.size())
                                      .toImage();
@@ -14317,7 +14334,7 @@ void checkTaskAgentAvatar(MainWindow &window)
     remoteIdentity.provider = QStringLiteral("codex");
     remoteIdentity.model = QStringLiteral("gpt-5");
     const QImage remoteFace =
-        window.testOrganizationTaskAgentFace(remoteTask).toImage();
+        tasks->organizationTaskAgentFacePicture(remoteTask).toImage();
     const QImage expectedRemote =
         forkmesh::ui::agentStatusModelIcon(remoteIdentity)
             .pixmap(remoteFace.size())
@@ -14325,59 +14342,59 @@ void checkTaskAgentAvatar(MainWindow &window)
     check(!remoteFace.isNull() &&
               remoteFace.convertToFormat(QImage::Format_ARGB32) ==
                   expectedRemote.convertToFormat(QImage::Format_ARGB32) &&
-              !window.testOrganizationTaskAgentWorking(remoteTask),
+              !tasks->organizationTaskAgentWorking(remoteTask),
           QStringLiteral("a bot task run elsewhere shows the avatar of the "
                          "provider and model the relay reports, without a "
                          "spinner once that run has finished"));
-    check(window.testOrganizationTaskAgentFace(personTask).isNull() &&
-              !window.testOrganizationTaskAgentWorking(personTask),
+    check(tasks->organizationTaskAgentFacePicture(personTask).isNull() &&
+              !tasks->organizationTaskAgentWorking(personTask),
           QStringLiteral("a task assigned to a person keeps the person badge"));
 
-    check(window.testOrganizationTaskAgentWorking(runningTask) &&
-              window.testOrganizationTaskSpinTimerActive(),
+    check(tasks->organizationTaskAgentWorking(runningTask) &&
+              tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("a running agent's task row spins while the Tasks "
                          "page is on screen"));
-    const QImage spinningRow = window.testOrganizationTaskRowImage(runningTask);
-    window.testTickOrganizationTaskSpinners();
+    const QImage spinningRow = tasks->organizationTaskRowImage(runningTask);
+    tasks->tickOrganizationTaskSpinners();
     QApplication::processEvents();
-    const QImage nextFrame = window.testOrganizationTaskRowImage(runningTask);
+    const QImage nextFrame = tasks->organizationTaskRowImage(runningTask);
     check(!spinningRow.isNull() && spinningRow != nextFrame,
           QStringLiteral("each spinner tick moves the fireball on the row"));
 
     session.status = AgentStatus::Success;
     window.testAddAgentSession(session);
-    window.testTickOrganizationTaskSpinners();
+    tasks->tickOrganizationTaskSpinners();
     QApplication::processEvents();
-    const QImage idleRow = window.testOrganizationTaskRowImage(runningTask);
-    check(!window.testOrganizationTaskAgentWorking(runningTask) &&
-              !window.testOrganizationTaskSpinTimerActive() &&
+    const QImage idleRow = tasks->organizationTaskRowImage(runningTask);
+    check(!tasks->organizationTaskAgentWorking(runningTask) &&
+              !tasks->organizationTaskSpinTimerActive() &&
               purplePixelCount(spinningRow) > purplePixelCount(idleRow) &&
-              !window.testOrganizationTaskAgentFace(runningTask).isNull(),
+              !tasks->organizationTaskAgentFacePicture(runningTask).isNull(),
           QStringLiteral("the spinner stops, and its timer with it, once the "
                          "agent finishes; the avatar stays"));
 
     session.status = AgentStatus::Running;
     window.testAddAgentSession(session);
-    window.testRefreshOrganizationTaskAgentRows();
-    check(window.testOrganizationTaskAgentWorking(runningTask) &&
-              window.testOrganizationTaskSpinTimerActive(),
+    tasks->refreshOrganizationTaskAgentRows();
+    check(tasks->organizationTaskAgentWorking(runningTask) &&
+              tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the spinner starts again when the agent runs again"));
 
     window.testShowControlNode();
     QApplication::processEvents();
-    window.testTickOrganizationTaskSpinners();
-    check(!window.testOrganizationTaskSpinTimerActive(),
+    tasks->tickOrganizationTaskSpinners();
+    check(!tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the task spinner timer stops while the Tasks page "
                          "is hidden"));
-    window.testShowOrganizationTasks();
+    showTestTasksPage(window);
     QApplication::processEvents();
-    check(window.testOrganizationTaskSpinTimerActive(),
+    check(tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the task spinner resumes when the Tasks page is "
                          "shown again with an agent still running"));
 
     window.testRemoveAgentSession(session.id);
-    window.testRefreshOrganizationTaskAgentRows();
-    check(!window.testOrganizationTaskSpinTimerActive(),
+    tasks->refreshOrganizationTaskAgentRows();
+    check(!tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("no agent working means no task spinner timer"));
 }
 
@@ -14399,8 +14416,12 @@ void checkTaskPeopleAvatars(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
     window.testSetAccountAvatar(QStringLiteral("jett"), QPixmap());
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), QPixmap());
     QApplication::processEvents();
@@ -14431,7 +14452,7 @@ void checkTaskPeopleAvatars(MainWindow &window)
          }}});
     QApplication::processEvents();
 
-    const QImage standIn = window.testOrganizationTaskRowImage(jettTask);
+    const QImage standIn = tasks->organizationTaskRowImage(jettTask);
     check(exactPixelCount(standIn, jettColor) == 0,
           QStringLiteral("a creator with no known picture wears the generated "
                          "stand-in"));
@@ -14444,37 +14465,37 @@ void checkTaskPeopleAvatars(MainWindow &window)
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), kaifPicture);
     QApplication::processEvents();
 
-    const QImage fullRow = window.testOrganizationTaskRowImage(jettTask);
-    check(window.testOrganizationTaskCreatorPicture(jettTask).cacheKey() ==
+    const QImage fullRow = tasks->organizationTaskRowImage(jettTask);
+    check(tasks->organizationTaskCreatorPicture(jettTask).cacheKey() ==
                   jettPicture.cacheKey() &&
               exactPixelCount(fullRow, jettColor) > 200,
           QStringLiteral("the Full row repaints with jett's real profile "
                          "picture as the creator avatar once it is loaded"));
-    check(window.testOrganizationTaskAssigneePicture(jettTask).cacheKey() ==
+    check(tasks->organizationTaskAssigneePicture(jettTask).cacheKey() ==
                   kaifPicture.cacheKey() &&
               exactPixelCount(fullRow, kaifColor) > 20,
           QStringLiteral("the assignee badge on a Full row shows the "
                          "assignee's real profile picture"));
-    const QImage plainRow = window.testOrganizationTaskRowImage(plainTask);
-    check(window.testOrganizationTaskCreatorPicture(plainTask).isNull() &&
+    const QImage plainRow = tasks->organizationTaskRowImage(plainTask);
+    check(tasks->organizationTaskCreatorPicture(plainTask).isNull() &&
               exactPixelCount(plainRow, jettColor) == 0,
           QStringLiteral("an account with no picture keeps its stand-in"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Compact);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Compact);
     QApplication::processEvents();
-    check(exactPixelCount(window.testOrganizationTaskRowImage(jettTask),
+    check(exactPixelCount(tasks->organizationTaskRowImage(jettTask),
                           kaifColor) > 40,
           QStringLiteral("the Compact assignee column shows the assignee's "
                          "real profile picture"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Zen);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Zen);
     QApplication::processEvents();
-    const QImage zenRow = window.testOrganizationTaskRowImage(jettTask);
+    const QImage zenRow = tasks->organizationTaskRowImage(jettTask);
     check(exactPixelCount(zenRow, jettColor) == 0 &&
               exactPixelCount(zenRow, kaifColor) == 0,
           QStringLiteral("Zen rows show no avatars"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
     window.testSetAccountAvatar(QStringLiteral("jett"), QPixmap());
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), QPixmap());
     window.testApplyOrganizationTasks(QJsonObject{
@@ -14715,7 +14736,11 @@ void checkAgentTaskLink(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
     QApplication::processEvents();
 
     const QString personTask = QStringLiteral("d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4");
@@ -14816,7 +14841,7 @@ void checkAgentTaskLink(MainWindow &window)
              {QStringLiteral("createdAt"), double(now)}}}},
     });
     QApplication::processEvents();
-    check(!window.testOrganizationTaskAgentFace(personTask).isNull(),
+    check(!tasks->organizationTaskAgentFacePicture(personTask).isNull(),
           QStringLiteral("a person's task shows the avatar of the agent "
                          "attached to it"));
 
@@ -14984,13 +15009,11 @@ void checkAgentTaskLink(MainWindow &window)
         QApplication::processEvents();
         window.testOpenAgentTranscriptReference(QStringLiteral("forkmesh-task:") + id);
         QApplication::processEvents();
-        check(window.testSectionIndex() ==
-                      window.testOrganizationTasksSectionIndex() &&
-                  selectedTaskTitle() == title,
+        check(tasks->isVisible() && selectedTaskTitle() == title,
               QStringLiteral("clicking a transcript task link opens Tasks with "
-                             "that task selected (%1: section %2, selected \"%3\")")
+                             "that task selected (%1: shown %2, selected \"%3\")")
                   .arg(title)
-                  .arg(window.testSectionIndex())
+                  .arg(tasks->isVisible())
                   .arg(selectedTaskTitle()));
     }
     window.testOpenAgentTranscriptReference(QStringLiteral("forkmesh-task:") +
@@ -15541,7 +15564,7 @@ void checkUiSnapshots(MainWindow &window)
     };
     const Page pages[] = {
         {0, "home"},     {1, "settings"}, {2, "chat"},   {4, "log"},
-        {7, "hosts"},    {14, "control"}, {15, "tasks"}, {-1, "notes"},
+        {7, "hosts"},    {14, "control"}, {-2, "tasks"}, {-1, "notes"},
         {17, "users"},   {18, "files"},   {20, "market"},
         {21, "ledger"},  {22, "team"},    {23, "stats"}, {24, "health"},
         {25, "memory"},
@@ -15654,7 +15677,9 @@ void checkUiSnapshots(MainWindow &window)
         for (const Page &page : pages) {
             if (page.section >= NextAccess::sectionCount(window))
                 continue;
-            if (page.section < 0)
+            if (page.section == -2)
+                window.testShowNativePackage(QStringLiteral("tasks"));
+            else if (page.section < 0)
                 window.testShowNotesSection();
             else
                 NextAccess::showSection(window, page.section);

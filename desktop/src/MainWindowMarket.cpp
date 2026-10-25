@@ -4356,7 +4356,6 @@ void MainWindow::syncPackageSurfaces()
         {m_railCodeButton, on(QStringLiteral("code"))},
         {m_railGitButton, on(QStringLiteral("commits"))},
         {m_chatButton, on(QStringLiteral("chat"))},
-        {m_tasksNavButton, on(QStringLiteral("tasks"))},
         {m_notificationButton, on(QStringLiteral("inbox"))},
         {m_networkNavButton,
          on(QStringLiteral("network")) || on(QStringLiteral("hosts"))},
@@ -4429,7 +4428,6 @@ void MainWindow::syncPackageSurfaces()
         const QHash<int, QString> sectionPackages = {
             {2, QStringLiteral("chat")},
             {3, QStringLiteral("inbox")},
-            {kOrganizationTasksSectionIndex, QStringLiteral("tasks")},
             {kTeamSectionIndex, QStringLiteral("special-agents")},
             {kStatsSectionIndex, QStringLiteral("stats")},
         };
@@ -4671,7 +4669,15 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.logActivity = [this](const QString &text) { logSystem(text); };
     host.openReference = [this](const QString &href) { openReferenceLink(href); };
     host.showPage = [this, id] { showNativePackage(id); };
-    host.windowCommand = [this](const QString &command, const QJsonObject &args) {
+    const bool tasksRead =
+        permissionIds.contains(QStringLiteral("organization.tasks.read"));
+    const bool tasksWrite =
+        permissionIds.contains(QStringLiteral("organization.tasks.write"));
+    host.windowCommand = [this, tasksWrite](const QString &command,
+                                            const QJsonObject &args) {
+        if (command.startsWith(QLatin1String("task.")) &&
+            command != QLatin1String("task.composeFromText") && !tasksWrite)
+            return false;
         return runWindowCommand(command, args);
     };
     host.notify = [this](const QString &title, const QString &body,
@@ -4733,6 +4739,26 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
     host.chromeSlotChanged = [this, id] { placeNativePackageChrome(id); };
     host.chromeSlotAt = [this](const QPoint &globalPos) {
         return nativePackageChromeSlotAt(globalPos);
+    };
+    host.windowQuery = [this, tasksRead](const QString &command,
+                                         const QJsonObject &args) {
+        if (command.startsWith(QLatin1String("task.")) && !tasksRead)
+            return QJsonValue();
+        return runWindowQuery(command, args);
+    };
+    host.windowRequest = [this, tasksWrite](
+                             const QString &command, const QJsonObject &args,
+                             forkmesh::market::NativePackageReplyHandler done) {
+        if (command.startsWith(QLatin1String("task.")) && !tasksWrite) {
+            done(false, {}, QStringLiteral("This package may not change tasks."));
+            return;
+        }
+        if (!runWindowRequest(command, args, done))
+            done(false, {}, QStringLiteral("This window does not offer %1.")
+                                .arg(command));
+    };
+    host.accountPicture = [this](const QString &account) {
+        return chatSenderAvatarSource(QString(), account);
     };
     return host;
 }

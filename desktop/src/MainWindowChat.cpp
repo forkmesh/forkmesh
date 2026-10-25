@@ -2816,7 +2816,7 @@ QWidget *MainWindow::buildChatPage()
 
     for (QPushButton *button :
          {m_tourNavButton, m_settingsNavButton, m_navScreenshotButton,
-          m_tasksNavButton, m_notificationButton})
+          m_notificationButton})
         m_appNavigationRailLayout->addWidget(button, 0, Qt::AlignLeft);
     applyRailOrder(); // packs every item against the top, stretch at the end
     syncPackageSurfaces();
@@ -3757,8 +3757,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         const bool task = provider == kTaskPromptProvider;
         if (task) {
             refreshQuickAddTaskAssignees();
-            if (organizationTaskMemberNames().isEmpty() &&
-                m_organizationTasksStartupPayload.isEmpty())
+            if (organizationTaskMemberNames().isEmpty())
                 refreshOrganizationTaskBadge();
         }
         m_quickAddTaskAssignee->setVisible(task);

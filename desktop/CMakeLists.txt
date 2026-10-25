@@ -482,7 +482,9 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowUsers.cpp
     src/MainWindowVultrMirrors.cpp
     src/MainWindowHostInstall.cpp
-    src/MainWindowTasks.cpp
+    src/MainWindowTaskBridge.cpp
+    src/OrganizationTaskStore.h
+    src/OrganizationTaskStore.cpp
     src/GitCapture.cpp
     src/MainWindowFiles.cpp
     src/MainWindowNetworkFiles.cpp
@@ -1369,6 +1371,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/MessageRow.h
     src/NodeEventSocket.h
     src/OfficeChannelMirror.h
+    src/OrganizationTaskStore.h
     src/RemoveCoreNodeDialog.h
     src/ScrollJumpButtons.h
     src/ServerNode.h
@@ -1482,6 +1485,7 @@ set_source_files_properties(
     src/MessageRow.h
     src/NodeEventSocket.h
     src/OfficeChannelMirror.h
+    src/OrganizationTaskStore.h
     src/RemoveCoreNodeDialog.h
     src/ScrollJumpButtons.h
     src/ServerNode.h

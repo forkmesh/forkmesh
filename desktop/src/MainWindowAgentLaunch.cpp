@@ -1726,7 +1726,7 @@ void MainWindow::deleteAgentSessionOrgTask(
                           .arg(force ? QStringLiteral(" (forced past its busy "
                                                       "guard)")
                                      : QString()));
-            if (m_organizationTasksLoaded)
+            if (m_organizationTaskStore && m_organizationTaskStore->loaded())
                 refreshOrganizationTasks();
             if (trace)
                 trace->taskStatus = taskAlreadyAbsent ? QStringLiteral("absent")

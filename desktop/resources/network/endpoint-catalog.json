@@ -932,9 +932,9 @@
       "alternative": "The tasks topic already announces changes; the refetch after each write is redundant",
       "requestNeeded": 35,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalogPage",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalog",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::refreshOrganizationTasks"
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestCatalogPage",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestCatalog",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::refresh"
       ]
     },
     {
@@ -947,9 +947,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::composeOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::composeOrganizationTask",
         "desktop/src/MainWindowAgentLanding.cpp: MainWindow::openOrgTaskForSession",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::createOrganizationTaskFollowUp"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::createOrganizationTaskFollowUp"
       ]
     },
     {
@@ -988,9 +988,9 @@
       "alternative": "none: on-demand reads",
       "requestNeeded": 90,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::loadOrganizationTaskHistory",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskAttachment",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::applyOrganizationTasks"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::loadOrganizationTaskHistory",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestAttachment",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::applyOrganizationTasks"
       ]
     },
     {
@@ -1003,9 +1003,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::runOrganizationTaskAction",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::commentOnOrganizationTask",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::checkInOnOrganizationTask"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::runOrganizationTaskAction",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::commentOnOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::checkInOnOrganizationTask"
       ]
     },
     {
@@ -1018,9 +1018,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::editOrganizationTask",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::assignOrganizationTaskToAgent",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::queueOrganizationTaskAgent"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::editOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::assignOrganizationTaskToAgent",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::queueOrganizationTaskAgent"
       ]
     },
     {
@@ -1033,9 +1033,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::deleteOrganizationTask",
         "desktop/src/MainWindowAgentLaunch.cpp: MainWindow::deleteAgentSessionAndCleanup",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteClosedOrganizationTasks"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::deleteClosedOrganizationTasks"
       ]
     },
     {

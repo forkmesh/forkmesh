@@ -1588,37 +1588,9 @@ void MainWindow::activateGlobalSearchHit(const GlobalSearchHit &hit)
 // --- Packages the desktop hosts itself --------------------------------------
 //
 // A marketplace package with its own page answers the top search box through
-// NativePackageWidget::searchHits. Notes, Tasks, Calendar and Timers are
-// packages too, but their pages are part of the window, so the window answers
-// for them here from the records those pages already hold. Packages that only
-// add a launcher (Ledger, Capture, ...) are found by their name instead.
-
-namespace {
-
-QString packageRecordText(const QJsonObject &record, const char *field)
-{
-    return record.value(QLatin1String(field)).toString().trimmed();
-}
-
-// The first of `fields` holding the query, or -1.
-int packageRecordMatch(const QJsonObject &record, const QString &query,
-                       std::initializer_list<const char *> fields)
-{
-    int index = 0;
-    for (const char *field : fields) {
-        if (containsFold(record.value(QLatin1String(field)).toString(), query))
-            return index;
-        ++index;
-    }
-    return -1;
-}
-
-} // namespace
-
-bool MainWindow::builtinPackageSearchable(const QString &packageId) const
-{
-    return packageSurfaceShown(packageId);
-}
+// NativePackageWidget::searchHits, and a top-bar widget the same way below.
+// Packages that only add a launcher (Ledger, Capture, ...) are found by their
+// name instead.
 
 QList<MainWindow::BuiltinPackageSearchHit>
 MainWindow::builtinPackageSearchHits(const QString &rawQuery,
@@ -1629,45 +1601,6 @@ MainWindow::builtinPackageSearchHits(const QString &rawQuery,
     if (query.isEmpty())
         return hits;
     const QString dot = QString::fromUtf8("  \xC2\xB7  ");
-
-    if (builtinPackageSearchable(QStringLiteral("tasks"))) {
-        int found = 0;
-        for (const QJsonValue &value : m_organizationTasks) {
-            if (found >= limitPerPackage)
-                break;
-            const QJsonObject task = value.toObject();
-            const QString id = packageRecordText(task, "id");
-            if (id.isEmpty())
-                continue;
-            int field = packageRecordMatch(
-                task, query,
-                {"title", "details", "assignee", "repository", "completionNote",
-                 "department", "status", "id"});
-            if (field < 0 &&
-                containsFold(task.value(QStringLiteral("qa"))
-                                 .toObject()
-                                 .value(QStringLiteral("howToTest"))
-                                 .toString(),
-                             query))
-                field = 8;
-            if (field < 0)
-                continue;
-            QString label = packageRecordText(task, "title");
-            if (label.isEmpty())
-                label = id;
-            if (field == 1 || field == 4)
-                label += dot + snippetAround(
-                    task.value(QLatin1String(field == 1 ? "details"
-                                                        : "completionNote"))
-                        .toString(), query);
-            const QString status = packageRecordText(task, "status");
-            if (!status.isEmpty())
-                label += dot + status;
-            hits.append({QStringLiteral("tasks"), QStringLiteral("Tasks"),
-                         QStringLiteral("list-unordered"), label, id});
-            ++found;
-        }
-    }
 
     for (const NativePackageChrome &chrome : m_nativePackageChrome) {
         if (!chrome.widget)
@@ -1719,10 +1652,6 @@ MainWindow::builtinPackageSearchHits(const QString &rawQuery,
 void MainWindow::activateBuiltinPackageSearchHit(const QString &packageId,
                                                  const QString &hitId)
 {
-    if (!hitId.isEmpty() && packageId == QLatin1String("tasks")) {
-        openOrganizationTask(hitId);
-        return;
-    }
     for (const NativePackageChrome &chrome : std::as_const(m_nativePackageChrome)) {
         if (chrome.id == packageId && chrome.widget) {
             chrome.widget->activateSearchHit(hitId);
@@ -1740,28 +1669,10 @@ void MainWindow::activateBuiltinPackageSearchHit(const QString &packageId,
     const forkmesh::market::PackageManifest *manifest =
         m_packageRegistry ? m_packageRegistry->package(packageId) : nullptr;
     const QString entrypoint = manifest ? manifest->desktopEntrypoint : QString();
-    if (entrypoint == QLatin1String("builtin:tasks"))
-        showSection(kOrganizationTasksSectionIndex);
-    else if (entrypoint == QLatin1String("builtin:ledger") && m_ledgerFeature)
+    if (entrypoint == QLatin1String("builtin:ledger") && m_ledgerFeature)
         showSection(kLedgerSectionIndex);
     else if (activateNativePackageChrome(packageId))
         return;
     else
         showPackageSettings(packageId);
-}
-
-void MainWindow::prepareBuiltinPackageSearch()
-{
-    if (m_builtinPackageSearchPrepared)
-        return;
-    m_builtinPackageSearchPrepared = true;
-    // Off the keystroke: a page that was never opened is built here, and its
-    // load callback redraws the dropdown through nativePackageSearchIndexChanged.
-    QTimer::singleShot(0, this, [this] {
-        if (builtinPackageSearchable(QStringLiteral("tasks")) &&
-            !m_organizationTasksLoaded) {
-            ensureSectionBuilt(kOrganizationTasksSectionIndex);
-            refreshOrganizationTasks();
-        }
-    });
 }
