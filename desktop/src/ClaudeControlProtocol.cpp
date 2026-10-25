@@ -727,4 +727,38 @@ QString permissionModeLabel(const QString &modeId)
     return QString();
 }
 
+QString permissionModeChangeNotice(const QString &fromModeId, const QString &toModeId)
+{
+    const QString to = permissionModeLabel(toModeId);
+    if (to.isEmpty() || fromModeId.isEmpty() || fromModeId == toModeId)
+        return QString();
+    QString rule;
+    if (toModeId == QLatin1String("bypassPermissions"))
+        rule = QStringLiteral("Tool calls run without asking for approval.");
+    else if (toModeId == QLatin1String("acceptEdits"))
+        rule = QStringLiteral("File edits are accepted automatically; shell commands and "
+                              "other tool calls wait for the user's approval.");
+    else if (toModeId == QLatin1String("default"))
+        rule = QStringLiteral("Edits, shell commands and other tool calls that change "
+                              "anything wait for the user's approval.");
+    else
+        rule = QStringLiteral("Read and plan only; make no changes until the user "
+                              "approves a plan.");
+    const QString from = permissionModeLabel(fromModeId);
+    const QString switched =
+        from.isEmpty()
+            ? QStringLiteral("The user switched this session to %1 mode (%2).")
+                  .arg(to, toModeId)
+            : QStringLiteral("The user switched this session from %1 mode (%2) to "
+                             "%3 mode (%4).")
+                  .arg(from, fromModeId, to, toModeId);
+    QString stale;
+    if (fromModeId == QLatin1String("bypassPermissions"))
+        stale = QStringLiteral(" Bypass permissions mode is no longer active, so "
+                               "ignore instructions that assume it.");
+    return QStringLiteral("[ForkMesh: permission mode changed. %1 %2%3 This applies "
+                          "from this message on.]\n\n")
+        .arg(switched, rule, stale);
+}
+
 } // namespace forkmesh::claudecontrol

@@ -59,6 +59,7 @@ export function encodeRig(rig) {
     clampInt(hand.y * 20, -255, 255),
     ...[0, 1, 2, 3, 4].map((i) => clampInt((hand.curl?.[i] || 0) * 100, 0, 100)),
     clampInt((hand.roll || 0) * 40, -255, 255),
+    clampInt((hand.z || 0) * 100, -255, 255),
   ]);
   wire.t = rig.talking ? 1 : 0;
   wire.l = clampInt((rig.level || 0) * 100, 0, 100);
@@ -105,6 +106,7 @@ export function decodeRig(wire) {
         y: clampInt(hand[2], -255, 255) / 20,
         curl: hand.slice(3, 8).map((value) => clampInt(value, 0, 100) / 100),
         roll: clampInt(hand[8], -255, 255) / 40,
+        z: hand.length > 9 ? clampInt(hand[9], -255, 255) / 100 : 0,
       });
     }
   }
