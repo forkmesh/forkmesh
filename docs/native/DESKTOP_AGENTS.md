@@ -340,24 +340,48 @@ left, so the text starts at the row's edge (asked for from a phone screenshot:
 the dot took width and the churn bars were hard to read).
 
 - The tile shows the first image of the session, or a blank tile when there is
-  none. Its border is the churn (`AgentChurnRing`): one continuous 2 pt stroke,
-  green for the share of lines added and red for the share removed, so the
-  larger side is the longer stretch. With no churn the border is a hairline.
-  While the agent is active the ring turns (one lap every 2.4 s, the green and
-  red stretches keep their lengths) so a working agent stands out in the list;
-  when it finishes the ring stops still. Reduce Motion keeps it still, and it
-  pauses while the tab is hidden (asked for from the phone: see at a glance
-  which agents are working).
-- A small semi-transparent pill on the tile's top right (`AgentTilePill`) holds
-  the file count and a dot coloured by status: blue running, orange waiting,
-  green done, purple merged, red failed, grey queued or stopped.
-- The tile's bottom left shows one dot per open background task
-  (`AgentTileTasks`, up to three, then `+n`), from the desktop row's
-  `backgroundTasks`: the session's open backgrounded tasks
-  (`agentclitasks::Ledger::openBackground`). The desktop rings
-  `agents.changed` when that count changes. The dots blink while the agent is
-  active; Reduce Motion holds them still.
-- The unread dot sits on the tile's top left.
+  none. Since 2026-10-25 its border is the token flow (`AgentTokenRing`): two
+  1 pt dashed lanes, tokens in on the outer lane and tokens out on the inner
+  one, moving in opposite directions while the agent is active. Each lane's
+  colour follows its rate: grey idle, blue slow, green steady, orange fast,
+  red very fast (`AgentTokenPace`; output steps at 1, 15, 60 and 200
+  tokens/s, input at ten times that because each request re-reads the
+  context). Its speed follows the rate smoothly, 4 pt/s at 1 token/s plus
+  4 pt/s per tenfold, at most 24 (`AgentTokenPace.travel`), and the dash
+  position adds up frame by frame (`AgentTokenClock`), so a change of speed
+  does not make the dashes jump. The phone measures the rate from how the
+  totals grow: once a second from the desktop vitals feed's `agentTokens`
+  while it watches the desktop (see NAVIGATION.md, agent token charts), and
+  on each list update otherwise (`AgentTokenSampler`: gaps count as at most
+  8 s; a second with no growth halves the rate every 1.5 s, down to idle below
+  0.5 tokens/s, so bursty arrivals glide instead of stopping each second; the
+  rate drops to idle after 10 s with no growth). Asked for on 2026-10-25: the
+  ring should move with tokens as they are sent and received. With no token
+  counts the border is a hairline. Reduce Motion keeps the lanes still, and
+  they pause while the tab is hidden.
+- The totals come from the desktop row's `tokensIn` and `tokensOut`: for Claude
+  sessions the desktop adds each assistant message's input (fresh, cache
+  written and cache read) and output once per message id
+  (`transcripttools::InputTokenCounter` / `OutputTokenCounter`); Codex reports
+  running totals. Older desktops without these fields fall back to the
+  session's stored `promptTokens` / `completionTokens`.
+- Inside the tile, top to bottom: the file count in a small semi-transparent
+  pill (`AgentTileFiles`) whose outline is the churn, a 0.75 pt stroke green
+  for the share of lines added and red for the share removed (it used to be the
+  turning 2 pt border); a row of tiny icons (`AgentTileBadges`, up to four,
+  most urgent first: conflict or behind, worktree, branch, commits ahead, pull
+  request, then runner, cloud or outside terminal, the same icons as the list's
+  meta line, from `AgentLineBadge.of`); and the open background tasks.
+- Background tasks are thin 1 pt lines (`AgentTileTasks`, up to ten, or seven
+  and `+n` past that), from the desktop row's `backgroundTasks`: the session's
+  open backgrounded tasks (`agentclitasks::Ledger::openBackground`). The
+  desktop rings `agents.changed` when that count changes. The lines blink while
+  the agent is active; Reduce Motion holds them still.
+- When the agent has finished successfully the bottom slot shows a small green
+  `done` bar instead of the task lines (`AgentTileDone`).
+- The status dot (blue running, orange waiting, green done, purple merged, red
+  failed, grey queued or stopped; `AgentTileStatusDot`) sits on the tile's top
+  right corner and the unread dot on its top left.
 
 - `AgentEagleStrip` keeps the lane as a train of copies of the latest line
   with 5 pt seams, scrolling left at 80 pt/s after a 0.5 s pause, so the lane is

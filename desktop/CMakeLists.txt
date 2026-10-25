@@ -87,14 +87,11 @@ endif()
 
 # Baked into the binaries for rebuild-only developer actions and diagnostics.
 # Update & restart deliberately uses an app-managed source clone instead, so it
-# cannot pull, replace, or build inside this working copy. Global is fine here —
-# the value never changes between builds of the same checkout, so it never
-# invalidates incremental builds. (It also must stay global: the inline
-# workingClientDir() in MainWindowInternal.h reads it, so every TU has to see the
-# same value or the ODR is violated.)
-add_compile_definitions(
-    FORKMESH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-)
+# cannot pull, replace, or build inside this working copy. Only SourceDir.cpp
+# sees the path: on every compile line it kept ccache from sharing objects
+# between checkouts (docs/desktop/build-and-test.md#ccache).
+set_source_files_properties(src/SourceDir.cpp PROPERTIES
+    COMPILE_DEFINITIONS FORKMESH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 # FORKMESH_VERSION changes on every release bump, so it must NOT be on compile
 # command lines at all — as a global definition it turned every bump into a
@@ -136,8 +133,9 @@ if(FORKMESH_CCACHE)
     # source-level definitions, and the client does not use the clock macros,
     # so both assumptions hold here. Pass them per invocation instead of
     # changing the developer's global ccache configuration.
+    get_filename_component(FORKMESH_CHECKOUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
     set(CMAKE_CXX_COMPILER_LAUNCHER
-        "${FORKMESH_CCACHE};sloppiness=pch_defines,time_macros")
+        "${FORKMESH_CCACHE};sloppiness=pch_defines,time_macros;base_dir=${FORKMESH_CHECKOUT_DIR};hash_dir=false")
 endif()
 
 if(UNIX AND NOT APPLE)
@@ -156,6 +154,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
+set_property(GLOBAL PROPERTY RULE_LAUNCH_CUSTOM
+    "${CMAKE_COMMAND} -E env QT_RCC_SOURCE_DATE_OVERRIDE=1")
 
 # The MainWindow*.cpp translation units are enormous (MainWindow.h +
 # MainWindowInternal.h alone are ~800 KB of headers), and cc1plus peaks between
@@ -653,6 +653,8 @@ if(FORKMESH_BROWSER_PANE)
 endif()
 
 set(FORKMESH_APP_SOURCES
+    src/SourceDir.h
+    src/SourceDir.cpp
     src/AgentFolders.h
     src/AgentFolders.cpp
     src/Http3Get.h
@@ -1166,6 +1168,8 @@ set(FORKMESH_APP_SOURCES
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
     src/ClaudeTranscriptTools.cpp
+    src/TranscriptCoverage.h
+    src/TranscriptCoverage.cpp
     src/ClaudeSessionScan.h
     src/ClaudeSessionScan.cpp
     src/ClaudeSessionImport.h
@@ -1305,7 +1309,7 @@ target_link_libraries(forkmesh PRIVATE forkmesh-resources forkmesh-browser-pane)
 # into the independent backend sources costs more than it saves and increases
 # their dependency surface.
 target_precompile_headers(forkmesh PRIVATE
-    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/MainWindowInternal.h>")
+    "$<$<COMPILE_LANGUAGE:CXX>:<MainWindowInternal.h$<ANGLE-R>>")
 # Clang otherwise embeds the PCH creation time in the artifact, preventing
 # ccache from recognizing an identical clean rebuild. GCC PCH files are already
 # deterministic for this purpose. It is a cc1 option: the clang driver (Apple's
@@ -1819,6 +1823,8 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-tests
         tests/test_crypto.cpp
+        src/SourceDir.h
+        src/SourceDir.cpp
         resources/icons.qrc
         src/PlatformLogFilter.h
         src/PlatformLogFilter.cpp
@@ -2077,6 +2083,8 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_action_security.cpp
         src/CrashHandler.h
         src/CrashHandler.cpp
+        src/SourceDir.h
+        src/SourceDir.cpp
         src/ActionFile.h
         src/ActionFile.cpp
         src/ActionStore.h
@@ -2259,6 +2267,8 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-binary-size-tests
         tests/test_binary_size.cpp
+        src/SourceDir.h
+        src/SourceDir.cpp
         src/BinarySize.h
         src/BinarySize.cpp
     )
@@ -2364,11 +2374,11 @@ if(FORKMESH_BUILD_TESTS)
     qt_add_executable(forkmesh-message-box-clicks-tests
         tests/test_message_box_clicks.cpp
         src/MessageBoxClicks.h
+        src/SourceDir.h
+        src/SourceDir.cpp
     )
     target_include_directories(forkmesh-message-box-clicks-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_compile_definitions(forkmesh-message-box-clicks-tests PRIVATE
-        FORKMESH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(forkmesh-message-box-clicks-tests PRIVATE Qt6::Widgets)
     if(APPLE)
         set_target_properties(forkmesh-message-box-clicks-tests PROPERTIES
@@ -2711,6 +2721,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentToolPolicy.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/VirtualMachineRuntime.h
         src/VirtualMachineRuntime.cpp
     )
@@ -2778,6 +2790,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2831,6 +2845,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/ClaudeControlProtocol.h
         src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
@@ -3064,6 +3080,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-claude-transcript-tools-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-claude-transcript-tools-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-transcript-coverage-tests
+        tests/test_transcript_coverage.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
+    )
+    target_include_directories(forkmesh-transcript-coverage-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-transcript-coverage-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-transcript-coverage-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3324,6 +3353,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
 
     qt_add_executable(forkmesh-teammate-tests
         tests/test_teammate_store.cpp
+        src/SourceDir.h
+        src/SourceDir.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
         src/RepoWorkflow.h
@@ -3334,6 +3365,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
 
     qt_add_executable(forkmesh-repo-workflow-tests
         tests/test_repo_workflow.cpp
+        src/SourceDir.h
+        src/SourceDir.cpp
         src/RepoWorkflow.h
         src/RepoWorkflow.cpp
         src/RepoWorkflowRunner.h
@@ -3887,6 +3920,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/CodexTranscriptStyle.h
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
@@ -4407,6 +4442,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-claude-transcript-tools-tests
         COMMAND forkmesh-claude-transcript-tools-tests)
+    add_test(NAME forkmesh-transcript-coverage-tests
+        COMMAND forkmesh-transcript-coverage-tests)
     add_test(NAME forkmesh-org-agent-job-attachments-tests
         COMMAND forkmesh-org-agent-job-attachments-tests)
     add_test(NAME forkmesh-local-control-prompt-images-tests

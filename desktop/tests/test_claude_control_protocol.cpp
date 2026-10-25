@@ -288,6 +288,21 @@ static void checkTitlesAndEnvelopes()
     check(permissionModeLabel(QStringLiteral("acceptEdits")) == QLatin1String("Edit") &&
               permissionModeLabel(QStringLiteral("default")) == QLatin1String("Ask"),
           "Claude's permission modes map to the desktop's labels");
+    const QString demoted = permissionModeChangeNotice(QStringLiteral("bypassPermissions"),
+                                                       QStringLiteral("acceptEdits"));
+    check(demoted.contains(QStringLiteral("from Auto mode (bypassPermissions) to Edit mode (acceptEdits)")) &&
+              demoted.contains(QStringLiteral("Bypass permissions mode is no longer active")) &&
+              demoted.endsWith(QStringLiteral("\n\n")),
+          "leaving Auto tells the agent its bypass instructions no longer hold");
+    check(permissionModeChangeNotice(QStringLiteral("acceptEdits"), QStringLiteral("default"))
+                  .contains(QStringLiteral("wait for the user's approval")) &&
+              !permissionModeChangeNotice(QStringLiteral("acceptEdits"), QStringLiteral("default"))
+                   .contains(QStringLiteral("Bypass")),
+          "a switch to Ask says tool calls now wait for approval");
+    check(permissionModeChangeNotice(QStringLiteral("default"), QStringLiteral("default")).isEmpty() &&
+              permissionModeChangeNotice(QString(), QStringLiteral("default")).isEmpty() &&
+              permissionModeChangeNotice(QStringLiteral("default"), QStringLiteral("unknown")).isEmpty(),
+          "no notice without a real change to a known mode");
 }
 
 int main()

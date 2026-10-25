@@ -131,6 +131,7 @@ namespace forkmesh::ui { class OverflowActionRow; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
+namespace forkmesh::agentwt { struct AgentTitle; }
 namespace forkmesh::agentresources {
 struct GovernorSnapshot;
 struct SliceCounters;
@@ -5238,6 +5239,8 @@ private:
     void refreshSuggestedApps();
     void testSuggestedApp(const QString &id);
     void installSuggestedApp(const QString &id);
+    bool suggestedAppInstalling(const QString &id) const;
+    QString suggestedAppInstallManager(const QString &id, QString *blocker) const;
     // Settings -> Organizations tab: the desktop twin of the website's
     // organization panel — the orgs this account belongs to, their member
     // roster and roles, their permission teams, and the repositories each org
@@ -12959,6 +12962,7 @@ private:
     QHash<QString, QPointer<QProcess>> m_suggestedAppTestProcesses;
     QProcess *m_suggestedAppInstallProcess = nullptr;
     QString m_suggestedAppInstallingId;
+    QHash<QString, QString> m_suggestedAppInstallProblems;
     QWidget *m_settingsProfileHost = nullptr;
     int m_profileSettingsTabIndex = -1;
     QPushButton *m_voiceTestMicButton = nullptr;
@@ -12990,6 +12994,10 @@ private:
     QWidget *m_debugUptimeTile = nullptr;
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
+    QWidget *m_debugStallTile = nullptr;
+    qint64 m_debugStallPeakSinceSampleMs = 0;
+    qint64 m_debugStallLongestMs = 0;
+    qint64 m_debugStallLastAtMs = 0;
     QWidget *m_debugTmpTile = nullptr;
     QWidget *m_debugTmpDataTile = nullptr;
     QWidget *m_debugUsbTile = nullptr;
@@ -14887,6 +14895,8 @@ private:
     QHash<int, QString> m_streamRaw;
     QHash<int, qint64> m_sessionTokens; // live token total per session, for the list
     QHash<int, forkmesh::transcripttools::OutputTokenCounter> m_sessionOutputTokens;
+    QHash<int, forkmesh::transcripttools::InputTokenCounter> m_sessionInputTokens;
+    QHash<int, QPair<qint64, qint64>> m_sessionTokenFlow;
     QHash<int, AgentScannerState> m_scannerStates;
     QHash<int, AgentSpinState> m_agentSpinStates; // fireball orbit, per session
     QElapsedTimer m_agentSpinClock; // real time between fireball animation frames
@@ -15057,6 +15067,8 @@ private:
     // nothing has been recorded, so there is nothing to launch on.
     QString agentToolImprovementsFixPrompt() const;
     void sendAgentToolImprovementsToAgent();
+    void startTranscriptCoverageAgent();
+    QHash<QString, int> m_transcriptCoverageAgents;
     QWidget *buildAgentGuardrailPage();
     void scheduleAgentGuardrailRefresh();
     void refreshAgentGuardrailBoard();
@@ -15576,9 +15588,13 @@ private:
         const QString &prompt, const QString &model,
         std::function<void(QString)> completion);
     void requestAgentTitle(const QString &provider, const QString &prompt,
-                           std::function<void(QString)> completion);
+                           const QString &model,
+                           std::function<void(forkmesh::agentwt::AgentTitle)> completion);
+    void runAgentTitleCli(const QString &provider, const QString &prompt,
+                          QStringList models,
+                          std::function<void(forkmesh::agentwt::AgentTitle)> completion);
     void applyAgentTitle(int sessionId, const QString &provider,
-                         const QString &title);
+                         const QString &model, const QString &title);
     void handleClaudeControlEvent(int sessionId, const QJsonObject &event);
     void requestClaudeSessionTitle(int sessionId);
     void applyClaudeSessionTitle(int sessionId, const QString &title, bool renamed);

@@ -158,6 +158,12 @@ the desktop's website-pings list and unread count (`pingforward::isOwnEcho`).
   (`notificationRowKey`: `local:<id>`, `web:<id>`, `run:<id>`), redraws only
   when its signature changes, and closes when the ping is gone. Esc or x closes
   it; widgets are replaced with `deleteLater`.
+- Each row in the list shows two small icons on its second line, right
+  aligned: the project's logo (`currentProjectLogo`, the instance logo a
+  project adopts) and where the ping lives, `device-desktop` for one raised on
+  this desktop or `cloud` for one from the account's ping inbox
+  (`kPingCloudRole` on the Type cell). Hovering them names both. Table mode
+  puts the same local/cloud icon in the Status cell.
 - Opening a website ping marks it read (`POST /api/notifications` with `ids`,
   signed with `kAccountAlertReadProof`).
 

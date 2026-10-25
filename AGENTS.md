@@ -89,6 +89,14 @@ Cloudflare Workers, D1 or Durable Objects. `app/host/`, `deploy/`,
   `~/projects/forkmesh-backup` is the retired Next folder, kept as a backup:
   never erase it either.
 
+## Desktop builds go in desktop/build
+
+Configure the desktop as `cmake -S desktop -B desktop/build ...` inside your
+worktree, not in the scratch folder. ccache only shares objects between
+checkouts when the build tree sits at the same relative place, so there a new
+worktree compiles just the files it changed; a tree in scratch compiles all of
+them (`docs/desktop/build-and-test.md#ccache`).
+
 ## Source is code only
 
 Source files hold code; human-readable text lives in `docs/`. Do not add
