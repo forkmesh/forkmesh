@@ -583,6 +583,8 @@ void MainWindow::restoreActionRuns()
             // Reclaim them here rather than waiting for the next push: the node
             // shares this disk with every other build on the box.
             ActionRunner::reclaimSandboxes(store->sandboxDir());
+            if (store->legacySandboxDir() != store->sandboxDir())
+                ActionRunner::reclaimSandboxes(store->legacySandboxDir());
             return store->loadAllRuns();
         }));
 }

@@ -233,8 +233,7 @@ void MainWindow::installCleanupHost()
                     }
                 }
                 result.removed = true;
-                forkmesh::agentscratch::remove(
-                    forkmesh::agentscratch::folderFor(request.worktreePath));
+                forkmesh::agentscratch::removeAll(request.worktreePath);
                 if (!result.trashRef.isEmpty()) {
                     gitText(request.repoPath,
                             {QStringLiteral("update-ref"), QStringLiteral("-d"),

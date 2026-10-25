@@ -468,7 +468,7 @@ QProcessEnvironment AgentRunner::processEnvironment(Phase phase) const
     }
     if (phase == Phase::Agent && !forkmesh::vm::active()) {
         for (const QString &kv : forkmesh::agentscratch::environment(
-                 forkmesh::agentscratch::folderFor(m_worktree))) {
+                 forkmesh::agentscratch::folderFor(m_worktree), m_worktree)) {
             const int eq = kv.indexOf(QLatin1Char('='));
             env.insert(kv.left(eq), kv.mid(eq + 1));
         }
@@ -892,20 +892,24 @@ void AgentRunner::cleanupWorktree()
     // session reuses it — move each directory aside first, then delete off the
     // GUI thread. `worktree prune` (not `remove`) drops git's administrative
     // record, because the checkout is no longer where git recorded it.
-    QStringList discarded;
-    for (const QString &path : {forkmesh::agentscratch::folderFor(m_worktree), m_worktree,
-                                m_worktree + QStringLiteral("-jail"),
+    const QString worktreeRoot = QFileInfo(m_worktree).absolutePath();
+    QVector<QPair<QString, QString>> discarded;
+    for (const QString &scratch : forkmesh::agentscratch::foldersFor(m_worktree)) {
+        const QString aside = moveAsideForDeletion(scratch);
+        if (!aside.isEmpty())
+            discarded.append({aside, QFileInfo(aside).absolutePath()});
+    }
+    for (const QString &path : {m_worktree, m_worktree + QStringLiteral("-jail"),
                                 m_worktree + QStringLiteral("-codex-home")}) {
         const QString aside = moveAsideForDeletion(path);
         if (!aside.isEmpty())
-            discarded << aside;
+            discarded.append({aside, worktreeRoot});
     }
-    const QString worktreeRoot = QFileInfo(m_worktree).absolutePath();
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     (void)QtConcurrent::run([repoPath = m_repoPath, discarded, worktreeRoot,
                              nowMs] {
-        for (const QString &path : discarded)
-            forkmesh::safedelete::removeTree(path, worktreeRoot, nullptr,
+        for (const auto &path : discarded)
+            forkmesh::safedelete::removeTree(path.first, path.second, nullptr,
                                              forkmesh::safedelete::Allow::OwnWorktree);
         forkmesh::agentscratch::sweepOrphans(worktreeRoot);
         QProcess::execute(QStringLiteral("git"),

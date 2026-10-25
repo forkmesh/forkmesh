@@ -1,4 +1,5 @@
 #include "ActionStore.h"
+#include "FastScratchDisk.h"
 #include "HiddenTerms.h"
 #include "SafeDelete.h"
 
@@ -486,22 +487,33 @@ QString ActionStore::artifactsDir() const
     return path;
 }
 
+QString ActionStore::heavyRoot() const
+{
+    const QString fast = forkmesh::fastdisk::actionsDir(forkmesh::fastdisk::activeRoot());
+    return fast.isEmpty() ? m_root : fast;
+}
+
+QString ActionStore::legacySandboxDir() const
+{
+    return m_root + QStringLiteral("/sandbox");
+}
+
 QString ActionStore::sandboxDir() const
 {
-    const QString path = m_root + QStringLiteral("/sandbox");
+    const QString path = heavyRoot() + QStringLiteral("/sandbox");
     QDir().mkpath(path);
     return path;
 }
 
 QString ActionStore::cacheRoot() const
 {
-    return m_root + QStringLiteral("/cache");
+    return heavyRoot() + QStringLiteral("/cache");
 }
 
 QString ActionStore::buildCacheDir(const ActionRun &run) const
 {
     const QString root =
-        m_root + QStringLiteral("/cache/") + run.repoKey();
+        cacheRoot() + QLatin1Char('/') + run.repoKey();
     const QString path = run.workflowPath ==
                                  QStringLiteral(".forkmesh/desktop-ci.yml")
                              ? root

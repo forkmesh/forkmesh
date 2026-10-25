@@ -11089,6 +11089,18 @@ void checkWorkspaceDesign(MainWindow &window)
     forkmesh::instancetheme::store({});
 
     NextAccess::setRailExpanded(window, false);
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    forkmesh::instancetheme::setMatchEnabled(true);
+    check(!window.testAppearanceIsDefault(),
+          QStringLiteral("a picked theme is not the install default"));
+    window.testResetAppearanceToDefaults();
+    settle();
+    check(window.testAppearanceIsDefault() &&
+              !settings.contains(QStringLiteral("app/theme")) &&
+              !settings.contains(QStringLiteral("app/design")) &&
+              !forkmesh::instancetheme::matchEnabled() && !Theme::isNext(),
+          QStringLiteral("Reset to default puts back the install's theme, "
+                         "interface and own colours"));
     settings.remove(QStringLiteral("app/design"));
     settings.remove(QStringLiteral("app/theme"));
     MainWindow::applyTheme();
@@ -11490,6 +11502,119 @@ void checkAgentCommandApprovalRender(MainWindow &window)
                          "Allowed chip (rows = %1, label = %2)")
               .arg(rows.size())
               .arg(rows.isEmpty() ? QString() : rows.first().approval.label));
+}
+
+void checkDeployLogBadges(MainWindow &window)
+{
+    const auto storedLine = [](const QString &message) {
+        return QStringLiteral("2026-01-01 00:00:00  ") + message;
+    };
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838]"))) !=
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate with no new failures is not an "
+                         "error"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: new test failures against the deployed "
+              "4eebecff140b: app/tests/test_x.py"))) ==
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate that found new failures still "
+                         "badges ERROR"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838|INFO]"))) ==
+              QStringLiteral("INFO"),
+          QStringLiteral("a deploy line stored as informational stays "
+                         "informational after a reload"));
+}
+
+class StyleChangeCounter final : public QObject
+{
+public:
+    QHash<QObject *, int> counts;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::StyleChange && watched->isWidgetType())
+            ++counts[watched];
+        return false;
+    }
+};
+
+void checkThemeSwitchRepolish(MainWindow &window)
+{
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    window.testShowChatSection();
+    window.testShowLogSection();
+    window.testShowMarketSection();
+    window.testShowLedgerSection();
+    window.testShowHostsSection();
+    window.testShowUsersSection();
+    window.testShowNodesSection();
+    window.testShowHomeSection();
+    settleAnimations();
+
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    auto switchTo = [&](const QString &theme, int *maxPerWidget, int *total) {
+        settings.setValue(QStringLiteral("app/theme"), theme);
+        StyleChangeCounter counter;
+        qApp->installEventFilter(&counter);
+        QElapsedTimer timer;
+        timer.start();
+        MainWindow::applyTheme();
+        const qint64 elapsed = timer.elapsed();
+        qApp->removeEventFilter(&counter);
+        *maxPerWidget = 0;
+        *total = 0;
+        for (const int count : std::as_const(counter.counts)) {
+            *maxPerWidget = qMax(*maxPerWidget, count);
+            *total += count;
+        }
+        qInfo().noquote() << QStringLiteral(
+                                 "theme switch to %1: %2 ms, %3 widgets, %4 "
+                                 "style changes, at most %5 on one widget")
+                                 .arg(theme)
+                                 .arg(elapsed)
+                                 .arg(QApplication::allWidgets().size())
+                                 .arg(*total)
+                                 .arg(*maxPerWidget);
+        settleAnimations();
+    };
+
+    int maxPerWidget = 0;
+    int total = 0;
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() > 128,
+          QStringLiteral("switching to the light theme recolours the app"));
+    check(total <= QApplication::allWidgets().size() * 3,
+          QStringLiteral("a theme switch restyles each widget about twice, "
+                         "not once per ancestor"));
+    const QString sheet = qApp->styleSheet();
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(qApp->styleSheet() == sheet &&
+              total < QApplication::allWidgets().size() / 4,
+          QStringLiteral("applying the theme already shown leaves the "
+                         "application style sheet alone"));
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() < 128 &&
+              !qApp->styleSheet().isEmpty(),
+          QStringLiteral("switching back to dark restores a dark style sheet"));
+
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    MainWindow::applyTheme();
+    settleAnimations();
 }
 
 void checkAppViewModes(MainWindow &window)
@@ -16135,6 +16260,18 @@ else:
           QStringLiteral("the shared app frame reserves exactly one pixel for "
                          "the perimeter on every side"));
 
+    if (app.arguments().contains(QStringLiteral("--deploy-log-badges-only"))) {
+        checkDeployLogBadges(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (app.arguments().contains(QStringLiteral("--theme-switch-only"))) {
+        checkThemeSwitchRepolish(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (viewModesOnly) {
         checkAppViewModes(window);
         stopChildProcesses(window);
@@ -16269,6 +16406,16 @@ else:
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("opening Agents builds only that deferred "
                              "repository tab, not every tab after it"));
+        settleAnimations();
+        const QString lastTabKey =
+            QStringLiteral("repositories/lastOpenDetailTab");
+        check(QSettings().value(lastTabKey, -1).toInt() == -1,
+              QStringLiteral("switching repository tabs does not rewrite the "
+                             "settings file"));
+        window.testFlushDeferredSettings();
+        check(QSettings().value(lastTabKey, -1).toInt() == 3,
+              QStringLiteral("the last repository tab is saved when the window "
+                             "closes"));
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -25687,6 +25834,7 @@ else:
                   "Git: fast-forwarded 12 branch(es) to main; 0 failed."))) ==
                   QStringLiteral("GIT"),
               QStringLiteral("a clean fast-forward sweep badges GIT, not ERROR"));
+        checkDeployLogBadges(window);
         check(window.testLogBadgeFor(storedLine(QStringLiteral(
                   "Deploy next_dns health-loop: n1 192.0.2.10 ok (fails 0) v6 "
                   "ok  [desktop/src/MainWindowLogs.cpp:2825]"))) !=

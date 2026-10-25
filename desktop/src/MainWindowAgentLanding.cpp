@@ -1201,7 +1201,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
         }
         forkmesh::safedelete::removeTree(wtPath, agentRoot, nullptr,
                                          forkmesh::safedelete::Allow::OwnWorktree);
-        forkmesh::agentscratch::remove(forkmesh::agentscratch::folderFor(wtPath));
+        forkmesh::agentscratch::removeAll(wtPath);
         forkmesh::agentscratch::sweepOrphans(agentRoot);
         if (!repoPath.isEmpty()) {
             QProcess::execute(QStringLiteral("git"),

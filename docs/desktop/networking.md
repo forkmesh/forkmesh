@@ -122,7 +122,12 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   and are badged by group (`corelogs::nodeLineBadge`): App, Cron, DB, Web,
   Daemon, IDS, Cert, Ops, Job, Mail, System; live errors go under Error.
   Errors are journald err or worse, Caddy error/panic/fatal, Go panics,
-  `ERROR`/`CRITICAL` lines and IDS alerts. Python tracebacks fold into one entry;
+  `ERROR`/`CRITICAL` lines and IDS alerts. Caddy's "setting HTTP/3 Alt-Svc
+  header … no port can be announced" is a warning
+  (`corelogs::isCaddyReloadNoise`). quic-go reports it when a response goes
+  out while the HTTP/3 listener is closed for a config reload; that response
+  just lacks the HTTP/3 advert. In report #9 it came once per core during a
+  deploy. Python tracebacks fold into one entry;
   identical lines fold for 10 minutes. `corelogs::nodeLineHtml` colours the
   prefix and body and pads them into columns with non-breaking spaces (the log
   views are monospace): node 3, role 6, unit 12, severity 5. Web lines also pad

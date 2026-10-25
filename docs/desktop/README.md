@@ -14,6 +14,7 @@ Topic pages in this folder:
 
 - [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
 - [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
+- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
 - [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in

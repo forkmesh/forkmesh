@@ -35,6 +35,8 @@
 #include "NetworkLogArchive.h" // netlog::Digest is held by value below
 #include "CrashLogScan.h"      // crashlog::Record is returned by value below
 #include "DiscussionInboxBackoff.h"
+#include "FastScratchDisk.h"
+#include "UsbLinkCheck.h"
 #include "NetworkBackoff.h"
 #include "DiscussionStore.h"
 #include "ForkMeshIdentity.h"
@@ -1821,6 +1823,7 @@ public:
     QStringList testRepoTabRowKeys() const;
     QStringList testRepoCodeBarKeys() const;
     void testBuildRepoCodeTab() { ensureRepoDetailTabBuilt(0); }
+    void testFlushDeferredSettings() { flushDeferredSettings(); }
     QPushButton *testRepoBranchesButton() const { return m_branchesButton; }
     void testMoveButtonToPanel(const QString &key, const QString &panel)
     {
@@ -2960,6 +2963,8 @@ public:
         setAppViewMode(mode);
     }
     void testCycleAppViewMode() { cycleAppViewMode(); }
+    void testResetAppearanceToDefaults() { resetAppearanceToDefaults(); }
+    bool testAppearanceIsDefault() const { return appearanceIsDefault(); }
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
     void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
@@ -4550,6 +4555,9 @@ private:
     void cycleAppViewMode();
     void applyAppViewMode();
     void updateViewModeButton();
+    void setMatchInstanceThemeFromMenu(bool enabled);
+    bool appearanceIsDefault() const;
+    void resetAppearanceToDefaults();
     // Agents' third splitter pane: a header and a shell terminal, shown only
     // in Workspace. The shell starts the first time the pane is shown, in the
     // selected session's worktree; "+" replaces it with a fresh one there.
@@ -4796,6 +4804,11 @@ private:
     void startDiagnostics();
     static QString stallLogPath();
     void updateFooterDiagnostics();
+    void initFastScratchDisk();
+    void refreshFastScratchDisk(bool clean);
+    void updateFastDiskTiles();
+    void updateFastDiskSettingsPanel();
+    void eraseFastScratchDisk();
     void updateQtDiagnosticTiles();
     void showQtDiagnosticsDialog();
     void checkFileDescriptorPressure();
@@ -5272,6 +5285,7 @@ private:
                          QLineEdit *cfTokenEdit, QLineEdit *cfAccountEdit,
                          QLineEdit *vultrTokenEdit, QLabel *statusLabel);
     QWidget *buildDataSection();
+    QWidget *buildFastDiskTab();
     void refreshDataDirTable();
     void scanDataDirRow(quint64 generation, int row);
     void exportConfigData();
@@ -11596,6 +11610,8 @@ private:
     QString m_cloudLogMonitorIdleReason;
     QWidget *m_globalOverlayHost = nullptr;
     void setupGenieSpider();
+    void flushDeferredSettings();
+    int m_lastRepoDetailTabPending = -1;
     bool genieSpiderShown() const;
     void setGenieSpiderShown(bool shown);
     void installGeniePetHost();
@@ -12895,6 +12911,19 @@ private:
     QWidget *m_debugUptimeTile = nullptr;
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
+    QWidget *m_debugTmpTile = nullptr;
+    QWidget *m_debugTmpDataTile = nullptr;
+    QWidget *m_debugUsbTile = nullptr;
+    QTimer *m_fastDiskTimer = nullptr;
+    forkmesh::fastdisk::Volume m_fastDiskVolume;
+    forkmesh::fastdisk::Usage m_fastDiskUsage;
+    QVector<forkmesh::usblink::Finding> m_usbFindings;
+    QSet<QString> m_usbWarned;
+    qint64 m_fastDiskLastCleanMs = 0;
+    bool m_fastDiskRefreshRunning = false;
+    QPointer<QLabel> m_fastDiskStatusLabel;
+    QPointer<QPushButton> m_fastDiskEraseButton;
+    QPointer<QCheckBox> m_fastDiskEnabledCheck;
     qint64 m_debugNetworkRequestTotal = 0;
     qint64 m_debugLastNetworkRequestTotal = -1;
     qint64 m_debugLastLogActivityTotal = -1;
