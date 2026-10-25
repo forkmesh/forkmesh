@@ -349,8 +349,10 @@ QVector<OnboardingStep> MainWindow::featureTourSteps()
         {"Switch month, week, day, and agenda views with search and time-zone support.",
          "Invite attendees, RSVP, recur events, and scope calendars to an organization.",
          "Ask an agent to suggest calendar entries from natural language."},
-        m_calendarNavButton,
-        revealSection(kCalendarSectionIndex, m_calendarNavButton)));
+        nativePackageNavigation(QStringLiteral("calendar")), [this] {
+            showNativePackage(QStringLiteral("calendar"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("calendar")));
+        }));
 
     steps.append(tourStep(
         "notes", "PERSONAL KNOWLEDGE", "Capture Markdown notes before they disappear",
@@ -359,8 +361,10 @@ QVector<OnboardingStep> MainWindow::featureTourSteps()
         {"Edit Markdown with attachments and version history.",
          "Switch storage and sharing per note instead of globally.",
          "Turn a note into a task or repository issue, or add it directly to an agent prompt."},
-        m_notesNavButton,
-        revealSection(kNotesSectionIndex, m_notesNavButton)));
+        nativePackageNavigation(QStringLiteral("notes")), [this] {
+            showNativePackage(QStringLiteral("notes"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("notes")));
+        }));
 
     steps.append(tourStep(
         "files", "LOCAL WORKSPACE", "Browse and edit files without losing context",

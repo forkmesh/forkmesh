@@ -1,6 +1,12 @@
 #include "RepositoryCalendar.h"
 
-#include "MainWindowInternal.h"
+#include "GitCapture.h"
+
+#include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QTimeZone>
 
 namespace forkmesh::ui {
 
@@ -16,8 +22,6 @@ QList<QPair<qint64, qint64>> repositoryCalendarMonths(const QDate &first,
     if (!first.isValid() || !last.isValid() || last <= first)
         return months;
     QDate cursor(first.year(), first.month(), 1);
-    // A month view spans three months at most and the agenda four, so the
-    // bound only guards against a nonsense range.
     while (cursor < last && months.size() < 24) {
         const QDate next = cursor.addMonths(1);
         months.append({QDateTime(cursor, QTime(0, 0)).toMSecsSinceEpoch(),
@@ -27,10 +31,6 @@ QList<QPair<qint64, qint64>> repositoryCalendarMonths(const QDate &first,
     return months;
 }
 
-// Project every unique commit reachable from a branch or tag into the Calendar
-// page's event shape. Operational refs and stashes are deliberately not user
-// activity. The visible time range keeps the Git read bounded without silently
-// dropping a busy day's later commits.
 QJsonArray repositoryCalendarEvents(const QString &gitPath,
                                     const QString &repository,
                                     qint64 startAtMs,
@@ -44,7 +44,7 @@ QJsonArray repositoryCalendarEvents(const QString &gitPath,
     const qint64 startSecs = startAtMs / 1000;
     const qint64 endSecs = (endAtMs - 1) / 1000;
     QByteArray output;
-    if (!runGitCapture(
+    if (!forkmesh::git::capture(
             gitPath,
             {QStringLiteral("log"), QStringLiteral("--branches"),
              QStringLiteral("--tags"), QStringLiteral("--remotes"),
@@ -124,4 +124,4 @@ QJsonArray repositoryCalendarEvents(const QString &gitPath,
     return events;
 }
 
-} // namespace forkmesh::ui
+}

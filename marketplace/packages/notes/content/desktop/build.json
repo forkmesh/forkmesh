@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "NotesPage.h",
+    "NotesPage.cpp"
+  ],
+  "mocHeaders": []
+}

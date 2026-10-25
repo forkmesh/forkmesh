@@ -219,8 +219,10 @@ descenders.
   position" in the clock's menu or the top bar's right-click menu. A drag
   swallows the release, so it never opens the clock menu. The spot is
   `ui/timersClockPlacement` (`center` or `right`; removed for the default
-  `left`), kept when the package is removed. `installTimersClockSlots` records
-  the three rows; `setTimersClockPlacement` moves the strip between them.
+  `left`), kept when the package is removed. The clock is the Timers plugin's
+  top-bar widget (`TimersClock`, [package modules](package-modules.md#top-bar-widgets));
+  `installNativePackageChromeSlots` records the three rows and
+  `placeNativePackageChrome` moves the widget between them.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.

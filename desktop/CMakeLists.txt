@@ -483,9 +483,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowVultrMirrors.cpp
     src/MainWindowHostInstall.cpp
     src/MainWindowTasks.cpp
-    src/RepositoryCalendar.cpp
-    src/MainWindowCalendar.cpp
-    src/MainWindowNotes.cpp
+    src/GitCapture.cpp
     src/MainWindowFiles.cpp
     src/MainWindowNetworkFiles.cpp
     src/MainWindowStats.cpp
@@ -542,7 +540,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowMarket.cpp
     src/MainWindowPackageExtensions.cpp
     src/MainWindowLedger.cpp
-    src/MainWindowTimers.cpp
+    src/MainWindowPackageChrome.cpp
     src/MainWindowMcp.cpp
     src/MainWindowLocalControl.cpp
     src/MainWindowLocalControlHosts.cpp

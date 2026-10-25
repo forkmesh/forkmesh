@@ -4,13 +4,16 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
+#include <QPoint>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
+#include <QVariant>
 #include <QWidget>
 
 #include <functional>
 
+class QMenu;
 class QNetworkAccessManager;
 
 namespace forkmesh::market {
@@ -109,6 +112,27 @@ struct NativePackageHost {
         repositoryWorkflowAction;
     std::function<QString(const QString &)> publicPageUrl;
     std::function<QString(const QString &)> webPageUrl;
+    std::function<void(const QString &, bool)> flashMessage;
+    std::function<void(const QString &)> reportError;
+    std::function<void(const QString &)> logActivity;
+    std::function<void(const QString &)> openReference;
+    std::function<void()> showPage;
+    std::function<bool(const QString &, const QJsonObject &)> windowCommand;
+    std::function<void(const QString &, const QString &, bool)> notify;
+    std::function<void(const QString &, const QString &)> recordQuietNotification;
+    std::function<QVariant(const QString &, const QVariant &)> setting;
+    std::function<void(const QString &, const QVariant &)> setSetting;
+    std::function<void(QWidget *)> attachPackageMenu;
+    std::function<QUrl(const QString &)> accountApiUrl;
+    std::function<QString(const QUrl &)> accountSessionToken;
+    std::function<bool(const QString &, const QString &, QString *, QString *,
+                       QString *)>
+        signProof;
+    std::function<std::function<void()>(const QString &, const QString &, int,
+                                        NativePackageAgentReplyHandler)>
+        askAgentWith;
+    std::function<void()> chromeSlotChanged;
+    std::function<QString(const QPoint &)> chromeSlotAt;
 };
 
 struct NativePackagePromptTarget {
@@ -200,6 +224,11 @@ public:
     {
         done({});
     }
+    virtual QString chromeSlot() const { return {}; }
+    virtual void addChromeMenuActions(QMenu *) {}
+    virtual void activate() {}
+    virtual bool acceptsHostCommand(const QString &) const { return false; }
+    virtual bool hostCommand(const QString &, const QJsonObject &) { return false; }
 };
 
 using NativePackageFactory =
@@ -217,6 +246,9 @@ struct NativePackageContribution {
     QString requestProof;
     NativePackageFactory factory;
     QString browserPath;
+    NativePackageFactory chromeFactory;
+    QStringList resourceProofs;
+    QStringList accountPaths;
 };
 
 // Package translation units register their contribution while they are linked.
