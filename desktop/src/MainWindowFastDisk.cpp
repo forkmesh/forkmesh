@@ -9,14 +9,21 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QProcess>
 #include <QPushButton>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#if defined(Q_OS_UNIX)
+#include <unistd.h>
+#endif
 
 namespace {
 
 constexpr char kFastDiskSetting[] = "storage/useTmpDisk";
+constexpr char kFastDiskBootDeclinedSetting[] = "storage/tmpBootMountDeclined";
 constexpr int kFastDiskPollMs = 60 * 1000;
 constexpr qint64 kFastDiskCleanEveryMs = 60LL * 60 * 1000;
 constexpr qint64 kFastDiskTempMaxAgeMs = 24LL * 60 * 60 * 1000;
@@ -24,6 +31,7 @@ constexpr qint64 kFastDiskTempMaxAgeMs = 24LL * 60 * 60 * 1000;
 struct FastDiskSnapshot {
     forkmesh::fastdisk::Volume volume;
     forkmesh::fastdisk::Usage usage;
+    forkmesh::fastdisk::BootMount boot;
     QVector<forkmesh::usblink::Finding> usb;
     forkmesh::fastdisk::CleanResult cleaned;
     bool cleanedRan = false;
@@ -32,6 +40,37 @@ struct FastDiskSnapshot {
 bool fastDiskEnabled()
 {
     return QSettings().value(QLatin1String(kFastDiskSetting), true).toBool();
+}
+
+forkmesh::fastdisk::BootMount planFastDiskBootMount(const forkmesh::fastdisk::Volume &volume)
+{
+    QFile fstab(forkmesh::fastdisk::defaultFstabFile());
+    const QByteArray text = fstab.open(QIODevice::ReadOnly) ? fstab.readAll() : QByteArray();
+#if defined(Q_OS_UNIX)
+    const uint uid = ::getuid();
+    const uint gid = ::getgid();
+#else
+    const uint uid = 0;
+    const uint gid = 0;
+#endif
+    return forkmesh::fastdisk::planBootMount(
+        volume, text, forkmesh::fastdisk::defaultBootTarget(qEnvironmentVariable("USER")), uid,
+        gid);
+}
+
+QString fastDiskBootText(const forkmesh::fastdisk::Volume &volume,
+                         const forkmesh::fastdisk::BootMount &boot)
+{
+    if (!volume.present())
+        return QString();
+    if (boot.configured)
+        return QStringLiteral("It is mounted automatically at startup (/etc/fstab).");
+    if (boot.possible())
+        return QStringLiteral("It is not mounted at startup yet. Mount at startup adds it to "
+                              "/etc/fstab at %1 after asking for your password.")
+            .arg(boot.target);
+    return QStringLiteral("ForkMesh cannot set it up to mount at startup: its UUID or mount "
+                          "folder could not be read.");
 }
 
 QString fastDiskStatusText(const forkmesh::fastdisk::Volume &volume,
@@ -106,6 +145,7 @@ void MainWindow::refreshFastScratchDisk(bool clean)
                 snapshot.cleanedRan = true;
             }
             snapshot.usage = forkmesh::fastdisk::usage(snapshot.volume);
+            snapshot.boot = planFastDiskBootMount(snapshot.volume);
             snapshot.usb = forkmesh::usblink::scan();
             return snapshot;
         },
@@ -114,6 +154,7 @@ void MainWindow::refreshFastScratchDisk(bool clean)
             const QString before = forkmesh::fastdisk::activeRoot();
             m_fastDiskVolume = snapshot.volume;
             m_fastDiskUsage = snapshot.usage;
+            m_fastDiskBoot = snapshot.boot;
             const QString after = forkmesh::fastdisk::activate(snapshot.volume, enabled);
             if (before != after)
                 logSystem(after.isEmpty()
@@ -145,7 +186,82 @@ void MainWindow::refreshFastScratchDisk(bool clean)
             }
             updateFastDiskTiles();
             updateFastDiskSettingsPanel();
+            if (enabled && m_fastDiskBoot.possible() &&
+                !m_fastDiskBootAsked.contains(m_fastDiskBoot.uuid) &&
+                QSettings().value(QLatin1String(kFastDiskBootDeclinedSetting)).toString() !=
+                    m_fastDiskBoot.uuid)
+                setupFastDiskBootMount(true);
         });
+}
+
+void MainWindow::setupFastDiskBootMount(bool automatic)
+{
+    using namespace forkmesh::fastdisk;
+    const BootMount plan = m_fastDiskBoot;
+    if (!plan.possible() || m_fastDiskBootRunning)
+        return;
+    m_fastDiskBootAsked.insert(plan.uuid);
+    const QString manual = QStringLiteral("echo '%1' | sudo tee -a /etc/fstab && sudo mkdir -p "
+                                          "%2 && sudo mount %2")
+                               .arg(plan.fstabLine(), plan.target);
+    const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
+    if (pkexec.isEmpty()) {
+        flashMessage(QStringLiteral("To mount the %1 disk at startup, run in a terminal: %2")
+                         .arg(label(), manual),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    m_fastDiskBootRunning = true;
+    updateFastDiskSettingsPanel();
+    logSystem(QStringLiteral("TMP disk: asking to mount %1 at %2 at startup.")
+                  .arg(m_fastDiskVolume.device, plan.target));
+    auto *process = new QProcess(this);
+    connect(process, &QProcess::finished, this,
+            [this, process, plan, automatic, manual](int exitCode, QProcess::ExitStatus status) {
+                process->deleteLater();
+                m_fastDiskBootRunning = false;
+                if (status == QProcess::NormalExit && exitCode == 0) {
+                    QSettings().remove(QLatin1String(kFastDiskBootDeclinedSetting));
+                    logSystem(QStringLiteral("TMP disk: added to /etc/fstab, mounts at %1 at "
+                                             "startup.")
+                                  .arg(plan.target));
+                    flashMessage(QStringLiteral("The %1 disk now mounts at %2 at startup.")
+                                     .arg(label(), plan.target));
+                } else if (status == QProcess::NormalExit && (exitCode == 126 || exitCode == 127)) {
+                    if (automatic)
+                        QSettings().setValue(QLatin1String(kFastDiskBootDeclinedSetting),
+                                             plan.uuid);
+                    flashMessage(QStringLiteral("The %1 disk was not set to mount at startup. "
+                                                "Settings > TMP disk > Mount at startup asks "
+                                                "again.")
+                                     .arg(label()),
+                                 true, QString(), forkmesh::kLocalOperationNoticeKind);
+                } else {
+                    const QString errors =
+                        QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
+                    flashMessage(QStringLiteral("Could not set the %1 disk to mount at startup%2. "
+                                                "Run in a terminal: %3")
+                                     .arg(label(),
+                                          errors.isEmpty() ? QString()
+                                                           : QStringLiteral(": ") + errors.right(200),
+                                          manual),
+                                 true, QString(), forkmesh::kLocalOperationNoticeKind);
+                }
+                refreshFastScratchDisk(false);
+            });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process, manual](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                process->deleteLater();
+                m_fastDiskBootRunning = false;
+                flashMessage(QStringLiteral("Could not launch the privilege helper (pkexec). Run "
+                                            "in a terminal: %1")
+                                 .arg(manual),
+                             true, QString(), forkmesh::kLocalOperationNoticeKind);
+                updateFastDiskSettingsPanel();
+            });
+    process->start(pkexec, bootMountArguments(plan));
 }
 
 void MainWindow::updateFastDiskTiles()
@@ -269,9 +385,18 @@ QWidget *MainWindow::buildFastDiskTab()
     erase->setToolTip(QStringLiteral("Delete everything on the disk labelled TMP"));
     connect(erase, &QPushButton::clicked, this, &MainWindow::eraseFastScratchDisk);
 
+    auto *boot = new QPushButton(QStringLiteral("Mount at startup\xE2\x80\xA6"));
+    m_fastDiskBootButton = boot;
+    boot->setObjectName(QStringLiteral("ghostButton"));
+    boot->setCursor(Qt::PointingHandCursor);
+    boot->setToolTip(QStringLiteral("Add the disk labelled TMP to /etc/fstab so it mounts when "
+                                    "the computer starts"));
+    connect(boot, &QPushButton::clicked, this, [this] { setupFastDiskBootMount(false); });
+
     auto *buttons = new QHBoxLayout;
     buttons->setSpacing(8);
     buttons->addWidget(refresh);
+    buttons->addWidget(boot);
     buttons->addWidget(erase);
     buttons->addStretch(1);
 
@@ -287,10 +412,17 @@ QWidget *MainWindow::buildFastDiskTab()
 
 void MainWindow::updateFastDiskSettingsPanel()
 {
-    if (m_fastDiskStatusLabel)
-        m_fastDiskStatusLabel->setText(fastDiskStatusText(m_fastDiskVolume, m_fastDiskUsage,
-                                                          fastDiskEnabled(),
-                                                          forkmesh::fastdisk::activeRoot()));
+    if (m_fastDiskStatusLabel) {
+        const QString boot = fastDiskBootText(m_fastDiskVolume, m_fastDiskBoot);
+        m_fastDiskStatusLabel->setText(
+            fastDiskStatusText(m_fastDiskVolume, m_fastDiskUsage, fastDiskEnabled(),
+                               forkmesh::fastdisk::activeRoot()) +
+            (boot.isEmpty() ? QString() : QStringLiteral(" ") + boot));
+    }
+    if (m_fastDiskBootButton) {
+        m_fastDiskBootButton->setVisible(m_fastDiskBoot.possible());
+        m_fastDiskBootButton->setEnabled(!m_fastDiskBootRunning);
+    }
     if (m_fastDiskEraseButton)
         m_fastDiskEraseButton->setEnabled(m_fastDiskVolume.usable());
 }
