@@ -1847,6 +1847,12 @@ public:
     void testBuildRepoDetailSection() { ensureRepoDetailSectionBuilt(); }
     QStringList testButtonPlacementMenuActions(const QString &key);
     QPushButton *testRepoPullsTab() const { return m_repoPullsTab; }
+    QWidget *testRepoTabRowPanel() const;
+    QWidget *testWorkflowPinStrip(const QString &rail) const
+    {
+        return m_workflowPinStrips.value(rail);
+    }
+    void testSetWorkflowPinStripsOpen(bool open) { setWorkflowPinStripsOpen(open); }
     int testRepoDetailTabIndex() const;
     int testSectionIndex() const;
     StatsTileData testStatsTileData(const QString &id) { return statsTileData(id); }
@@ -7640,6 +7646,9 @@ private:
     void applyRepoCodeBarOrder();
     QBoxLayout *buttonPanelLayout(const QString &panel) const;
     void moveButtonToPanel(const QString &key, const QString &panel);
+    bool handleButtonPanelDrop(QObject *watched, QEvent *event);
+    QWidget *movableButtonForRailKey(const QString &railKey) const;
+    void showButtonPanelDropZone(QWidget *panel, bool show);
     void resetButtonPlacement();
     void attachButtonPlacementMenu(QWidget *button);
     void addButtonPlacementActions(QMenu *menu, QWidget *button);
@@ -9028,6 +9037,13 @@ private:
     void unpinWorkflowFromRail(const QString &repo, const QString &workflowId);
     void addWorkflowPinActions(QMenu *menu, const QString &repo, const QString &workflowId);
     QWidget *buildWorkflowPinStrip(const QString &rail);
+    bool handleWorkflowPinEvent(QObject *watched, QEvent *event);
+    void startWorkflowPinDrag(QWidget *button, const QPoint &hotSpot);
+    void setWorkflowPinStripsOpen(bool open);
+    int workflowPinSlotAt(QWidget *strip, const QPoint &at, const QString &repo,
+                          const QString &workflowId) const;
+    void showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at);
+    void hideWorkflowPinDropIndicator();
     void refreshWorkflowPins();
     void showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos);
     QPixmap repoWorkflowIcon(const forkmesh::repoworkflows::Workflow &workflow, int side) const;
@@ -11057,6 +11073,7 @@ private:
     QPointer<QPushButton> m_railSortButton;
     QTimer *m_railCountSortTimer = nullptr;
     RailEventHook *m_railEventHook = nullptr;
+    RailEventHook *m_buttonPanelDropHook = nullptr;
     QPointer<QWidget> m_railDragSource;
     QPoint m_railDragStart;
     QObject *m_railDragReorder = nullptr;
@@ -13261,6 +13278,11 @@ private:
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
     QHash<QString, QPointer<QWidget>> m_workflowPinStrips;
+    RailEventHook *m_workflowPinHook = nullptr;
+    QPointer<QWidget> m_workflowPinDragSource;
+    QPoint m_workflowPinDragStart;
+    QPointer<QWidget> m_workflowPinDropIndicator;
+    bool m_workflowPinDragging = false;
     QTimer *m_repoWorkflowNotifyTimer = nullptr;
     QTableWidget *m_mirrorNodesTable = nullptr;
     QLabel *m_mirrorNodesSummary = nullptr;
