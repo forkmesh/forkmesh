@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-25",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Agents",
+     "items": [
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-24",
    "version": "",
    "title": "",
@@ -36,7 +50,8 @@
     {
      "title": "Chat",
      "items": [
-      "Links to a channel or direct message open it even on a freshly loaded chat page."
+      "Links to a channel or direct message open it even on a freshly loaded chat page.",
+      "In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with."
      ]
     },
     {
