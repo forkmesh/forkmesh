@@ -2958,6 +2958,8 @@ public:
         setAppViewMode(mode);
     }
     void testCycleAppViewMode() { cycleAppViewMode(); }
+    void testResetAppearanceToDefaults() { resetAppearanceToDefaults(); }
+    bool testAppearanceIsDefault() const { return appearanceIsDefault(); }
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
     void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
@@ -4548,6 +4550,9 @@ private:
     void cycleAppViewMode();
     void applyAppViewMode();
     void updateViewModeButton();
+    void setMatchInstanceThemeFromMenu(bool enabled);
+    bool appearanceIsDefault() const;
+    void resetAppearanceToDefaults();
     // Agents' third splitter pane: a header and a shell terminal, shown only
     // in Workspace. The shell starts the first time the pane is shown, in the
     // selected session's worktree; "+" replaces it with a fresh one there.

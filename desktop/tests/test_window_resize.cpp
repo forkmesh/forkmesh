@@ -10998,6 +10998,18 @@ void checkWorkspaceDesign(MainWindow &window)
     forkmesh::instancetheme::store({});
 
     NextAccess::setRailExpanded(window, false);
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    forkmesh::instancetheme::setMatchEnabled(true);
+    check(!window.testAppearanceIsDefault(),
+          QStringLiteral("a picked theme is not the install default"));
+    window.testResetAppearanceToDefaults();
+    settle();
+    check(window.testAppearanceIsDefault() &&
+              !settings.contains(QStringLiteral("app/theme")) &&
+              !settings.contains(QStringLiteral("app/design")) &&
+              !forkmesh::instancetheme::matchEnabled() && !Theme::isNext(),
+          QStringLiteral("Reset to default puts back the install's theme, "
+                         "interface and own colours"));
     settings.remove(QStringLiteral("app/design"));
     settings.remove(QStringLiteral("app/theme"));
     MainWindow::applyTheme();
