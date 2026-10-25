@@ -27,6 +27,7 @@ inline const QString kRailTop = QStringLiteral("top");
 inline const QString kRailLeft = QStringLiteral("left");
 inline const QString kRailRight = QStringLiteral("right");
 inline const QString kRailBottom = QStringLiteral("bottom");
+inline const QString kAccountRepo = QStringLiteral("@account/workflows");
 
 inline const QString kStatusQueued = QStringLiteral("queued");
 inline const QString kStatusRunning = QStringLiteral("running");

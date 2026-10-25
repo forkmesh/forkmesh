@@ -245,6 +245,16 @@ Play, and Android releases ship as the signed
   meeting; a phone outside that account needs a six-digit pairing code approved
   on the LAN. Frames are the twin of `desktop/src/LocalControl.{h,cpp}`, pinned
   by shared test vectors.
+- Owner-only families (hosts, agents, merge queue, ...) compare the account
+  name the desktop holds for the phone with its own account. A phone approved
+  by code keeps the name it had when approved, so a phone paired as a guest
+  used to be refused with "Only the account that owns this desktop can manage
+  its hosts" even after signing in to the owner's account. When a code-approved
+  phone now names an account its saved record lacks, the desktop asks
+  `devices/check`; only when the account lists the phone's key is the new name
+  recorded (the approval stays `code`, so signing out never forgets it). A
+  phone the account does not list keeps its old name, so a code-approved phone
+  cannot claim the owner's name on its own.
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
   desktop: [`native/ios/docs/FMCrypto.md`](../../native/ios/docs/FMCrypto.md).
 

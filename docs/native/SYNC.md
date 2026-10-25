@@ -214,4 +214,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S139 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
 | S140 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
 | S141 | 2026-10-25 | Account | fix | The app stays signed in to your instances after the phone restarts. | d16277242c | n/a | Android is not directBootAware, so it never starts before the first unlock |
+| S141 | 2026-10-25 | Desktop | feature | With several desktops running, the Desktops page shows each one's status, Where it runs lets you pick one, and the icon above the clock stacks the desktops and the core nodes. | 38a83361e4 | pending |  |
 <!-- ledger:end -->
