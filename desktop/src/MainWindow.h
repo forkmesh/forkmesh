@@ -9623,6 +9623,7 @@ private:
     void scmStageAll();
     void scmUnstageAll();
     void scmDiscardAll();
+    void applyScmChangeBlock(const QUrl &url);
     void scmCommit();
     void scmCommitAndPush();
     void scmStageAllCommitAndPush();
