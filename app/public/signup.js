@@ -807,7 +807,17 @@
     signupReferralCodeInput.addEventListener("input", updateCreateState);
   }
   termsAgree.addEventListener("change", updateCreateState);
-  form.addEventListener("submit", createAccount);
+  let creatingAccount = false;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (creatingAccount) return;
+    creatingAccount = true;
+    try {
+      await createAccount(event);
+    } finally {
+      creatingAccount = false;
+    }
+  });
 
   // Browser history can restore the visible username without replaying its
   // input event, leaving the transient availability state stale. Reconcile

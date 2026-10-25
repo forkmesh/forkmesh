@@ -214,6 +214,29 @@ as `restartTiming/pendingSummary`, and the relaunched app shows it as a notice a
 first paint (`finishPendingRestartTiming()`). It shows only when that launch is
 the relaunch, so a failed install leaves no stale notice.
 
+### Compile cache for the restart
+
+Until 2026-10-25 the restart compiled through `~/.ccache`, the cache every agent
+build on the machine also wrote to. It was capped at 5 GiB, full, and missed
+85 % of the time after 36,886 cleanups, so agent builds evicted the restart's
+objects long before the next restart. The build step now sets its own cache
+(`ccacheEnvironment()` in `src/RestartTiming.h`):
+
+- with the fast scratch disk on, the fast disk's `ccache` folder at 40 GiB, the
+  same cache and size agents get (`AgentScratch.h`), so a change an agent
+  already compiled the same way is a hit;
+- otherwise `~/.cache/forkmesh/rebuild-ccache`, sized to a quarter of the free
+  space on its volume, between 2 and 20 GiB;
+- nothing when the desktop was started with `CCACHE_DIR` set, or when it builds
+  as another user (`sudo -u`).
+
+`CCACHE_STATSLOG` points at `build/.forkmesh-tmp/ccache-stats.log`, which every
+restart starts empty. After the build, `ccacheCounts()` reads it and the summary
+gains ` · compile cache: N of M hit`. The trace logs `compile cache: <dir> (up to
+<size>)` before the build. Ninja still decides what to compile; the cache makes a
+clean rebuild, a build-type switch, or a file that returns to an earlier state
+cost a lookup instead of a compile.
+
 **Update, rebuild & restart** (`MainWindow::updateRebuildRestart()`,
 `src/MainWindowSetup.cpp`) runs `git pull --ff-only` from the mirror named by
 `/api/install-source`. If the pull fails, the update stops, reports why and
@@ -228,8 +251,12 @@ deletes the checkout, whose `.git` holds every local branch and agent worktree.
   helper bodies in `src/MainWindowInternal1.cpp` … `4.cpp` with only a
   declaration in the header.
 - The build commit id is in a generated `ForkMeshBuildCommit.h` included only by
-  `src/main.cpp` and `src/MainWindowHostInstall.cpp`; `FORKMESH_VERSION` is not a
-  cache variable or compile definition.
+  `src/DesktopBuildCommit.cpp`, whose `forkmesh::desktopBuildCommit()` everything
+  else calls; `FORKMESH_VERSION` is not a cache variable or compile definition.
+  Until 2026-10-25 `src/main.cpp` and `src/MainWindowHostInstall.cpp` included
+  the header, so every commit recompiled both on the next restart (12 to 19 s
+  each on an idle machine, minutes behind agent builds), and the 23,000-line
+  `tests/test_window_resize.cpp` in agent test builds.
 - Install `ccache` (with room, e.g. `ccache -M 30G`), `ninja` and `mold`.
 - The generated `marketplace.qrc` embeds every package (about 47 MB of C++
   through AUTORCC by October 2026). Compiling that one file took 1.3 GiB, and
@@ -266,6 +293,14 @@ Widgets; iterate on those before building the app.
 - Qt builds use at most two compiler jobs. The desktop workflow keeps its
   cache independently from the Worker and deployment workflows, so parallel
   runs do not force a cold Qt rebuild.
+- The desktop workflow's step sets `timeout-minutes: 220`. The desktop
+  runner's default step limit is 90 minutes, and a change to `MainWindow.h`
+  misses ccache for every `MainWindow*.cpp` in `forkmesh-window-tests`: at
+  two jobs on a busy desktop that rebuild alone ran past 90 minutes. Run 8092
+  on 2026-10-25 (main `f86a1b189b`, which carried a `MainWindow.h` change)
+  was killed at 66% with "Critical Qt client contracts exceeded the process
+  time limit". The objects it did compile stay in the kept cache, so the
+  next run starts further on.
 - CI never builds the `forkmesh` app target; `src/main.cpp` and the app link
   are only checked by building locally.
 - `.forkmesh/release.yml` and `tools/package/*.sh` produce release binaries
@@ -292,6 +327,10 @@ delta search runs and the step stays within its CPU limit
   `forkmesh-no-environ-identifier`) fails on such declarations under
   `desktop/src`, `desktop/tests` and `desktop/packages`, allowing the POSIX
   global (`extern char **environ;`).
+- Cast `QChar::unicode()` to `uint` before passing it to the numeric
+  `QString::arg(value, width, base, fill)`. From Qt 6.9 (Homebrew's Qt on
+  macOS), `char16_t` matches no `arg` overload, so the build fails there but
+  still passes on Linux distributions that ship Qt 6.8.
 
 ## Known failures and traps
 

@@ -1,5 +1,4 @@
 
-#include "ForkMeshBuildCommit.h"
 #include "DesktopBuildCommit.h"
 #include "ForkMeshVersion.h"
 #include "Tooltips.h"
@@ -586,8 +585,7 @@ bool MainWindow::buildHostInstallCommand(const QString &ip, const QString &user,
             expectedReleaseManifestDigest =
                 publishedRelease.manifestSha256.trimmed().toLower();
         } else {
-            expectedBuildCommit =
-                QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+            expectedBuildCommit = forkmesh::desktopBuildCommit();
 #ifdef FORKMESH_WINDOW_TESTS
             const QString testBuildCommit =
                 qEnvironmentVariable("FORKMESH_TEST_BUILD_COMMIT")
@@ -1983,9 +1981,4 @@ void MainWindow::submitHostLinkCode(const QString &code)
         if (m_hostInstallStatus)
             m_hostInstallStatus->setText(message.trimmed());
     });
-}
-
-QString forkmesh::desktopBuildCommit()
-{
-    return QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
 }

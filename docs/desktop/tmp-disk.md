@@ -50,6 +50,39 @@ keeps the folder it launched with. Old scratch on the system disk is left for
 its worktree's normal removal, and old Action sandboxes there are still
 reclaimed at startup (`legacySandboxDir()`).
 
+### Mounting it at startup
+
+A disk the desktop auto-mounted when it was opened in the file manager is gone
+after a reboot until someone opens it again, and the first agent run then
+lands on the system disk. When the probe finds a `TMP` disk that
+`/etc/fstab` does not mention (by `UUID=`, `LABEL=TMP`, a `/dev/disk/by-*`
+link or the device itself; comments do not count), ForkMesh asks once, through
+`pkexec`, to add it:
+
+    UUID=<uuid> <folder> <type> defaults,noatime,nofail,x-systemd.device-timeout=10s 0 2
+
+- The folder is where the disk is mounted now, so active scratch paths stay
+  valid; an unmounted disk gets `/media/<user>/TMP` (`/mnt/TMP` when the user
+  name has unusual characters). The UUID comes from `/dev/disk/by-uuid`, the
+  type from the mount table or udev (`/run/udev/data`), `auto` otherwise.
+- `nofail` and the 10 second device timeout mean a missing disk cannot stop
+  the computer booting. vfat, exFAT and NTFS also get `uid=`/`gid=` of the
+  user, and only ext2/3/4 are checked at boot (pass `2`).
+- The helper script backs up `/etc/fstab` to `/etc/fstab.forkmesh-<time>`,
+  exits if the UUID is already there, appends the line, creates the folder,
+  reloads systemd and mounts the disk if it is not mounted. The line, folder
+  and UUID are passed as separate arguments; the UUID, folder and type are
+  checked against strict patterns before the prompt.
+- Cancelling the password prompt is remembered for that disk
+  (`storage/tmpBootMountDeclined`), so it is not asked again on every start;
+  Settings > TMP disk shows whether the disk mounts at startup and has
+  **Mount at startup…** while it does not. Without `pkexec` the notice gives
+  the `sudo` command instead. Nothing is asked while `storage/useTmpDisk` is
+  off.
+
+Code: `planBootMount()`, `fstabCovers()` and `bootMountArguments()` in
+`FastScratchDisk.h`, `setupFastDiskBootMount()` in `MainWindowFastDisk.cpp`.
+
 ### Keeping it clean
 
 At startup and then hourly, `cleanUnused()` removes:
@@ -91,9 +124,48 @@ Clicking any of them re-checks at once.
 mass-storage device (an interface of class `08`) it estimates what the drive
 can do from its USB version (3.x means at least 5 Gbps), a UAS interface in its
 descriptors (protocol `0x62`, also at least 5 Gbps), and its name (`Gen 2` or
-`3.1`/`3.2` means 10 Gbps, `Gen 2x2`, USB4 or Thunderbolt 20 Gbps). It caps that
-at the fastest root hub on the machine and reports the drive when its link is
-slower. A drive on a USB 2.0 link reports version 2.10, so the UAS interface
-and the name are what catch the common case. Each slow drive is logged and
-shown as a notice once per session, and the USB tile keeps the full text in
-its tooltip.
+`3.1`/`3.2` means 10 Gbps, `Gen 2x2`, USB4 or Thunderbolt 20 Gbps), and from
+its BOS descriptors (`bos_descriptors`, Linux 6.5 and later): a SuperSpeed
+capability means 5 Gbps, and a SuperSpeedPlus capability states its sublink
+speed outright, which catches drives such as the SanDisk Extreme whose name
+gives no hint. It caps that at the fastest root hub on the machine and reports
+the drive when its link is slower. A drive on a USB 2.0 link reports version
+2.10, so the UAS interface, the BOS and the name are what catch the common
+case. Each slow drive is logged and shown as a notice once per session, and the
+USB tile keeps the full text in its tooltip.
+
+### Which port to use
+
+The notice says which port to move the drive to, not just "a faster port".
+`rootPorts` lists every port on every root hub
+(`usbN/N-0:1.0/usbN-portM`), skipping `connect_type` `hardwired` (internal) and
+`not used`. For each port it reads:
+
+- speed: the root hub's `speed`. A USB 3 port and its USB 2.0 twin are one
+  socket, joined by the `peer` link, so the drive's own socket speed is the
+  faster of the two.
+- taken: a device on the port (`N-M`) or on its peer, named in the notice.
+- USB-C: a `connector` link on the port or its peer, which the Type-C port
+  mapper adds when the firmware ties the socket to `/sys/class/typec`. Most
+  desktop boards publish no Type-C class, so "not USB-C" really means "not
+  known".
+- place: `physical_location/panel`, `vertical_position` and
+  `horizontal_position` from ACPI. Many boards copy one template into every
+  port (one test machine says `top`, `upper`, `left` for all of them), so when
+  every port that has a location shares the same one, the locations are
+  ignored.
+- controller: the PCI device behind the root hub.
+
+The notice then picks one case:
+
+| Situation | Advice |
+| --- | --- |
+| Behind a hub on a fast computer port | Drop the hub and use that port |
+| Direct on a port as fast as the drive's target | The cable is the limit; use the drive's own cable |
+| Free fast port known to be USB-C, or with a trusted place | Names it ("the free 10 Gbps USB-C port on the back, lower right") |
+| Free fast ports, socket unknown | Counts them; if they all sit on a different controller from the drive's (an add-on chip such as the ASMedia ASM3142 on many Intel boards), says that controller usually drives the rear USB-C port and the red or teal USB-A port beside it |
+| Every fast port taken | Names what is using them |
+| No port information | The old generic advice |
+
+The drive's own port speed ("Its port only does 5 Gbps") is shown so the user
+can see the port, not the drive, is the limit.

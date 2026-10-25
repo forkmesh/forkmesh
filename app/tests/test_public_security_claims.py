@@ -179,13 +179,13 @@ def test_marketing_copy_matches_guest_registration_and_bounded_availability():
 
 def test_retired_bounty_and_phone_mirror_advertising_stays_removed():
     readme = (PROJECT / "README.md").read_text(encoding="utf-8").lower()
-    changelog = (PUBLIC / "changelog.html").read_text(encoding="utf-8").lower()
+    changelog = (PROJECT / "changelog" / "changelog.json").read_text(encoding="utf-8").lower()
     assert "fund any issue with one click" not in readme
     assert "pays out to the contributor when their pr is merged" not in readme
     assert "on-chain bounties" not in readme
     assert "mirror on your phone" not in readme
     assert "mirror on your phone" not in changelog
-    assert "phones are access clients" in " ".join(readme.split())
+    assert "mirroring remains a desktop or headless-node job" in " ".join(readme.split())
     assert "access client; git mirroring remains a desktop/headless-node job" in changelog
     assert "legacy worker-custodied bounty deposits and automatic payouts are frozen" in readme
 
