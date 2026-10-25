@@ -12,6 +12,12 @@
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
      ]
+    },
+    {
+     "title": "Desktop",
+     "items": [
+      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can."
+     ]
     }
    ]
   },
