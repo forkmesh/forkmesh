@@ -621,15 +621,27 @@ void setPullChecksAttention(QPushButton *button, bool running)
         tile->setAttentionLight(running);
 }
 
+QSet<int> pullsWithRunningChecks(const QList<ActionRun> &runs,
+                                 const QString &owner, const QString &name)
+{
+    QSet<int> running;
+    for (const ActionRun &run : runs) {
+        if (run.status == ActionStatus::Running && run.pullNumber > 0 &&
+            run.owner == owner && run.name == name)
+            running.insert(run.pullNumber);
+    }
+    return running;
+}
+
 bool pullHasRunningChecks(const PullRequest &pull,
                           const QList<ActionRun> &runs,
                           const QString &owner, const QString &name)
 {
     return std::any_of(runs.cbegin(), runs.cend(),
                        [&pull, &owner, &name](const ActionRun &run) {
-                           return run.owner == owner && run.name == name &&
+                           return run.status == ActionStatus::Running &&
                                   run.pullNumber == pull.number &&
-                                  run.status == ActionStatus::Running;
+                                  run.owner == owner && run.name == name;
                        });
 }
 
@@ -2876,6 +2888,8 @@ void MainWindow::refreshPullList()
         repoOwner = m_repositories.at(m_repoDetailIndex).owner;
         repoName = m_repositories.at(m_repoDetailIndex).name;
     }
+    const QSet<int> runningCheckPulls =
+        pullsWithRunningChecks(m_actionRuns, repoOwner, repoName);
     for (int row = 0; row < visiblePulls.size(); ++row) {
         const PullRequest &pr = *visiblePulls.at(row);
         auto *num = new SortTableWidgetItem;
@@ -2908,8 +2922,7 @@ void MainWindow::refreshPullList()
         if (m_pullBranchState.contains(pr.number))
             num->setData(kPullCodeBranchRole, branchState.codeBranch);
         const QString displayStatus = pullDisplayStatus(pr);
-        const bool checksRunning = pullHasRunningChecks(
-            pr, m_actionRuns, repoOwner, repoName);
+        const bool checksRunning = runningCheckPulls.contains(pr.number);
         // A spinner glyph gives an in-list progress signal without
         // displacing the PR state icon into another column. It changes only
         // while an executor is actively running, not while a run is queued or

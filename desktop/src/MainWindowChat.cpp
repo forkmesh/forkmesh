@@ -2,6 +2,7 @@
 #include "ForkMeshVersion.h"
 #include "ProcessReaper.h"
 #include "ProjectRegistry.h"
+#include "SettingsWrite.h"
 #include "Tooltips.h"
 #include "UiSounds.h"
 #include "MainWindow.h"
@@ -3129,6 +3130,26 @@ QWidget *MainWindow::buildStatusBar()
         m_qtDiagnosticTiles.append(tile);
         debugTiles.append(tile);
     }
+    const struct {
+        QWidget **slot;
+        const char *name;
+        const char *label;
+        const char *accessible;
+    } diskTiles[] = {
+        {&m_debugTmpDataTile, "debugTmpDataTile", "DATA", "Data on the TMP disk"},
+        {&m_debugUsbTile, "debugUsbLinkTile", "USB", "USB drive link speed"},
+        {&m_debugTmpTile, "debugTmpDiskTile", "TMP", "TMP fast disk"},
+    };
+    for (const auto &definition : diskTiles) {
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label), debugContent,
+                                           kResourceSparklineCompactSide, 2);
+        tile->setObjectName(QString::fromLatin1(definition.name));
+        tile->setAccessibleName(QString::fromLatin1(definition.accessible));
+        tile->setLoading(true);
+        tile->onClicked = [this] { refreshFastScratchDisk(false); };
+        *definition.slot = tile;
+        debugTiles.append(tile);
+    }
     for (int first = 0; first < debugTiles.size(); first += 4) {
         auto *quad = new QWidget(debugContent);
         quad->setObjectName(QStringLiteral("debugTileQuad"));
@@ -4525,14 +4546,15 @@ void MainWindow::resetPromptOverlayPlacement()
 void MainWindow::savePromptOverlayPlacement()
 {
     QSettings settings;
-    settings.setValue(QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    settings.setValue(QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    settings.setValue(QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    settings.setValue(QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
+    using forkmesh::settings::put;
+    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
+    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
+    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
+    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    settings.setValue(QLatin1String(kPromptDetachGeometrySetting),
-                      m_promptDetachGeometry);
+    put(settings, QLatin1String(kPromptDetachGeometrySetting),
+        m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()

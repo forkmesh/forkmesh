@@ -8516,13 +8516,8 @@ void MainWindow::recordNavLocation()
     }
     captureNavSubPlace(here);
 
-    if (here.detailTab >= 0) {
-        static QSettings navigationSettings;
-        if (navigationSettings.value(kLastRepoDetailTabSetting, -1).toInt() !=
-            here.detailTab)
-            navigationSettings.setValue(kLastRepoDetailTabSetting,
-                                        here.detailTab);
-    }
+    if (here.detailTab >= 0)
+        m_lastRepoDetailTabPending = here.detailTab;
 
     if (m_navHistoryIndex >= 0 && m_navHistoryIndex < m_navHistory.size() &&
         m_navHistory.at(m_navHistoryIndex) == here)

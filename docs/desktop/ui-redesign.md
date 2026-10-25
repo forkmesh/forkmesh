@@ -87,6 +87,20 @@ keys are Classic's hex values. The window's view menu and Settings → Appearanc
 both switch the interface, and both pick the theme: the view menu's Theme
 section lists `MainWindow::appThemeChoices()`, the same list as
 `appThemeCombo`, and goes through that combo when Settings has been built.
+Below the themes it has two more entries:
+
+- **Match the instance's theme** (`viewMenuMatchInstanceTheme`) toggles the same
+  `ui/matchInstanceTheme` setting as the Settings checkbox (see the instance
+  theme item below). Turning it on from Halloween or a Market skin switches the
+  theme to `system` first, because both of those replace the instance colours
+  and the toggle would otherwise seem to do nothing.
+- **Reset to default** (`viewMenuThemeReset`,
+  `MainWindow::resetAppearanceToDefaults`) removes `app/theme`, `app/design` and
+  `ui/matchInstanceTheme`, so the app looks the way a fresh install does:
+  Classic, following the system's light or dark setting, in ForkMesh's own
+  colours. It leaves density, the Agents layout and the view mode alone. The
+  entry is greyed out while those three settings are already at their defaults
+  (`appearanceIsDefault`).
 
 **Halloween is a built-in theme, not a Market skin.** `halloween` always uses the
 dark base and installs `Theme::halloweenRoleColors()` (pumpkin-orange accent,
