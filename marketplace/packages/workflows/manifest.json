@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Automation",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "summary": "Build automations on a visual canvas with 100 integrations, Shortcuts-style steps and your own scripts. On the desktop it runs your repositories' special agents, shortcuts and desktop steps as workflows you can pin to any rail.",
   "screenshots": [
     {
