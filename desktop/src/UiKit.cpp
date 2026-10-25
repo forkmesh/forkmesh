@@ -637,6 +637,16 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
     return wrapper;
 }
 
+QString cellDisplayText(const QString &text, int maxChars)
+{
+    if (maxChars <= 0 || text.size() <= maxChars)
+        return text;
+    qsizetype keep = maxChars;
+    if (text.at(keep - 1).isHighSurrogate())
+        --keep;
+    return text.left(keep) + QChar(0x2026);
+}
+
 namespace {
 
 const char kFloatingSurface[] = "floatingSurface";
@@ -741,6 +751,14 @@ public:
             }
         }
         QStyledItemDelegate::paint(painter, opt, index);
+    }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text = cellDisplayText(option->text);
     }
 };
 

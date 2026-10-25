@@ -46,6 +46,7 @@ constexpr qsizetype kActionProcessLogMaxBytes = 1024 * 1024;
 constexpr qsizetype kActionProcessLogTailBytes = 128 * 1024;
 constexpr qsizetype kActionProcessLogMaxLineChars = 4096;
 constexpr qsizetype kActionCrashOutputTailBytes = 12 * 1024;
+constexpr int kActionCrashContextRefreshMs = 250;
 constexpr qsizetype kActionCrashContextMaxChars = 12000;
 constexpr qint64 kMaxLandedArtifactBytes = 1024LL * 1024 * 1024;
 constexpr qint64 kHostRunFreeBytes = 1024LL * 1024 * 1024;
@@ -367,6 +368,13 @@ ActionRunner::ActionRunner(ActionStore *store, QObject *parent)
                      QStringLiteral("Workflow exceeded the total time limit."));
         }
     });
+    m_crashContextTimer = new QTimer(this);
+    m_crashContextTimer->setSingleShot(true);
+    m_crashContextTimer->setInterval(kActionCrashContextRefreshMs);
+    connect(m_crashContextTimer, &QTimer::timeout, this, [this] {
+        if (m_busy)
+            updateCrashContext();
+    });
     m_terminationTimer = new QTimer(this);
     m_terminationTimer->setSingleShot(true);
     connect(m_terminationTimer, &QTimer::timeout, this, [this] {
@@ -392,6 +400,7 @@ ActionRunner::~ActionRunner()
     m_stepTimer->stop();
     m_jobTimer->stop();
     m_terminationTimer->stop();
+    m_crashContextTimer->stop();
 
     QProcess *const process = m_process;
     if (!process)
@@ -1751,6 +1760,7 @@ void ActionRunner::finishComplete(bool ok, const QString &finalMessage,
     m_completing = false;
     m_stepTimer->stop();
     m_jobTimer->stop();
+    m_crashContextTimer->stop();
     forkmesh::setCrashContext(QString());
     forkmesh::setTerminationSignalSurvivalEnabled(false);
     emit statusChanged(m_run.id, m_run.status);
@@ -1781,6 +1791,7 @@ void ActionRunner::interruptForShutdown(bool crashed, int exitCode)
     m_phase = Phase::Idle;
     m_busy = false;
     m_completing = false;
+    m_crashContextTimer->stop();
     forkmesh::setCrashContext(QString());
     forkmesh::setTerminationSignalSurvivalEnabled(false);
     emit interrupted(m_run.id);
@@ -2101,7 +2112,8 @@ void ActionRunner::emitProcessOutput(const QByteArray &bytes)
         return;
 
     rememberCrashProcessOutput(bytes);
-    updateCrashContext();
+    if (!m_crashContextTimer->isActive())
+        m_crashContextTimer->start();
 
     if (m_processOutputBytes >= kActionProcessLogMaxBytes) {
         emitProcessOutputTruncationNotice();
@@ -2262,8 +2274,17 @@ QString ActionRunner::crashContext() const
     return out;
 }
 
+#ifdef FORKMESH_ACTION_STORE_TESTS
+bool ActionRunner::crashContextRefreshPendingForTesting() const
+{
+    return m_crashContextTimer->isActive();
+}
+#endif
+
 void ActionRunner::updateCrashContext() const
 {
+    m_crashContextTimer->stop();
+    ++m_crashContextUpdates;
     const QString tail = crashOutputTail();
     QString head = crashContextHeader();
     if (!tail.isEmpty())

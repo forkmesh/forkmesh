@@ -11,6 +11,7 @@
 #include "PrivateMirrorStore.h"
 #include "PublicMirrorRuntime.h"
 #include "RunnerSetupHandoff.h"
+#include "UiKit.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -518,6 +519,8 @@ QTableWidget *systemValuesTable(const QString &objectName)
     return table;
 }
 
+constexpr int kValueTooltipChars = 2000;
+
 void appendValueRow(QTableWidget *table, const QString &section,
                     const QString &name, const QString &value)
 {
@@ -527,8 +530,8 @@ void appendValueRow(QTableWidget *table, const QString &section,
     table->insertRow(row);
     table->setItem(row, 0, new QTableWidgetItem(section));
     table->setItem(row, 1, new QTableWidgetItem(name));
-    auto *valueItem = new QTableWidgetItem(value);
-    valueItem->setToolTip(value);
+    auto *valueItem = new QTableWidgetItem(forkmesh::ui::kit::cellDisplayText(value));
+    valueItem->setToolTip(forkmesh::ui::kit::cellDisplayText(value, kValueTooltipChars));
     table->setItem(row, 2, valueItem);
 }
 
