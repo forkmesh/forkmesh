@@ -52,10 +52,6 @@ def test_stale_node_purge_only_removes_orphaned_registration():
             node_name TEXT NOT NULL
         );
         CREATE TABLE account_presence (ts INTEGER NOT NULL);
-        CREATE TABLE host_presence (
-            repo_bi TEXT NOT NULL,
-            ts INTEGER NOT NULL
-        );
 
         INSERT INTO nodes VALUES ('repo-node', 'repo-node', 0);
         INSERT INTO nodes VALUES ('endpoint-node', 'endpoint-node', 0);
@@ -64,7 +60,6 @@ def test_stale_node_purge_only_removes_orphaned_registration():
         INSERT INTO mirror_https_endpoints
             VALUES ('endpoint-node', 'endpoint-node');
         INSERT INTO account_presence VALUES (0);
-        INSERT INTO host_presence VALUES ('repo:stale', 0);
         """
     )
     writes = []
@@ -89,9 +84,6 @@ def test_stale_node_purge_only_removes_orphaned_registration():
     async def active_registered_node_bis(_env, _now):
         return set()
 
-    async def notify_stale_hosts_offline(_env, _cutoff):
-        return ["repo:stale"]
-
     async def delete_repo_namespace(*args):
         namespace_deletes.append(args)
         raise AssertionError("stale-node purge attempted catalog deletion")
@@ -112,7 +104,6 @@ def test_stale_node_purge_only_removes_orphaned_registration():
         "d1_all": d1_all,
         "d1_run": d1_run,
         "active_registered_node_bis": active_registered_node_bis,
-        "notify_stale_hosts_offline": notify_stale_hosts_offline,
         "_delete_repo_namespace": delete_repo_namespace,
         "purge_catalog_related_caches": purge_catalog_related_caches,
         "schedule_public_catalog_republish": schedule_public_catalog_republish,
@@ -137,9 +128,7 @@ def test_stale_node_purge_only_removes_orphaned_registration():
     assert db.execute(
         "SELECT COUNT(*) FROM account_presence"
     ).fetchone()[0] == 0
-    assert db.execute(
-        "SELECT COUNT(*) FROM host_presence"
-    ).fetchone()[0] == 0
+    assert not any("host_presence" in sql for sql, _args in writes)
     assert cache_purges == [True]
     # The removed node changes the anonymous catalog: one republish doorbell.
     assert republishes == [True]

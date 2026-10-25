@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-25",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Agents",
+     "items": [
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-24",
    "version": "",
    "title": "",
@@ -10,7 +24,8 @@
     {
      "title": "Market",
      "items": [
-      "The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one."
+      "The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one.",
+      "In the desktop Market you can switch between a grid and a list, and clicking a package opens its details in a pane on the right."
      ]
     },
     {
@@ -35,13 +50,15 @@
     {
      "title": "Chat",
      "items": [
-      "Links to a channel or direct message open it even on a freshly loaded chat page."
+      "Links to a channel or direct message open it even on a freshly loaded chat page.",
+      "In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with."
      ]
     },
     {
      "title": "Agents",
      "items": [
-      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first."
+      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first.",
+      "Claude Code agents now show up as sessions in the Claude desktop app's Code tab, where you can read and resume them; use Open in Claude app from an agent's menu, or turn it off in Settings > Agents."
      ]
     },
     {
@@ -89,6 +106,7 @@
       "A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports.",
       "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.",
       "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.",
+      "The desktop app uses less CPU while agents or Actions run, and the Team page opens without reading every teammate's whole transcript.",
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
       "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.",
       "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
@@ -100,7 +118,8 @@
      "items": [
       "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
       "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
-      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.",
+      "Deploy nodes runs deploy again when Action sandboxes are on a TMP disk."
      ]
     }
    ]
@@ -179,6 +198,8 @@
     {
      "title": "Android",
      "items": [
+      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.",
+      "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.",
       "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
       "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.",
@@ -312,6 +333,9 @@
      "title": "Android",
      "items": [
       "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.",
+      "On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call.",
+      "Calls ring an Android phone that has notifications turned off, as long as its background connection is on.",
+      "Removing a project on Android erases its chat history, and performance reports hide conversation and channel names.",
       "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."
      ]
     },

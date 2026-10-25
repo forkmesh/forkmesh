@@ -4,6 +4,7 @@
 #include "RepoWorkflowRunner.h"
 #include "SideRail.h"
 #include "TeammateStore.h"
+#include "TerminalTabsPage.h"
 #include "WorkspaceBrowserPane.h"
 
 #include <QAbstractButton>
