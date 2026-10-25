@@ -15880,7 +15880,7 @@ void checkGitCompactLayout(MainWindow &window)
     settle();
     const QString fresh = window.testGitLayoutState();
     check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
-              fresh.endsWith(QStringLiteral(" branch=gitNextHeader")),
+              fresh.endsWith(QStringLiteral(" rows=1 branch=gitNextHeader")),
           QStringLiteral("the New Git layout has the page header, the branches "
                          "column and the branch picker in the header (%1)")
               .arg(fresh));
@@ -15890,10 +15890,11 @@ void checkGitCompactLayout(MainWindow &window)
     window.testApplyGitLayout();
     settle();
     const QString compact = window.testGitLayoutState();
-    check(compact == QStringLiteral(
-                         "header=0 side=0 files=1 history=1 branch=gitHistoryHeader"),
+    check(compact == QStringLiteral("header=0 side=0 files=1 history=1 rows=1 "
+                                    "branch=gitHistoryHeader"),
           QStringLiteral("the Compact Git layout stacks files over history with "
-                         "the branch picker in the history header (%1)")
+                         "room for the file list and the branch picker in the "
+                         "history header (%1)")
               .arg(compact));
     shot(QStringLiteral("compact"));
 

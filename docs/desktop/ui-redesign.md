@@ -1854,7 +1854,10 @@ A window that starts in Classic is never touched.
   no page header, with the branch picker, Fetch, Pull and rescan back in the
   history header and the "▾ CHANGES" caption showing the count again. Only
   the page arrangement changes (`arrangePage(false)`); the change rows, the
-  commit box and the history rows keep the new design. Switching runs
+  commit box and the history rows keep the new design. The commit box now
+  sits in the files pane, so Compact gives the change list a three-row
+  minimum height; without it the files/history splitter squeezed the list to
+  nothing in a short window. Switching runs
   `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).

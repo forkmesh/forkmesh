@@ -2647,6 +2647,9 @@ QWidget *MainWindow::buildSourceControlPanel()
             scmSetShown(title, !next);
             scmSetShown(m_scmCountLabel, !next);
         }
+        if (m_scmTree)
+            m_scmTree->setMinimumHeight(
+                chrome->arranged == 1 && !next ? 3 * kScmNextRowHeight : 0);
         if (next && !chrome->installed && !installPage())
             return;
         if (chrome->pageArranged == int(next))
@@ -3841,11 +3844,14 @@ QString MainWindow::testGitLayoutState() const
     const QWidget *pair =
         m_commitsBranchButton ? m_commitsBranchButton->parentWidget() : nullptr;
     const QWidget *host = pair ? pair->parentWidget() : nullptr;
-    return QStringLiteral("header=%1 side=%2 files=%3 history=%4 branch=%5")
+    const bool rows =
+        m_scmTree && m_scmTree->viewport()->height() >= kScmNextRowHeight;
+    return QStringLiteral("header=%1 side=%2 files=%3 history=%4 rows=%5 branch=%6")
         .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextHeader"))))
         .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextSide"))))
         .arg(shown(m_gitFilesSlot))
         .arg(shown(m_gitHistorySlot))
+        .arg(rows ? 1 : 0)
         .arg(host ? host->objectName() : QString());
 }
 #endif
