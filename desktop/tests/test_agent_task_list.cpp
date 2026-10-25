@@ -185,6 +185,25 @@ static void testCreatedTaskId()
           summaryText(counts));
 }
 
+static void testProgressText()
+{
+    Tracker tracker;
+    check(progressText(tracker).isEmpty(), QStringLiteral("no tasks, no progress"));
+    tracker.ingest(toolUse(QStringLiteral("t1"), QStringLiteral("TodoWrite"),
+                           parse(R"({"todos":[
+        {"content":"A","status":"completed"},
+        {"content":"B","activeForm":"Running the whole desktop test suite slowly","status":"in_progress"},
+        {"content":"C","status":"pending"}]})")));
+    check(progressText(tracker, 20) == QStringLiteral("◼ 1/3 · Running the whole d…"),
+          progressText(tracker, 20));
+    tracker.ingest(toolUse(QStringLiteral("t2"), QStringLiteral("TodoWrite"),
+                           parse(R"({"todos":[{"content":"A","status":"completed"},{"content":"C","status":"pending"}]})")));
+    check(progressText(tracker) == QStringLiteral("◻ 1/2"), progressText(tracker));
+    tracker.ingest(toolUse(QStringLiteral("t3"), QStringLiteral("TodoWrite"),
+                           parse(R"({"todos":[{"content":"A","status":"completed"}]})")));
+    check(progressText(tracker) == QStringLiteral("✔ 1/1"), progressText(tracker));
+}
+
 static void testBar()
 {
     Tracker tracker;
@@ -245,6 +264,7 @@ int main(int argc, char **argv)
     testSubagentGroups();
     testCodexPlanDeltas();
     testCreatedTaskId();
+    testProgressText();
     testBar();
     if (failures) {
         std::cerr << failures << " failure(s)\n";

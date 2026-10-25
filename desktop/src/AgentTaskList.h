@@ -39,6 +39,9 @@ QString normalizedStatus(const QString &status);
 QString createdTaskId(const QString &resultText);
 QString summaryText(const Counts &counts);
 
+class Tracker;
+QString progressText(const Tracker &tracker, int maxChars = 48);
+
 class Tracker
 {
 public:

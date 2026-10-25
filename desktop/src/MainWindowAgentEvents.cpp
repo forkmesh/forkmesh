@@ -577,6 +577,20 @@ void MainWindow::auditAgentGuardrailEvent(
     }
 }
 
+QString MainWindow::agentTaskProgress(int sessionId)
+{
+    auto tracker = m_agentTaskTrackers.find(sessionId);
+    if (tracker == m_agentTaskTrackers.end()) {
+        const auto events = m_streamEvents.constFind(sessionId);
+        if (events == m_streamEvents.constEnd())
+            return {};
+        tracker = m_agentTaskTrackers.insert(sessionId, {});
+        for (const QJsonObject &event : *events)
+            feedAgentTaskTracker(*tracker, event);
+    }
+    return forkmesh::agenttasks::progressText(*tracker);
+}
+
 void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
 {
     // Agent output is untrusted data. Strip provider credentials before it can
@@ -594,6 +608,9 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         ev.insert(forkmesh::agents::resumeAccountKey(), accountId);
     }
     const QString type = ev.value(QStringLiteral("type")).toString();
+    if (auto tracker = m_agentTaskTrackers.find(sessionId);
+        tracker != m_agentTaskTrackers.end())
+        feedAgentTaskTracker(*tracker, ev);
     // The speaker rows caption their bubble with when it was said; the CLIs'
     // stream events carry no time, so stamp them as they arrive (and persist).
     if ((type == QLatin1String("_local_user") || type == QLatin1String("assistant") ||
@@ -2389,6 +2406,14 @@ void MainWindow::animateRunningAgentIcons()
             if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn))
                 m_agentTable->viewport()->update(
                     m_agentTable->visualItemRect(issueItem));
+        if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn)) {
+            const QString progress = agentTaskProgress(s->id);
+            if (issueItem->data(kAgentTaskProgressRole).toString() != progress) {
+                issueItem->setData(kAgentTaskProgressRole, progress);
+                issueItem->setText(agentTitleWithProgress(
+                    issueItem->data(kAgentTitleBaseRole).toString(), progress));
+            }
+        }
         if (m_agentListView == AgentListView::Compact)
             if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn)) {
                 const QString ticker =

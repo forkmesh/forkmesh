@@ -55,6 +55,7 @@
 #include "AccountCapability.h"
 #include "AccountSessionCache.h"
 #include "AgentStore.h"
+#include "AgentTaskList.h"
 #include "RepoWorkflowRunner.h"
 #include "TaskWorkItems.h"
 #include "ListViewMode.h"
@@ -14962,6 +14963,8 @@ private:
     // and corrupt the half-built table unless we skip the nested rebuild.
     bool m_agentTableRefreshing = false;
     QHash<int, QString> m_lastAssistantText; // last assistant prose, for waiting/question
+    QHash<int, forkmesh::agenttasks::Tracker> m_agentTaskTrackers;
+    QString agentTaskProgress(int sessionId);
     QSet<int> m_agentCompletionChecks;
     // The drain window between the CLI's `result` and a genuinely finished run:
     // what the agent left running, whether it is still doing work, and how long

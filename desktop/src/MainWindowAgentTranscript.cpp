@@ -174,6 +174,7 @@ bool MainWindow::ensureStreamEventsLoadedAsync(int sessionId)
                        !m_streamSessions.contains(sessionId) &&
                        !m_codexStreams.contains(sessionId)) {
                 m_streamEvents[sessionId] = std::move(out.events);
+                m_agentTaskTrackers.remove(sessionId);
                 m_streamRaw[sessionId] = std::move(out.raw);
                 m_streamFiles[sessionId] = std::move(out.files);
             }
