@@ -901,6 +901,83 @@ static void testCodePairedUserStays()
           "a code-paired phone cannot rename its user to the owner");
 }
 
+static void testCodePairedGuestSignsIn()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey phoneKey;
+    const QString store = dir.filePath("paired.json");
+    writeStore(store, QJsonArray{QJsonObject{
+        {"key", phoneKey.publicKey}, {"name", "Guest 2307"},
+        {"user", ""}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    QList<QJsonObject> outbox;
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    server.setRelaySink([&](const QJsonObject &f) { outbox.append(f); return true; },
+                        "desk");
+    using Verdict = LocalControlServer::AccountCheck;
+    Verdict verdict = Verdict::NotOwned;
+    QStringList asked;
+    server.accountDeviceCheck = [&](const LocalControlServer::Device &device,
+                                    std::function<void(Verdict)> done) {
+        asked.append(device.key);
+        done(verdict);
+    };
+    const auto dial = [&](const QString &session) {
+        auto *phone = new RelayTestClient(phoneKey);
+        phone->session = session;
+        phone->server = &server;
+        phone->open();
+        for (int i = 0; i < 3; ++i) {
+            phone->fromDesktop.append(outbox);
+            outbox.clear();
+            phone->pump();
+        }
+        return phone;
+    };
+    const auto connectedUser = [&]() {
+        for (const LocalControlServer::Device &device : server.connectedDevices())
+            if (device.key == phoneKey.publicKey)
+                return device.user;
+        return QString();
+    };
+
+    std::unique_ptr<RelayTestClient> phone(dial("relay-session-guest-signin-1"));
+    check(asked == QStringList{phoneKey.publicKey},
+          "a code-paired phone naming a new account is checked with the account");
+    check(server.isConnected(phoneKey.publicKey),
+          "and still connects when the account does not list it");
+    check(storedRecord(store, phoneKey.publicKey).value("user").toString().isEmpty(),
+          "an unconfirmed account name is not recorded");
+    check(!forkmesh::localcontrol::hosts::ownerMayManageHosts(connectedUser(), "alice"),
+          "so it cannot manage the desktop's hosts");
+
+    verdict = Verdict::Unreachable;
+    phone.reset(dial("relay-session-guest-signin-2"));
+    check(server.isConnected(phoneKey.publicKey) &&
+              storedRecord(store, phoneKey.publicKey).value("user").toString().isEmpty(),
+          "an account that cannot be asked leaves the phone as it was");
+
+    verdict = Verdict::Owned;
+    phone.reset(dial("relay-session-guest-signin-3"));
+    check(server.isConnected(phoneKey.publicKey),
+          "a code-paired phone the account lists connects");
+    check(storedRecord(store, phoneKey.publicKey).value("user").toString() == "alice",
+          "and its signed-in account is recorded");
+    check(storedRecord(store, phoneKey.publicKey).value("approval").toString() == "code",
+          "while it stays approved in person");
+    check(forkmesh::localcontrol::hosts::ownerMayManageHosts(connectedUser(), "alice"),
+          "so the signed-in owner can manage the desktop's hosts");
+
+    asked.clear();
+    phone.reset(dial("relay-session-guest-signin-4"));
+    check(server.isConnected(phoneKey.publicKey) && asked.isEmpty(),
+          "a confirmed account is not asked about again");
+}
+
 static void testRelayResilience()
 {
     QTemporaryDir dir;
@@ -1037,7 +1114,7 @@ static void testAccountRevocation()
         QJsonObject{{"key", legacyPhone.publicKey}, {"name", "Legacy phone"},
                     {"pairedAtMs", 2.0}},
         QJsonObject{{"key", codePhone.publicKey}, {"name", "Code phone"},
-                    {"pairedAtMs", 3.0}, {"approval", "code"}}});
+                    {"user", "alice"}, {"pairedAtMs", 3.0}, {"approval", "code"}}});
     QList<QJsonObject> outbox;
     LocalControlServer server(
         desktopKey.publicKey,
@@ -1527,6 +1604,7 @@ int main(int argc, char **argv)
     testAccountDevices();
     testRelayResilience();
     testCodePairedUserStays();
+    testCodePairedGuestSignsIn();
     testAccountRevocation();
     testLanAdmitsBeforeAccountCheck();
     testHostPolicy();
