@@ -129,6 +129,7 @@ struct AgentSession {
     // can still tell that the finished local run and the website's row are one
     // run and show it once. Empty for a run started on this desktop.
     QString webSessionId;
+    QString claudeAppSessionId;
     QString claudeImportId;
     QString claudeImportPath;
     QString claudeImportCwd;
