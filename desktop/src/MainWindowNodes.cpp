@@ -4158,12 +4158,7 @@ void MainWindow::forgetSavedHostNamed(const QString &node)
 QWidget *MainWindow::buildHomeSection()
 {
     auto *page = new QWidget;
-    auto *empty = new QLabel(
-        QStringLiteral("Select a repository to explore its code and activity."));
-    empty->setObjectName(QStringLiteral("emptyState"));
-    empty->setAlignment(Qt::AlignCenter);
-    empty->setWordWrap(true);
-    m_repoDetailSection = empty;
+    m_repoDetailSection = new QWidget;
     auto *layout = new QHBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);

@@ -10348,6 +10348,7 @@ private:
     void uninstallForkMesh();
     void rebuildAndRelaunch();
     void showSection(int index);
+    int startupLandingSection() const;
     void updateHomeStats();
     QString selfNodeStats() const; // inline stats line for your own node
     void attachBackend(ChatBackend *backend);
