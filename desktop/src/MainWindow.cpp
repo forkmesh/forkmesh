@@ -166,6 +166,7 @@ MainWindow::~MainWindow()
             m_agentToolLedger->saveLater();
     }
     forkmesh::diskwrite::flush();
+    ActionStore::flushWrites();
     flushRepositorySyncTimes();
 
     clearDesktopPackageExtensions();
