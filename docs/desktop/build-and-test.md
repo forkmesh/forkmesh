@@ -12,7 +12,8 @@ From `desktop/CMakeLists.txt`:
   (required); Multimedia/MultimediaWidgets, OpenGL/OpenGLWidgets, Bluetooth,
   WebEngineWidgets (optional, found `QUIET`). Without WebEngine, agent browser
   windows ([../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md)) open
-  in the system browser.
+  in the system browser, and so do pages in the Browser tab
+  ([browser.md](browser.md)).
 - OpenSSL 3.0 or newer; 3.5 for every feature. See [OpenSSL](#openssl).
 - Python 3 (the build generates marketplace sources from `marketplace/`).
 - Optional: `libnghttp3` plus OpenSSL QUIC for the HTTP/3 client
