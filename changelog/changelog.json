@@ -34,7 +34,8 @@
      "items": [
       "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.",
       "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.",
-      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can."
+      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.",
+      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls."
      ]
     }
    ]

@@ -1902,6 +1902,7 @@ private:
 
 constexpr int kResourceSparklineSide = 34;
 constexpr int kResourceSparklineCompactSide = 19;
+constexpr qint64 kDebugStallChartMaxMs = 2000;
 
 class ResourceSparkline : public QWidget
 {
