@@ -11261,6 +11261,8 @@ QPixmap languageBarPixmap(const QList<QPair<QString, qint64>> &langs,
 
 QPixmap letterFavicon(const QString &host, int side = 36);
 
+QPixmap currentProjectLogo(int side, QString *name = nullptr);
+
 QString builtinFaviconKey(const QString &host);
 
 bool hasBuiltinFavicon(const QString &host);
