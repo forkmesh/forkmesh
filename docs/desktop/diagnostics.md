@@ -645,6 +645,42 @@ returned, so summed frame totals overstate a function's own cost.
     `agentStatusIconColor`) already skips unchanged rows (adhoc #2104). The
     sample's other frames were stale, so the time could not be pinned to
     the loop. The two compositor buffer-swap stalls wait on Wayland.
+- **Data-table column fits, origin attribution, Deploy nodes runs (report
+  #14, 2026-10-24).** The running binary was built at 21:55 from `main`
+  before the report #13 fixes were merged, so its cell-text cap was not in
+  it.
+  - A 1,882 ms stall (`STALL-20261024T220959001-p3540757-0002`) ran from
+    `QTableWidgetItem::setData` through `QHeaderView::sectionPosition` into
+    `QTableView::sizeHintForColumn`. In the Next design `syncDataTable` turns
+    every Interactive column of a `dataTable` into `ResizeToContents`, which
+    undoes `makeColumnsResizable`'s freeze. A pending section resize then
+    runs on the next cell update and measures up to
+    `resizeContentsPrecision()` rows per column, 1,000 by default. Data
+    tables now fit from `kit::kDataTableFitRows` (100) rows around the
+    viewport. A smaller bound a page already set (the Users tables use one)
+    is kept, and leaving the Next design restores the old value.
+    `forkmesh-ui-kit-tests` times 20 cell updates on a 3,000-row data table
+    at both settings and checks the restore.
+  - `QtRuntimeDiagnostics::noteEventTiming` and `hiddenunicode::guardWidget`
+    were named as the likely origin of 16 stall groups. The first is the
+    event-timing hook, which runs after every delivery. The second is the
+    input guard, which runs on every `Polish` event and only casts the
+    widget. Both are glue frames now, so a style-sheet polish stall names
+    the code that created the widgets. `forkmesh-stall-watchdog-tests`
+    covers it.
+  - The NEW "Action failed before UI refresh" errors for Deploy nodes (runs
+    7888 and 7903) were "The node deploy agent did not pick up this run
+    within 3 minutes". The agent only scanned `<data>/actions/sandbox`, and
+    Action sandboxes had moved to the TMP disk at 20:30. See
+    `docs/deploy/auto-deploy.md`.
+  - No change: the 513 ms `show_sys` stall had no resolved application
+    frame. The two style-sheet polish stalls had no application caller
+    under the glue frames. The new compositor buffer-swap stalls wait on
+    Wayland. The 90% CPU comes from about 48 repaint passes a second of
+    the whole window (MainWindow, `appWindowFrame` and `windowFade` each
+    painted about 74,700 times in 26 minutes) with 7 agents running.
+    Nothing in the report names the widget that asks for them, so this
+    needs a run with paint-request tracing.
 
 ### Background file writes
 

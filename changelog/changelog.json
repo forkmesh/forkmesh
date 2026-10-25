@@ -97,6 +97,7 @@
       "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
       "Notes open in the rendered preview; switch to Write to edit.",
       "Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.",
+      "Long data tables no longer freeze for a second or two when a cell updates.",
       "Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture."
      ]
     },
@@ -105,7 +106,8 @@
      "items": [
       "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
       "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
-      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.",
+      "Deploy nodes runs deploy again when Action sandboxes are on a TMP disk."
      ]
     }
    ]
