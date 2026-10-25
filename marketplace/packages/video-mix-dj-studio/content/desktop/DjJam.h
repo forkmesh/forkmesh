@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "DjCore.h"
 
 #include <QJsonObject>
@@ -17,7 +19,8 @@ namespace forkmesh::djstudio {
 struct DjMotionSample {
     double x = 0;
     double y = 0;
-    bool operator==(const DjMotionSample &) const = default;
+    bool operator==(const DjMotionSample &o) const { return std::tie(x, y) == std::tie(o.x, o.y); }
+    bool operator!=(const DjMotionSample &o) const { return !(*this == o); }
 };
 
 namespace motion {
@@ -47,7 +50,8 @@ struct DjJamPresence {
     double energy = 0;
     QList<DjMotionSample> motion;
     qint64 ago = 0;
-    bool operator==(const DjJamPresence &) const = default;
+    bool operator==(const DjJamPresence &o) const { return std::tie(name, state, playing, energy, motion, ago) == std::tie(o.name, o.state, o.playing, o.energy, o.motion, o.ago); }
+    bool operator!=(const DjJamPresence &o) const { return !(*this == o); }
     bool dancing() const { return energy >= motion::dancing; }
     static std::optional<DjJamPresence> fromJson(const QJsonObject &object);
     static QJsonObject body(DjPresenceState state, bool playing);
@@ -58,14 +62,16 @@ struct DjJamReaction {
     QString name;
     QString kind;
     qint64 ago = 0;
-    bool operator==(const DjJamReaction &) const = default;
+    bool operator==(const DjJamReaction &o) const { return std::tie(id, name, kind, ago) == std::tie(o.id, o.name, o.kind, o.ago); }
+    bool operator!=(const DjJamReaction &o) const { return !(*this == o); }
     static std::optional<DjJamReaction> fromJson(const QJsonObject &object);
 };
 
 struct DjJamMember {
     QString name;
     QString status;
-    bool operator==(const DjJamMember &) const = default;
+    bool operator==(const DjJamMember &o) const { return std::tie(name, status) == std::tie(o.name, o.status); }
+    bool operator!=(const DjJamMember &o) const { return !(*this == o); }
     bool joined() const;
 };
 
@@ -78,7 +84,8 @@ struct DjJamDeck {
     double rate = 1;
     qint64 at = 0;
     QString by;
-    bool operator==(const DjJamDeck &) const = default;
+    bool operator==(const DjJamDeck &o) const { return std::tie(videoId, title, author, playing, position, rate, at, by) == std::tie(o.videoId, o.title, o.author, o.playing, o.position, o.rate, o.at, o.by); }
+    bool operator!=(const DjJamDeck &o) const { return !(*this == o); }
     static DjJamDeck fromJson(const QJsonObject &object);
     double expectedPosition(qint64 serverNow) const;
     QJsonObject body() const;
@@ -90,7 +97,8 @@ struct DjJamSummary {
     QString owner;
     QString myStatus;
     int members = 0;
-    bool operator==(const DjJamSummary &) const = default;
+    bool operator==(const DjJamSummary &o) const { return std::tie(id, title, owner, myStatus, members) == std::tie(o.id, o.title, o.owner, o.myStatus, o.members); }
+    bool operator!=(const DjJamSummary &o) const { return !(*this == o); }
     bool invited() const { return myStatus == QLatin1String("invited"); }
     static QList<DjJamSummary> list(const QJsonObject &object);
 };
@@ -109,7 +117,8 @@ struct DjJam {
     QMap<DjSide, DjJamDeck> decks;
     QList<DjJamPresence> presence;
     QList<DjJamReaction> reactions;
-    bool operator==(const DjJam &) const = default;
+    bool operator==(const DjJam &o) const { return std::tie(id, title, owner, me, myStatus, now, members, queue, decks, presence, reactions) == std::tie(o.id, o.title, o.owner, o.me, o.myStatus, o.now, o.members, o.queue, o.decks, o.presence, o.reactions); }
+    bool operator!=(const DjJam &o) const { return !(*this == o); }
 
     std::optional<DjJamPresence> presenceOf(const QString &name) const;
     DjPersonStatus status(const DjJamMember &member) const;

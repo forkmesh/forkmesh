@@ -605,7 +605,7 @@ void testSmartListsExportAsAPlaylist()
 
 }
 
-int main()
+int runCrateTests()
 {
     testTagNamesAreTidied();
     testTaggingKeepsTheSongAndCountsTags();

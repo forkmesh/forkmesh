@@ -106,7 +106,7 @@ QWidget *DjDeckView::buildInfo()
     auto *names = new QVBoxLayout;
     names->setSpacing(0);
     m_title = label(QString(), 13, theme::text(), true, box);
-    m_title->setMinimumWidth(60);
+    m_title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_title->setTextInteractionFlags(Qt::NoTextInteraction);
     m_title->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_title, &QLabel::customContextMenuRequested, this, [this](const QPoint &point) {
@@ -114,6 +114,7 @@ QWidget *DjDeckView::buildInfo()
             menuRequested(m_deck, m_title->mapToGlobal(point));
     });
     m_artist = label(QString(), 11, color, true, box);
+    m_artist->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     names->addWidget(m_title);
     names->addWidget(m_artist);
     auto *bpmBox = new QVBoxLayout;
@@ -157,11 +158,11 @@ QWidget *DjDeckView::buildInfo()
     m_remain->setCursor(Qt::PointingHandCursor);
     times->addWidget(m_remain);
     times->addStretch();
-    caption(QStringLiteral("GAIN"));
     m_gain = label(QStringLiteral("0.0 dB"), 10, color, true, box);
+    m_gain->setToolTip(QStringLiteral("Deck gain (the GAIN knob on the mixer)"));
     times->addWidget(m_gain);
     m_key = label(QString(), 9, theme::dim(), true, box);
-    times->addWidget(m_key);
+    m_key->hide();
     column->addLayout(times);
 
     m_overview = new DjOverview(m_model, m_deck, box);
@@ -198,15 +199,22 @@ QWidget *DjDeckView::buildInfo()
     fx->addWidget(m_loopIn);
     fx->addWidget(m_loopOut);
     fx->addWidget(m_loop);
-    fx->addSpacing(6);
+    fx->addStretch();
+    column->addWidget(m_fxRow);
+    auto *effects = new QWidget(box);
+    auto *fxLine = new QHBoxLayout(effects);
+    fxLine->setContentsMargins(0, 0, 0, 0);
+    fxLine->setSpacing(3);
+    fxLine->addWidget(label(QStringLiteral("FX"), 9, theme::dim(), true, effects));
+    fx = fxLine;
     const QStringList names3{QStringLiteral("ECHO"), QStringLiteral("VERB"), QStringLiteral("FLANG")};
     for (int slot = 0; slot < 3; ++slot) {
-        auto *button = small(names3.at(slot), m_fxRow, 40);
+        auto *button = small(names3.at(slot), effects, 38);
         button->setColor(color);
         button->setToolTip(QStringLiteral("Switch the %1 effect on or off; the knob next to it sets how much").arg(names3.at(slot).toLower()));
         button->clicked = [this, slot]() { m_model->toggleFx(m_deck, slot); };
-        auto *knob = new DjKnob(QString(), false, m_fxRow);
-        knob->setFixedSize(22, 22);
+        auto *knob = new DjKnob(QString(), false, effects);
+        knob->setFixedSize(20, 20);
         knob->setColor(color);
         knob->setDefault(0.5);
         knob->changed = [this, slot](double value) { m_model->setFx(m_deck, slot, value); };
@@ -216,7 +224,7 @@ QWidget *DjDeckView::buildInfo()
         fx->addWidget(knob);
     }
     fx->addStretch();
-    column->addWidget(m_fxRow);
+    column->addWidget(effects);
 
     m_padRow = new QWidget(box);
     auto *pads = new QHBoxLayout(m_padRow);
@@ -326,8 +334,8 @@ QWidget *DjDeckView::buildPlatter()
         if (fileRequested)
             fileRequested(m_deck, file->mapToGlobal(QPoint(0, file->height())));
     };
-    tools->addWidget(backspin);
-    tools->addWidget(brake);
+    m_backspin = backspin;
+    m_brake = brake;
     tools->addWidget(m_sample);
     tools->addWidget(next);
     tools->addWidget(similar);
@@ -354,6 +362,7 @@ QWidget *DjDeckView::buildPlatter()
     m_restart->clicked = [this]() { m_model->restart(m_deck); };
     m_sync = new DjButton(QStringLiteral("SYNC"), box);
     m_sync->setFixedHeight(26);
+    m_sync->setFontSize(9);
     m_sync->setColor(color);
     m_sync->setToolTip(QStringLiteral("Match this deck's tempo to the other playing deck"));
     m_sync->clicked = [this]() { m_model->sync(m_deck); };
@@ -411,6 +420,13 @@ QWidget *DjDeckView::buildPitch()
     column->addWidget(m_range);
     column->addWidget(m_pitch, 1);
     column->addWidget(m_reset);
+    if (m_backspin && m_brake) {
+        m_backspin->setParent(box);
+        m_brake->setParent(box);
+        m_brake->setLabel(QStringLiteral("BRK"));
+        column->addWidget(m_brake);
+        column->addWidget(m_backspin);
+    }
     column->addLayout(bends);
     return box;
 }
@@ -418,7 +434,7 @@ QWidget *DjDeckView::buildPitch()
 void DjDeckView::setCompact(bool compact)
 {
     m_compact = compact;
-    m_fxRow->setVisible(true);
+    m_reset->setVisible(!compact);
     refresh();
 }
 
@@ -565,6 +581,12 @@ void DjDeckView::animate()
     m_overview->update();
     if (deck.keepsPlaying && !deck.advancing)
         m_play->update();
+}
+
+void DjDeckView::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    refresh();
 }
 
 void DjDeckView::dragEnterEvent(QDragEnterEvent *event)

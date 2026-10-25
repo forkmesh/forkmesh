@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "DjCore.h"
 
 #include <QList>
@@ -20,7 +22,8 @@ struct DjSmartList {
     QString symbol;
     DjSmartKind kind = DjSmartKind::Listening;
     QList<DjTrack> songs;
-    bool operator==(const DjSmartList &) const = default;
+    bool operator==(const DjSmartList &o) const { return std::tie(id, name, symbol, kind, songs) == std::tie(o.id, o.name, o.symbol, o.kind, o.songs); }
+    bool operator!=(const DjSmartList &o) const { return !(*this == o); }
 };
 
 struct DjSimilarSong {
@@ -28,7 +31,8 @@ struct DjSimilarSong {
     int score = 0;
     QStringList reasons;
     QString id() const { return track.id; }
-    bool operator==(const DjSimilarSong &) const = default;
+    bool operator==(const DjSimilarSong &o) const { return std::tie(track, score, reasons) == std::tie(o.track, o.score, o.reasons); }
+    bool operator!=(const DjSimilarSong &o) const { return !(*this == o); }
 };
 
 namespace smart {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "DjCore.h"
 #include "DjSmart.h"
 
@@ -19,7 +21,8 @@ struct DjPlaylist {
     QString id;
     QString name;
     QStringList songs;
-    bool operator==(const DjPlaylist &) const = default;
+    bool operator==(const DjPlaylist &o) const { return std::tie(id, name, songs) == std::tie(o.id, o.name, o.songs); }
+    bool operator!=(const DjPlaylist &o) const { return !(*this == o); }
 };
 
 struct DjFocus {
@@ -36,25 +39,29 @@ struct DjFocus {
     bool isEverything() const { return kind == Kind::Everything; }
     bool isSmart() const { return kind == Kind::Smart; }
     bool isFiled() const { return kind == Kind::Playlist || kind == Kind::Tag; }
-    bool operator==(const DjFocus &) const = default;
+    bool operator==(const DjFocus &o) const { return std::tie(kind, value) == std::tie(o.kind, o.value); }
+    bool operator!=(const DjFocus &o) const { return !(*this == o); }
 };
 
 struct DjTagCount {
     QString name;
     int count = 0;
-    bool operator==(const DjTagCount &) const = default;
+    bool operator==(const DjTagCount &o) const { return std::tie(name, count) == std::tie(o.name, o.count); }
+    bool operator!=(const DjTagCount &o) const { return !(*this == o); }
 };
 
 struct DjImportedList {
     QString name;
     QStringList songs;
-    bool operator==(const DjImportedList &) const = default;
+    bool operator==(const DjImportedList &o) const { return std::tie(name, songs) == std::tie(o.name, o.songs); }
+    bool operator!=(const DjImportedList &o) const { return !(*this == o); }
 };
 
 struct DjCrateImport {
     QList<DjTrack> tracks;
     QList<DjImportedList> playlists;
-    bool operator==(const DjCrateImport &) const = default;
+    bool operator==(const DjCrateImport &o) const { return std::tie(tracks, playlists) == std::tie(o.tracks, o.playlists); }
+    bool operator!=(const DjCrateImport &o) const { return !(*this == o); }
 };
 
 struct DjMergeReport {
@@ -62,7 +69,8 @@ struct DjMergeReport {
     int playlists = 0;
     bool full = false;
     QString summary() const;
-    bool operator==(const DjMergeReport &) const = default;
+    bool operator==(const DjMergeReport &o) const { return std::tie(songs, playlists, full) == std::tie(o.songs, o.playlists, o.full); }
+    bool operator!=(const DjMergeReport &o) const { return !(*this == o); }
 };
 
 enum class DjMove { Full, Added, Moved, Removed };
@@ -107,7 +115,8 @@ public:
     QString cursor;
     QList<DjSmartList> smart;
 
-    bool operator==(const DjCrate &) const = default;
+    bool operator==(const DjCrate &o) const { return std::tie(tracks, playlists, focus, shuffle, cursor, smart) == std::tie(o.tracks, o.playlists, o.focus, o.shuffle, o.cursor, o.smart); }
+    bool operator!=(const DjCrate &o) const { return !(*this == o); }
 
     QJsonObject toJson() const;
     static DjCrate fromJson(const QJsonObject &object);

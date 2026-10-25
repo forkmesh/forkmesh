@@ -133,21 +133,21 @@ DjMixerView::Strip DjMixerView::makeStrip(int deck, QWidget *parent)
     Strip strip;
     strip.deck = deck;
     strip.box = new QWidget(parent);
-    strip.box->setFixedWidth(52);
+    strip.box->setFixedWidth(48);
     auto *column = new QVBoxLayout(strip.box);
     column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(1);
+    column->setSpacing(0);
     column->addWidget(caption(QString::number(deck + 1), strip.box, 11, color));
     strip.gain = new DjKnob(QStringLiteral("GAIN"), true, strip.box);
     strip.gain->setColor(color);
-    strip.gain->setFixedSize(40, 42);
+    strip.gain->setFixedSize(36, 38);
     strip.gain->changed = [this, deck](double value) { m_model->setGain(deck, value * 12); };
     column->addWidget(strip.gain, 0, Qt::AlignHCenter);
     const QStringList bands{QStringLiteral("LOW"), QStringLiteral("MID"), QStringLiteral("HIGH")};
     for (int band = 2; band >= 0; --band) {
         auto *knob = new DjKnob(bands.at(band), true, strip.box);
         knob->setColor(color);
-        knob->setFixedSize(40, 42);
+        knob->setFixedSize(36, 38);
         knob->setToolTip(QStringLiteral("%1 EQ. Double-click to centre, right-click to kill the band.").arg(bands.at(band)));
         knob->changed = [this, deck, band](double value) { m_model->setEq(deck, band, value); };
         knob->rightClicked = [this, deck, band]() { m_model->toggleKill(deck, band); };
@@ -156,7 +156,7 @@ DjMixerView::Strip DjMixerView::makeStrip(int deck, QWidget *parent)
     }
     strip.filter = new DjKnob(QStringLiteral("FILTER"), true, strip.box);
     strip.filter->setColor(QColor(0xc0, 0x7c, 0xff));
-    strip.filter->setFixedSize(40, 42);
+    strip.filter->setFixedSize(36, 38);
     strip.filter->setToolTip(QStringLiteral("Filter: left is low-pass, right is high-pass"));
     strip.filter->changed = [this, deck](double value) { m_model->setFilter(deck, value); };
     column->addWidget(strip.filter, 0, Qt::AlignHCenter);
@@ -183,18 +183,18 @@ QWidget *DjMixerView::buildMixer()
     m_stripRow->setContentsMargins(0, 0, 0, 0);
     m_stripRow->setSpacing(4);
     m_masterBox = new QWidget(page);
-    m_masterBox->setFixedWidth(64);
+    m_masterBox->setFixedWidth(60);
     auto *master = new QVBoxLayout(m_masterBox);
     master->setContentsMargins(0, 0, 0, 0);
-    master->setSpacing(2);
+    master->setSpacing(1);
     master->addWidget(caption(QStringLiteral("MASTER"), m_masterBox, 9, theme::text()));
     m_master = new DjKnob(QStringLiteral("VOL"), false, m_masterBox);
-    m_master->setFixedSize(44, 46);
+    m_master->setFixedSize(38, 40);
     m_master->setDefault(0.8);
     m_master->changed = [this](double value) { m_model->setMaster(value * 1.25); };
     master->addWidget(m_master, 0, Qt::AlignHCenter);
     m_sampler = new DjKnob(QStringLiteral("SAMPLER"), false, m_masterBox);
-    m_sampler->setFixedSize(44, 46);
+    m_sampler->setFixedSize(38, 40);
     m_sampler->setDefault(0.8);
     m_sampler->setColor(QColor(0xff, 0x9f, 0x1c));
     m_sampler->changed = [this](double value) { m_model->setSamplerLevel(value); };

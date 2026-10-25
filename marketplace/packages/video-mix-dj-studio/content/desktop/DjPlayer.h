@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include <QJsonObject>
 #include <QRectF>
 #include <QString>
@@ -23,14 +25,16 @@ struct DjDeckSound {
     std::array<double, 3> fx{0, 0, 0};
     double beat = 0.5;
     bool keylock = false;
-    bool operator==(const DjDeckSound &) const = default;
+    bool operator==(const DjDeckSound &o) const { return std::tie(gain, trim, eq, filter, fx, beat, keylock) == std::tie(o.gain, o.trim, o.eq, o.filter, o.fx, o.beat, o.keylock); }
+    bool operator!=(const DjDeckSound &o) const { return !(*this == o); }
 };
 
 struct DjVideoSlot {
     QRectF rect;
     double opacity = 0;
     int z = 0;
-    bool operator==(const DjVideoSlot &) const = default;
+    bool operator==(const DjVideoSlot &o) const { return std::tie(rect, opacity, z) == std::tie(o.rect, o.opacity, o.z); }
+    bool operator!=(const DjVideoSlot &o) const { return !(*this == o); }
 };
 
 class DjPlayer

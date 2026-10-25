@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -26,7 +28,8 @@ struct DjWaveBar {
     double low = 0;
     double mid = 0;
     double high = 0;
-    bool operator==(const DjWaveBar &) const = default;
+    bool operator==(const DjWaveBar &o) const { return std::tie(level, low, mid, high) == std::tie(o.level, o.low, o.mid, o.high); }
+    bool operator!=(const DjWaveBar &o) const { return !(*this == o); }
 };
 
 struct DjSearchResult {
@@ -34,14 +37,16 @@ struct DjSearchResult {
     QString title;
     QString author;
     double seconds = 0;
-    bool operator==(const DjSearchResult &) const = default;
+    bool operator==(const DjSearchResult &o) const { return std::tie(id, title, author, seconds) == std::tie(o.id, o.title, o.author, o.seconds); }
+    bool operator!=(const DjSearchResult &o) const { return !(*this == o); }
 };
 
 struct DjHistoryItem {
     QString id;
     QString title;
     QString author;
-    bool operator==(const DjHistoryItem &) const = default;
+    bool operator==(const DjHistoryItem &o) const { return std::tie(id, title, author) == std::tie(o.id, o.title, o.author); }
+    bool operator!=(const DjHistoryItem &o) const { return !(*this == o); }
 };
 
 struct DjPlayedSong {
@@ -50,7 +55,8 @@ struct DjPlayedSong {
     QString author;
     int plays = 1;
     double last = 0;
-    bool operator==(const DjPlayedSong &) const = default;
+    bool operator==(const DjPlayedSong &o) const { return std::tie(id, title, author, plays, last) == std::tie(o.id, o.title, o.author, o.plays, o.last); }
+    bool operator!=(const DjPlayedSong &o) const { return !(*this == o); }
 };
 
 struct DjTrack {
@@ -59,7 +65,8 @@ struct DjTrack {
     QString author;
     QStringList tags;
     bool noShuffle = false;
-    bool operator==(const DjTrack &) const = default;
+    bool operator==(const DjTrack &o) const { return std::tie(id, title, author, tags, noShuffle) == std::tie(o.id, o.title, o.author, o.tags, o.noShuffle); }
+    bool operator!=(const DjTrack &o) const { return !(*this == o); }
     QString shownTitle() const { return title.isEmpty() ? QStringLiteral("YouTube video") : title; }
 };
 
@@ -70,7 +77,8 @@ struct DjQueueItem {
     QString author;
     QString addedBy;
     qint64 addedAt = 0;
-    bool operator==(const DjQueueItem &) const = default;
+    bool operator==(const DjQueueItem &o) const { return std::tie(id, videoId, title, author, addedBy, addedAt) == std::tie(o.id, o.videoId, o.title, o.author, o.addedBy, o.addedAt); }
+    bool operator!=(const DjQueueItem &o) const { return !(*this == o); }
     QJsonObject toJson() const;
     static std::optional<DjQueueItem> fromJson(const QJsonObject &object);
 };
@@ -79,7 +87,8 @@ struct DjSection {
     int deck = 0;
     double start = 0;
     double duration = 8;
-    bool operator==(const DjSection &) const = default;
+    bool operator==(const DjSection &o) const { return std::tie(deck, start, duration) == std::tie(o.deck, o.start, o.duration); }
+    bool operator!=(const DjSection &o) const { return !(*this == o); }
 };
 
 struct DjRandom {
@@ -201,7 +210,8 @@ struct DjAutomixStep {
     DjSide side = DjSide::A;
     DjSide to = DjSide::B;
     double seconds = 0;
-    bool operator==(const DjAutomixStep &) const = default;
+    bool operator==(const DjAutomixStep &o) const { return std::tie(kind, side, to, seconds) == std::tie(o.kind, o.side, o.to, o.seconds); }
+    bool operator!=(const DjAutomixStep &o) const { return !(*this == o); }
 };
 
 namespace automix {
@@ -231,7 +241,8 @@ DjEndReport judge(double position, double duration, std::optional<double> doubte
 struct DjRepeatSpan {
     double start = 0;
     double end = 0;
-    bool operator==(const DjRepeatSpan &) const = default;
+    bool operator==(const DjRepeatSpan &o) const { return std::tie(start, end) == std::tie(o.start, o.end); }
+    bool operator!=(const DjRepeatSpan &o) const { return !(*this == o); }
 };
 
 struct DjRepeatStep {

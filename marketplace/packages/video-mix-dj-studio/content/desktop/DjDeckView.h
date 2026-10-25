@@ -36,6 +36,7 @@ protected:
     void dragLeaveEvent(QDragLeaveEvent *) override;
     void dropEvent(QDropEvent *event) override;
     void paintEvent(QPaintEvent *) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     QWidget *buildInfo();
@@ -80,6 +81,8 @@ private:
     DjButton *m_repeat = nullptr;
     DjButton *m_keylock = nullptr;
     DjButton *m_sample = nullptr;
+    DjButton *m_backspin = nullptr;
+    DjButton *m_brake = nullptr;
     DjButton *m_padModeButton = nullptr;
     QList<DjButton *> m_fxButtons;
     QList<DjKnob *> m_fxKnobs;

@@ -579,7 +579,7 @@ void testPresence()
 
 }
 
-int main()
+int runLogicTests()
 {
     testCandidates();
     testCount();

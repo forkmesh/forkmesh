@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "DjCore.h"
 
 #include <QByteArray>
@@ -21,14 +23,16 @@ struct DjAutoDjCandidate {
     double views = 0;
     std::optional<double> likes;
     int rank = 0;
-    bool operator==(const DjAutoDjCandidate &) const = default;
+    bool operator==(const DjAutoDjCandidate &o) const { return std::tie(id, title, author, seconds, views, likes, rank) == std::tie(o.id, o.title, o.author, o.seconds, o.views, o.likes, o.rank); }
+    bool operator!=(const DjAutoDjCandidate &o) const { return !(*this == o); }
     DjSearchResult result() const { return DjSearchResult{id, title, author, seconds}; }
 };
 
 struct DjAutoDjLikes {
     double likes = 0;
     double views = 0;
-    bool operator==(const DjAutoDjLikes &) const = default;
+    bool operator==(const DjAutoDjLikes &o) const { return std::tie(likes, views) == std::tie(o.likes, o.views); }
+    bool operator!=(const DjAutoDjLikes &o) const { return !(*this == o); }
 };
 
 namespace autodj {
