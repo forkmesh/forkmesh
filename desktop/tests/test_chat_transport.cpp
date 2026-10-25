@@ -2657,7 +2657,10 @@ void testDirectRoomResealsUndeliveredMessages()
           "a DM written before the peer's key is known reaches the relay");
     if (harness.textFrames.isEmpty())
         return;
-    const QByteArray firstFrame = harness.textFrames.constLast();
+    QByteArray firstFrame = harness.textFrames.constLast();
+    for (const QByteArray &raw : std::as_const(harness.textFrames))
+        if (RoomSeal::isSealedFrame(inner(raw)))
+            firstFrame = raw;
     const QString firstRef = QString::fromLatin1(
         QCryptographicHash::hash(firstFrame, QCryptographicHash::Sha256)
             .toHex().left(40));
@@ -2812,7 +2815,10 @@ void testDirectRoomRatchetRecovery()
           "the DM reaches the relay");
     if (harness.textFrames.isEmpty())
         return;
-    const QByteArray sentRaw = harness.textFrames.constLast();
+    QByteArray sentRaw = harness.textFrames.constLast();
+    for (const QByteArray &raw : std::as_const(harness.textFrames))
+        if (RoomSeal::isSealedFrame(inner(raw)))
+            sentRaw = raw;
     const QJsonObject sentSealed = inner(sentRaw);
     QStringList sentKids;
     for (const QJsonValue &value : sentSealed.value("keys").toArray())

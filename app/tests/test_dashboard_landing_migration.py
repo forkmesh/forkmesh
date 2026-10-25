@@ -104,7 +104,7 @@ def test_dashboard_exposes_live_hydration_targets():
     dashboard = assembled_dashboard()
 
     assert 'src="/dashboard.js?v=${version}"' in dashboard
-    assert dashboard.count('src="/dashboard-chat.js?v=${version}"') == 1
+    assert 'src="/dashboard-chat.js' not in dashboard
     for marker in (
         "data-dashboard-profile-name",
         "data-sidebar-repo-list",
@@ -154,16 +154,16 @@ def test_dashboard_nav_links_to_chat_page():
     drawer_nav = dashboard.split('data-sidebar-main-menu', 1)[1].split(
         "</nav>", 1)[0]
     assert drawer_nav.index('href="https://forkmesh.com/"') < drawer_nav.index("Repositories")
-    assert drawer_nav.index("Repositories") < drawer_nav.index('href="/dashboard/chat"')
-    assert drawer_nav.index('href="/dashboard/chat"') < drawer_nav.index('href="/dashboard/network"')
+    assert drawer_nav.index("Repositories") < drawer_nav.index('href="/chat"')
+    assert drawer_nav.index('href="/chat"') < drawer_nav.index('href="/dashboard/network"')
     assert drawer_nav.index('href="/dashboard/network"') < drawer_nav.index('href="/docs"')
     assert "Chat" in drawer_nav
-    assert 'data-nav="chat" data-nav-link href="/dashboard/chat"' in drawer_nav
+    assert 'data-nav="chat" data-nav-link href="/chat"' in drawer_nav
+    assert 'href="/dashboard/chat"' not in drawer_nav
     assert 'data-lucide="messages-square"' in drawer_nav
     # Sidebar entries are real page links now - no client-router buttons.
     assert "<button" not in drawer_nav
     assert "data-section=" not in drawer_nav
-    assert 'href="/chat"' not in drawer_nav
 
 
 def test_dashboard_uses_github_system_font_without_affecting_code_or_site_fonts():
@@ -2677,7 +2677,7 @@ def test_dashboard_repository_blob_viewer_previews_media_csv_pdf_and_binary():
 
     for marker in (
         "function repoPreviewKindFromPath(path)",
-        "function repoRawUrl(repo, path)",
+        'function repoRawUrl(repo, path, ref = "")',
         "function repoPreviewMeta(data, repo, path)",
         "function renderRepoMediaPreview(meta)",
         "function renderRepoCsvPreview(meta)",
@@ -2782,11 +2782,10 @@ def test_direct_gateway_streams_raw_repository_blobs_without_json_base64_cap():
 
 
 def test_dashboard_network_chat_uses_real_room_integration_without_mock_messages():
-    dashboard = _read(PUBLIC / "dashboard" / "chat" / "index.html")
+    dashboard = _read(PUBLIC / "dashboard" / "index.html")
     chat_js = _read(PUBLIC / "dashboard-chat.js")
     visible = _strip_html_comments(dashboard)
 
-    assert 'src="/dashboard-chat.js?v=${version}"' in dashboard
     assert "CHAT_WS_PATH =\n" in chat_js
     assert "`/api/repo/${encodeURIComponent(ROOM_OWNER)}`" in chat_js
     assert (
@@ -2859,7 +2858,6 @@ def test_clean_marketing_routes_target_static_pages():
         ("/dashboard", "dashboard/index.html"),
         ("/dashboard/repos", "dashboard/repos/index.html"),
         ("/dashboard/network", "dashboard/network/index.html"),
-        ("/dashboard/chat", "dashboard/chat/index.html"),
         ("/dashboard/settings", "dashboard/settings/index.html"),
         ("/dashboard/profile", "dashboard/profile/index.html"),
         ("/dashboard/profile/repositories", "dashboard/profile/repositories/index.html"),
@@ -2870,8 +2868,9 @@ def test_clean_marketing_routes_target_static_pages():
     assert "!/dashboard" in run_worker_first
     assert "/dashboard/*" in run_worker_first
     assert WRANGLER["assets"]["html_handling"] == "drop-trailing-slash"
-    for page in ("repos", "network", "chat", "settings", "profile", "profile/repositories"):
+    for page in ("repos", "network", "settings", "profile", "profile/repositories"):
         assert ("!/dashboard/" + page) in run_worker_first
+    assert "!/dashboard/chat" not in run_worker_first
     assert "/dashboard.html" not in run_worker_first
 
 

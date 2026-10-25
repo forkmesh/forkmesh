@@ -7,6 +7,7 @@
 #include <QButtonGroup>
 #include <QChildEvent>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -19,15 +20,19 @@
 #include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStyle>
 #include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QSvgRenderer>
 #include <QTableView>
+#include <QTextDocument>
 #include <QTimerEvent>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
+
+#include <algorithm>
 
 namespace forkmesh::ui::kit {
 
@@ -632,6 +637,16 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
     return wrapper;
 }
 
+QString cellDisplayText(const QString &text, int maxChars)
+{
+    if (maxChars <= 0 || text.size() <= maxChars)
+        return text;
+    qsizetype keep = maxChars;
+    if (text.at(keep - 1).isHighSurrogate())
+        --keep;
+    return text.left(keep) + QChar(0x2026);
+}
+
 namespace {
 
 const char kFloatingSurface[] = "floatingSurface";
@@ -736,6 +751,14 @@ public:
             }
         }
         QStyledItemDelegate::paint(painter, opt, index);
+    }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text = cellDisplayText(option->text);
     }
 };
 
@@ -886,6 +909,14 @@ void prepareMessageCard(QObject *watched)
     box->overrideWindowFlags(flags);
 }
 
+QString messageGist(QString text)
+{
+    text = text.trimmed();
+    while (!text.isEmpty() && QStringLiteral(".!?:\u2026").contains(text.back()))
+        text.chop(1);
+    return text.trimmed();
+}
+
 void dressMessageCard(QMessageBox *box)
 {
     if (box->property(kMessageCardDressed).toBool())
@@ -893,7 +924,7 @@ void dressMessageCard(QMessageBox *box)
     box->setProperty(kMessageCardDressed, true);
     const QString title = box->windowTitle().trimmed();
     if (!title.isEmpty() && box->informativeText().isEmpty() &&
-        title != box->text().trimmed() &&
+        messageGist(title).compare(messageGist(box->text()), Qt::CaseInsensitive) != 0 &&
         title != QApplication::applicationDisplayName()) {
         const Qt::TextFormat format = box->textFormat();
         box->setInformativeText(box->text());
@@ -947,20 +978,85 @@ void fitMessageScrims(QObject *watched)
     }
 }
 
+bool isMessageBlockText(const QString &text)
+{
+    if (text.contains(QLatin1Char('\n')))
+        return true;
+    if (!Qt::mightBeRichText(text))
+        return false;
+    static const QRegularExpression blocks(
+        QStringLiteral("<(br|p|li|ul|ol|table|pre|div)\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    return text.contains(blocks);
+}
+
+QList<QWidget *> messageCardRows(QMessageBox *box)
+{
+    QList<QWidget *> rows;
+    auto *grid = qobject_cast<QGridLayout *>(box->layout());
+    if (!grid)
+        return rows;
+    QList<std::pair<std::pair<int, int>, QWidget *>> cells;
+    for (int index = 0; index < grid->count(); ++index) {
+        QWidget *widget = grid->itemAt(index)->widget();
+        if (!widget || widget->objectName() == QLatin1String("qt_msgboxex_icon_label"))
+            continue;
+        int row = 0, column = 0, rowSpan = 0, columnSpan = 0;
+        grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
+        cells.append({{row, column}, widget});
+    }
+    std::stable_sort(cells.begin(), cells.end(),
+                     [](const auto &left, const auto &right) { return left.first < right.first; });
+    for (const auto &cell : std::as_const(cells))
+        rows.append(cell.second);
+    return rows;
+}
+
 void layoutMessageCard(QMessageBox *box)
 {
     if (!box->iconPixmap().isNull())
         box->setIconPixmap(QPixmap());
+    if (auto *icon = box->findChild<QLabel *>(QStringLiteral("qt_msgboxex_icon_label")))
+        icon->hide();
     box->setContentsMargins(0, 0, 0, 0);
-    if (auto *grid = qobject_cast<QGridLayout *>(box->layout())) {
-        grid->setContentsMargins(24, 22, 24, 20);
-        grid->setHorizontalSpacing(0);
-        grid->setVerticalSpacing(8);
-        for (int index = 0; index < grid->count(); ++index) {
-            if (QSpacerItem *spacer = grid->itemAt(index)->spacerItem())
-                spacer->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    const QList<QWidget *> rows = messageCardRows(box);
+    if (!rows.isEmpty()) {
+        delete box->layout();
+        auto *column = new QVBoxLayout(box);
+        column->setSizeConstraint(QLayout::SetNoConstraint);
+        column->setContentsMargins(24, 24, 24, 24);
+        column->setSpacing(8);
+        for (QWidget *row : rows) {
+            if (qobject_cast<QDialogButtonBox *>(row))
+                column->addSpacing(12);
+            column->addWidget(row);
         }
-        grid->invalidate();
+    }
+    auto *heading = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_label"));
+    auto *body = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_informativelabel"));
+    const bool centered = !(heading && isMessageBlockText(heading->text())) &&
+                          !(body && isMessageBlockText(body->text()));
+    const Qt::Alignment alignment =
+        (centered ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignTop;
+    if (heading)
+        heading->setAlignment(alignment);
+    if (body) {
+        body->setContentsMargins(0, 0, 0, 0);
+        body->setAlignment(alignment);
+    }
+    if (QCheckBox *check = box->checkBox(); check && box->layout())
+        box->layout()->setAlignment(check, centered ? Qt::AlignHCenter : Qt::AlignLeft);
+    if (auto *buttons = box->findChild<QDialogButtonBox *>(
+            QStringLiteral("qt_msgbox_buttonbox"))) {
+        buttons->setCenterButtons(true);
+        const QList<QAbstractButton *> all = buttons->buttons();
+        int width = 0;
+        for (QAbstractButton *button : all) {
+            button->setMinimumWidth(0);
+            width = std::max(width, button->sizeHint().width());
+        }
+        for (QAbstractButton *button : all)
+            button->setMinimumWidth(std::max(width, 96));
     }
     showMessageScrim(box);
 }

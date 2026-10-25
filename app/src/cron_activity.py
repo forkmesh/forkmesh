@@ -106,6 +106,10 @@ CRON_PHASE_CATALOG = (
      "Purge catalog entries for blocked repositories."),
     ("central-fund", 15, (14,), "rewards",
      "Distribute the central reward fund."),
+    ("mirror-quota", 5, (3,), "integrations",
+     "Check a few registered repository mirrors with a bounded git ref "
+     "listing and record whether each matches the repository's recent "
+     "heads."),
     ("instance-health", 15, (11,), "nodes",
      "Ask listed instances for /readyz; hide offline ones and ping about "
      "deleting those offline for a day."),
@@ -150,6 +154,9 @@ CRON_PHASE_CATALOG = (
     ("tip-verify", 5, (2,), "rewards",
      "Look for the Solana transfers paying up to three pending comment "
      "tips (read-only RPC; the forge never signs or holds funds)."),
+    ("ai-review", 5, (0,), "platform",
+     "Review at most one queued pull request with Cloudflare Workers AI "
+     "when an administrator turned AI review on."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

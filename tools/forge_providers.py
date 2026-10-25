@@ -83,6 +83,7 @@ class RemoteComment:
     body: str
     created_at: int
     updated_at: int
+    author_avatar: str = ""
 
 
 @dataclass
@@ -98,6 +99,7 @@ class RemoteIssue:
     labels: list[str] = field(default_factory=list)
     assignees: list[str] = field(default_factory=list)
     comment_count: int = 0
+    author_avatar: str = ""
 
 
 def iso_ms(value: Any) -> int:
@@ -116,6 +118,11 @@ def single_line(text: Any) -> str:
 
 def _login(user: Any) -> str:
     return str(user.get("login") or "ghost") if isinstance(user, dict) else "ghost"
+
+
+def _avatar(user: Any) -> str:
+    value = user.get("avatar_url") if isinstance(user, dict) else ""
+    return value if isinstance(value, str) and value.startswith("https://") else ""
 
 
 def validate_repository(value: str) -> str:
@@ -298,14 +305,16 @@ class GitHubProvider(ForgeProvider):
             labels=[str(l.get("name") if isinstance(l, dict) else l)
                     for l in item.get("labels") or []],
             assignees=[_login(a) for a in item.get("assignees") or []],
-            comment_count=int(item.get("comments") or 0))
+            comment_count=int(item.get("comments") or 0),
+            author_avatar=_avatar(item.get("user")))
 
     @staticmethod
     def _comment(item: dict[str, Any]) -> RemoteComment:
         return RemoteComment(id=str(item["id"]), author=_login(item.get("user")),
                              body=normalize_body(item.get("body")),
                              created_at=iso_ms(item.get("created_at")),
-                             updated_at=iso_ms(item.get("updated_at") or item.get("created_at")))
+                             updated_at=iso_ms(item.get("updated_at") or item.get("created_at")),
+                             author_avatar=_avatar(item.get("user")))
 
     def _paginate(self, path: str, query: dict[str, Any]) -> Iterable[dict[str, Any]]:
         page = 1

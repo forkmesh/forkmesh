@@ -21,7 +21,7 @@ route, so a deploy from it fails instead of creating a second Worker.
 | `www/public/` | Static site: `index.html`, marketing pages, `blog/`, `docs/` (hand-written pages), `assets/`, `_redirects`, `_headers`. Every HTML page except `docs/git-compatibility/` is rendered from `www/templates/` |
 | `www/templates/`, `app/tools/site_templates.py` | Page templates with inheritance: `base.html`, `layouts/blog-post.html`, `partials/`, one child per page under `pages/`, and their renderer ([templates](templates.md)) |
 | `www/public/genie-spider.js` | The Genie spider on every website page and most App pages ([genie-spider](genie-spider.md)) |
-| `tools/site_crawler.py`, `.forkmesh/teammates/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
+| `tools/site_crawler.py`, `.forkmesh/workflows/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
 | `www/public/site-header.js`, `home-header-auth.js`, `api-client.js` | Login state and the shared browser API client ([sessions](../app/auth-sessions.md)) |
 | `www/public/analytics.js`, `analytics-sdk.js` | Consent-gated first-party analytics ([analytics](../app/analytics.md)); the SDK is a generated copy. Conversion points (`data-forkmesh-product-action`) and markup experiments (`data-fm-experiment`) are listed under [conversion tracking](../app/analytics.md#conversion-tracking) |
 | `www/public/homepage-downloads.js` | The downloads card, fed by the signed release manifest |
@@ -92,6 +92,13 @@ answers them without running the Worker. Static responses carry
   line the total across every release, from
   `/api/repo/forkmesh/forkmesh/releases/downloads`; when that call fails the
   counts are simply left out.
+- **Hero install line.** A small Binary / Source switch sits inside the
+  homepage's install pill. Binary (the default) keeps the plain
+  `curl -fsSL https://forkmesh.com/install.sh | bash`; Source swaps the shown
+  and copied command to `… | FORKMESH_FROM_SOURCE=1 bash`, the installer's
+  explicit source build. The variable sits on the `bash` side of the pipe so
+  the installer, not `curl`, sees it. Both copies count as the same
+  `home-install-hero` product action.
 
 ## Protocols and interfaces
 
@@ -331,6 +338,16 @@ so elements rendered later are covered without a DOM walk. API:
 `rememberPlugin(account, id, installed)`, `refreshPlugins(force)`; the Status
 Page calls (`rememberStatusPage`, `refreshStatusPage`, `statusPageShown`,
 `data-status-entry`, `forkmesh.statusPage.v1`) ride on the same fetch.
+
+## Pages contributed by packages
+
+A Market package can add a page to the website through a `www.page`
+contribution (`app/tools/build_app_plugins.py`, `WWW_SOCKET`): a `route` that
+must not collide with a core route (`static_routes.CORE_RESERVED_ROUTE_PREFIXES`)
+or another package, a title and its assets. Each package page documents
+itself; current ones include the Feed's public post page
+`forkmesh.com/feed?post=<id>` ([instance-feed.md](../marketplace/instance-feed.md)).
+Test: `app/tests/test_www_plugin_pages.py`.
 
 ## Related docs
 

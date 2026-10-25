@@ -873,6 +873,14 @@ QWidget *MainWindow::buildLogSection()
     m_fleetVisualizer = new forkmesh::FleetVisualizer;
     m_fleetVisualizer->nodeSource = [this] { return m_coreLogTally.nodes(); };
     m_fleetVisualizer->idleReasonSource = [this] { return m_coreLogIdleReason; };
+    m_fleetVisualizer->onTableClicked = [this](const QString &table) {
+        const int index =
+            m_databaseManager ? m_logViewTabs->indexOf(m_databaseManager) : -1;
+        if (index < 0)
+            return;
+        m_logViewTabs->setCurrentIndex(index);
+        m_databaseManager->showTable(table);
+    };
     auto *visualizerScroll = new QScrollArea;
     visualizerScroll->setObjectName(QStringLiteral("fleetVisualizerScroll"));
     visualizerScroll->setFrameShape(QFrame::NoFrame);
@@ -2835,7 +2843,10 @@ void MainWindow::startDeployLogFollower()
                 logSystemFrom(
                     forkmesh::control::redactProcessOutput(text),
                     forkmesh::logSourceRelativePath(FORKMESH_LOG_SOURCE_FILE),
-                    FORKMESH_LOG_SOURCE_LINE, forkmesh::LogSeverity::Automatic,
+                    FORKMESH_LOG_SOURCE_LINE,
+                    category == QLatin1String("ERROR")
+                        ? forkmesh::LogSeverity::Error
+                        : forkmesh::LogSeverity::Informational,
                     category);
             },
             this);

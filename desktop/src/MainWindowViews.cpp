@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "InstanceTheme.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "WorkspaceLayout.h"
@@ -126,6 +127,55 @@ void MainWindow::showViewModeMenu()
         });
     }
 
+    menu.addSeparator();
+    QAction *themeHeader = menu.addAction(QStringLiteral("Theme"));
+    themeHeader->setEnabled(false);
+    auto *themeGroup = new QActionGroup(&menu);
+    themeGroup->setExclusive(true);
+    const QString currentTheme =
+        QSettings().value(kThemeSetting, QStringLiteral("system")).toString();
+    for (const auto &choice : appThemeChoices()) {
+        QAction *entry = menu.addAction(choice.first);
+        entry->setObjectName(QStringLiteral("viewMenuTheme-%1").arg(choice.second));
+        entry->setCheckable(true);
+        entry->setChecked(choice.second == currentTheme);
+        entry->setActionGroup(themeGroup);
+        connect(entry, &QAction::triggered, this, [this, value = choice.second] {
+            if (QSettings().value(kThemeSetting, QStringLiteral("system"))
+                    .toString() == value)
+                return;
+            if (m_themeCombo) {
+                const int index = m_themeCombo->findData(value);
+                if (index >= 0 && index != m_themeCombo->currentIndex()) {
+                    m_themeCombo->setCurrentIndex(index);
+                    return;
+                }
+            }
+            QSettings().setValue(kThemeSetting, value);
+            applyTheme(m_packageRegistry.get());
+        });
+    }
+    QAction *matchInstance =
+        menu.addAction(QStringLiteral("Match the instance's theme"));
+    matchInstance->setObjectName(QStringLiteral("viewMenuMatchInstanceTheme"));
+    matchInstance->setCheckable(true);
+    matchInstance->setChecked(forkmesh::instancetheme::matchEnabled());
+    matchInstance->setToolTip(QStringLiteral(
+        "Wear the colours of the ForkMesh instance (core or server) this "
+        "project is connected to, as its admin chose them in Settings -> "
+        "Instance theme."));
+    connect(matchInstance, &QAction::toggled, this,
+            [this](bool enabled) { setMatchInstanceThemeFromMenu(enabled); });
+    QAction *resetTheme = menu.addAction(QStringLiteral("Reset to default"));
+    resetTheme->setObjectName(QStringLiteral("viewMenuThemeReset"));
+    resetTheme->setEnabled(!appearanceIsDefault());
+    resetTheme->setToolTip(QStringLiteral(
+        "Go back to the look a fresh install starts with: the Classic "
+        "interface, following the system's light or dark setting, in "
+        "ForkMesh's own colours."));
+    connect(resetTheme, &QAction::triggered, this,
+            &MainWindow::resetAppearanceToDefaults);
+
     if (Theme::isNext()) {
         menu.addSeparator();
         QAction *layoutHeader = menu.addAction(QStringLiteral("Agents layout"));
@@ -167,6 +217,55 @@ void MainWindow::showViewModeMenu()
         QPoint(m_viewModeButton->width(), m_viewModeButton->height())));
 }
 
+void MainWindow::setMatchInstanceThemeFromMenu(bool enabled)
+{
+    if (forkmesh::instancetheme::matchEnabled() == enabled)
+        return;
+    if (enabled) {
+        const QString current =
+            QSettings().value(kThemeSetting, QStringLiteral("system")).toString();
+        if (current == kHalloweenTheme ||
+            current.startsWith(kMarketplaceThemePrefix))
+            QSettings().setValue(kThemeSetting, QStringLiteral("system"));
+    }
+    applyInstanceThemeChoice(enabled);
+    logSystem(enabled ? QStringLiteral("Theme now matches the instance")
+                      : QStringLiteral("Theme no longer matches the instance"));
+}
+
+bool MainWindow::appearanceIsDefault() const
+{
+    QSettings settings;
+    return settings.value(kThemeSetting, QStringLiteral("system")).toString() ==
+               QStringLiteral("system") &&
+           Theme::designFromSetting(
+               settings.value(QLatin1String(Theme::kDesignSetting)).toString()) ==
+               Theme::Design::Classic &&
+           !forkmesh::instancetheme::matchEnabled();
+}
+
+void MainWindow::resetAppearanceToDefaults()
+{
+    QSettings settings;
+    settings.remove(kThemeSetting);
+    settings.remove(QLatin1String(Theme::kDesignSetting));
+    settings.remove(QLatin1String(forkmesh::instancetheme::kMatchSetting));
+    m_instanceThemeOrigin.clear();
+    if (m_matchInstanceThemeCheck) {
+        const QSignalBlocker blocker(m_matchInstanceThemeCheck);
+        m_matchInstanceThemeCheck->setChecked(false);
+    }
+    if (auto *combo = findChild<QComboBox *>(QStringLiteral("appDesignCombo"))) {
+        const QSignalBlocker blocker(combo);
+        const int index = combo->findData(
+            Theme::designSettingValue(Theme::Design::Classic));
+        if (index >= 0)
+            combo->setCurrentIndex(index);
+    }
+    applyTheme(m_packageRegistry.get());
+    logSystem(QStringLiteral("Theme reset to the default"));
+}
+
 void MainWindow::restoreAppViewMode()
 {
     m_viewMode = appViewModeFromKey(
@@ -204,7 +303,7 @@ void MainWindow::applyAppViewMode()
         m_appNavigationRail->setVisible(!reduced);
     if (m_appStatusArea)
         m_appStatusArea->setVisible(!reduced);
-    applyTeammateRailVisibility();
+    applySideRailVisibility();
     applyPackageRailVisibility();
 
     const bool terminal = appViewModeShowsWorkspaceTerminal(m_viewMode);

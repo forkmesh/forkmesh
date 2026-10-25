@@ -137,6 +137,8 @@ QString statusLabel(const QString &status)
         return QStringLiteral("Skipped");
     if (status == QLatin1String("running"))
         return QStringLiteral("Running");
+    if (status == QLatin1String("stopped"))
+        return QStringLiteral("Stopped");
     if (status.isEmpty())
         return QStringLiteral("Not run yet");
     return status;
@@ -477,6 +479,134 @@ Draft Draft::fromJson(const QJsonObject &workflow)
     draft.connections = workflow.value(QStringLiteral("connections")).toArray();
     draft.hookPath = text(workflow, "hookPath");
     return draft;
+}
+
+Draft Draft::fromLocal(const QJsonObject &workflow, const QString &repo)
+{
+    Draft draft = fromJson(workflow);
+    draft.repo = repo;
+    draft.active = workflow.value(QStringLiteral("enabled")).toBool(true);
+    draft.icon = text(workflow, "icon");
+    draft.description = text(workflow, "description");
+    draft.createdAtMs = qint64(workflow.value(QStringLiteral("createdAtMs")).toDouble());
+    draft.hookPath.clear();
+    return draft;
+}
+
+QJsonObject Draft::localJson() const
+{
+    return QJsonObject{{QStringLiteral("kind"), QStringLiteral("forkmesh.workflow")},
+                       {QStringLiteral("version"), 1},
+                       {QStringLiteral("id"), id},
+                       {QStringLiteral("name"), name},
+                       {QStringLiteral("description"), description},
+                       {QStringLiteral("icon"), icon},
+                       {QStringLiteral("enabled"), active},
+                       {QStringLiteral("createdAtMs"), double(createdAtMs)},
+                       {QStringLiteral("nodes"), nodes},
+                       {QStringLiteral("connections"), connections}};
+}
+
+QString Draft::addTrigger(const Catalog &catalog, const QString &type)
+{
+    if (!catalog.isTrigger(type))
+        return {};
+    QJsonObject params;
+    for (const QJsonValue &value : catalog.fields(type, QString())) {
+        const QJsonObject field = value.toObject();
+        const QString fallback = field.value(QStringLiteral("default")).toVariant().toString();
+        if (!fallback.isEmpty())
+            params.insert(text(field, "key"), fallback);
+    }
+    QStringList targets;
+    qint64 left = 0;
+    int triggers = 0;
+    for (const QJsonValue &value : nodes) {
+        const QJsonObject current = value.toObject();
+        left = std::min(left, integer(current, "x"));
+        if (catalog.isTrigger(text(current, "type"))) {
+            ++triggers;
+            continue;
+        }
+        if (inputs(text(current, "id")).isEmpty())
+            targets << text(current, "id");
+    }
+    if (targets.isEmpty()) {
+        for (const QString &candidate : ordered()) {
+            if (!catalog.isTrigger(text(node(candidate), "type"))) {
+                targets << candidate;
+                break;
+            }
+        }
+    }
+    const QString triggerId = newId(type);
+    nodes.insert(0, QJsonObject{{QStringLiteral("id"), triggerId},
+                                {QStringLiteral("type"), type},
+                                {QStringLiteral("name"), uniqueName(catalog.name(type))},
+                                {QStringLiteral("x"), left - (triggers == 0 ? kColumn : 0)},
+                                {QStringLiteral("y"), triggers * kRow},
+                                {QStringLiteral("params"), params}});
+    for (const QString &target : targets)
+        connections.append(connection(triggerId, QStringLiteral("main"), target));
+    return triggerId;
+}
+
+void Draft::retype(const Catalog &catalog, const QString &nodeId, const QString &type)
+{
+    const int index = indexOf(nodeId);
+    if (index < 0 || !catalog.isTrigger(type))
+        return;
+    QJsonObject current = nodes.at(index).toObject();
+    if (text(current, "type") == type)
+        return;
+    QJsonObject params;
+    for (const QJsonValue &value : catalog.fields(type, QString())) {
+        const QJsonObject field = value.toObject();
+        const QString fallback = field.value(QStringLiteral("default")).toVariant().toString();
+        if (!fallback.isEmpty())
+            params.insert(text(field, "key"), fallback);
+    }
+    current.insert(QStringLiteral("type"), type);
+    current.insert(QStringLiteral("params"), params);
+    current.insert(QStringLiteral("name"), uniqueName(catalog.name(type), nodeId));
+    nodes.replace(index, current);
+}
+
+bool Draft::hasAgentStep() const
+{
+    for (const QJsonValue &value : nodes)
+        if (text(value.toObject(), "type") == QLatin1String("agent.run"))
+            return true;
+    return false;
+}
+
+QString localWorkflowId(const QString &name)
+{
+    QString result;
+    bool dash = false;
+    for (const QChar ch : name.trimmed().toLower()) {
+        if (ch.isLetterOrNumber() && ch.unicode() < 128) {
+            result += ch;
+            dash = false;
+        } else if (!result.isEmpty() && !dash) {
+            result += QLatin1Char('-');
+            dash = true;
+        }
+        if (result.size() >= 60)
+            break;
+    }
+    while (result.endsWith(QLatin1Char('-')))
+        result.chop(1);
+    return result.isEmpty() ? QStringLiteral("workflow") : result;
+}
+
+QString localStatusLabel(const QString &status)
+{
+    if (status == QLatin1String("stopped"))
+        return QStringLiteral("Stopped");
+    if (status == QLatin1String("queued"))
+        return QStringLiteral("Waiting");
+    return statusLabel(status);
 }
 
 QJsonObject Draft::graph() const

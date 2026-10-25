@@ -31,6 +31,7 @@ run_worker_first = [
   "/dashboard-composer.js",
   "/dashboard-plugin-host.js",
   "/user-status.js",
+  "/username-autocomplete.js",
   "/qr.js",
   # Marketing landing pages pass through the Worker so acquisition
   # attribution can observe them server-side (docs/attribution.md). The

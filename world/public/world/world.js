@@ -32,6 +32,7 @@ import {
 // un-routed subresource the World loads.
 import { createAccountEventChannel } from "../account-events.js";
 import { buildLiveMirrorNodes } from "./world-mirror-nodes.js";
+import { WORLD_VOICE_ROOM_RE, bubbleGroups, cleanVoiceRoomName } from "./world-voice-rooms.js";
 import {
   MASTODON_LOOKUP_URL,
   MASTODON_PROFILE_URL,
@@ -730,6 +731,9 @@ const SETTINGS_WIDTH_KEY = "forkmesh.world.settingsWidth.v1";
 const SETTINGS_WIDTH_MIN = 360;
 const REFRESH_POSITION_KEY = "forkmesh.world.refresh-position.v1";
 const WORLD_HUD_LAYOUT_KEY = "forkmesh.world.hudLayout.v1";
+const WORLD_HUD_ISLAND_OFFSET_KEY = "forkmesh.world.hudIslandOffset.v1";
+const WORLD_HUD_ISLAND_MARGIN = 8;
+const WORLD_HUD_ISLAND_STEP = 24;
 const WORLD_HUD_DOCKS = Object.freeze(["top", "left", "right", "bottom"]);
 const WORLD_HUD_DOCK_NAMES = Object.freeze({
   top: "top edge",
@@ -1988,7 +1992,7 @@ const WORLD_BRAND_NAV_PAGES = Object.freeze([
     icon: `<path d="M3 12h3.5l3 7 4-14 3 7H20"></path>`,
   },
   {
-    href: "/dashboard/chat",
+    href: "/chat",
     label: "Chat",
     copy: "Rooms, direct messages, #general",
     icon: `<path d="M20 15a2 2 0 0 1-2 2H8.6L4 20.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"></path>`,
@@ -2015,6 +2019,14 @@ const WORLD_BRAND_NAV_SHORTCUTS = Object.freeze([
 // visited directly (homepage footer band, signup page). A console page must
 // never load inside that little embedded strip.
 const WORLD_UI_ICON_PATHS = Object.freeze({
+  mic:
+    '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path>',
+  video:
+    '<path d="m22 8-6 4 6 4V8Z"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect>',
+  headset:
+    '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"></path>',
+  hash:
+    '<path d="M4 9h16"></path><path d="M4 15h16"></path><path d="M10 3 8 21"></path><path d="M16 3l-2 18"></path>',
   users:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
   alert:
@@ -2055,6 +2067,8 @@ const WORLD_UI_ICON_PATHS = Object.freeze({
     '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
   close: '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>',
   up: '<path d="m18 15-6-6-6 6"></path>',
+  grip:
+    '<circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle>',
   down: '<path d="m6 9 6 6 6-6"></path>',
   reload:
     '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path>',
@@ -3252,6 +3266,13 @@ function droneRaceFrame(value) {
   };
 }
 
+function worldApiHeaders(extra = {}) {
+  const headers = { accept: "application/json", ...extra };
+  const token = String(readSession()?.sessionToken || "");
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
+}
+
 function remotePlayer(peer) {
   if (!peer?.id) return null;
   const status = String(peer.status || "hidden");
@@ -3362,6 +3383,13 @@ function remotePlayer(peer) {
     solana: WORLD_SOLANA_ADDRESS_RE.test(String(peer.solana || ""))
       ? String(peer.solana)
       : "",
+    voice: WORLD_VOICE_ROOM_RE.test(String(peer.voice || ""))
+      ? String(peer.voice)
+      : "",
+    voiceName: cleanVoiceRoomName(peer.voiceName),
+    mic: peer.mic === true,
+    cam: peer.cam === true,
+    words: Math.max(0, Math.min(9_999_999, Math.floor(Number(peer.words) || 0))),
     // A live presence frame is by definition activity within the hour.
     activityBucket: "hour",
   };
@@ -5804,6 +5832,8 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           </div>
         </details>
 
+        <section class="world-channels" data-world-channels role="dialog" aria-label="Channels, voice rooms and direct messages" hidden></section>
+        <div class="world-voice-audio" data-world-voice-audio hidden></div>
         <section
           class="world-hud-island"
           data-world-hud-island
@@ -5814,7 +5844,11 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           aria-label="Avatar actions and World chat"
         >
           <div class="world-hud-island-bar">
+            <button class="world-hud-island-grip" type="button" data-world-island-grip title="Drag to move · double-click to put back" aria-label="Move chat box. Arrow keys move it, Home puts it back.">${worldIconSvg("grip")}</button>
             <div class="world-avatar-actions" data-world-dock="bottom" data-world-avatar-actions data-dashboard-chat-emotes role="toolbar" aria-label="Avatar actions">
+              <button type="button" data-world-tool="voice-mic" data-world-voice-mic title="Talk: turn on your microphone" aria-label="Microphone" aria-pressed="false">${worldIconSvg("mic")}</button>
+              <button type="button" data-world-tool="voice-camera" data-world-voice-camera title="Camera: your face, head and hands move your avatar" aria-label="Camera" aria-pressed="false">${worldIconSvg("video")}</button>
+              <button type="button" data-world-tool="voice-panel" data-world-voice-open title="Voice rooms, privacy bubbles, reactions and performance" aria-label="Voice panel" aria-expanded="false">${worldIconSvg("headset")}</button>
               <button type="button" data-world-tool="emote-wave" data-dashboard-chat-emote="wave" title="Wave" aria-label="Wave">${worldIconSvg("hand")}</button>
               <button type="button" data-world-tool="emote-jump" data-dashboard-chat-emote="jump" title="Jump" aria-label="Jump">${worldIconSvg("jump")}</button>
               <button type="button" data-world-tool="emote-superjump" data-dashboard-chat-emote="superjump" title="Super jump over buildings" aria-label="Super jump">${worldIconSvg("superjump")}</button>
@@ -5826,7 +5860,8 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <button type="button" data-world-tool="emote-sparkle" data-dashboard-chat-emote="sparkle" title="Sparkle" aria-label="Sparkle">${worldIconSvg("sparkle")}</button>
               <button type="button" data-world-tool="jetpack" data-world-jetpack-toggle title="Put on jetpack" aria-label="Put on jetpack" aria-pressed="false">${worldIconSvg("rocket")}</button>
             </div>
-            <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Open channels and direct messages" aria-label="Open channels and direct messages in a new tab">${worldIconSvg("external")}</button>
+            <button class="world-voice-perf" type="button" data-world-voice-perf data-grade="unknown" title="Voice and video performance" aria-label="Voice and video performance and diagnostic report" hidden><span class="world-voice-perf-dot" aria-hidden="true"></span><span data-world-voice-perf-text>…</span></button>
+            <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Channels, voice rooms, Office rooms and direct messages" aria-label="Open channels, voice rooms, Office rooms and direct messages">${worldIconSvg("hash")}</button>
             <button
               class="world-hud-island-toggle"
               type="button"
@@ -5837,6 +5872,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               title="Show more chat"
             >${worldIconSvg("up")}<span class="world-hud-island-unread" data-world-chat-unread role="status" hidden></span></button>
           </div>
+          <div class="world-voice-panel" data-world-voice-panel role="dialog" aria-label="Voice and video" hidden></div>
           <p class="world-hud-notice" data-world-hud-notice data-tone="status" role="status" aria-live="polite" hidden>
             <span data-world-hud-notice-text></span>
             <button type="button" data-world-hud-notice-dismiss aria-label="Dismiss notice">${worldIconSvg("close")}</button>
@@ -8158,12 +8194,24 @@ class ForkMeshWorld extends HTMLElement {
     ])
       .then(async ([quality, environment, THREE]) => {
         if (this.destroyed || this.world) return null;
-        const plan = quality.planWorldRenderer({
-          container: this.$("[data-world-canvas-wrap]"),
-          forceCompactRenderer: this.rendererSafeMode === true,
-          qualityTier: this.requestedQualityTier,
-        });
-        const prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        const planFor = (forceCompactRenderer) =>
+          quality.planWorldRenderer({
+            container: this.$("[data-world-canvas-wrap]"),
+            forceCompactRenderer,
+            qualityTier: this.requestedQualityTier,
+          });
+        let plan = planFor(this.rendererSafeMode === true);
+        let prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        if (!prepared?.renderer && this.rendererSafeMode !== true) {
+          quality.releaseWorldRendererContext(prepared);
+          const compactPlan = planFor(true);
+          const compact = quality.prepareWorldRendererContext(compactPlan, THREE, document);
+          if (compact?.renderer) {
+            this.rendererSafeMode = true;
+            plan = compactPlan;
+            prepared = compact;
+          }
+        }
         if (!prepared?.renderer || plan.compactRenderer) return prepared;
         await new Promise((resolve) => setTimeout(() => resolve(), 0));
         if (this.destroyed || this.world) {
@@ -8391,7 +8439,7 @@ class ForkMeshWorld extends HTMLElement {
         },
         onWorldBulletinSelect: () => this.openLandmark("events"),
         onWorldGeneralChatSelect: () => {
-          this.openWorldChat("/dashboard/chat");
+          this.openWorldChat("/chat");
         },
         onWorldDiscordBoardSelect: () => {
           window.dispatchEvent(new CustomEvent("forkmesh:open-discord"));
@@ -13625,7 +13673,7 @@ class ForkMeshWorld extends HTMLElement {
         this.openWorldChat(
           chatLink.getAttribute("href") ||
             chatLink.dataset.worldChatOpen ||
-            "/dashboard/chat",
+            "/chat",
           chatLink,
         );
         return;
@@ -14364,6 +14412,14 @@ class ForkMeshWorld extends HTMLElement {
         this.enterNeighborhoodHome(enterHome.dataset.worldEnterHome, false);
         return;
       }
+      const voiceAction = event.target.closest("[data-world-voice-action]");
+      if (voiceAction) {
+        this.runWorldVoiceAction(
+          voiceAction.dataset.worldVoiceAction,
+          voiceAction.dataset.worldVoicePeer,
+        );
+        return;
+      }
       const handshakeOffer = event.target.closest(
         "[data-world-handshake-offer]",
       );
@@ -14809,6 +14865,150 @@ class ForkMeshWorld extends HTMLElement {
     list.hidden = false;
   }
 
+  hudIslandOffsetLimits(island) {
+    const bounds = (island.offsetParent || this).getBoundingClientRect();
+    const rect = island.getBoundingClientRect();
+    const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+    const left = rect.left - applied.x;
+    const top = rect.top - applied.y;
+    return {
+      minX: bounds.left + WORLD_HUD_ISLAND_MARGIN - left,
+      maxX: bounds.right - WORLD_HUD_ISLAND_MARGIN - rect.width - left,
+      minY: bounds.top + WORLD_HUD_ISLAND_MARGIN - top,
+      maxY: bounds.bottom - WORLD_HUD_ISLAND_MARGIN - rect.height - top,
+      middle: bounds.top + bounds.height / 2 - top - rect.height / 2,
+    };
+  }
+
+  hudIslandMovable() {
+    const grip = this.$("[data-world-island-grip]");
+    return Boolean(grip && grip.getClientRects().length);
+  }
+
+  applyHudIslandOffset(wanted = this.hudIslandOffset) {
+    const island = this.$("[data-world-hud-island]");
+    if (!island) return { x: 0, y: 0 };
+    const movable = this.hudIslandMovable();
+    const target = (movable && wanted) || { x: 0, y: 0 };
+    const limits = this.hudIslandOffsetLimits(island);
+    const clamp = (value, min, max) =>
+      Math.round(Math.min(Math.max(Number(value) || 0, min), Math.max(min, max)));
+    const x = clamp(target.x, limits.minX, limits.maxX);
+    const y = clamp(target.y, limits.minY, limits.maxY);
+    const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+    if (applied.x !== x || applied.y !== y) {
+      this.hudIslandAppliedOffset = { x, y };
+      island.style.setProperty("--world-hud-island-x", `${x}px`);
+      island.style.setProperty("--world-hud-island-y", `${y}px`);
+    }
+    const placement = y < limits.middle ? "top" : "bottom";
+    if (island.dataset.placement !== placement) {
+      island.dataset.placement = placement;
+    }
+    return { x, y };
+  }
+
+  setHudIslandOffset(offset, persist = true) {
+    const next = this.applyHudIslandOffset(offset || { x: 0, y: 0 });
+    this.hudIslandOffset = next.x || next.y ? next : null;
+    if (!persist) return;
+    try {
+      if (this.hudIslandOffset) {
+        writeJSON(localStorage, WORLD_HUD_ISLAND_OFFSET_KEY, this.hudIslandOffset);
+      } else {
+        localStorage.removeItem(WORLD_HUD_ISLAND_OFFSET_KEY);
+      }
+    } catch (_) {}
+  }
+
+  bindHudIslandDrag(island) {
+    const grip = this.$("[data-world-island-grip]");
+    const bar = island.querySelector(".world-hud-island-bar");
+    if (!grip) return;
+    let stored = null;
+    try {
+      stored = readJSON(localStorage, WORLD_HUD_ISLAND_OFFSET_KEY, null);
+    } catch (_) {}
+    if (Number.isFinite(stored?.x) && Number.isFinite(stored?.y)) {
+      this.hudIslandOffset = { x: stored.x, y: stored.y };
+      window.requestAnimationFrame(() => {
+        if (!this.destroyed && this.hudIslandOffset) this.applyHudIslandOffset();
+      });
+    }
+    const bounds = island.offsetParent || island.parentElement;
+    if (bounds && "ResizeObserver" in window) {
+      this.hudIslandBoundsObserver = new ResizeObserver(() => {
+        if (this.hudIslandOffset) this.applyHudIslandOffset();
+      });
+      this.hudIslandBoundsObserver.observe(bounds);
+    }
+    let pointerId = null;
+    let start = null;
+    island.addEventListener("pointerdown", (event) => {
+      if (pointerId !== null || event.button > 0) return;
+      if (!this.hudIslandMovable()) return;
+      const handle =
+        event.target.closest("[data-world-island-grip]") ||
+        (event.target === island || event.target === bar ? event.target : null);
+      if (!handle) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pointerId = event.pointerId;
+      const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+      start = { x: event.clientX - applied.x, y: event.clientY - applied.y };
+      island.dataset.dragging = "true";
+      island.setPointerCapture?.(pointerId);
+    });
+    island.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== pointerId) return;
+      event.preventDefault();
+      this.setHudIslandOffset(
+        { x: event.clientX - start.x, y: event.clientY - start.y },
+        false,
+      );
+    });
+    const stop = (event) => {
+      if (event.pointerId !== pointerId) return;
+      pointerId = null;
+      delete island.dataset.dragging;
+      try {
+        island.releasePointerCapture?.(event.pointerId);
+      } catch (_) {}
+      this.setHudIslandOffset(this.hudIslandAppliedOffset);
+    };
+    island.addEventListener("pointerup", stop);
+    island.addEventListener("pointercancel", stop);
+    island.addEventListener("lostpointercapture", stop);
+    island.addEventListener("dblclick", (event) => {
+      if (
+        event.target.closest("[data-world-island-grip]") ||
+        event.target === island ||
+        event.target === bar
+      ) {
+        this.setHudIslandOffset(null);
+      }
+    });
+    grip.addEventListener("keydown", (event) => {
+      const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+      const moves = {
+        ArrowLeft: [-WORLD_HUD_ISLAND_STEP, 0],
+        ArrowRight: [WORLD_HUD_ISLAND_STEP, 0],
+        ArrowUp: [0, -WORLD_HUD_ISLAND_STEP],
+        ArrowDown: [0, WORLD_HUD_ISLAND_STEP],
+      };
+      if (event.key === "Home") {
+        this.setHudIslandOffset(null);
+      } else if (moves[event.key]) {
+        const [dx, dy] = moves[event.key];
+        this.setHudIslandOffset({ x: applied.x + dx, y: applied.y + dy });
+      } else {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+
   setHudIslandExpanded(expanded) {
     const island = this.$("[data-world-hud-island]");
     const toggle = this.$("[data-world-island-toggle]");
@@ -14844,7 +15044,21 @@ class ForkMeshWorld extends HTMLElement {
       this.setHudIslandExpanded(island.dataset.expanded !== "true");
     });
     this.$("[data-world-island-full-chat]")?.addEventListener("click", () => {
-      window.open("/dashboard/chat", "_blank", "noopener,noreferrer");
+      void this.openChannelsPanel().then((opened) => {
+        if (!opened) window.open("/chat", "_blank", "noopener,noreferrer");
+      });
+    });
+    this.$("[data-world-voice-mic]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.toggleMic());
+    });
+    this.$("[data-world-voice-camera]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.toggleCamera());
+    });
+    this.$("[data-world-voice-open]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel());
+    });
+    this.$("[data-world-voice-perf]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel(true));
     });
     this.$("[data-world-island-feed]")?.addEventListener("click", (event) => {
       if (island.dataset.expanded === "true") return;
@@ -14866,6 +15080,7 @@ class ForkMeshWorld extends HTMLElement {
           entries[0]?.borderBoxSize?.[0]?.blockSize ??
             island.getBoundingClientRect().height,
         );
+        if (this.hudIslandOffset) this.applyHudIslandOffset();
         if (height === lastHeight || island.dataset.expanded === "true") {
           return;
         }
@@ -14874,6 +15089,7 @@ class ForkMeshWorld extends HTMLElement {
       });
       this.hudIslandResizeObserver.observe(island);
     }
+    this.bindHudIslandDrag(island);
     this.$("[data-world-composer-modes]")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-world-composer-mode]");
       if (button) this.setComposerMode(button.dataset.worldComposerMode);
@@ -18631,7 +18847,8 @@ class ForkMeshWorld extends HTMLElement {
                         }</button>`
                   }
                 </div>
-              </section>`
+              </section>
+              ${this.worldVoiceDetailMarkup(peerId, name)}`
             : ""
         }
         <div class="world-truth-grid">
@@ -27635,7 +27852,7 @@ class ForkMeshWorld extends HTMLElement {
     return true;
   }
 
-  openWorldChat(href = "/dashboard/chat", returnFocus = null) {
+  openWorldChat(href = "/chat", returnFocus = null) {
     this.chatReturnFocus =
       returnFocus instanceof HTMLElement ? returnFocus : null;
     this.openChatTerminal();
@@ -27820,7 +28037,7 @@ class ForkMeshWorld extends HTMLElement {
       )}" data-world-chat-channel-option="${escapeHTML(choice.id)}"${
         external
           ? ` data-external="true" title="${escapeHTML(
-              `Open ${choice.label} in Chat in a new tab`,
+              `Open ${choice.label} here in the World`,
             )}"`
           : ""
       }>${escapeHTML(choice.label)}${
@@ -27847,10 +28064,10 @@ class ForkMeshWorld extends HTMLElement {
       );
     }
     if (extra.channels.length) {
-      parts.push(group("Channels · opens Chat", extra.channels, true));
+      parts.push(group("Channels", extra.channels, true));
     }
     if (extra.directs.length) {
-      parts.push(group("Direct messages · opens Chat", extra.directs, true));
+      parts.push(group("Direct messages", extra.directs, true));
     }
     const markup = parts.join("");
     if (menu.dataset.rendered !== markup) {
@@ -27919,8 +28136,10 @@ class ForkMeshWorld extends HTMLElement {
             : WORLD_CHAT_PRIVATE_DIRECT_KEY,
         );
       } catch (_) {}
-      window.open("/chat", "_blank", "noopener,noreferrer");
       this.setChatChannelMenuOpen(false, true);
+      void this.openChannelsPanel({ conversation: value }).then((opened) => {
+        if (!opened) window.open("/chat", "_blank", "noopener,noreferrer");
+      });
       return true;
     }
     return false;
@@ -32125,12 +32344,12 @@ class ForkMeshWorld extends HTMLElement {
     );
   }
 
-  perfCopyReport() {
+  perfCopyReport({ logTail = false } = {}) {
     if (!this.world?.auditScene) return "";
     const profile = this.world.getProfile?.() || null;
     if (profile?.frames || !this.perfLastProfile) this.perfLastProfile = profile;
     this.runPerfAudit();
-    return this.perfReportMarkdown({ logTail: false });
+    return this.perfReportMarkdown({ logTail });
   }
 
   perfReportMarkdown({ logTail = true } = {}) {
@@ -32264,7 +32483,7 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   async copyPerfReport() {
-    const text = this.perfReportMarkdown();
+    const text = this.perfCopyReport({ logTail: true }) || this.perfReportMarkdown();
     try {
       await navigator.clipboard.writeText(text);
       this.notice("📋 Optimization report copied — paste it into an issue or an agent prompt.");
@@ -33406,6 +33625,7 @@ class ForkMeshWorld extends HTMLElement {
       )
         ? String(this.identity.solana)
         : "",
+      ...this.voicePresence(),
     };
   }
 
@@ -33591,8 +33811,29 @@ class ForkMeshWorld extends HTMLElement {
           peersChanged = true;
         }
       }
+    } else if (message.type === "rig" && message.id) {
+      const rigger = String(message.id);
+      if (rigger !== this.serverPeerId && this.remotePlayers.has(rigger)) {
+        if (this.avatarPuppets) this.avatarPuppets.receive(message);
+        else void this.ensureAvatarPuppets().then((puppets) => puppets?.receive(message));
+      }
+    } else if (message.type === "voice-signal") {
+      this.voice?.handle(message);
+    } else if (
+      message.type === "interaction" &&
+      message.kind === "reaction" &&
+      message.from
+    ) {
+      this.receiveWorldReaction(message);
+    } else if (
+      message.type === "interaction" &&
+      ["bubble-invite", "bubble-knock", "bubble-decline"].includes(message.kind) &&
+      message.from
+    ) {
+      void this.ensureVoice().then((voice) => voice?.handle(message));
     } else if (message.type === "leave") {
       const departed = String(message.id || "");
+      this.avatarPuppets?.forget(departed);
       peersChanged = this.remotePlayers.delete(departed);
       this.pendingKnocks.delete(departed);
       this.pendingHandshakes.delete(departed);
@@ -33712,6 +33953,307 @@ class ForkMeshWorld extends HTMLElement {
     // change the public roster. Avoid re-walking every avatar and rebuilding
     // unrelated scene metrics for those high-frequency frames.
     if (peersChanged) this.schedulePeerRender();
+    if (peersChanged) this.syncWorldVoicePeers();
+  }
+
+  syncWorldVoicePeers() {
+    this.syncWorldBubbles();
+    const talking = [...this.remotePlayers.values()].filter((player) => player.voice || player.words);
+    if (!talking.length) return;
+    const apply = (puppets) => {
+      for (const player of talking) puppets?.presence(player.id, player);
+    };
+    if (this.avatarPuppets) apply(this.avatarPuppets);
+    else void this.ensureAvatarPuppets().then(apply);
+  }
+
+  syncWorldBubbles() {
+    const groups = bubbleGroups(
+      this.remotePlayers,
+      this.voice?.room ? { room: this.voice.room } : null,
+    );
+    const key = JSON.stringify(groups);
+    if (key === this.worldBubbleKey) return;
+    this.worldBubbleKey = key;
+    this.world?.setPrivacyBubbles?.(groups);
+  }
+
+  receiveWorldReaction(message) {
+    void this.ensureAvatarPuppets().then((puppets) => {
+      const emoji = puppets?.emojiFor(message.reaction);
+      if (!emoji) return;
+      const from = String(message.from);
+      const target = String(message.target || "");
+      const toSelf = Boolean(target) && target === this.serverPeerId;
+      this.world?.playAvatarReaction?.(from, toSelf ? "self" : target || from, emoji);
+      if (toSelf) {
+        const name = this.remotePlayers.get(from)?.name || "Someone";
+        this.notice(`${emoji} ${name} reacted to what you said.`);
+      }
+    });
+  }
+
+  sendVoiceFrame(frame) {
+    const type = String(frame?.type || "");
+    if (type === "interaction") {
+      if (
+        !["bubble-invite", "bubble-knock", "bubble-decline", "reaction"].includes(
+          String(frame.kind || ""),
+        )
+      ) {
+        return false;
+      }
+    } else if (type !== "rig" && type !== "voice-signal") {
+      return false;
+    }
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
+    if (
+      type === "rig" &&
+      Number(this.socket.bufferedAmount || 0) > SOCKET_BUFFER_HIGH_WATER_BYTES
+    ) {
+      return false;
+    }
+    try {
+      this.socket.send(JSON.stringify(Object.assign({ type }, frame)));
+      this.socketOutboundFrames = incrementDiagnosticCounter(
+        this.socketOutboundFrames,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  voicePresence() {
+    return (
+      this.voice?.presence?.() || {
+        voice: "",
+        voiceName: "",
+        mic: false,
+        cam: false,
+        words: 0,
+      }
+    );
+  }
+
+  ensureAvatarPuppets() {
+    if (this.avatarPuppets) return Promise.resolve(this.avatarPuppets);
+    this.avatarPuppetsPromise ||= import("./world-avatar-puppets.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.avatarPuppets = module.createAvatarPuppets({
+          world: () => this.world,
+        });
+        this.avatarPuppetsTimer = window.setInterval(
+          () => this.avatarPuppets?.tick(),
+          100,
+        );
+        return this.avatarPuppets;
+      })
+      .catch(() => {
+        this.avatarPuppetsPromise = null;
+        return null;
+      });
+    return this.avatarPuppetsPromise;
+  }
+
+  ensureVoice() {
+    if (this.voice) return Promise.resolve(this.voice);
+    this.voicePromise ||= Promise.all([
+      import("./world-voice.js"),
+      this.ensureAvatarPuppets(),
+    ])
+      .then(([module]) => {
+        if (this.destroyed) return null;
+        this.voice = module.createWorldVoice(this.voiceHost());
+        this.voice.render();
+        return this.voice;
+      })
+      .catch(() => {
+        this.voicePromise = null;
+        this.notice("Voice could not load. Reload the page to try again.");
+        return null;
+      });
+    return this.voicePromise;
+  }
+
+  voiceHost() {
+    return {
+      documentRef: document,
+      session: () => readSession(),
+      selfId: () => this.serverPeerId,
+      players: () => this.remotePlayers,
+      world: () => this.world,
+      puppets: () => this.avatarPuppets,
+      chatSpace: () => this.activeChatSpace(),
+      send: (frame) => this.sendVoiceFrame(frame),
+      presenceNow: () => this.sendPresenceNow({ type: "presence" }),
+      presenceSoon: () => this.sendPresence({ type: "presence" }),
+      notify: (text) => this.notice(text),
+      apiHeaders: (extra) => worldApiHeaders(extra),
+      audioHost: () => this.$("[data-world-voice-audio]"),
+      panelElement: () => this.$("[data-world-voice-panel]"),
+      perfElement: () => this.$("[data-world-voice-perf]"),
+      syncButtons: (state) => this.syncVoiceButtons(state),
+      syncBubbles: () => {
+        this.worldBubbleKey = "";
+        this.syncWorldBubbles();
+      },
+      nearbyPlayers: (radius) => this.nearbyVoicePlayers(radius),
+      wearsPhotoFace: () =>
+        this.settings?.faceImage === true && Boolean(readSession()?.avatarPng),
+      version: () =>
+        document.querySelector('meta[name="forkmesh-world-version"]')
+          ?.content || "",
+      diagnostics: () => ({
+        quality: this.world?.qualityState?.() || null,
+        peers: this.remotePlayers.size,
+        socketOutbound: this.socketOutboundFrames,
+        socketBackpressure: this.socketBackpressureEvents,
+      }),
+    };
+  }
+
+  worldVoiceDetailMarkup(peerId, name) {
+    const peer = this.remotePlayers.get(String(peerId || ""));
+    if (!peer || peer.accountStatus === "Guest" || !this.chatSignedIn()) return "";
+    const mine = String(this.voice?.room?.id || "");
+    const theirs = String(peer.voice || "");
+    const button = (action, label, primary = false) =>
+      `<button type="button" class="${primary ? "world-primary-action" : "world-link-action"}" data-world-voice-action="${action}" data-world-voice-peer="${escapeHTML(peerId)}">${escapeHTML(label)}</button>`;
+    const actions = [];
+    let copy = `Talk with ${name} so only the two of you hear it: a privacy bubble wraps you both, and everyone else sees the bubble but never hears inside it.`;
+    if (mine.startsWith("bubble:") && theirs === mine) {
+      copy = `${name} is in your privacy bubble.`;
+    } else if (mine.startsWith("bubble:")) {
+      actions.push(button("invite", "Invite into my bubble", true));
+    } else if (theirs.startsWith("bubble:")) {
+      copy = `${name} is in a privacy bubble. You can ask to come in; someone inside decides.`;
+      actions.push(button("knock", "Ask to join their bubble", true));
+    } else {
+      actions.push(button("bubble", "Start a privacy bubble", true));
+    }
+    if (theirs && !theirs.startsWith("bubble:") && theirs !== "channel" && theirs !== mine) {
+      actions.push(button("join", "Join their voice room"));
+    }
+    return `<section class="world-detail-section" data-world-voice-detail>
+                <h3>Voice</h3>
+                <p>${escapeHTML(copy)}</p>
+                <div class="world-detail-actions">${actions.join("")}</div>
+              </section>`;
+  }
+
+  runWorldVoiceAction(action, peerId) {
+    const peer = this.remotePlayers.get(String(peerId || ""));
+    void this.ensureVoice().then((voice) => {
+      if (!voice || !peer) return;
+      if (action === "bubble") void voice.startBubble(peer.id);
+      else if (action === "invite") voice.invite(peer.id);
+      else if (action === "knock") voice.knock(peer.id);
+      else if (action === "join" && peer.voice) {
+        void voice.join({ id: peer.voice, name: peer.voiceName || "" });
+      }
+      voice.openPanel(true);
+      window.setTimeout(() => this.refreshWorldMemberDetail(peer.id), 600);
+    });
+  }
+
+  nearbyVoicePlayers(radius = 12) {
+    const here = this.lastMovement || {};
+    const space = String(here.space || this.currentSpace || "");
+    return [...this.remotePlayers.values()]
+      .filter(
+        (player) =>
+          player.accountStatus !== "Guest" &&
+          player.space === space &&
+          Math.hypot(
+            player.x - Number(here.x || 0),
+            player.z - Number(here.z || 0),
+          ) <= radius,
+      )
+      .slice(0, 8)
+      .map((player) => ({ id: player.id, name: player.name }));
+  }
+
+  syncVoiceButtons({ mic = false, cam = false, room = "", joining = false } = {}) {
+    const micButton = this.$("[data-world-voice-mic]");
+    const camButton = this.$("[data-world-voice-camera]");
+    if (micButton) {
+      micButton.setAttribute("aria-pressed", String(mic));
+      micButton.dataset.state = joining ? "joining" : mic ? "on" : room ? "listening" : "off";
+      micButton.title = mic
+        ? "Mute your microphone"
+        : room
+          ? "Listening · turn on your microphone to talk"
+          : "Talk: turn on your microphone";
+    }
+    if (camButton) {
+      camButton.setAttribute("aria-pressed", String(cam));
+      camButton.dataset.state = cam ? "on" : "off";
+      camButton.title = cam
+        ? "Turn the camera off"
+        : "Camera: your face, head and hands move your avatar";
+    }
+    const open = this.$("[data-world-voice-open]");
+    if (open) {
+      open.dataset.state = room ? "in-room" : "off";
+      open.setAttribute(
+        "aria-expanded",
+        String(this.$("[data-world-voice-panel]")?.hidden === false),
+      );
+    }
+  }
+
+  ensureChannels() {
+    if (this.worldChannels) return Promise.resolve(this.worldChannels);
+    this.worldChannelsPromise ||= import("./world-channels.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.worldChannels = module.createWorldChannels({
+          documentRef: document,
+          panel: this.$("[data-world-channels]"),
+          voice: () => this.voice,
+          ensureVoice: () => this.ensureVoice(),
+          players: () => this.remotePlayers,
+          spaces: () => this.chatSpaceChoices(),
+          signedIn: () => this.chatSignedIn(),
+          selectSpace: (space) => this.selectChatChannel(`space:${space}`),
+          loadPrivate: () => this.loadChatChannelChoices({ force: true }),
+          openOffice: (roomId) => this.openWorldOfficeRoom(roomId),
+        });
+        return this.worldChannels;
+      })
+      .catch(() => {
+        this.worldChannelsPromise = null;
+        return null;
+      });
+    return this.worldChannelsPromise;
+  }
+
+  async openChannelsPanel(options = {}) {
+    const channels = await this.ensureChannels();
+    if (!channels) return false;
+    channels.setOpen(true, options);
+    return true;
+  }
+
+  async openWorldOfficeRoom(roomId) {
+    const office = await this.ensureOfficeRuntime({ userInitiated: true });
+    const meeting = this.officeMeeting;
+    if (!office || !meeting) {
+      this.notice("The Office is not available right now.");
+      return false;
+    }
+    this.worldChannels?.setOpen(false);
+    const target =
+      roomId && /^[0-9a-f]{32}$/.test(String(roomId)) ? String(roomId) : "general";
+    meeting.openLobby();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (meeting.inRoom || (await meeting.joinRoom(target))) return true;
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+    }
+    this.notice("You are in the Office lobby. Use the meeting board on Marketing to pick a room.");
+    return false;
   }
 
   // A full renderPeers() pass walks the entire member directory (badges,
@@ -34685,6 +35227,7 @@ class ForkMeshWorld extends HTMLElement {
     window.removeEventListener("keydown", this.handlePublicInputActivity);
     window.removeEventListener("keydown", this.handleQuickChatEscape);
     this.hudIslandResizeObserver?.disconnect();
+    this.hudIslandBoundsObserver?.disconnect();
     this.stopAgentRunWatch();
     window.removeEventListener("message", this.handleWorldChatMessage);
     window.removeEventListener("message", this.handleEmbedHostMessage);
@@ -34785,6 +35328,12 @@ class ForkMeshWorld extends HTMLElement {
     const soundContext = this.soundContext;
     this.soundContext = null;
     soundContext?.close?.().catch(() => {});
+    this.voice?.destroy();
+    this.voice = null;
+    this.worldChannels?.destroy();
+    this.worldChannels = null;
+    window.clearInterval(this.avatarPuppetsTimer);
+    this.avatarPuppets = null;
     this.officeMeeting?.destroy();
     this.officeMeeting = null;
     this.officeController?.destroy();

@@ -173,10 +173,12 @@ kbd { font: 500 11px/1 var(--font); color: var(--muted); background: var(--card)
 .fm-q-row[hidden] { display: none; }
 .fm-q-value { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .fm-q-bar { display: inline-flex; align-items: center; gap: 6px; }
-.fm-q-diag { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .94); cursor: pointer; box-shadow: var(--shadow); }
+.fm-q-diag { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 26px; padding: 0 10px; border: 0; border-radius: 9px; background: rgba(255, 255, 255, .94); color: var(--ink); font: 600 11px var(--font); cursor: pointer; box-shadow: var(--shadow); }
 .fm-q-diag[hidden] { display: none; }
 .fm-q-diag:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
-.fm-q-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--line); }
+.fm-q-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--muted); }
+.fm-q-diag[data-state="ok"] .fm-q-dot { background: var(--ok); }
+.fm-q-diag[data-state="warn"], .fm-q-diag[data-state="bad"] { color: var(--bad); }
 .fm-q-diag[data-state="warn"] .fm-q-dot, .fm-q-diag[data-state="bad"] .fm-q-dot { background: var(--bad); }
 .fm-q-diag-panel { width: 340px; gap: 6px; }
 .fm-q-issues, .fm-q-fixes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }

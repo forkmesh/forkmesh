@@ -103,6 +103,11 @@ struct NativePackageHost {
     std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
         findLogins;
     std::function<void(const QString &)> openWebPage;
+    std::function<QJsonObject()> repositoryWorkflows;
+    std::function<void(const QString &, const QString &, const QString &,
+                       const QJsonObject &, NativePackageReplyHandler)>
+        repositoryWorkflowAction;
+    std::function<QString(const QString &)> publicPageUrl;
 };
 
 struct NativePackagePromptTarget {
@@ -182,6 +187,7 @@ public:
     virtual void openRailTile(const QString &) {}
     virtual void packageChanged() {}
     virtual void repositoryChanged() {}
+    virtual void repositoryWorkflowsChanged() {}
     virtual bool storesLogins() const { return false; }
     virtual void saveLogin(const NativePackageLogin &, const QString &,
                            QWidget *, NativePackageLoginHandler done)
@@ -245,5 +251,6 @@ bool nativePackageRequestPathAllowed(const QString &packageId,
                                      const QString &apiPrefix,
                                      const QString &path);
 QUrl nativePackageWebPageUrl(const QUrl &base, const QString &path);
+QUrl nativePackagePublicPageUrl(const QUrl &base, const QString &path);
 
 } // namespace forkmesh::market

@@ -35,6 +35,11 @@ They just send both steps in one tap and skip the sheet. The user asked for
 one-tap runs, and the list already shows what each row does. The detail page
 on iPhone keeps its **Run** button with the sheet.
 
+A workflow's **Run shortcut** step runs a script or prompt shortcut too,
+waits for it and hands its output to the next step, so a shortcut can run on a
+schedule, after a special agent or from a button pinned to any rail
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+
 ## The queue
 
 Script shortcuts can be queued behind the ones already running, so a

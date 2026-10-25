@@ -109,10 +109,25 @@ QToolButton#agentStatusPill:hover { background-color: @surfaceRaised; }
 #agentMetaPopup, #slashActionsPopup { border-color: @borderStrong; }
 
 #promptWrapper, #promptWrapper:focus-within { border-color: @borderStrong; }
-#promptResizeGrip:hover { background-color: @accent; }
 QCheckBox#promptWorktreeCheck::indicator:checked, QCheckBox#promptVibeCheck::indicator:checked {
     border-color: @accent; background: @accent;
 }
 QCheckBox#promptVibeCheck:checked { color: @accentFg; }
 QCheckBox#slashToggle::indicator:checked { background: @accent; }
 QFrame#slashActionRow[slashSelected="true"] { background: @surfaceActive; }
+
+QPushButton#teammateRailAvatar[nextChip="true"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+    color: @fgMuted; font-size: 12px; font-weight: 600; padding: 0px;
+}
+QPushButton#teammateRailAvatar[nextChip="true"]:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @fg;
+}
+QPushButton#teammateRailAvatar[nextChip="true"][enabledTeammate="false"] { color: @fgSubtle; }
+QLabel#teammateRailTitle {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 1px;
+    background: transparent;
+}
+QPushButton#teammateRailCreateButton {
+    background: transparent; border: 1px dashed @borderStrong; border-radius: 12px;
+}

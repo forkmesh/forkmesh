@@ -2,6 +2,7 @@
 #include "ForkMeshVersion.h"
 #include "ProcessReaper.h"
 #include "ProjectRegistry.h"
+#include "SettingsWrite.h"
 #include "Tooltips.h"
 #include "UiSounds.h"
 #include "MainWindow.h"
@@ -36,6 +37,8 @@
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
 
+#include <QAbstractSlider>
+#include <QAbstractSpinBox>
 #include <QActionGroup>
 #include <QCheckBox>
 #include <QDialog>
@@ -75,7 +78,10 @@ class ChatPreviewLabel : public QLabel
 {
 public:
     struct Line {
+        QString conversation;
+        QString where;
         QString who;
+        QString when;
         QString text;
         bool mine = false;
         QPixmap avatar;
@@ -97,8 +103,8 @@ public:
         setWordWrap(false);
         setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
         setCursor(Qt::PointingHandCursor);
-        setToolTip(QStringLiteral("The latest messages in the conversation the "
-                                  "add button sends to. Click to open it."));
+        setToolTip(QStringLiteral("The latest chat messages. Click one to open "
+                                  "its channel; drag to move the prompt."));
     }
 
     void setLines(const QList<Line> &lines)
@@ -111,7 +117,15 @@ public:
 
     bool hasLines() const { return !m_lines.isEmpty(); }
     QList<Line> lines() const { return m_lines; }
-    std::function<void()> onClicked;
+    std::function<void(const QString &conversation)> onClicked;
+
+    int rowAt(const QPoint &pos) const
+    {
+        if (m_lines.isEmpty())
+            return -1;
+        const int row = (pos.y() - contentsRect().top()) / (rowHeight() + kRowGap);
+        return qBound(0, row, int(m_lines.size()) - 1);
+    }
 
     int rowHeight() const
     {
@@ -144,6 +158,7 @@ protected:
         const QColor accent = Theme::color(Theme::Role::AccentFg);
         const QColor strong = Theme::color(Theme::Role::FgSecondary);
         const QColor body = palette().color(QPalette::WindowText);
+        const QColor muted = Theme::nextOr(Theme::Role::FgMuted, QColor("#8b949e"));
         const int rowH = rowHeight();
         int y = area.top();
         for (const Line &line : std::as_const(m_lines)) {
@@ -157,12 +172,23 @@ protected:
                 painter.drawEllipse(face);
             }
             x += kAvatarPx + 6;
-            const QString who = line.who + QStringLiteral(": ");
-            const QRect row(x, y, qMax(0, area.right() - x + 1), rowH);
-            painter.setFont(bold);
-            painter.setPen(line.mine ? strong : accent);
-            painter.drawText(row, Qt::AlignLeft | Qt::AlignVCenter, who);
-            const int textX = x + boldMetrics.horizontalAdvance(who);
+            const auto drawPart = [&](const QString &part, const QFont &partFont,
+                                      const QFontMetrics &partMetrics,
+                                      const QColor &color, int maxWidth) {
+                if (part.isEmpty())
+                    return;
+                const QString shown =
+                    partMetrics.elidedText(part, Qt::ElideRight, maxWidth);
+                painter.setFont(partFont);
+                painter.setPen(color);
+                painter.drawText(QRect(x, y, qMax(0, area.right() - x + 1), rowH),
+                                 Qt::AlignLeft | Qt::AlignVCenter, shown);
+                x += partMetrics.horizontalAdvance(shown) + 5;
+            };
+            drawPart(line.where, font(), metrics, muted, 90);
+            drawPart(line.who, bold, boldMetrics, line.mine ? strong : accent, 90);
+            drawPart(line.when, font(), metrics, muted, 60);
+            const int textX = x;
             const int room = qMax(10, area.right() - textX + 1);
             painter.setFont(font());
             painter.setPen(body);
@@ -176,7 +202,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton && onClicked) {
-            onClicked();
+            const int row = rowAt(event->position().toPoint());
+            onClicked(row >= 0 ? m_lines.at(row).conversation : QString());
             event->accept();
             return;
         }
@@ -188,8 +215,10 @@ private:
     {
         QStringList rows;
         for (const Line &line : std::as_const(m_lines))
-            rows << (line.who + QStringLiteral(": ")).toHtmlEscaped() +
-                        line.text.toHtmlEscaped();
+            rows << QStringList{line.where, line.who, line.when}
+                            .join(QLatin1Char(' '))
+                            .toHtmlEscaped() +
+                        QStringLiteral(": ") + line.text.toHtmlEscaped();
         const QString html = rows.join(QStringLiteral("<br>"));
         if (text() != html)
             setText(html);
@@ -287,6 +316,101 @@ private:
     QPointer<QWidget> m_spacer;
     QPointer<QWidget> m_preview;
     int m_radius = 0;
+};
+
+bool isPromptDragSurface(QWidget *widget, const QWidget *wrapper, const QWidget *bar)
+{
+    if (!widget || !wrapper || (widget != wrapper && !wrapper->isAncestorOf(widget)))
+        return false;
+    if (bar && (widget == bar || bar->isAncestorOf(widget)))
+        return false;
+    for (QWidget *w = widget; w && w != wrapper; w = w->parentWidget()) {
+        if (qobject_cast<QAbstractButton *>(w) || qobject_cast<QComboBox *>(w) ||
+            qobject_cast<QAbstractSpinBox *>(w) || qobject_cast<QLineEdit *>(w) ||
+            qobject_cast<QTextEdit *>(w) || qobject_cast<QPlainTextEdit *>(w) ||
+            qobject_cast<QAbstractSlider *>(w) || qobject_cast<QAbstractItemView *>(w))
+            return false;
+    }
+    return true;
+}
+
+class PromptResizeEdge : public QWidget
+{
+public:
+    static constexpr int kBandPx = 5;
+    static constexpr int kCornerPx = 10;
+
+    PromptResizeEdge(QWidget *host, QWidget *panel, QWidget *bar, Qt::Edges edges)
+        : QWidget(host), m_panel(panel), m_bar(bar), m_edges(edges)
+    {
+        setObjectName(QStringLiteral("promptResizeEdge"));
+        setProperty("promptResizeEdges", edges.toInt());
+        setCursor(cursorFor(edges));
+        panel->installEventFilter(this);
+        if (bar)
+            bar->installEventFilter(this);
+        place();
+    }
+
+    Qt::Edges edges() const { return m_edges; }
+
+    void place()
+    {
+        if (!m_panel)
+            return;
+        const QRect r = m_panel->geometry();
+        const bool horizontal = m_edges & (Qt::LeftEdge | Qt::RightEdge);
+        const bool vertical = m_edges & (Qt::TopEdge | Qt::BottomEdge);
+        const int w = vertical ? (horizontal ? kCornerPx : r.width() - 2 * kCornerPx)
+                               : kBandPx;
+        const int h = horizontal ? (vertical ? kCornerPx : r.height() - 2 * kCornerPx)
+                                 : kBandPx;
+        const int x = m_edges & Qt::LeftEdge    ? r.left()
+                      : m_edges & Qt::RightEdge ? r.right() - w + 1
+                                                : r.left() + kCornerPx;
+        const int y = m_edges & Qt::TopEdge      ? r.top()
+                      : m_edges & Qt::BottomEdge ? r.bottom() - h + 1
+                                                 : r.top() + kCornerPx;
+        setGeometry(x, y, qMax(0, w), qMax(0, h));
+        setVisible(!m_panel->isHidden());
+        raise();
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Move:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::ShowToParent:
+        case QEvent::HideToParent:
+            place();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    static Qt::CursorShape cursorFor(Qt::Edges edges)
+    {
+        if (edges == (Qt::TopEdge | Qt::LeftEdge) ||
+            edges == (Qt::BottomEdge | Qt::RightEdge))
+            return Qt::SizeFDiagCursor;
+        if (edges == (Qt::TopEdge | Qt::RightEdge) ||
+            edges == (Qt::BottomEdge | Qt::LeftEdge))
+            return Qt::SizeBDiagCursor;
+        if (edges & (Qt::LeftEdge | Qt::RightEdge))
+            return Qt::SizeHorCursor;
+        return Qt::SizeVerCursor;
+    }
+
+    QPointer<QWidget> m_panel;
+    QPointer<QWidget> m_bar;
+    Qt::Edges m_edges;
 };
 
 constexpr int kComposerIconPx = 16;
@@ -2623,11 +2747,13 @@ QWidget *MainWindow::buildChatPage()
     for (int index = 3; index <= 8; ++index)
         addDeferredSection();
     m_sectionStack->addWidget(new QWidget);              // 9 retired Firewall redirect
-    for (int index = 10; index <= kProjectSettingsSectionIndex; ++index)
+    for (int index = 10; index <= kTerminalsSectionIndex; ++index)
         addDeferredSection();
     logStartup(QStringLiteral("  buildChatPage: secondary sections deferred"));
 
     auto *content = new QWidget;
+    content->setObjectName(QStringLiteral("shellContentCard"));
+    content->setAttribute(Qt::WA_StyledBackground, true);
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
@@ -2677,7 +2803,8 @@ QWidget *MainWindow::buildChatPage()
     m_appNavigationRailLayout->setSpacing(1);
     railOuterLayout->addLayout(m_appNavigationRailLayout, 1);
     for (QPushButton *button :
-         {m_homeGridNavButton, m_agentsNavButton, m_reposNavButton,
+         {m_homeGridNavButton, m_sessionsNavButton, m_agentsNavButton,
+          m_reposNavButton,
           m_marketNavButton, m_ledgerNavButton, m_chatButton,
           m_controlNodeNavButton,
           m_networkNavButton, m_usersNavButton, m_teamNavButton,
@@ -2716,15 +2843,29 @@ QWidget *MainWindow::buildChatPage()
     m_appNavigationRail = railScroll;
     applyRailCaptionPreference();
 
+    auto *railColumn = new QWidget;
+    railColumn->setObjectName(QStringLiteral("appNavigationRailColumn"));
+    auto *railColumnLayout = new QVBoxLayout(railColumn);
+    railColumnLayout->setContentsMargins(0, 0, 0, 0);
+    railColumnLayout->setSpacing(0);
+    railColumnLayout->addWidget(
+        forkmesh::ui::NextAccess::buildSidebarHeader(*this));
+    railColumnLayout->addWidget(railScroll, 1);
+    railColumnLayout->addWidget(buildWorkflowPinStrip(QStringLiteral("left")), 0,
+                                Qt::AlignHCenter);
+    railColumnLayout->addWidget(
+        forkmesh::ui::NextAccess::buildSidebarFooter(*this));
+
     auto *lower = new QWidget;
     auto *lowerLayout = new QHBoxLayout(lower);
     lowerLayout->setContentsMargins(0, 0, 0, 0);
     lowerLayout->setSpacing(0);
-    lowerLayout->addWidget(railScroll);
+    lowerLayout->addWidget(railColumn);
     lowerLayout->addWidget(forkmesh::ui::NextAccess::railResizeHandle(*this));
     lowerLayout->addWidget(shell, 1);
     lowerLayout->addWidget(buildPackageRail());
-    lowerLayout->addWidget(buildTeammateRail());
+    restoreTeammateRunState();
+    lowerLayout->addWidget(buildSideRail());
 
     auto *root = new QVBoxLayout(page);
     root->setContentsMargins(0, 0, 0, 0);
@@ -2886,6 +3027,8 @@ QWidget *MainWindow::buildStatusBar()
     row->addWidget(m_footerWorktreeInfo);
     row->addWidget(m_footerCommitInfo);
     row->addWidget(m_footerGitIdentity);
+    row->addWidget(buildWorkflowPinStrip(QStringLiteral("bottom")), 0,
+                   Qt::AlignVCenter);
     row->addStretch(1);
     row->addWidget(m_statusBackgroundHost);
     row->addStretch(1);
@@ -2928,17 +3071,18 @@ QWidget *MainWindow::buildStatusBar()
         m_resourceChart->setFixedSize(40, 40);
         debugRow->addWidget(m_resourceChart, 0, Qt::AlignVCenter);
     }
-    auto *uptimeTile = new ResourceSparkline(QStringLiteral("UP"), debugContent,
-                                             40, 2);
+    QVector<ResourceSparkline *> debugTiles;
+    auto *uptimeTile = new ResourceSparkline(
+        QStringLiteral("UP"), debugContent, kResourceSparklineCompactSide, 2);
     m_debugUptimeTile = uptimeTile;
     uptimeTile->setObjectName(QStringLiteral("debugUptimeTile"));
     uptimeTile->setAccessibleName(QStringLiteral("ForkMesh session uptime"));
     uptimeTile->setToolTip(
         QStringLiteral("How long this ForkMesh window has been running"));
-    debugRow->addWidget(uptimeTile, 0, Qt::AlignVCenter);
+    debugTiles.append(uptimeTile);
 
-    auto *networkActivityTile =
-        new ResourceSparkline(QStringLiteral("NET"), debugContent, 40, 60);
+    auto *networkActivityTile = new ResourceSparkline(
+        QStringLiteral("NET"), debugContent, kResourceSparklineCompactSide, 60);
     m_debugNetworkActivityTile = networkActivityTile;
     networkActivityTile->setObjectName(
         QStringLiteral("debugNetworkActivityTile"));
@@ -2946,39 +3090,78 @@ QWidget *MainWindow::buildStatusBar()
         QStringLiteral("Live network request activity"));
     networkActivityTile->setToolTip(
         QStringLiteral("Network request attempts per second for this session"));
-    debugRow->addWidget(networkActivityTile, 0, Qt::AlignVCenter);
+    networkActivityTile->setUnit(QStringLiteral("/s"));
+    debugTiles.append(networkActivityTile);
 
-    auto *logActivityTile =
-        new ResourceSparkline(QStringLiteral("LOG"), debugContent, 40, 60);
+    auto *logActivityTile = new ResourceSparkline(
+        QStringLiteral("LOG"), debugContent, kResourceSparklineCompactSide, 60);
     m_debugLogActivityTile = logActivityTile;
     logActivityTile->setObjectName(QStringLiteral("debugLogActivityTile"));
     logActivityTile->setAccessibleName(QStringLiteral("Live log activity"));
     logActivityTile->setToolTip(
         QStringLiteral("Log entries per second for this session"));
-    debugRow->addWidget(logActivityTile, 0, Qt::AlignVCenter);
+    logActivityTile->setUnit(QStringLiteral("/s"));
+    debugTiles.append(logActivityTile);
 
     const struct {
         const char *name;
         const char *label;
         const char *accessible;
+        const char *unit;
         bool healthColors;
     } qtTiles[] = {
-        {"qtDiagnosticLoopTile", "LOOP", "Qt event-loop latency", true},
-        {"qtDiagnosticEventTile", "EVT", "Qt event delivery rate", false},
-        {"qtDiagnosticPaintTile", "PAINT", "Qt paint and layout activity", false},
-        {"qtDiagnosticUiTile", "UI", "Qt widgets and windows", false},
-        {"qtDiagnosticPoolTile", "POOL", "Qt thread pool and timers", true},
+        {"qtDiagnosticLoopTile", "LOOP", "Qt event-loop latency", "ms", true},
+        {"qtDiagnosticEventTile", "EVT", "Qt event delivery rate", "/s", false},
+        {"qtDiagnosticPaintTile", "PAINT", "Qt paint and layout activity", "/s",
+         false},
+        {"qtDiagnosticUiTile", "UI", "Qt widgets and windows", "", false},
+        {"qtDiagnosticPoolTile", "POOL", "Qt thread pool and timers", "", true},
     };
     for (const auto &definition : qtTiles) {
-        auto *tile = new ResourceSparkline(
-            QString::fromLatin1(definition.label), debugContent, 40, 60);
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label),
+                                           debugContent,
+                                           kResourceSparklineCompactSide, 60);
         tile->setObjectName(QString::fromLatin1(definition.name));
         tile->setAccessibleName(QString::fromLatin1(definition.accessible));
         tile->setHealthColorsEnabled(definition.healthColors);
+        tile->setUnit(QString::fromLatin1(definition.unit));
         tile->setToolTip(QStringLiteral("Open Qt runtime diagnostics"));
         tile->onClicked = [this] { showQtDiagnosticsDialog(); };
         m_qtDiagnosticTiles.append(tile);
-        debugRow->addWidget(tile, 0, Qt::AlignVCenter);
+        debugTiles.append(tile);
+    }
+    const struct {
+        QWidget **slot;
+        const char *name;
+        const char *label;
+        const char *accessible;
+    } diskTiles[] = {
+        {&m_debugTmpDataTile, "debugTmpDataTile", "DATA", "Data on the TMP disk"},
+        {&m_debugUsbTile, "debugUsbLinkTile", "USB", "USB drive link speed"},
+        {&m_debugTmpTile, "debugTmpDiskTile", "TMP", "TMP fast disk"},
+    };
+    for (const auto &definition : diskTiles) {
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label), debugContent,
+                                           kResourceSparklineCompactSide, 2);
+        tile->setObjectName(QString::fromLatin1(definition.name));
+        tile->setAccessibleName(QString::fromLatin1(definition.accessible));
+        tile->setLoading(true);
+        tile->onClicked = [this] { refreshFastScratchDisk(false); };
+        *definition.slot = tile;
+        debugTiles.append(tile);
+    }
+    for (int first = 0; first < debugTiles.size(); first += 4) {
+        auto *quad = new QWidget(debugContent);
+        quad->setObjectName(QStringLiteral("debugTileQuad"));
+        quad->setFixedSize(40, 40);
+        auto *grid = new QGridLayout(quad);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(2);
+        for (int i = first; i < qMin(first + 4, int(debugTiles.size())); ++i) {
+            debugTiles.at(i)->setHoverCardEnabled(true);
+            grid->addWidget(debugTiles.at(i), (i - first) / 2, (i - first) % 2);
+        }
+        debugRow->addWidget(quad, 0, Qt::AlignVCenter);
     }
     auto *separator = new QFrame;
     separator->setObjectName(QStringLiteral("debugBarSeparator"));
@@ -3037,50 +3220,37 @@ QWidget *MainWindow::buildStatusBar()
                 menu->popup(logTailButton->mapToGlobal(pos));
             });
 
-    auto *copyDiagnosticsButton = new ActivityRailButton(QStringLiteral("copy"),
-                                                         QStringLiteral("Report"));
-    m_debugCopyDiagnosticsButton = copyDiagnosticsButton;
-    copyDiagnosticsButton->setObjectName("topNavButton");
-    copyDiagnosticsButton->setAccessibleName(QStringLiteral("Copy diagnostic report"));
-    copyDiagnosticsButton->setCheckable(false);
-    copyDiagnosticsButton->setCursor(Qt::PointingHandCursor);
-    copyDiagnosticsButton->setToolTip(QString::fromUtf8(
-        "Copy diagnostic report \xE2\x80\x94 errors, stalls, crashes, resource "
-        "findings and fix-it instructions to paste into an agent. Each copy "
-        "compares itself with the last one, so it shows what got fixed and "
-        "what is new. Right-click to send it straight to a new agent"));
-    connect(copyDiagnosticsButton, &QPushButton::clicked, this,
-            &MainWindow::copyDiagnosticsReport);
-    copyDiagnosticsButton->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(copyDiagnosticsButton, &QWidget::customContextMenuRequested, this,
-            [this, copyDiagnosticsButton](const QPoint &pos) {
+    auto *diagnosticsButton = new ActivityRailButton(QStringLiteral("pulse"),
+                                                     QStringLiteral("Diagnose"));
+    m_debugDiagnosticsButton = diagnosticsButton;
+    diagnosticsButton->setObjectName(QStringLiteral("topNavButton"));
+    diagnosticsButton->setAccessibleName(QStringLiteral("Diagnose"));
+    diagnosticsButton->setCheckable(false);
+    diagnosticsButton->setCursor(Qt::PointingHandCursor);
+    diagnosticsButton->setToolTip(QStringLiteral(
+        "Start an agent with the selected model and a diagnostic snapshot to "
+        "fix errors, crashes and stalls and optimize resource usage. Turns red "
+        "when a performance, security or UI issue is detected. Right-click to "
+        "copy the report instead"));
+    connect(diagnosticsButton, &QPushButton::clicked, this,
+            &MainWindow::sendDiagnosticsReportToAgent);
+    diagnosticsButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(diagnosticsButton, &QWidget::customContextMenuRequested, this,
+            [this, diagnosticsButton](const QPoint &pos) {
                 auto *menu = new QMenu(this);
                 menu->setAttribute(Qt::WA_DeleteOnClose);
-                menu->addAction(QStringLiteral("Copy diagnostic report"), this,
-                                [this] { copyDiagnosticsReport(); });
                 menu->addAction(QStringLiteral("Send report to a new agent"), this,
                                 [this] { sendDiagnosticsReportToAgent(); });
+                menu->addAction(QStringLiteral("Copy diagnostic report"), this,
+                                [this] { copyDiagnosticsReport(); });
                 menu->addSeparator();
                 menu->addAction(QStringLiteral("Start comparisons over"), this,
                                 [this] { resetDiagnosticsReportBaseline(); });
-                menu->popup(copyDiagnosticsButton->mapToGlobal(pos));
+                menu->popup(diagnosticsButton->mapToGlobal(pos));
             });
 
-    auto *sendDiagnosticsButton = new ActivityRailButton(
-        QStringLiteral("rocket"), QStringLiteral("Send diagnostic"));
-    sendDiagnosticsButton->setObjectName(QStringLiteral("sendDiagnosticsButton"));
-    sendDiagnosticsButton->setAccessibleName(QStringLiteral("Send diagnostic"));
-    sendDiagnosticsButton->setCheckable(false);
-    sendDiagnosticsButton->setCursor(Qt::PointingHandCursor);
-    sendDiagnosticsButton->setToolTip(QStringLiteral(
-        "Start a desktop agent with a diagnostic snapshot to fix errors, "
-        "investigate crashes and stalls, and optimize resource usage"));
-    connect(sendDiagnosticsButton, &QPushButton::clicked, this,
-            &MainWindow::sendDiagnosticsReportToAgent);
-
     for (QPushButton *tool : {m_navRebuildButton, m_navResizeButton,
-                              static_cast<QPushButton *>(copyDiagnosticsButton),
-                              static_cast<QPushButton *>(sendDiagnosticsButton),
+                              static_cast<QPushButton *>(diagnosticsButton),
                               static_cast<QPushButton *>(logTailButton)})
         if (tool)
             debugToolsRow->addWidget(tool, 0, Qt::AlignVCenter);
@@ -3234,36 +3404,29 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddHistory = QSettings().value(kQuickAddHistorySetting).toStringList();
     forkmesh::logStartupTrace(QStringLiteral("  logDock: composer built"));
 
-    m_quickAddCharCount = new QLabel;
-    m_quickAddCharCount->setObjectName("quickAddCharCount");
-    m_quickAddCharCount->setToolTip("Characters remaining in the quick-add title");
-    m_quickAddCharCount->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_quickAddCharCount->setFixedWidth(
-        m_quickAddCharCount->fontMetrics().horizontalAdvance(
-            QString::number(kQuickAddMaxChars)) +
-        6);
-    auto updateQuickAddCharCount = [this, kQuickAddMaxChars]() {
-        const int remaining =
-            kQuickAddMaxChars - m_issueQuickAdd->toPlainText().length();
-        m_quickAddCharCount->setText(QString::number(remaining));
-        m_quickAddCharCount->setStyleSheet(Theme::remapSheet(QStringLiteral(
-            "QLabel#quickAddCharCount{color:%1;font-size:11px;}")
-                .arg(remaining <= 20 ? QStringLiteral("#d29922")
-                                     : QStringLiteral("#8b949e"))));
-    };
+    m_promptChannelButton = new QPushButton;
+    m_promptChannelButton->setObjectName(QStringLiteral("promptChannelButton"));
+    m_promptChannelButton->setCursor(Qt::PointingHandCursor);
+    m_promptChannelButton->setFlat(true);
+    {
+        QFont small = m_promptChannelButton->font();
+        small.setPixelSize(11);
+        m_promptChannelButton->setFont(small);
+    }
+    m_promptChannelButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    connect(m_promptChannelButton, &QPushButton::clicked, this,
+            &MainWindow::showPromptChannelMenu);
     connect(m_issueQuickAdd, &QPlainTextEdit::textChanged, this,
-            [this, updateQuickAddCharCount, kQuickAddMaxChars] {
+            [this, kQuickAddMaxChars] {
                 const QString text = m_issueQuickAdd->toPlainText();
                 if (text.length() > kQuickAddMaxChars) {
                     const QSignalBlocker block(m_issueQuickAdd);
                     m_issueQuickAdd->setPlainText(text.left(kQuickAddMaxChars));
                     m_issueQuickAdd->moveCursor(QTextCursor::End);
                 }
-                updateQuickAddCharCount();
                 if (!m_quickAddHistoryNavigating)
                     m_quickAddHistoryIndex = -1;
             });
-    updateQuickAddCharCount();
 
     // Keep what is being typed on disk so a restart or crash mid-prompt puts it
     // back. Edits coalesce for a moment before the write, and quitting flushes
@@ -3835,12 +3998,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptWrapper = promptWrapper;
     promptWrapper->setObjectName("promptWrapper");
     auto *chatPreview = new ChatPreviewLabel;
-    chatPreview->onClicked = [this] {
-        if (!promptChatRoom().isEmpty())
+    chatPreview->onClicked = [this](const QString &conversation) {
+        if (conversation.isEmpty())
             return;
-        const int sessionId = m_promptChatSessionId;
-        if (sessionId >= 0 && findAgentSession(sessionId))
-            showAgentSession(sessionId);
+        switchConversation(conversation);
+        showSection(2);
     };
     chatPreview->hide();
     m_promptChatPreview = chatPreview;
@@ -3862,21 +4024,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     promptHandle->installEventFilter(this);
     auto *promptHandleRow = new QHBoxLayout(promptHandle);
     promptHandleRow->setContentsMargins(FloatingPromptBar::kFadePx, 2,
-                                        next ? 6 : 3, 2);
+                                        PromptResizeEdge::kCornerPx, 2);
     promptHandleRow->setSpacing(4);
     const int handleButtonPx = next ? 20 : 16;
 
-    m_promptResizeGrip = new QFrame;
-    m_promptResizeGrip->setObjectName(QStringLiteral("promptResizeGrip"));
-    m_promptResizeGrip->setFixedSize(12, 12);
-    m_promptResizeGrip->setCursor(Qt::SizeBDiagCursor);
-    m_promptResizeGrip->setToolTip(QStringLiteral("Drag to resize the prompt"));
-    m_promptResizeGrip->installEventFilter(this);
-
-    // Right of the resize grip: wipe a half-typed prompt in one click (adhoc
-    // #1634). Same 16px footprint and its own object name as the reset/pop-out
-    // pair at the other end of the strip, so it reads as one family of tiny
-    // controls rather than a button borrowed from the toolbar below.
+    // Wipe a half-typed prompt in one click (adhoc #1634).
     m_promptClearButton = new QPushButton;
     m_promptClearButton->setObjectName(QStringLiteral("promptClearButton"));
     m_promptClearButton->setCursor(Qt::PointingHandCursor);
@@ -3972,7 +4124,8 @@ QWidget *MainWindow::buildNetworkLogDock()
         updateVibeTip(on);
         QSettings().setValue(QStringLiteral("agents/composerVibe"), on);
     });
-    promptHandleRow->addWidget(m_quickAddCharCount, 0);
+    m_promptChannelButton->setFixedHeight(handleButtonPx);
+    promptHandleRow->addWidget(m_promptChannelButton, 0);
     promptHandleRow->addWidget(m_promptWorktreeCheck, 0);
     promptHandleRow->addWidget(m_promptCloudButton, 0);
     promptHandleRow->addWidget(m_promptVibeCheck, 0);
@@ -3990,20 +4143,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     connect(m_promptResetButton, &QPushButton::clicked, this,
             &MainWindow::resetPromptOverlayPlacement);
     promptHandleRow->addWidget(m_promptResetButton, 0);
-
-    m_promptDetachButton = new QPushButton;
-    m_promptDetachButton->setObjectName(QStringLiteral("promptDetachButton"));
-    m_promptDetachButton->setCursor(Qt::PointingHandCursor);
-    m_promptDetachButton->setFixedSize(handleButtonPx, handleButtonPx);
-    setComposerIconTone(m_promptDetachButton);
-    setOcticon(m_promptDetachButton, "screen-full", next ? 14 : 10);
-    m_promptDetachButton->setToolTip(
-        QStringLiteral("Pop the prompt out into its own window"));
-    connect(m_promptDetachButton, &QPushButton::clicked, this,
-            [this] { setPromptOverlayDetached(!m_promptOverlayDetached); });
-    promptHandleRow->addWidget(m_promptDetachButton, 0);
-    promptHandleRow->addSpacing(2);
-    promptHandleRow->addWidget(m_promptResizeGrip, 0, Qt::AlignTop);
+    refreshQuickAddSendToChannelButton();
 
     auto *promptStack = new QVBoxLayout(promptWrapper);
     promptStack->setContentsMargins(0, 0, 0, 0);
@@ -4025,6 +4165,10 @@ QWidget *MainWindow::buildNetworkLogDock()
 
     promptWrapper->setMinimumWidth(0);
     promptWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    for (QWidget *surface : promptWrapper->findChildren<QWidget *>())
+        if (isPromptDragSurface(surface, promptWrapper, promptHandle))
+            surface->installEventFilter(this);
+    promptWrapper->installEventFilter(this);
 
     auto *promptOverlayHost = new QWidget;
     m_promptOverlayHost = promptOverlayHost;
@@ -4040,6 +4184,16 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_userAvatarNavButton->setToolTip(
         QStringLiteral("Collapse the prompt overlay (Settings remains in the rail)"));
     m_userAvatarNavButton->raise();
+    for (const Qt::Edges edges :
+         {Qt::Edges(Qt::TopEdge), Qt::Edges(Qt::BottomEdge),
+          Qt::Edges(Qt::LeftEdge), Qt::Edges(Qt::RightEdge),
+          Qt::TopEdge | Qt::LeftEdge, Qt::TopEdge | Qt::RightEdge,
+          Qt::BottomEdge | Qt::LeftEdge, Qt::BottomEdge | Qt::RightEdge}) {
+        auto *edge = new PromptResizeEdge(promptOverlayHost, promptWrapper,
+                                          promptHandle, edges);
+        edge->installEventFilter(this);
+        m_promptResizeEdges.append(edge);
+    }
 
     m_footerUpdateLog = new QTextEdit;
     m_footerUpdateLog->setObjectName("footerUpdateLog");
@@ -4161,6 +4315,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         lights->onStallClicked = [this] { sendStallReportToComposer(); };
         lights->onStallContextMenu = [this] { showDiagnosticsDialog(); };
     }
+    syncDebugActivityLightCategories();
     attachDebugActivityLights();
 
     auto *dockRow = new QHBoxLayout(dock);
@@ -4223,6 +4378,20 @@ const char kPromptDetachedSetting[] = "prompt/detached";
 const char kPromptDetachGeometrySetting[] = "prompt/detachGeometry";
 constexpr int kPromptMinWidth = 280;
 constexpr int kPromptMinHeight = 120;
+
+QRect resizedPromptRect(const QRect &start, Qt::Edges edges, const QPoint &delta)
+{
+    QRect rect = start;
+    if (edges & Qt::LeftEdge)
+        rect.setLeft(qMin(start.left() + delta.x(), start.right() + 1 - kPromptMinWidth));
+    if (edges & Qt::RightEdge)
+        rect.setRight(qMax(start.right() + delta.x(), start.left() + kPromptMinWidth - 1));
+    if (edges & Qt::TopEdge)
+        rect.setTop(qMin(start.top() + delta.y(), start.bottom() + 1 - kPromptMinHeight));
+    if (edges & Qt::BottomEdge)
+        rect.setBottom(qMax(start.bottom() + delta.y(), start.top() + kPromptMinHeight - 1));
+    return rect;
+}
 } // namespace
 
 void MainWindow::clampPromptOverlayIntoHost()
@@ -4307,14 +4476,6 @@ void MainWindow::setPromptOverlayDetached(bool detached)
         }
         m_promptOverlayHost->show();
     }
-    if (m_promptDetachButton) {
-        setOcticon(m_promptDetachButton,
-                   m_promptOverlayDetached ? "sign-in" : "screen-full", 10);
-        m_promptDetachButton->setToolTip(
-            m_promptOverlayDetached
-                ? QStringLiteral("Dock the prompt back into the window")
-                : QStringLiteral("Pop the prompt out into its own window"));
-    }
     positionGlobalFooterOverlays();
     savePromptOverlayPlacement();
 }
@@ -4385,14 +4546,15 @@ void MainWindow::resetPromptOverlayPlacement()
 void MainWindow::savePromptOverlayPlacement()
 {
     QSettings settings;
-    settings.setValue(QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    settings.setValue(QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    settings.setValue(QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    settings.setValue(QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
+    using forkmesh::settings::put;
+    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
+    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
+    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
+    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    settings.setValue(QLatin1String(kPromptDetachGeometrySetting),
-                      m_promptDetachGeometry);
+    put(settings, QLatin1String(kPromptDetachGeometrySetting),
+        m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()
@@ -4411,9 +4573,45 @@ void MainWindow::loadPromptOverlayPlacement()
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
 {
+    if (m_promptDragHandle &&
+        isPromptDragSurface(qobject_cast<QWidget *>(object), m_promptWrapper,
+                            m_promptDragHandle)) {
+        const QEvent::Type type = event->type();
+        if (type != QEvent::MouseButtonPress && type != QEvent::MouseMove &&
+            type != QEvent::MouseButtonRelease)
+            return false;
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        const QPoint cursor = mouse->globalPosition().toPoint();
+        if (type == QEvent::MouseButtonPress) {
+            m_promptBodyPressed = mouse->button() == Qt::LeftButton;
+            m_promptBodyPressPos = cursor;
+            return false;
+        }
+        if (type == QEvent::MouseButtonRelease) {
+            m_promptBodyPressed = false;
+            return false;
+        }
+        if (!m_promptBodyPressed || !(mouse->buttons() & Qt::LeftButton))
+            return false;
+        if ((cursor - m_promptBodyPressPos).manhattanLength() <
+            QApplication::startDragDistance())
+            return true;
+        m_promptBodyPressed = false;
+        QMouseEvent press(QEvent::MouseButtonPress,
+                          m_promptDragHandle->mapFromGlobal(m_promptBodyPressPos),
+                          m_promptBodyPressPos, Qt::LeftButton, Qt::LeftButton,
+                          mouse->modifiers());
+        if (!handlePromptPlacementEvent(m_promptDragHandle, &press))
+            return false;
+        QMouseEvent move(QEvent::MouseMove, m_promptDragHandle->mapFromGlobal(cursor),
+                         cursor, Qt::NoButton, Qt::LeftButton, mouse->modifiers());
+        handlePromptPlacementEvent(m_promptDragHandle, &move);
+        return true;
+    }
     const bool onHandle = object == m_promptDragHandle;
-    const bool onGrip = object == m_promptResizeGrip;
-    if (!onHandle && !onGrip)
+    auto *edgeWidget = qobject_cast<QWidget *>(object);
+    const bool onEdge = edgeWidget && m_promptResizeEdges.contains(edgeWidget);
+    if (!onHandle && !onEdge)
         return false;
     if (!m_promptOverlayHost || !m_globalOverlayHost)
         return false;
@@ -4434,12 +4632,14 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
                 return false;
             m_promptPlacementGrab = mouse->globalPosition().toPoint();
             m_promptPlacementStartRect = m_promptDetachWindow->geometry();
-            if (onGrip) {
+            if (onEdge) {
+                m_promptResizeActiveEdges =
+                    Qt::Edges::fromInt(edgeWidget->property("promptResizeEdges").toInt());
                 QWindow *handle = m_promptDetachWindow->windowHandle();
-                if (handle && handle->startSystemResize(Qt::TopEdge | Qt::RightEdge))
+                if (handle && handle->startSystemResize(m_promptResizeActiveEdges))
                     return true;
                 m_promptDetachResizing = true;
-                m_promptResizeGrip->grabMouse();
+                edgeWidget->grabMouse();
                 return true;
             }
             m_promptDetachDragging = true;
@@ -4468,10 +4668,13 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         m_promptPlacementStartRect =
             QRect(m_promptOverlayPos, m_promptOverlayHost->size());
         m_promptPlacementDragging = onHandle;
-        m_promptPlacementResizing = onGrip;
+        m_promptPlacementResizing = onEdge;
+        if (onEdge)
+            m_promptResizeActiveEdges =
+                Qt::Edges::fromInt(edgeWidget->property("promptResizeEdges").toInt());
         if (onHandle)
             m_promptDragHandle->setCursor(Qt::ClosedHandCursor);
-        (onHandle ? m_promptDragHandle : m_promptResizeGrip)->grabMouse();
+        (onHandle ? m_promptDragHandle : edgeWidget)->grabMouse();
         return true;
     }
     case QEvent::MouseMove: {
@@ -4484,12 +4687,8 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         if (m_promptDetachResizing) {
             if (!m_promptDetachWindow)
                 return true;
-            const QRect start = m_promptPlacementStartRect;
-            const QSize size(qMax(kPromptMinWidth, start.width() + delta.x()),
-                             qMax(kPromptMinHeight, start.height() - delta.y()));
-            m_promptDetachWindow->setGeometry(
-                QRect(QPoint(start.left(), start.bottom() - size.height() + 1),
-                      size));
+            m_promptDetachWindow->setGeometry(resizedPromptRect(
+                m_promptPlacementStartRect, m_promptResizeActiveEdges, delta));
             return true;
         }
         if (m_promptDetachDragging) {
@@ -4519,17 +4718,14 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             }
             m_promptOverlayPos = wanted.topLeft();
         } else {
-            const QSize size(m_promptPlacementStartRect.width() + delta.x(),
-                             m_promptPlacementStartRect.height() - delta.y());
-            m_promptOverlaySize =
-                QSize(qMax(kPromptMinWidth, size.width()),
-                      qMax(kPromptMinHeight, size.height()));
-            m_promptOverlayPos =
-                QPoint(m_promptPlacementStartRect.left(),
-                       m_promptPlacementStartRect.bottom() -
-                           m_promptOverlaySize.height() + 1);
+            const QRect rect =
+                resizedPromptRect(m_promptPlacementStartRect,
+                                  m_promptResizeActiveEdges, delta)
+                    .intersected(QRect(QPoint(), m_globalOverlayHost->size()));
+            m_promptOverlaySize = rect.size();
+            m_promptOverlayPos = rect.topLeft();
         }
-        positionGlobalFooterOverlays();
+        schedulePositionGlobalFooterOverlays();
         m_promptOverlayHost->raise();
         return true;
     }
@@ -4537,7 +4733,7 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         if (!m_promptPlacementDragging && !m_promptPlacementResizing &&
             !m_promptDetachDragging && !m_promptDetachResizing)
             return false;
-        (onHandle ? m_promptDragHandle : m_promptResizeGrip)->releaseMouse();
+        (onHandle ? m_promptDragHandle : edgeWidget)->releaseMouse();
         if (m_promptDetachResizing) {
             m_promptDetachResizing = false;
             savePromptOverlayPlacement();
@@ -4550,6 +4746,8 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             savePromptOverlayPlacement();
             return true;
         }
+        if (m_footerOverlaysPositionQueued)
+            positionGlobalFooterOverlays();
         m_promptPlacementDragging = false;
         m_promptPlacementResizing = false;
         if (m_promptDragHandle)
@@ -4561,6 +4759,20 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
     default:
         return false;
     }
+}
+
+void MainWindow::schedulePositionGlobalFooterOverlays()
+{
+    if (m_footerOverlaysPositionQueued)
+        return;
+    m_footerOverlaysPositionQueued = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_footerOverlaysPositionQueued = false;
+            positionGlobalFooterOverlays();
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::positionGlobalFooterOverlays()
@@ -4608,18 +4820,28 @@ void MainWindow::positionGlobalFooterOverlays()
                                     promptOverDetailPane ? 0 : 8, 0);
         QLayoutItem *spacerSlot = dockRow->itemAt(1);
         QSpacerItem *spacer = spacerSlot ? spacerSlot->spacerItem() : nullptr;
-        if (spacer) {
-            spacer->changeSize(0, 0,
-                               promptOverDetailPane ? QSizePolicy::Fixed
-                                                    : QSizePolicy::Minimum,
-                               QSizePolicy::Minimum);
+        const QSizePolicy::Policy spacerPolicy =
+            promptOverDetailPane ? QSizePolicy::Fixed : QSizePolicy::Minimum;
+        bool rowChanged = false;
+        if (spacer &&
+            (spacer->sizePolicy().horizontalPolicy() != spacerPolicy ||
+             spacer->sizePolicy().verticalPolicy() != QSizePolicy::Minimum ||
+             spacer->sizeHint() != QSize(0, 0))) {
+            spacer->changeSize(0, 0, spacerPolicy, QSizePolicy::Minimum);
+            rowChanged = true;
         }
         dockRow->setStretch(1, promptOverDetailPane ? 0 : 1); // transparent spacer
-        dockRow->setAlignment(
-            m_promptOverlayHost,
-            dockAgentPrompt ? Qt::AlignBottom
-                            : Qt::AlignRight | Qt::AlignBottom);
-        dockRow->invalidate();
+        const Qt::Alignment promptAlignment =
+            dockAgentPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
+        const int promptSlot = dockRow->indexOf(m_promptOverlayHost);
+        QLayoutItem *promptItem =
+            promptSlot >= 0 ? dockRow->itemAt(promptSlot) : nullptr;
+        if (promptItem && promptItem->alignment() != promptAlignment) {
+            dockRow->setAlignment(m_promptOverlayHost, promptAlignment);
+            rowChanged = true;
+        }
+        if (rowChanged)
+            dockRow->invalidate();
     }
     if (m_promptOverlayHost && m_promptWrapper) {
         const bool showPrompt = !m_promptOverlayCollapsed || m_promptOverlayDetached;
@@ -4658,6 +4880,21 @@ void MainWindow::positionGlobalFooterOverlays()
         m_promptOverlayHost->show();
         m_promptOverlayHost->raise();
     }
+    if (m_promptOverlayHost) {
+        const bool homeComposer =
+            Theme::isNext() && !m_promptOverlayDetached && m_sectionStack &&
+            m_sectionStack->currentIndex() == kHomeGridSectionIndex &&
+            m_sectionStack->currentWidget() &&
+            m_sectionStack->currentWidget()->property("homeComposer").toBool();
+        if (homeComposer && !m_promptOverlayHost->isHidden()) {
+            m_promptOverlayHost->setProperty("hiddenForHome", true);
+            m_promptOverlayHost->hide();
+        } else if (!homeComposer &&
+                   m_promptOverlayHost->property("hiddenForHome").toBool()) {
+            m_promptOverlayHost->setProperty("hiddenForHome", false);
+            m_promptOverlayHost->show();
+        }
+    }
     // setGeometry() clamps to the dock's pinned height, so the top edge has to
     // be measured against that same clamped value. A floating or detached
     // prompt leaves the row empty and collapses the layout's size hint to the
@@ -4691,7 +4928,6 @@ void MainWindow::positionGlobalFooterOverlays()
             ? detailRect.width()
             : qMax(0, m_globalOverlayHost->width() - 2 * kHorizontalMargin),
         height);
-    m_footerDock->show();
     m_footerDock->raise();
     if (m_promptOverlayHost && m_userAvatarNavButton) {
         const int x = m_promptOverlayCollapsed ? 4 : 8;
@@ -6782,18 +7018,6 @@ QString MainWindow::promptChatRoom() const
     return m_currentConversation;
 }
 
-int MainWindow::promptChatTargetSessionId() const
-{
-    const int onScreen = quickAddFollowUpAgentSessionId();
-    const int target = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
-    if (target < 0)
-        return -1;
-    for (const AgentSession &session : m_agentSessions)
-        if (session.id == target)
-            return target;
-    return -1;
-}
-
 void MainWindow::schedulePromptChatPreview()
 {
     if (!m_promptChatPreview)
@@ -6818,14 +7042,16 @@ void MainWindow::refreshPromptChatPreview()
     QPixmap ownFace = roundedAvatar(effectiveUserAvatar(), avatarPx, 0.5);
     if (ownFace.isNull())
         ownFace = chatActorAvatar(QString(), chatDisplayName(), avatarPx);
-    const QString room = promptChatRoom();
-    const int sessionId = room.isEmpty() ? promptChatTargetSessionId() : -1;
-    const AgentSession *session = findAgentSession(sessionId);
-    QList<ChatPreviewLabel::Line> lines;
-    if (!room.isEmpty()) {
-        const QList<ChatMessage> history = m_history.value(room);
-        for (int index = history.size() - 1; index >= 0 && lines.size() < 3;
-             --index) {
+    struct Recent {
+        QString conversation;
+        const ChatMessage *message = nullptr;
+        QString text;
+    };
+    QList<Recent> recent;
+    for (auto it = m_history.constBegin(); it != m_history.constEnd(); ++it) {
+        const QList<ChatMessage> &history = it.value();
+        int taken = 0;
+        for (qsizetype index = history.size() - 1; index >= 0 && taken < 3; --index) {
             const ChatMessage &message = history.at(index);
             if (message.deleted || !message.threadRootId.isEmpty())
                 continue;
@@ -6834,77 +7060,44 @@ void MainWindow::refreshPromptChatPreview()
                 text = message.fileName;
             if (text.isEmpty())
                 continue;
-            const QString who = message.self ? QStringLiteral("You")
-                                : message.senderName.trimmed().isEmpty()
-                                    ? message.senderId
-                                    : message.senderName.trimmed();
-            lines.prepend({who, text, message.self,
-                           message.self ? ownFace
-                                        : chatActorAvatar(message.senderId,
-                                                          message.senderName,
-                                                          avatarPx)});
-        }
-    } else if (session) {
-        QString agent = agentModelShortLabel(session->model);
-        if (agent.isEmpty())
-            agent = QStringLiteral("Agent");
-        const QPixmap agentFace =
-            agentModelIcon(session->provider, session->model)
-                .pixmap(QSize(avatarPx, avatarPx), iconDevicePixelRatio());
-        const auto lastParagraph = [](const QString &text) {
-            const QStringList parts =
-                text.trimmed().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-            for (auto it = parts.crbegin(); it != parts.crend(); ++it) {
-                const QString line = it->simplified();
-                if (!line.isEmpty() && line != QLatin1String("```"))
-                    return line;
-            }
-            return QString();
-        };
-        const QList<QJsonObject> events = m_streamEvents.value(sessionId);
-        for (int index = events.size() - 1; index >= 0 && lines.size() < 3; --index) {
-            const QJsonObject &event = events.at(index);
-            const QString type = event.value(QStringLiteral("type")).toString();
-            QString text;
-            bool mine = false;
-            if (type == QLatin1String("_local_user")) {
-                text = event.value(QStringLiteral("text")).toString();
-                mine = true;
-            } else if (type == QLatin1String("_codex_agent_complete")) {
-                text = event.value(QStringLiteral("text")).toString();
-            } else if (type == QLatin1String("assistant") || type == QLatin1String("user")) {
-                const QJsonValue content = event.value(QStringLiteral("message"))
-                                               .toObject()
-                                               .value(QStringLiteral("content"));
-                if (content.isString()) {
-                    text = content.toString();
-                } else {
-                    for (const QJsonValue &block : content.toArray()) {
-                        const QJsonObject part = block.toObject();
-                        if (part.value(QStringLiteral("type")).toString() ==
-                            QLatin1String("text"))
-                            text += part.value(QStringLiteral("text")).toString() +
-                                    QLatin1Char('\n');
-                    }
-                }
-                mine = type == QLatin1String("user");
-            }
-            text = lastParagraph(text);
-            if (text.isEmpty())
-                continue;
-            lines.prepend({mine ? QStringLiteral("You") : agent, text, mine,
-                           mine ? ownFace : agentFace});
-        }
-        if (lines.isEmpty()) {
-            const QString reply = lastParagraph(m_lastAssistantText.value(sessionId));
-            const QString asked = lastParagraph(session->prompt);
-            if (!asked.isEmpty())
-                lines.append({QStringLiteral("You"), asked, true, ownFace});
-            if (!reply.isEmpty())
-                lines.append({agent, reply, false, agentFace});
+            recent.append({it.key(), &message, text});
+            ++taken;
         }
     }
-    m_promptChatSessionId = lines.isEmpty() || !room.isEmpty() ? -1 : sessionId;
+    std::stable_sort(recent.begin(), recent.end(), [](const Recent &a, const Recent &b) {
+        return a.message->timestampMs > b.message->timestampMs;
+    });
+    if (recent.size() > 3)
+        recent.resize(3);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const auto when = [now](qint64 timestampMs) {
+        if (timestampMs <= 0)
+            return QString();
+        const qint64 seconds = qMax<qint64>(0, (now - timestampMs) / 1000);
+        if (seconds < 60)
+            return QStringLiteral("now");
+        if (seconds < 3600)
+            return QStringLiteral("%1m").arg(seconds / 60);
+        if (seconds < 86400)
+            return QStringLiteral("%1h").arg(seconds / 3600);
+        if (seconds < 86400 * 7)
+            return QStringLiteral("%1d").arg(seconds / 86400);
+        return QLocale().toString(QDateTime::fromMSecsSinceEpoch(timestampMs).date(),
+                                  QStringLiteral("MMM d"));
+    };
+    QList<ChatPreviewLabel::Line> lines;
+    for (auto it = recent.crbegin(); it != recent.crend(); ++it) {
+        const ChatMessage &message = *it->message;
+        const QString who = message.self ? QStringLiteral("You")
+                            : message.senderName.trimmed().isEmpty()
+                                ? message.senderId
+                                : message.senderName.trimmed();
+        lines.append({it->conversation, chatConversationLabel(it->conversation), who,
+                      when(message.timestampMs), it->text, message.self,
+                      message.self ? ownFace
+                                   : chatActorAvatar(message.senderId,
+                                                     message.senderName, avatarPx)});
+    }
     const bool wasShown = !preview->isHidden();
     preview->setLines(lines);
     preview->setVisible(!lines.isEmpty());
@@ -6926,18 +7119,30 @@ void MainWindow::refreshPromptChatPreview()
 
 void MainWindow::refreshQuickAddSendToChannelButton()
 {
-    QPushButton *button = m_quickAddSendToChannelButton;
-    if (!button)
-        return;
     const QString channel = m_currentConversation.isEmpty()
                                 ? QString()
                                 : chatConversationLabel(m_currentConversation);
-    const QString shown = button->fontMetrics().elidedText(
-        channel.isEmpty() ? QString::fromUtf8("\xE2\x80\x94") : channel,
-        Qt::ElideRight, 120);
-    const QString label = QStringLiteral("send to: %1").arg(shown);
-    if (button->text() != label)
-        button->setText(label);
+    if (QPushButton *picker = m_promptChannelButton) {
+        const QString shown = picker->fontMetrics().elidedText(
+            channel.isEmpty() ? QStringLiteral("no channel") : channel,
+            Qt::ElideRight, 140);
+        const QString label = shown + QString::fromUtf8(" \xE2\x96\xBE");
+        if (picker->text() != label)
+            picker->setText(label);
+        picker->setToolTip(
+            channel.isEmpty()
+                ? QStringLiteral("Pick the chat channel or person this prompt can be sent to")
+                : QStringLiteral("Chatting in %1. Click to switch channel or message a person.")
+                      .arg(channel));
+        picker->setAccessibleName(channel.isEmpty()
+                                      ? QStringLiteral("Chat channel")
+                                      : QStringLiteral("Chat channel %1").arg(channel));
+    }
+    QPushButton *button = m_quickAddSendToChannelButton;
+    if (!button)
+        return;
+    if (button->text() != QLatin1String("chat"))
+        button->setText(QStringLiteral("chat"));
     button->setEnabled(!channel.isEmpty());
     button->setToolTip(
         channel.isEmpty()
@@ -6949,6 +7154,103 @@ void MainWindow::refreshQuickAddSendToChannelButton()
     button->setAccessibleName(channel.isEmpty()
                                   ? QStringLiteral("Send to chat")
                                   : QStringLiteral("Send to %1").arg(channel));
+}
+
+int MainWindow::promptChannelUserCount(const QString &conversation) const
+{
+    if (m_officeChannelMirror) {
+        if (const int members =
+                m_officeChannelMirror->memberCountForConversation(conversation);
+            members > 0)
+            return members;
+    }
+    if (conversation == m_currentConversation && m_chatMembersButton) {
+        bool ok = false;
+        const int shown = m_chatMembersButton->text().toInt(&ok);
+        if (ok && shown > 0)
+            return shown;
+    }
+    QSet<QString> senders;
+    for (const ChatMessage &message : m_history.value(conversation)) {
+        if (message.self)
+            senders.insert(QString());
+        else if (!message.senderId.isEmpty())
+            senders.insert(message.senderId);
+    }
+    senders.insert(QString());
+    return int(senders.size());
+}
+
+void MainWindow::showPromptChannelMenu()
+{
+    if (!m_promptChannelButton)
+        return;
+    const auto isDirect = [](const QString &conversation) {
+        return isDirectConversation(conversation) ||
+               forkmesh::office::isDirectOfficeConversation(conversation);
+    };
+    QStringList conversations = m_channels;
+    QStringList directs;
+    for (const QString &peerId : std::as_const(m_openDms))
+        directs.append(dmKey(peerId));
+    for (const QString &conversation : std::as_const(m_officeDirectConversations))
+        if (!forkmesh::office::directPeerForConversation(conversation).isEmpty() &&
+            !directs.contains(conversation))
+            directs.append(conversation);
+    for (const QString &conversation : unlistedChatConversations()) {
+        QStringList &into = isDirect(conversation) ? directs : conversations;
+        if (!into.contains(conversation))
+            into.append(conversation);
+    }
+    if (!m_currentConversation.isEmpty()) {
+        QStringList &into = isDirect(m_currentConversation) ? directs : conversations;
+        if (!into.contains(m_currentConversation))
+            into.prepend(m_currentConversation);
+    }
+    auto *menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setObjectName(QStringLiteral("promptChannelMenu"));
+    const auto addRow = [this, menu](const QString &conversation) {
+        int chats = 0;
+        for (const ChatMessage &message : m_history.value(conversation))
+            if (!message.deleted && message.threadRootId.isEmpty())
+                ++chats;
+        const int users = promptChannelUserCount(conversation);
+        const QString counts =
+            QString::fromUtf8("%1 %2 \xC2\xB7 %3 %4")
+                .arg(users)
+                .arg(users == 1 ? QStringLiteral("user") : QStringLiteral("users"))
+                .arg(chats)
+                .arg(chats == 1 ? QStringLiteral("chat") : QStringLiteral("chats"));
+        QAction *action = menu->addAction(
+            QStringLiteral("%1\t%2").arg(chatConversationLabel(conversation), counts));
+        action->setData(conversation);
+        action->setCheckable(true);
+        action->setChecked(conversation == m_currentConversation);
+        connect(action, &QAction::triggered, this, [this, conversation] {
+            switchConversation(conversation);
+            refreshQuickAddSendToChannelButton();
+            schedulePromptChatPreview();
+        });
+    };
+    if (conversations.isEmpty()) {
+        menu->addAction(QStringLiteral("No chat channels yet"))->setEnabled(false);
+    }
+    for (const QString &conversation : std::as_const(conversations))
+        addRow(conversation);
+    menu->addSection(QStringLiteral("Direct messages"));
+    for (const QString &conversation : std::as_const(directs))
+        addRow(conversation);
+    QAction *person = menu->addAction(QString::fromUtf8("Message someone\xE2\x80\xA6"));
+    person->setObjectName(QStringLiteral("promptChannelMessagePerson"));
+    person->setToolTip(QStringLiteral("Pick a person and send this prompt to them directly"));
+    connect(person, &QAction::triggered, this, [this] {
+        showNewMessageDialog();
+        refreshQuickAddSendToChannelButton();
+        schedulePromptChatPreview();
+    });
+    menu->popup(m_promptChannelButton->mapToGlobal(
+        QPoint(0, m_promptChannelButton->height())));
 }
 
 void MainWindow::sendQuickAddToChannel()

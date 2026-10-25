@@ -24,6 +24,7 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list ([voice.md](voice.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
@@ -341,6 +342,14 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   attributes, records `WORLD_BOOT.interactive()` and fires
   `forkmesh:world-interactive`. The WebGL fallback, an import failure and a
   10 s watchdog also remove the card.
+- **Compact retry before the fallback.** `prepareWorldRenderer()` opens the
+  WebGL2 context early. If the full plan's context cannot be created (a
+  software GL such as Mesa llvmpipe, or a GPU process that fails
+  `BindToCurrentSequence`), it tries once more with the compact plan
+  (no antialias, default power preference) and, if that one opens, switches
+  the visit to safe mode so `createWorldScene` builds the matching compact
+  renderer. The "could not start the 3D renderer" fallback shows only when
+  both fail. A context whose `WebGLRenderer` throws is released at once.
 - **Sliced construction.** `createWorldScene` yields between slices; frames
   hold up to 32 ms of construction work. Construction-time canvases queue
   their painter; first-view plates paint before the reveal and the rest in
@@ -387,7 +396,13 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
 - **Performance bar and profiler** (`createWorldProfiler`, only while an
   admin bar is shown): frame phases, per-callback cost, draw-call attribution
   by World element, GPU timer queries; `auditWorldScene` finds duplicate
-  geometries/materials, instancing candidates and culling opt-outs.
+  geometries/materials, instancing candidates and culling opt-outs. Both
+  copy paths (the drawer's Copy button and the boot log's report provider)
+  go through `perfCopyReport()`, which samples a fresh profile window and
+  re-runs the audit on it, so the findings and the Frame budget table
+  describe the same frames. The button used to print the newest window
+  beside findings from the last periodic audit, so one report could show
+  two different `renderer.render` costs.
 - **Render stall monitor** (`scene/render-stalls.js`): splits frames over
   50 ms into program compiles, texture uploads, shadow and reflection draws,
   and scene update parts (matrix walk, animation, labels, camera). Long
@@ -438,7 +453,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   `transform` or `backdrop-filter` on an ancestor of the phone HUD's fixed
   avatar badge. An element given `display` in the component layer needs a
   `[hidden] { display: none; }` rule. Avoid `backdrop-filter` over the live
-  canvas.
+  canvas. Rules for retired UI go with it: the chat terminal and quick
+  channel strip (now the HUD island's native chat), the avatar action menu
+  (the island toolbar), the `.world-loading-curtain` (inlined in
+  `index.html`) and the HTML aquarium controls (the 3D reef panel) were
+  removed from `world.css` on 2026-10-24; tests check they stay gone.
 
 ## User interface
 
@@ -489,6 +508,21 @@ above the software keyboard (`--world-chat-covered-bottom`).
   targetNode}` with the Desktop or Runner target always named. Models come
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
+- **Moving it:** drag the grip at the left of the toolbar (or the island's
+  empty edge) to put the island anywhere in the World; arrow keys on the grip
+  nudge it 24px, and Home or a double-click puts it back. The offset from the
+  default bottom-centre spot is stored in `forkmesh.world.hudIslandOffset.v1`
+  and applied as `--world-hud-island-x` / `-y` in its transform. Every resize
+  re-clamps it 8px inside the World, so expanding near the top pushes it down
+  instead of off screen, and the saved offset comes back when it collapses.
+  In the top half (`data-placement="top"`) the channel, model and runner menus
+  open downwards. At 600px and below the island is full width, so the grip is
+  hidden and the saved offset is ignored.
+- **Feed fit:** the island's feed rules carry `.world-hud-island` so they beat
+  the roomier `.world-native-chat` message rules (32px avatars, 8px padding)
+  that used to clip a single message out of the two-line collapsed view. Each
+  row is 24px (20px avatar, 20px line), so the 48px collapsed feed shows
+  exactly the last two messages.
 
 ### HUD rails
 
@@ -754,6 +788,17 @@ them without changing page.
   hid every bug drawn after it. A house, its label and each bug with an https
   `url` are `instance-hexagon` picks, so clicking one opens that link in a new
   tab.
+- **Neighbour scene draw cost.** A terrarium's bugs are one draw: their icons
+  share one canvas atlas and one `forkmesh-instance-hex-bug-board` mesh whose
+  vertex shader turns each quad to face the camera like a sprite. The board
+  uses `alphaTest` instead of blending, so overlapping icons need no sorting
+  and it casts no shadow. Each bug keeps a hidden `Sprite` with
+  `raycastProxy`, which carries the `neighbour-bug` pick. Unpicked meshes
+  (glass panes, frames, windows, lamps, trees) are then merged by material
+  (`mergeMeshesByMaterial` with `skip` for anything interactive). Before this a
+  32-bug scene cost 64 draws, 43 of them transparent; now it costs 19, 5
+  transparent. The hex layer is the `instance-hexes` World element
+  ("Neighbour hexagons"), so the profiler names its draws.
 - **Bug icons through home.** An instance's raw-file route sends no CORS
   header, so a cross-origin icon cannot be drawn into a WebGL texture and
   every bug fell back to its initial. The World loads each icon from its own
@@ -964,6 +1009,21 @@ them without changing page.
 - **Bikes** follow the road graph (`districts/roads.js`); tapping left or
   right before a junction picks a branch, holding leaves the road, and riding
   onto a road along it rejoins. Tests: `world/tests/test_world_bike_junctions.py`.
+  On the outer edge of the world (a road with only one drawn hex beside it)
+  the default turn at each junction stays on the outer road (`outerTurn` and
+  `outerIncoming` on each graph edge), so a rider circles the whole edge
+  without steering and only goes back in after a tap toward the inside. Test:
+  `test_riding_the_outer_edge_stays_on_the_outer_road_unless_steered_in`.
+  The six outer junctions, where two drawn hexes meet open land, are T
+  junctions: each carries a `bend` (the centre of the missing third hex and its
+  corner), and the roads along that hex curve into each other around its
+  rounded corner. `roadBendPositions()` lays that corner's asphalt, its centre
+  dashes are kept through the junction while the side road's stop short, the
+  road graph adds the through turn between the two edges that share no drawn
+  hex, `roadBendContains()` makes the curve walkable, and the junction's fill
+  triangle points along its three roads. Tests:
+  `test_outer_junctions_curve_one_road_into_the_next`,
+  `test_outer_junction_dashes_follow_the_through_road`.
 - **Parachute** (`parachuteSinkVelocity()`), **gym** (`poseAvatarArms()`),
   **avatars** (the back name board is a child of the torso).
 - **Office aquarium reef controller** (`scene/aquarium-panel.js`): a physical
@@ -975,6 +1035,7 @@ them without changing page.
 
 ## Related docs
 
+- [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)

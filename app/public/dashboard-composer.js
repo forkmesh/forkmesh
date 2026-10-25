@@ -615,7 +615,7 @@
           <button type="button" class="fmc-dot" data-composer-pr aria-pressed="true" title="Open a pull request when the run finishes"><span class="fmc-dot-mark"></span><span class="fmc-sr">Open a pull request when the run finishes</span></button>
           <button type="button" class="fmc-icon-button" data-composer-cloud aria-pressed="false" aria-label="Run new agents in the cloud" title="Run new agents in the cloud">${icon("cloud")}</button>
           <div class="fmc-handle" data-composer-handle title="Drag to move; double-click to reset" aria-hidden="true">${icon("grip")}</div>
-          <span class="fmc-count" data-composer-count aria-label="Characters left">${MAX_PROMPT}</span>
+          <span class="fmc-count" data-composer-count aria-label="Characters left" hidden>${MAX_PROMPT}</span>
           <button type="button" class="fmc-icon-button" data-composer-reset aria-label="Reset position and refresh" title="Reset position and refresh">${icon("refresh")}</button>
           <button type="button" class="fmc-icon-button" data-composer-expand aria-pressed="false" aria-label="Expand composer" title="Expand composer">${icon("expand")}</button>
           <button type="button" class="fmc-icon-button" data-composer-collapse aria-label="Collapse composer" title="Collapse composer (Esc)">${icon("minimize")}</button>
@@ -931,8 +931,9 @@
     const left = remainingChars();
     const count = composer.els.count;
     if (count) {
+      count.hidden = left > MAX_PROMPT * 0.2;
       count.textContent = String(left);
-      count.dataset.tone = left < 0 ? "over" : left <= 20 ? "low" : "";
+      count.dataset.tone = left < 0 ? "over" : left <= MAX_PROMPT * 0.05 ? "near" : left <= MAX_PROMPT * 0.2 ? "low" : "";
       count.setAttribute("aria-label", left < 0 ? `${-left} characters over the limit` : `${left} characters left`);
     }
     const hasDraft = Boolean((composer.els.input?.value || "").trim() || composer.attachments.length);
@@ -2344,37 +2345,11 @@
     window.addEventListener("popstate", refreshContext);
     window.addEventListener("resize", () => {
       applyViewport();
-      applyPillLift();
       if (isOpen()) applyPlacement();
     });
     window.visualViewport?.addEventListener("resize", applyViewport);
     window.visualViewport?.addEventListener("scroll", applyViewport);
     applyViewport();
-    watchPageDock();
-  }
-
-  function pageDock() {
-    if (document.body.dataset.page !== "chat") return null;
-    return document.querySelector("[data-dashboard-chat-composer]");
-  }
-
-  function watchPageDock() {
-    const dock = pageDock();
-    if (!dock) return;
-    if (typeof ResizeObserver === "function") new ResizeObserver(applyPillLift).observe(dock);
-    applyPillLift();
-  }
-
-  function applyPillLift() {
-    const root = composer.root;
-    if (!root) return;
-    const rect = pageDock()?.getBoundingClientRect();
-    if (!rect || !rect.height) {
-      root.style.removeProperty("--fmc-pill-lift");
-      return;
-    }
-    const lift = Math.max(0, Math.round(window.innerHeight - rect.top)) + 12;
-    root.style.setProperty("--fmc-pill-lift", lift + "px");
   }
 
   function applyViewport() {

@@ -14,8 +14,9 @@ Topic pages in this folder:
 
 - [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
 - [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
+- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
-- [agents-ui.md](agents-ui.md): Agents page, activity window, sounds and announcer
+- [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
 - [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch Auto agent, its prompt, and the cleanup of merged pull requests and branches
 - [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup
@@ -29,6 +30,7 @@ Topic pages in this folder:
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
+- [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
 ## Code map
@@ -126,9 +128,48 @@ Everything is in `desktop/`.
   beside the rail, split into labelled groups, and sorted (custom, by name, by
   use, or by badge count). Buttons can move between the rail, the repository
   tab bar and the Code toolbar, and any button that opens a page can be dropped
-  into the rail as a shortcut. All of this is stored as JSON under `ui/*`
+  into the rail as a shortcut. Moving works by drag in both directions: a
+  repository tab or Code toolbar button dragged onto the rail moves there, and
+  a rail icon dragged onto the bar it may live in (the repository tab bar, or
+  the Code toolbar for a Code toolbar button) moves back
+  (`handleButtonPanelDrop`, which outlines the bar while the icon is over it
+  and calls `moveButtonToPanel`). A bar the icon may not live in refuses the
+  drag, so the drop keeps the same rules as the "Move to …" menu. All of this is stored as JSON under `ui/*`
   settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
+- **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
+  folder member, shortcut or plugin too, but not Home) and pick "Hide from
+  left rail (keep on Home)"; a repository tab or Code toolbar button offers
+  "Hide from … (keep on Home)", which first moves it to the left rail and then
+  hides it there. Its rail key goes into `ui/railHidden` (a string list).
+  `applyRailOrder` takes hidden items out of the rail and its folders and parks
+  their buttons in `railHiddenItems`, a hidden holder widget, instead of
+  calling `hide()`: a button's own visibility stays what the feature that owns
+  it set, so a package turned off still disappears from Home, and turning a
+  feature on cannot make a hidden item reappear in the rail.
+  `railItemWidgets()` lists the rail, its folders and the holder, so Home, the
+  command palette, `railWidgetForKey` and a Home tile click
+  (`QAbstractButton::click`) still reach the item, and `isInRail` counts it.
+  A Home tile's right-click menu shows "Show in left rail" for a hidden item
+  and "Hide from left rail (keep on Home)" for the rest
+  (`addHomeTileRailActions`). The left rail's background menu has a "Hidden
+  from the rail" list to show one or all again. Moving the button to another
+  bar, dropping it on the rail, or "Reset button placement" also shows it again.
+- **Pinned workflows.** Workflows (special agents among them) can be pinned to
+  four places around the window: the top bar beside the activity indicators,
+  under the left rail, the side rail at the right edge and the status bar
+  (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
+  [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+  Right-rail pins have no strip of their own: they show among the side rail's
+  items ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+  A strip with no pins is hidden. A pin can be dragged from any strip to any
+  other, or to another place in its own strip: while a pin is dragged the three
+  strips, even empty ones, and the side rail show a dashed outline, and a line
+  marks where it will land (`handleWorkflowPinEvent`; the side rail draws its
+  own accent line). The drop saves the new order with
+  `rw::movePin`, which keeps the pin's slot among the pins of the target strip.
+  Strips do not rebuild during a drag (`m_workflowPinDragging`), because a
+  rebuild deletes the pin buttons, the dragged one included.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's
@@ -239,6 +280,17 @@ removed by every uninstall path. The launcher claims only
 `x-scheme-handler/forkmesh`, never `inode/directory`, so `xdg-open <folder>`
 keeps opening the file manager. macOS has no entry.
 
+The app-menu and dock icon is the `forkmesh` icon that `desktop/install.sh`
+puts in `~/.local/share/icons/hicolor`. In-app updates never re-run that
+script, so a launcher installed before the logo changed kept showing the old
+square icon with its black background. Five seconds after the window opens,
+`src/DesktopLauncherIcon.cpp` rewrites those icons (16 to 512 px, the scalable
+SVG and the unthemed `~/.local/share/icons/forkmesh.png` if present) from the
+transparent `:/app/forkmesh.png` and `:/app/forkmesh.svg` built into the app,
+then rebuilds the GTK icon cache. It only acts when
+`~/.local/share/applications/forkmesh.desktop` exists, writes only files whose
+bytes differ, and does nothing on Windows or macOS.
+
 ## Data layout and paths
 
 `src/AppPaths.cpp` resolves `~/projects/<project>/` (override with
@@ -307,8 +359,9 @@ Details, manual CMake, test targets and known failures:
   and changes nothing (or moves the checkout aside); a fresh clone runs only
   when there is no checkout, into a missing or empty folder.
   `app/tests/test_desktop_update_keeps_checkout.py` covers it.
-- **Hosts.** Network → Hosts installs, updates and removes ForkMesh on SSH
-  hosts; every host update also refreshes the host's agent CLIs
+- **Hosts.** The Hosts rail beside Network → Nodes installs, updates and
+  removes ForkMesh on SSH hosts, and each saved host is a row of the node list
+  ([networking.md](networking.md#network--nodes)); every host update also refreshes the host's agent CLIs
   ([../agents/README.md](../agents/README.md#agent-cli-refresh-on-hosts)).
 - Logs and diagnosis: [diagnostics.md](diagnostics.md).
 
@@ -520,6 +573,15 @@ measured and keep the plain branch icon.
   `QToolTip::showText`/`hideText`. Do not restyle tips through `QToolTip { }`
   rules: the window paints `QPalette::ToolTipBase`/`ToolTipText` itself.
   `tests/test_tooltips.cpp` covers it.
+- **Widget fonts are sized in pixels.** The global style sheet and the font
+  size setting set `font-size` in `px`, so `font().pointSizeF()` is `-1` and
+  `setPointSizeF(font.pointSizeF() * 1.25)` logs `QFont::setPointSizeF: Point
+  size <= 0 (-1.250000)` and leaves the font unchanged. Size a derived font
+  with `forkmesh::scaledFont`, `forkmesh::resizedFont` or
+  `forkmesh::fontSizedLike` (`src/FontSizing.h`), which keep whichever unit the
+  font carries. `tests/test_font_sizing.cpp` covers the helpers and
+  `tests/validate_error_log_regressions.py` rejects a raw
+  `setPointSizeF(x.pointSizeF() ...)`.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
   `MainWindowInternal1-4.cpp` with only a declaration in the header. New shell

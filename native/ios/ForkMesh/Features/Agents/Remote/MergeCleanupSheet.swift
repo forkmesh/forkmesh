@@ -27,6 +27,7 @@ struct MergeCleanupSheet: View {
                     MergeLandedReport(
                         title: "Merged \(branch) and cleaned up.",
                         subtitle: model.mergeStats.map { $0.base.isEmpty ? "" : "\(branch) is part of \($0.base) now." } ?? "",
+                        notice: model.setAsideNote,
                         stats: model.mergeStats)
                 } else {
                     form
@@ -65,6 +66,18 @@ struct MergeCleanupSheet: View {
                     }
                 }
             }
+            if model.canSetAside && !model.busy {
+                Section {
+                    Button {
+                        Task { await run(setAside: true) }
+                    } label: {
+                        Label("Set aside and merge", systemImage: "shippingbox")
+                    }
+                    .accessibilityIdentifier("merge-set-aside")
+                } footer: {
+                    Text(MergeFailureNote.setAsideExplanation)
+                }
+            }
             if model.conflicted, let onFixConflicts {
                 ConflictFixSection(fix: fix) {
                     if await fix.send(onFixConflicts) {
@@ -79,10 +92,10 @@ struct MergeCleanupSheet: View {
         }
     }
 
-    private func run() async {
-        if await model.mergeNow() {
+    private func run(setAside: Bool = false) async {
+        if await model.mergeNow(setAside: setAside) {
             FmHaptics.commit()
-            onMerged(MergeOutcome(branch: model.mergedBranch ?? "", stats: model.mergeStats).message())
+            onMerged(model.outcome.message())
         } else if !model.errorText.isEmpty {
             FmHaptics.failure()
         }
@@ -333,11 +346,15 @@ struct MergeLandedScreen: View {
 }
 
 struct MergeFailureNote: View {
+    static let setAsideExplanation =
+        "The desktop saves all uncommitted work in its checkout on a wip/ branch, sets aside only the files this merge touches, merges, then puts those edits back. If they clash with the merge, the files get conflict markers and the wip/ branch keeps the untouched copy."
+
     @Environment(\.fmPalette) private var fm
     let errorText: String
     var notice: String = ""
     let fix: ConflictFixModel
     let onFix: (() async -> Void)?
+    var onSetAside: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
@@ -353,6 +370,15 @@ struct MergeFailureNote: View {
                     .foregroundStyle(fm.danger)
                     .fixedSize(horizontal: false, vertical: true)
                     .fmMessageTools(errorText)
+            }
+            if let onSetAside {
+                FmToneButton(
+                    label: "Set aside and merge", icon: "inventory_2_outlined", tone: .accent, height: 32,
+                    onPressed: onSetAside)
+                    .accessibilityIdentifier("merge-set-aside")
+                Text(Self.setAsideExplanation)
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let onFix {
                 HStack(spacing: FmSpace.x2) {

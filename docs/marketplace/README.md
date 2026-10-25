@@ -86,11 +86,19 @@ own Usage page with this desktop's Claude Code and Codex accounts and their
 controls, which the Usage package embeds
 ([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
-done)` and `findLogins(url, asker, done)` (see **Login store** below).
+done)` and `findLogins(url, asker, done)` (see **Login store** below), and
+for packages declaring `desktop.workflows.run`, `repositoryWorkflows()` and
+`repositoryWorkflowAction(repo, id, action, payload, done)`: the workflows in
+the desktop's repositories (special agents among them), run, edited and
+pinned to a rail on this desktop
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
-the [Runners](runners.md) page). `request` waits out the
+the [Runners](runners.md) page), and `publicPageUrl(path)`, the same path as a
+URL to share: `https://forkmesh.com` for the official hosts, the active host
+otherwise (`nativePackagePublicPageUrl`, used by [Feed](instance-feed.md)).
+`request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
@@ -100,8 +108,10 @@ no timers), `navigationBadge()` / `prepareNavigationBadge()`,
 `setHostSearchQuery()`, `searchHits()` / `activateSearchHit()` /
 `prepareSearch()` (answered from memory on the GUI thread), `exportData()`
 (offered on removal), `hostPromptTarget()` / `submitHostPrompt()` (the page
-takes over the footer prompt box while visible), `userDirectoryChanged()`
-and `repositoryChanged()` (the user opened another repository).
+takes over the footer prompt box while visible), `userDirectoryChanged()`,
+`repositoryChanged()` (the user opened another repository) and
+`repositoryWorkflowsChanged()` (a desktop workflow was saved, ran or was
+pinned).
 
 **Login store.** A package can hand a password it was given to the user's
 password manager and ask for it back, without the host knowing which package
@@ -327,7 +337,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
-  `tour`, `people` ([people.md](people.md)), `aquarium`
+  `tour` (three depths on both apps; [tour.md](tour.md)), `people`
+  ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).

@@ -31,30 +31,30 @@ struct RoleValues {
 constexpr int kRoleCount = static_cast<int>(Role::Count);
 
 const std::array<RoleValues, kRoleCount> kRoles = {{
-    {"bg", "#0d1117", "#ffffff", "#09090b", "#ffffff"},
-    {"bgSubtle", "#010409", "#f6f8fa", "#0c0c0e", "#fafafa"},
-    {"surface", "#161b22", "#ffffff", "#111113", "#ffffff"},
-    {"surfaceRaised", "#21262d", "#f6f8fa", "#18181b", "#f4f4f5"},
-    {"surfaceActive", "#30363d", "#eaeef2", "#232326", "#e8e8eb"},
-    {"border", "#30363d", "#d0d7de", "#232326", "#e4e4e7"},
-    {"borderStrong", "#484f58", "#afb8c1", "#303036", "#d4d4d8"},
-    {"fg", "#e6edf3", "#1f2328", "#f4f4f5", "#18181b"},
-    {"fgSecondary", "#c9d1d9", "#424a53", "#d4d4d8", "#3f3f46"},
-    {"fgMuted", "#8b949e", "#656d76", "#a1a1aa", "#6b6b74"},
-    {"fgSubtle", "#6e7681", "#8c959f", "#71717a", "#8a8a94"},
-    {"accent", "#1f6feb", "#0969da", "#1f6feb", "#0969da"},
-    {"accentHover", "#388bfd", "#0550ae", "#388bfd", "#0550ae"},
-    {"accentPressed", "#1158c7", "#0a5cc7", "#1158c7", "#0a5cc7"},
-    {"accentFg", "#58a6ff", "#0969da", "#58a6ff", "#0969da"},
-    {"accentSubtle", "#132b45", "#ddf4ff", "#12233b", "#e6f0fd"},
+    {"bg", "#0d1117", "#ffffff", "#131317", "#fdfdfd"},
+    {"bgSubtle", "#010409", "#f6f8fa", "#0c0c0e", "#f3f3f5"},
+    {"surface", "#161b22", "#ffffff", "#1a1a1e", "#f7f7f7"},
+    {"surfaceRaised", "#21262d", "#f6f8fa", "#202024", "#f2f2f2"},
+    {"surfaceActive", "#30363d", "#eaeef2", "#27272b", "#ebebeb"},
+    {"border", "#30363d", "#d0d7de", "#232327", "#eaeaea"},
+    {"borderStrong", "#484f58", "#afb8c1", "#2f2f33", "#dedede"},
+    {"fg", "#e6edf3", "#1f2328", "#ececef", "#17171a"},
+    {"fgSecondary", "#c9d1d9", "#424a53", "#c4c4cb", "#3a3a40"},
+    {"fgMuted", "#8b949e", "#656d76", "#8d8d97", "#6c6c75"},
+    {"fgSubtle", "#6e7681", "#8c959f", "#5f5f68", "#9a9aa3"},
+    {"accent", "#1f6feb", "#0969da", "#5b8cff", "#2f6fed"},
+    {"accentHover", "#388bfd", "#0550ae", "#739dff", "#2860d6"},
+    {"accentPressed", "#1158c7", "#0a5cc7", "#4a7be8", "#2254bd"},
+    {"accentFg", "#58a6ff", "#0969da", "#5b8cff", "#2f6fed"},
+    {"accentSubtle", "#132b45", "#ddf4ff", "#1d2438", "#e8eefb"},
     {"onAccent", "#ffffff", "#ffffff", "#ffffff", "#ffffff"},
-    {"selection", "#1f6feb", "#0969da", "#17396b", "#cfe2fb"},
-    {"success", "#3fb950", "#1a7f37", "#3fb950", "#1a7f37"},
-    {"successSubtle", "#12261a", "#dafbe1", "#102417", "#e3f7e8"},
-    {"warning", "#d29922", "#9a6700", "#d29922", "#9a6700"},
-    {"warningSubtle", "#2b210b", "#fff8c5", "#26200e", "#fdf6d3"},
-    {"danger", "#f85149", "#cf222e", "#f85149", "#cf222e"},
-    {"dangerSubtle", "#2d1215", "#ffebe9", "#2a1214", "#fdecea"},
+    {"selection", "#1f6feb", "#0969da", "#1d2438", "#e8eefb"},
+    {"success", "#3fb950", "#1a7f37", "#3fb871", "#1f9d55"},
+    {"successSubtle", "#12261a", "#dafbe1", "#152a1f", "#e3f2e9"},
+    {"warning", "#d29922", "#9a6700", "#d9a440", "#b7791f"},
+    {"warningSubtle", "#2b210b", "#fff8c5", "#2d2516", "#f6eddf"},
+    {"danger", "#f85149", "#cf222e", "#ef6464", "#d64545"},
+    {"dangerSubtle", "#2d1215", "#ffebe9", "#301b1d", "#f9e6e6"},
 }};
 
 struct PaletteEntry {
@@ -91,23 +91,23 @@ const ChatToneValues kChatTones[] = {
 };
 
 const PaletteEntry kNextDarkPalette[] = {
-    {"#010409", "#060607"}, {"#0d1117", "#09090b"}, {"#10151c", "#0c0c0e"},
-    {"#161b22", "#111113"}, {"#1b2129", "#151517"}, {"#1c2433", "#17171a"},
-    {"#1f2630", "#18181b"}, {"#1f2937", "#18181b"}, {"#21262d", "#18181b"},
-    {"#282e35", "#1f1f23"}, {"#30363d", "#232326"}, {"#374151", "#303036"},
-    {"#444c56", "#35353b"}, {"#484f58", "#3a3a41"}, {"#656d76", "#71717a"},
-    {"#6e7681", "#71717a"}, {"#8b949e", "#a1a1aa"}, {"#b1bac4", "#bdbdc4"},
-    {"#c9d1d9", "#d4d4d8"}, {"#d1d5db", "#d4d4d8"}, {"#e6edf3", "#f4f4f5"},
+    {"#010409", "#08080a"}, {"#0d1117", "#131317"}, {"#10151c", "#0c0c0e"},
+    {"#161b22", "#1a1a1e"}, {"#1b2129", "#1d1d21"}, {"#1c2433", "#1f1f23"},
+    {"#1f2630", "#202024"}, {"#1f2937", "#202024"}, {"#21262d", "#202024"},
+    {"#282e35", "#252529"}, {"#30363d", "#27272b"}, {"#374151", "#2f2f33"},
+    {"#444c56", "#38383d"}, {"#484f58", "#3d3d43"}, {"#656d76", "#5f5f68"},
+    {"#6e7681", "#5f5f68"}, {"#8b949e", "#8d8d97"}, {"#b1bac4", "#bdbdc4"},
+    {"#c9d1d9", "#c4c4cb"}, {"#d1d5db", "#c4c4cb"}, {"#e6edf3", "#ececef"},
     {"#f0f6fc", "#fafafa"}, {"#f9fafb", "#fafafa"},
 };
 
 const PaletteEntry kNextLightPalette[] = {
-    {"#f6f8fa", "#fafafa"}, {"#d0d7de", "#e4e4e7"}, {"#1f2328", "#18181b"},
-    {"#656d76", "#71717a"}, {"#eaeef2", "#f0f0f2"}, {"#8c959f", "#a1a1aa"},
-    {"#d8dee4", "#e4e4e7"}, {"#424a53", "#3f3f46"}, {"#57606a", "#5b5b65"},
+    {"#f6f8fa", "#f3f3f5"}, {"#d0d7de", "#eaeaea"}, {"#1f2328", "#17171a"},
+    {"#656d76", "#71717a"}, {"#eaeef2", "#f0f0f2"}, {"#8c959f", "#9a9aa3"},
+    {"#d8dee4", "#eaeaea"}, {"#424a53", "#3a3a40"}, {"#57606a", "#5b5b65"},
     {"#24292f", "#202024"}, {"#afb8c1", "#b8b8c0"}, {"#6e7781", "#71717a"},
     {"#6e7681", "#71717a"}, {"#f3f4f6", "#f4f4f5"}, {"#eef1f5", "#f0f0f2"},
-    {"#ebecf0", "#ececef"}, {"#e6ebf1", "#e8e8ec"}, {"#e5e7eb", "#e4e4e7"},
+    {"#ebecf0", "#ececef"}, {"#e6ebf1", "#e8e8ec"}, {"#e5e7eb", "#eaeaea"},
     {"#e1e6eb", "#e2e2e6"},
 };
 
@@ -263,6 +263,28 @@ QMap<QString, QString> overridePalette(Design design, bool dark)
             palette.insert(classic, wanted);
     }
     return palette;
+}
+
+QMap<QString, QString> halloweenRoleColors()
+{
+    static const PaletteEntry kHalloween[] = {
+        {"bg", "#120b10"},           {"bgSubtle", "#0b0609"},
+        {"surface", "#1a1016"},      {"surfaceRaised", "#24151d"},
+        {"surfaceActive", "#331d29"}, {"border", "#3a2330"},
+        {"borderStrong", "#5a3447"}, {"fg", "#f6e9dc"},
+        {"fgSecondary", "#e2cdb8"},  {"fgMuted", "#b39a8a"},
+        {"fgSubtle", "#8a7266"},     {"accent", "#f97316"},
+        {"accentHover", "#fb8a3c"},  {"accentPressed", "#d65f0c"},
+        {"accentFg", "#ffa24d"},     {"accentSubtle", "#3a1d0c"},
+        {"onAccent", "#1b0d05"},     {"selection", "#6b2f0e"},
+        {"success", "#a3e635"},      {"successSubtle", "#1e2a0d"},
+        {"warning", "#facc15"},      {"warningSubtle", "#2e240a"},
+        {"danger", "#ef4444"},       {"dangerSubtle", "#2e0f12"},
+    };
+    QMap<QString, QString> roles;
+    for (const PaletteEntry &entry : kHalloween)
+        roles.insert(QString::fromLatin1(entry.from), QString::fromLatin1(entry.to));
+    return roles;
 }
 
 QString hex(Role role, Design design, bool dark)

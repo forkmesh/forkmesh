@@ -502,6 +502,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentCliSession.cpp
     src/MainWindowClaudeImport.cpp
     src/MainWindowAgentEvents.cpp
+    src/MainWindowAgentClaudeControl.cpp
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
     src/MainWindowAgentCloud.cpp
@@ -515,6 +516,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowGlobalAgentRules.cpp
     src/MainWindowAgentIntake.cpp
     src/MainWindowAgentHub.cpp
+    src/MainWindowSessions.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -524,8 +526,11 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowWorkspace.cpp
     src/MainWindowTeammateHome.cpp
     src/MainWindowTeammateRail.cpp
+    src/MainWindowSideRail.cpp
+    src/MainWindowTerminals.cpp
     src/MainWindowPackageRail.cpp
     src/MainWindowTeammates.cpp
+    src/MainWindowRepoWorkflows.cpp
     src/MainWindowSearch.cpp
     src/MainWindowSettings.cpp
     src/MainWindowOrganizations.cpp
@@ -722,6 +727,8 @@ set(FORKMESH_APP_SOURCES
     src/TrayMode.cpp
     src/BackgroundMode.h
     src/BackgroundMode.cpp
+    src/DesktopLauncherIcon.h
+    src/DesktopLauncherIcon.cpp
     src/BackgroundSettings.h
     src/BackgroundSettings.cpp
     src/BackgroundRunnerBadge.h
@@ -805,6 +812,7 @@ set(FORKMESH_APP_SOURCES
     src/ComponentHealthBoard.h
     src/ComponentHealthBoard.cpp
     src/MainWindowComponentHealth.cpp
+    src/MainWindowFastDisk.cpp
     src/HomeBoard.h
     src/HomeBoard.cpp
     src/HomeLayout.h
@@ -986,6 +994,8 @@ set(FORKMESH_APP_SOURCES
     src/PullReviewModel.cpp
     src/PullMergeAll.h
     src/PullMergeAll.cpp
+    src/MergeSetAside.h
+    src/MergeSetAside.cpp
     src/PullAiReview.h
     src/PullAiReview.cpp
     src/MergeQueue.h
@@ -1021,6 +1031,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentCredentialEnvironment.h
     src/AgentJail.h
     src/AgentScratch.h
+    src/FastScratchDisk.h
+    src/UsbLinkCheck.h
     src/AgentWorktree.h
     src/AgentWorkspaceNameGate.h
     src/VirtualMachineRuntime.h
@@ -1059,10 +1071,16 @@ set(FORKMESH_APP_SOURCES
     src/AgentRunner.cpp
     src/TeammateStore.h
     src/TeammateStore.cpp
+    src/RepoWorkflow.h
+    src/RepoWorkflow.cpp
+    src/RepoWorkflowRunner.h
+    src/RepoWorkflowRunner.cpp
     src/TeammateMood.h
     src/TeammateMood.cpp
     src/TeammateWorkspace.h
     src/TeammateWorkspace.cpp
+    src/StallRepairRouting.h
+    src/StallRepairRouting.cpp
     src/QrCode.h
     src/QrCode.cpp
     src/ReactionCatalog.h
@@ -1100,6 +1118,12 @@ set(FORKMESH_APP_SOURCES
     src/RemoveCoreNodeDialog.cpp
     src/TerminalWidget.h
     src/TerminalWidget.cpp
+    src/TerminalBridge.h
+    src/TerminalBridge.cpp
+    src/TerminalTabsPage.h
+    src/TerminalTabsPage.cpp
+    src/SideRail.h
+    src/SideRail.cpp
     src/ClaudeIdeBridge.h
     src/ClaudeIdeBridge.cpp
     src/WorldSpeechBridge.h
@@ -1118,6 +1142,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentRuntimeRegistry.cpp
     src/ClaudeStreamSession.h
     src/ClaudeStreamSession.cpp
+    src/ClaudeControlProtocol.h
+    src/ClaudeControlProtocol.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
     src/CodexRateLimitsProbe.h
@@ -1126,6 +1152,8 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/ClaudeElicitationDialog.h
+    src/ClaudeElicitationDialog.cpp
     src/PromptDeckBar.h
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
@@ -1238,6 +1266,7 @@ set(FORKMESH_APP_SOURCES
     src/DesktopPackageExtension.cpp
     ${FORKMESH_MARKETPLACE_SOURCES}
     src/StartupTrace.h
+    src/PageSwitchTrace.h
     src/MainWindowInternal.h
     src/MainWindowAgentsInternal.h
     src/MainWindowNetworkInternal.h
@@ -1307,6 +1336,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
@@ -1416,6 +1446,7 @@ set_source_files_properties(
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
@@ -1439,7 +1470,7 @@ set_source_files_properties(
 )
 target_include_directories(forkmesh PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${FORKMESH_MARKETPLACE_INCLUDE_DIRS}
+    ${FORKMESH_APP_MARKETPLACE_INCLUDE_DIRS}
     ${FORKMESH_MOC_DIRS})
 
 target_link_libraries(forkmesh PRIVATE Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)
@@ -1674,6 +1705,34 @@ if(FORKMESH_BUILD_TESTS)
     target_include_directories(forkmesh-stats-dashboard-tests PRIVATE src)
     if(APPLE)
         set_target_properties(forkmesh-stats-dashboard-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-font-sizing-tests
+        tests/test_font_sizing.cpp
+        src/FontSizing.h
+    )
+    target_link_libraries(forkmesh-font-sizing-tests PRIVATE Qt6::Gui)
+    target_include_directories(forkmesh-font-sizing-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-font-sizing-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-ui-kit-tests
+        tests/test_ui_kit.cpp
+        src/Theme.h
+        src/DesignTokens.h
+        src/DesignTokens.cpp
+        src/UiKit.h
+        src/UiKit.cpp
+        resources/icons.qrc
+        ${FORKMESH_THEME_QRC}
+    )
+    target_link_libraries(forkmesh-ui-kit-tests PRIVATE Qt6::Widgets Qt6::Svg)
+    target_include_directories(forkmesh-ui-kit-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-ui-kit-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -2177,6 +2236,19 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-launcher-icon-tests
+        tests/test_desktop_launcher_icon.cpp
+        src/DesktopLauncherIcon.h
+        src/DesktopLauncherIcon.cpp
+    )
+    target_include_directories(forkmesh-launcher-icon-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-launcher-icon-tests PRIVATE Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-launcher-icon-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     # The health board is a plain QWidget with std::function callbacks, so it
     # can be driven directly: layout by column count, filtering, and hit
     # testing that must follow the filtered order rather than the original one.
@@ -2597,6 +2669,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeRegistry.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2723,6 +2797,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2914,6 +2990,21 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-agent-hub-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-hub-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-side-rail-tests
+        tests/test_side_rail.cpp
+        src/SideRail.h
+        src/SideRail.cpp
+        src/TerminalBridge.h
+        src/TerminalBridge.cpp
+    )
+    target_include_directories(forkmesh-side-rail-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-side-rail-tests PRIVATE Qt6::Core Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-side-rail-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3111,6 +3202,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_user_activity.cpp
         src/UserActivityLog.h
         src/UserActivityLog.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/UserActivityChart.h
         src/UserActivityChart.cpp
         src/SourceCheckout.h
@@ -3187,9 +3280,23 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_teammate_store.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-repo-workflow-tests
+        tests/test_repo_workflow.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
+        src/RepoWorkflowRunner.h
+        src/RepoWorkflowRunner.cpp
+        src/TeammateStore.h
+        src/TeammateStore.cpp
+    )
+    target_link_libraries(forkmesh-repo-workflow-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-repo-workflow-tests PRIVATE src)
 
     qt_add_executable(forkmesh-teammate-workspace-tests
         tests/test_teammate_workspace.cpp
@@ -3197,6 +3304,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/TeammateWorkspace.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-workspace-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-workspace-tests PRIVATE src)
@@ -3207,9 +3316,19 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/TeammateMood.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-mood-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-mood-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-stall-repair-tests
+        tests/test_stall_repair_routing.cpp
+        src/StallRepairRouting.h
+        src/StallRepairRouting.cpp
+    )
+    target_link_libraries(forkmesh-stall-repair-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-stall-repair-tests PRIVATE src)
 
     qt_add_executable(forkmesh-user-avatar-tests
         tests/test_user_avatar_store.cpp
@@ -3255,6 +3374,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_saved_search_store.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
     )
     target_link_libraries(forkmesh-saved-search-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-saved-search-tests PRIVATE src)
@@ -3263,6 +3384,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_security_alarm_state.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/SecurityAlarmState.h
         src/SecurityAlarmState.cpp
     )
@@ -3643,12 +3766,23 @@ forkmesh_link_opengl(forkmesh-window-tests)
     qt_add_executable(forkmesh-agent-scratch-tests
         tests/test_agent_scratch.cpp
         src/AgentScratch.h
+        src/FastScratchDisk.h
         src/AgentWorktree.h
         src/SafeDelete.h
         src/AppPaths.h
     )
     target_link_libraries(forkmesh-agent-scratch-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-agent-scratch-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-fast-disk-tests
+        tests/test_fast_scratch_disk.cpp
+        src/FastScratchDisk.h
+        src/UsbLinkCheck.h
+        src/AgentScratch.h
+        src/SafeDelete.h
+    )
+    target_link_libraries(forkmesh-fast-disk-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-fast-disk-tests PRIVATE src)
 
     # Project settings > Agents: the policy in project.json, the folder lock it
     # puts on launches, the external-call classifier and the Claude Code hook
@@ -3703,6 +3837,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
         src/CodexTranscriptStyle.h
@@ -3873,6 +4009,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
         forkmesh-agent-hub-tests
+        forkmesh-side-rail-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
@@ -3908,8 +4045,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-package-tests
         forkmesh-native-package-tests
         forkmesh-teammate-tests
+        forkmesh-repo-workflow-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-ledger-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-network-log-tests
@@ -3928,6 +4067,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-app-paths-tests
         forkmesh-safe-delete-tests
         forkmesh-agent-scratch-tests
+        forkmesh-fast-disk-tests
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
@@ -3951,6 +4091,14 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-project-invite-tests)
     add_test(NAME forkmesh-stats-dashboard-tests
              COMMAND forkmesh-stats-dashboard-tests)
+    add_test(NAME forkmesh-ui-kit-tests
+             COMMAND forkmesh-ui-kit-tests)
+    set_tests_properties(forkmesh-ui-kit-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME forkmesh-font-sizing-tests
+             COMMAND forkmesh-font-sizing-tests)
+    set_tests_properties(forkmesh-font-sizing-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-fleet-visualizer-tests
              COMMAND forkmesh-fleet-visualizer-tests)
     add_test(NAME forkmesh-tests COMMAND forkmesh-tests)
@@ -3968,6 +4116,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-announcer-tests COMMAND forkmesh-announcer-tests)
     add_test(NAME forkmesh-code-health-tests COMMAND forkmesh-code-health-tests)
     add_test(NAME forkmesh-binary-size-tests COMMAND forkmesh-binary-size-tests)
+    add_test(NAME forkmesh-launcher-icon-tests COMMAND forkmesh-launcher-icon-tests)
     add_test(NAME forkmesh-component-health-board-tests
         COMMAND forkmesh-component-health-board-tests)
     add_test(NAME forkmesh-home-board-tests
@@ -3989,6 +4138,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     set_tests_properties(forkmesh-native-package-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
+    add_test(NAME forkmesh-repo-workflow-tests COMMAND forkmesh-repo-workflow-tests)
+    add_test(NAME forkmesh-stall-repair-tests COMMAND forkmesh-stall-repair-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)
     add_test(NAME forkmesh-teammate-mood-tests COMMAND forkmesh-teammate-mood-tests)
@@ -4054,6 +4205,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-safe-delete-tests)
     add_test(NAME forkmesh-agent-scratch-tests
              COMMAND forkmesh-agent-scratch-tests)
+    add_test(NAME forkmesh-fast-disk-tests
+             COMMAND forkmesh-fast-disk-tests)
     add_test(NAME forkmesh-agent-parity-tests
              COMMAND forkmesh-agent-parity-tests)
     add_test(NAME forkmesh-process-reaper-tests
@@ -4091,6 +4244,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             NAME forkmesh-cloud-agent-stream-contract
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_cloud_agent_stream_contract.py")
+        add_test(
+            NAME forkmesh-page-switch-trace
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_page_switch_trace.py")
         add_test(
             NAME forkmesh-agent-branch-only-contract
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
@@ -4131,6 +4288,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             NAME forkmesh-issue-directory-avatars
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_issue_directory_avatars.py")
+        add_test(
+            NAME forkmesh-agents-rail-fallback
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_agents_rail_fallback.py")
         add_test(
             NAME forkmesh-qstring-unicode-literals
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
@@ -4188,6 +4349,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-agent-intake-tests)
     add_test(NAME forkmesh-agent-hub-tests
         COMMAND forkmesh-agent-hub-tests)
+    add_test(NAME forkmesh-side-rail-tests
+        COMMAND forkmesh-side-rail-tests)
     add_test(NAME forkmesh-agent-windows-tests
         COMMAND forkmesh-agent-windows-tests)
     set_tests_properties(forkmesh-agent-windows-tests PROPERTIES
@@ -4413,6 +4576,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
         forkmesh-agent-hub-tests
+        forkmesh-side-rail-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
@@ -4446,9 +4610,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-host-log-tests
         forkmesh-core-node-log-tests
         forkmesh-deploy-log-tests
-        forkmesh-e2e forkmesh-teammate-tests
+        forkmesh-e2e forkmesh-teammate-tests forkmesh-repo-workflow-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests
@@ -4464,6 +4629,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-app-paths-tests
         forkmesh-safe-delete-tests
         forkmesh-agent-scratch-tests
+        forkmesh-fast-disk-tests
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
@@ -4524,6 +4690,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-agent-cli-tasks-tests
         COMMAND forkmesh-agent-cli-tasks-tests)
+
+    qt_add_executable(forkmesh-claude-control-tests
+        tests/test_claude_control_protocol.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
+    )
+    target_include_directories(forkmesh-claude-control-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-claude-control-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-claude-control-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-claude-control-tests
+        COMMAND forkmesh-claude-control-tests)
 
     qt_add_executable(forkmesh-desktop-power-alert-tests
         tests/test_desktop_power_alert.cpp
@@ -4604,6 +4785,20 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-pull-merge-all-tests
         COMMAND forkmesh-pull-merge-all-tests)
+    qt_add_executable(forkmesh-merge-set-aside-tests
+        tests/test_merge_set_aside.cpp
+        src/MergeSetAside.h
+        src/MergeSetAside.cpp
+    )
+    target_include_directories(forkmesh-merge-set-aside-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-merge-set-aside-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-merge-set-aside-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-merge-set-aside-tests
+        COMMAND forkmesh-merge-set-aside-tests)
     qt_add_executable(forkmesh-local-control-mergequeue-tests
         tests/test_local_control_mergequeue.cpp
         src/LocalControlMergeQueue.h
@@ -4679,6 +4874,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         src/LocalControlInsights.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_include_directories(forkmesh-local-control-teammates-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -263,6 +263,19 @@ int main(int argc, char **argv)
                        temp.filePath(QStringLiteral("settings")));
     QSettings().clear();
 
+    {
+        ActionStore burstStore(temp.filePath(QStringLiteral("burst-actions")));
+        ActionRunner burstRunner(&burstStore);
+        for (int chunk = 0; chunk < 500; ++chunk)
+            burstRunner.feedProcessOutputForTesting(
+                QByteArray("[ 40%] Building CXX object chunk ") +
+                QByteArray::number(chunk) + '\n');
+        check(burstRunner.crashContextUpdatesForTesting() == 0 &&
+                  burstRunner.crashContextRefreshPendingForTesting(),
+              "a burst of step output refreshes the crash context once on a "
+              "timer, not on every chunk");
+    }
+
     check(ActionRunner::checkoutLostWorktreeRace(QStringLiteral(
               "Preparing worktree (detached HEAD 825125e4bf)\n"
               "fatal: failed to read worktrees/source/commondir: Success\n")),
@@ -449,6 +462,40 @@ int main(int argc, char **argv)
         third = cacheStore.createRun(third);
         check(third.id == second.id + 1,
               "deleting a run does not recycle its id within the process");
+
+        QString expected;
+        for (int i = 0; i < 200; ++i) {
+            const QString line = QStringLiteral("line %1").arg(i);
+            cacheStore.appendLog(third, line);
+            expected += line + QLatin1Char('\n');
+            if (i % 50 == 0)
+                check(cacheStore.readLog(third) == expected,
+                      "a log read while appends are queued sees every line in order");
+        }
+        third.status = ActionStatus::Success;
+        cacheStore.saveRun(third);
+        ActionStore::flushWrites();
+        QFile writtenLog(cacheStore.logPath(third));
+        check(writtenLog.open(QIODevice::ReadOnly) &&
+                  QString::fromUtf8(writtenLog.readAll()) == expected,
+              "queued log appends reach log.txt in order once flushed");
+        QFile writtenMeta(QFileInfo(cacheStore.logPath(third)).absolutePath() +
+                          QStringLiteral("/meta.json"));
+        check(writtenMeta.open(QIODevice::ReadOnly) &&
+                  ActionRun::fromJson(QJsonDocument::fromJson(writtenMeta.readAll()).object())
+                          .status == ActionStatus::Success,
+              "the last queued meta.json write is the one on disk");
+
+        ActionRun fourth = first;
+        fourth.name = QStringLiteral("four");
+        fourth = cacheStore.createRun(fourth);
+        const QString fourthDir = QFileInfo(cacheStore.logPath(fourth)).absolutePath();
+        for (int i = 0; i < 50; ++i)
+            cacheStore.appendLog(fourth, QStringLiteral("doomed %1").arg(i));
+        check(cacheStore.deleteRun(fourth), "a run with queued writes deletes");
+        ActionStore::flushWrites();
+        check(!QFileInfo::exists(fourthDir),
+              "queued writes for a deleted run do not recreate its directory");
     }
 
     const QString repository = temp.filePath(QStringLiteral("repository"));

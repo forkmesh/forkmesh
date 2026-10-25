@@ -433,13 +433,13 @@ def test_notify_mentions_accepts_an_optional_number_for_the_digest():
         ENTRY_TEXT.index("def _thread_key")
     ]
     assert "number=0" in body
-    assert 'meta={"number": number} if number else {}' in body
+    assert 'meta=({"number": number, "source": source,' in body
+    assert "if number else {})" in body
     # Call sites that know the number now pass it through.
     for marker in (
-        'event.get("body", ""), repo_web_href(owner, repo), "issue",\n                number=number))',
-        '"issue",\n                number=number))',
-        'repo_web_href(owner, repo), "pull", number=number)',
-        'repo_web_href(owner, repo), "discussion", number=number)',
+        'event.get("body", ""), repo_web_href(owner, repo), "issue",\n            number=number,',
+        'repo_web_href(owner, repo), "pull", number=number,',
+        'repo_web_href(owner, repo), "discussion", number=number,',
     ):
         assert marker in ENTRY_TEXT
 

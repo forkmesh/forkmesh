@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import types
+import re
 import shutil
 import subprocess
 import urllib.parse
@@ -530,13 +532,15 @@ def test_a_cut_diff_points_at_the_raw_diff():
 
 
 @pytest.mark.parametrize("path,expected", [
-    ("/ForkMesh/forkmesh/pull/4.diff", ("forkmesh", "forkmesh", 4)),
-    ("/forkmesh/forkmesh/pulls/4.patch", ("forkmesh", "forkmesh", 4)),
-    ("/Garden/pull/12.diff", (None, "Garden", 12)),
-    ("/Garden/pulls/12.patch", (None, "Garden", 12)),
+    ("/ForkMesh/forkmesh/pull/4.diff", ("forkmesh", "forkmesh", 4, False)),
+    ("/forkmesh/forkmesh/pulls/4.patch", ("forkmesh", "forkmesh", 4, False)),
+    ("/forkmesh/forkmesh/pull/4.txt", ("forkmesh", "forkmesh", 4, True)),
+    ("/Garden/pull/12.diff", (None, "Garden", 12, False)),
+    ("/Garden/pulls/12.patch", (None, "Garden", 12, False)),
+    ("/Garden/pull/12.txt", (None, "Garden", 12, True)),
     ("/forkmesh/forkmesh/pull/4", None),
     ("/forkmesh/forkmesh/pull/0.diff", None),
-    ("/forkmesh/forkmesh/pull/4.txt", None),
+    ("/forkmesh/forkmesh/pull/4.html", None),
     ("/api/pull/4.diff", None),
     ("/dashboard/forkmesh/pull/4.diff", None),
 ])
@@ -583,6 +587,55 @@ def test_raw_diff_route_serves_the_pull_patch_as_text():
     response, body, asked = run_fetch(
         http_scope("/forkmesh/forkmesh/pull/4.diff"), FakeFastPath(public=False))
     assert body == "worker" and asked
+
+
+def test_text_route_serves_the_whole_pull_as_plain_text():
+    response, body, asked = run_fetch(http_scope("/forkmesh/forkmesh/pull/4.txt"),
+                                      FakeFastPath())
+    assert int(response.status) == 200 and not asked
+    assert response.headers.get("content-type") == "text/plain; charset=utf-8"
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert body.startswith("Pull request #4: Patch pull\nAuthor: alice\n"
+                           "Merges feature-4 into main\nState: open\n")
+    assert "## Description\n\nBody of pull 4." in body
+    assert "## Comments and reviews (1)\n\n### frank commented, 1970-01-01 00:00 UTC\n\nLooks <b>good</b>" in body
+    assert body.endswith("## Diff\n\n" + FILES[LEDGER][".forkmesh/pulls/4/changes.patch"])
+    response, body, _asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/3.txt"), FakeFastPath())
+    assert int(response.status) == 200
+    assert body.endswith("## Diff\n\nNo diff is available for this pull request.\n")
+    repo_views._public.clear()
+    response, body, asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/4.txt"), FakeFastPath(public=False))
+    assert body == "worker" and asked
+
+
+def test_pull_text_folds_edits_deletes_and_review_states():
+    conversation = [
+        {"type": "comment", "id": "a", "author": "ann", "authorKey": "ka",
+         "ts": "1790000000000", "body": "First draft"},
+        {"type": "comment-edit", "target": "a", "authorKey": "ka", "ts": "1790000001000",
+         "body": "Edited text"},
+        {"type": "comment", "id": "b", "author": "bo", "authorKey": "kb", "body": "Gone"},
+        {"type": "comment-delete", "target": "b", "authorKey": "kb"},
+        {"type": "comment-edit", "target": "a", "authorKey": "kb", "body": "Hijack"},
+        {"type": "review", "id": "r", "author": "cy", "authorKey": "kc",
+         "state": "changes_requested", "body": ""},
+        {"type": "line-comment", "id": "l", "author": "cy", "authorKey": "kc",
+         "path": "x.py", "lineStart": "3", "lineEnd": "5", "body": "Off by one"},
+        {"type": "commit", "id": "m", "author": "ann", "body": "fix things"},
+    ]
+    bundle = types.SimpleNamespace(model={"pull": {"number": 9, "title": "T", "author": "ann", "state": "open",
+                             "base": "main", "head": "f", "body": "", "patch": "",
+                             "conversation": conversation}})
+    text = repo_views.pull_text(bundle)
+    assert "(no description)" in text
+    assert "### ann commented, 2026-09-21 " in text and "Edited text" in text
+    assert "First draft" not in text and "Gone" not in text and "Hijack" not in text
+    assert "### cy requested changes\n" in text
+    assert "### cy commented on x.py:3-5\n\nOff by one" in text
+    assert "fix things" not in text
+    assert "## Comments and reviews (3)" in text
 
 
 SHORT_META = ('<meta name="forkmesh-repo-short" content="forkmesh">'
@@ -677,3 +730,65 @@ def test_a_reader_waits_for_a_cold_pull_that_a_person_does_not(monkeypatch):
         http_scope("/forkmesh/forkmesh/pull/4", CHATGPT), FakeFastPath(), pages)
     assert "Patch pull" in reader and 'class="a">+new' in reader
     assert 'href="/forkmesh/forkmesh/pull/4.diff"' in reader
+
+
+def test_issue_list_rows_show_recent_commenters_with_imported_pictures(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
+    index = {"issues": [{
+        "number": 7, "title": "Forum thread", "status": "open", "location": "open",
+        "author": "github:ann", "recentCommenters": ["github:Bob", "carol", 5,
+                                                     "dan", "erin", "fay"]}],
+        "openFolders": 1, "closedFolders": 0,
+        "forgeAvatars": ["github:bob"]}
+    model = repo_views._indexed_issues(index)
+    assert model["rows"][0]["commenters"] == ["github:Bob", "carol", "dan", "erin"]
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, model=model,
+                             ref="main")
+    html = repo_views._render(bundle)
+    faces = html.split("data-repo-issue-row-commenters>", 1)[1].split("</span><a ", 1)[0]
+    assert faces.count("h-5 w-5") == 4
+    assert ('src="/api/repo/o/r/raw?path=.forkmesh%2Fcontributors%2Fgithub-bob.png'
+            '&amp;ref=main"') in faces
+    assert "github.com" not in faces.replace('href="https://github.com/', "")
+    assert faces.count("<img") == 1
+
+
+def test_the_server_list_is_newest_created_first_with_forum_lists_on(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
+    rows = [{"number": n, "title": "t%d" % n, "state": "open", "ts": ts, "author": "a"}
+            for n, ts in ((3, 1_700_000_000_000), (9, 1_600_000_000_000),
+                          (5, 1_700_000_000), (4, ""), (8, 1_700_000_000_000))]
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, ref="main",
+                             model={"rows": rows, "open": 5, "closed": 0})
+    html = repo_views._render(bundle)
+    order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', html)]
+    assert order == [8, 5, 3, 9, 4]
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"forum-list"}))
+    repo_views_html = repo_views._render(bundle)
+    order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', repo_views_html)]
+    assert order == [3, 9, 5, 4, 8]
+
+
+def test_issue_list_rows_have_no_commenter_faces_unless_forum_lists_are_on(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"forum-list"}))
+    index = {"issues": [{"number": 7, "title": "Thread", "status": "open", "location": "open",
+                         "author": "ann", "recentCommenters": ["bob"]}],
+             "openFolders": 1, "closedFolders": 0}
+    model = repo_views._indexed_issues(index)
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, model=model, ref="main")
+    assert "data-repo-issue-row-commenters" not in repo_views._render(bundle)
+def test_issue_detail_reads_its_attachment_shard(monkeypatch):
+    shard = ".forkmesh/attachments/issues/12.json"
+    url = "https://user-images.githubusercontent.com/1/2-a.png"
+    entry = {"path": ".forkmesh/attachments/%s.png" % ("c" * 64), "type": "image/png",
+             "bytes": 9}
+    monkeypatch.setitem(FILES[MAIN], shard, json.dumps({
+        "schema": "forkmesh-attachments-issue-v1", "files": {url: entry}}))
+    bundle, _fast = build("issue", 12)
+    assert "blobs?path=%s&ref=main" % shard in reads(bundle)
+    assert bundle.model["attachments"] == {url: {"path": entry["path"], "type": "image/png"}}
+    plain, _fast = build("issue", 5)
+    assert plain.model["attachments"] == {}

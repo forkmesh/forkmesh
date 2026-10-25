@@ -36,6 +36,8 @@
 #include "../src/ServerNode.h"
 #include "../src/TipSigner.h"
 #include "../src/SkillUsageChart.h"
+#include "../src/SideRail.h"
+#include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
 #include "ForkMeshBuildCommit.h"
@@ -47,6 +49,7 @@
 
 #include <QAction>
 #include <QAbstractButton>
+#include <QDialog>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QBuffer>
@@ -680,9 +683,10 @@ void checkNodesPageRunnersAndRelays(MainWindow &window)
     check(window.testNodesRoleFilterKeys() ==
               QStringList{QString(), QStringLiteral("core"),
                           QStringLiteral("runner"), QStringLiteral("mirror"),
-                          QStringLiteral("desktop"), QStringLiteral("relay")},
+                          QStringLiteral("desktop"), QStringLiteral("instance"),
+                          QStringLiteral("relay")},
           QStringLiteral("the Role filter offers all, core, runner, mirror, "
-                         "desktop and relay (%1)")
+                         "desktop, instance and relay (%1)")
               .arg(window.testNodesRoleFilterKeys().join(QStringLiteral(","))));
     int runnerRows = 0;
     for (const QString &name : window.testNodeDirectoryNames())
@@ -705,6 +709,96 @@ void checkNodesPageRunnersAndRelays(MainWindow &window)
               .arg(window.testNodesRoleFilterKey())
               .arg(window.testVisibleNodeDirectoryRows()));
     window.testSetNodesRoleFilter(QString());
+
+    const QVariant savedHosts = QSettings().value(QStringLiteral("hosts/list"));
+    QSettings().setValue(
+        QStringLiteral("hosts/list"),
+        QString::fromUtf8(QJsonDocument(QJsonArray{QJsonObject{
+                                            {QStringLiteral("name"), QStringLiteral("rail-host-1")},
+                                            {QStringLiteral("ip"), QStringLiteral("203.0.113.50")},
+                                            {QStringLiteral("user"), QStringLiteral("forkmesh")},
+                                            {QStringLiteral("status"), QStringLiteral("installed")},
+                                            {QStringLiteral("region"), QStringLiteral("ewr")},
+                                        }})
+                              .toJson(QJsonDocument::Compact)));
+    window.testSetVultrFleetJson(QByteArrayLiteral(
+        R"({"instances":[)"
+        R"({"label":"fmnext-core-7","main_ip":"203.0.113.17","tags":["forkmesh-next"]}]})"));
+    window.testSetDirectoryInstances(QJsonArray{QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("f455c98c739e5b0f7348dfd5914d2eac")},
+        {QStringLiteral("name"), QStringLiteral("OWASP BLT")},
+        {QStringLiteral("url"), QStringLiteral("https://git.owaspblt.org/")},
+        {QStringLiteral("status"), QStringLiteral("online")},
+        {QStringLiteral("world"), true},
+        {QStringLiteral("checkedAt"), double(now - 60000)},
+    }});
+    window.testShowNodesSection();
+    QApplication::processEvents();
+    check(cell(QStringLiteral("rail-host-1"), "Role") == QStringLiteral("Mirror") &&
+              cell(QStringLiteral("rail-host-1"), "Scope") == QStringLiteral("saved host") &&
+              cell(QStringLiteral("rail-host-1"), "Endpoint") ==
+                  QStringLiteral("203.0.113.50") &&
+              cell(QStringLiteral("rail-host-1"), "Actions") == QStringLiteral("Logs"),
+          QStringLiteral("a saved host is a row of the node list (%1 | %2 | %3)")
+              .arg(cell(QStringLiteral("rail-host-1"), "Role"),
+                   cell(QStringLiteral("rail-host-1"), "Scope"),
+                   cell(QStringLiteral("rail-host-1"), "Endpoint")));
+    check(cell(QStringLiteral("n7"), "Role") == QStringLiteral("Core") &&
+              cell(QStringLiteral("n7"), "Endpoint") == QStringLiteral("203.0.113.17"),
+          QStringLiteral("a fleet core from the cloud listing is a row of the node "
+                         "list (%1 | %2)")
+              .arg(cell(QStringLiteral("n7"), "Role"),
+                   cell(QStringLiteral("n7"), "Endpoint")));
+    check(cell(QStringLiteral("OWASP BLT"), "Role") == QStringLiteral("Instance") &&
+              cell(QStringLiteral("OWASP BLT"), "Status") == QStringLiteral("Online") &&
+              cell(QStringLiteral("OWASP BLT"), "Endpoint") ==
+                  QStringLiteral("git.owaspblt.org") &&
+              cell(QStringLiteral("OWASP BLT"), "Actions") == QStringLiteral("Website"),
+          QStringLiteral("a self-hosted instance from the public directory is a "
+                         "row of the node list (%1 | %2 | %3)")
+              .arg(cell(QStringLiteral("OWASP BLT"), "Role"),
+                   cell(QStringLiteral("OWASP BLT"), "Status"),
+                   cell(QStringLiteral("OWASP BLT"), "Endpoint")));
+    const QStringList visualCaptions = window.testNodeDirectoryVisualCaptions();
+    check(visualCaptions.mid(0, 5) ==
+              QStringList{QStringLiteral("Node"), QStringLiteral("Status"),
+                          QStringLiteral("CPU"), QStringLiteral("RAM"),
+                          QStringLiteral("Disk")},
+          QStringLiteral("CPU, RAM and disk come right after the node and its "
+                         "status (%1)")
+              .arg(visualCaptions.mid(0, 6).join(QStringLiteral(", "))));
+    auto *hostsRail = window.findChild<QScrollArea *>(QStringLiteral("networkHostsRail"));
+    bool hostsTab = false;
+    for (const QString &label : window.testNetworkTabLabels())
+        hostsTab |= label.startsWith(QStringLiteral("Hosts"));
+    check(hostsRail && hostsRail->isVisible() && !hostsTab &&
+              hostsRail->width() <= 320,
+          QStringLiteral("the saved-host controls sit in a rail beside the node "
+                         "list, with no Hosts tab"));
+    QTableWidget *railHosts =
+        hostsRail ? hostsRail->findChild<QTableWidget *>(QStringLiteral("issueTable"))
+                  : nullptr;
+    QTableWidget *directory = nullptr;
+    for (QTableWidget *table : window.findChildren<QTableWidget *>())
+        if (table->property("nodesDirectory").toBool())
+            directory = table;
+    int hostRow = -1;
+    for (int row = 0; directory && row < directory->rowCount(); ++row) {
+        const QTableWidgetItem *name = directory->item(row, 0);
+        if (name && name->data(Qt::UserRole).toString() == QLatin1String("rail-host-1"))
+            hostRow = row;
+    }
+    if (directory && hostRow >= 0)
+        emit directory->cellClicked(hostRow, 0);
+    QApplication::processEvents();
+    check(railHosts && hostRow >= 0 && railHosts->currentRow() == 0 &&
+              railHosts->selectionModel()->isRowSelected(0, QModelIndex()),
+          QStringLiteral("clicking a saved host's row picks it in the Hosts rail"));
+    if (savedHosts.isValid())
+        QSettings().setValue(QStringLiteral("hosts/list"), savedHosts);
+    else
+        QSettings().remove(QStringLiteral("hosts/list"));
+    window.testSetDirectoryInstances(QJsonArray{});
     window.testSetVultrFleetJson(QByteArrayLiteral(R"({"instances":[]})"));
     window.testSetRunnersPayload(QJsonObject{{QStringLiteral("ok"), true},
                                              {QStringLiteral("runners"), QJsonArray{}}});
@@ -930,6 +1024,57 @@ void checkFooterOverlayGeometry(MainWindow &window)
             qtDialog->close();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QApplication::processEvents();
+
+        QStringList debugTileNames = activityTileNames;
+        debugTileNames += qtTileNames;
+        bool tilesQuadrantSized = true;
+        for (const QString &name : debugTileNames) {
+            QWidget *tile = window.findChild<QWidget *>(name);
+            tilesQuadrantSized = tilesQuadrantSized && tile &&
+                                 tile->size() ==
+                                     QSize(forkmesh::ui::kResourceSparklineCompactSide,
+                                           forkmesh::ui::kResourceSparklineCompactSide) &&
+                                 tile->parentWidget() &&
+                                 tile->parentWidget()->objectName() ==
+                                     QStringLiteral("debugTileQuad");
+        }
+        check(tilesQuadrantSized,
+              QStringLiteral("every debug chart is one quadrant of a 2x2 block, "
+                             "the size of the resource chart's own quadrants"));
+
+        auto *loopTile = window.findChild<QWidget *>(
+            QStringLiteral("qtDiagnosticLoopTile"));
+        if (loopTile) {
+            const QPoint at(loopTile->width() / 2, loopTile->height() / 2);
+            QHelpEvent hover(QEvent::ToolTip, at, loopTile->mapToGlobal(at));
+            QApplication::sendEvent(loopTile, &hover);
+        }
+        auto *hoverCard = window.findChild<QWidget *>(
+            QStringLiteral("sparklineHoverCard"));
+        check(hoverCard && hoverCard->isVisible() && hoverCard->height() > 80 &&
+                  !QToolTip::isVisible(),
+              QStringLiteral("hovering a debug chart opens the live detail card "
+                             "instead of a plain tooltip"));
+        if (hoverCard)
+            hoverCard->hide();
+
+        const int shownBefore = lights->visibleLightCount();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), false);
+        const int shownMuted = lights->visibleLightCount();
+        const int mutedWidth = lights->width();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), true);
+        window.testSetLoggingEnabled(false);
+        const int shownLoggingOff = lights->visibleLightCount();
+        window.testSetLoggingEnabled(true);
+        check(shownBefore == expectedLogCategories &&
+                  shownMuted == expectedLogCategories - 1 &&
+                  mutedWidth < lights->width() && shownLoggingOff == 0 &&
+                  lights->visibleLightCount() == expectedLogCategories,
+              QStringLiteral("the debug bar shows a log icon only for the "
+                             "categories being recorded (%1 / %2 / %3)")
+                  .arg(shownBefore)
+                  .arg(shownMuted)
+                  .arg(shownLoggingOff));
 
         version->click();
         QApplication::processEvents();
@@ -1285,13 +1430,33 @@ void checkFooterOverlayGeometry(MainWindow &window)
               QStringLiteral("restart, resize and the log tail are captioned "
                              "tools at the debug bar's right edge"));
 
-        QPushButton *reportTool = window.testDebugCopyDiagnosticsButton();
+        QPushButton *reportTool = window.testDebugDiagnosticsButton();
         check(reportTool && tools && reportTool->parentWidget() == tools &&
                   logTool &&
                   reportTool->mapTo(&window, QPoint(0, 0)).x() <
                       logTool->mapTo(&window, QPoint(0, 0)).x(),
-              QStringLiteral("the diagnostic report tool sits just left of the "
-                             "log tail"));
+              QStringLiteral("the diagnose tool sits just left of the log tail"));
+        int diagnosticTools = 0;
+        if (tools)
+            for (QPushButton *tool : tools->findChildren<QPushButton *>())
+                if (tool->accessibleName().contains(QLatin1String("iagnos")))
+                    ++diagnosticTools;
+        check(diagnosticTools == 1,
+              QStringLiteral("one diagnose tool replaces the separate report "
+                             "and send buttons"));
+        auto *diagnoseRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(reportTool);
+        window.testLogSystem(QStringLiteral(
+            "Node n1 core fmnext-ids.service err: alert ssh_foreign_ip: login "
+            "from 203.0.113.9"));
+        const bool alerted = window.testDiagnosticsAlertDetected();
+        check(diagnoseRail && alerted && diagnoseRail->dangerTint() &&
+                  diagnoseRail->toolTip().contains(QStringLiteral("Security")),
+              QStringLiteral("an IDS incident turns the diagnose tool red and "
+                             "names it under Security"));
+        window.testAcknowledgeDiagnosticsAlert();
+        check(diagnoseRail && !diagnoseRail->toolTip().contains(
+                                  QStringLiteral("intrusion-detection")),
+              QStringLiteral("sending the report acknowledges the incident"));
         const QString diagnostics = window.testDiagnosticsReport();
         check(diagnostics.startsWith(
                   QStringLiteral("# ForkMesh desktop diagnostic report #")) &&
@@ -1371,25 +1536,51 @@ void checkFooterOverlayGeometry(MainWindow &window)
     }
 
     // The composer is a movable panel (adhoc #1536): dragging its top strip
-    // takes it off the footer anchor and onto the workspace, the corner grip
-    // resizes it, the button pops it out into a window of its own, and
+    // takes it off the footer anchor and onto the workspace, any edge or
+    // corner resizes it, the button pops it out into a window of its own, and
     // double-clicking the strip snaps everything back.
     auto *promptHandle =
         window.findChild<QWidget *>(QStringLiteral("promptDragHandle"));
-    auto *promptGrip =
-        window.findChild<QWidget *>(QStringLiteral("promptResizeGrip"));
+    QWidget *promptGrip = nullptr;
+    QWidget *promptLeftEdge = nullptr;
+    const QList<QWidget *> promptEdges =
+        window.findChildren<QWidget *>(QStringLiteral("promptResizeEdge"));
+    for (QWidget *edge : promptEdges) {
+        const auto edges = Qt::Edges::fromInt(edge->property("promptResizeEdges").toInt());
+        if (edges == (Qt::TopEdge | Qt::RightEdge))
+            promptGrip = edge;
+        else if (edges == Qt::Edges(Qt::LeftEdge))
+            promptLeftEdge = edge;
+    }
     auto *promptClear =
         window.findChild<QPushButton *>(QStringLiteral("promptClearButton"));
-    auto *promptDetach =
-        window.findChild<QPushButton *>(QStringLiteral("promptDetachButton"));
+    auto *promptChannel =
+        window.findChild<QPushButton *>(QStringLiteral("promptChannelButton"));
     auto *promptText =
         window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
-    check(promptClear && promptText && promptGrip && promptDetach &&
-              promptClear->parentWidget() == promptGrip->parentWidget() &&
-              promptGrip->geometry().left() > promptDetach->geometry().right() &&
-              promptGrip->geometry().left() > promptClear->geometry().right(),
-          QStringLiteral("the prompt resize grip sits at the right end of the "
-                         "floating button bar"));
+    check(!window.findChild<QWidget *>(QStringLiteral("promptResizeGrip")) &&
+              promptEdges.size() == 8 && promptGrip && promptLeftEdge &&
+              promptWrapper &&
+              promptGrip->parentWidget() == promptWrapper->parentWidget() &&
+              promptGrip->geometry().right() == promptWrapper->geometry().right() &&
+              promptGrip->geometry().top() == promptWrapper->geometry().top() &&
+              promptLeftEdge->geometry().left() == promptWrapper->geometry().left() &&
+              promptLeftEdge->height() > promptWrapper->height() / 2,
+          QStringLiteral("the prompt has no resize grip: every edge and corner "
+                         "is a resize handle"));
+    check(!window.findChild<QPushButton *>(QStringLiteral("promptDetachButton")) &&
+              !window.findChild<QLabel *>(QStringLiteral("quickAddCharCount")),
+          QStringLiteral("the prompt strip has no pop-out or characters-left "
+                         "control"));
+    check(promptClear && promptChannel && promptGrip &&
+              !promptGrip->geometry().intersects(QRect(
+                  promptChannel->mapTo(promptGrip->parentWidget(), QPoint()),
+                  promptChannel->size())) &&
+              !promptGrip->geometry().intersects(QRect(
+                  promptClear->mapTo(promptGrip->parentWidget(), QPoint()),
+                  promptClear->size())),
+          QStringLiteral("the top-right resize corner leaves the floating "
+                         "buttons clickable"));
     check(!window.findChild<QWidget *>(QStringLiteral("promptDragPill")) &&
               promptHandle && promptWrapper &&
               promptHandle->parentWidget() == promptWrapper &&
@@ -1459,7 +1650,7 @@ void checkFooterOverlayGeometry(MainWindow &window)
                              "remembers it"));
         promptVibe->click();
     }
-    if (promptHandle && promptGrip && promptDetach && prompt && dock) {
+    if (promptHandle && promptGrip && prompt && dock) {
         const auto sendMouse = [](QWidget *target, QEvent::Type type,
                                   const QPoint &global) {
             QMouseEvent event(type, target->mapFromGlobal(global),
@@ -1493,7 +1684,25 @@ void checkFooterOverlayGeometry(MainWindow &window)
         QApplication::processEvents();
         check(prompt->width() > dragged.width() &&
                   prompt->height() > dragged.height(),
-              QStringLiteral("the corner grip resizes the floating prompt"));
+              QStringLiteral("the top-right corner resizes the floating prompt"));
+
+        if (promptLeftEdge) {
+            const QRect before(prompt->mapToGlobal(QPoint()), prompt->size());
+            const QPoint edgeAt = promptLeftEdge->mapToGlobal(
+                QPoint(promptLeftEdge->width() / 2, promptLeftEdge->height() / 2));
+            sendMouse(promptLeftEdge, QEvent::MouseButtonPress, edgeAt);
+            sendMouse(promptLeftEdge, QEvent::MouseMove, edgeAt + QPoint(-50, 30));
+            sendMouse(promptLeftEdge, QEvent::MouseButtonRelease,
+                      edgeAt + QPoint(-50, 30));
+            QApplication::processEvents();
+            const QRect after(prompt->mapToGlobal(QPoint()), prompt->size());
+            check(after.width() == before.width() + 50 &&
+                      after.left() == before.left() - 50 &&
+                      after.right() == before.right() &&
+                      after.height() == before.height(),
+                  QStringLiteral("dragging the prompt's left edge widens it to "
+                                 "the left only"));
+        }
 
         // The text area itself has to absorb the extra height, not just leave
         // blank space above the toolbar (adhoc #1625).
@@ -1515,14 +1724,14 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.testClearPageNotices();
         QApplication::processEvents();
 
-        promptDetach->click();
+        window.testSetPromptOverlayDetached(true);
         QApplication::processEvents();
         auto *detachWindow =
             window.findChild<QWidget *>(QStringLiteral("promptDetachWindow"));
         check(detachWindow && detachWindow->isWindow() &&
                   prompt->window() == detachWindow &&
                   promptWrapper && promptWrapper->isVisible(),
-              QStringLiteral("the detach button moves the prompt into a window "
+              QStringLiteral("popping the prompt out moves it into a window "
                              "of its own, outside the app's own window"));
         check(detachWindow &&
                   detachWindow->windowFlags().testFlag(Qt::FramelessWindowHint) &&
@@ -1544,17 +1753,13 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.testClearPageNotices();
         QApplication::processEvents();
 
-        promptDetach->click();
+        window.testSetPromptOverlayDetached(false);
         QApplication::processEvents();
         check(prompt->window() == &window &&
                   (!detachWindow || !detachWindow->isVisible()),
-              QStringLiteral("pressing detach again brings the prompt back "
+              QStringLiteral("docking the prompt again brings it back "
                              "inside the app"));
 
-        // The panel is still floating/resized from the drag+grip gestures above
-        // (adhoc #1625): the explicit reset button is a discoverable alternative
-        // to the handle's double-click gesture and should snap it back the same
-        // way.
         auto *promptReset =
             window.findChild<QPushButton *>(QStringLiteral("promptResetButton"));
         check(promptReset != nullptr,
@@ -1607,12 +1812,18 @@ void checkFooterOverlayGeometry(MainWindow &window)
                   prompt->window() != &window && prompt->window()->isVisible(),
               QStringLiteral("dragging the prompt out of the window pops it "
                              "into a window of its own"));
-        if (window.testPromptOverlayPlacement() == QStringLiteral("detached"))
-            promptDetach->click();
+        if (window.testPromptOverlayPlacement() == QStringLiteral("detached")) {
+            QMouseEvent dockBack(QEvent::MouseButtonDblClick,
+                                 QPointF(promptHandle->width() / 2.0,
+                                         promptHandle->height() / 2.0),
+                                 QPointF(promptHandle->mapToGlobal(QPoint(0, 0))),
+                                 Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(promptHandle, &dockBack);
+        }
         QApplication::processEvents();
         check(prompt->window() == &window,
               QStringLiteral("a prompt dragged out of the window docks back "
-                             "with the detach button"));
+                             "with a double-click on its strip"));
 
         // Re-float it once more so the handle's own double-click gesture (the
         // longer-standing affordance) is still exercised too.
@@ -1668,10 +1879,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
             window.resize(originalWindowSize);
             QApplication::processEvents();
         }
-        if (promptReset) {
-            promptReset->click();
-            QApplication::processEvents();
-        }
+        window.testResetPromptOverlayPlacement();
+        QApplication::processEvents();
     }
 
     window.testSetLogOverlayExpanded(true);
@@ -3065,11 +3274,95 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     QApplication::processEvents();
     QLabel *preview = window.testPromptChatPreview();
     check(preview && !preview->isHidden() &&
-              preview->text().contains(QStringLiteral("ana: morning, room")) &&
-              preview->text().contains(QStringLiteral("ben: standup in five")),
-          QStringLiteral("with a chat room open the composer previews that room "
-                         "(%1)")
+              preview->text().contains(QStringLiteral("#prompt-preview ana ")) &&
+              preview->text().contains(QStringLiteral(": morning, room")) &&
+              preview->text().contains(QStringLiteral("#prompt-preview ben now: "
+                                                      "standup in five")) &&
+              preview->text().count(QStringLiteral("<br>")) <= 2,
+          QStringLiteral("the composer previews the latest chats with channel, "
+                         "user and time on one line (%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    auto *channelPicker =
+        window.findChild<QPushButton *>(QStringLiteral("promptChannelButton"));
+    check(channelPicker && channelPicker->text().startsWith(QStringLiteral("#prompt")),
+          QStringLiteral("the prompt strip names the chat channel it is in (%1)")
+              .arg(channelPicker ? channelPicker->text() : QStringLiteral("none")));
+    if (channelPicker) {
+        const QString direct = QStringLiteral("@peer-cy");
+        window.testDeliverChatMessage(direct, QStringLiteral("peer-cy"),
+                                      QStringLiteral("cy"),
+                                      QStringLiteral("got a minute?"));
+        QApplication::processEvents();
+        channelPicker->click();
+        QApplication::processEvents();
+        QMenu *channels = nullptr;
+        for (QWidget *top : QApplication::topLevelWidgets())
+            if (auto *menu = qobject_cast<QMenu *>(top);
+                menu && menu->objectName() == QLatin1String("promptChannelMenu") &&
+                menu->isVisible())
+                channels = menu;
+        QAction *row = nullptr;
+        if (channels)
+            for (QAction *action : channels->actions())
+                if (action->data().toString() == room)
+                    row = action;
+        check(row && row->isChecked() &&
+                  QRegularExpression(QString::fromUtf8(
+                                         "^#prompt-preview\\t\\d+ users? \xC2\xB7 2 chats$"))
+                      .match(row->text())
+                      .hasMatch(),
+              QStringLiteral("the channel menu lists each channel on one row with "
+                             "its users and chats (%1)")
+                  .arg(row ? row->text() : QStringLiteral("none")));
+        int directSection = -1;
+        int directRow = -1;
+        bool messagePerson = false;
+        if (channels) {
+            const QList<QAction *> actions = channels->actions();
+            for (int i = 0; i < actions.size(); ++i) {
+                if (actions.at(i)->isSeparator() &&
+                    actions.at(i)->text() == QLatin1String("Direct messages"))
+                    directSection = i;
+                if (actions.at(i)->data().toString() == direct)
+                    directRow = i;
+                if (actions.at(i)->objectName() ==
+                    QLatin1String("promptChannelMessagePerson"))
+                    messagePerson = true;
+            }
+        }
+        check(directSection >= 0 && directRow > directSection && messagePerson,
+              QStringLiteral("the channel menu lists direct messages under their own "
+                             "section and offers Message someone (section %1, row %2)")
+                  .arg(directSection)
+                  .arg(directRow));
+        if (channels)
+            channels->close();
+        QApplication::processEvents();
+    }
+    if (preview && !preview->isHidden()) {
+        auto *handle = window.findChild<QWidget *>(QStringLiteral("promptDragHandle"));
+        const QPoint start = preview->mapToGlobal(QPoint(20, preview->height() / 2));
+        const QPoint end = start + QPoint(-60, -60);
+        QMouseEvent press(QEvent::MouseButtonPress, preview->mapFromGlobal(start),
+                          QPointF(start), Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(preview, &press);
+        QMouseEvent move(QEvent::MouseMove, preview->mapFromGlobal(end), QPointF(end),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(preview, &move);
+        if (handle) {
+            QMouseEvent release(QEvent::MouseButtonRelease, handle->mapFromGlobal(end),
+                                QPointF(end), Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier);
+            QApplication::sendEvent(handle, &release);
+        }
+        QApplication::processEvents();
+        check(window.testPromptOverlayPlacement() == QStringLiteral("floating"),
+              QStringLiteral("dragging the chat lines moves the prompt (%1)")
+                  .arg(window.testPromptOverlayPlacement()));
+        window.testResetPromptOverlayPlacement();
+        QApplication::processEvents();
+    }
     QPushButton *add = nullptr;
     for (QPushButton *button :
          window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
@@ -3080,7 +3373,7 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
                          "add and Enter does not pick it"));
     auto *sendTo = window.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
     check(sendTo && sendTo->isEnabled() &&
-              sendTo->text().startsWith(QStringLiteral("send to: #prompt")) &&
+              sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
               sendTo->toolTip().contains(QStringLiteral("(Enter)")),
           QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
@@ -9906,7 +10199,8 @@ void checkButtonPlacement(MainWindow &window)
           QStringLiteral("Pulls starts in the repository tab bar (%1)")
               .arg(tabs.join(QStringLiteral(", "))));
     check(window.testButtonPlacementMenuActions(pulls) ==
-              QStringList{QStringLiteral("Move to left rail")},
+              QStringList{QStringLiteral("Move to left rail"),
+                          QStringLiteral("Hide from repository tab bar (keep on Home)")},
           QStringLiteral("a repository tab offers to move to the left rail"));
 
     window.testMoveButtonToPanel(pulls, QStringLiteral("rail"));
@@ -9924,6 +10218,40 @@ void checkButtonPlacement(MainWindow &window)
               QStringList{QStringLiteral("Move to repository tab bar"),
                           QStringLiteral("Reset button placement")},
           QStringLiteral("a moved button offers to move back and to reset"));
+
+    const auto dropRailItemOn = [](QWidget *target, const QString &key) {
+        if (!target)
+            return false;
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), key.toUtf8());
+        const QPoint at = target->rect().center();
+        QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        QApplication::sendEvent(target, &enter);
+        if (!enter.isAccepted())
+            return false;
+        QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton,
+                        Qt::NoModifier);
+        QApplication::sendEvent(target, &drop);
+        QApplication::processEvents();
+        return drop.isAccepted();
+    };
+    QWidget *tabPanel = window.testRepoTabRowPanel();
+    check(tabPanel && tabPanel->acceptDrops() && dropRailItemOn(tabPanel, pulls) &&
+              window.testRepoTabRowKeys().contains(pulls) &&
+              !window.testRailOrderKeys().contains(pulls) &&
+              !QSettings().value(placementKey).toMap().contains(pulls),
+          QStringLiteral("dragging Pulls from the rail onto the tab bar moves it back (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(dropRailItemOn(tabPanel, QStringLiteral("settings")) &&
+              window.testRepoTabRowKeys().contains(QStringLiteral("settings")) &&
+              !window.testRailOrderKeys().contains(QStringLiteral("settings")),
+          QStringLiteral("dragging a rail icon onto the tab bar moves it there (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(!dropRailItemOn(tabPanel, QStringLiteral("settings")),
+          QStringLiteral("a button already in the tab bar is not dropped there again"));
+    window.testMoveButtonToPanel(pulls, QStringLiteral("rail"));
+    window.testMoveButtonToPanel(QStringLiteral("settings"), QStringLiteral("rail"));
 
     window.testShowStatsSection();
     QApplication::processEvents();
@@ -10053,7 +10381,8 @@ void checkButtonPlacement(MainWindow &window)
           QStringLiteral("the Code toolbar holds Overview through Releases (%1)")
               .arg(codeBar.join(QStringLiteral(", "))));
     check(window.testButtonPlacementMenuActions(branches) ==
-              QStringList{QStringLiteral("Move to left rail")},
+              QStringList{QStringLiteral("Move to left rail"),
+                          QStringLiteral("Hide from Code toolbar (keep on Home)")},
           QStringLiteral("a Code toolbar button offers to move to the left rail"));
 
     window.testMoveButtonToPanel(branches, QStringLiteral("rail"));
@@ -10061,6 +10390,17 @@ void checkButtonPlacement(MainWindow &window)
               !window.testRepoCodeBarKeys().contains(branches),
           QStringLiteral("Branches moves from the Code toolbar into the rail (%1)")
               .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+    {
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), branches.toUtf8());
+        QWidget *tabPanel = window.testRepoTabRowPanel();
+        QDragEnterEvent enter(QPoint(4, 4), Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        if (tabPanel)
+            QApplication::sendEvent(tabPanel, &enter);
+        check(tabPanel && !enter.isAccepted(),
+              QStringLiteral("a Code toolbar button in the rail does not drop on the tab bar"));
+    }
     check(window.testButtonPlacementMenuActions(branches) ==
               QStringList{QStringLiteral("Move to Code toolbar"),
                           QStringLiteral("Reset button placement")},
@@ -10101,6 +10441,164 @@ void checkButtonPlacement(MainWindow &window)
               !QSettings().contains(placementKey),
           QStringLiteral("resetting puts the Code toolbar back together (%1)")
               .arg(window.testRepoCodeBarKeys().join(QStringLiteral(", "))));
+}
+
+void checkRailHideKeepsOnHome(MainWindow &window)
+{
+    const QString hiddenKey = QStringLiteral("ui/railHidden");
+    const QString placementKey = QStringLiteral("ui/buttonPlacement");
+    const QString notes = QStringLiteral("notes");
+    const QString pulls = QStringLiteral("repoTab:pulls");
+    QSettings().remove(hiddenKey);
+    QSettings().remove(placementKey);
+    window.testBuildRepoDetailSection();
+    window.testApplyRailOrder();
+    QApplication::processEvents();
+    const QStringList rail = window.testRailOrderKeys();
+    const QStringList tabs = window.testRepoTabRowKeys();
+    const auto homeKeys = [&window] {
+        QStringList keys;
+        for (const HomeGroup &group : window.testHomeGridGroups())
+            for (const HomeTile &tile : group.tiles)
+                keys << tile.key;
+        return keys;
+    };
+    QWidget *notesButton = window.testRailWidgetForKey(notes);
+    check(rail.contains(notes) && homeKeys().contains(notes) && notesButton,
+          QStringLiteral("Notes starts in the rail and on Home"));
+
+    window.testSetRailItemHidden(notes, true);
+    QApplication::processEvents();
+    check(!window.testRailOrderKeys().contains(notes) &&
+              QSettings().value(hiddenKey).toStringList() == QStringList{notes},
+          QStringLiteral("hiding Notes takes it out of the rail and saves it (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+    check(notesButton && !notesButton->isVisible() && !notesButton->isHidden() &&
+              window.testRailWidgetForKey(notes) == notesButton,
+          QStringLiteral("the hidden Notes button is kept off screen"));
+    check(homeKeys().contains(notes),
+          QStringLiteral("a rail item hidden from the rail stays on Home"));
+    window.testApplyRailOrder();
+    check(!window.testRailOrderKeys().contains(notes),
+          QStringLiteral("Notes stays hidden when the rail is rebuilt"));
+    check(window.testHomeTileMenuActions(notes) ==
+                  QStringList{QStringLiteral("homeShowInRail")} &&
+              window.testHomeTileMenuActions(QStringLiteral("chat")) ==
+                  QStringList{QStringLiteral("homeHideFromRail")} &&
+              window.testHomeTileMenuActions(QStringLiteral("home")).isEmpty(),
+          QStringLiteral("a Home tile offers to show or hide its rail item"));
+
+    window.testShowHomeGridSection();
+    const int homeSection = window.testSectionIndex();
+    check(window.testActivateHomeGridTile(notes) &&
+              window.testSectionIndex() != homeSection,
+          QStringLiteral("the Home tile still opens a hidden rail page (%1)")
+              .arg(window.testSectionIndex()));
+
+    window.testSetRailItemHidden(QStringLiteral("home"), true);
+    check(window.testRailOrderKeys().value(0) == QStringLiteral("home") &&
+              window.testRailHiddenKeys() == QStringList{notes},
+          QStringLiteral("Home itself cannot be hidden from the rail"));
+
+    window.testSetRailItemHidden(notes, false);
+    QApplication::processEvents();
+    check(window.testRailOrderKeys() == rail && !QSettings().contains(hiddenKey) &&
+              notesButton && notesButton->isVisible(),
+          QStringLiteral("showing Notes puts it back in its place (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+
+    window.testHideButtonKeepOnHome(window.testRepoPullsTab());
+    QApplication::processEvents();
+    check(!window.testRepoTabRowKeys().contains(pulls) &&
+              !window.testRailOrderKeys().contains(pulls) &&
+              homeKeys().contains(pulls),
+          QStringLiteral("hiding Pulls from the repository tab bar keeps it on "
+                         "Home (%1)")
+              .arg(homeKeys().join(QStringLiteral(", "))));
+    window.testSetRailItemHidden(pulls, false);
+    check(window.testRailOrderKeys().contains(pulls),
+          QStringLiteral("showing Pulls again puts it in the left rail"));
+
+    window.testSetRailItemHidden(notes, true);
+    window.testResetButtonPlacement();
+    check(window.testRailOrderKeys() == rail &&
+              window.testRepoTabRowKeys() == tabs &&
+              !QSettings().contains(hiddenKey) &&
+              !QSettings().contains(placementKey),
+          QStringLiteral("resetting button placement shows hidden items again"));
+}
+
+void checkWorkflowPinStripDrops(MainWindow &window)
+{
+    const QString pinsKey = QStringLiteral("ui/workflowPins");
+    const QStringList rails{QStringLiteral("top"), QStringLiteral("left"),
+                            QStringLiteral("bottom")};
+    window.show();
+    QApplication::processEvents();
+    bool built = true;
+    for (const QString &rail : rails)
+        built = built && window.testWorkflowPinStrip(rail);
+    QWidget *sideRail = window.testSideRail();
+    QWidget *right =
+        sideRail ? sideRail->findChild<QWidget *>(QStringLiteral("sideRailContent")) : nullptr;
+    check(built && right && right->acceptDrops() &&
+              !window.testWorkflowPinStrip(QStringLiteral("right")),
+          QStringLiteral("the top, left and bottom edges have workflow pin strips and the side "
+                         "rail takes right-rail pins"));
+    if (!built || !right)
+        return;
+    QSettings().setValue(
+        pinsKey, QStringLiteral("[{\"repo\":\"o/r\",\"workflow\":\"a\",\"rail\":\"top\"},"
+                                "{\"repo\":\"o/r\",\"workflow\":\"b\",\"rail\":\"left\"}]"));
+
+    window.testSetWorkflowPinStripsOpen(true);
+    QApplication::processEvents();
+    bool open = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        open = open && !strip->isHidden() && strip->acceptDrops() &&
+               strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    open = open && right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                               Qt::FindDirectChildrenOnly);
+    check(open, QStringLiteral("dragging a pin opens the three strips and the side rail as drop "
+                               "zones"));
+
+    QMimeData mime;
+    mime.setData(QStringLiteral("application/x-forkmesh-workflow-pin"), QByteArrayLiteral("o/r\na"));
+    const QPoint at = right->rect().center();
+    QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &enter);
+    QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &drop);
+    const QString saved = QSettings().value(pinsKey).toString();
+    check(enter.isAccepted() && drop.isAccepted() &&
+              saved.contains(QStringLiteral("\"workflow\":\"a\"")) &&
+              saved.indexOf(QStringLiteral("\"rail\":\"right\"")) >= 0 &&
+              !saved.contains(QStringLiteral("\"rail\":\"top\"")),
+          QStringLiteral("a pin dropped on the side rail moves to the right rail (%1)").arg(saved));
+
+    QWidget *bottom = window.testWorkflowPinStrip(QStringLiteral("bottom"));
+    QMimeData other;
+    other.setData(QStringLiteral("application/x-forkmesh-rail-item"), QByteArrayLiteral("settings"));
+    QDragEnterEvent stranger(bottom->rect().center(), Qt::MoveAction, &other, Qt::LeftButton,
+                             Qt::NoModifier);
+    QApplication::sendEvent(bottom, &stranger);
+    check(!stranger.isAccepted(), QStringLiteral("a pin strip ignores drags that are not pins"));
+
+    window.testSetWorkflowPinStripsOpen(false);
+    QApplication::processEvents();
+    bool closed = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        closed = closed && strip->isHidden() &&
+                 !strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    closed = closed && !right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                                    Qt::FindDirectChildrenOnly);
+    check(closed, QStringLiteral("after the drag, strips with no shown pins hide again"));
+    QSettings().remove(pinsKey);
+    QSettings().remove(QStringLiteral("ui/sideRailItems"));
 }
 
 void checkRailPageShortcuts(MainWindow &window)
@@ -10443,14 +10941,13 @@ void checkWorkspaceDesign(MainWindow &window)
           QStringLiteral("branch and vibe are icon toggles, with the branch on"));
 
     QLabel *preview = window.testPromptChatPreview();
-    check(preview && preview->isVisibleTo(&window) &&
-              preview->text().contains(QStringLiteral("now the composer")) &&
-              preview->text().contains(QStringLiteral("rarely used actions")) &&
-              preview->text().count(QStringLiteral("<br>")) == 2,
-          QStringLiteral("three compact lines of the latest chat sit over the prompt "
-                         "(%1)")
+    check(preview && !preview->text().contains(QStringLiteral("now the composer")) &&
+              !preview->text().contains(QStringLiteral("rarely used actions")) &&
+              preview->text().count(QStringLiteral("<br>")) <= 2,
+          QStringLiteral("the lines over the prompt are the latest chats, never the "
+                         "agent transcript (%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
-    if (preview && wrapper) {
+    if (preview && wrapper && preview->isVisibleTo(&window)) {
         auto *bar = wrapper->findChild<QWidget *>(QStringLiteral("promptDragHandle"));
         const QRect previewInWrapper(preview->mapTo(wrapper, QPoint()), preview->size());
         check(preview->height() >= preview->sizeHint().height() &&
@@ -10550,6 +11047,42 @@ void checkWorkspaceDesign(MainWindow &window)
                          "to the open agent (%1)")
               .arg(centredSend ? centredSend->text() : QStringLiteral("none")));
     shoot(QStringLiteral("agents-new-layout"));
+    {
+        int shownEdges = 0;
+        for (QWidget *edge :
+             window.findChildren<QWidget *>(QStringLiteral("promptResizeEdge")))
+            shownEdges += edge->isVisibleTo(&window) ? 1 : 0;
+        check(shownEdges == 8,
+              QStringLiteral("the centred composer keeps all eight edges and corners "
+                             "resizable (%1 shown)")
+                  .arg(shownEdges));
+        auto *body = window.findChild<QWidget *>(QStringLiteral("quickAddBottomBarHost"));
+        if (body && body->isVisibleTo(&window)) {
+            const QPoint start = body->mapToGlobal(QPoint(2, body->height() / 2));
+            const QPoint end = start + QPoint(-40, -120);
+            QMouseEvent press(QEvent::MouseButtonPress, body->mapFromGlobal(start),
+                              QPointF(start), Qt::LeftButton, Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(body, &press);
+            QMouseEvent move(QEvent::MouseMove, body->mapFromGlobal(end), QPointF(end),
+                             Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(body, &move);
+            if (auto *handle =
+                    window.findChild<QWidget *>(QStringLiteral("promptDragHandle"))) {
+                QMouseEvent release(QEvent::MouseButtonRelease,
+                                    handle->mapFromGlobal(end), QPointF(end),
+                                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(handle, &release);
+            }
+            settle();
+        }
+        check(body && window.testPromptOverlayPlacement() == QStringLiteral("floating"),
+              QStringLiteral("dragging the centred composer by its body lifts it out "
+                             "to float anywhere (%1)")
+                  .arg(window.testPromptOverlayPlacement()));
+        window.testResetPromptOverlayPlacement();
+        settle();
+    }
     forkmesh::ui::setWorkspaceLayoutClassic(true);
     NextAccess::syncWorkspace(window);
     settle();
@@ -10596,6 +11129,18 @@ void checkWorkspaceDesign(MainWindow &window)
     forkmesh::instancetheme::store({});
 
     NextAccess::setRailExpanded(window, false);
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    forkmesh::instancetheme::setMatchEnabled(true);
+    check(!window.testAppearanceIsDefault(),
+          QStringLiteral("a picked theme is not the install default"));
+    window.testResetAppearanceToDefaults();
+    settle();
+    check(window.testAppearanceIsDefault() &&
+              !settings.contains(QStringLiteral("app/theme")) &&
+              !settings.contains(QStringLiteral("app/design")) &&
+              !forkmesh::instancetheme::matchEnabled() && !Theme::isNext(),
+          QStringLiteral("Reset to default puts back the install's theme, "
+                         "interface and own colours"));
     settings.remove(QStringLiteral("app/design"));
     settings.remove(QStringLiteral("app/theme"));
     MainWindow::applyTheme();
@@ -10997,6 +11542,119 @@ void checkAgentCommandApprovalRender(MainWindow &window)
                          "Allowed chip (rows = %1, label = %2)")
               .arg(rows.size())
               .arg(rows.isEmpty() ? QString() : rows.first().approval.label));
+}
+
+void checkDeployLogBadges(MainWindow &window)
+{
+    const auto storedLine = [](const QString &message) {
+        return QStringLiteral("2026-01-01 00:00:00  ") + message;
+    };
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838]"))) !=
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate with no new failures is not an "
+                         "error"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: new test failures against the deployed "
+              "4eebecff140b: app/tests/test_x.py"))) ==
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate that found new failures still "
+                         "badges ERROR"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838|INFO]"))) ==
+              QStringLiteral("INFO"),
+          QStringLiteral("a deploy line stored as informational stays "
+                         "informational after a reload"));
+}
+
+class StyleChangeCounter final : public QObject
+{
+public:
+    QHash<QObject *, int> counts;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::StyleChange && watched->isWidgetType())
+            ++counts[watched];
+        return false;
+    }
+};
+
+void checkThemeSwitchRepolish(MainWindow &window)
+{
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    window.testShowChatSection();
+    window.testShowLogSection();
+    window.testShowMarketSection();
+    window.testShowLedgerSection();
+    window.testShowHostsSection();
+    window.testShowUsersSection();
+    window.testShowNodesSection();
+    window.testShowHomeSection();
+    settleAnimations();
+
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    auto switchTo = [&](const QString &theme, int *maxPerWidget, int *total) {
+        settings.setValue(QStringLiteral("app/theme"), theme);
+        StyleChangeCounter counter;
+        qApp->installEventFilter(&counter);
+        QElapsedTimer timer;
+        timer.start();
+        MainWindow::applyTheme();
+        const qint64 elapsed = timer.elapsed();
+        qApp->removeEventFilter(&counter);
+        *maxPerWidget = 0;
+        *total = 0;
+        for (const int count : std::as_const(counter.counts)) {
+            *maxPerWidget = qMax(*maxPerWidget, count);
+            *total += count;
+        }
+        qInfo().noquote() << QStringLiteral(
+                                 "theme switch to %1: %2 ms, %3 widgets, %4 "
+                                 "style changes, at most %5 on one widget")
+                                 .arg(theme)
+                                 .arg(elapsed)
+                                 .arg(QApplication::allWidgets().size())
+                                 .arg(*total)
+                                 .arg(*maxPerWidget);
+        settleAnimations();
+    };
+
+    int maxPerWidget = 0;
+    int total = 0;
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() > 128,
+          QStringLiteral("switching to the light theme recolours the app"));
+    check(total <= QApplication::allWidgets().size() * 3,
+          QStringLiteral("a theme switch restyles each widget about twice, "
+                         "not once per ancestor"));
+    const QString sheet = qApp->styleSheet();
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(qApp->styleSheet() == sheet &&
+              total < QApplication::allWidgets().size() / 4,
+          QStringLiteral("applying the theme already shown leaves the "
+                         "application style sheet alone"));
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() < 128 &&
+              !qApp->styleSheet().isEmpty(),
+          QStringLiteral("switching back to dark restores a dark style sheet"));
+
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    MainWindow::applyTheme();
+    settleAnimations();
 }
 
 void checkAppViewModes(MainWindow &window)
@@ -14573,6 +15231,161 @@ void checkUiSnapshots(MainWindow &window)
     settle();
 }
 
+void checkSessionsPage(MainWindow &window)
+{
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    QApplication::processEvents();
+    const auto waitUntil = [](const std::function<bool()> &ready) {
+        QElapsedTimer clock;
+        clock.start();
+        while (!ready() && clock.elapsed() < 5000)
+            QApplication::processEvents(QEventLoop::AllEvents, 25);
+        return ready();
+    };
+
+    QPushButton *sessions = window.testSessionsNavButton();
+    QPushButton *agents = window.testAgentsNavButton();
+    const QStringList rail = window.testRailOrderKeys();
+    const int sessionsAt = rail.indexOf(QStringLiteral("sessions"));
+    check(sessions && agents && sessionsAt >= 0 &&
+              rail.indexOf(QStringLiteral("agents")) == sessionsAt + 1 &&
+              sessions->parentWidget() == agents->parentWidget(),
+          QStringLiteral("the rail has a Sessions button directly above Agents (%1)")
+              .arg(rail.join(QStringLiteral(", "))));
+    if (!sessions || !agents)
+        return;
+
+    const auto assistant = [](const QString &text) {
+        return QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("assistant")},
+            {QStringLiteral("message"),
+             QJsonObject{{QStringLiteral("content"),
+                          QJsonArray{QJsonObject{{QStringLiteral("type"),
+                                                  QStringLiteral("text")},
+                                                 {QStringLiteral("text"), text}}}}}}};
+    };
+    const auto userTurn = [](const QString &text) {
+        return QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                           {QStringLiteral("text"), text}};
+    };
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const auto seed = [&window, now](int id, const QString &title,
+                                     const QString &status, const QString &mode) {
+        AgentSession session;
+        session.id = id;
+        session.owner = QStringLiteral("forkmesh");
+        session.name = QStringLiteral("sessions-probe");
+        session.issueTitle = title;
+        session.prompt = title;
+        session.provider = QStringLiteral("claude-code");
+        session.model = QStringLiteral("claude-opus-5-5");
+        session.mode = mode;
+        session.branchName = QStringLiteral("agent/%1").arg(id);
+        session.status = status;
+        session.createdAtMs = now - id;
+        window.testAddAgentSession(session);
+        return session;
+    };
+    const AgentSession first = seed(9411, QStringLiteral("Wire the sessions page"),
+                                    AgentStatus::Running, QStringLiteral("Auto"));
+    const AgentSession second = seed(9412, QStringLiteral("Review the relay rules"),
+                                     AgentStatus::Success, QStringLiteral("Auto"));
+    const AgentSession planner = seed(9413, QStringLiteral("Plan the next step"),
+                                      AgentStatus::Success, QStringLiteral("Plan"));
+    window.testSetAgentTranscriptEvents(
+        first.id, {userTurn(QStringLiteral("wire the sessions page")),
+                   assistant(QStringLiteral("The sessions sidebar now lists every run."))});
+    window.testSetAgentTranscriptEvents(
+        second.id, {userTurn(QStringLiteral("review the relay rules")),
+                    assistant(QStringLiteral("Relays keep the permission rule."))});
+    window.testSetAgentTranscriptEvents(planner.id, {});
+
+    sessions->click();
+    QApplication::processEvents();
+    check(window.testSectionIndex() == window.testSessionsSectionIndex() &&
+              sessions->isChecked() && !agents->isChecked(),
+          QStringLiteral("clicking Sessions shows the Sessions page and checks only "
+                         "its rail button"));
+    const QList<int> listed = window.testSessionsListIds();
+    check(listed.contains(first.id) && listed.contains(second.id) &&
+              listed.indexOf(first.id) < listed.indexOf(second.id),
+          QStringLiteral("the Sessions list shows the seeded sessions, the running "
+                         "one in Active above the finished ones"));
+
+    window.showSessionsPage(first.id);
+    check(waitUntil([&] {
+              return window.testSessionsOpenId() == first.id &&
+                     window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("sidebar now lists")) > 0;
+          }),
+          QStringLiteral("selecting a session renders its stored transcript in the "
+                         "page's own transcript view"));
+
+    window.testApplyAgentTranscriptEvent(
+        first.id, assistant(QStringLiteral("Live rows land as they stream.")));
+    check(waitUntil([&] {
+              return window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("Live rows land")) > 0;
+          }),
+          QStringLiteral("a new event of the open session is appended live"));
+
+    window.testSetAgentSessionLiveTransport(first.id, true);
+    window.testSetAgentSessionLiveTransport(second.id, true);
+    check(window.testSessionsComposerState().startsWith(
+              QStringLiteral("1|%1|").arg(first.id)),
+          QStringLiteral("the composer is enabled and addressed to the open session "
+                         "(%1)")
+              .arg(window.testSessionsComposerState()));
+    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"),
+                                    second.id);
+    check(waitUntil([&] {
+              return window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("please cover the relay strip")) > 0;
+          }),
+          QStringLiteral("Enter in the composer sends through "
+                         "sendPromptToAgentSession and the turn shows live"));
+
+    QString why;
+    check(!window.relayBetweenSessions(planner.id, first.id,
+                                       QStringLiteral("take over"), &why) &&
+              why.contains(QStringLiteral("mode")),
+          QStringLiteral("a Plan session may not direct an Auto session (%1)").arg(why));
+    why.clear();
+    check(window.forwardLastSessionReply(first.id, second.id, &why),
+          QStringLiteral("the last reply forwards to another session (%1)").arg(why));
+
+    window.showSessionsPage(second.id);
+    check(waitUntil([&] {
+              return window.testSessionsOpenId() == second.id &&
+                     window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("please cover the relay strip")) > 0 &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("another agent, not the user")) > 0;
+          }),
+          QStringLiteral("Also send to reached the second session and the "
+                         "forwarded reply arrived wrapped as an agent message"));
+    check(window.testSessionsRelayStrip().join(QLatin1Char(' ')).contains(
+              QStringLiteral("#%1").arg(first.id)),
+          QStringLiteral("the strip shows the conversation between sessions (%1)")
+              .arg(window.testSessionsRelayStrip().join(QStringLiteral(" | "))));
+
+    window.testSetAgentSessionLiveTransport(first.id, false);
+    window.testSetAgentSessionLiveTransport(second.id, false);
+    window.testRemoveAgentSession(first.id);
+    window.testRemoveAgentSession(second.id);
+    window.testRemoveAgentSession(planner.id);
+    window.testShowHomeSection();
+    QApplication::processEvents();
+}
+
 int runWorkspaceSnapshots(MainWindow &window);
 
 int main(int argc, char *argv[])
@@ -14894,6 +15707,8 @@ else:
         app.arguments().contains(QStringLiteral("--agent-efficiency-only"));
     const bool agentLandingOnly =
         app.arguments().contains(QStringLiteral("--agent-landing-only"));
+    const bool sessionsOnly =
+        app.arguments().contains(QStringLiteral("--sessions-only"));
     const bool errorLogTriageOnly =
         app.arguments().contains(QStringLiteral("--error-log-triage-only"));
     const bool viewModesOnly =
@@ -15268,7 +16083,8 @@ else:
         const auto hover = [&chart](const QPoint &position, const QString &expected) {
             QHelpEvent event(QEvent::ToolTip, position, chart.mapToGlobal(position));
             QApplication::sendEvent(&chart, &event);
-            return QToolTip::text() == expected;
+            return forkmesh::ui::SparklineHoverCard::detailShownFor(&chart)
+                .startsWith(expected);
         };
         check(hover(QPoint(8, 8), QStringLiteral("CPU details")) &&
                   hover(QPoint(25, 8), QStringLiteral("Memory details")) &&
@@ -15484,6 +16300,18 @@ else:
           QStringLiteral("the shared app frame reserves exactly one pixel for "
                          "the perimeter on every side"));
 
+    if (app.arguments().contains(QStringLiteral("--deploy-log-badges-only"))) {
+        checkDeployLogBadges(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (app.arguments().contains(QStringLiteral("--theme-switch-only"))) {
+        checkThemeSwitchRepolish(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (viewModesOnly) {
         checkAppViewModes(window);
         stopChildProcesses(window);
@@ -15531,6 +16359,12 @@ else:
         return failures == 0 ? 0 : 1;
     }
 
+    if (sessionsOnly) {
+        checkSessionsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (errorLogTriageOnly) {
         window.show();
         QApplication::processEvents();
@@ -15544,10 +16378,12 @@ else:
         checkRailSortAndGroups(window);
         checkRailDragReorder(window);
         checkButtonPlacement(window);
+        checkWorkflowPinStripDrops(window);
         checkRailPageShortcuts(window);
         checkStatsPage(window);
         checkMemoryPage(window);
         checkHomeGridPage(window);
+        checkRailHideKeepsOnHome(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -15610,6 +16446,16 @@ else:
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("opening Agents builds only that deferred "
                              "repository tab, not every tab after it"));
+        settleAnimations();
+        const QString lastTabKey =
+            QStringLiteral("repositories/lastOpenDetailTab");
+        check(QSettings().value(lastTabKey, -1).toInt() == -1,
+              QStringLiteral("switching repository tabs does not rewrite the "
+                             "settings file"));
+        window.testFlushDeferredSettings();
+        check(QSettings().value(lastTabKey, -1).toInt() == 3,
+              QStringLiteral("the last repository tab is saved when the window "
+                             "closes"));
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -15623,21 +16469,27 @@ else:
         auto *tourButton = window.findChild<QPushButton *>(
             QStringLiteral("tourNavButton"));
         QPushButton *takeTour = nullptr;
+        QPushButton *takeEssentials = nullptr;
         if (tour) {
-            for (QPushButton *button : tour->findChildren<QPushButton *>()) {
-                if (button->text() == QStringLiteral("Take the tour  →")) {
+            for (QPushButton *button : tour->findChildren<QPushButton *>(
+                     QStringLiteral("onboardingTrackButton"))) {
+                if (button->text().startsWith(
+                        QStringLiteral("The whole shebang  ·  25 stops")))
                     takeTour = button;
-                    break;
-                }
+                else if (button->text().startsWith(
+                             QStringLiteral("Essentials  ·  8 stops")))
+                    takeEssentials = button;
             }
         }
         check(tour && tour->isVisible() &&
                   tour->view() ==
                       forkmesh::ui::OnboardingTour::View::Welcome &&
-                  takeTour &&
+                  takeTour && takeEssentials &&
+                  tour->trackChoices().size() == 3 &&
                   window.testStackIndex() == 1,
               QStringLiteral("a fresh install opens the welcome over the usable "
-                             "app shell with a Take the tour choice"));
+                             "app shell with Essentials, Advanced and the whole "
+                             "shebang to choose from"));
         check(tourButton && tourButton->isVisibleTo(&window) &&
                   tourButton->accessibleName().contains(
                       QStringLiteral("feature tour")) &&
@@ -15688,6 +16540,13 @@ else:
             tourButton->click();
         QApplication::processEvents();
         check(tour && tour->view() ==
+                          forkmesh::ui::OnboardingTour::View::Choose &&
+                  tour->trackChoices().size() == 3,
+              QStringLiteral("the rail Tour button opens the track chooser"));
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Everything);
+        QApplication::processEvents();
+        check(tour && tour->view() ==
                           forkmesh::ui::OnboardingTour::View::Tour &&
                   tour->currentStepId() == QStringLiteral("navigation") &&
                   !QSettings().value(
@@ -15721,6 +16580,17 @@ else:
         if (tourButton)
             tourButton->click();
         QApplication::processEvents();
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Essentials);
+        QApplication::processEvents();
+        const QStringList essentialSteps{
+            QStringLiteral("navigation"), QStringLiteral("agents"),
+            QStringLiteral("prompt"), QStringLiteral("repositories"),
+            QStringLiteral("repo-switcher"), QStringLiteral("pings"),
+            QStringLiteral("search"), QStringLiteral("ready")};
+        check(tour && tour->stepIds() == essentialSteps,
+              QStringLiteral("Essentials keeps the everyday stops in tour order "
+                             "and still ends on the finish"));
         bool replayHasSkip = false;
         if (tour) {
             for (QPushButton *button : tour->findChildren<QPushButton *>()) {
@@ -15759,9 +16629,9 @@ else:
                   tourButton && tourButton->isVisibleTo(&window) &&
                   window.testOnboardingTour() &&
                   window.testOnboardingTour()->view() ==
-                      forkmesh::ui::OnboardingTour::View::Tour,
+                      forkmesh::ui::OnboardingTour::View::Choose,
               QStringLiteral("reinstalling the Tour package from the Market "
-                             "brings the rail button and the walkthrough back"));
+                             "brings the rail button and the tour chooser back"));
         if (window.testOnboardingTour())
             window.testOnboardingTour()->dismiss();
         stopChildProcesses(window);
@@ -16107,7 +16977,7 @@ else:
             window.testAddAgentSession(session);
 
         const QString teammateConfigRelative =
-            QStringLiteral(".forkmesh/teammates/quality.json");
+            QStringLiteral(".forkmesh/workflows/quality.json");
         const QString teammateConfigPath =
             QDir(repository.path()).filePath(teammateConfigRelative);
         QFile originalConfigFile(teammateConfigPath);
@@ -16187,268 +17057,287 @@ else:
             QApplication::processEvents(QEventLoop::AllEvents, 20);
 
         {
-            window.testSetTeammateRailEnabled(true);
-            window.testRefreshTeammateRail();
-            QApplication::processEvents();
-            QWidget *rail = window.testTeammateRail();
-            auto railItemFor = [rail](const QString &id) -> QWidget * {
+            namespace sr = forkmesh::siderail;
+            const auto settleRail = [] {
+                for (int i = 0; i < 6; ++i) {
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                }
+            };
+            const QString railShot = qEnvironmentVariable("FORKMESH_TEAMMATE_RAIL_SHOT");
+            QSettings().remove(sr::kItemsSetting);
+            const QSize railWindowSize = window.size();
+            window.resize(1400, qMax(railWindowSize.height(), 800));
+            window.testSetSideRailEnabled(true);
+            window.testRefreshSideRail();
+            settleRail();
+            QWidget *rail = window.testSideRail();
+            auto railItemFor = [rail](const QString &key) -> QWidget * {
                 if (!rail)
                     return nullptr;
-                for (QWidget *item : rail->findChildren<QWidget *>(
-                         QStringLiteral("teammateRailItem"))) {
-                    if (item->property("teammateId").toString() == id)
+                for (QWidget *item : rail->findChildren<QWidget *>(QStringLiteral("sideRailItem")))
+                    if (item->property("sideRailKey").toString() == key)
                         return item;
-                }
                 return nullptr;
             };
-            QWidget *railItem = railItemFor(quality.id);
-            QPushButton *railAvatar =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailAvatar"))
-                         : nullptr;
-            QPushButton *railMore =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailMenuButton"))
-                         : nullptr;
-            const bool railCompact =
-                railItem &&
-                !railItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailRunButton")) &&
-                !railItem->findChild<QLabel *>(
-                    QStringLiteral("teammateRailLastRun"));
-            QPushButton *railMood =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailMood"))
-                         : nullptr;
-            const bool railMenuHud = railMore && !railMore->isHidden();
-            const bool railMoodShown =
-                railMood && !railMood->isHidden() &&
-                !railItem->property("mood").toString().isEmpty() &&
-                railMood->toolTip().contains(QStringLiteral("Weighed 100 signals"));
-            const bool railFaceFillsSquare =
-                railAvatar && railItem->width() == railItem->height() &&
-                railAvatar->width() >= railItem->width() - 4 &&
-                !railAvatar->property("motion").toString().isEmpty();
-            const QString railTip = railAvatar ? railAvatar->toolTip() : QString();
-            QPushButton *railCreate =
-                rail ? rail->findChild<QPushButton *>(
-                           QStringLiteral("teammateRailCreateButton"))
-                     : nullptr;
             const int railRight =
                 rail ? rail->mapTo(&window, QPoint(rail->width(), 0)).x() : -1;
-            const QVariant railStaleness =
-                railItem ? railItem->property("staleness") : QVariant();
-            check(railStaleness.isValid() &&
-                      railStaleness.toDouble() >= 0.0 &&
-                      railStaleness.toDouble() <= 1.0 &&
-                      railTip.contains(QStringLiteral("Schedule:")),
-                  QString("each special agent on the rail carries a cadence-based "
-                          "freshness tint and names its schedule (staleness=%1)")
-                      .arg(railStaleness.toDouble()));
-            check(rail && rail->isVisible() && railItem && railAvatar &&
-                      railCompact && railMenuHud && railMoodShown &&
-                      railFaceFillsSquare &&
-                      railTip.contains(QStringLiteral("Last run:")) &&
-                      (railTip.contains(QStringLiteral("Click to")) ||
-                       railTip.contains(QStringLiteral("Paused"))) &&
-                      railCreate && railCreate->isEnabled() &&
-                      railRight >= window.width() - 2,
-                  QString("the right rail lists each special agent as a square "
-                          "live face filling its box, with the last run in its "
-                          "hover, an always-visible menu HUD button, a mood "
-                          "emoji weighed from 100 signals and no Run button or "
-                          "age line, plus a create button (item=%1 compact=%2 "
-                          "menu/mood/face=%3/%4/%5 tip=%6 right=%7/%8)")
-                      .arg(railItem != nullptr)
-                      .arg(railCompact)
-                      .arg(railMenuHud)
-                      .arg(railMoodShown)
-                      .arg(railFaceFillsSquare)
-                      .arg(railTip)
+            QPushButton *railTerminal =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailTerminalButton")) : nullptr;
+            QPushButton *railBrowse =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailBrowserButton")) : nullptr;
+            QPushButton *railAdd =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailAddButton")) : nullptr;
+            const bool noTeamChips =
+                rail && window.findChildren<QWidget *>(QStringLiteral("teammateRailItem")).isEmpty();
+            check(rail && rail->isVisible() && noTeamChips && railTerminal && railBrowse &&
+                      railAdd && railRight >= window.width() - 2,
+                  QString("the right rail is a generic side rail: a terminal button, a "
+                          "browser button and an add tile, with no special agent chips "
+                          "(chips gone=%1 right=%2/%3)")
+                      .arg(noTeamChips)
                       .arg(railRight)
                       .arg(window.width()));
 
-            window.testSetTeammateRailEnabled(false);
-            QApplication::processEvents();
+            const QString repoKey = QStringLiteral("forkmesh/teammates-preview");
+            const QString workflowKey = sr::workflowItem(repoKey, quality.id).key();
+            QMimeData workflowDrop;
+            workflowDrop.setData(QLatin1String(sr::kWorkflowMime),
+                                 sr::encodeWorkflow(repoKey, quality.id));
+            const bool workflowDropped = window.testDropOnSideRail(&workflowDrop, -1);
+            settleRail();
+            QWidget *workflowButton = nullptr;
+            for (int i = 0; i < 50 && !workflowButton; ++i) {
+                settleRail();
+                workflowButton = railItemFor(workflowKey);
+            }
+            const bool pinnedRight =
+                QSettings().value(QStringLiteral("ui/workflowPins")).toString().contains(
+                    QStringLiteral("\"right\""));
+            check(workflowDropped && workflowButton && pinnedRight &&
+                      workflowButton->toolTip().contains(QStringLiteral("Click to run")),
+                  QString("dropping a workflow on the side rail pins it to the right rail "
+                          "and shows a run button (dropped=%1 pinned=%2 tip=%3)")
+                      .arg(workflowDropped)
+                      .arg(pinnedRight)
+                      .arg(workflowButton ? workflowButton->toolTip() : QString()));
+
+            QMimeData pageDrop;
+            pageDrop.setData(QStringLiteral("application/x-forkmesh-rail-item"),
+                             QByteArrayLiteral("agents"));
+            const bool pageDropped = window.testDropOnSideRail(&pageDrop, -1);
+            QMimeData linkDrop;
+            linkDrop.setUrls({QUrl(QStringLiteral("https://example.com/docs"))});
+            const bool linkDropped = window.testDropOnSideRail(&linkDrop, 0);
+            QMimeData fileDrop;
+            fileDrop.setUrls({QUrl::fromLocalFile(repository.path())});
+            const bool fileRefused = !window.testDropOnSideRail(&fileDrop, 0);
+            settleRail();
+            const QStringList railKeys = window.testSideRailKeys();
+            const QStringList wantKeys{sr::linkItem(QUrl(QStringLiteral("https://example.com/docs"))).key(),
+                                       workflowKey, sr::pageItem(QStringLiteral("agents")).key()};
+            QWidget *pageButton = nullptr;
+            for (int i = 0; i < 50 && !pageButton; ++i) {
+                settleRail();
+                pageButton = railItemFor(sr::pageItem(QStringLiteral("agents")).key());
+            }
+            if (auto *button = qobject_cast<QAbstractButton *>(pageButton))
+                button->click();
+            settleRail();
+            QAbstractButton *agentsNav = nullptr;
+            for (QAbstractButton *candidate : window.findChildren<QAbstractButton *>())
+                if (candidate->property("forkmeshRailKey").toString() == QLatin1String("agents") &&
+                    candidate != pageButton)
+                    agentsNav = candidate;
+            check(pageDropped && linkDropped && fileRefused && railKeys == wantKeys &&
+                      pageButton && agentsNav && agentsNav->isChecked(),
+                  QString("pages from the left rail and web links drop onto the side rail in "
+                          "place, file links are refused, and a page button opens its page "
+                          "(dropped page/link/file-refused=%1/%2/%3 order=%4 button=%5 nav=%6 "
+                          "checked=%7 keys=%8)")
+                      .arg(pageDropped)
+                      .arg(linkDropped)
+                      .arg(fileRefused)
+                      .arg(railKeys == wantKeys)
+                      .arg(pageButton != nullptr)
+                      .arg(agentsNav != nullptr)
+                      .arg(agentsNav && agentsNav->isChecked())
+                      .arg(railKeys.join(QLatin1Char(',')) + QStringLiteral(" shown=") +
+                           [rail] {
+                               QStringList shown;
+                               for (QWidget *item : rail->findChildren<QWidget *>(
+                                        QStringLiteral("sideRailItem")))
+                                   shown << item->property("sideRailKey").toString();
+                               return shown.join(QLatin1Char(','));
+                           }()));
+
+            const int closedWidth = rail ? rail->width() : 0;
+            window.testSetSideRailBrowserOpen(true);
+            settleRail();
+            QWidget *browserPanel = window.testSideRailBrowserPanel();
+            const bool browserShown = browserPanel && browserPanel->isVisible() && rail &&
+                                      rail->width() > closedWidth + 200 && railBrowse->isChecked();
+            if (!railShot.isEmpty())
+                window.grab().save(railShot + QStringLiteral(".side-rail.png"));
+            window.testSetSideRailBrowserOpen(false);
+            settleRail();
+            check(browserShown && browserPanel && !browserPanel->isVisible() &&
+                      rail->width() == closedWidth,
+                  QString("the side rail opens a small browser beside it and closes it again "
+                          "(closed=%1)")
+                      .arg(closedWidth));
+
+            window.testSetSideRailEnabled(false);
+            settleRail();
             const bool railHidden = rail && !rail->isVisible() &&
-                                    !QSettings()
-                                         .value(QStringLiteral("ui/showTeammateRail"))
-                                         .toBool();
-            window.testSetTeammateRailEnabled(true);
-            QApplication::processEvents();
+                                    !QSettings().value(sr::kShowSetting).toBool();
+            window.testSetSideRailEnabled(true);
+            settleRail();
             check(railHidden && rail && rail->isVisible(),
-                  QStringLiteral("the teammates rail can be turned off and "
-                                 "back on"));
-            const QString railShot =
-                qEnvironmentVariable("FORKMESH_TEAMMATE_RAIL_SHOT");
-            if (!railShot.isEmpty()) {
-                window.grab().save(railShot + QStringLiteral(".window.png"));
-                if (rail)
-                    rail->grab()
-                        .scaled(rail->width() * 3, rail->height() * 3,
-                                Qt::KeepAspectRatio, Qt::SmoothTransformation)
-                        .save(railShot + QStringLiteral(".rail.png"));
-            }
+                  QStringLiteral("the side rail can be turned off and back on"));
 
-            forkmesh::teammates::Config railCfo =
-                forkmesh::teammates::Store::chiefFinancialOfficerTemplate();
-            const forkmesh::teammates::Store railCfoStore(
-                QDir(repository.path()).filePath(
-                    QStringLiteral(".forkmesh/teammates")));
-            const bool railCfoSaved = railCfoStore.save(&railCfo);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *railCfoItem = railItemFor(railCfo.id);
-            auto railCfoButton = [&railItemFor, &railCfo](const char *name) {
-                QWidget *item = railItemFor(railCfo.id);
-                return item ? item->findChild<QPushButton *>(
-                                  QString::fromLatin1(name))
-                            : nullptr;
+            QSettings().remove(sr::kItemsSetting);
+            QSettings().remove(QStringLiteral("ui/workflowPins"));
+            window.testRefreshSideRail();
+            settleRail();
+
+            const auto terminalText = [&window](const QString &id) {
+                const QJsonObject reply = window.testTerminalRequest(
+                    0, id, QStringLiteral("terminals.read"),
+                    {{QStringLiteral("terminal"), id}, {QStringLiteral("lines"), 50}});
+                return reply.value(QStringLiteral("text")).toString();
             };
-            QPushButton *railCfoPlay = railCfoButton("teammateRailPlay");
-            QPushButton *railCfoPayouts =
-                railCfoButton("teammateRailProcessPayouts");
-            QPushButton *railCfoMore = railCfoButton("teammateRailMenuButton");
-            QPushButton *railCfoFace = railCfoButton("teammateRailAvatar");
-            QPushButton *railCfoMood = railCfoButton("teammateRailMood");
-            QLabel *railCfoName =
-                railCfoItem ? railCfoItem->findChild<QLabel *>(
-                                  QStringLiteral("teammateRailName"))
-                            : nullptr;
-            QWidget *railQualityItem = railItemFor(quality.id);
-            const bool railCornersPlaced =
-                railCfoItem && railCfoPlay && railCfoPayouts &&
-                railQualityItem &&
-                railQualityItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailPlay")) &&
-                !railQualityItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailProcessPayouts")) &&
-                railCfoMore && railCfoFace && railCfoName && railCfoMood &&
-                railCfoPlay->geometry().left() < railCfoMood->geometry().left() &&
-                railCfoMood->geometry().right() < railCfoMore->geometry().left() &&
-                railCfoPlay->geometry().top() < 8 &&
-                railCfoMood->geometry().top() < 8 &&
-                railCfoMore->geometry().top() < 8 &&
-                qAbs(railCfoMood->geometry().center().x() -
-                     railCfoItem->width() / 2) <= 1 &&
-                railCfoPayouts->geometry().top() >
-                    railCfoMore->geometry().bottom() &&
-                !railCfoPlay->isHidden() && !railCfoMore->isHidden() &&
-                railCfoPayouts->isHidden();
-            const bool railNameOverAvatar =
-                railCfoName && railCfoFace &&
-                railCfoName->geometry().bottom() >=
-                    railCfoFace->geometry().bottom() - 4 &&
-                railCfoName->geometry().top() > railCfoFace->geometry().center().y() &&
-                railCfoItem->width() - railCfoFace->width() <= 4;
-            if (railCfoItem) {
-                QEnterEvent enter(QPointF(4, 4), QPointF(4, 4), QPointF(4, 4));
-                QApplication::sendEvent(railCfoItem, &enter);
-            }
-            const bool railCornersOnHover =
-                railCfoPlay && !railCfoPlay->isHidden() &&
-                railCfoPayouts && !railCfoPayouts->isHidden();
-            if (!railShot.isEmpty() && rail)
-                rail->grab()
-                    .scaled(rail->width() * 3, rail->height() * 3,
-                            Qt::KeepAspectRatio, Qt::SmoothTransformation)
-                    .save(railShot + QStringLiteral(".corners.png"));
-            if (railCfoItem) {
-                QEvent leave(QEvent::Leave);
-                QApplication::sendEvent(railCfoItem, &leave);
-            }
-            check(railCornersPlaced && railNameOverAvatar && railCornersOnHover,
-                  QString("a rail special agent's face fills its square with a "
-                          "tiny name along the bottom, play, mood and menu sit "
-                          "as round HUD buttons along the top, and the CFO "
-                          "shows a process-payments button on hover (placed=%1 "
-                          "name=%2 hover=%3)")
-                      .arg(railCornersPlaced)
-                      .arg(railNameOverAvatar)
-                      .arg(railCornersOnHover));
-            QStringList railStarted;
-            window.testSetTeammateStartHook(
-                [&railStarted](const QString &teammateId, const QString &) {
-                    railStarted.append(teammateId);
-                    return 943400;
-                });
-            if (railCfoPlay)
-                railCfoPlay->click();
-            for (int i = 0; i < 4; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            const bool railPlayStarted =
-                railStarted == QStringList{railCfo.id};
-            QPushButton *railCfoAvatar = railCfoButton("teammateRailAvatar");
-            if (railCfoAvatar)
-                railCfoAvatar->click();
-            for (int i = 0; i < 4; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            window.testSetTeammateStartHook({});
-            const QString railCfoMessage = window.testLatestNoticeText();
-            const QString railCfoPage = window.testTeammateHomeId();
-            railCfoStore.remove(railCfo.id);
-            window.testReloadTeammatesPanel();
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            check(railCfoSaved && railCfoAvatar && railPlayStarted &&
-                      railStarted == QStringList{railCfo.id} &&
-                      railCfoPage == railCfo.id &&
-                      !railCfoMessage.contains(
-                          QStringLiteral("schedule recorded")),
-                  QString("the play corner on a payout special agent starts its "
-                          "agent instead of recording a schedule, and a click "
-                          "on the avatar opens its page without running it "
-                          "(saved=%1 avatar=%2 started=%3 page=%4 message=%5)")
-                      .arg(railCfoSaved)
-                      .arg(railCfoAvatar != nullptr)
-                      .arg(railStarted.join(QLatin1Char(',')))
-                      .arg(railCfoPage)
-                      .arg(railCfoMessage));
+            const auto waitForText = [&](const QString &id, const QString &needle) {
+                for (int i = 0; i < 400 && !terminalText(id).contains(needle); ++i)
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                return terminalText(id).contains(needle);
+            };
+            const QString terminalId = window.testOpenTerminalTab(
+                QStringLiteral("command"), QStringLiteral("printf 'fm-term-%s\\n' ready"),
+                repository.path());
+            forkmesh::ui::TerminalTabsPage *terminals = window.testTerminalsPage();
+            const bool terminalPageShown = terminals && terminals->isVisible();
+            const bool terminalPrinted = waitForText(terminalId, QStringLiteral("fm-term-ready"));
+            if (!railShot.isEmpty())
+                window.grab().save(railShot + QStringLiteral(".terminals.png"));
+            const QString terminalToken = window.testTerminalToken(terminalId);
+            const bool tokenMinted =
+                terminalToken.isEmpty() || terminalToken.startsWith(QStringLiteral("term."));
+            check(!terminalId.isEmpty() && terminals && terminals->count() == 1 &&
+                      terminalPageShown && terminalPrinted && tokenMinted,
+                  QString("a terminal opens as a tab in the window and its output can be read "
+                          "back (page=%1 printed=%2 token=%3 text=%4)")
+                      .arg(terminalPageShown)
+                      .arg(terminalPrinted)
+                      .arg(tokenMinted)
+                      .arg(terminalText(terminalId).right(200)));
 
-            window.testMarkTeammateDoneUnseen(teammateRun.id);
-            const bool doneMarked =
-                window.testTeammateDoneUnseen(teammateRun.id);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *doneItem = railItemFor(quality.id);
-            QPushButton *doneAvatar =
-                doneItem ? doneItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailAvatar"))
-                         : nullptr;
-            const bool doneFlagged =
-                doneItem && doneItem->property("doneUnseen").toBool();
-            const QString doneTip =
-                doneAvatar ? doneAvatar->toolTip() : QString();
-            if (doneAvatar)
-                doneAvatar->click();
-            for (int i = 0; i < 6; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            const QString doneOpened = window.testTeammateHomeId();
-            const bool doneCleared =
-                !window.testTeammateDoneUnseen(teammateRun.id);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *seenItem = railItemFor(quality.id);
-            const bool seenUnflagged =
-                seenItem && !seenItem->property("doneUnseen").toBool();
-            check(doneMarked && doneFlagged &&
-                      doneTip.contains(QStringLiteral("click to see the result")) &&
-                      doneOpened == quality.id && doneCleared &&
-                      seenUnflagged,
-                  QString("a teammate whose run finished shows a done badge on "
-                          "the rail until a click opens its page (mark=%1 "
-                          "flag=%2 tip=%3 opened=%4 cleared=%5 after=%6)")
-                      .arg(doneMarked)
-                      .arg(doneFlagged)
-                      .arg(doneTip)
-                      .arg(doneOpened)
-                      .arg(doneCleared)
-                      .arg(seenUnflagged));
+            const QJsonObject typed = window.testTerminalRequest(
+                0, terminalId, QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId},
+                 {QStringLiteral("text"), QStringLiteral("echo fm-typed-$((40+2))")},
+                 {QStringLiteral("enter"), true}});
+            const bool typedEchoed = waitForText(terminalId, QStringLiteral("fm-typed-42"));
+            check(typed.value(QStringLiteral("ok")).toBool() && typedEchoed,
+                  QString("a program in a ForkMesh terminal can type into a shared terminal "
+                          "and read the result (ok=%1 text=%2)")
+                      .arg(typed.value(QStringLiteral("ok")).toBool())
+                      .arg(terminalText(terminalId).right(300)));
+
+            if (!window.testTerminalToken(terminalId).isEmpty()) {
+                const QString probe = window.testOpenTerminalTab(
+                    QStringLiteral("command"),
+                    QStringLiteral(R"(python3 -c 'import os,socket,json
+s=socket.socket(socket.AF_UNIX); s.connect(os.environ["FORKMESH_AGENT_INTAKE"])
+s.sendall((json.dumps({"token": os.environ["FORKMESH_AGENT_INTAKE_TOKEN"], "method": "terminals.list", "params": {}})+"\n").encode())
+r=json.loads(s.recv(65536).decode())
+print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get("terminals", []) if t.get("self")))')"),
+                    repository.path());
+                const bool probed = waitForText(probe, QStringLiteral("FMPROBE True 2 1"));
+                check(probed,
+                      QString("a program in a terminal tab reaches the desktop over the agent "
+                              "socket with its own token and sees the shared tabs (text=%1)")
+                          .arg(terminalText(probe).right(300)));
+                terminals->closeTab(probe);
+                settleRail();
+            }
+
+            AgentSession planAgent;
+            planAgent.id = 943510;
+            planAgent.owner = QStringLiteral("forkmesh");
+            planAgent.name = QStringLiteral("teammates-preview");
+            planAgent.mode = QStringLiteral("Plan");
+            planAgent.status = AgentStatus::Running;
+            planAgent.issueTitle = QStringLiteral("terminal plan agent");
+            window.testAddAgentSession(planAgent);
+            const QJsonObject planList = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.list"), {});
+            const QJsonObject planType = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId}, {QStringLiteral("text"), QStringLiteral("x")}});
+            terminals->setShared(terminalId, false);
+            const QJsonObject privateList = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.list"), {});
+            const QJsonObject privateRead = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.read"),
+                {{QStringLiteral("terminal"), terminalId}});
+            const QJsonObject userClose = window.testTerminalRequest(
+                0, terminalId, QStringLiteral("terminals.close"),
+                {{QStringLiteral("terminal"), terminalId}});
+            check(planList.value(QStringLiteral("terminals")).toArray().size() == 1 &&
+                      planType.value(QStringLiteral("error")).toString() == QStringLiteral("mode_too_low") &&
+                      privateList.value(QStringLiteral("terminals")).toArray().isEmpty() &&
+                      privateList.value(QStringLiteral("private_terminals")).toInt() == 1 &&
+                      privateRead.value(QStringLiteral("error")).toString() == QStringLiteral("not_shared") &&
+                      userClose.value(QStringLiteral("error")).toString() == QStringLiteral("user_terminal"),
+                  QString("agents below Auto mode can only read, private terminals are hidden, "
+                          "and a terminal the user opened is not closed for them "
+                          "(type=%1 read=%2 close=%3)")
+                      .arg(planType.value(QStringLiteral("error")).toString(),
+                           privateRead.value(QStringLiteral("error")).toString(),
+                           userClose.value(QStringLiteral("error")).toString()));
+
+            QPushButton *chromeTerminal = nullptr;
+            for (QPushButton *button : window.findChildren<QPushButton *>())
+                if (button->property("terminalLauncherButton").toBool() ||
+                    button->objectName() == QLatin1String("topTerminalButton"))
+                    chromeTerminal = button;
+            check(chromeTerminal != nullptr,
+                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+            if (railTerminal)
+                railTerminal->click();
+            settleRail();
+            auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
+            auto *launcherKind =
+                launcher ? launcher->findChild<QComboBox *>(QStringLiteral("terminalLauncherKind")) : nullptr;
+            auto *launcherCommand =
+                launcher ? launcher->findChild<QLineEdit *>(QStringLiteral("terminalLauncherCommand")) : nullptr;
+            auto *launcherOpen =
+                launcher ? launcher->findChild<QPushButton *>(QStringLiteral("terminalLauncherOpen")) : nullptr;
+            if (launcherKind && launcherCommand && launcherOpen) {
+                launcherKind->setCurrentIndex(launcherKind->findData(QStringLiteral("command")));
+                launcherCommand->setText(QStringLiteral("printf 'fm-launched\\n'"));
+                launcherOpen->click();
+            }
+            settleRail();
+            const QStringList openIds = terminals ? terminals->ids() : QStringList();
+            const QString launchedId = openIds.size() == 2 ? openIds.last() : QString();
+            const bool launched = !launchedId.isEmpty() &&
+                                  waitForText(launchedId, QStringLiteral("fm-launched"));
+            check(launcher && launcherKind && launcherOpen && launched,
+                  QString("the rail's terminal button opens the launcher, which opens a "
+                          "command in a new terminal tab (tabs=%1)")
+                      .arg(openIds.size()));
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(terminals && terminals->count() == 0 &&
+                      window.testTerminalToken(terminalId).isEmpty(),
+                  QStringLiteral("closing a terminal tab drops its agent token"));
+            window.resize(railWindowSize);
+            window.testShowTeamSection();
+            settleRail();
 
             {
                 const auto settle = [] {
@@ -16659,21 +17548,23 @@ else:
                 QStringLiteral("Release checks keep slipping.\n```json\n"
                                "{\"name\": \"Ada\", \"specialty\": "
                                "\"Release Engineering\"}\n```\n"));
-            window.testRefreshTeammateRail();
-            QApplication::processEvents();
-            const bool adoptedInRail = railItemFor(QStringLiteral("ada"));
+            bool adoptedInRail = false;
+            for (const forkmesh::teammates::Config &saved :
+                 forkmesh::teammates::Store(QDir(repository.path()).filePath(
+                                                QStringLiteral(".forkmesh/teammates")))
+                     .load()
+                     .teammates)
+                adoptedInRail = adoptedInRail || saved.id == QLatin1String("ada");
             forkmesh::teammates::Store(
                 QDir(repository.path()).filePath(
                     QStringLiteral(".forkmesh/teammates")))
                 .remove(QStringLiteral("ada"));
             window.testReloadTeammatesPanel();
-            window.testRefreshTeammateRail();
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             for (int i = 0; i < 4; ++i)
                 QApplication::processEvents(QEventLoop::AllEvents, 20);
             check(adopted == QStringLiteral("Ada") && adoptedInRail,
-                  QString("a teammate the finder defines joins the team and "
-                          "the rail (%1)")
+                  QString("a teammate the finder defines joins the team (%1)")
                       .arg(adopted));
         }
 
@@ -19935,6 +20826,39 @@ else:
               .arg(removedStyle)
               .arg(removedChoice));
 
+    const int halloweenChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("halloween")) : -1;
+    if (halloweenChoice >= 0)
+        appThemeCombo->setCurrentIndex(halloweenChoice);
+    QApplication::processEvents();
+    const QString halloweenBg = Theme::hex(Theme::Role::Bg);
+    const QString halloweenAccent = Theme::hex(Theme::Role::Accent);
+    const QString halloweenWindow =
+        qApp->palette().color(QPalette::Window).name(QColor::HexRgb);
+    const bool halloweenDark = forkmesh::ui::currentThemeIsDark();
+    const QString halloweenPreference =
+        QSettings().value(QStringLiteral("app/theme")).toString();
+    check(halloweenChoice >= 0 &&
+              halloweenPreference == QStringLiteral("halloween") &&
+              halloweenDark && halloweenBg == QLatin1String("#120b10") &&
+              halloweenAccent == QLatin1String("#f97316") &&
+              halloweenWindow != QLatin1String("#0d1117") &&
+              halloweenWindow != QLatin1String("#09090b"),
+          QStringLiteral("choosing Halloween recolours the app in pumpkin "
+                         "orange on a near-black purple (choice=%1 "
+                         "preference=%2 dark=%3 bg=%4 accent=%5 window=%6)")
+              .arg(halloweenChoice)
+              .arg(halloweenPreference)
+              .arg(halloweenDark)
+              .arg(halloweenBg, halloweenAccent, halloweenWindow));
+    const int systemChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("system")) : -1;
+    if (systemChoice >= 0)
+        appThemeCombo->setCurrentIndex(systemChoice);
+    QApplication::processEvents();
+    check(Theme::hex(Theme::Role::Accent) != QLatin1String("#f97316"),
+          QStringLiteral("leaving Halloween drops its colours"));
+
     QPushButton *removeCapture = nullptr;
     const QList<QPushButton *> initialPackageActions =
         allMarketActions(QStringLiteral("marketPackageAction-capture"));
@@ -20214,6 +21138,31 @@ else:
               window.testTimerChipTexts().isEmpty(),
           QStringLiteral("installing Timers puts a little clock in the window's "
                          "top bar"));
+
+    const QString clockSlotBefore = window.testTimersClockSlot();
+    window.testDropTimersClock(0.9);
+    QApplication::processEvents();
+    const QString clockSlotRight = window.testTimersClockSlot();
+    const QString storedRight =
+        QSettings().value(QStringLiteral("ui/timersClockPlacement")).toString();
+    window.testDropTimersClock(0.5);
+    QApplication::processEvents();
+    const QString clockSlotCenter = window.testTimersClockSlot();
+    window.testDropTimersClock(0.1);
+    QApplication::processEvents();
+    const QString clockSlotLeft = window.testTimersClockSlot();
+    check(clockSlotBefore == QStringLiteral("left") &&
+              clockSlotRight == QStringLiteral("right") &&
+              storedRight == QStringLiteral("right") &&
+              clockSlotCenter == QStringLiteral("center") &&
+              clockSlotLeft == QStringLiteral("left") && timersStrip &&
+              !timersStrip->isHidden() &&
+              !QSettings().contains(QStringLiteral("ui/timersClockPlacement")),
+          QStringLiteral("dragging the clock moves it to the left, middle or "
+                         "right of the top bar and remembers the spot "
+                         "(slots=%1/%2/%3/%4 stored=%5)")
+              .arg(clockSlotBefore, clockSlotRight, clockSlotCenter,
+                   clockSlotLeft, storedRight));
 
     const bool timerEntriesAdded =
         window.testAddTimer(QStringLiteral("25m standup")) &&
@@ -22250,21 +23199,32 @@ else:
     QWidget *hostsPageBody =
         window.findChild<QWidget *>(QStringLiteral("hostsPageBody"));
     QLayout *hostsPageLayout = hostsPageBody ? hostsPageBody->layout() : nullptr;
-    QLayout *hostsProvisioningRow = window.findChild<QLayout *>(
-        QStringLiteral("hostsProvisioningRow"));
     QTableWidget *hostsPageTable =
         hostsPageBody
             ? hostsPageBody->findChild<QTableWidget *>(QStringLiteral("issueTable"))
             : nullptr;
     QWidget *hostsAutoscalePanel =
         window.findChild<QFrame *>(QStringLiteral("fleetAutoscalePanel"));
-    check(hostsPageLayout && hostsPageTable && hostsProvisioningRow &&
-              hostsAutoscalePanel &&
-              hostsPageLayout->indexOf(hostsPageTable) == 0 &&
-              hostsPageLayout->indexOf(hostsAutoscalePanel) == 1 &&
-              hostsPageLayout->indexOf(hostsProvisioningRow) == 2,
+    QStringList railSections;
+    int firstSection = -1;
+    for (int i = 0; hostsPageLayout && i < hostsPageLayout->count(); ++i) {
+        QWidget *widget = hostsPageLayout->itemAt(i)->widget();
+        if (!widget || widget->objectName() != QLatin1String("hostsRailSection"))
+            continue;
+        if (firstSection < 0)
+            firstSection = i;
+        railSections.append(widget->property("railSection").toString());
+    }
+    check(hostsPageLayout && hostsPageTable && hostsAutoscalePanel &&
+              hostsPageLayout->indexOf(hostsPageTable) >= 0 &&
+              hostsPageLayout->indexOf(hostsPageTable) < firstSection &&
+              railSections == QStringList{QStringLiteral("addHost"), QStringLiteral("vultr"),
+                                          QStringLiteral("runners"), QStringLiteral("fleet"),
+                                          QStringLiteral("output")},
           QStringLiteral(
-              "Hosts puts the saved-host fleet first, fleet autoscaling next, then the provisioning cards"));
+              "the Hosts rail puts the saved hosts first, then collapsible add-host, "
+              "Vultr, runner, fleet and output sections (%1)")
+              .arg(railSections.join(QStringLiteral(", "))));
     QLabel *fleetHealthSummary = window.findChild<QLabel *>(
         QStringLiteral("hostsFleetHealthSummary"));
     check(fleetHealthSummary &&
@@ -23576,18 +24536,21 @@ else:
               QStringLiteral("nodesUpdateAllBinaryButton")) != nullptr,
           QStringLiteral("Nodes offers a fleet-wide binary update action"));
 
-    // 32 columns of one-line facts have to fit a screen, so the directory
-    // stays compact: single-line rows, and the sort-arrow slot -- about a
-    // caption's worth of width -- reserved in the sorted column alone rather
-    // than in every column that never draws one.
+    // 32 columns of facts have to fit a screen, so the directory stays
+    // compact: two-line rows (value over caption), and the sort-arrow slot --
+    // about a caption's worth of width -- reserved in the sorted column alone
+    // rather than in every column that never draws one.
     QTableWidget *nodeDirectory = nullptr;
     for (QTableWidget *grid : window.findChildren<QTableWidget *>()) {
         if (grid->property("nodesDirectory").toBool())
             nodeDirectory = grid;
     }
     check(nodeDirectory && nodeDirectory->rowCount() > 0 &&
-              nodeDirectory->rowHeight(0) <= 26,
-          QStringLiteral("Nodes keeps the directory on single-line rows"));
+              nodeDirectory->rowHeight(0) >= 40 && nodeDirectory->rowHeight(0) <= 52,
+          QStringLiteral("Nodes keeps the directory on compact two-line rows (%1 px)")
+              .arg(nodeDirectory && nodeDirectory->rowCount() > 0
+                       ? nodeDirectory->rowHeight(0)
+                       : -1));
     auto *nodeHeader =
         nodeDirectory ? qobject_cast<forkmesh::ui::KebabHeaderView *>(
                             nodeDirectory->horizontalHeader())
@@ -24935,6 +25898,7 @@ else:
                   "Git: fast-forwarded 12 branch(es) to main; 0 failed."))) ==
                   QStringLiteral("GIT"),
               QStringLiteral("a clean fast-forward sweep badges GIT, not ERROR"));
+        checkDeployLogBadges(window);
         check(window.testLogBadgeFor(storedLine(QStringLiteral(
                   "Deploy next_dns health-loop: n1 192.0.2.10 ok (fails 0) v6 "
                   "ok  [desktop/src/MainWindowLogs.cpp:2825]"))) !=
@@ -33827,7 +34791,7 @@ else:
         auto *sendToButton =
             seeded.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
         check(sendToButton && sendToButton->isVisible() &&
-                  sendToButton->text().startsWith(QStringLiteral("send to: ")),
+                  sendToButton->text() == QStringLiteral("chat"),
               QStringLiteral("the top of the send column sends the prompt to the "
                              "current chat channel (%1)")
                   .arg(sendToButton ? sendToButton->text() : QStringLiteral("none")));
@@ -36801,7 +37765,7 @@ else:
                              "filter off, so their sessions show at once"));
 
         {
-            QWidget *rail = window.testTeammateRail();
+            QWidget *rail = window.testSideRail();
             const QSize before = window.size();
             window.resize(1400, before.height());
             QApplication::processEvents();
@@ -36813,7 +37777,7 @@ else:
             window.resize(before);
             QApplication::processEvents();
             check(wideShows && narrowWidth < 1000 && narrowHides,
-                  QString("a narrow window gives the teammates rail's width "
+                  QString("a narrow window gives the side rail's width "
                           "back to the page (narrow=%1)")
                       .arg(narrowWidth));
         }

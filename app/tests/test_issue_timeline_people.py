@@ -33,9 +33,9 @@ def _const(text, name):
 
 HELPER_NAMES = (
     "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issuePersonHandle",
-    "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
-    "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorAccount",
-    "forgeIdentity", "forgeLinkAttrs",
+    "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
+    "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorKnown", "issueActorAccount",
+    "forgeIdentity", "forgeLinkAttrs", "rememberForgeAvatars", "forgeAvatarSrc",
 )
 CONTENT_NAMES = (
     "repoContributorIsBot", "repoContributorProfileUrl", "repoRosterPerson", "issueCardAuthorHtml",
@@ -62,12 +62,18 @@ const MD_BODY_CLASS = "md";
 const fetched = [];
 globalThis.fetch = async (url) => {
   fetched.push(url);
+  if (String(url).startsWith("/api/accounts/name-case?")) {
+    const names = decodeURIComponent(String(url).split("names=")[1]).split(",");
+    return { ok: true, json: async () => ({ ok: true, names: Object.fromEntries(names.filter((name) => name === "alice").map((name) => [name, name])) }) };
+  }
   const name = decodeURIComponent(String(url).split("/").pop());
   const exists = name === "alice";
   return { ok: true, json: async () => ({ exists, avatarPng: exists ? "iVBORw0KGgo=" : "" }) };
 };
 const issueActorAccounts = new Map();
 const issueActorAccountsSettled = new Map();
+const issueActorBatch = { names: new Set(), promise: null };
+const USER_NAME_BATCH = 50;
 %s
 %s
 %s
@@ -76,7 +82,9 @@ const issueActorAccountsSettled = new Map();
 """ % (
         _const(HELPERS, "USER_NAME_RE"),
         "\n".join([_const(HELPERS, "ISSUE_PERSON_HANDLE_RE"), _const(HELPERS, "FORGE_PROFILES"),
-                   _const(HELPERS, "FORGE_IDENTITY_RE")]),
+                   _const(HELPERS, "FORGE_IDENTITY_RE"), _const(HELPERS, "forgeAvatarSets")]) + "\n" + HELPERS[
+            HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+            HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5],
         "\n".join(_function(HELPERS, name) for name in HELPER_NAMES),
         "\n".join([_const(CONTENT, "MD_MENTION"), _const(CONTENT, "MENTION_SUGGESTION_LIMIT"),
                    _const(CONTENT, "MENTION_LOGIN_RE")]
@@ -111,9 +119,12 @@ console.log(JSON.stringify({
     assert 'data-issue-actor-avatar="kofi-mensah"' in out["mixed"]
     assert out["digit"].startswith('<a data-issue-person="2fast-dev"') and 'data-issue-actor-avatar="2fast-dev"' in out["digit"]
     for bot in (out["importer"], out["actions"]):
-        assert bot.startswith("<span") and 'data-lucide="bot"' in bot
-        assert "data-issue-person" not in bot and "href" not in bot and "data-issue-actor-avatar" not in bot
-    assert '<i data-lucide="bot" class="h-5 w-5' in out["actions"]
+        assert bot.startswith("<span") and "<svg data-bot-avatar=" in bot
+        assert "data-issue-person" not in bot and "href" not in bot
+    assert '<svg data-bot-avatar="bot"' in out["importer"]
+    assert "data-issue-actor-avatar" not in out["importer"]
+    assert '<svg data-bot-avatar="actions"' in out["actions"] and 'class="h-5 w-5 text-muted-foreground"' in out["actions"]
+    assert 'data-issue-actor-avatar="acme-actions"' in out["actions"]
     assert 'href="https://code.example.test/@vandana42"' in out["name"] and ">vandana42</span></a>" in out["name"]
     assert ">Kofi-Mensah</span></a>" in out["mixedName"] and 'href="https://code.example.test/@kofi-mensah"' in out["mixedName"]
     assert out["digitName"].startswith('<a data-issue-person="2fast-dev"') and ">2Fast-Dev</a>" in out["digitName"]
@@ -126,7 +137,7 @@ def test_mirrored_github_authors_link_to_their_github_profile_without_loading_gi
     out = _node("""
 console.log(JSON.stringify({
   name: issuePersonNameHtml("github:Gulp-Run"),
-  avatar: issueActorAvatarHtml("github:wkrp", "", "h-6 w-6"),
+  avatar: issueActorAvatarHtml("github:alice", "", "h-6 w-6"),
   comment: renderIssueTimelineComment({ type: "comment", authorName: "github:immartian", body: "hi", ts: 1 }),
   sync: issuePersonNameHtml("github:~sync"),
   hostile: issuePersonNameHtml('github:x"onmouseover=alert(1)'),
@@ -138,7 +149,7 @@ console.log(JSON.stringify({
 """)
     assert out["name"].startswith('<a href="https://github.com/Gulp-Run" target="_blank" rel="noopener noreferrer nofollow"')
     assert 'title="Gulp-Run on GitHub"' in out["name"] and ">@Gulp-Run</a>" in out["name"]
-    assert out["avatar"].startswith('<a href="https://github.com/wkrp"') and ">W</span></a>" in out["avatar"]
+    assert out["avatar"].startswith('<a href="https://github.com/alice"') and ">A</span></a>" in out["avatar"]
     assert "data-issue-actor-avatar" not in out["avatar"] and "<img" not in out["avatar"]
     assert out["comment"].count('href="https://github.com/immartian"') == 3
     assert "data-issue-actor-avatar" not in out["comment"] and "data-issue-person" not in out["comment"]
@@ -159,16 +170,16 @@ console.log(JSON.stringify({
 """)
     assign = out["assign"]
     assert '<span class="font-semibold text-foreground">tasks[bot]</span>' in assign
-    assert 'data-lucide="bot"' in assign
+    assert '<svg data-bot-avatar="bot"' in assign
     assert "set assignees: <a href=\"https://code.example.test/@vandana42\"" in assign
     assert '<a data-issue-person="2fast-dev"' in assign and ">2Fast-Dev</a>" in assign
-    assert 'data-lucide="bot"' in out["label"] and ">G<" not in out["label"]
+    assert '<svg data-bot-avatar="bot"' in out["label"] and ">G<" not in out["label"]
     comment = out["comment"]
     assert comment.count('data-issue-actor-avatar="vandana42"') == 2
     assert '<span class="hidden sm:block">' in comment and '<span class="mr-1 inline-flex align-middle sm:hidden">' in comment
     assert 'class="relative flex h-6 w-6 shrink-0' in comment and 'class="relative flex h-10 w-10 shrink-0' in comment
     assert '<a href="https://code.example.test/@vandana42" data-issue-person="vandana42" class="font-semibold' in comment
-    assert out["bot"].count('data-lucide="bot"') == 2 and "data-issue-person" not in out["bot"]
+    assert out["bot"].count('<svg data-bot-avatar="actions"') == 2 and "data-issue-person" not in out["bot"]
 
 
 def test_links_resolve_to_the_forge_then_the_roster_profile_then_plain_text():
@@ -214,7 +225,7 @@ console.log(JSON.stringify({
     assert out["mention"] == "@dave"
     assert out["accounts"][0] == {"exists": True, "png": "iVBORw0KGgo=", "linkable": False} == out["accounts"][1]
     assert out["accounts"][2] == {"exists": False, "png": "", "linkable": False}
-    assert out["fetched"] == ["/api/accounts/alice"]
+    assert out["fetched"] == ["/api/accounts/name-case?names=alice", "/api/accounts/alice"]
     assert out["match"] == {"name": "Vandana", "login": "Vandana42", "profile": "https://github.com/vandana42",
                             "avatarUrl": "/raw/vandana42.png", "commits": 3}
     assert out["gitlab"] == "Vandana42" and out["miss"] is None
@@ -303,6 +314,16 @@ console.log(JSON.stringify({
     assert out["empty"] == ["vandana42", "valerie", "Vaughn", "vbig", "ipetrov"]
     assert out["limit"] == 8
     assert out["avatar"] == "/raw/v.png"
+
+
+def test_account_search_results_follow_the_thread_and_roster():
+    out = _node("""
+const roster = [{ name: "Vance Big", login: "vbig", commits: 9 }];
+const all = buildMentionCandidates([{ login: "valerie", ts: 1 }], roster, "me",
+  ["vbig", "me", "vera-x", "valerie", "bad name", "dependabot"]);
+console.log(JSON.stringify(all.map((c) => [c.login, c.tier, c.name])));
+""")
+    assert out == [["valerie", 0, ""], ["vbig", 1, "Vance Big"], ["vera-x", 2, ""]]
 
 
 def test_mention_keys_move_pick_and_close():

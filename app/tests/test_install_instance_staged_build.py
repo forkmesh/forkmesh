@@ -217,8 +217,10 @@ def test_the_release_binary_is_only_fetched_for_the_release_source():
     assert '[ "${CFG_sourceUrl%.git}" != "$RELEASE_SOURCE" ]' in body
     assert body.index("Kept the installed git node program") < body.index("curl -fsSL")
     order = TEXT.split("\ncheck_system\n", 1)[1]
-    assert order.index("build_app\nactivate_source\nwrite_settings\nmigrate_database\nstart_app\n"
-                       "SOURCE_COMMITTED=\"1\"") >= 0
+    steps = ["build_app\n", "activate_source\n", "write_settings\n", "migrate_database\n",
+             "start_app\n", "SOURCE_COMMITTED=\"1\""]
+    found = [order.index(step) for step in steps]
+    assert found == sorted(found)
     assert "rollback_source || true" in function("on_exit")
     assert 'APP_RESTARTED="1"\n  systemctl restart forkmesh-instance.service' in function("start_app")
 

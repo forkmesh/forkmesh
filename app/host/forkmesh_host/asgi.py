@@ -34,6 +34,8 @@ import urllib.parse
 from . import d1_caller
 from . import error_log
 from . import js as _js
+from . import privacy
+from . import read_surfaces
 from . import repo_ssr
 from . import request_guard
 from .request_policy import RequestPolicy
@@ -187,6 +189,7 @@ class HostASGI:
         runtime.host_metrics = self.metrics
         self._fleet_api = None
         install_handshake_log_filter()
+        privacy.install_log_filters(runtime.env)
         self._born = time.monotonic()
         self.boot_unseal_waits = 0
 
@@ -295,6 +298,7 @@ class HostASGI:
         self._edge_client(scope, headers, method)
         if client and not headers.has("cf-connecting-ip"):
             headers.set("cf-connecting-ip", client[0])
+        privacy.scrub_headers(headers, self.runtime.env)
         country = headers.get("cf-ipcountry")
         cf = JsObject(country=country) if country else JsObject()
         cf["httpProtocol"] = "HTTP/" + str(scope.get("http_version", "1.1"))
@@ -552,6 +556,7 @@ class HostASGI:
         if path.startswith("/api/fleet/"):
             await self._fleet(scope, receive, send, method, path)
             return
+        await privacy.load(self.runtime.env)
         denial = await self._policy_denial(scope, method, path)
         if denial is not None:
             await self._send_response(send, denial, method)
@@ -575,6 +580,16 @@ class HostASGI:
             await self._send_response(send, self._plain_response(
                 400, "Bad Request\n"), method)
             return
+        if (self.repo_fastpath is not None and method in ("GET", "HEAD")
+                and read_surfaces.target(scope) is not None):
+            origin = read_surfaces.origin_of(_url_from_scope(
+                scope, _headers_from_scope(scope), self.trust_forwarded))
+            try:
+                if await read_surfaces.handle(self.repo_fastpath, self.runtime.fetch,
+                                              scope, send, origin):
+                    return
+            except Exception as error:
+                error_log.report("read surface failed on %s" % path, error)
         if (self.serve_assets and method in ("GET", "HEAD")
                 and not self.rules.worker_first(path)):
             assets = getattr(self.runtime.env, "ASSETS", None)
@@ -631,7 +646,8 @@ class HostASGI:
                 413, "Payload Too Large\n", {"connection": "close"})
         elapsed = (time.perf_counter() - started) * 1000
         if elapsed > 250 and path not in HELD_REQUEST_PATHS:
-            print("slow request %.0fms %s %s" % (elapsed, method, path))
+            print("slow request %.0fms %s %s" % (
+                elapsed, method, privacy.log_path(self.runtime.env, path)))
         if response is None or response.status == 101:
             response = _js.Response(b"worker returned no response", 500, "",
                                     _js.Headers())
@@ -658,7 +674,8 @@ class HostASGI:
             if not body_state.get("too_large"):
                 self.errors += 1
                 error_log.report("worker fetch raised on %s %s -> 500"
-                                 % (method, path), error)
+                                 % (method, privacy.log_path(
+                                     self.runtime.env, path)), error)
             return _js.Response(
                 b"Internal Server Error", 500, "",
                 _js.Headers({"content-type": "text/plain; charset=utf-8"}))
@@ -756,6 +773,7 @@ class HostASGI:
             await self._deny(scope, send, self._sealed_response(
                 scope.get("path", "/")))
             return
+        await privacy.load(self.runtime.env)
         request = self._request(scope, receive, "GET", None)
         if not request.headers.has("upgrade"):
             request.headers.set("upgrade", "websocket")
@@ -764,7 +782,8 @@ class HostASGI:
         except Exception as error:
             self.errors += 1
             error_log.report("worker websocket fetch raised on %s -> 500"
-                             % (scope.get("path"),), error)
+                             % (privacy.log_path(self.runtime.env,
+                                                 scope.get("path")),), error)
             response = _js.Response(b"Internal Server Error", 500, "",
                                     _js.Headers())
         client = getattr(response, "webSocket", None)

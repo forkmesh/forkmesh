@@ -13,6 +13,7 @@ class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QDialog;
+class QFrame;
 class QGridLayout;
 class QLabel;
 class QLineEdit;
@@ -79,6 +80,8 @@ private:
     void openRecording(int row);
     void enableRecordings();
     void setStatus(const QString &text, bool error = false);
+    void selectChartMetric(int metric);
+    void renderChartHeading();
     QWidget *buildConversionsPage();
     QWidget *buildExperimentsPage();
     void showSection(int index);
@@ -123,6 +126,10 @@ private:
     QList<QLabel *> m_kpiValues;
     QList<QLabel *> m_kpiChanges;
     AnalyticsChart *m_chart = nullptr;
+    QList<QFrame *> m_kpiCards;
+    QLabel *m_chartTitle = nullptr;
+    QLabel *m_chartHint = nullptr;
+    int m_chartMetric = 1;
     QTableWidget *m_pages = nullptr;
     QTableWidget *m_referrers = nullptr;
     QTableWidget *m_countries = nullptr;

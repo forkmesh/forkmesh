@@ -22,7 +22,8 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Website and docs library | `www/` | [www/README.md](www/README.md) |
 | Office (2D) | `office/` | [office/README.md](office/README.md) |
 | World (3D) | `world/` | [world/README.md](world/README.md) |
-| Native apps (iOS, Android) | `native/` | [native/README.md](native/README.md) |
+| World voice, camera and channels | `world/public/world/world-voice*.js`, `world-channels.js`, `app/public/call-avatar-*.js` | [world/voice.md](world/voice.md) |
+| Native apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
 | Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |
 | Codebase analysis (Code Map, Size Map, Strata, Ember, Synapse) | `desktop/src/RepoInsight*`, `marketplace/packages/{code-map,size-map,strata,ember,synapse}/`, `native/ios/ForkMeshCore/Sources/FMCodeInsight`, `native/android/core/.../codeinsight`, `native/fixtures/insight` | [marketplace/codebase-analysis.md](marketplace/codebase-analysis.md) |
@@ -53,32 +54,41 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | [deploy/self-deploy.md](deploy/self-deploy.md) | phone-approved deploys run by the cores |
 | [HOSTED_REPOS.md](HOSTED_REPOS.md) | repositories hosted on the cores |
 | [CORE_PUSH.md](CORE_PUSH.md) | owner pushes, tag moves and branch deletes on the cores |
-| [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances |
+| [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances started from `forkmesh.com/start`; user guide [www/docs/start-your-own-instance.md](../www/docs/start-your-own-instance.md) |
 | [MAIL_LOG.md](MAIL_LOG.md) | the #email-log channel, mail tracking and core mail delivery |
 
 ## Features and topics
 
 - [finance/grants/README.md](finance/grants/README.md): the ranked grant list, its CRM import and one-click ChatGPT drafts.
-- [APPS.md](APPS.md): third-party apps through OAuth.
+- [APPS.md](APPS.md): third-party apps through OAuth; `examples/apps/hello-app` is the worked example.
+- [desktop/networking.md](desktop/networking.md) ("Visualizer"): the desktop Log → Visualizer, including opening a table bubble in the Database tab.
 - [app/account-data.md](app/account-data.md): Settings > Data: phone settings saved encrypted to the account, the inventory of everything ForkMesh keeps about a person, the export and per-item delete.
 - [marketplace-usage-feed-mastodon.md](marketplace-usage-feed-mastodon.md): privacy and federation boundaries for the Usage, Feed, and Mastodon packages.
 - [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.
 - [attribution.md](attribution.md): acquisition attribution.
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
+- [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
+- [app/privacy-mode.md](app/privacy-mode.md): privacy mode for self-hosted instances: no visitor logs, what remains and why.
+- [app/accounts-and-moderation.md](app/accounts-and-moderation.md): email-free sign-up with recovery codes, random usernames, moderators, blocks, hidden posts, locked threads, first-post approval and new-account limits.
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
 - [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
 - [app/comment-reactions.md](app/comment-reactions.md): emoji reactions on issue, pull request and discussion comments (storage, API, limits, first paint, picker, gratitude group and Thank you sticker, custom reactions, animation).
+- [app/translations.md](app/translations.md): on-device post translation (browser Translator API, no network) and signed community translations attached to posts.
 - [app/repo-media.md](app/repo-media.md): uploading videos into issue and pull request markdown, stored in the replicated database and served with Range support.
 - [app/pull-revisions.md](app/pull-revisions.md): updating a pull request with new commits or a rewritten branch (signed revisions, no force push).
 - [app/comment-edits.md](app/comment-edits.md): editing and deleting your own issue and pull request comments (signed `comment-edit`/`comment-delete` events).
 - [app/comment-gifs.md](app/comment-gifs.md): GIFs and stickers in comment composers (GIPHY proxy, key handling, rendering, reduced motion).
+- [app/seasonal-theme.md](app/seasonal-theme.md): the Halloween theme an administrator or moderator switches on in Settings, Appearance (orange colours, spider web, witch hats, auto-off).
 - [app/comment-tips.md](app/comment-tips.md): wallet-to-wallet Solana Pay tips on comments (requests, read-only verification, limits, settings).
 - [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
+- [app/username-autocomplete.md](app/username-autocomplete.md): the shared username picker on chat channel invites, new channels, repository collaborators and advisory credits, and account search behind every @mention list.
 - [app/profile-links.md](app/profile-links.md): usernames and @mentions link to the person's profile on the web, desktop, server pages, world and phones.
 - [app/diff-viewer.md](app/diff-viewer.md): the full-screen web diff viewer for pull requests, branch comparisons and commits.
 - [app/issue-views.md](app/issue-views.md): the per-issue view count on issue pages and the issue list, deduplicated per viewer and day, with automated clients not counted.
 - [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
+- [app/issue-assignment-limit.md](app/issue-assignment-limit.md): the issue page's Assign button and the one-open-issue rule for self-assignment (freed by a linked pull request), set with `assignmentLimit` in `.forkmesh/issues.json`.
+- [app/bot-avatars.md](app/bot-avatars.md): built-in avatars for bots and system accounts (Actions, git node, runners, AI review, `[bot]` names) and the account override.
 - [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars.
 - [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
 - [app/pull-review-prompt.md](app/pull-review-prompt.md): the copyable "Review with your agent" prompt on open pull requests, its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
@@ -93,6 +103,9 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 
 ## Special agents
 
+Each special agent is a workflow in `.forkmesh/workflows/` that the desktop
+runs; see [app/workflows.md](app/workflows.md#desktop-workflows-and-special-agents).
+
 | Agent | Charter |
 | --- | --- |
 | CFO (financial review, payouts) | [finance/cfo.md](finance/cfo.md) |
@@ -100,5 +113,16 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Reddit scout | [community/reddit.md](community/reddit.md) |
 | Site crawler | [www/site-crawler.md](www/site-crawler.md) |
 | Sentinel (security) | [security/sentinel.md](security/sentinel.md) |
+
+## Coding agents
+
+`app/public/forkmesh-agent.md`, served at
+`https://app.forkmesh.com/forkmesh-agent.md`, is the one guide written for
+outside coding agents: starting an instance, working on a repository, and the
+pull request workflow. The start page copies a one-line prompt that points an
+agent at it. Keep it in step with [INSTANCES.md](INSTANCES.md),
+`www/docs/start-config.md` and the pull request section of `CONTRIBUTING.md`;
+`app/tests/test_start_instance_page.py` checks the parts that must match.
+User guide: [www/docs/coding-agents.md](../www/docs/coding-agents.md).
 
 Repository rules: `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`.

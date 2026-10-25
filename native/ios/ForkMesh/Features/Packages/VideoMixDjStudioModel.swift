@@ -511,7 +511,7 @@ final class DjStudioModel {
     }
 
     private func claimAudio() {
-        guard !audioClaimed else { return }
+        guard !audioClaimed, !OtherAppCall.ownCall else { return }
         audioClaimed = true
         let session = AVAudioSession.sharedInstance()
         previousCategory = session.category
@@ -1459,7 +1459,7 @@ final class DjStudioModel {
         }
     }
 
-    private func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
+    func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
         DjAutomixDeck(
             loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate,
             repeats: deck.repeats)

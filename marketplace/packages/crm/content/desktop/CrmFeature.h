@@ -24,6 +24,7 @@
 
 class QComboBox;
 class QFrame;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -327,6 +328,11 @@ private:
     void renderSheetList();
     void syncSheetList();
     void tintToolbar();
+    void arrangeNextHeader(QHBoxLayout *heading, QLabel *title,
+                           const QList<QToolButton *> &mailButtons,
+                           QToolButton *extensionButton, QToolButton *refreshButton);
+    void applyNextStyle();
+    void syncHeaderTabs();
     void showPeople();
     void renderPeople();
     QIcon contactPicture(const ContactRow &row, int side);
@@ -656,6 +662,10 @@ private:
     QHash<QString, qint64> m_sheetViewedAt;
     QToolButton *m_pipelinesButton = nullptr;
     QList<QPair<QToolButton *, QString>> m_toolIcons;
+    QWidget *m_menuHolder = nullptr;
+    QToolButton *m_importMenuButton = nullptr;
+    QToolButton *m_mailMenuButton = nullptr;
+    QToolButton *m_overviewTab = nullptr;
     QListWidget *m_sheetList = nullptr;
     QWidget *m_body = nullptr;
     QWidget *m_peoplePage = nullptr;

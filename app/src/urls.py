@@ -419,6 +419,10 @@ CUSTOM_REACTION_ASSET_RE = re.compile(
     r"^/api/reactions/custom/asset/([0-9a-f]{40})\.(svg|png|gif|webp)$")
 COMMENT_GIFS_RE = re.compile(r"^/api/gifs/(config|search|trending|settings)$")
 COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
+SEASON_RE = re.compile(r"^/api/season(?:/(settings))?/?$")
+REPO_MODERATION_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/moderation$")
+ORG_MODERATION_RE = re.compile(r"^/api/orgs/([^/]+)/moderation$")
+REPO_TRANSLATIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/translations$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 REPO_ISSUE_VIEW_RE = re.compile(
@@ -432,3 +436,6 @@ REPO_FORK_COUNTS_RE = re.compile(r"^/api/repo-fork-counts/?$")
 REPO_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forks$")
 REPO_REMOTE_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/remote-forks$")
 REPO_PULL_BATCH_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/pull-batch$")
+AI_REVIEW_RE = re.compile(
+    r"^/api/ai-review/(?:(settings)|pulls/([A-Za-z0-9_-][A-Za-z0-9._-]{0,63})/"
+    r"([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/([1-9][0-9]{0,8}))$")

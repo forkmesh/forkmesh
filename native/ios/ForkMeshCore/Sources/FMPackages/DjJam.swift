@@ -7,13 +7,19 @@ public struct DjQueueItem: Codable, Equatable, Sendable, Identifiable {
     public var title: String
     public var author: String
     public var addedBy: String
+    public var addedAt: Int64
 
-    public init(id: String, videoId: String, title: String, author: String, addedBy: String = "") {
+    public init(id: String, videoId: String, title: String, author: String, addedBy: String = "", addedAt: Int64 = 0) {
         self.id = String(id.prefix(64))
         self.videoId = videoId
         self.title = String(title.prefix(300))
         self.author = String(author.prefix(200))
         self.addedBy = String(addedBy.prefix(64))
+        self.addedAt = max(0, addedAt)
+    }
+
+    public var addedDate: Date? {
+        addedAt > 0 ? Date(timeIntervalSince1970: Double(addedAt) / 1000) : nil
     }
 
     public init(from decoder: Decoder) throws {
@@ -27,7 +33,8 @@ public struct DjQueueItem: Codable, Equatable, Sendable, Identifiable {
             videoId: videoId,
             title: ((try? values.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "",
             author: ((try? values.decodeIfPresent(String.self, forKey: .author)) ?? nil) ?? "",
-            addedBy: ((try? values.decodeIfPresent(String.self, forKey: .addedBy)) ?? nil) ?? "")
+            addedBy: ((try? values.decodeIfPresent(String.self, forKey: .addedBy)) ?? nil) ?? "",
+            addedAt: ((try? values.decodeIfPresent(Int64.self, forKey: .addedAt)) ?? nil) ?? 0)
     }
 
     public var thumbnail: URL { DjStudio.thumbnailURL(videoId, quality: "mqdefault") }
@@ -38,7 +45,8 @@ public struct DjQueueItem: Codable, Equatable, Sendable, Identifiable {
         guard DjStudio.isVideoId(videoId), !id.isEmpty else { return nil }
         self.init(
             id: id, videoId: videoId, title: object["title"]?.stringValue ?? "",
-            author: object["author"]?.stringValue ?? "", addedBy: object["addedBy"]?.stringValue ?? "")
+            author: object["author"]?.stringValue ?? "", addedBy: object["addedBy"]?.stringValue ?? "",
+            addedAt: object["addedAt"]?.int64Value ?? 0)
     }
 }
 

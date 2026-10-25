@@ -188,8 +188,10 @@ final class MessagesVoiceRecorder: NSObject, AVAudioRecorderDelegate {
         PromptDictation.yieldOverhearing()
         let session: AVAudioSession = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            if !OtherAppCall.ownCall {
+                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                try session.setActive(true)
+            }
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 22_050, AVNumberOfChannelsKey: 1,
                 AVEncoderBitRateKey: 32_000,
@@ -216,7 +218,7 @@ final class MessagesVoiceRecorder: NSObject, AVAudioRecorderDelegate {
         recording = false
         Self.isRecording = false
         startedAt = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
         if let keep, let data = try? Data(contentsOf: fileURL), data.count > 1_000 { keep(data) }
         try? FileManager.default.removeItem(at: fileURL)
     }
@@ -279,8 +281,10 @@ struct MessagesAudioBubble: View {
             return
         }
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            if !OtherAppCall.ownCall {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try AVAudioSession.sharedInstance().setActive(true)
+            }
             let made: AVAudioPlayer = try player ?? AVAudioPlayer(data: attachment.data)
             player = made
             made.play()

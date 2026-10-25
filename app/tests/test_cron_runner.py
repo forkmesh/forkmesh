@@ -424,6 +424,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
                 "channel-unread-email"))
         elif minute % 5 == 4:
             phases.extend(("webhook-outbox", "app-events", "provider-mirror"))
+        if minute % 5 == 3:
+            phases.append("mirror-quota")
         if minute % 10 == 8:
             phases.append("ap-digest")
         if minute % 20 == 12:
@@ -446,6 +448,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("workflow-schedules")
         if minute % 15 == 6:
             phases.append("member-activity")
+        if minute % 5 == 0:
+            phases.append("ai-review")
         hourly = minute % 60
         if hourly == 7:
             phases.append("microjob-payouts")

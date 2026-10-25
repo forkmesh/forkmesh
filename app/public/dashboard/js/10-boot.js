@@ -14,7 +14,6 @@
     "docs": initDocsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
-    "chat": initChatPage,
     "tasks": initTasksPage,
     "calendar": initCalendarPage,
     "notes": initNotesPage,
@@ -99,6 +98,7 @@
     session: () => state.session ? { ...state.session } : null,
     escapeHtml,
     relativeTimeLabel,
+    publicSiteOrigin,
     // Bundled first-party packages can keep a mature host implementation while
     // the manifest owns route, navigation, install identity, and presentation.
     // The allowlist prevents a package from invoking arbitrary dashboard code.
@@ -189,6 +189,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();
@@ -211,9 +212,17 @@
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentAnchor();
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();
+      void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
+      initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

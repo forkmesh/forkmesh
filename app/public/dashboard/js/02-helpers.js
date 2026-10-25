@@ -181,25 +181,60 @@
     return theme === "light" ? "light" : "dark";
   }
 
-  function readDashboardTheme() {
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -210,9 +245,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -229,7 +267,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -239,7 +277,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -782,10 +830,44 @@
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
   }
 
+  const BOT_AVATAR_GLYPHS = {
+    actions: "<circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1\"></path><circle cx=\"12\" cy=\"12\" r=\"6.5\"></circle>",
+    node: "<circle cx=\"6\" cy=\"6\" r=\"2.25\"></circle><circle cx=\"6\" cy=\"18\" r=\"2.25\"></circle><circle cx=\"18\" cy=\"8\" r=\"2.25\"></circle><path d=\"M6 8.25v7.5M18 10.25c0 4-5.5 3.5-10.2 6.4\"></path>",
+    runner: "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><path d=\"M7.5 7.25h.01M7.5 16.75h.01M11.5 7.25h5M11.5 16.75h5\"></path>",
+    ai: "<path d=\"M11 3.5l1.9 4.6 4.6 1.9-4.6 1.9L11 16.5l-1.9-4.6L4.5 10l4.6-1.9z\"></path><path d=\"M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z\"></path>",
+    bot: "<rect x=\"4.5\" y=\"8\" width=\"15\" height=\"11\" rx=\"2.5\"></rect><path d=\"M12 8V4.5M9.5 4.5h5M2.5 12.5v3M21.5 12.5v3\"></path><circle cx=\"9.5\" cy=\"13\" r=\"1\"></circle><circle cx=\"14.5\" cy=\"13\" r=\"1\"></circle><path d=\"M9.5 16.25h5\"></path>",
+  };
+
+  function botAvatarKind(name, email = "") {
+    const text = String(name || "").trim();
+    const mail = String(email || "").trim().toLowerCase();
+    if (!text && !mail) return "";
+    if (/^(?:ai[\s_-]?review(?:er)?|forkbot|ai[\s_-]?agent)(?:\[bot\])?$/i.test(text)) return "ai";
+    if (/(?:^|[\s_-])runner(?:\[bot\])?$/i.test(text)) return "runner";
+    const lowered = text.toLowerCase();
+    const platform = String(typeof platformName === "function" ? platformName() : "").trim().toLowerCase();
+    if (/^forkmesh(?:[\s_-]mirror(?:[\s_-]reconciler)?)?$/i.test(text)
+      || (platform && [platform, `${platform} mirror`, `${platform} mirror reconciler`].includes(lowered))
+      || (typeof platformAccount === "function" && platformAccount(text))) return "node";
+    if (/^github[\s_-]?actions?(?:\[bot\])?$/i.test(text)
+      || /^[a-z0-9][a-z0-9_-]*-actions(?:\[bot\])?$/i.test(text)
+      || /^forkmesh[\s_-](?:actions|deploy)$/i.test(text)
+      || (platform && lowered === `${platform} actions`)
+      || ["actions@forkmesh.local", "deploy@forkmesh.local"].includes(mail)) return "actions";
+    if (/\[bot\]$/i.test(text) || /^(?:dependabot|renovate)$/i.test(text)
+      || /(?:^|[\s_-])bot$/i.test(text) || mail.includes("[bot]@")) return "bot";
+    return "";
+  }
+
+  function botAvatarSvg(kind, classes = "h-4 w-4") {
+    const name = Object.prototype.hasOwnProperty.call(BOT_AVATAR_GLYPHS, kind) ? kind : "bot";
+    return `<svg data-bot-avatar="${name}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="${classes} text-muted-foreground">${BOT_AVATAR_GLYPHS[name]}</svg>`;
+  }
+
   function issueActorIsBot(name) {
     const text = String(name || "").trim();
     if (!text) return false;
-    if (/\[bot\]$/i.test(text)) return true;
+    if (botAvatarKind(text)) return true;
     return typeof repoContributorIsBot === "function" && repoContributorIsBot({ name: text });
   }
 
@@ -813,6 +895,28 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
+
+  function rememberForgeAvatars(repo, names, commit = "") {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -822,12 +926,16 @@
     const forge = bot ? null : forgeIdentity(label);
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
+    const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
-      ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
+      ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
-    const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
+    const override = bot && !agent ? issuePersonHandle(label) : "";
+    const hydrate = (handle || override) && !ownAvatar
+      ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
     if (hydrate) watchIssueActorAvatars();
     const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
     const title = bot ? `${label} (bot)` : label;
@@ -876,12 +984,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
@@ -1704,6 +1845,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {

@@ -1,25 +1,25 @@
 import { CALL_FACE_STORAGE_KEY, callBackgroundsSupported, callFaceById, callFacesSupported, createFaceStage } from "../chat-call-faces.js";
-import { CUSTOM_FACE_ID, savedCustomFaceImage } from "../chat-call-face-custom.js";
+import { faceImageFor, photoFaceId, stageFaceFor } from "../chat-call-face-custom.js";
 import { callBackgroundById, savedCallBackground } from "../chat-call-backgrounds.js";
 import { callVoicesSupported, createVoiceStage, rememberCallerPitch, resolveCallVoice, savedCallerPitch, savedVoiceChoice } from "../chat-call-voice.js";
 
-function savedFace(storage) {
+export function savedCallFace(storage, avatarImage = null) {
   try {
     const id = storage?.getItem(CALL_FACE_STORAGE_KEY) || "";
-    if (id === CUSTOM_FACE_ID) return savedCustomFaceImage(storage) ? CUSTOM_FACE_ID : "";
+    if (photoFaceId(id)) return faceImageFor(id, { storage, avatarImage }) ? id : "";
     return callFaceById(id)?.id || "";
   } catch (_) {
     return "";
   }
 }
 
-export function createFmmLocal({ storage = globalThis.localStorage, documentRef = globalThis.document, scope = globalThis, voiceModuleUrl = "" } = {}) {
+export function createFmmLocal({ storage = globalThis.localStorage, documentRef = globalThis.document, scope = globalThis, voiceModuleUrl = "", avatarImage = null, faceChoice = null } = {}) {
   return async function prepareLocal(local, media) {
     const stops = [];
     let audio = local.getAudioTracks()[0] || null;
     let video = media === "video" ? local.getVideoTracks()[0] || null : null;
     let stage = null;
-    const faceId = savedFace(storage);
+    const faceId = typeof faceChoice === "function" ? faceChoice() : savedCallFace(storage, avatarImage);
     const voice = resolveCallVoice(savedVoiceChoice(storage), faceId);
     if (audio && voice && callVoicesSupported(scope)) {
       try {
@@ -43,8 +43,8 @@ export function createFmmLocal({ storage = globalThis.localStorage, documentRef 
         try {
           stage = createFaceStage({
             cameraStream: local,
-            faceId: callFacesSupported(documentRef) ? faceId : "",
-            faceImage: faceId === CUSTOM_FACE_ID ? savedCustomFaceImage(storage) || "" : "",
+            faceId: callFacesSupported(documentRef) ? stageFaceFor(faceId) : "",
+            faceImage: faceImageFor(faceId, { storage, avatarImage }),
             backgroundId,
             backgroundImage: background.image || "",
             documentRef,

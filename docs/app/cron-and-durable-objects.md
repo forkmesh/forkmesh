@@ -16,6 +16,7 @@ are kept in rqlite.
 | `FORKMESH_CRON_RUNNER` | `ForkMeshCronRunner` | `app/src/entry.py` | Cron coordinator (`scheduled-runner-v1`), snapshot republish doorbell (`snapshot-republish-v1`), mirror-wake doorbell, sixteen ingress shards |
 | `FORKMESH_CRON_WATCHDOG` | `ForkMeshCronWatchdog` | `app/src/entry.py` | Pushes its alarm forward on each completed tick; emails once on outage and once on recovery |
 | `FORKMESH_DISCORD_GATE` | `ForkMeshDiscordGate` | `app/src/entry.py` | Singleton Discord API rate gate |
+| `FORKMESH_ORG_OFFICE` | `ForkMeshOrgOffice` | `app/src/org_office_room.py` (class in `app/src/entry.py`) | One organization office per organization: sockets, desks, whiteboard and attendance ([../office/README.md](../office/README.md)) |
 
 ## The per-minute cron
 

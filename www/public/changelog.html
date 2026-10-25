@@ -181,11 +181,144 @@
         </p>
       </section>
 
+      <section class="release" id="2026-10-24">
+        <div class="release-meta">
+          <time class="when" datetime="2026-10-24">October 24, 2026</time>
+        </div>
+        <div class="release-body">
+          <h3>Market</h3>
+          <ul>
+            <li>The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one.</li>
+          </ul>
+          <h3>Calls</h3>
+          <ul>
+            <li>Direct calls can use your avatar as your face, and group calls now apply your chosen face and voice on every connection.</li>
+          </ul>
+          <h3>Projects</h3>
+          <ul>
+            <li>Mirrored issues link back to the original on GitHub or Gitea, show the imported avatars, and can list threads newest first with their last commenters (the Forum-style issue lists plugin).</li>
+            <li>Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place.</li>
+            <li>Instances can turn on Atom feeds of a repository's issues, a lite view of every thread that works without JavaScript, and a forum-style home page (the Feeds and lite view plugin); white label is an install setting.</li>
+            <li>Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin).</li>
+            <li>Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin).</li>
+            <li>Posts in other languages get a Translate bar that translates on your device or shows the instance's own English translation, and members can add their own translations (the Translations plugins).</li>
+            <li>Issue pages load faster on mirrored forums: imported avatars are cached, names are checked in one request per page, and Translate bars appear without slowing the thread.</li>
+            <li>Merging a pull request or updating its branch from the web shows each step live, from handing it to a mirror to publishing the result.</li>
+          </ul>
+          <h3>Chat</h3>
+          <ul>
+            <li>Links to a channel or direct message open it even on a freshly loaded chat page.</li>
+          </ul>
+          <h3>Agents</h3>
+          <ul>
+            <li>Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first.</li>
+          </ul>
+          <h3>World</h3>
+          <ul>
+            <li>World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the "could not start the 3D renderer" page.</li>
+            <li>Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.</li>
+            <li>One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World.</li>
+            <li>Turning on your camera in the World now works; the browser no longer blocks it.</li>
+          </ul>
+          <h3>World</h3>
+          <ul>
+            <li>A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it.</li>
+          </ul>
+          <h3>Settings</h3>
+          <ul>
+            <li>Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick.</li>
+            <li>Instances can let people sign up without an email address, using a one-time recovery code, suggest random usernames, and appoint moderators who approve first posts, block accounts and lock threads.</li>
+            <li>Instances can use a GitHub-style theme that follows each visitor's light or dark system setting, and Settings, Appearance has a System choice.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>A new install asks for nothing at launch: a short screen explains which permissions may come up and why, and each one is asked only when you first use the feature that needs it.</li>
+          </ul>
+          <h3>Desktop</h3>
+          <ul>
+            <li>In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.</li>
+            <li>In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up.</li>
+            <li>The debug bar's Report and Send diagnostic buttons are now one Diagnose button that turns red when it spots a performance, security or UI problem, and one click starts an agent with the model you have selected.</li>
+            <li>Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer.</li>
+            <li>The install line on the homepage has a small Binary / Source switch, so you can copy the command that compiles ForkMesh from source.</li>
+            <li>Switching theme or interface from the View menu is several times faster and no longer freezes the window for many seconds.</li>
+            <li>The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the pop-out button is gone: drag the prompt by any part of its body to move it anywhere or out into its own window, and resize it from any edge or corner.</li>
+            <li>The desktop app freezes less while the disk is busy: Action logs and run status, saved-search runs and quick-fix choices are written in the background, and the Genie spider no longer rewrites your settings each time it wanders.</li>
+            <li>Drag a pinned workflow between the top, left, right and bottom strips, and drag a left-rail icon back onto the repository tab bar or Code toolbar.</li>
+            <li>The desktop's View menu can reset the look to the default a fresh install starts with, or match the theme of the instance you are connected to.</li>
+            <li>A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports.</li>
+            <li>The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.</li>
+            <li>The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.</li>
+            <li>On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.</li>
+            <li>The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.</li>
+            <li>Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.</li>
+          </ul>
+          <h3>Server</h3>
+          <ul>
+            <li>Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.</li>
+            <li>Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.</li>
+            <li>The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.</li>
+          </ul>
+        </div>
+      </section>
+
       <section class="release" id="2026-10-23">
         <div class="release-meta">
           <time class="when" datetime="2026-10-23">October 23, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Market</h3>
+          <ul>
+            <li>Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in.</li>
+            <li>On iPhone, Video Mix DJ Studio lets you hold a queued song for a menu that removes it, drags a queued song onto a deck as soon as you move your finger, and plays a song you add right away when nothing is playing.</li>
+          </ul>
+          <h3>Calls</h3>
+          <ul>
+            <li>iPhone video calls switch to the other person's picture as soon as it arrives, play through the loudspeaker, and the microphone test now plays back what you said.</li>
+          </ul>
+          <h3>Projects</h3>
+          <ul>
+            <li>Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.</li>
+            <li>Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.</li>
+            <li>The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.</li>
+            <li>Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.</li>
+            <li>Anyone who can push to a pull request's branch can press Update branch to bring in the newest base branch; it says when the branch was synced, or that there are merge conflicts to resolve locally.</li>
+            <li>Only organization owners can merge pull requests and agent branches: contributors no longer see a green Ready to merge button or a Merge &amp; clean up button for agent work.</li>
+            <li>A pull request from a fork no longer warns that it is commits behind when it still merges cleanly, and you are told when a pull request was opened on your fork because the original repository is a read-only mirror.</li>
+          </ul>
+          <h3>Chat</h3>
+          <ul>
+            <li>Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name.</li>
+            <li>A message from someone signed in on a new phone or browser no longer stays labelled Guest: it switches to their account name as soon as the server confirms the device.</li>
+            <li>When several new devices join a private chat at once, the iPhone shows one approval banner for all of them instead of one per device.</li>
+            <li>On iPhone, reinstalling ForkMesh and restoring your identity key from the projects folder keeps your safety numbers the same, so the people you chat with don't see a new device.</li>
+            <li>Typing a name to invite someone to a private channel, or to add people to a new channel, now suggests matching usernames as you type, and @mentions in chat, issues and pull requests suggest anyone on ForkMesh.</li>
+            <li>Calls are steadier: they reconnect by themselves after a network drop or silent audio, answering no longer fails quietly, voice is clearer at a higher quality, and a call that cannot connect says so after 30 seconds.</li>
+            <li>During a call, Back to chat shrinks the call into a small window you can drag anywhere and tap to reopen, and you see your own camera with the other person's name until their video arrives.</li>
+            <li>The call quality pill on iPhone now has the Diagnose button that turns red on a problem and explains the fixes, and the iPhone's pre-call check can record a microphone test.</li>
+          </ul>
+          <h3>Agents</h3>
+          <ul>
+            <li>The composer hides its character count until a prompt nears the limit, then shows it in orange and red.</li>
+            <li>Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.</li>
+            <li>On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.</li>
+            <li>When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back.</li>
+            <li>Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window.</li>
+          </ul>
+          <h3>World</h3>
+          <ul>
+            <li>Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.</li>
+            <li>Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.</li>
+            <li>You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.</li>
+            <li>With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line.</li>
+            <li>With Diagnostics on, each core node light and your desktop light now carry three tiny CPU, memory and disk bars in green, orange or red, the lights sit a little further from the screen's corner, and the desktop charts have left the top right.</li>
+            <li>In a Video Mix DJ Studio jam on iPhone, each queued song shows who added it and the date and time they added it.</li>
+          </ul>
+          <h3>Android</h3>
           <ul>
             <li>Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.</li>
             <li>Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.</li>
@@ -204,6 +337,23 @@
             <li>On Android, New project loads the checked instance's logo and can quick-add an instance from the ForkMesh directory.</li>
             <li>On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk.</li>
             <li>On Android, Agents Eagle rows drop the left agent dot and show a tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots.</li>
+          </ul>
+          <h3>Desktop</h3>
+          <ul>
+            <li>On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.</li>
+            <li>Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with "Point size &lt;= 0" font warnings.</li>
+            <li>In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.</li>
+            <li>Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.</li>
+            <li>On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone.</li>
+            <li>Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back.</li>
+            <li>The new desktop design has a fresh Home with a prompt box, suggestions and a Needs you list, a calmer sidebar, top bar and team rail, and restyled Sessions, Code and CRM pages.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.</li>
+            <li>Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.</li>
+            <li>A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count.</li>
+            <li>Pings in the inbox now show the logo of the instance they came from, next to the ping's icon on the web and under it on the phone.</li>
           </ul>
         </div>
       </section>
@@ -254,6 +404,7 @@
             <li>Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.</li>
             <li>Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once.</li>
             <li>An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh.</li>
+            <li>A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another.</li>
           </ul>
           <h3>World</h3>
           <ul>
@@ -295,8 +446,12 @@
             <li>A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.</li>
             <li>Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.</li>
             <li>Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.</li>
+            <li>The desktop debug bar shows log icons only for the log types you record, draws every chart at one small size with a live detail card when you hover it, and overlaps the status dots without captions, as on the phone.</li>
             <li>On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.</li>
             <li>The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.</li>
+            <li>Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar.</li>
+            <li>New UI stall reports now go to the agent already working on stalls instead of starting another agent.</li>
+            <li>Fixed many of the pauses where the desktop window froze for a moment.</li>
           </ul>
           <h3>Server</h3>
           <ul>

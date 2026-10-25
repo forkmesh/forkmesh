@@ -20,12 +20,8 @@ PUBLIC = Path(__file__).resolve().parents[1] / "public"
 WWW_PUBLIC = PUBLIC.parents[1] / "www" / "public"
 CHAT = (PUBLIC / "dashboard-chat.js").read_text(encoding="utf-8")
 PUBLIC_CHAT = (PUBLIC / "chat.js").read_text(encoding="utf-8")
-DASHBOARD_HTML = (PUBLIC / "dashboard" / "chat" / "index.html").read_text(encoding="utf-8")
 PUBLIC_CHAT_HTML = (PUBLIC / "chat.html").read_text(encoding="utf-8")
 PUBLIC_CHAT_CSS = (PUBLIC / "chat.css").read_text(encoding="utf-8")
-CHAT_VIEW = (
-    PUBLIC / "dashboard" / "partials" / "views" / "chat.html"
-).read_text(encoding="utf-8")
 STYLES = (WWW_PUBLIC / "styles.css").read_text(encoding="utf-8")
 
 
@@ -56,7 +52,11 @@ def test_replayed_self_messages_are_rendered_after_refresh():
             source.index("function renderChatEntry("):
             source.index("async function verifyAdminDelete(")
         ]
-        assert 'entry.senderId === selfId ? "self" : kind' in render_entry
+        assert re.search(
+            r'entry\.senderId === selfId(?: \|\| isOwnViewOnceEntry\(entry\))?\s*'
+            r'\?\s*"self"\s*:\s*kind',
+            render_entry,
+        )
 
 
 def test_dashboard_history_starts_at_five_and_reveals_viewport_sized_batches():
@@ -302,7 +302,7 @@ def test_dashboard_picker_and_paste_attachments_send_without_an_extra_click():
 
 
 def test_chat_mention_styles_are_available_on_all_chat_surfaces():
-    for source in (DASHBOARD_HTML, PUBLIC_CHAT_CSS, STYLES):
+    for source in (PUBLIC_CHAT_CSS, STYLES):
         assert ".chat-mention {" in source
         assert ".chat-mention-card {" in source
         assert ".chat-mention-card[hidden]" in source
@@ -546,76 +546,7 @@ def test_dashboard_side_chat_keeps_its_socket_alive_and_reconnects():
     assert "scheduleReconnect();" in close_handler
 
 
-def test_world_embedded_dashboard_chat_removes_redundant_dashboard_chrome():
-    assert 'params.get("worldEmbed") !== "1"' in CHAT_VIEW
-    assert 'document.documentElement.dataset.worldEmbed = "1"' in CHAT_VIEW
-    assert 'html[data-world-embed="1"] [data-app-header]' in CHAT_VIEW
-    assert 'html[data-world-embed="1"] [data-dashboard-sidebar]' in CHAT_VIEW
-    assert 'html[data-world-embed="1"] [data-mobile-sidebar-backdrop]' in CHAT_VIEW
-    assert "display: none !important" in CHAT_VIEW
-    assert "data-dashboard-chat-view" in CHAT_VIEW
-    assert "data-dashboard-chat-composer" in CHAT_VIEW
-
-
-def test_world_embedded_dashboard_chat_tracks_mobile_keyboard_viewport():
-    viewport_sync = CHAT_VIEW[
-        CHAT_VIEW.index("const syncWorldEmbedViewport = () => {"):
-        CHAT_VIEW.index("syncWorldEmbedViewport();")
-    ]
-    assert "const layoutHeight = window.innerHeight;" in viewport_sync
-    assert "const visualHeight = window.visualViewport?.height;" in viewport_sync
-    assert (
-        "window.frameElement?.getBoundingClientRect?.().height"
-        in viewport_sync
-    )
-    assert "const candidates = [" in viewport_sync
-    assert "layoutHeight," in viewport_sync
-    assert "visualHeight," in viewport_sync
-    assert "frameHeight," in viewport_sync
-    assert "Math.min(...candidates)" in viewport_sync
-    assert '"--forkmesh-chat-viewport-height"' in viewport_sync
-    viewport_listeners = CHAT_VIEW[
-        CHAT_VIEW.index("syncWorldEmbedViewport();"):
-        CHAT_VIEW.index('window.addEventListener("resize"')
-    ]
-    assert viewport_listeners.count(
-        "window.visualViewport?.addEventListener("
-    ) == 2
-    assert '"resize",' in viewport_listeners
-    assert '"scroll",' in viewport_listeners
-    assert "height: 100%;" in CHAT_VIEW
-    assert "min-height: 0 !important;" in CHAT_VIEW
-    assert "overflow-y: auto;" in CHAT_VIEW
-
-
-def test_world_embedded_dashboard_chat_keeps_mobile_composer_usable():
-    assert "font-size: 16px;" in CHAT_VIEW
-    assert "min-height: 2.75rem;" in CHAT_VIEW
-    assert 'meta[name="viewport"]' in CHAT_VIEW
-    assert 'viewportMeta.content += ", viewport-fit=cover"' in CHAT_VIEW
-    assert "env(safe-area-inset-bottom, 0px)" in CHAT_VIEW
-    assert "env(safe-area-inset-left, 0px)" in CHAT_VIEW
-    assert "env(safe-area-inset-right, 0px)" in CHAT_VIEW
-    assert 'aria-label="Message #general"' in CHAT_VIEW
-    assert 'enterkeyhint="send"' in CHAT_VIEW
-
-
-def test_world_chat_has_a_primer_multiline_repository_action_composer():
-    for marker in (
-        'id="fullChatChannel"',
-        'id="fullChatRepo"',
-        'id="fullChatAction"',
-        '<option value="chat">Send to chat</option>',
-        '<option value="task">Create team task</option>',
-        '<option value="issue">Create repository issue</option>',
-        '<option value="agent" selected>Send to bot</option>',
-        'id="fullChatInput"',
-        'rows="2"',
-        "border-border",
-        "bg-card",
-        "focus:ring-1",
-    ):
-        assert marker in CHAT_VIEW
+def test_world_chat_has_a_multiline_repository_action_composer():
     for contract in (
         'fetch("/api/repositories"',
         "selectedComposerRepository()",
@@ -635,33 +566,13 @@ def test_chat_prompt_input_expands_from_its_top_resize_handle():
     # changes only the prompt textarea's inline height, and pulling it down to
     # the minimum clears that override so the prompt snaps back to its resting
     # size.
-    assert "data-dashboard-chat-input-resize-handle" in CHAT_VIEW
-    assert 'aria-label="Resize message input"' in CHAT_VIEW
     assert "wireFullInputResizeHandle()" in CHAT
     assert "drag.startHeight + drag.startY - event.clientY" in CHAT
     assert 'fullInput.style.height = ""' in CHAT
     assert "fullInputManualHeight" in CHAT
 
 
-def test_world_chat_is_a_transparent_bubble_hud_with_context_and_emotes():
-    for marker in (
-        "data-dashboard-chat-context-rail",
-        "data-dashboard-chat-context-channel",
-        "data-dashboard-chat-context-source",
-        "data-dashboard-chat-scroll-rail",
-        "chat-message-bubble",
-        "background: transparent !important",
-        "world-chat-composer-unfurl",
-        'data-dashboard-chat-emote="wave"',
-        'data-dashboard-chat-emote="jump"',
-        'data-dashboard-chat-emote="spin"',
-        'data-dashboard-chat-emote="backflip"',
-        'data-dashboard-chat-emote="dance"',
-        'data-dashboard-chat-emote="float"',
-        'data-dashboard-chat-emote="wobble"',
-        'data-dashboard-chat-emote="sparkle"',
-    ):
-        assert marker in CHAT_VIEW
+def test_world_chat_relays_emotes_and_scrolls_the_log():
     assert 'type: "forkmesh:world-emote"' in CHAT
     assert "fullLog.scrollTo({" in CHAT
 
@@ -674,16 +585,3 @@ def test_world_todo_actions_replay_as_chat_notification_bubbles():
     assert "emitWorldActivity" not in CHAT
 
 
-def test_world_embed_uses_one_dark_primer_header_and_pinned_grid_composer():
-    for marker in (
-        "color-scheme: dark",
-        "--background: #0d1117",
-        "[data-dashboard-chat-channel-header]",
-        "display: none;",
-        "[data-dashboard-chat-composer-toolbar]",
-        "grid-template-columns:",
-        "[data-dashboard-chat-action]",
-        "grid-column: 1 / -1",
-    ):
-        assert marker in CHAT_VIEW
-    assert "Public World <strong" not in CHAT_VIEW

@@ -222,3 +222,17 @@ through its own worklet, so only received WebRTC audio tracks are measured.
   sides, re-installing the same send key keeps the counter, a new key resets
   it, and audio and video through one `FrameSendKey` never repeat a counter
   (`fm_frame_crypto_tool send` / `receive`).
+
+## Face and voice on both engines
+
+`prepareLocal` (the face and voice changer stages from `createFmmLocal`) used
+to run only on the FM Media path: a call that fell back to WebRTC sent the raw
+camera and microphone even when a face or voice was chosen. Both engines now
+send the prepared stream (`outgoingMedia`), and mute and camera-off apply to
+the prepared tracks as well as the raw ones (2026-10-24).
+
+`createGroupCalls` also takes `acquireMedia(media)`: a caller that already has
+its camera and microphone open (the World, which also tracks the face and
+counts words on them) hands its stream in, and the engine does not stop those
+tracks when the call ends. World voice rooms use the engine this way with
+their own `sendFrame` and `fetchTicket` ([../world/voice.md](../world/voice.md)).

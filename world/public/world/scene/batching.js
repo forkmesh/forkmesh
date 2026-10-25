@@ -673,7 +673,7 @@ export function* mergeObjectBatchesSteps(THREE, root, {
   return group;
 }
 
-export function mergeMeshesByMaterial(THREE, root, { name = root.name || "forkmesh-merged" } = {}) {
+export function mergeMeshesByMaterial(THREE, root, { name = root.name || "forkmesh-merged", skip = () => false } = {}) {
   root.updateWorldMatrix(true, true);
   const rootInverse = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const relative = new THREE.Matrix4();
@@ -683,6 +683,7 @@ export function mergeMeshesByMaterial(THREE, root, { name = root.name || "forkme
   root.traverse((object) => {
     if (object === root || !object.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return;
     if (Array.isArray(object.material) || !object.material || object.visible === false) return;
+    if (skip(object)) return;
     const geometry = object.geometry;
     if (!geometry?.attributes?.position || !geometry.attributes.normal) return;
     if (Object.keys(geometry.morphAttributes || {}).length) return;

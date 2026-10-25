@@ -16,10 +16,12 @@ where this node has a working checkout.
 2. After the operator confirms, a worker finds the local branch for each one.
    This is the same lookup **Fix** uses (`localPullAgentBranch`). A pull request
    that arrived as a signed patch gets its `pr/<n>` branch built from the patch
-   first (`PullStore::ensurePullHeadRef`). A pull request is left out, with a
-   reason in the notice and the agent log, when its code is not on this node,
-   its branch or base name fails `safeRefName`, or its base is not a local
-   branch.
+   first (`PullStore::ensurePullHeadRef`). Pull requests still without a
+   branch are then looked up in the cloud ([Pulling branches from the
+   cloud](#pulling-branches-from-the-cloud)). A pull request is left out, with
+   a reason in the notice and the agent log, when its code is on neither this
+   node nor the cloud, its branch or base name fails `safeRefName`, or its
+   base is not a local branch.
 3. One agent starts through `startAdHocAgentForRepo` with
    `directCheckout = true` and mode `Auto`. It runs in the repository's own
    checkout with no agent branch, no worktree and no permission prompts, so its
@@ -33,6 +35,76 @@ where this node has a working checkout.
    is for.
 5. When the run finishes successfully, `notifyAgentDone` calls
    `finishPullMergeAllRun`, and ForkMesh cleans up (next section).
+
+## Pulling branches from the cloud
+
+The timed checkout sync (`refreshCore` in `UpstreamCheckoutSync.cpp`) copies
+the cloud's branches into `refs/remotes/origin/*` and
+`refs/remotes/forkmesh-mesh/*`, but Merge all used to look only at local
+branches and the replayed patch. A pull request another node had already
+published as `pr/<n>` was skipped as "its code is not on this node" until the
+next sync happened to make the local branch.
+
+Now the worker, before its loop, asks `origin` once with `git ls-remote` for
+`refs/heads/pr/<n>` of every open pull request without a local branch, and
+fetches only the ones the cloud has (`fetchServedPullBranches`). For each
+pull request that local replay cannot build, it creates `pr/<n>` at the
+cloud's commit, or failing that at `refs/remotes/origin/pr/<n>` or
+`refs/remotes/forkmesh-mesh/pr/<n>` (`adoptTrackedPullBranch`). The branch is
+only ever created (`update-ref` with an all-zero old value), never moved, so
+a local `pr/<n>` always wins. Local replay still runs first, because a
+patch pull's numbered branch follows its current signed patch, which a
+branch published earlier may not.
+
+Some pull requests have no commit anywhere: a signed patch with no
+`headBaseOid` that no longer applies to the base (a stacked series whose
+earlier parts changed, or a patch from a remote fork). Fetching cannot help
+there. The skip reason now says so (`pullmergeall::missingCodeReason`): "its
+signed patch does not apply to `main` and no node has published its branch;
+the author needs to rebase it". A branch pull says which branch is missing.
+`materializePullRef` returns without an error in that case, which is why the
+old message only ever said the code was not here.
+
+## Stacked patches whose earlier parts merged
+
+On 2026-10-24 Merge all left out twelve pull requests: #552 to #564 (parts 4
+to 16 of a 16-part series sent as signed patches) and #567. The series' author
+sent each part with only its own commit. Each patch was cut from the author's
+`main` with the earlier parts on top. Parts 1, 2, 3, 5 and 14 had arrived as
+branches rebased onto a newer `main` and were merged. So the files part 4
+expects (`index <pre>..` in its patch) existed nowhere here: neither on the
+base tip, nor in its history (`patchPreimageBaseCommit`), nor as blobs for
+`git am --3way`.
+
+`replayStackedPullSeries` in `PullStore.cpp` now rebuilds such a pull before
+it is given up:
+
+1. The patch's first commit gives the author's email and date. The author's
+   commits from the three days before it are found on the base branch and on
+   every `pr/*` branch, local or tracked (`git log -F --author=<email>`),
+   starting from the files the patch touches and widening to the files those
+   commits touch. One commit per author date and subject is kept, so a copy
+   rebuilt on a `pr/*` branch counts once. More than 30 commits means it is
+   not a short stack, and the search stops.
+2. The candidate bases are the last 40 first-parent commits of the base branch
+   committed before the patch was written. For each one, the author's commits
+   it does not contain are the stack. Files that no stacked commit touches
+   must already hold the blobs the patch expects.
+3. A scratch worktree at that base cherry-picks the stack in author-date
+   order. Only when every file then holds exactly the blob the patch names
+   does `git am` replay the patch on top. At most three bases are tried.
+
+The resulting `pr/<n>` branch forks from the author's base and carries the
+author's exact tree, so it conflicts with the current base tip just as the
+pull request does. That merge is what the agent resolves. Later parts find
+the rebuilt earlier part on its `pr/*` branch, so a whole series rebuilds in
+number order. A patch cut from a fork whose files this repository never had,
+such as #567 (generated pages of a fork with a different `main`), still
+cannot be rebuilt. It keeps the "the author needs to rebase it" reason.
+
+The twelve pull requests of 2026-10-24 were rebuilt by hand the same way on
+the node that runs Merge all. #567 was rebased onto `main` and its conflicts
+were resolved, because no commit here matches its fork's generated pages.
 
 ## Why ForkMesh cleans up, not the agent
 

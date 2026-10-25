@@ -55,6 +55,11 @@ def commit(repo, files, message):
     return git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True)
+def no_tmp_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(tmp_path / "no-labels"))
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "src"
@@ -390,6 +395,57 @@ def test_a_run_requeued_after_a_desktop_restart_follows_its_new_workspace(repo, 
     assert result_line(second).startswith(auto.RESULT_MARK + " ok deployed ")
     assert result_line(first) == ""
     assert [run["workspace"] for run in auto.running_runs(tmp_path / "actions")] == [second]
+
+
+def tmp_disk(tmp_path, monkeypatch, target=None):
+    labels, device = tmp_path / "labels", tmp_path / "dev" / "sdz1"
+    labels.mkdir()
+    device.parent.mkdir()
+    device.write_text("")
+    (labels / "TMP").symlink_to(device)
+    mount = target or tmp_path / "media" / "TMP"
+    mount.mkdir(parents=True)
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/root / ext4 rw 0 0\n%s %s ext4 rw 0 0\n" % (
+        device, str(mount).replace(" ", "\\040")))
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(labels))
+    monkeypatch.setattr(auto, "TMP_DISK_MOUNTS", str(mounts))
+    return mount
+
+
+def test_tmp_disk_mount_matches_the_labelled_device_and_unescapes_spaces(tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch, tmp_path / "media" / "T M P")
+    assert auto.tmp_disk_mount() == mount
+    assert auto.sandbox_dirs(tmp_path / "actions") == [
+        tmp_path / "actions" / "sandbox", mount / "ForkMesh" / "actions" / "sandbox"]
+
+
+def test_no_tmp_disk_leaves_only_the_data_sandbox(tmp_path):
+    assert auto.tmp_disk_mount() is None
+    assert auto.sandbox_dirs(tmp_path / "actions") == [tmp_path / "actions" / "sandbox"]
+
+
+def test_a_tmp_disk_that_is_labelled_but_not_mounted_is_ignored(tmp_path, monkeypatch):
+    tmp_disk(tmp_path, monkeypatch)
+    (tmp_path / "mounts").write_text("/dev/root / ext4 rw 0 0\n")
+    assert auto.tmp_disk_mount() is None
+
+
+def test_a_run_whose_sandbox_is_on_the_tmp_disk_is_deployed(repo, tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch)
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    head = commit(repo, {"app/a.py": "tmp disk\n"}, "tmp disk")
+    legacy = make_run(tmp_path / "actions", 7903, head)
+    fast = (mount / "ForkMesh" / "actions" / "sandbox" / "forkmesh-run-7903-1790000099999"
+            / "workspace")
+    fast.mkdir(parents=True)
+    agent.tick()
+    assert agent.attached[7903] is not None
+    settle(agent, clock)
+    assert calls == [(head, "auto")]
+    assert result_line(fast).startswith(auto.RESULT_MARK + " ok deployed ")
+    assert not (legacy / auto.SINK_NAME).exists()
 
 
 def test_paused_or_disarmed_agent_answers_without_deploying(repo, tmp_path):
@@ -1451,3 +1507,36 @@ def test_version_probe_brackets_an_ipv6_route(monkeypatch):
     seen.clear()
     auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run)
     assert "app.forkmesh.com:443:198.51.100.10" in seen[0]
+
+
+def test_fleet_branches_main_does_not_reflect_are_pending(repo):
+    main = git(repo, "rev-parse", "main")
+    git(repo, "branch", "fleet/remove-core-n2")
+    git(repo, "branch", "fleet/add-core-n3")
+    git(repo, "branch", "fleet/add-core-n1")
+    git(repo, "branch", "fleet/remove-core-n7")
+    git(repo, "branch", "fleet/other")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), main) == [
+        "fleet/add-core-n3", "fleet/remove-core-n2"]
+    retired = FLEET_TOML.replace('[[nodes]]\nname = "n2"\nrole = "core"\n'
+                                 'public_ipv4 = "203.0.113.12"\n\n', "")
+    later = commit(repo, {"deploy/fleet.toml": retired + '\n[hosted]\nretired_cores = ["n3"]\n'},
+                   "fleet change landed by another commit")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), later) == []
+
+
+def test_gate_one_names_the_fleet_branch_main_is_missing(repo, monkeypatch):
+    git(repo, "branch", "fleet/remove-core-n2")
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False))
+
+    def silent(hosts, **kwargs):
+        raise GuardError("n2 did not answer /api/version (HTTP 0); the fleet must be "
+                         "healthy before a deploy")
+    monkeypatch.setattr(auto, "live_revs", silent)
+    target = git(repo, "rev-parse", "main")
+    with pytest.raises(GuardError, match=r"n2 did not answer .*fleet/remove-core-n2 not "
+                                         r"merged into main"):
+        pipeline._execute(target, target[:12], None, {})
+    git(repo, "branch", "-m", "fleet/remove-core-n2", "fleet/remove-core-n9")
+    with pytest.raises(GuardError, match=r"healthy before a deploy$"):
+        pipeline._execute(target, target[:12], None, {})

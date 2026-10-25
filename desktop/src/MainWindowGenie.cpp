@@ -7,6 +7,7 @@
 #include "MainWindowInternal.h"
 #include "NativePackageExtension.h"
 #include "PetHostFeed.h"
+#include "SettingsWrite.h"
 #include "ForkMeshPackageRegistry.h"
 #include "TeammateStore.h"
 
@@ -152,11 +153,14 @@ void MainWindow::setupGenieSpider()
     connect(m_genieSpider, &GenieSpiderWidget::menuRequested, this, &MainWindow::showGenieMenu);
     connect(m_genieSpider, &GenieSpiderWidget::escaped, this, &MainWindow::releaseGenieToDesktop);
     connect(m_genieSpider, &GenieSpiderWidget::moved, this, [this] {
-        if (!m_genieSpider->parked())
-            genieSettings().setValue(m_genieOnDesktop ? kGenieDesktopSpotSetting : kGenieSpotSetting,
-                                     m_genieSpider->homeFraction());
         if (m_genieCoach->isVisible())
             m_genieCoach->place(m_genieSpider->bodyRect());
+    });
+    connect(m_genieSpider, &GenieSpiderWidget::placed, this, [this] {
+        if (!m_genieSpider->parked())
+            forkmesh::settings::put(genieSettings(),
+                                    m_genieOnDesktop ? kGenieDesktopSpotSetting : kGenieSpotSetting,
+                                    m_genieSpider->homeFraction());
     });
     connect(m_genieTip, &GenieTipBubble::clicked, this, &MainWindow::showNextGenieTip);
     connect(m_genieTip, &GenieTipBubble::addToAgent, this, &MainWindow::addGenieTipToAgent);
@@ -1098,7 +1102,7 @@ void MainWindow::replyToGenieSpider(const QString &tip)
     const int repoIndex = genieSpiderTeammateRepo();
     if (repoIndex < 0) {
         flashMessage(QStringLiteral("Replies go to the Genie special agent, and no open repository has one. Add "
-                                    ".forkmesh/teammates/genie.json from the ForkMesh repository to one."),
+                                    ".forkmesh/workflows/genie.json from the ForkMesh repository to one."),
                      true);
         return;
     }

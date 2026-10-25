@@ -356,6 +356,13 @@ async def _save(env, row, record, touch=False):
         )
 
 
+def merge_allowed(context):
+    context = context or {}
+    if context.get("scope") == "owner":
+        return context.get("accessBasis") != "own_session"
+    return str(context.get("role") or "") == "owner"
+
+
 def _error(code, message, status, **kwargs):
     return _org_agent_error(code, message, status, **kwargs)
 
@@ -536,6 +543,12 @@ async def session_action(env, request, context, row, record, action, data,
     context["servedOwner"] = await _served_owner(
         env, context["org"], context["repo"])
     if action == "merge":
+        if not merge_allowed(context):
+            return _error(
+                "forbidden",
+                "Only an owner of the organization can merge an agent "
+                "branch. Open a pull request so an owner can review and "
+                "merge it.", 403, required_action="open_pull")
         return await _merge(env, request, context, row, record, data,
                             owner_scope)
     if action == "link-pull":

@@ -1219,6 +1219,9 @@ _URL_EXPORT_NAMES = (
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
     "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
+    "SEASON_RE",
+    "AI_REVIEW_RE", "REPO_MODERATION_RE", "ORG_MODERATION_RE",
+    "REPO_TRANSLATIONS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -1391,6 +1394,8 @@ instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
 instance_registry = _LazyModule("instance_registry")
 instance_world = _LazyModule("instance_world")
+instance_home = _LazyModule("instance_home")
+instance_privacy = _LazyModule("instance_privacy")
 instance_world_scene = _LazyModule("instance_world_scene")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
@@ -1566,6 +1571,8 @@ world_relay_instances_handler = _world_routes.export(
 world_satellites_handler = _world_routes.export("world_satellites_handler")
 world_social_posts_handler = _world_routes.export("world_social_posts_handler")
 world_ticket_handler = _world_routes.export("world_ticket_handler")
+world_voice_ticket_handler = _world_routes.export(
+    "world_voice_ticket_handler")
 world_mesh_handler = _world_routes.export("world_mesh_handler")
 world_neighbour_scene_handler = _world_routes.export(
     "world_neighbour_scene_handler")
@@ -5166,6 +5173,7 @@ STATUS_CORE_ROSTER_FRESH_MS = 24 * 60 * 60 * 1000
 STATUS_CORE_HEARTBEAT_FRESH_MS = 30 * 1000
 STATUS_CORE_VOTE_FRESH_MS = 90 * 1000
 STATUS_CORE_IDS_FRESH_MS = 180 * 1000
+STATUS_CORE_METRICS_FRESH_MS = 3 * 60 * 1000
 STATUS_RUNNER_PREFIX = "runner:"
 STATUS_RUNNER_MAX = 32
 STATUS_RUNNER_SEEN_FRESH_MS = 3 * 60 * 1000
@@ -9062,10 +9070,12 @@ async def _fold_blog_post_view(env, request, slug, referer, self_host):
     same blinded per-slug digest the HLL folds, held in ``blog_post_view_seen``
     only long enough for the window to mean something.
     """
+    if instance_privacy.active(env):
+        return
     now = int(Date.now())
     await ensure_schema(env)
 
-    address = world_visitor_metrics.canonical_edge_address(
+    address = _visitor_count_address(
         request.headers.get("cf-connecting-ip") or "")
     category = world_visitor_metrics.generalized_user_agent(
         str(request.headers.get("user-agent") or "")[:2048])
@@ -9899,7 +9909,7 @@ async def _world_unique_visitor_tokens(env, request, now):
         # CF-Connecting-IP is authored by Cloudflare for an inbound Worker
         # request. Never fall back to X-Forwarded-For, query data, cookies, or a
         # caller-provided JSON field: those can contain a forged address.
-        address = world_visitor_metrics.canonical_edge_address(
+        address = _visitor_count_address(
             headers.get("cf-connecting-ip") or "")
         raw_agent = str(headers.get("user-agent") or "")[:2048]
     except Exception:
@@ -11851,7 +11861,7 @@ class _NotesRuntime(_WorldCommunityRuntime):
         """
         try:
             headers = self.request.headers
-            address = world_visitor_metrics.canonical_edge_address(
+            address = _visitor_count_address(
                 headers.get("cf-connecting-ip") or "")
             agent = str(headers.get("user-agent") or "")[:2048]
         except Exception:
@@ -12336,7 +12346,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         return _request_origin(self.request) if self.request is not None else ""
 
     def request_visitor(self):
-        if self.request is None:
+        if self.request is None or instance_privacy.active(self.env):
             return {"ip": "", "agent": ""}
         headers = self.request.headers
         return {"ip": str(headers.get("cf-connecting-ip") or "").strip()[:64],
@@ -13980,7 +13990,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c841261a4d250195503c8582103050794b077a64668e7d1060abe2c94466bceb"
+    "5acceac3d4386ea85e51e3ea37b79eab8aa4b347be6c104682e159bbb3346eb3"
 )
 
 
@@ -14205,14 +14215,18 @@ def _log_d1_query(sql, args=(), kind="query"):
 
 
 _D1_WATCH_TABLES_RE = re.compile(
-    r"\b(users|account_sessions|account_devices|repositories|"
-    r"profile_contribution_[a-z_]+)\b", re.IGNORECASE)
+    r"\b(users|nodes|account_sessions|account_devices|repositories|"
+    r"mirror_https_endpoints|profile_contribution_[a-z_]+)\b",
+    re.IGNORECASE)
 _D1_WATCH_WRITE_RE = re.compile(
     r"\b(insert|update|delete|replace)\b", re.IGNORECASE)
 _D1_WATCH_SESSION_TABLES = frozenset(
     ("users", "account_sessions", "account_devices"))
 _D1_WATCH_SESSION_TOUCH = "UPDATE account_sessions SET last_seen_at=?"
-_D1_WATCH_GENERATIONS = {"contributions": 0}
+_D1_WATCH_GENERATIONS = {
+    "contributions": 0, "repositories": 0, "mirror_https_endpoints": 0,
+    "signing_keys": 0}
+_D1_WATCH_NODE_TOUCH = "UPDATE nodes SET last_seen=?"
 
 
 def _d1_write_watch(sql):
@@ -14232,6 +14246,13 @@ def _d1_write_watch(sql):
     if "repositories" in tables or any(
             name.startswith("profile_contribution_") for name in tables):
         _D1_WATCH_GENERATIONS["contributions"] += 1
+    if "repositories" in tables:
+        _D1_WATCH_GENERATIONS["repositories"] += 1
+    if "mirror_https_endpoints" in tables:
+        _D1_WATCH_GENERATIONS["mirror_https_endpoints"] += 1
+    if tables & {"users", "account_devices"} or (
+            "nodes" in tables and not text.startswith(_D1_WATCH_NODE_TOUCH)):
+        _D1_WATCH_GENERATIONS["signing_keys"] += 1
 
 
 def _cron_d1_budget_start():
@@ -14391,6 +14412,27 @@ async def d1_run(env, sql, *args):
     if args:
         stmt = stmt.bind(*d1_bind_args(args))
     return await stmt.run()
+
+
+D1_SNAPSHOT_TTL_MS = 30 * 1000
+D1_SNAPSHOT_MAX = 32
+_D1_SNAPSHOTS = {}
+
+
+async def _d1_snapshot(env, table, sql, *args):
+    now = int(Date.now())
+    generation = _D1_WATCH_GENERATIONS.get(table, 0)
+    key = (sql, args)
+    hit = _D1_SNAPSHOTS.get(key)
+    if (hit is not None and hit[1] == generation
+            and 0 <= now - hit[0] < D1_SNAPSHOT_TTL_MS):
+        return [dict(row) for row in hit[2]]
+    rows = await d1_all(env, sql, *args)
+    if _D1_WATCH_GENERATIONS.get(table, 0) == generation:
+        if key not in _D1_SNAPSHOTS and len(_D1_SNAPSHOTS) >= D1_SNAPSHOT_MAX:
+            _D1_SNAPSHOTS.clear()
+        _D1_SNAPSHOTS[key] = (now, generation, [dict(row) for row in rows])
+    return rows
 
 
 async def d1_run_batch(env, statements):
@@ -16689,6 +16731,11 @@ core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
 core_push_pulls_synchronized = _core_push.export("pulls_synchronized")
 _recent_pushes = _LazyModule("recent_pushes")
+_ai_review = _LazyModule("ai_review")
+ai_review_handler = _ai_review.export("handler")
+ai_review_cron = _ai_review.export("run_cron")
+ai_review_enqueue = _ai_review.export("enqueue")
+ai_review_note_push = _ai_review.export("note_push")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
@@ -16701,6 +16748,8 @@ custom_reactions_asset_handler = _custom_reactions.export("asset_handler")
 custom_reactions_catalog = _custom_reactions.export("catalog")
 _comment_gifs = _LazyModule("comment_gifs")
 comment_gifs_handler = _comment_gifs.export("handler")
+_seasonal_theme = _LazyModule("seasonal_theme")
+seasonal_theme_handler = _seasonal_theme.export("handler")
 _comment_tips = _LazyModule("comment_tips")
 comment_tips_handler = _comment_tips.export("handler")
 comment_tips_intent_handler = _comment_tips.export("intent_handler")
@@ -16716,6 +16765,21 @@ pull_attention_handler = _pull_attention.export("handler")
 pull_attention_review_posted = _pull_attention.export("review_posted")
 pull_attention_record = _pull_attention.export("pull_record")
 pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
+_moderation = _LazyModule("moderation")
+moderation_repo_handler = _moderation.export("repo_handler")
+moderation_org_handler = _moderation.export("org_handler")
+moderation_blocked_response = _moderation.export("blocked_response")
+moderation_can_moderate_repo = _moderation.export("can_moderate_repo")
+_account_policy = _LazyModule("account_policy")
+_random_handles = _LazyModule("random_handles")
+_account_recovery = _LazyModule("account_recovery")
+account_recover_handler = _account_recovery.export("recover_handler")
+account_recovery_code_handler = _account_recovery.export(
+    "regenerate_handler")
+account_handle_suggestion_handler = _account_recovery.export(
+    "suggestion_handler")
+_post_translations = _LazyModule("post_translations")
+post_translations_handler = _post_translations.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -17407,6 +17471,9 @@ async def repo_about_handler(env, request, owner, repo):
             not owner_key_authed
             and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
+    # An organization has no node key of its own; its owners and admins were
+    # already checked above, so its repositories' About (and images) can be
+    # edited from the web like a person's.
     if not await _owner_pubkey(env, owner) and not (
             await _branch_protection.settings_only(env, data, owner, repo)):
         linked = await d1_first(
@@ -18216,6 +18283,8 @@ async def record_release_download(env, repo_bi, sha256, ua=""):
     """Log one completed release-asset download. Best-effort; never raises —
     called fire-and-forget from the streaming DO response, so a D1 hiccup must
     never fail or delay the download itself."""
+    if instance_privacy.active(env):
+        ua = ""
     try:
         await ensure_schema(env)
         await d1_run(
@@ -18611,21 +18680,27 @@ async def verify_share_view_token(env, viewer, owner, repo, ts, sig):
 # that cannot change between two requests a second apart: crawlers, stale links
 # and polling clients walk /api/repo/<owner>/<repo>/... for names this relay
 # has never held, and every one of those probes paid a blind index plus a D1
-# read before its 404 (adhoc #1642). Only the CLOSED answer is memoized, so a
-# public repository is never served from a cached verdict; publishing clears
-# the entry inline for same-isolate read-your-writes, and the TTL is short
-# enough that a publish from another isolate is visible within one page load.
-# Per-isolate and bounded, mirroring _ORG_ALIAS_MEMO.
+# read before its 404 (adhoc #1642). Publishing clears the entry inline for
+# same-isolate read-your-writes, and the TTL is short enough that a publish
+# from another isolate is visible within one page load. A public verdict is
+# held in _REPO_OPEN_MEMO only under an unchanged catalog_rev and no local
+# repositories write (docs/app/d1.md). Per-isolate and bounded,
+# mirroring _ORG_ALIAS_MEMO.
 _REPO_CLOSED_MEMO = {}
 REPO_CLOSED_MEMO_TTL_MS = 5 * 1000
 REPO_CLOSED_MEMO_MAX = 512
+_REPO_OPEN_MEMO = {}
+REPO_OPEN_MEMO_TTL_MS = 30 * 1000
 
 
 def _forget_repo_closed(owner, repo):
     """Drop a memoized "not publicly served" verdict after a catalog write."""
-    _REPO_CLOSED_MEMO.pop(
-        str(owner or "").strip().lower() + "/"
-        + str(repo or "").strip().lower(), None)
+    key = (str(owner or "").strip().lower() + "/"
+           + str(repo or "").strip().lower())
+    _REPO_CLOSED_MEMO.pop(key, None)
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    if open_memo is not None:
+        open_memo.pop(key, None)
 
 
 async def _repo_is_private(env, owner, repo):
@@ -18649,6 +18724,23 @@ async def _repo_is_private(env, owner, repo):
                 and now - closed_at
                 < globals().get("REPO_CLOSED_MEMO_TTL_MS", 5000)):
             return True
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    rev_reader = globals().get("_catalog_rev_current")
+    generations = globals().get("_D1_WATCH_GENERATIONS") or {}
+    open_mark = None
+    if open_memo is not None and callable(rev_reader):
+        now = now or int(Date.now())
+        try:
+            rev = await rev_reader(env, now)
+        except Exception:
+            rev = None
+        if rev is not None:
+            open_mark = (rev, generations.get("repositories", 0))
+            opened = open_memo.get(key)
+            if (opened is not None and opened[1] == open_mark
+                    and 0 <= now - opened[0]
+                    < globals().get("REPO_OPEN_MEMO_TTL_MS", 30000)):
+                return False
 
     async def resolve():
         await ensure_schema(env)
@@ -18693,6 +18785,15 @@ async def _repo_is_private(env, owner, repo):
             memo[key] = now
         else:
             memo.pop(key, None)
+    if open_memo is not None:
+        if closed or open_mark is None or open_mark[1] != generations.get(
+                "repositories", 0):
+            open_memo.pop(key, None)
+        else:
+            if (key not in open_memo and len(open_memo)
+                    >= globals().get("REPO_CLOSED_MEMO_MAX", 512)):
+                open_memo.clear()
+            open_memo[key] = (now, open_mark)
     return closed
 
 
@@ -19122,6 +19223,9 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     moderation_error = await username_moderation_error(env, new_name)
     if moderation_error:
         return name_bi, rec, moderation_error
+    if ((await _signup_policy(env)).get("handles") == "require"
+            and not _random_handles.is_random_handle(new_name)):
+        return name_bi, rec, "random_handle_required"
 
     new_name_bi, target = await _account_row(env, new_name)
     quarantined = await d1_first(
@@ -19187,6 +19291,16 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     await _delete_chat_direct_conversations(env, name_bi)
     await d1_run(
         env, "UPDATE account_presence SET name_bi=? WHERE name_bi=?",
+        new_name_bi, name_bi)
+    for table in ("moderation_roles", "moderation_blocks",
+                  "moderation_post_counts"):
+        await d1_run(
+            env, "UPDATE OR IGNORE " + table + " SET account_bi=? "
+            "WHERE account_bi=?", new_name_bi, name_bi)
+        await d1_run(
+            env, "DELETE FROM " + table + " WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "UPDATE moderation_queue SET author_bi=? WHERE author_bi=?",
         new_name_bi, name_bi)
     await d1_run(
         env, "UPDATE pending_verifications SET name_bi=? WHERE name_bi=?",
@@ -19325,12 +19439,17 @@ _REPO_SCOPED_TABLES = (
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
     ("comment_reactions", "repo_bi"),
+    ("moderation_flags", "repo_bi"),
+    ("moderation_queue", "repo_bi"),
+    ("post_translations", "repo_bi"),
     ("member_repo_activity", "repo_bi"),
     ("member_activity_repos", "repo_bi"),
     ("comment_tips", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
+    ("repo_mirror_quota", "repo_bi"),
+    ("repo_mirror_registry", "repo_bi"),
     ("repo_privacy_policy", "repo_bi"),
     ("repo_remote_forks", "repo_bi"),
     ("repo_security_scan_leases", "repo_bi"),
@@ -19530,6 +19649,15 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
     await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
+    for moderation_table, moderation_column in (
+            ("moderation_roles", "account_bi"),
+            ("moderation_blocks", "account_bi"),
+            ("moderation_post_counts", "account_bi"),
+            ("moderation_queue", "author_bi")):
+        await d1_run(
+            env, "DELETE FROM " + moderation_table + " WHERE "
+            + moderation_column + "=?", name_bi)
+    await d1_run(env, "DELETE FROM post_translations WHERE account_bi=?", name_bi)
     await d1_run(
         env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
     await d1_run(
@@ -20818,9 +20946,9 @@ def _apply_browser_security_headers(response, pathname):
     if "text/html" not in content_type:
         return response
     path = str(pathname or "/")
+    chat_page = path in ("/chat", "/chat.html")
     frameable = (
-        path in ("/chat", "/chat.html")
-        or path.startswith("/dashboard/chat")
+        chat_page
         or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
@@ -20836,7 +20964,8 @@ def _apply_browser_security_headers(response, pathname):
             "frame-src 'self'",
             "frame-src 'self' " + _TURNSTILE_CHALLENGE_ORIGIN, 1,
         )
-    devices = _plugin_device_page(path)
+    devices = ("camera", "microphone") if chat_page else _plugin_device_page(
+        path)
     if devices:
         csp = csp.replace(
             "media-src 'self' blob: https:", _DEVICE_PAGE_MEDIA_SRC, 1)
@@ -21499,6 +21628,12 @@ def _chat_socket_target(request, path=None, account_bi="", address=""):
         query="&".join(query), fragment="").geturl()
 
 
+def _visitor_count_address(raw):
+    if instance_privacy.is_pseudonym(raw):
+        return ""
+    return world_visitor_metrics.canonical_edge_address(raw)
+
+
 def _generalized_client_category(request):
     """Reduce a user agent to a non-identifying category."""
     try:
@@ -21527,6 +21662,8 @@ def _account_session_client_ip(request):
     try:
         raw = str(request.headers.get("cf-connecting-ip") or "")
     except Exception:
+        return ""
+    if instance_privacy.is_pseudonym(raw):
         return ""
     try:
         return str(ipaddress.ip_address(raw.strip().strip("[]")[:64]))[:64]
@@ -22105,6 +22242,18 @@ async def _account_signup(env, request):
         env, request, "signup_started", {"path": "/signup"}, dedupe=True)
     signup_referral_code = _admin_signup_referral_code_normalize(
         data.get("signupReferralCode", ""))
+    signup_policy = await _signup_policy(env)
+    if _account_policy.signup_closed(signup_policy):
+        await log_blocked_signup(env, request, SIGNUP_PATH, 403,
+                                 "signup_closed")
+        return await _signup_refused(
+            env, "signup_closed", 403, claim=signup_claim,
+            name=data.get("nodeName", ""))
+    if _account_policy.invite_only(signup_policy) and not (
+            await _admin_signup_referral_code_mode(env)):
+        return await _signup_refused(
+            env, "invalid_signup_referral_code", 403, claim=signup_claim,
+            name=data.get("nodeName", ""))
     if not await _admin_signup_referral_code_matches(
             env, signup_referral_code):
         await log_blocked_signup(env, request, SIGNUP_PATH, 403,
@@ -22127,9 +22276,15 @@ async def _account_signup(env, request):
     if not valid_node_name(name):
         return await _signup_refused(
             env, "invalid_node_name", 400, claim=signup_claim, name=name)
-    if not valid_account_email(email):
+    email_optional = _account_policy.email_optional(signup_policy)
+    if (email or not email_optional) and not valid_account_email(email):
         return await _signup_refused(
             env, "valid_email_required", 400, claim=signup_claim, name=name)
+    if (signup_policy.get("handles") == "require"
+            and not _random_handles.is_random_handle(name)):
+        return await _signup_refused(
+            env, "random_handle_required", 400, claim=signup_claim,
+            name=name)
     if len(password) < 8:
         return await _signup_refused(
             env, "password_too_short", 400, claim=signup_claim, name=name)
@@ -22146,12 +22301,12 @@ async def _account_signup(env, request):
         return await _signup_refused(
             env, "node_name_taken", 409, claim=signup_claim, name=name)
 
-    email_bi = await blind_index(env, email)
+    email_bi = await blind_index(env, email) if email else None
     quarantined = await d1_first(
         env,
         "SELECT 1 AS reserved FROM quarantined_users "
         "WHERE status<>'restored' AND (user_bi=? OR email_bi=?) LIMIT 1",
-        name_bi, email_bi,
+        name_bi, email_bi or name_bi,
     )
     if quarantined:
         await log_blocked_signup(env, request, SIGNUP_PATH, 409,
@@ -22160,7 +22315,8 @@ async def _account_signup(env, request):
             env, "account_pending_verification", 409, claim=signup_claim,
             name=name)
     dup = await d1_first(
-        env, "SELECT user_bi AS name_bi FROM users WHERE email_bi=?", email_bi)
+        env, "SELECT user_bi AS name_bi FROM users WHERE email_bi=?",
+        email_bi) if email_bi else None
     if dup and dup.get("name_bi") != name_bi:
         return await _signup_refused(
             env, "email_taken", 409, claim=signup_claim, name=name)
@@ -22209,6 +22365,9 @@ async def _account_signup(env, request):
         name, clean_string(data.get("nodeName", ""), MAX_NODE_NAME)))
     rec["status"] = "active"
     rec["email_verified"] = bool(rec.get("email_verified", False))
+    recovery_code = ""
+    if not email:
+        recovery_code = await _account_recovery.issue(rec)
     # A reservation already carries created_at, but it is not a joined user
     # until signup promotes it to active. The duplicate-active guard above
     # makes this transition the one reliable signal for a welcome.
@@ -22230,7 +22389,8 @@ async def _account_signup(env, request):
     rec["signup"] = signup_meta
     if data.get("marketingEmail") is True:
         marketing_email.apply_consent(rec, True, "signup", int(Date.now()))
-    ip_bi = await blind_index(env, signup_ip) if signup_ip else None
+    ip_bi = await blind_index(env, signup_ip) if signup_ip and \
+        not instance_privacy.is_pseudonym(signup_ip) else None
     await _save_account(env, name_bi, rec, email_bi=email_bi, ip_bi=ip_bi)
     await _record_signup_origin(env, name_bi, rec)
     # Attribution: join the account to its browser session — or record it
@@ -22304,9 +22464,18 @@ async def _account_signup(env, request):
         env, rec,
         session_device_label=_account_session_device_label(request),
         session_client_ip=_account_session_client_ip(request))
+    if recovery_code:
+        payload["recoveryCode"] = recovery_code
     return await _account_session_response(
         env, request, payload, status=201
     )
+
+
+async def _signup_policy(env):
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return dict(_account_policy.DEFAULTS)
+    return await moderation.policy(env)
 
 
 async def _account_password_record(env, data):
@@ -22894,8 +23063,12 @@ def _signup_metadata(request):
     # automatic referral enforcement and the cryptographically authenticated
     # is_admin Users page; ordinary profile/directory payloads never include it.
     # users.ip_bi remains the indexed one-way equality token.
+    address = _transient_client_address(request)
+    if instance_privacy.is_pseudonym(address):
+        return {"clientCategory": _generalized_client_category(request),
+                "at": int(Date.now())}
     return {
-        "ip": _transient_client_address(request),
+        "ip": address,
         "userAgent": _referral_user_agent(request),
         "country": world_request_country(request),
         "clientCategory": _generalized_client_category(request),
@@ -32621,6 +32794,8 @@ async def _mail_tracked_html(env, send_id, html, footer=False):
     base = (getattr(env, "API_ORIGIN", "") or "https://app.forkmesh.com").rstrip("/")
     tok = mail_tracking.token(
         send_id, await blind_index(env, "mail-track:" + send_id))
+    if instance_privacy.active(env):
+        return html or "", "%s/api/mail/t/u/%s" % (base, tok)
     if footer:
         return (mail_activity.add_footer(
             html or "", "%s/api/mail/t/l/%s.png" % (base, tok)),
@@ -35262,6 +35437,12 @@ async def accounts_handler(env, request):
         return await _account_forgot_password_challenge(env, request)
     if url.path == "/api/accounts/reset-password" and method == "POST":
         return await _account_reset_password(env, request)
+    if url.path == "/api/accounts/recover" and method == "POST":
+        return await account_recover_handler(env, request)
+    if url.path == "/api/accounts/recovery-code" and method == "POST":
+        return await account_recovery_code_handler(env, request)
+    if url.path == "/api/accounts/handle-suggestion" and method == "GET":
+        return await account_handle_suggestion_handler(env, request)
     if url.path == "/api/accounts/change-password" and method == "POST":
         return await _account_change_password(env, request)
     if url.path == "/api/accounts/claim-node" and method == "POST":
@@ -36770,6 +36951,8 @@ def _repo_view_totals(row):
 
 async def _repo_viewer_key(env, request, data, repo_key,
                            scope="repo-view-v1"):
+    if instance_privacy.active(env):
+        return ""
     try:
         account_bi, account_rec = await _account_session_record(
             env, request, data)
@@ -36779,7 +36962,7 @@ async def _repo_viewer_key(env, request, data, repo_key,
         subject = "account\n%s" % account_bi
     else:
         try:
-            address = world_visitor_metrics.canonical_edge_address(
+            address = _visitor_count_address(
                 request.headers.get("cf-connecting-ip") or "")
             agent = str(request.headers.get("user-agent") or "")[:2048]
         except Exception:
@@ -37346,11 +37529,26 @@ async def _account_signing_pubkeys(env, account_bi, record):
     return keys
 
 
+CLAIMED_SIGNING_KEYS_MEMO_MS = 10 * 1000
+CLAIMED_SIGNING_KEYS_MEMO_MAX = 256
+_CLAIMED_SIGNING_KEYS_MEMO = {}
+
+
 async def _claimed_node_signing_pubkeys(env, node):
     """Return keys allowed to act as one claimed desktop/headless node."""
     node = clean_string(node, MAX_NODE_NAME).strip().lower()
     if not valid_node_name(node):
         return []
+    memo = globals().get("_CLAIMED_SIGNING_KEYS_MEMO")
+    generations = globals().get("_D1_WATCH_GENERATIONS") or {}
+    generation = generations.get("signing_keys", 0)
+    now = int(Date.now()) if memo is not None else 0
+    if memo is not None:
+        hit = memo.get(node)
+        if (hit is not None and hit[1] == generation
+                and 0 <= now - hit[0] < globals().get(
+                    "CLAIMED_SIGNING_KEYS_MEMO_MS", 10000)):
+            return list(hit[2])
     keys = list(await _owner_signing_pubkeys(env, node))
     node_bi = await blind_index(env, node)
     row = await d1_first(
@@ -37361,6 +37559,11 @@ async def _claimed_node_signing_pubkeys(env, node):
     public_key = clean_string((row or {}).get("pubkey", ""), 120).strip()
     if valid_node_pubkey(public_key) and public_key not in keys:
         keys.append(public_key)
+    if memo is not None and generations.get("signing_keys", 0) == generation:
+        if node not in memo and len(memo) >= globals().get(
+                "CLAIMED_SIGNING_KEYS_MEMO_MAX", 256):
+            memo.clear()
+        memo[node] = (now, generation, tuple(keys))
     return keys
 
 
@@ -37968,7 +38171,7 @@ async def _private_repo_reader_filter(env, owner, repo):
 
 
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
-                          number=0):
+                          number=0, comment=""):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
@@ -37986,7 +38189,9 @@ async def notify_mentions(env, owner, repo, actor, title, body, href, source,
             dedupe="mention:" + owner + "/" + repo + ":" + source + ":" + name +
                    ":" + clean_string(actor, 80) + ":" + clean_string(title, 80) +
                    ":" + clean_string(body, 80),
-            meta={"number": number} if number else {},
+            meta=({"number": number, "source": source,
+                   **({"comment": clean_string(str(comment), 80)} if comment else {})}
+                  if number else {}),
         )
         if source in ("issue", "pull") and number:
             await subscribe_thread(env, owner, repo, source, number, name)
@@ -38044,7 +38249,7 @@ async def subscribe_thread(env, owner, repo, source, number, subscriber,
 
 
 async def notify_subscribers(env, owner, repo, source, number, actor, title,
-                             body, href, skip=()):
+                             body, href, skip=(), comment=""):
     # Fan a new comment out to everyone following the thread, minus the commenter
     # and anyone already covered by an @mention on this same event (so a mentioned
     # subscriber gets one notification, not two).
@@ -38094,7 +38299,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             dedupe="subscribed:" + owner + "/" + repo + ":" + source + ":" +
                    str(number) + ":" + name + ":" + clean_string(actor, 80) +
                    ":" + snippet,
-            meta={"number": number, "source": source},
+            meta={"number": number, "source": source,
+                  **({"comment": clean_string(str(comment), 80)} if comment else {})},
         )
 
 
@@ -41680,7 +41886,8 @@ async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event,
 
 
 async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
-                                   repo_keys, actions_job=False):
+                                   repo_keys, actions_job=False,
+                                   approved=None):
     event = data.get("event")
     if not isinstance(event, dict):
         return json_response({"error": "event_required"}, status=400)
@@ -41695,7 +41902,7 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response({"error": "bad_signature"}, status=401)
     if actions_job:
         event["authorVerified"] = True
-    else:
+    elif approved is None:
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
@@ -41711,8 +41918,16 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response(
             {"ok": True, "number": queued.get("number", number)},
             status=201)
+    moderation = globals().get("_moderation")
+    moderation_refusal, moderation_context = (
+        await moderation.submission_gate(
+            env, request, data, owner, repo, event, "issue", actions_job)
+        if moderation is not None and approved is None else (None, {}))
+    if moderation_refusal is not None:
+        return moderation_refusal
+    held = bool(moderation_context.get("hold"))
     signed_number = number
-    if event_type == "open":
+    if event_type == "open" and not held:
         reserved = await _forkbot_next_issue_number(
             env, repo_bi, owner, repo, "issue")
         # A desktop submission may already carry a usable proposal. A web
@@ -41737,6 +41952,10 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         if not ok and event_type in ("edit", "delete"):
             ok = await _issue_comment_owned_by_submitter(
                 env, owner, repo, number, event)
+        if not ok and moderation is not None and \
+                event_type in moderation.MODERATOR_ISSUE_EVENTS:
+            ok = await _issue_moderator_allowed(
+                env, request, data, owner, repo)
         if not ok:
             return err
     # Self-assignment (issue #570) is the one assignment a public
@@ -41820,6 +42039,11 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         "submitter": clean_string(event.get("author", ""), 120),
         "submittedAt": int(Date.now()),
     }
+    if held:
+        original = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+        return await moderation.hold(
+            env, owner, repo, repo_bi, item, moderation_context,
+            safe_segment(unquote(original.group(1))) if original else owner)
     await d1_run(
         env,
         "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
@@ -41840,7 +42064,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_mentions(
             env, owner, repo, actor, item.get("titleIfNew", ""),
             event.get("body", ""), repo_web_href(owner, repo), "issue",
-            number=number))
+            number=number,
+            comment=event.get("id", "") if event_type == "comment" else ""))
     assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
     if isinstance(event.get("assignees"), list):
         assignees.extend(event.get("assignees"))
@@ -41860,7 +42085,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_subscribers(
             env, owner, repo, "issue", number, actor,
             item.get("titleIfNew", ""), event.get("body", ""),
-            repo_web_href(owner, repo)))
+            repo_web_href(owner, repo),
+            comment=event.get("id", "") if event_type == "comment" else ""))
     await _best_effort_inbox_side_effect(
         subscribe_thread(env, owner, repo, "issue", number, actor))
     if event_type == "comment" or (
@@ -41894,6 +42120,52 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     await _best_effort_inbox_side_effect(_queue_issue_actions(
         env, owner, repo, number, event, item, actions_job))
     return json_response({"ok": True, "number": number}, status=201)
+
+
+async def _moderation_submission_refusal(env, request, data, owner, repo,
+                                         event, surface):
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return None
+    refused, _context = await moderation.submission_gate(
+        env, request, data, owner, repo, event, surface)
+    return refused
+
+
+async def _issue_moderator_allowed(env, request, data, owner, repo):
+    try:
+        _, rec = await _account_session_record(env, request, data)
+    except Exception:
+        return False
+    actor = clean_string(
+        (rec or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not actor:
+        return False
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return False
+    return await moderation.can_moderate_repo(env, actor, owner, repo)
+
+
+async def _moderation_commit_issue(env, request, held):
+    owner = safe_segment(held.get("owner") or "")
+    repo = safe_segment(held.get("repo") or "")
+    public_owner = safe_segment(held.get("publicOwner") or "") or owner
+    item = held.get("item") if isinstance(held.get("item"), dict) else {}
+    event = item.get("event") if isinstance(item.get("event"), dict) else {}
+    if not owner or not repo or not event:
+        return json_response({"error": "invalid_item"}, status=400)
+    meta = dict(item.get("meta") or {}) if isinstance(
+        item.get("meta"), dict) else {}
+    meta.pop("wantsAgent", None)
+    data = {"event": event, "number": int(item.get("number") or 0),
+            "titleIfNew": item.get("titleIfNew", ""), "meta": meta,
+            "attachmentData": item.get("attachmentData")}
+    repo_bi = await blind_index(env, owner + "/" + repo)
+    return await _accept_issue_submission(
+        env, request, owner, repo, repo_bi, data,
+        event_signing_repo_keys((public_owner, repo), (owner, repo)),
+        approved=held)
 
 
 async def _queue_issue_actions(env, owner, repo, number, event, item,
@@ -42248,6 +42520,12 @@ async def pulls_handler(env, request, owner, repo):
             refused = await _bind_session_author(env, request, data, event)
             if refused is not None:
                 return refused
+            moderation_gate = globals().get("_moderation_submission_refusal")
+            moderation_refusal = await moderation_gate(
+                env, request, data, owner, repo, event,
+                "pull") if moderation_gate else None
+            if moderation_refusal is not None:
+                return moderation_refusal
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -42296,6 +42574,12 @@ async def pulls_handler(env, request, owner, repo):
             refused = await _bind_session_author(env, request, data, event)
             if refused is not None:
                 return refused
+            moderation_gate = globals().get("_moderation_submission_refusal")
+            moderation_refusal = await moderation_gate(
+                env, request, data, owner, repo, event,
+                "pull") if moderation_gate else None
+            if moderation_refusal is not None:
+                return moderation_refusal
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -42352,7 +42636,8 @@ async def pulls_handler(env, request, owner, repo):
                                        pull_title, number,
                                        text=event.get("body", ""), event=event)
             await notify_mentions(env, owner, repo, actor, "Pull request comment", event.get("body", ""),
-                                  repo_web_href(owner, repo), "pull", number=number)
+                                  repo_web_href(owner, repo), "pull", number=number,
+                                  comment=str(event.get("id", "") or ""))
             pull_author = ""
             if event.get("type") in ("status", "delete"):
                 await _best_effort_inbox_side_effect(pull_attention_forget(
@@ -42371,7 +42656,8 @@ async def pulls_handler(env, request, owner, repo):
             await notify_subscribers(env, owner, repo, "pull", number, actor,
                                      "", event.get("body", ""),
                                      repo_web_href(owner, repo),
-                                     skip=(pull_author,) if pull_author else ())
+                                     skip=(pull_author,) if pull_author else (),
+                                     comment=str(event.get("id", "") or ""))
             await subscribe_thread(env, owner, repo, "pull", number, actor)
             await notify_repo_host(env, owner, repo, "pulls")
             await notify_repo_mirrors(env, owner, repo, "pulls")
@@ -42440,6 +42726,13 @@ async def pulls_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
             return refused
+        moderation_gate = globals().get("_moderation_submission_refusal")
+        moderation_refusal = await moderation_gate(
+            env, request, data, owner, repo,
+            {"type": "open", "authorName": pull.get("authorName", "")},
+            "pull") if moderation_gate else None
+        if moderation_refusal is not None:
+            return moderation_refusal
         disclosure_check = globals().get("pull_ai_disclosure_check")
         if disclosure_check is not None:
             refusal = await disclosure_check(env, owner, repo, pull)
@@ -42563,6 +42856,10 @@ async def pulls_handler(env, request, owner, repo):
                 env, owner, repo, "pull.opened",
                 {"number": number, "title": title, "author": actor,
                  "body": str(description or "")[:2000]}, source_actor=actor)
+        queue_ai_review = globals().get("ai_review_enqueue")
+        if queue_ai_review is not None:
+            await _best_effort_inbox_side_effect(
+                queue_ai_review(env, owner, repo, number, "opened", actor))
         # Badge (adhoc #44): render the PR's visual fingerprint from the
         # signed patch and attach it to the federated note as its lead image.
         # Best-effort — a badge failure must never block the submission.
@@ -42740,10 +43037,21 @@ async def discussions_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
+        moderation_gate = globals().get("_moderation_submission_refusal")
+        moderation_refusal = await moderation_gate(
+            env, request, data, owner, repo, event,
+            "discussion") if moderation_gate else None
+        if moderation_refusal is not None:
+            return moderation_refusal
         owner_approved = False
         if event_type in DISCUSSION_OWNER_EVENT_TYPES or event_type == "answer":
             owner_approved = await _discussion_answer_by_owner(
                 env, request, data, owner, repo)
+            moderation = globals().get("_moderation")
+            if (not owner_approved and moderation is not None
+                    and event_type in moderation.MODERATOR_DISCUSSION_EVENTS):
+                owner_approved = await _issue_moderator_allowed(
+                    env, request, data, owner, repo)
             if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_approved:
                 return json_response({"error": "not_authorized"}, status=403)
         submitter_bi = await blind_index(env, event.get("author", ""))
@@ -42787,11 +43095,13 @@ async def discussions_handler(env, request, owner, repo):
         if content_event:
             await _best_effort_inbox_side_effect(notify_mentions(
                 env, owner, repo, actor, title, event.get("body", ""),
-                repo_web_href(owner, repo), "discussion", number=number))
+                repo_web_href(owner, repo), "discussion", number=number,
+                comment=str(event.get("id", "") or "") if event_type == "comment" else ""))
         if event_type == "comment":
             await _best_effort_inbox_side_effect(notify_subscribers(
                 env, owner, repo, "discussion", number, actor, title,
-                event.get("body", ""), repo_web_href(owner, repo)))
+                event.get("body", ""), repo_web_href(owner, repo),
+                comment=str(event.get("id", "") or "")))
             await _best_effort_inbox_side_effect(subscribe_thread(
                 env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
@@ -44930,6 +45240,8 @@ async def capture_sentry_error(env, status, method, path, message, ray="",
                                cloudflare_error_code="", service="forkmesh"):
     """Send one Sentry event with vanilla Python + Worker fetch. Best-effort."""
     try:
+        if instance_privacy.active(env):
+            return False
         parts = _sentry_dsn_parts(getattr(env, "SENTRY_DSN", ""))
         if not parts:
             return False
@@ -45020,6 +45332,8 @@ async def capture_sentry_cron_check_in(env, status, check_in_id="",
                                        cron="", duration=None):
     """Send a Sentry Cron Monitoring check-in. Best-effort."""
     try:
+        if instance_privacy.active(env):
+            return False
         parts = _sentry_dsn_parts(getattr(env, "SENTRY_DSN", ""))
         if not parts:
             return False
@@ -45143,6 +45457,8 @@ async def _write_error_log(env, status, method, path, message, ray="",
         return
     try:
         message = _privacy_safe_error_text(path, message)
+        if instance_privacy.active(env):
+            actor = ""
         await ensure_schema(env)
         # Is this the first row of its group? Read before the insert, so the
         # row we are about to write cannot answer its own question.
@@ -48279,6 +48595,9 @@ def _https_mirror_public_context_cache_clear():
     after pin admissions that never touched a repository row.
     """
     _HTTPS_MIRROR_PUBLIC_CONTEXT_MEMO.clear()
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    if isinstance(open_memo, dict):
+        open_memo.clear()
     catalog_memo = globals().get("_PUBLIC_CATALOG_MEMO")
     if isinstance(catalog_memo, dict):
         catalog_memo.update({"ts": 0, "refresh_ts": 0})
@@ -50993,14 +51312,15 @@ def _https_mirror_record_avoided(record, avoided):
 async def _https_mirror_candidates(
         env, context, preferred_region, sticky="", avoid_node="",
         operation=""):
-    rows = await d1_all(
-        env,
-        """SELECT node_name,base_url,mirror_url,public_key,
+    endpoints_sql = """SELECT node_name,base_url,mirror_url,public_key,
                   registration_sig,issued_at,
                   checked_at,latency_ms,region,healthy,integrity,abuse_blocked,
                   forkmesh_refs_sha256,forkmesh_operations_json
-             FROM mirror_https_endpoints""",
-    )
+             FROM mirror_https_endpoints"""
+    snapshot = globals().get("_d1_snapshot")
+    rows = await (
+        snapshot(env, "mirror_https_endpoints", endpoints_sql)
+        if callable(snapshot) else d1_all(env, endpoints_sql))
     rows = [
         row for row in rows or []
         if str(row.get("node_name") or "").lower() in context["nodes"]
@@ -52148,6 +52468,45 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
     }
 
 
+HTTPS_MIRROR_MERGE_PROGRESS_PHASES = (
+    "claimed", "fetching", "verifying", "checking", "testing",
+    "committing", "hooks", "pushing", "publishing",
+)
+
+
+def _https_mirror_merge_progress(value):
+    if not isinstance(value, dict):
+        return None
+    phases = HTTPS_MIRROR_MERGE_PROGRESS_PHASES
+    limit = 2 ** 53
+
+    def stamp(item):
+        return (
+            item if isinstance(item, int) and not isinstance(item, bool)
+            and 0 < item < limit else 0)
+
+    steps = []
+    for step in (value.get("steps") if isinstance(
+            value.get("steps"), list) else [])[:len(phases) * 2]:
+        if (
+            isinstance(step, dict)
+            and step.get("phase") in phases
+            and stamp(step.get("at"))
+        ):
+            steps.append({"phase": step["phase"], "at": step["at"]})
+    phase = value.get("phase")
+    started = stamp(value.get("startedAt"))
+    updated = stamp(value.get("updatedAt"))
+    if phase not in phases or not started or not updated or not steps:
+        return None
+    return {
+        "phase": phase,
+        "startedAt": started,
+        "updatedAt": updated,
+        "steps": steps,
+    }
+
+
 def _https_mirror_merge_result(value, request, mutation="merge"):
     """Return a bounded node result or None; no origin data is projected."""
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
@@ -52160,11 +52519,15 @@ def _https_mirror_merge_result(value, request, mutation="merge"):
     if status == "processing":
         if value.get("ok") is not True:
             return None
-        return {
+        output = {
             "ok": True,
             "status": "processing",
             "requestId": request_id,
         }
+        progress = _https_mirror_merge_progress(value.get("progress"))
+        if progress:
+            output["progress"] = progress
+        return output
     if status == "failed":
         error = str(value.get("error") or "")
         if error not in profile["failures"]:
@@ -53176,10 +53539,6 @@ async def _https_mirror_proxy(
                 query,
             )
             if direct_target:
-                if operation == "git-info-refs":
-                    if not monitoring:
-                        await _https_mirror_route_advance(
-                            env, context, endpoint["node"], operation)
                 return Response(None, status=307, headers={
                     "Location": direct_target,
                     "Cache-Control": "no-store",
@@ -54401,6 +54760,8 @@ def _cron_due_phases(minute_slot):
         phases.append("webhook-outbox")
         phases.append("app-events")
         phases.append("provider-mirror")
+    if minute % 5 == 3:
+        phases.append("mirror-quota")
     if minute % 10 == 8:
         phases.append("ap-digest")
     if minute % 20 == 12:
@@ -54430,6 +54791,8 @@ def _cron_due_phases(minute_slot):
         phases.append("workflow-schedules")
     if minute % 15 == 6:
         phases.append("member-activity")
+    if minute % 5 == 0:
+        phases.append("ai-review")
     hourly = minute % 60
     if hourly == 7:
         phases.append("microjob-payouts")
@@ -54624,8 +54987,14 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await run_badge_sweep(env)
     if phase == "member-activity":
         return await _chat_member_stats.refresh_member_repo_activity(env)
+    if phase == "mirror-quota":
+        import mirror_quota
+        mirror_quota._bind_runtime(globals())
+        return await mirror_quota.run_checks(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
+    if phase == "ai-review":
+        return await ai_review_cron(env)
     if phase == "actions-schedule":
         return await _actions_schedule_cron(env, minute)
     raise ValueError("unknown cron phase")

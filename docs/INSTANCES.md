@@ -23,6 +23,15 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Let your coding agent do it.** A card under "Set up from a file" holds a
+  read-only one-line prompt with a Copy button
+  (`data-start-agent-prompt`, `data-start-agent-copy`) that points a coding
+  agent at `app/public/forkmesh-agent.md` (served at
+  `/forkmesh-agent.md`), plus links to read it, download it as
+  `FORKMESH.md`, and the user guide `www/docs/coding-agents.md`. The agent
+  writes the settings file and the person uploads it here, so SSH secrets
+  are typed by nobody but them. The card has no section number; the six
+  numbered sections are unchanged.
 - **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
   three surface families (Slate, the ForkMesh default, Zinc and Stone), a
   dark/light preview switch and Shuffle, over a live mock of a repository
@@ -172,6 +181,52 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
 
+## Tor onion service
+
+Setting `onionService` (a boolean, default `false`, kept in `instance.json`)
+serves the instance over Tor too, so blocking its domain or IP address does
+not block it ([app/forum-reach.md](app/forum-reach.md)). To turn it on for a
+running instance, add `"onionService": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh
+--update`; `false` (or removing the key) turns it off.
+
+| Piece | Where |
+| --- | --- |
+| Package | `tor` joins the `packages` step |
+| Hidden service | `/etc/tor/torrc.d/forkmesh-instance.conf`: `HiddenServiceDir /var/lib/tor/forkmesh-instance/`, `HiddenServicePort 80 127.0.0.1:8091`; `/etc/tor/torrc` gets one `%include /etc/tor/torrc.d/*.conf` line if it has none |
+| Onion site | `/etc/caddy/conf.d/forkmesh-onion.caddy`: `http://<addr>.onion:8091`, bound to `127.0.0.1`, the same gateway paths and app as the HTTPS site, `Host` set to the onion name |
+| Advertisement | `/etc/caddy/site.d/forkmesh-onion-location.caddy`: `Onion-Location: http://<addr>.onion{uri}` on the HTTPS site, which Tor Browser offers to switch to |
+| App | `FORKMESH_PUBLIC_HOSTS=<domain>,<addr>.onion` (the host allowlist in `request_guard.py` answers the onion name) and `FORKMESH_VAR_INSTANCE_ONION=<addr>.onion` in the unit; `/api/instance` answers `onion: "<addr>.onion"` (`null` without one) and `instance-brand.js` adds a "Tor .onion" link to the footer badge |
+
+- The step runs after `configure` and before `services`, inside the
+  `configure` progress step, so the start page's step list is unchanged.
+  The address is read from `/var/lib/tor/forkmesh-instance/hostname` (v3,
+  56 base32 characters); the setup stops if Tor does not write one within
+  two minutes.
+- **Plain HTTP on purpose.** Tor encrypts and authenticates the connection
+  to the onion address end to end, and no public CA issues `.onion`
+  certificates cheaply. Caddy listens only on loopback, so the onion site
+  is reachable only through Tor. The onion site drops the app's
+  `upgrade-insecure-requests` CSP directive (it would send Tor Browser to
+  `https://` for every asset) and the HSTS header.
+- **Idempotent.** Each run rewrites the torrc snippet and the two Caddy
+  files; Tor restarts only when its configuration changed or it is not
+  running, and Caddy reloads only when its files changed. `--update`
+  keeps the same address.
+- **The key is the address.** `/var/lib/tor/forkmesh-instance/` holds
+  `hs_ed25519_secret_key`; whoever has it can serve that address. Back the
+  folder up (root only, mode 0700, owner `debian-tor`) to move the address
+  to a new server; turning the setting off removes the site files but
+  keeps the key, so turning it back on keeps the address.
+- **Egress and the allowlist.** The app makes no outbound calls for this:
+  `FORKMESH_EGRESS_PRODUCTION_ALLOW` is unchanged, and only the host
+  allowlist gains the onion name. The web firewall (`webFirewall`) is
+  unaffected: Tor dials out, and port 8091 is loopback only.
+- **Visitors share one address.** Every onion visitor reaches the app from
+  `127.0.0.1` (`Cf-Connecting-Ip`), so per-IP rate limits are shared among
+  them; probe bans never apply to non-global addresses.
+- Tests: `app/tests/test_install_instance_onion.py`.
+
 ## Updates build beside the running version
 
 Until October 2026 `--update` checked the new commit out in
@@ -313,8 +368,10 @@ upload CSS.
   start page and in Settings draw only the palette,
   as one colour block with primary three times as wide as the rest (a mock
   screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
-  and are refused by the API. Today all four are ready: `default` (the
-  ForkMesh colours), `blt`, `cloudflare` and `google`.
+  and are refused by the API. Today all five are ready: `default` (the
+  ForkMesh colours), `blt`, `cloudflare`, `google` and `github`. An entry
+  may also name `colorMode` (`dark`, `light` or `system`, see
+  [Colour mode](#colour-mode)); without one it is `dark`.
 - **Storage:** choosing a theme stores `{"preset": "<id>"}` in the
   `instance_settings` theme row (optionally with `dark`/`light` colour
   overrides on top), not a copy of its colours, so polishing a theme in the
@@ -350,7 +407,12 @@ upload CSS.
   current theme. The password field is cleared on success, failure, cancel,
   leaving the section and `pagehide`, and the form carries a hidden
   `autocomplete="username"` field so a browser does not save a password
-  without an account name. The route checks the session is an admin, then the account password with its
+  without an account name. The admin console offers the same choice under Platform, **Site theme**
+  (`?view=site-theme`: one radio per ready theme, "Keep the custom colours"
+  when the stored theme has its own, and the colour mode), behind the
+  console's own sign-in and CSRF check, recording `admin.console_save_theme`
+  in the audit log; picking a named theme there drops any custom colour
+  overrides, so the theme is seen as designed. The route checks the session is an admin, then the account password with its
   own attempt budget (`instance-theme-v1` blind index, the login lockout
   rules), and records `instance.theme` in the sensitive-action audit log
   either way. Repository share cards take their accent from the stored
@@ -383,6 +445,19 @@ upload CSS.
   12/16/24 px radii, regular-weight headings and
   Google Sans when the visitor has it installed (Roboto or the system font
   otherwise; no font is downloaded).
+- **GitHub (follows system):** GitHub's default light and default dark
+  themes, picked from each visitor's system setting (`colorMode: system`).
+  Light: white canvas, `#f6f8fa` header and subtle surfaces, `#d0d7de`
+  borders, `#1f2328` text, `#59636e` muted text, `#0969da` links and focus,
+  `#1f883d` create button, `#1a7f37` success, `#9a6700` attention,
+  `#d1242f` danger. Dark: `#0d1117` canvas under a `#010409` header,
+  `#151b23` subtle surfaces and popovers, `#3d444d` borders, `#f0f6fc` text,
+  `#9198a1` muted text, `#4493f8` links, `#1f6feb` focus ring, `#238636`
+  create button, `#3fb950`, `#d29922` and `#f85149` for status. Its
+  stylesheet sets GitHub's system font stack (no font is downloaded), 6 px
+  radii, 600-weight headings, pill labels and GitHub's faint border on the
+  green button. forum.example.org, a GitHub forum mirror, asked for
+  it in October 2026 so the mirror reads like the forum its visitors know.
 - **Adding a theme:** add its entry and stylesheet, set `status` to `ready`
   when it is finished, and check it with `/instance-theme.css?preset=<id>`
   before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
@@ -404,6 +479,51 @@ The gateway tools were not in the digest at all, so a gateway code change only
 took effect because of that spurious restart. The cost now is that the
 `version` label in the catalog stays at the commit of the last real restart
 when an update changed nothing the node runs.
+
+## Colour mode
+
+The dashboard has always opened dark unless the visitor picked light in
+Settings, Appearance. An instance can instead open in light, or follow each
+visitor's `prefers-color-scheme`, without a flash of the wrong theme.
+
+- **Setting:** the theme document's `mode` (`dark`, `light`, `system`), else
+  the preset's `colorMode`, else `dark` (`instance_theme.color_mode`).
+  `clean` keeps `mode` only when it differs from the preset's own, so
+  `{"preset": "github"}` already follows the system. The installer's
+  settings file takes `"theme": "github"`; an object with `mode` goes
+  through the console page, the launch API or `PUT /api/instance/theme`.
+- **Visitor's choice wins:** Settings, Appearance offers System, Dark and
+  Light. Dark or Light is stored as before (`forkmesh.dashboard.theme`,
+  `forkmesh.theme`, the `forkmesh_theme` cookie); System stores `system`, so
+  that visitor follows the system even on an instance whose default is
+  dark. With nothing stored, the instance's mode decides. The public site
+  reads the same keys: `site-header.js` and `home-theme.js` follow the
+  system for `system` (the homepage's own light default applies only when
+  nothing is stored), and `static-page.js` resolves it without writing a
+  fixed theme back over it.
+- **First paint:** the shell's head script resolves a stored choice
+  (`system` through `matchMedia`) and sets `data-dashboard-theme` and
+  `data-dashboard-theme-resolved`. `/instance-theme.css` (render-blocking,
+  linked by `tools/apply_instance_brand.py` at the end of `<head>`) writes
+  `--instance-color-mode` when the mode is not dark, and the brand tool puts
+  a small inline script (`data-instance-color-mode`, `MODE_TAG`) right after
+  that link. A script after a stylesheet runs only once the stylesheet has
+  loaded, so it can read the variable and switch the page before anything
+  is painted; it also follows a later system change. The dashboard bundle
+  (`02-helpers.js` `readDashboardTheme`) reads the same variable, so its
+  boot keeps that choice instead of going back to dark.
+- **Without JavaScript** (Tor Browser's safest level, script blockers):
+  nothing sets `data-dashboard-theme-resolved`, so the stylesheet's own
+  `@media (prefers-color-scheme: light){html:not([data-dashboard-theme-resolved]){...}}`
+  block applies the light tokens: `theme.json`'s light values, the shell's
+  light link colours (`BASE_LIGHT_HEX`), then the preset's and the
+  instance's own. The server-rendered first views (repository, issue list
+  and issue pages, `repo_ssr*.py`) draw only with those tokens, so they come
+  out light or dark correctly; rules keyed on `[data-dashboard-theme="light"]`
+  wait for the script. The forum home page and the lite pages
+  (`read_surfaces.py`) carry their own GitHub light and dark palette behind
+  a media query and need no script either; they ignore the visitor's stored
+  choice, because they are cached by URL.
 
 ## Private admin console path
 
@@ -871,6 +991,39 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
+- **ForkMesh's own sites** (install setting `"whiteLabel": true`, off by
+  default; `apply_instance_brand --white-label`, `INSTANCE_WHITE_LABEL=1`;
+  `apply_instance_brand.offsite_chrome`, `instance_features.OFFSITE_CHROME`):
+  the brand tool removes header and
+  sidebar links to forkmesh.com pages (Marketplace `forkmesh.com/market`,
+  Pricing, Membership), app.forkmesh.com and Patreon from every built page,
+  points the sidebar's Home at `/` and the header and sidebar World links at
+  `/world` (which the World plugin's rule hides while it is off). The links
+  are gone at the first paint and for a reader without JavaScript, where
+  before `instance-brand.js` hid them only after `/api/instance` answered.
+  `/instance-theme.css` also hides any such link the dashboard draws later in
+  `header`, `nav`, `aside` or `footer`, except inside the Powered by badge,
+  which stays only while `poweredBy` is on. forkmesh.com is untouched.
+
+## Home page
+
+An admin chooses a home repository from the admin console, Platform → Home
+page (`instance_console.render_home`, `save_home`; `app/src/instance_home.py`).
+It is one `instance_settings` row (`k = 'home'`,
+`{"repository": "owner/name"}`), CSRF-checked and audited as
+`admin.console_save_home`; an empty field turns the page off. `GET
+/api/instance` reports it as `home` (`{"repository": ...}` or `null`; always
+`null` on forkmesh.com).
+
+With a home repository set, `/` is a forum front page rendered by the host
+(`app/host/forkmesh_host/read_surfaces.py`): the repository's README with one
+`dir="auto"` section per heading, the latest threads from its issue index,
+its labels, links to its Atom feeds and lite view, and a slot for the
+repository's mirror line. It needs no JavaScript and makes no request to
+another site. Without one, or while the repository is not public, `/`
+redirects to `/dashboard` as before. example sets `example/forum`.
+Details: [app/feeds-and-lite.md](app/feeds-and-lite.md).
+
 ## Plugins
 
 An admin turns optional plugins on and off from the admin console, Platform →
@@ -886,6 +1039,7 @@ reinstall or restart.
 | `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 | `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
+| `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -1343,6 +1497,39 @@ never carry it.
   The Mirrors tab stays as the full diagnostic view. The "Powered by
   ForkMesh" badge is not a served-by label and stays (see the top of this
   page).
+- **Mirror goal.** The rail's "Mirrors" card is not a served-by label: it
+  counts plain git copies kept elsewhere (this instance, the original named
+  by `.forkmesh/forge-source.json`, and copies people register) against a
+  goal the maintainers set, and is shown on instances too. See
+  [app/mirror-quota.md](app/mirror-quota.md).
+
+## Accounts, sign-up and moderation
+
+An admin chooses under People, **Sign-up & moderation**
+(`app/src/instance_console.py`, view `accounts-moderation`); the choice is the
+`instance_settings` row `accounts` and applies within 30 seconds, without a
+restart. Defaults keep the behaviour from before (email required, people pick
+their usernames, no review, no limits). Details, APIs and storage:
+[app/accounts-and-moderation.md](app/accounts-and-moderation.md).
+
+| Setting | Choices |
+| --- | --- |
+| Sign-up | open with email required; open with email optional (no address stored, a one-time recovery code instead); invite code only (the Controls code, email optional); closed |
+| Usernames | people choose; suggest a random name like `quiet-otter-7f3k`; random names only |
+| Only signed-in accounts can post | off / on |
+| First-post approval | off / on: a new account's posts wait in the organization's Moderation queue until a moderator approves one |
+| New-account period, threads and comments per day | 7 days, 0 (no limit), 0 (no limit) |
+| Hide the posts of accounts blocked with "hide their posts" | on |
+
+The same page lists instance moderators (they moderate every repository
+here), accounts blocked on the whole server, and the moderation log.
+Organization owners and admins name their own moderators and block accounts
+from the organization's settings page.
+
+For a public forum such as forum.example.org: email optional, suggest
+random names, only signed-in accounts can post, first-post approval on,
+3 threads and 20 comments a day for the first 7 days. Sign-up still needs the
+Turnstile keys (see [Limits](#limits)).
 
 ## Directory
 
@@ -1402,6 +1589,18 @@ otherwise SMTP or Mailtrap by configuration. `MAIL_SENDER` and
 `MAIL_SENDER_NAME` set the sender. Budgets, suppression and the mail log apply
 to every provider.
 
+## Privacy mode
+
+An admin can make the instance keep no records about visitors beyond what it
+needs to run: Platform → Privacy mode in the admin console (`instance_settings`
+key `privacy`), or the install setting `privacyMode: true`
+(`INSTANCE_PRIVACY_MODE=1` in `app.env`). Only the install setting also
+reaches Caddy, uvicorn, the git node and the journal. To turn it on for an
+existing instance, add `"privacyMode": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh --update`.
+[app/privacy-mode.md](app/privacy-mode.md) has the audit of what is recorded
+normally, what privacy mode stops, and what remains and why.
+
 ## Limits
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
@@ -1439,6 +1638,7 @@ switch, git node program),
 `test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_accounts_moderation.py`,
 `test_instance_node_reconnect_frontend.py`,
 `test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
 `test_single_org_contributors.py`, and

@@ -30,6 +30,13 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
   in-tree runner registered as `coreTest`:
   `./gradlew :core:coreTest -Pfilter=Json` runs classes whose name contains
   `Json`.
+- **Build memory.** `gradle.properties` caps the Gradle daemon at 2 GB heap
+  (768 MB metaspace) and the Kotlin compile daemon at 1.5 GB, and stops an
+  idle Gradle daemon after 15 minutes. With the old 4 GB cap the two daemons
+  held about 6.5 GB after a build; next to the emulator (about 7 GB) and the
+  iOS Simulator that starved a 16 GB Mac until it hit a watchdog panic
+  (2026-10-23). `./gradlew --stop` frees the Gradle daemon at once. Raise the
+  caps only if a build fails with `OutOfMemoryError` or `Metaspace`.
 - `res/xml/network_security_config.xml` refuses cleartext except `10.0.2.2`,
   `localhost` and `127.0.0.1`.
 
@@ -911,7 +918,7 @@ default in new projects except the chosen starter pack
     before it joins, so names and keys are known at once. FM Media is off
     (`fmm: { enabled: false }`, no call signer), so joining a room that
     already runs on FM Media fails with the server's `room_engine` error
-    (ledger S117). Header buttons show for private, writable channels; a
+    (ledger S140). Header buttons show for private, writable channels; a
     direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays

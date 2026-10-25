@@ -11,7 +11,7 @@ follows a run through every layer. The desktop UI for agents is described in
 
 | Layer | Files |
 | --- | --- |
-| Desktop local runtimes | `desktop/src/AgentRuntimeRegistry.*`, `AgentRuntimeSession.*`, `ClaudeStreamSession.*` (Claude Code stream-json), `CodexAppServerSession.*` (Codex app-server), `AgentRunner.*` (legacy script providers) |
+| Desktop local runtimes | `desktop/src/AgentRuntimeRegistry.*`, `AgentRuntimeSession.*`, `ClaudeStreamSession.*` (Claude Code stream-json), `ClaudeControlProtocol.*` and `MainWindowAgentClaudeControl.cpp` (its control requests, names and sub-sessions), `ClaudeElicitationDialog.*`, `CodexAppServerSession.*` (Codex app-server), `AgentRunner.*` (legacy script providers) |
 | Desktop sessions and storage | `desktop/src/AgentStore.*`, `AgentWorktree.h`, `AgentScratch.h`, `MainWindowAgent*.cpp` |
 | Desktop memory and CPU containment | `desktop/src/AgentResources.*`, `AgentResourceGovernor.*` ([memory.md](memory.md)) |
 | Desktop sandboxing | `desktop/src/ProjectAgentAccess.*`, `MainWindowAgentAccess.cpp`, `AgentNetworkGate.*`, `AgentRunRules.*`, `CommandVariables.*`, `AgentJail.h`, `AgentGuardrails.*`, `AgentPermissionController.*`, `VirtualMachineRuntime.*` ([access-rules.md](access-rules.md)) |
@@ -38,12 +38,20 @@ follows a run through every layer. The desktop UI for agents is described in
   Cloudflare token directly. `AgentSession::titledBy` records who reworded
   the title. Naming requests go through `WorkspaceNameGate` (2 in flight,
   `Retry-After` honoured up to 1 hour).
+- **Claude Code names its own runs.** A Claude Code run is named by its
+  Claude Code session instead (`generate_session_title` over the session's
+  stream, then every `session_title_changed`), so `/rename` and renames on
+  claude.ai carry over, and **Rename…** in the agent list renames the Claude
+  session too. The one-shot namer above does not run for Claude Code. See
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#claude-code-session-control-2026-10-23).
 - **Worktree and scratch.** Each run gets a Git worktree at
   `.worktrees/agent-<session>-<slug>` (bare mirrors and KVM runs use a temp
   directory) and a scratch folder `.worktrees/.scratch/<worktree>`
   (`AgentScratch.h`). Runs launch with `FORKMESH_AGENT_SCRATCH` naming it and
   `TMPDIR`/`TMP`/`TEMP` pointing at its `tmp/`; the agent is told to keep
-  build trees, logs and throwaway files there.
+  build trees, logs and throwaway files there. When a disk labelled `TMP` is
+  mounted, the scratch folder and the agents' `CCACHE_DIR` live on it instead
+  ([../desktop/tmp-disk.md](../desktop/tmp-disk.md)).
 - **Resuming.** A resumed ad-hoc run reuses its saved branch and worktree. If
   an older workspace naming update left those saved names out of sync, the
   desktop recovers the one unambiguous worktree whose folder and checked-out
@@ -59,8 +67,10 @@ follows a run through every layer. The desktop UI for agents is described in
   branch or worktree, orphan worktrees under the agent root and orphan agent
   branches. An issue must show in two checks in a row before one local
   warning ping. Tests: `forkmesh-agent-parity-tests`.
-- **Runtimes.** Claude Code runs as a stream-json session; Codex through its
-  app-server protocol. Both report provider-neutral events
+- **Runtimes.** Claude Code runs as a stream-json session that ForkMesh hosts
+  fully (an `initialize` handshake, `--permission-prompt-tool stdio`, permission,
+  plan, question, dialog and MCP-input prompts, sub-sessions with a stop
+  control; `ClaudeControlProtocol.*`); Codex through its app-server protocol. Both report provider-neutral events
   (`session.lifecycle`, `output.text.streaming`, `tool.lifecycle`, `usage`;
   `AgentRuntimeSession.h`) feeding the transcript, the tool efficiency ledger
   (`data/agents/tool-efficiency.json`) and the activity window.
@@ -361,8 +371,8 @@ running jobs keep their binary. The update's exit status is unchanged.
 
 ## Operations
 
-- Mirror CLI sign-in: **Network → Hosts** has an agent-CLI installer and a
-  sign-in shell per host.
+- Mirror CLI sign-in: the Hosts rail beside **Network → Nodes** has an
+  agent-CLI installer and a sign-in shell per host.
 - A job stuck unclaimed: check the target node is online and advertises the
   provider.
 - A terminal report the relay keeps refusing (6 conflicts) is dropped

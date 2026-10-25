@@ -19,7 +19,12 @@ package. No third party receives analytics events.
 
 - `POST /api/analytics/_/capture` and `/api/analytics/_/decide`:
   session-less, authenticated by a project's public write key and its allowed
-  origins. `_` can never be an organization name.
+  origins. `_` can never be an organization name. An allowed origin is exact
+  (`https://example.org`) or a wildcard (`https://*.example.org`, every
+  subdomain but not the bare domain); wildcards over shared suffixes
+  (`*.co.uk`, `*.github.io` and the rest of `SHARED_SUFFIXES`) are refused.
+  The rules are in the package's
+  [README](../../marketplace/packages/analytics/README.md).
 - `GET /api/analytics/_/pages?path=`: public unique-visitor count, only for
   the site-default project and only for `/docs` paths (shown as "N views" on
   documentation pages).

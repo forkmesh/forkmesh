@@ -318,7 +318,10 @@ destination, in sections, with counts and activity:
 opens the project drawer; touch and hold for 0.5 s goes to Home from any
 tab, closing open overlays, the same as `openProjectHome`, 2026-10-18), the telemetry strip centred (tiny health-coloured
 charts of phone metrics and, when a desktop answers `diag.watch`, desktop
-memory, CPU, disk and swap), the new agent button and the avatar
+memory, CPU, disk and swap, each a line over a fill of its colour at 35 %, so
+a quiet chart still shows a band and not only a line on its top edge; on a
+Dynamic Island iPhone in portrait the strip moves to the status bar's right
+ear, see below), the new agent button and the avatar
 (`AvatarWithDot`, rounded square). The connection status is a 2 pt stroke
 around the square in the status colour (green online, amber away or
 connecting, red when diagnostics need attention, grey offline), not a corner
@@ -395,13 +398,65 @@ ring) also sit in the thin strip of status bar above the Dynamic Island, so
 the checks stay visible on every page. The strip is the top safe-area inset
 minus the island's 48 pt (11 pt on a 59 pt inset, 14 pt on 62 pt); it shows
 only when that inset is at least 54 pt, which leaves out notched iPhones,
-landscape and iPad, where there is no room above a cut-out. The inset is
-measured in screen space (the overlay's global top plus its own top inset,
-as `ShellHome` does) and the row is offset back to the screen's top edge, so
-the dots stay pinned above the island even when the overlay's frame does not
-reach into the status bar and reports a zero inset. The row ignores
-touches, since a tap that high belongs to the status bar's scroll-to-top, and
-a troubled dot blinks like the footer's.
+landscape and iPad, where there is no room above a cut-out. The inset is the
+key window's top safe-area inset, or the overlay's global top plus its own
+inset when that is larger. The window is read because the overlay ignores the
+top safe area, and a view that does that reports a zero inset; the first
+version read only that inset, so on a full-screen shell it saw 0 and never
+drew the dots. The row is offset back to the screen's top edge, so it stays
+pinned above the island whatever the overlay's frame.
+
+**Machine lights above the clock.** While Diagnostics is on, the same view
+puts the footer's desktop light, the office MacBook light and the core node
+and runner lights (`ShellFooterDesktopLight`, `ShellFooterMacLight`,
+`ShellFleetLight`, glyphs at 10 to 11 pt in a 12 pt row) in the status bar's
+left ear, centred above the clock's side of the ear less its first 24 pt
+(`ShellIslandStatusDots.earLeadingInset`), so the screen's rounded corner does
+not clip the desktop light; the operator asked for that nudge on 2026-10-23,
+when the row was centred in the whole ear and the corner cut the first icon.
+The row's top is the strip height less
+12 pt (at least 1 pt), which leaves a couple of points between the icons and
+the time; the lights sit 8 pt apart and the node lights 1 pt apart. The ear is
+half of the screen width less the island's 126 pt. The operator asked on
+2026-10-23 for the lights above the time with more room; they first sat under
+it, starting 7 pt below the island's middle, with the node lights overlapping. Node lights follow Status Page and its filters like the
+footer's; the desktop light shows whenever Diagnostics is on, red while no
+desktop is connected. The shell refreshes the desktop load light on
+activation alongside the fleet.
+
+**Resource bars on the machine lights.** Each core node light and the desktop
+light carry three tiny bars (`ShellResourceBars`, 1.5 pt wide, 6 pt tall, on a
+`bgBase` plate in the icon's bottom-right corner, so the icon keeps its size):
+CPU, memory and disk, left to right. A bar fills to its percentage and is green
+below 75 %, orange from 75 % and red from 90 %, the desktop vitals' limits; a
+missing reading leaves an empty track. Core readings come from the status
+feed: each core publishes `cpuPct` (from `/proc/stat` between samples at least
+5 s apart), `memPct` (`MemTotal` less `MemAvailable`) and `diskPct` (the root
+file system, as `df` counts it) in its `host_metrics` row every 30 s, and
+`/api/status` adds `resources: {cpu, memory, disk}` to a `core:` system while
+that row is under 3 minutes old (`STATUS_CORE_METRICS_FRESH_MS`). The desktop's
+bars read the latest per-second desktop vitals (`DesktopVitals`) while the
+phone watches a linked desktop; with the bars on, a relayed desktop's globe
+moves to the icon's bottom-left. The VoiceOver labels add the three
+percentages. The operator asked for them on 2026-10-23, and for the desktop
+charts to leave the right ear now that its icon shows the same three numbers.
+
+**Telemetry charts above the battery.** On the same screens the top bar's
+telemetry strip leaves the bar (`ShellIslandStatusDots.earsShown`: an inset
+of at least 54 pt and not a compact height) and its charts
+(`TelemetryEarSparks`) sit in the right ear at the lights' height, above the
+signal, Wi-Fi and battery. The ear shows only the phone's own charts: the
+desktop's memory, CPU, disk and swap charts left it on 2026-10-23, since the
+desktop light's bars now carry them. Each chart is squeezed to fit the ear
+less 10 pt a side (`TelemetrySparks.fitted`, at most the strip's 12 pt), 12 pt
+tall, 1 pt apart. The in-bar strip still leads with the desktop group, 2 pt
+apart with 4 pt before the phone's charts. Elsewhere (notched
+iPhones, landscape, iPad) the strip stays in the bar.
+
+These rows ignore touches, since a tap that high belongs to the status bar's
+scroll-to-top, and a troubled light blinks like the footer's. With the charts
+in the ear, the Diagnostics screen opens from its page (the `diagnostics`
+route) rather than a tap on the strip.
 
 ### 2.0.1 Chat room layout (iOS)
 
@@ -516,6 +571,47 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 - **Placeholders** (`RoutePlaceholderView`, unbuilt repository sections) say
   the screen "is not in this version of the app yet" and never name the
   internal owner.
+
+### 2.0.2.2 The tour
+
+The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
+`fm.tour.seen.v1`) and keeps a Tour icon on Home. The operator asked on
+2026-10-24 for the tour to look like the screens it describes, to move, and
+to offer three depths.
+
+- **Tracks** (`TourTrack`, `FMPackages/TourCatalog.swift`): Essentials (Home,
+  Agents, the new agent button, Inbox, the hub), Advanced (adds hold to talk,
+  review and merge, the command palette, search and the bottom bar) and The
+  whole shebang (adds chat, projects, desktops, Notes/Tasks/Calendar, the
+  Market, personal tools, notifications and widgets, and looks). Each track
+  contains the one before it, so stops keep their order. A track card shows its
+  stop count, an estimate at 20 s a stop, and its stops' symbols.
+- **The package gate decides the stops.** A stop with `needs` (Agents, Inbox,
+  Repos, Chat) is left out when that tab's package is not installed. A stop
+  with `offers` (Desktops, Notes and the rest, personal tools) stays, but when
+  none of its packages is installed it says so and its button opens the Market
+  instead (`TourStop.fromMarket`).
+- **Each stop is a live mock** (`TourStage`, `Navigation/TourStage.swift`;
+  scenes in `TourScenes.swift`): a rounded screen drawn with the shell's own
+  pieces where they exist (`ShellHomeIcon`, `ShellBarPreview`,
+  `ShellHomeIconPreview`, `ShellSparkleField`, `AvatarWithDot`) and simple
+  copies of the rest. It plays its interaction every 1.9 s while the page is
+  current. The control to try has a pulsing ring (`tourTarget`), and the hint
+  under the screen names it ("Tap Allow", "Touch and hold the button").
+  Touching the mock acts at once and holds the autoplay for 6 s. The voice
+  stop listens for a real touch and hold and shows the words arriving, so the
+  gesture can be practised. Reduce Motion stops the ring, the ripples and the
+  animated changes; the steps still advance.
+- **Show me** (`TourStop.jump`) closes the tour and opens the real place:
+  a tab, Home, the hub, the composer, the palette, the project switcher or a
+  route (`HomeShell.tourJump`, after the sheet's 0.45 s dismissal). Opened as
+  the `.tour` route, the tour has no shell, so only tab and route jumps show.
+- **Progress.** The bar of segments under the header jumps to a stop. Closing
+  part-way stores the place (`fm.tour.place.v1`, `TourPlace`), and the chooser
+  then offers "Pick up where you left off". Finishing a track marks it and every
+  smaller track done (`fm.tour.done.v1`, seals on the cards), then returns to
+  the chooser with the next track suggested; finishing the last one closes the
+  tour. The Tour icon's count on Home is the number of tracks not yet done.
 
 ### 2.0.3 Other pages
 
@@ -1171,7 +1267,8 @@ the website's own:
 | `/<owner>/<repo>/commit/<sha>`, `/commits/<ref>` | `.commit`, `.commits` |
 | `/<owner>/<repo>/actions[/runs/<id>]`, `/releases[/tag/<t>]`, `/mirrors`, `/agents`, `/worktrees`, `/about`, `/shortcuts` | the matching section, `.run`, `.release`, `.shortcuts(r)` |
 | `/@<name>` | `.profile(name)` |
-| `/dashboard/chat`, `/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
+| `/dashboard/chat` | `.chat` (the web 308-redirects it to `/chat`, its one chat page since 2026-10-23; the app does not parse `/chat` yet, so a `/chat` link opens in the browser) |
+| `/dashboard/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |
 | `/market/<package-id>` (plugin share link; not `/market/previews/…`) | `.market`, then `.package(id)` |

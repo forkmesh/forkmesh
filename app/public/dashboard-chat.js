@@ -462,6 +462,7 @@ function mountForkMeshDashboardChat(options = {}) {
   let sealStore = null;
   let frameAuth = null;
   let nodeOwners = null;
+  let guestLines = null;
   const sealStores = new Map();
   let sealUnavailable = false;
   // Sender ids of frames not addressed to this browser. An encrypted room
@@ -787,6 +788,10 @@ function mountForkMeshDashboardChat(options = {}) {
     }
     frameAuth.forgetLegacySelfId();
     nodeOwners = nodeOwners || frameAuth.createNodeOwners();
+    guestLines = guestLines || frameAuth.createGuestRelabeler({
+      owners: nodeOwners,
+      onConfirmed: (node, account, ids) => renameConfirmedGuest(node, account, ids),
+    });
     sealUnavailable = false;
     try {
       const store = await activateChatIdentity();
@@ -803,7 +808,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (!frameAuth || !nodeOwners) return [];
     const list = plains.filter(Boolean);
     await nodeOwners.prefetch(list, { selfNode: selfId });
-    return list
+    const attributed = list
       .map((plain) => frameAuth.attributeFrame(plain, {
         owners: nodeOwners,
         selfNode: selfId,
@@ -811,6 +816,41 @@ function mountForkMeshDashboardChat(options = {}) {
         selfName: displayName(),
       }))
       .filter(Boolean);
+    for (const plain of attributed) guestLines?.note(plain);
+    return attributed;
+  }
+
+  function renameConfirmedGuest(node, account, ids) {
+    const name = String(account).slice(0, MAX_NAME);
+    let side = false;
+    let thread = false;
+    for (const id of ids) {
+      const record = rows.get(id) || threadRepliesById.get(id);
+      if (record && record.senderId === node && !record.self) {
+        record.who = name;
+        record.accountKind = "user";
+        if (record.rootId) thread = true;
+        const author = record.el?.querySelector(".chat-message-author");
+        if (author) {
+          const holder = document.createElement("div");
+          holder.innerHTML = authorElementHtml(record, author.className);
+          const next = holder.firstElementChild;
+          if (next) {
+            author.replaceWith(next);
+            bindAuthorProfileCard(next);
+          }
+          hydrateChatAvatar(record.avatarEl, name);
+        }
+      }
+      const entry = sideEntries.find((item) => item.id === id);
+      if (entry && entry.senderId === node && entry.kind !== "self") {
+        entry.who = name;
+        entry.accountKind = "user";
+        side = true;
+      }
+    }
+    if (side) renderSideMessages();
+    if (thread || ids.includes(activeThreadRootId)) renderThreadDialog();
   }
 
   function isAuthenticatedPlain(plain) {
@@ -1704,9 +1744,20 @@ function mountForkMeshDashboardChat(options = {}) {
     return Date.now() - (person.lastSeenMs || 0) < MENTION_STALE_MS;
   }
 
-  function mentionCandidates(partial) {
+  function mentionCandidates(partial, inputEl) {
     const self = mentionName(displayName());
     const byName = new Map();
+    const accounts = window.ForkMeshUsernames?.lookup(partial, () => {
+      if (inputEl && inputEl === document.activeElement &&
+          mentionTokenAtCaret(inputEl)?.partial === partial) {
+        showMentionSuggest(inputEl);
+      }
+    }) || [];
+    for (const name of accounts) {
+      if (MENTIONABLE_NAME_RE.test(name)) {
+        byName.set(name, { name, kind: "user", lastSeenMs: 0 });
+      }
+    }
     for (const person of mentionDirectory.values()) byName.set(person.name, person);
     // Room presence wins over the directory entry: it carries a lastSeenMs.
     for (const person of mentionPeople.values()) byName.set(person.name, person);
@@ -1979,7 +2030,7 @@ function mountForkMeshDashboardChat(options = {}) {
       closeMentionSuggest();
       return;
     }
-    const items = mentionCandidates(token.partial);
+    const items = mentionCandidates(token.partial, inputEl);
     if (!items.length) {
       closeMentionSuggest();
       return;

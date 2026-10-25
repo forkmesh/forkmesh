@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <script>
-      if (new URLSearchParams(location.search).get("embed") === "office") {
-        document.documentElement.dataset.chatEmbed = "office";
+      const chatEmbed = new URLSearchParams(location.search).get("embed");
+      if (chatEmbed === "office" || chatEmbed === "world") {
+        document.documentElement.dataset.chatEmbed = chatEmbed;
       }
     </script>
     <script src="/api-client.js?v=${version}"></script>
@@ -25,13 +26,15 @@
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <link rel="stylesheet" href="/site-header.css" />
     <script src="/user-status.js?v=${version}" defer></script>
+    <script src="/username-autocomplete.js?v=${version}" defer></script>
     <script src="/site-header.js?v=${version}" defer></script>
     <script>
       (() => {
         const keys = ["forkmesh.dashboard.theme", "forkmesh.theme"];
         let theme = "dark";
         try {
-          theme = keys.map((key) => localStorage.getItem(key)).find((value) => value === "light" || value === "dark") || theme;
+          const stored = keys.map((key) => localStorage.getItem(key)).find((value) => ["light", "dark", "system"].includes(value));
+          theme = stored === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : stored || theme;
         } catch (_) {}
         document.documentElement.classList.toggle("dark", theme !== "light");
         document.documentElement.style.colorScheme = theme;
@@ -1237,6 +1240,31 @@
         white-space: nowrap;
       }
 
+      html[data-chat-embed="world"],
+      html[data-chat-embed="world"] body {
+        min-width: 0;
+        height: 100dvh;
+        overflow: hidden;
+      }
+
+      html[data-chat-embed="world"] .chat-shell {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        height: 100dvh;
+      }
+
+      html[data-chat-embed="world"] .chat-panes {
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      html[data-chat-embed="world"] .chat-site-header,
+      html[data-chat-embed="world"] .chat-rooms-pane,
+      html[data-chat-embed="world"] .chat-people-pane {
+        display: none;
+      }
+
       /* ── responsive ── */
       @media (max-width: 980px) {
         .chat-panes { grid-template-columns: 200px minmax(0, 1fr); }
@@ -1543,7 +1571,7 @@
               <section id="chat-channel-members-section" class="chat-channel-section" aria-labelledby="chat-channel-members-title" hidden>
                 <h3 id="chat-channel-members-title">Members</h3>
                 <form id="chat-channel-invite-form" class="chat-channel-form">
-                  <input id="chat-channel-username" name="username" maxlength="63" placeholder="username" aria-label="Registered username" required />
+                  <input id="chat-channel-username" name="username" maxlength="63" placeholder="Type a username" aria-label="Registered username" data-username-autocomplete="single" required />
                   <button type="submit">Invite</button>
                 </form>
                 <div id="chat-channel-members" aria-live="polite"></div>
@@ -1844,7 +1872,7 @@
               </select>
               <button type="submit">Create</button>
             </form>
-            <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: alice, bob" aria-label="Usernames to invite, separated by commas" />
+            <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: start typing a username" aria-label="Usernames to invite, separated by commas" data-username-autocomplete="list" />
             <p id="chat-channel-audience" class="chat-channel-audience" role="status" aria-live="polite">Only you can see this room until you invite someone. Nobody else, including administrators, is added.</p>
             <p class="chat-attachment-meta">Members, renaming and deletion live in Settings. Incoming webhooks work in public and private channels; their messages are visible to the server.</p>
           </section>
@@ -1867,14 +1895,21 @@
 
       <div id="chat-call-panel" class="chat-call-panel" role="dialog" aria-label="Encrypted call" hidden>
         <div class="chat-call-head">
+          <button id="chat-call-minimize" type="button" class="chat-call-back" aria-label="Back to chat. The call keeps going in a small window" hidden>Back to chat</button>
           <strong id="chat-call-peer"></strong>
           <span id="chat-call-state" role="status" aria-live="polite"></span>
           <span id="chat-call-route" class="chat-call-route" hidden></span>
         </div>
-        <div class="chat-call-videos">
+        <div id="chat-call-videos" class="chat-call-videos">
           <video id="chat-call-remote" autoplay playsinline></video>
+          <div id="chat-call-placeholder" class="chat-call-placeholder" hidden>
+            <span id="chat-call-avatar" class="chat-call-avatar" aria-hidden="true"></span>
+            <span id="chat-call-placeholder-text" class="chat-call-placeholder-text"></span>
+          </div>
           <video id="chat-call-local" autoplay muted playsinline hidden></video>
+          <button id="chat-call-sound" type="button" class="chat-call-sound" hidden>Tap to turn on sound</button>
         </div>
+        <p id="chat-call-notice" class="chat-call-notice" hidden></p>
         <p class="chat-call-meta">
           Calls go directly between your devices when the network allows; once
           connected, the line above says whether this call is direct or relayed
@@ -1906,6 +1941,7 @@
           <button id="chat-call-mute" type="button">Mute</button>
           <button id="chat-call-camera" type="button" hidden>Camera off</button>
           <button id="chat-call-hangup" type="button" class="chat-call-hangup">Hang up</button>
+          <button id="chat-call-expand" type="button" class="chat-call-expand" aria-label="Open the call" hidden>Open</button>
         </div>
       </div>
 

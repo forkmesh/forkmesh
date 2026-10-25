@@ -31,6 +31,10 @@ MAIN_REF = "refs/heads/main"
 RESULT_MARK = "::node-deploy-result::"
 SINK_NAME = "node-deploy.log"
 RUN_DIR_RE = re.compile(r"^forkmesh-run-(\d+)-(\d+)$")
+TMP_DISK_LABEL = "TMP"
+TMP_DISK_LABEL_DIR = "/dev/disk/by-label"
+TMP_DISK_MOUNTS = "/proc/self/mounts"
+TMP_DISK_ROOT = "ForkMesh"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DEBOUNCE_SECONDS = 3
@@ -452,6 +456,33 @@ def reask_silent(hosts, answers, run=subprocess.run, say=None, sleep=time.sleep,
         answers = [fresh.get(name, (name, code, rev)) for name, code, rev in answers]
 
 
+FLEET_BRANCH_RE = re.compile(r"^refs/heads/(fleet/(add|remove)-core-(n[0-9]{1,2}))$")
+
+
+def unmerged_fleet_branches(git, main) -> list:
+    import tomllib
+    listed = git.call("for-each-ref", "--format=%(refname)", "refs/heads/fleet/")
+    shown = git.call("show", "%s:deploy/fleet.toml" % main) if main else None
+    if listed.returncode != 0 or shown is None or shown.returncode != 0:
+        return []
+    try:
+        fleet = tomllib.loads(shown.stdout)
+    except tomllib.TOMLDecodeError:
+        return []
+    cores = {n.get("name") for n in fleet.get("nodes") or [] if n.get("role", "core") == "core"}
+    retired = set((fleet.get("hosted") or {}).get("retired_cores") or [])
+    pending = []
+    for ref in listed.stdout.split():
+        match = FLEET_BRANCH_RE.match(ref)
+        if not match:
+            continue
+        kind, name = match.group(2), match.group(3)
+        if (kind == "remove" and name in cores) or (
+                kind == "add" and name not in cores and name not in retired):
+            pending.append(match.group(1))
+    return sorted(pending)
+
+
 def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
               clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
               unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
@@ -621,13 +652,49 @@ def actions_root(layout=None) -> Path:
     return (layout or forkmesh_paths.resolve()).data_path("actions")
 
 
-def running_runs(root: Path) -> list:
-    sandbox = root / "sandbox"
-    runs = []
+def unescape_mount_field(value: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+
+def tmp_disk_mount(label_dir=None, mounts_file=None) -> Path | None:
+    link = Path(label_dir or TMP_DISK_LABEL_DIR) / TMP_DISK_LABEL
     try:
-        entries = list(os.scandir(sandbox))
-    except FileNotFoundError:
-        return runs
+        device = link.resolve(strict=True)
+        text = Path(mounts_file or TMP_DISK_MOUNTS).read_text("utf-8", "replace")
+    except (OSError, RuntimeError):
+        return None
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        try:
+            source = Path(unescape_mount_field(fields[0])).resolve()
+        except (OSError, RuntimeError):
+            continue
+        target = unescape_mount_field(fields[1])
+        if source == device and target != "/" and os.path.isdir(target):
+            return Path(os.path.normpath(target))
+    return None
+
+
+def sandbox_dirs(root: Path, label_dir=None, mounts_file=None) -> list:
+    dirs = [Path(root) / "sandbox"]
+    mount = tmp_disk_mount(label_dir, mounts_file)
+    if mount is not None:
+        fast = mount / TMP_DISK_ROOT / "actions" / "sandbox"
+        if fast not in dirs:
+            dirs.append(fast)
+    return dirs
+
+
+def running_runs(root: Path, sandboxes=None) -> list:
+    runs = []
+    entries = []
+    for sandbox in sandbox_dirs(root) if sandboxes is None else sandboxes:
+        try:
+            entries.extend(os.scandir(sandbox))
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            continue
     newest = {}
     for entry in entries:
         match = RUN_DIR_RE.match(entry.name)
@@ -1170,7 +1237,16 @@ class Pipeline:
         main = self.git.rev(MAIN_REF)
         hosts = self.hosts(target)
         self.say("gate 1: %s must be on main and fast-forward what the cores run" % rev)
-        live = live_revs(hosts, run=self.run, say=self.say, sleep=self.sleep)
+        try:
+            live = live_revs(hosts, run=self.run, say=self.say, sleep=self.sleep)
+        except GuardError as error:
+            pending = unmerged_fleet_branches(self.git, main)
+            if not pending:
+                raise
+            raise GuardError("%s; main's deploy/fleet.toml is behind the fleet: %s not "
+                             "merged into main (next_fleet add-core/remove-core), merge "
+                             "it and push main again" % (error, ", ".join(pending))
+                             ) from error
         self.say("gate 1: live %s" % ", ".join("%s %s" % kv for kv in sorted(live.items())))
         manifest = common.load_manifest()
         gate = fast_forward_gate(live, manifest, self.git, target, main, mode=self.mode)

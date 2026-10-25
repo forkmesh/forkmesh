@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -286,5 +287,173 @@ void workflowsFeatureChecks()
     named<QPushButton>(page, QStringLiteral("‹ All workflows"))->click();
     settle();
     workflowsCheck(pages->currentIndex() == 0, QStringLiteral("a saved workflow returns to the dashboard without asking"));
+    workflowsCheck(!named<QTableWidget>(page, QStringLiteral("workflowsLocalTable"))->isVisibleTo(page),
+                   QStringLiteral("without the desktop's workflows the page shows only the account's"));
     delete page;
+
+    struct LocalCall {
+        QString repo;
+        QString id;
+        QString action;
+        QJsonObject payload;
+    };
+    QList<LocalCall> localCalls;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QJsonObject agentFile = QJsonDocument::fromJson(R"json({
+      "kind": "forkmesh.workflow", "version": 1, "id": "sentinel", "name": "Sentinel", "icon": "sentinel",
+      "enabled": true,
+      "nodes": [{"id": "schedule", "type": "workflow.schedule", "name": "Schedule", "x": 0, "y": 0,
+                 "params": {"mode": "weekdays"}},
+                {"id": "agent", "type": "agent.run", "name": "Sentinel", "x": 288, "y": 0,
+                 "params": {"specialty": "Security", "permissions": ["read-repositories"],
+                            "skills": ["Threat models"]}}],
+      "connections": [{"from": "schedule", "output": "main", "to": "agent"}]
+    })json").object();
+    const QJsonObject localPayload{
+        {QStringLiteral("catalog"), QJsonDocument::fromJson(R"json({
+          "core": [
+            {"type": "workflow.manual", "name": "Run by hand", "group": "Triggers", "trigger": true,
+             "outputs": ["main"], "fields": []},
+            {"type": "workflow.schedule", "name": "Schedule", "group": "Triggers", "trigger": true,
+             "outputs": ["main"], "fields": [{"key": "mode", "label": "How often", "type": "select",
+               "options": [{"value": "daily", "label": "Every day"}, {"value": "weekdays", "label": "Weekdays"}]}]},
+            {"type": "agent.run", "name": "Special agent", "group": "Agents", "outputs": ["main"],
+             "fields": [{"key": "avatar", "label": "Portrait", "type": "avatar"},
+                        {"key": "specialty", "label": "Specialty", "type": "string"},
+                        {"key": "permissions", "label": "Permissions", "type": "checks",
+                         "options": [{"value": "read-repositories", "label": "Read repositories"},
+                                     {"value": "modify-code", "label": "Modify code"}]},
+                        {"key": "skills", "label": "Skill names (one per line)", "type": "list"},
+                        {"key": "shortcut", "label": "Playbook shortcut", "type": "shortcut"}]},
+            {"type": "workflow.shortcut", "name": "Run shortcut", "group": "Shortcuts", "outputs": ["main"],
+             "fields": [{"key": "file", "label": "Shortcut file", "type": "shortcut"}]}
+          ], "integrations": [], "operators": []
+        })json").object()},
+        {QStringLiteral("avatars"), QJsonArray{QJsonObject{{QStringLiteral("value"), QStringLiteral("sentinel")},
+                                                           {QStringLiteral("label"), QStringLiteral("Sentinel")}}}},
+        {QStringLiteral("repositories"),
+         QJsonArray{QJsonObject{{QStringLiteral("key"), QStringLiteral("forkmesh/forkmesh")},
+                                {QStringLiteral("title"), QStringLiteral("forkmesh/forkmesh")},
+                                {QStringLiteral("shortcuts"),
+                                 QJsonArray{QJsonObject{{QStringLiteral("file"), QStringLiteral("review-security.md")},
+                                                        {QStringLiteral("name"), QStringLiteral("Review security")},
+                                                        {QStringLiteral("kind"), QStringLiteral("prompt")}}}}}}},
+        {QStringLiteral("workflows"),
+         QJsonArray{QJsonObject{{QStringLiteral("repo"), QStringLiteral("forkmesh/forkmesh")},
+                                {QStringLiteral("id"), QStringLiteral("sentinel")},
+                                {QStringLiteral("name"), QStringLiteral("Sentinel")},
+                                {QStringLiteral("specialAgent"), true},
+                                {QStringLiteral("enabled"), true},
+                                {QStringLiteral("hasSchedule"), true},
+                                {QStringLiteral("trigger"), QStringLiteral("Weekdays at 09:00 (off)")},
+                                {QStringLiteral("lastStatus"), QStringLiteral("error")},
+                                {QStringLiteral("lastRunAt"), double(now - 60000)},
+                                {QStringLiteral("recentRuns"),
+                                 QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("lr1")},
+                                                        {QStringLiteral("workflowId"), QStringLiteral("sentinel")},
+                                                        {QStringLiteral("status"), QStringLiteral("error")},
+                                                        {QStringLiteral("startedAtMs"), double(now - 60000)},
+                                                        {QStringLiteral("finishedAtMs"), double(now - 30000)},
+                                                        {QStringLiteral("trigger"), QStringLiteral("By hand")},
+                                                        {QStringLiteral("error"), QStringLiteral("Sentinel: tests failed")},
+                                                        {QStringLiteral("outputFile"), QStringLiteral("/tmp/lr1.md")},
+                                                        {QStringLiteral("steps"),
+                                                         QJsonArray{QJsonObject{
+                                                             {QStringLiteral("name"), QStringLiteral("Sentinel")},
+                                                             {QStringLiteral("type"), QStringLiteral("agent.run")},
+                                                             {QStringLiteral("status"), QStringLiteral("error")},
+                                                             {QStringLiteral("sessionId"), 77},
+                                                             {QStringLiteral("error"), QStringLiteral("tests failed")}}}}}}}},
+                    QJsonObject{{QStringLiteral("repo"), QStringLiteral("forkmesh/forkmesh")},
+                                {QStringLiteral("id"), QStringLiteral("clean")},
+                                {QStringLiteral("name"), QStringLiteral("Clean up")},
+                                {QStringLiteral("specialAgent"), false},
+                                {QStringLiteral("enabled"), true},
+                                {QStringLiteral("trigger"), QStringLiteral("By hand")},
+                                {QStringLiteral("pinned"), QStringLiteral("bottom")}}}},
+        {QStringLiteral("pins"), QJsonArray()}};
+    FakeServer second;
+    forkmesh::market::NativePackageHost localHost = host;
+    localHost.request = [&second](const QByteArray &method, const QString &path, const QJsonObject &body,
+                                  forkmesh::market::NativePackageReplyHandler handler) {
+        bool ok = false;
+        const QJsonObject payload = second.reply(method, path, body, &ok);
+        QTimer::singleShot(0, [handler, ok, payload] {
+            handler(ok, payload, ok ? QString() : payload.value(QStringLiteral("error")).toString());
+        });
+    };
+    localHost.repositoryWorkflows = [&localPayload] { return localPayload; };
+    localHost.repositoryWorkflowAction = [&localCalls, &agentFile](const QString &repo, const QString &id,
+                                                                    const QString &action, const QJsonObject &payload,
+                                                                    forkmesh::market::NativePackageReplyHandler done) {
+        localCalls.append({repo, id, action, payload});
+        QJsonObject reply;
+        if (action == QLatin1String("get"))
+            reply = QJsonObject{{QStringLiteral("workflow"), agentFile}, {QStringLiteral("runs"), QJsonArray()}};
+        if (action == QLatin1String("save")) {
+            agentFile = payload.value(QStringLiteral("workflow")).toObject();
+            reply = QJsonObject{{QStringLiteral("workflow"), agentFile}};
+        }
+        QTimer::singleShot(0, [done, reply] { done(true, reply, QStringLiteral("Done.")); });
+    };
+    auto *desk = static_cast<WorkflowsFeature *>(contribution->factory(localHost, nullptr));
+    desk->resize(1280, 860);
+    desk->show();
+    desk->refresh();
+    settle();
+    auto *local = named<QTableWidget>(desk, QStringLiteral("workflowsLocalTable"));
+    workflowsCheck(local && local->isVisibleTo(desk) && local->rowCount() == 2 &&
+                       local->item(0, 0)->text() == QLatin1String("Sentinel") &&
+                       local->item(0, 2)->text() == QLatin1String("Special agent") &&
+                       local->item(1, 8)->text() == QLatin1String("bottom"),
+                   QStringLiteral("the dashboard lists the desktop's workflows with their kind and rail"));
+    auto *deskRuns = named<QTableWidget>(desk, QStringLiteral("workflowsRuns"));
+    bool localRunListed = false;
+    for (int row = 0; deskRuns && row < deskRuns->rowCount(); ++row)
+        localRunListed = localRunListed || deskRuns->item(row, 0)->text() == QLatin1String("Sentinel");
+    workflowsCheck(localRunListed, QStringLiteral("desktop runs join the recent runs"));
+    const auto hits = desk->searchHits(QStringLiteral("senti"), 5);
+    workflowsCheck(!hits.isEmpty() && hits.first().id == QLatin1String("repo:forkmesh/forkmesh|sentinel"),
+                   QStringLiteral("the top search box finds desktop workflows"));
+    workflowsCheck(desk->navigationBadge() >= 1, QStringLiteral("a failed desktop workflow counts on the rail badge"));
+    local->selectRow(1);
+    settle();
+    named<QPushButton>(desk, QStringLiteral("Desktop workflow: Run"))->click();
+    settle();
+    workflowsCheck(!localCalls.isEmpty() && localCalls.last().action == QLatin1String("run") &&
+                       localCalls.last().id == QLatin1String("clean"),
+                   QStringLiteral("Run starts the desktop workflow on this desktop"));
+
+    desk->activateSearchHit(QStringLiteral("repo:forkmesh/forkmesh|sentinel"));
+    settle();
+    auto *deskPages = desk->findChild<QStackedWidget *>();
+    auto *deskSteps = named<QListWidget>(desk, QStringLiteral("workflowsSteps"));
+    workflowsCheck(deskPages && deskPages->currentIndex() == 1 && deskSteps && deskSteps->count() == 2,
+                   QStringLiteral("a desktop workflow opens in the editor with its steps"));
+    deskSteps->setCurrentRow(1);
+    settle();
+    QCheckBox *modify = nullptr;
+    for (QCheckBox *box : desk->findChildren<QCheckBox *>())
+        if (box->text() == QLatin1String("Modify code"))
+            modify = box;
+    auto *skills = named<QPlainTextEdit>(desk, QStringLiteral("Skill names (one per line)"));
+    workflowsCheck(modify && !modify->isChecked() && skills &&
+                       skills->toPlainText() == QLatin1String("Threat models"),
+                   QStringLiteral("the special agent step shows its permissions as boxes and its skills as lines"));
+    if (modify)
+        modify->setChecked(true);
+    if (skills)
+        skills->setPlainText(QStringLiteral("Threat models\nFuzzing"));
+    named<QPushButton>(desk, QStringLiteral("Save"))->click();
+    settle();
+    QJsonObject savedAgent;
+    for (const QJsonValue &value : agentFile.value(QStringLiteral("nodes")).toArray())
+        if (value.toObject().value(QStringLiteral("id")).toString() == QLatin1String("agent"))
+            savedAgent = value.toObject().value(QStringLiteral("params")).toObject();
+    workflowsCheck(localCalls.last().action == QLatin1String("save") &&
+                       savedAgent.value(QStringLiteral("permissions")).toArray().contains(QStringLiteral("modify-code")) &&
+                       savedAgent.value(QStringLiteral("skills")).toArray().size() == 2 &&
+                       agentFile.value(QStringLiteral("kind")).toString() == QLatin1String("forkmesh.workflow"),
+                   QStringLiteral("Save writes the edited special agent back to its workflow file"));
+    delete desk;
 }

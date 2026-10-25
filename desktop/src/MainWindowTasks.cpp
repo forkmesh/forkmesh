@@ -5,6 +5,7 @@
 #include "SettingsWrite.h"
 #include "TaskMarkdown.h"
 
+#include <QAbstractTextDocumentLayout>
 #include <QActionGroup>
 #include <QBuffer>
 #include <QButtonGroup>
@@ -13,6 +14,7 @@
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDrag>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFutureWatcher>
@@ -24,11 +26,15 @@
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QMenu>
+#include <QMimeData>
 #include <QNetworkReply>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QPointer>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
 #include <QSplitter>
@@ -38,11 +44,17 @@
 #include <QStandardItemModel>
 #include <QStyledItemDelegate>
 #include <QTextBrowser>
+#include <QTextLayout>
 #include <QTextOption>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolTip>
+#include <QtMath>
 
 #include <algorithm>
+#include <functional>
+#include <memory>
+#include <vector>
 #include <cmath>
 
 using namespace forkmesh::ui;
@@ -1797,8 +1809,66 @@ QString taskCommentReceiptHtml(const QJsonObject &entry)
                      .arg(readers.join(QStringLiteral(", ")));
 }
 
+QString taskNextCaptionHtml(const QString &caption)
+{
+    return QStringLiteral("<p style='margin:18px 0 8px 0;font-size:11px;"
+                          "font-weight:600;color:%1'>%2</p>")
+        .arg(Theme::hex(Theme::Role::FgSubtle), caption.toHtmlEscaped());
+}
+
+QString taskHistoryNextHtml(const QJsonArray &history)
+{
+    QString html = taskNextCaptionHtml(QStringLiteral("ACTIVITY"));
+    const QString muted = Theme::hex(Theme::Role::FgMuted);
+    const QString subtle = Theme::hex(Theme::Role::FgSubtle);
+    const QString fg = Theme::hex(Theme::Role::Fg);
+    if (history.isEmpty())
+        return html + QStringLiteral("<p style='margin:0;color:%1'>No activity "
+                                     "recorded on this task yet.</p>")
+                          .arg(muted);
+    html += QStringLiteral("<table cellspacing='0' width='100%'>");
+    for (const QJsonValue &value : history) {
+        const QJsonObject entry = value.toObject();
+        const QString actor = taskText(entry, QStringLiteral("actor"));
+        const QString kind = taskText(entry, QStringLiteral("kind"));
+        const QString summary = taskText(entry, QStringLiteral("summary"));
+        const QString body = taskText(entry, QStringLiteral("body"));
+        const qint64 at =
+            qint64(entry.value(QStringLiteral("createdAt")).toDouble());
+        const QString who =
+            actor.isEmpty()
+                ? QStringLiteral("<span style='color:%1'>Someone</span>").arg(fg)
+                : userProfileLinkHtml(actor, QStringLiteral("@") + actor);
+        QString line = QStringLiteral("%1 <span style='color:%2'>%3</span>")
+                           .arg(who, muted,
+                                taskEventLabel(kind).toHtmlEscaped());
+        if (kind == QLatin1String("replied") && !body.isEmpty()) {
+            line += QStringLiteral("<div style='margin:4px 0 0 0;color:%1'>%2</div>")
+                        .arg(fg, forkmesh::taskmarkdown::toHtml(body));
+            const QString receipt = taskCommentReceiptHtml(entry);
+            if (!receipt.isEmpty())
+                line += QStringLiteral("<div style='color:%1;font-size:11px'>%2</div>")
+                            .arg(subtle, receipt.toHtmlEscaped());
+        } else if (!summary.isEmpty()) {
+            line += QStringLiteral("<span style='color:%1'> &mdash; %2</span>")
+                        .arg(muted, summary.toHtmlEscaped());
+        }
+        html += QStringLiteral(
+                    "<tr><td width='26' valign='top' style='padding:4px 8px 4px 0'>%1</td>"
+                    "<td valign='top' style='padding:4px 0'>%2</td>"
+                    "<td valign='top' align='right' style='padding:4px 0 4px 8px;"
+                    "color:%3;white-space:nowrap'>%4</td></tr>")
+                    .arg(taskGlyphMarkup(taskPersonGlyph(actor, Theme::activeDark()), 18),
+                         line, subtle,
+                         taskCreatedAge(at).toHtmlEscaped());
+    }
+    return html + QStringLiteral("</table>");
+}
+
 QString taskHistoryHtml(const QJsonArray &history, bool dark)
 {
+    if (Theme::isNext())
+        return taskHistoryNextHtml(history);
     QString html = QStringLiteral(
                        "<h3 style='margin:14px 0 4px 0'>%1&nbsp;Activity</h3>")
                        .arg(taskGlyphMarkup(taskTimeGlyph(dark), 15));
@@ -1878,8 +1948,11 @@ QString taskFieldsHtml(const QJsonObject &task, const QString &localAgentRun,
         return QStringLiteral(
                    "<tr><td style='padding:3px 7px 3px 0'>%1</td>"
                    "<th align='left' style='padding:3px 12px 3px 0;"
-                   "color:#8b949e'>%2</th><td style='padding:3px 0'>%3</td></tr>")
-            .arg(taskGlyphMarkup(glyph, 14), label.toHtmlEscaped(), shown);
+                   "color:%4%5'>%2</th><td style='padding:3px 0'>%3</td></tr>")
+            .arg(taskGlyphMarkup(glyph, 14), label.toHtmlEscaped(), shown,
+                 Theme::nextOrHex(Theme::Role::FgMuted, QStringLiteral("#8b949e")),
+                 Theme::isNext() ? QStringLiteral(";font-weight:normal")
+                                 : QString());
     };
     QString html = QStringLiteral("<table cellspacing='0'>");
     const QString destination = taskText(task, QStringLiteral("destination"));
@@ -1974,21 +2047,37 @@ QString taskFieldsHtml(const QJsonObject &task, const QString &localAgentRun,
 QString taskDetailHtml(const QJsonObject &task,
                        const QHash<QString, QByteArray> &imageData,
                        const QHash<QString, QString> &imageMime,
-                       const QJsonArray &history)
+                       const QJsonArray &history,
+                       const QString &fieldsHtml = QString())
 {
+    const bool next = Theme::isNext();
     if (task.isEmpty()) {
         return QStringLiteral(
-            "<p style='color:#8b949e'>Select a task to inspect its private "
-            "details and available actions.</p>");
+            "<p style='color:%1'>Select a task to inspect its private "
+            "details and available actions.</p>")
+            .arg(Theme::nextOrHex(Theme::Role::FgMuted, QStringLiteral("#8b949e")));
     }
     const bool dark = currentThemeIsDark();
     const QJsonObject qa = task.value(QStringLiteral("qa")).toObject();
     QString html =
-        QStringLiteral("<h2 style='margin:0 0 8px 0'>%1</h2>")
-            .arg(taskText(task, QStringLiteral("title")).toHtmlEscaped());
-    auto block = [&html](const TaskGlyph &glyph, const QString &heading,
-                         const QString &value) {
+        next ? QString()
+             : QStringLiteral("<h2 style='margin:0 0 8px 0'>%1</h2>")
+                   .arg(taskText(task, QStringLiteral("title")).toHtmlEscaped());
+    auto block = [&html, next](const TaskGlyph &glyph, const QString &heading,
+                               const QString &value) {
         const QString rendered = forkmesh::taskmarkdown::toHtml(value);
+        if (next) {
+            const bool details = heading == QLatin1String("Details");
+            if (rendered.isEmpty() && !details)
+                return;
+            if (!details)
+                html += taskNextCaptionHtml(heading.toUpper());
+            html += rendered.isEmpty()
+                        ? QStringLiteral("<p style='margin:0;color:%1'>No details.</p>")
+                              .arg(Theme::hex(Theme::Role::FgSubtle))
+                        : QStringLiteral("<div style='margin:0'>%1</div>").arg(rendered);
+            return;
+        }
         html += QStringLiteral(
                     "<h3 style='margin:14px 0 4px 0'>%1&nbsp;%2</h3>"
                     "<div style='margin:0'>%3</div>")
@@ -2048,7 +2137,11 @@ QString taskDetailHtml(const QJsonObject &task,
             .arg(taskImageHref(key), mime,
                  QString::fromLatin1(bytes.toBase64()));
     }
-    if (!attachmentHtml.isEmpty()) {
+    if (!attachmentHtml.isEmpty() && next) {
+        html += taskNextCaptionHtml(QStringLiteral("ATTACHMENTS")) +
+                QStringLiteral("<div style='white-space:normal'>%1</div>")
+                    .arg(attachmentHtml);
+    } else if (!attachmentHtml.isEmpty()) {
         html += QStringLiteral(
             "<h3 style='margin:14px 0 4px 0'>%1&nbsp;Attachments</h3>"
             "<div style='white-space:normal'>%2</div>")
@@ -2056,6 +2149,8 @@ QString taskDetailHtml(const QJsonObject &task,
                                   taskMutedColor(dark), {}, 0.5}, 15),
                  attachmentHtml);
     }
+    if (!fieldsHtml.isEmpty())
+        html += taskNextCaptionHtml(QStringLiteral("DETAILS")) + fieldsHtml;
     html += taskHistoryHtml(history, dark);
     return html;
 }
@@ -2157,6 +2252,865 @@ private:
     bool m_hover = false;
     int m_pressed = -1;
 };
+
+constexpr int kBoardIdRole = Qt::UserRole + 60;
+constexpr int kBoardShortIdRole = Qt::UserRole + 61;
+constexpr int kBoardProjectRole = Qt::UserRole + 62;
+constexpr int kBoardPriorityRole = Qt::UserRole + 63;
+constexpr int kBoardDoneRole = Qt::UserRole + 64;
+constexpr int kBoardAvatarRole = Qt::UserRole + 65;
+constexpr int kBoardAvatarKindRole = Qt::UserRole + 66;
+constexpr int kBoardChecklistRole = Qt::UserRole + 67;
+constexpr int kBoardBranchRole = Qt::UserRole + 68;
+constexpr int kBoardAttachmentsRole = Qt::UserRole + 69;
+constexpr int kBoardQaRole = Qt::UserRole + 70;
+constexpr int kBoardQaStateRole = Qt::UserRole + 71;
+constexpr int kBoardAgeRole = Qt::UserRole + 72;
+constexpr int kBoardWorkingRole = Qt::UserRole + 73;
+constexpr int kBoardProgressRole = Qt::UserRole + 74;
+constexpr int kBoardCardPad = 12;
+constexpr int kBoardCardGap = 8;
+constexpr int kBoardTitleLines = 3;
+constexpr int kBoardAvatar = 20;
+constexpr int kBoardLaneMinWidth = 236;
+const char kTasksNextHooksProperty[] = "tasksNextHooks";
+const char kTasksNextKindProperty[] = "tasksNextKind";
+const char kTasksNextFitPending[] = "tasksNextFitPending";
+const char kTasksBoardMime[] = "application/x-forkmesh-task-id";
+
+QString tasksBoardColumn(const QJsonObject &task)
+{
+    if (organizationTaskIsClosed(task))
+        return QStringLiteral("done");
+    if (organizationTaskAwaitsQa(task))
+        return QStringLiteral("qa");
+    return taskStatusKey(task);
+}
+
+QString tasksBoardColumnLabel(const QString &column)
+{
+    if (column == QLatin1String("qa"))
+        return QStringLiteral("In QA");
+    return taskStatusLabel(column);
+}
+
+QString tasksBoardChecklist(const QString &markdown)
+{
+    static const QRegularExpression item(QStringLiteral(
+        "^(?:[ \\t]*>)*[ \\t]*(?:[-*+]|\\d{1,9}[.)])[ \\t]+\\[([ xX])\\][ \\t]"));
+    static const QRegularExpression fence(
+        QStringLiteral("^(?:[ \\t]*>)*[ \\t]{0,3}(`{3,}|~{3,})"));
+    int total = 0;
+    int checked = 0;
+    QString openFence;
+    const QStringList lines =
+        QString(markdown).replace(QStringLiteral("\r\n"), QStringLiteral("\n"))
+            .split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        const QRegularExpressionMatch fenceMatch = fence.match(line);
+        if (!openFence.isEmpty()) {
+            const QString marker = fenceMatch.captured(1);
+            if (fenceMatch.hasMatch() && marker.at(0) == openFence.at(0) &&
+                marker.size() >= openFence.size())
+                openFence.clear();
+            continue;
+        }
+        if (fenceMatch.hasMatch()) {
+            openFence = fenceMatch.captured(1);
+            continue;
+        }
+        const QRegularExpressionMatch match = item.match(line);
+        if (!match.hasMatch())
+            continue;
+        ++total;
+        if (match.captured(1) != QLatin1String(" "))
+            ++checked;
+    }
+    return total > 0 ? QStringLiteral("%1/%2").arg(checked).arg(total)
+                     : QString();
+}
+
+QStringList tasksBoardTitleLines(const QString &text, const QFont &font,
+                                 int width, int maxLines)
+{
+    QStringList lines;
+    const QString source = text.simplified();
+    if (width <= 0 || source.isEmpty())
+        return lines;
+    const QFontMetrics metrics(font);
+    QTextLayout layout(source, font);
+    layout.beginLayout();
+    for (;;) {
+        QTextLine line = layout.createLine();
+        if (!line.isValid())
+            break;
+        line.setLineWidth(width);
+        if (lines.size() == maxLines - 1) {
+            lines.append(metrics.elidedText(source.mid(line.textStart()),
+                                            Qt::ElideRight, width));
+            break;
+        }
+        lines.append(source.mid(line.textStart(), line.textLength()).trimmed());
+    }
+    layout.endLayout();
+    return lines;
+}
+
+QFont tasksNextFont(const QFont &base, int pixels, QFont::Weight weight)
+{
+    QFont font = base;
+    font.setPixelSize(pixels);
+    font.setWeight(weight);
+    return font;
+}
+
+QFont tasksNextMonoFont(const QFont &base, int pixels)
+{
+    QFont font = Theme::monospaceFont(base);
+    font.setPixelSize(pixels);
+    font.setWeight(QFont::Normal);
+    return font;
+}
+
+QPixmap tasksNextCanvas(int side)
+{
+    const qreal ratio = iconDevicePixelRatio();
+    QPixmap pixmap(QSize(side, side) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    return pixmap;
+}
+
+QPixmap tasksBoardStatusPixmap(const QString &column, int side)
+{
+    if (column == QLatin1String("qa"))
+        return tintedOcticonPixmap(QStringLiteral("shield-check"),
+                                   Theme::color(Theme::Role::FgMuted), side);
+    if (column == QLatin1String("done"))
+        return tintedOcticonPixmap(QStringLiteral("check-circle"),
+                                   Theme::color(Theme::Role::Success), side);
+    QPixmap pixmap = tasksNextCanvas(side);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const bool active = column == QLatin1String("active");
+    const QColor color = Theme::color(active ? Theme::Role::Accent
+                                             : Theme::Role::FgMuted);
+    QPen pen(color, 1.5);
+    if (column == QLatin1String("queued"))
+        pen.setDashPattern({1.6, 1.6});
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    const QRectF ring(1.5, 1.5, side - 3.0, side - 3.0);
+    painter.drawEllipse(ring);
+    if (active) {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        painter.drawEllipse(ring.center(), side / 6.0, side / 6.0);
+    }
+    return pixmap;
+}
+
+QPixmap tasksNextBoardGlyph(const QColor &color, int side)
+{
+    QPixmap pixmap = tasksNextCanvas(side);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(color, 1.3));
+    painter.setBrush(Qt::NoBrush);
+    const qreal inset = 1.5;
+    const QRectF frame(inset, inset, side - 2 * inset, side - 2 * inset);
+    painter.drawRoundedRect(frame, 2.5, 2.5);
+    const qreal third = frame.width() / 3.0;
+    painter.drawLine(QPointF(frame.left() + third, frame.top()),
+                     QPointF(frame.left() + third, frame.bottom()));
+    painter.drawLine(QPointF(frame.left() + 2 * third, frame.top()),
+                     QPointF(frame.left() + 2 * third, frame.bottom()));
+    return pixmap;
+}
+
+QIcon tasksNextToggleIcon(const std::function<QPixmap(const QColor &)> &draw)
+{
+    QIcon icon;
+    icon.addPixmap(draw(Theme::color(Theme::Role::FgMuted)), QIcon::Normal,
+                   QIcon::Off);
+    icon.addPixmap(draw(Theme::color(Theme::Role::Fg)), QIcon::Normal,
+                   QIcon::On);
+    return icon;
+}
+
+enum TasksNextButtonKind {
+    TasksNextUnstyled = 0,
+    TasksNextIcon,
+    TasksNextText,
+    TasksNextChip,
+    TasksNextInverse,
+};
+
+class TasksNextButtonStyler : public QObject
+{
+public:
+    using QObject::QObject;
+
+    void adopt(QPushButton *widget, TasksNextButtonKind kind)
+    {
+        auto *button = dynamic_cast<VerticalIconButton *>(widget);
+        if (!button)
+            return;
+        button->setProperty(kTasksNextKindProperty, int(kind));
+        button->installEventFilter(this);
+        fit(button);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        auto *button = dynamic_cast<VerticalIconButton *>(watched);
+        if (!button)
+            return false;
+        switch (event->type()) {
+        case QEvent::Polish:
+        case QEvent::StyleChange:
+        case QEvent::FontChange:
+            scheduleFit(button);
+            return false;
+        case QEvent::Show:
+            fit(button);
+            return false;
+        case QEvent::ToolTip:
+            if (active(button) && button->toolTip().isEmpty() &&
+                !label(button).isEmpty()) {
+                QToolTip::showText(
+                    static_cast<QHelpEvent *>(event)->globalPos(),
+                    label(button), button);
+                return true;
+            }
+            return false;
+        case QEvent::Paint:
+            if (!active(button))
+                return false;
+            if (button->size() != preferredSize(button))
+                scheduleFit(button);
+            paint(button);
+            return true;
+        default:
+            return false;
+        }
+    }
+
+private:
+    static int kindOf(const QWidget *button)
+    {
+        return button->property(kTasksNextKindProperty).toInt();
+    }
+
+    static bool active(const VerticalIconButton *button)
+    {
+        return Theme::isNext() && !button->inRail() &&
+               kindOf(button) != TasksNextUnstyled;
+    }
+
+    static QString label(const VerticalIconButton *button)
+    {
+        if (kindOf(button) == TasksNextChip)
+            return button->accessibleName();
+        return button->text();
+    }
+
+    static QString iconName(const VerticalIconButton *button)
+    {
+        if (button->text() == QLatin1String("Stop"))
+            return QStringLiteral("stop");
+        return button->property("forkmeshOcticon").toString();
+    }
+
+    static int textWidth(const QFont &font, const QString &text)
+    {
+        return text.isEmpty()
+                   ? 0
+                   : qCeil(QFontMetricsF(font).horizontalAdvance(text)) + 1;
+    }
+
+    static QSize preferredSize(const VerticalIconButton *button)
+    {
+        const int kind = kindOf(button);
+        if (kind == TasksNextIcon)
+            return QSize(28, 28);
+        if (kind == TasksNextChip) {
+            const QFont font = tasksNextFont(button->font(), 12, QFont::Normal);
+            int width = 10 + 14 + 6 + textWidth(font, button->accessibleName());
+            if (!button->text().isEmpty())
+                width += 6 + textWidth(font, button->text());
+            return QSize(width + 10, 28);
+        }
+        if (kind == TasksNextInverse) {
+            const QFont font = tasksNextFont(button->font(), 13, QFont::Medium);
+            return QSize(12 + 14 + 6 + textWidth(font, button->text()) + 12, 32);
+        }
+        const QFont font = tasksNextFont(button->font(), 13, QFont::Normal);
+        int width = 8 + 16;
+        if (!button->text().isEmpty())
+            width += 6 + textWidth(font, button->text());
+        if (button->menu())
+            width += 4 + 12;
+        return QSize(width + 8, 28);
+    }
+
+    static void fit(VerticalIconButton *button)
+    {
+        if (!active(button))
+            return;
+        const QSize want = preferredSize(button);
+        if (button->minimumSize() != want || button->maximumSize() != want)
+            button->setFixedSize(want);
+    }
+
+    static void scheduleFit(VerticalIconButton *button)
+    {
+        if (button->property(kTasksNextFitPending).toBool())
+            return;
+        button->setProperty(kTasksNextFitPending, true);
+        QPointer<VerticalIconButton> guarded(button);
+        QMetaObject::invokeMethod(
+            button,
+            [guarded] {
+                if (!guarded)
+                    return;
+                guarded->setProperty(kTasksNextFitPending, false);
+                fit(guarded);
+            },
+            Qt::QueuedConnection);
+    }
+
+    static void drawGlyph(QPainter &painter, const VerticalIconButton *button,
+                          const QRect &rect, const QColor &color)
+    {
+        const QString name = iconName(button);
+        if (name.isEmpty()) {
+            button->icon().paint(&painter, rect, Qt::AlignCenter,
+                                 button->isEnabled() ? QIcon::Normal
+                                                     : QIcon::Disabled);
+            return;
+        }
+        painter.drawPixmap(rect.topLeft(),
+                           tintedOcticonPixmap(name, color, rect.width()));
+    }
+
+    static void paint(VerticalIconButton *button)
+    {
+        QPainter painter(button);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const int kind = kindOf(button);
+        const bool enabled = button->isEnabled();
+        const bool hovered = enabled && button->underMouse();
+        const bool pressed = enabled && button->isDown();
+        const bool checked = button->isChecked();
+        const QRectF body(0.5, 0.5, button->width() - 1.0,
+                          button->height() - 1.0);
+
+        if (kind == TasksNextInverse) {
+            QColor fill = Theme::color(pressed   ? Theme::Role::FgMuted
+                                       : hovered ? Theme::Role::FgSecondary
+                                                 : Theme::Role::Fg);
+            if (!enabled)
+                fill.setAlphaF(0.4);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(fill);
+            painter.drawRoundedRect(body, 8, 8);
+            const QColor ink = Theme::color(Theme::Role::Bg);
+            const QRect iconRect(12, (button->height() - 14) / 2, 14, 14);
+            drawGlyph(painter, button, iconRect, ink);
+            painter.setPen(ink);
+            painter.setFont(tasksNextFont(button->font(), 13, QFont::Medium));
+            painter.drawText(QRect(iconRect.right() + 7, 0,
+                                   button->width() - iconRect.right() - 7,
+                                   button->height()),
+                             Qt::AlignVCenter | Qt::AlignLeft, button->text());
+            return;
+        }
+
+        if (kind == TasksNextChip) {
+            const QColor border = Theme::color(
+                checked ? Theme::Role::Accent : Theme::Role::Border);
+            const QColor fill = Theme::color(
+                checked   ? Theme::Role::AccentSubtle
+                : hovered ? Theme::Role::SurfaceRaised
+                          : Theme::Role::Surface);
+            QColor ink = Theme::color(checked   ? Theme::Role::AccentFg
+                                      : hovered ? Theme::Role::Fg
+                                                : Theme::Role::FgMuted);
+            if (!enabled)
+                ink = Theme::color(Theme::Role::FgSubtle);
+            painter.setPen(QPen(border, 1));
+            painter.setBrush(fill);
+            painter.drawRoundedRect(body, body.height() / 2, body.height() / 2);
+            const QRect iconRect(10, (button->height() - 14) / 2, 14, 14);
+            drawGlyph(painter, button, iconRect, ink);
+            const QFont font = tasksNextFont(button->font(), 12, QFont::Normal);
+            painter.setFont(font);
+            painter.setPen(ink);
+            int x = iconRect.right() + 7;
+            const QString name = button->accessibleName();
+            painter.drawText(QRect(x, 0, textWidth(font, name), button->height()),
+                             Qt::AlignVCenter | Qt::AlignLeft, name);
+            x += textWidth(font, name) + 6;
+            if (!button->text().isEmpty())
+                painter.drawText(
+                    QRect(x, 0, button->width() - x, button->height()),
+                    Qt::AlignVCenter | Qt::AlignLeft, button->text());
+            return;
+        }
+
+        if (hovered || pressed || checked) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Theme::color(pressed || checked
+                                              ? Theme::Role::SurfaceActive
+                                              : Theme::Role::SurfaceRaised));
+            painter.drawRoundedRect(body, 6, 6);
+        }
+        QColor ink = Theme::color(hovered || pressed || checked
+                                      ? Theme::Role::Fg
+                                      : Theme::Role::FgMuted);
+        if (!enabled)
+            ink = Theme::color(Theme::Role::FgSubtle);
+        const QColor accent = button->accentColor();
+        const QColor glyph = accent.isValid() && enabled ? accent : ink;
+        const int iconX = kind == TasksNextIcon ? (button->width() - 16) / 2 : 8;
+        const QRect iconRect(iconX, (button->height() - 16) / 2, 16, 16);
+        drawGlyph(painter, button, iconRect, glyph);
+        if (kind == TasksNextIcon)
+            return;
+        int x = iconRect.right() + 7;
+        int right = button->width() - 8;
+        if (button->menu()) {
+            painter.drawPixmap(right - 12, (button->height() - 12) / 2,
+                               tintedOcticonPixmap(QStringLiteral("chevron-down"),
+                                                   ink, 12));
+            right -= 16;
+        }
+        painter.setPen(ink);
+        painter.setFont(tasksNextFont(button->font(), 13, QFont::Normal));
+        painter.drawText(QRect(x, 0, qMax(0, right - x), button->height()),
+                         Qt::AlignVCenter | Qt::AlignLeft, button->text());
+    }
+};
+
+class TasksBoardCardDelegate : public QStyledItemDelegate
+{
+public:
+    explicit TasksBoardCardDelegate(QListWidget *view)
+        : QStyledItemDelegate(view), m_view(view)
+    {
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        const int width = qMax(120, m_view->viewport()->width());
+        const QFont title = tasksNextFont(option.font, 13, QFont::Normal);
+        const int lines = qMax<int>(
+            1, tasksBoardTitleLines(index.data(Qt::DisplayRole).toString(),
+                                    title, width - 2 * kBoardCardPad,
+                                    kBoardTitleLines)
+                   .size());
+        return QSize(width, kBoardCardPad + 16 + 6 +
+                                lines * QFontMetrics(title).lineSpacing() + 10 +
+                                kBoardAvatar + kBoardCardPad + kBoardCardGap);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setRenderHint(QPainter::SmoothPixmapTransform);
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+        const bool done = index.data(kBoardDoneRole).toBool();
+        const QRect card =
+            option.rect.adjusted(0, 0, 0, -kBoardCardGap);
+        painter->setPen(QPen(Theme::color(selected  ? Theme::Role::Accent
+                                          : hovered ? Theme::Role::BorderStrong
+                                                    : Theme::Role::Border),
+                             1));
+        painter->setBrush(Theme::color(Theme::Role::Surface));
+        painter->drawRoundedRect(QRectF(card).adjusted(0.5, 0.5, -0.5, -0.5), 12,
+                                 12);
+
+        const QRect inner =
+            card.adjusted(kBoardCardPad, kBoardCardPad, -kBoardCardPad,
+                          -kBoardCardPad);
+        const QColor subtle = Theme::color(Theme::Role::FgSubtle);
+        const QColor muted = Theme::color(Theme::Role::FgMuted);
+
+        const QFont mono = tasksNextMonoFont(option.font, 11);
+        const QFont small = tasksNextFont(option.font, 11, QFont::Normal);
+        int x = inner.left();
+        const QRect idLine(inner.left(), inner.top(), inner.width(), 16);
+        const QString priority = index.data(kBoardPriorityRole).toString();
+        int idRight = inner.right();
+        if (!priority.isEmpty()) {
+            painter->setFont(mono);
+            const int width = QFontMetrics(mono).horizontalAdvance(priority);
+            painter->setPen(subtle);
+            painter->drawText(QRect(inner.right() - width + 1, idLine.top(), width,
+                                    idLine.height()),
+                              Qt::AlignVCenter | Qt::AlignRight, priority);
+            idRight -= width + 8;
+        }
+        painter->setFont(mono);
+        painter->setPen(subtle);
+        const QString shortId = index.data(kBoardShortIdRole).toString();
+        const int idWidth = QFontMetrics(mono).horizontalAdvance(shortId);
+        painter->drawText(QRect(x, idLine.top(), idWidth + 1, idLine.height()),
+                          Qt::AlignVCenter | Qt::AlignLeft, shortId);
+        x += idWidth + 1;
+        const QString project = index.data(kBoardProjectRole).toString();
+        if (!project.isEmpty() && x < idRight) {
+            painter->setFont(small);
+            const QString shown = QFontMetrics(small).elidedText(
+                QString::fromUtf8(" \xC2\xB7 ") + project, Qt::ElideRight,
+                idRight - x);
+            painter->drawText(QRect(x, idLine.top(), idRight - x, idLine.height()),
+                              Qt::AlignVCenter | Qt::AlignLeft, shown);
+        }
+
+        const QFont titleFont = tasksNextFont(option.font, 13, QFont::Normal);
+        const int lineHeight = QFontMetrics(titleFont).lineSpacing();
+        const QStringList lines = tasksBoardTitleLines(
+            index.data(Qt::DisplayRole).toString(), titleFont, inner.width(),
+            kBoardTitleLines);
+        painter->setFont(titleFont);
+        painter->setPen(Theme::color(done ? Theme::Role::FgMuted
+                                          : Theme::Role::Fg));
+        int y = idLine.bottom() + 1 + 6;
+        for (const QString &line : lines) {
+            painter->drawText(QRect(inner.left(), y, inner.width(), lineHeight),
+                              Qt::AlignVCenter | Qt::AlignLeft, line);
+            y += lineHeight;
+        }
+        y = qMax(y, idLine.bottom() + 1 + 6 + lineHeight) + 10;
+
+        const QRect avatar(inner.left(), y, kBoardAvatar, kBoardAvatar);
+        const QString avatarKind = index.data(kBoardAvatarKindRole).toString();
+        const QPixmap face = index.data(kBoardAvatarRole).value<QPixmap>();
+        if (!face.isNull()) {
+            QPainterPath clip;
+            clip.addRoundedRect(QRectF(avatar),
+                                avatarKind == QLatin1String("agent") ? 5 : 10,
+                                avatarKind == QLatin1String("agent") ? 5 : 10);
+            painter->save();
+            painter->setClipPath(clip);
+            painter->drawPixmap(avatar, face);
+            painter->restore();
+        } else if (avatarKind == QLatin1String("agent")) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::SurfaceRaised));
+            painter->drawRoundedRect(QRectF(avatar), 5, 5);
+            painter->drawPixmap(avatar.left() + 3, avatar.top() + 3,
+                                tintedOcticonPixmap(QStringLiteral("smart-toy"),
+                                                    muted, 14));
+        } else {
+            painter->setPen(QPen(subtle, 1, Qt::DashLine));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawEllipse(QRectF(avatar).adjusted(0.5, 0.5, -0.5, -0.5));
+            painter->drawPixmap(avatar.left() + 4, avatar.top() + 4,
+                                tintedOcticonPixmap(QStringLiteral("person"),
+                                                    subtle, 12));
+        }
+        if (index.data(kBoardWorkingRole).toBool()) {
+            const QRectF dot(avatar.right() - 5, avatar.bottom() - 5, 8, 8);
+            painter->setPen(QPen(Theme::color(Theme::Role::Surface), 2));
+            painter->setBrush(Theme::color(Theme::Role::Accent));
+            painter->drawEllipse(dot);
+        }
+
+        const QFont meta = tasksNextFont(option.font, 12, QFont::Normal);
+        const QFontMetrics metaMetrics(meta);
+        painter->setFont(meta);
+        const QString age = index.data(kBoardAgeRole).toString();
+        int right = inner.right() + 1;
+        if (!age.isEmpty()) {
+            const int width = metaMetrics.horizontalAdvance(age);
+            painter->setPen(subtle);
+            painter->drawText(QRect(right - width, avatar.top(), width,
+                                    avatar.height()),
+                              Qt::AlignVCenter | Qt::AlignRight, age);
+            right -= width + 8;
+        }
+        x = avatar.right() + 1 + 10;
+        const auto drawMeta = [&](const QString &icon, const QString &text,
+                                  const QColor &color, int maxText) {
+            if (text.isEmpty() || x + 12 + 4 >= right)
+                return;
+            painter->drawPixmap(x, avatar.top() + (avatar.height() - 12) / 2,
+                                tintedOcticonPixmap(icon, color, 12));
+            x += 12 + 4;
+            const int room = qMin(maxText, right - x);
+            if (room <= 0)
+                return;
+            const QString shown =
+                metaMetrics.elidedText(text, Qt::ElideRight, room);
+            const int width = metaMetrics.horizontalAdvance(shown);
+            painter->setPen(color);
+            painter->drawText(QRect(x, avatar.top(), width + 1, avatar.height()),
+                              Qt::AlignVCenter | Qt::AlignLeft, shown);
+            x += width + 10;
+        };
+        const QString checklist = index.data(kBoardChecklistRole).toString();
+        if (!checklist.isEmpty()) {
+            drawMeta(QStringLiteral("check-circle"), checklist, muted, 60);
+        } else {
+            const int progress = index.data(kBoardProgressRole).toInt();
+            if (progress > 0 && !done)
+                drawMeta(QStringLiteral("pulse"),
+                         QStringLiteral("%1%").arg(progress), muted, 60);
+        }
+        drawMeta(QStringLiteral("git-branch"),
+                 index.data(kBoardBranchRole).toString(), muted, 120);
+        const int attachments = index.data(kBoardAttachmentsRole).toInt();
+        if (attachments > 0)
+            drawMeta(QStringLiteral("paperclip"), QString::number(attachments),
+                     muted, 40);
+        const QString qaState = index.data(kBoardQaStateRole).toString();
+        const QColor qaColor = Theme::color(
+            qaState == QLatin1String("passed")   ? Theme::Role::Success
+            : qaState == QLatin1String("failed") ? Theme::Role::Danger
+                                                 : Theme::Role::Warning);
+        drawMeta(qaState == QLatin1String("failed")   ? QStringLiteral("circle-slash")
+                 : qaState == QLatin1String("passed") ? QStringLiteral("shield-check")
+                                                      : QStringLiteral("eye"),
+                 index.data(kBoardQaRole).toString(), qaColor, 90);
+        painter->restore();
+    }
+
+private:
+    QListWidget *m_view = nullptr;
+};
+
+struct TasksBoardShared {
+    std::function<void(const QString &, const QString &)> drop;
+    std::function<void()> pending;
+};
+
+class TasksBoardList : public QListWidget
+{
+public:
+    TasksBoardList(const QString &column, QFrame *lane,
+                   std::shared_ptr<TasksBoardShared> shared)
+        : m_column(column), m_lane(lane), m_shared(std::move(shared))
+    {
+        setObjectName(QStringLiteral("tasksBoardList"));
+        setFrameShape(QFrame::NoFrame);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        setResizeMode(QListView::Adjust);
+        setUniformItemSizes(false);
+        setSelectionMode(QAbstractItemView::SingleSelection);
+        setMouseTracking(true);
+        setDragEnabled(true);
+        setAcceptDrops(true);
+        setDropIndicatorShown(false);
+        setDragDropMode(QAbstractItemView::DragDrop);
+        setDefaultDropAction(Qt::MoveAction);
+        setItemDelegate(new TasksBoardCardDelegate(this));
+        viewport()->setAutoFillBackground(false);
+    }
+
+    QString column() const { return m_column; }
+    void setDropAllowed(bool allowed) { m_dropAllowed = allowed; }
+    void setEmptyText(const QString &text) { m_emptyText = text; }
+
+protected:
+    QStringList mimeTypes() const override
+    {
+        return {QString::fromLatin1(kTasksBoardMime)};
+    }
+
+    QMimeData *mimeData(const QList<QListWidgetItem *> &items) const override
+    {
+        auto *mime = new QMimeData;
+        if (!items.isEmpty() && items.constFirst())
+            mime->setData(QString::fromLatin1(kTasksBoardMime),
+                          items.constFirst()->data(kBoardIdRole).toString().toUtf8());
+        return mime;
+    }
+
+    Qt::DropActions supportedDropActions() const override
+    {
+        return Qt::CopyAction | Qt::MoveAction;
+    }
+
+    void startDrag(Qt::DropActions) override
+    {
+        QListWidgetItem *item = currentItem();
+        if (!item)
+            return;
+        auto *drag = new QDrag(this);
+        drag->setMimeData(mimeData({item}));
+        const QRect rect = visualItemRect(item);
+        if (rect.isValid()) {
+            const qreal ratio = devicePixelRatioF();
+            QPixmap pixmap(rect.size() * ratio);
+            pixmap.setDevicePixelRatio(ratio);
+            pixmap.fill(Qt::transparent);
+            QPainter painter(&pixmap);
+            QStyleOptionViewItem option;
+            initViewItemOption(&option);
+            option.rect = QRect(QPoint(0, 0), rect.size());
+            option.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver);
+            itemDelegate()->paint(&painter, option, indexFromItem(item));
+            painter.end();
+            drag->setPixmap(pixmap);
+            drag->setHotSpot(viewport()->mapFromGlobal(QCursor::pos()) -
+                             rect.topLeft());
+        }
+        drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
+        const std::shared_ptr<TasksBoardShared> shared = m_shared;
+        QMetaObject::invokeMethod(
+            this,
+            [shared] {
+                const std::function<void()> run =
+                    std::exchange(shared->pending, {});
+                if (run)
+                    run();
+            },
+            Qt::QueuedConnection);
+    }
+
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        if (!accepts(event)) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+        setHover(true);
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (!accepts(event)) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    }
+
+    void dragLeaveEvent(QDragLeaveEvent *event) override
+    {
+        setHover(false);
+        event->accept();
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        setHover(false);
+        if (!accepts(event)) {
+            event->ignore();
+            return;
+        }
+        const QString taskId = QString::fromUtf8(
+            event->mimeData()->data(QString::fromLatin1(kTasksBoardMime)));
+        const QString column = m_column;
+        const std::shared_ptr<TasksBoardShared> shared = m_shared;
+        shared->pending = [shared, taskId, column] {
+            if (shared->drop)
+                shared->drop(taskId, column);
+        };
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    }
+
+    void paintEvent(QPaintEvent *event) override
+    {
+        QListWidget::paintEvent(event);
+        if (count() > 0 || m_emptyText.isEmpty())
+            return;
+        QPainter painter(viewport());
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF box(0.5, 0.5, viewport()->width() - 1.0, 84.0);
+        painter.setPen(QPen(Theme::color(Theme::Role::BorderStrong), 1,
+                            Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(box, 12, 12);
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        painter.setFont(tasksNextFont(font(), 12, QFont::Normal));
+        painter.drawText(box, Qt::AlignCenter, m_emptyText);
+    }
+
+private:
+    bool accepts(const QDropEvent *event) const
+    {
+        return m_dropAllowed && event->mimeData() &&
+               event->mimeData()->hasFormat(QString::fromLatin1(kTasksBoardMime)) &&
+               dynamic_cast<TasksBoardList *>(event->source()) &&
+               event->source() != this;
+    }
+
+    void setHover(bool hover)
+    {
+        if (!m_lane || m_lane->property("dropTarget").toBool() == hover)
+            return;
+        m_lane->setProperty("dropTarget", hover);
+        m_lane->style()->unpolish(m_lane);
+        m_lane->style()->polish(m_lane);
+        m_lane->update();
+    }
+
+    QString m_column;
+    QPointer<QFrame> m_lane;
+    std::shared_ptr<TasksBoardShared> m_shared;
+    QString m_emptyText;
+    bool m_dropAllowed = true;
+};
+
+class TasksNextHooks : public QObject
+{
+public:
+    using QObject::QObject;
+    std::function<void()> render;
+    std::function<void()> detail;
+};
+
+struct TasksNextLane {
+    QString key;
+    QPointer<QFrame> frame;
+    QPointer<QLabel> count;
+    QPointer<QToolButton> add;
+    QPointer<TasksBoardList> list;
+};
+
+struct TasksNextUi {
+    bool board = true;
+    bool syncing = false;
+    QPointer<QLabel> summary;
+    QPointer<QLineEdit> filter;
+    QPointer<QPushButton> assignee;
+    QPointer<QPushButton> boardButton;
+    QPointer<QPushButton> listButton;
+    QPointer<QScrollArea> boardScroll;
+    QPointer<QWidget> hint;
+    QPointer<QWidget> detailPanel;
+    QPointer<QLabel> detailId;
+    QPointer<QLabel> detailTitle;
+    QPointer<QPushButton> detailMore;
+    std::vector<TasksNextLane> lanes;
+};
+
+void runTasksNextHook(const QObject *table, bool rows)
+{
+    if (!table)
+        return;
+    auto *hooks = dynamic_cast<TasksNextHooks *>(
+        table->property(kTasksNextHooksProperty).value<QObject *>());
+    if (!hooks)
+        return;
+    const std::function<void()> &hook = rows ? hooks->render : hooks->detail;
+    if (hook)
+        hook();
+}
 
 } // namespace
 
@@ -2804,6 +3758,787 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     splitter->setStretchFactor(0, 3);
     splitter->setStretchFactor(1, 2);
     outer->addWidget(splitter, 1);
+
+    if (Theme::isNext()) {
+        auto *styler = new TasksNextButtonStyler(page);
+        auto *hooks = new TasksNextHooks(page);
+        auto ui = std::make_shared<TasksNextUi>();
+        m_organizationTasksTable->setProperty(
+            kTasksNextHooksProperty, QVariant::fromValue<QObject *>(hooks));
+
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+        for (QWidget *widget :
+             {static_cast<QWidget *>(m_organizationTaskNewButton),
+              static_cast<QWidget *>(refresh),
+              static_cast<QWidget *>(m_organizationTaskDeleteClosedButton),
+              static_cast<QWidget *>(m_organizationTaskViewButton),
+              static_cast<QWidget *>(m_organizationTaskSortButton),
+              static_cast<QWidget *>(m_organizationTaskMineFilterButton),
+              static_cast<QWidget *>(m_organizationTaskOpenFilterButton),
+              static_cast<QWidget *>(m_organizationTaskClosedFilterButton),
+              static_cast<QWidget *>(m_organizationTaskAllFilterButton),
+              static_cast<QWidget *>(m_organizationTasksStatus),
+              static_cast<QWidget *>(m_organizationTasksSummary)})
+            headingRow->removeWidget(widget);
+        outer->removeItem(headingRow);
+        delete headingRow;
+        peopleScroll->hide();
+        m_organizationTasksSummary->hide();
+
+        auto *header = new QFrame(page);
+        header->setObjectName(QStringLiteral("tasksNextHeader"));
+        auto *headerRow = new QHBoxLayout(header);
+        headerRow->setContentsMargins(24, 12, 16, 12);
+        headerRow->setSpacing(6);
+        auto *titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        auto *title = new QLabel(QStringLiteral("Tasks"));
+        title->setObjectName(QStringLiteral("tasksNextTitle"));
+        ui->summary = new QLabel;
+        ui->summary->setObjectName(QStringLiteral("tasksNextSummary"));
+        ui->summary->setTextFormat(Qt::PlainText);
+        titleColumn->addWidget(title);
+        titleColumn->addWidget(ui->summary);
+        headerRow->addLayout(titleColumn);
+        headerRow->addStretch(1);
+
+        ui->filter = new QLineEdit;
+        ui->filter->setObjectName(QStringLiteral("tasksNextFilter"));
+        ui->filter->setPlaceholderText(QStringLiteral("Filter tasks"));
+        ui->filter->setAccessibleName(QStringLiteral("Filter tasks"));
+        ui->filter->setFixedWidth(224);
+        ui->filter->addAction(
+            QIcon(tintedOcticonPixmap(QStringLiteral("search"),
+                                      Theme::color(Theme::Role::FgSubtle), 14)),
+            QLineEdit::LeadingPosition);
+        connect(ui->filter.data(), &QLineEdit::textEdited, this,
+                [this](const QString &text) {
+                    m_organizationTasksSearchMirror = text.trimmed();
+                    m_organizationTaskShownRows = 0;
+                    renderOrganizationTaskRows();
+                });
+        headerRow->addWidget(ui->filter);
+
+        ui->assignee = new QPushButton(QStringLiteral("Everyone"));
+        ui->assignee->setObjectName(QStringLiteral("tasksNextAssignee"));
+        ui->assignee->setAccessibleName(QStringLiteral("Assignee"));
+        ui->assignee->setToolTip(QStringLiteral("Show the tasks of one assignee"));
+        ui->assignee->setLayoutDirection(Qt::RightToLeft);
+        ui->assignee->setIcon(QIcon(tintedOcticonPixmap(
+            QStringLiteral("chevron-down"), Theme::color(Theme::Role::FgMuted),
+            12)));
+        ui->assignee->setIconSize(QSize(12, 12));
+        auto *assigneeMenu = new QMenu(ui->assignee);
+        assigneeMenu->setLayoutDirection(Qt::LeftToRight);
+        ui->assignee->setMenu(assigneeMenu);
+        connect(assigneeMenu, &QMenu::aboutToShow, this, [this, assigneeMenu] {
+            assigneeMenu->clear();
+            if (!m_organizationTaskPeopleLayout)
+                return;
+            for (int i = 0; i < m_organizationTaskPeopleLayout->count(); ++i) {
+                auto *person = qobject_cast<QToolButton *>(
+                    m_organizationTaskPeopleLayout->itemAt(i)->widget());
+                if (!person)
+                    continue;
+                QAction *action = assigneeMenu->addAction(
+                    person->icon(),
+                    person->accessibleName() + QLatin1Char('\t') + person->text());
+                action->setCheckable(true);
+                action->setChecked(person->isChecked());
+                action->setToolTip(person->toolTip());
+                QPointer<QToolButton> guarded(person);
+                connect(action, &QAction::triggered, person, [guarded] {
+                    if (guarded)
+                        guarded->click();
+                });
+            }
+        });
+        headerRow->addWidget(ui->assignee);
+
+        auto *viewSwitch = new QFrame;
+        viewSwitch->setObjectName(QStringLiteral("tasksNextViewSwitch"));
+        auto *viewRow = new QHBoxLayout(viewSwitch);
+        viewRow->setContentsMargins(2, 2, 2, 2);
+        viewRow->setSpacing(2);
+        auto *viewGroup = new QButtonGroup(viewSwitch);
+        viewGroup->setExclusive(true);
+        const auto makeViewButton = [viewRow, viewGroup](const QString &tip,
+                                                          const QIcon &icon) {
+            auto *button = new QPushButton;
+            button->setObjectName(QStringLiteral("tasksNextViewButton"));
+            button->setCheckable(true);
+            button->setToolTip(tip);
+            button->setAccessibleName(tip);
+            button->setIcon(icon);
+            button->setIconSize(QSize(14, 14));
+            button->setFixedSize(28, 28);
+            button->setCursor(Qt::PointingHandCursor);
+            viewGroup->addButton(button);
+            viewRow->addWidget(button);
+            return button;
+        };
+        ui->boardButton = makeViewButton(
+            QStringLiteral("Board"),
+            tasksNextToggleIcon([](const QColor &color) {
+                return tasksNextBoardGlyph(color, 14);
+            }));
+        ui->listButton = makeViewButton(
+            QStringLiteral("List"),
+            tasksNextToggleIcon([](const QColor &color) {
+                return tintedOcticonPixmap(QStringLiteral("list-unordered"),
+                                           color, 14);
+            }));
+        headerRow->addWidget(viewSwitch);
+        headerRow->addSpacing(2);
+        headerRow->addWidget(refresh);
+        headerRow->addWidget(m_organizationTaskDeleteClosedButton);
+        headerRow->addWidget(m_organizationTaskNewButton);
+        styler->adopt(refresh, TasksNextText);
+        styler->adopt(m_organizationTaskDeleteClosedButton, TasksNextIcon);
+        styler->adopt(m_organizationTaskNewButton, TasksNextInverse);
+        outer->insertWidget(0, header);
+
+        auto *chips = new QFrame(page);
+        chips->setObjectName(QStringLiteral("tasksNextChips"));
+        auto *chipRow = new QHBoxLayout(chips);
+        chipRow->setContentsMargins(24, 8, 16, 8);
+        chipRow->setSpacing(6);
+        for (QPushButton *chip :
+             {m_organizationTaskOpenFilterButton,
+              m_organizationTaskClosedFilterButton,
+              m_organizationTaskAllFilterButton,
+              m_organizationTaskMineFilterButton}) {
+            chipRow->addWidget(chip);
+            styler->adopt(chip, TasksNextChip);
+        }
+        chipRow->addStretch(1);
+        chipRow->addWidget(m_organizationTaskViewButton);
+        chipRow->addWidget(m_organizationTaskSortButton);
+        styler->adopt(m_organizationTaskViewButton, TasksNextText);
+        styler->adopt(m_organizationTaskSortButton, TasksNextText);
+        outer->insertWidget(1, chips);
+
+        splitter->setObjectName(QStringLiteral("tasksNextSplit"));
+        splitter->setHandleWidth(1);
+
+        auto shared = std::make_shared<TasksBoardShared>();
+        ui->boardScroll = new QScrollArea;
+        ui->boardScroll->setObjectName(QStringLiteral("tasksNextBoardScroll"));
+        ui->boardScroll->setFrameShape(QFrame::NoFrame);
+        ui->boardScroll->setWidgetResizable(true);
+        ui->boardScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        ui->boardScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        auto *board = new QWidget;
+        board->setObjectName(QStringLiteral("tasksNextBoard"));
+        auto *boardRow = new QHBoxLayout(board);
+        boardRow->setContentsMargins(20, 16, 20, 12);
+        boardRow->setSpacing(12);
+        for (const char *key : {"ready", "queued", "active", "qa", "done"}) {
+            TasksNextLane lane;
+            lane.key = QString::fromLatin1(key);
+            lane.frame = new QFrame;
+            lane.frame->setObjectName(QStringLiteral("tasksBoardColumn"));
+            lane.frame->setMinimumWidth(kBoardLaneMinWidth);
+            auto *laneLayout = new QVBoxLayout(lane.frame);
+            laneLayout->setContentsMargins(8, 0, 8, 8);
+            laneLayout->setSpacing(0);
+            auto *laneHeader = new QWidget;
+            laneHeader->setFixedHeight(44);
+            auto *laneHeaderRow = new QHBoxLayout(laneHeader);
+            laneHeaderRow->setContentsMargins(6, 0, 0, 0);
+            laneHeaderRow->setSpacing(8);
+            auto *laneIcon = new QLabel;
+            laneIcon->setObjectName(QStringLiteral("tasksBoardColumnIcon"));
+            laneIcon->setPixmap(tasksBoardStatusPixmap(lane.key, 16));
+            laneIcon->setFixedSize(16, 16);
+            auto *laneTitle = new QLabel(tasksBoardColumnLabel(lane.key));
+            laneTitle->setObjectName(QStringLiteral("tasksBoardColumnTitle"));
+            lane.count = new QLabel(QStringLiteral("0"));
+            lane.count->setObjectName(QStringLiteral("tasksBoardColumnCount"));
+            laneHeaderRow->addWidget(laneIcon);
+            laneHeaderRow->addWidget(laneTitle);
+            laneHeaderRow->addWidget(lane.count);
+            laneHeaderRow->addStretch(1);
+            if (lane.key == QLatin1String("ready")) {
+                lane.add = new QToolButton;
+                lane.add->setObjectName(QStringLiteral("tasksBoardColumnAdd"));
+                lane.add->setIcon(QIcon(tintedOcticonPixmap(
+                    QStringLiteral("plus"), Theme::color(Theme::Role::FgMuted),
+                    14)));
+                lane.add->setIconSize(QSize(14, 14));
+                lane.add->setFixedSize(28, 28);
+                lane.add->setAutoRaise(true);
+                lane.add->setCursor(Qt::PointingHandCursor);
+                lane.add->setToolTip(QStringLiteral("New task"));
+                lane.add->setAccessibleName(QStringLiteral("New task"));
+                connect(lane.add.data(), &QToolButton::clicked, this, [this] {
+                    if (m_organizationTaskNewButton)
+                        m_organizationTaskNewButton->click();
+                });
+                laneHeaderRow->addWidget(lane.add);
+            }
+            lane.list = new TasksBoardList(lane.key, lane.frame, shared);
+            lane.list->setDropAllowed(lane.key != QLatin1String("queued"));
+            lane.list->setEmptyText(lane.key == QLatin1String("queued")
+                                        ? QStringLiteral("No queued tasks")
+                                        : QStringLiteral("Drop a task here"));
+            laneLayout->addWidget(laneHeader);
+            laneLayout->addWidget(lane.list, 1);
+            boardRow->addWidget(lane.frame, 1);
+            ui->lanes.push_back(lane);
+        }
+        ui->boardScroll->setWidget(board);
+        tableLayout->insertWidget(0, ui->boardScroll, 1);
+
+        const auto selectTask = [this](const QString &taskId) {
+            if (!m_organizationTasksTable || taskId.isEmpty())
+                return;
+            int row = organizationTaskRowForId(taskId);
+            if (row < 0) {
+                for (int position = 0;
+                     position < m_organizationTaskMatches.size(); ++position) {
+                    const int index = m_organizationTaskMatches.at(position);
+                    if (index < 0 || index >= m_organizationTasks.size() ||
+                        taskText(m_organizationTasks.at(index).toObject(),
+                                 QStringLiteral("id")) != taskId)
+                        continue;
+                    appendOrganizationTaskRows(
+                        position + 1 - m_organizationTasksTable->rowCount());
+                    break;
+                }
+                row = organizationTaskRowForId(taskId);
+            }
+            if (row >= 0 && row != m_organizationTasksTable->currentRow())
+                m_organizationTasksTable->selectRow(row);
+        };
+        const auto syncBoardSelection = [this, ui] {
+            const QString selectedId =
+                taskText(selectedOrganizationTask(m_organizationTasksTable,
+                                                  m_organizationTasks),
+                         QStringLiteral("id"));
+            ui->syncing = true;
+            for (const TasksNextLane &lane : ui->lanes) {
+                if (!lane.list)
+                    continue;
+                const QSignalBlocker blocker(lane.list);
+                QListWidgetItem *found = nullptr;
+                for (int i = 0; i < lane.list->count() && !selectedId.isEmpty();
+                     ++i) {
+                    if (lane.list->item(i)->data(kBoardIdRole).toString() ==
+                        selectedId) {
+                        found = lane.list->item(i);
+                        break;
+                    }
+                }
+                if (found) {
+                    lane.list->setCurrentItem(found);
+                    lane.list->scrollToItem(found);
+                } else {
+                    lane.list->clearSelection();
+                    lane.list->setCurrentItem(nullptr);
+                }
+                lane.list->viewport()->update();
+            }
+            ui->syncing = false;
+        };
+        for (const TasksNextLane &lane : ui->lanes) {
+            connect(lane.list.data(), &QListWidget::currentItemChanged, this,
+                    [ui, selectTask](QListWidgetItem *current) {
+                        if (ui->syncing || !current)
+                            return;
+                        selectTask(current->data(kBoardIdRole).toString());
+                    });
+            connect(lane.list.data(), &QListWidget::itemClicked, this,
+                    [ui, selectTask](QListWidgetItem *item) {
+                        if (!item)
+                            return;
+                        selectTask(item->data(kBoardIdRole).toString());
+                        if (ui->detailPanel)
+                            ui->detailPanel->show();
+                    });
+            connect(lane.list.data(), &QListWidget::itemDoubleClicked, this,
+                    [this](QListWidgetItem *) { editOrganizationTask(); });
+        }
+        connect(m_organizationTasksTable, &QTableWidget::itemSelectionChanged,
+                this, syncBoardSelection);
+        connect(m_organizationTasksTable, &QTableWidget::itemClicked, this,
+                [ui](QTableWidgetItem *) {
+                    if (ui->detailPanel)
+                        ui->detailPanel->show();
+                });
+
+        shared->drop = [this, ui, selectTask](const QString &taskId,
+                                              const QString &target) {
+            selectTask(taskId);
+            const QJsonObject task = selectedOrganizationTask(
+                m_organizationTasksTable, m_organizationTasks);
+            if (taskText(task, QStringLiteral("id")) != taskId)
+                return;
+            const QString from = tasksBoardColumn(task);
+            if (from == target)
+                return;
+            const QString startText = m_organizationTaskStartButton
+                                          ? m_organizationTaskStartButton->text()
+                                          : QString();
+            QPushButton *button = nullptr;
+            if (target == QLatin1String("active") &&
+                (from == QLatin1String("ready") ||
+                 from == QLatin1String("queued")) &&
+                startText == QLatin1String("Start"))
+                button = m_organizationTaskStartButton;
+            else if (target == QLatin1String("ready") &&
+                     from == QLatin1String("active") &&
+                     startText == QLatin1String("Stop"))
+                button = m_organizationTaskStartButton;
+            else if (target == QLatin1String("ready") &&
+                     from == QLatin1String("done"))
+                button = m_organizationTaskUndoButton;
+            else if (target == QLatin1String("done"))
+                button = m_organizationTaskCompleteButton;
+            else if (target == QLatin1String("qa") &&
+                     from != QLatin1String("done"))
+                button = m_organizationTaskQaButton;
+            if (button && button->isEnabled() && !button->isHidden()) {
+                if (ui->detailPanel)
+                    ui->detailPanel->show();
+                button->click();
+                return;
+            }
+            if (m_organizationTasksStatus)
+                m_organizationTasksStatus->setText(
+                    QStringLiteral("This task cannot move to %1 from here.")
+                        .arg(tasksBoardColumnLabel(target)));
+        };
+
+        auto *footer = new QFrame(page);
+        footer->setObjectName(QStringLiteral("tasksNextFooter"));
+        footer->setFixedHeight(32);
+        auto *footerRow = new QHBoxLayout(footer);
+        footerRow->setContentsMargins(24, 0, 16, 0);
+        footerRow->setSpacing(8);
+        auto *hint = new QWidget;
+        auto *hintRow = new QHBoxLayout(hint);
+        hintRow->setContentsMargins(0, 0, 0, 0);
+        hintRow->setSpacing(8);
+        auto *hintIcon = new QLabel;
+        hintIcon->setPixmap(tintedOcticonPixmap(
+            QStringLiteral("clock"), Theme::color(Theme::Role::FgSubtle), 12));
+        auto *hintText = new QLabel(
+            QStringLiteral("Drag a card to another column to change its status"));
+        hintText->setObjectName(QStringLiteral("tasksNextHint"));
+        hintRow->addWidget(hintIcon);
+        hintRow->addWidget(hintText);
+        ui->hint = hint;
+        footerRow->addWidget(hint);
+        m_organizationTasksStatus->setWordWrap(false);
+        footerRow->addWidget(m_organizationTasksStatus, 1);
+        outer->addWidget(footer);
+
+        const auto applyMode = [this, ui] {
+            const bool boardMode = ui->board;
+            if (ui->boardScroll)
+                ui->boardScroll->setVisible(boardMode);
+            m_organizationTasksTable->setVisible(!boardMode);
+            if (m_organizationTaskPageLabel)
+                m_organizationTaskPageLabel->setVisible(!boardMode);
+            if (m_organizationTaskViewButton)
+                m_organizationTaskViewButton->setVisible(!boardMode);
+            if (ui->hint)
+                ui->hint->setVisible(boardMode);
+            if (ui->boardButton)
+                ui->boardButton->setChecked(boardMode);
+            if (ui->listButton)
+                ui->listButton->setChecked(!boardMode);
+            updateOrganizationTaskSpinTimer();
+        };
+        connect(ui->boardButton.data(), &QPushButton::clicked, this, [ui, applyMode] {
+            ui->board = true;
+            applyMode();
+        });
+        connect(ui->listButton.data(), &QPushButton::clicked, this, [ui, applyMode] {
+            ui->board = false;
+            applyMode();
+        });
+        applyMode();
+
+        detailHost->setObjectName(QStringLiteral("tasksNextDetailPanel"));
+        detailHost->setAttribute(Qt::WA_StyledBackground, true);
+        detailHost->setMinimumWidth(340);
+        ui->detailPanel = detailHost;
+        detailLayout->removeWidget(actionHost);
+        mainColumn->removeWidget(m_organizationTaskDetail);
+        commentRow->removeWidget(m_organizationTaskQuickComment);
+        commentRow->removeWidget(m_organizationTaskQuickCommentSend);
+        detailBody->removeWidget(m_organizationTaskSide);
+        detailLayout->removeItem(detailBody);
+        delete detailBody;
+        detailLayout->setContentsMargins(0, 0, 0, 0);
+        detailLayout->setSpacing(0);
+
+        auto *detailHeader = new QFrame;
+        detailHeader->setObjectName(QStringLiteral("tasksNextDetailHeader"));
+        detailHeader->setFixedHeight(48);
+        auto *detailHeaderRow = new QHBoxLayout(detailHeader);
+        detailHeaderRow->setContentsMargins(16, 0, 10, 0);
+        detailHeaderRow->setSpacing(2);
+        ui->detailId = new QLabel;
+        ui->detailId->setObjectName(QStringLiteral("tasksNextDetailId"));
+        ui->detailId->setTextFormat(Qt::PlainText);
+        ui->detailId->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        ui->detailId->setFont(tasksNextMonoFont(ui->detailId->font(), 12));
+        detailHeaderRow->addWidget(ui->detailId);
+        detailHeaderRow->addStretch(1);
+        const auto makeHeaderButton = [](const QString &name, const QString &icon,
+                                         const QString &tip) {
+            auto *button = new QPushButton;
+            button->setObjectName(name);
+            button->setIcon(QIcon(tintedOcticonPixmap(
+                icon, Theme::color(Theme::Role::FgMuted), 16)));
+            button->setIconSize(QSize(16, 16));
+            button->setFixedSize(28, 28);
+            button->setToolTip(tip);
+            button->setAccessibleName(tip);
+            button->setCursor(Qt::PointingHandCursor);
+            return button;
+        };
+        ui->detailMore = makeHeaderButton(QStringLiteral("tasksNextDetailMore"),
+                                          QStringLiteral("kebab-horizontal"),
+                                          QStringLiteral("More actions"));
+        auto *moreMenu = new QMenu(ui->detailMore);
+        moreMenu->setObjectName(QStringLiteral("tasksNextMoreMenu"));
+        ui->detailMore->setMenu(moreMenu);
+        connect(moreMenu, &QMenu::aboutToShow, this, [this, moreMenu] {
+            moreMenu->clear();
+            const auto mirror = [moreMenu](QPushButton *button, const QString &text,
+                                           const QIcon &icon) {
+                if (!button)
+                    return;
+                QAction *action = moreMenu->addAction(icon, text);
+                action->setEnabled(button->isEnabled());
+                action->setToolTip(button->toolTip());
+                QPointer<QPushButton> guarded(button);
+                QObject::connect(action, &QAction::triggered, button, [guarded] {
+                    if (guarded)
+                        guarded->click();
+                });
+            };
+            mirror(m_organizationTaskEditButton, QStringLiteral("Edit"),
+                   QIcon(tintedOcticonPixmap(QStringLiteral("pencil"),
+                                             Theme::color(Theme::Role::FgMuted),
+                                             16)));
+            moreMenu->addSeparator();
+            mirror(m_organizationTaskDeleteButton, QStringLiteral("Move to trash"),
+                   QIcon(tintedOcticonPixmap(QStringLiteral("trash"),
+                                             Theme::color(Theme::Role::Danger),
+                                             16)));
+        });
+        auto *closeDetail = makeHeaderButton(QStringLiteral("tasksNextDetailClose"),
+                                             QStringLiteral("x"),
+                                             QStringLiteral("Close"));
+        connect(closeDetail, &QPushButton::clicked, detailHost,
+                [detailHost] { detailHost->hide(); });
+        detailHeaderRow->addWidget(ui->detailMore);
+        detailHeaderRow->addWidget(closeDetail);
+
+        actionHost->setObjectName(QStringLiteral("tasksNextDetailActions"));
+        actionHost->setAttribute(Qt::WA_StyledBackground, true);
+        actions->setContentsMargins(12, 8, 12, 8);
+        m_organizationTaskEditButton->hide();
+        m_organizationTaskDeleteButton->hide();
+        for (QPushButton *button :
+             {m_organizationTaskStartButton, m_organizationTaskCompleteButton,
+              m_organizationTaskUndoButton, m_organizationTaskAgentButton,
+              m_organizationTaskStartAgentButton, m_organizationTaskPromptButton,
+              m_organizationTaskQaButton, m_organizationTaskReturnButton,
+              m_organizationTaskFollowUpButton, m_organizationTaskIssueButton,
+              m_organizationTaskCommentButton, m_organizationTaskCheckinButton,
+              m_organizationTaskRemindButton,
+              m_organizationTaskAttachWorktreeButton})
+            styler->adopt(button, TasksNextIcon);
+
+        auto *detailScroll = new QScrollArea;
+        detailScroll->setObjectName(QStringLiteral("tasksNextDetailScroll"));
+        detailScroll->setFrameShape(QFrame::NoFrame);
+        detailScroll->setWidgetResizable(true);
+        detailScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        auto *detailBodyWidget = new QWidget;
+        detailBodyWidget->setObjectName(QStringLiteral("tasksNextDetailBody"));
+        auto *bodyLayout = new QVBoxLayout(detailBodyWidget);
+        bodyLayout->setContentsMargins(20, 18, 20, 20);
+        bodyLayout->setSpacing(14);
+        ui->detailTitle = new QLabel;
+        ui->detailTitle->setObjectName(QStringLiteral("tasksNextDetailTitle"));
+        ui->detailTitle->setTextFormat(Qt::PlainText);
+        ui->detailTitle->setWordWrap(true);
+        ui->detailTitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_organizationTaskSide->setMinimumWidth(0);
+        m_organizationTaskSide->setMaximumWidth(QWIDGETSIZE_MAX);
+        m_organizationTaskFields->hide();
+        m_organizationTaskProperties->setStyleSheet(Theme::expandTokens(
+            QStringLiteral(
+                "QLabel#mutedLabel { color: @fgMuted; font-size: 13px; }"
+                "QLineEdit, QSpinBox, QComboBox { padding: 2px 6px;"
+                " min-height: 22px; border: 1px solid transparent;"
+                " border-radius: 6px; background: transparent; color: @fg;"
+                " font-size: 13px; }"
+                "QLineEdit:hover, QSpinBox:hover, QComboBox:hover {"
+                " background-color: @surfaceRaised; }"
+                "QLineEdit:focus, QSpinBox:focus, QComboBox:focus {"
+                " border-color: @accent; }"
+                "QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {"
+                " color: @fgSecondary; }"),
+            Theme::activeDesign(), Theme::activeDark()));
+        for (QLabel *name : m_organizationTaskProperties->findChildren<QLabel *>(
+                 QStringLiteral("mutedLabel"), Qt::FindDirectChildrenOnly))
+            name->setMinimumWidth(96);
+        propertiesForm->setVerticalSpacing(2);
+        m_organizationTaskDetail->setFrameShape(QFrame::NoFrame);
+        m_organizationTaskDetail->setVerticalScrollBarPolicy(
+            Qt::ScrollBarAlwaysOff);
+        m_organizationTaskDetail->setHorizontalScrollBarPolicy(
+            Qt::ScrollBarAlwaysOff);
+        m_organizationTaskDetail->setSizePolicy(QSizePolicy::Preferred,
+                                                QSizePolicy::Fixed);
+        QPointer<QTextBrowser> detailBrowser(m_organizationTaskDetail);
+        const auto fitDetailBrowser = [detailBrowser] {
+            if (!detailBrowser)
+                return;
+            const int height =
+                qCeil(detailBrowser->document()->size().height()) +
+                2 * detailBrowser->frameWidth();
+            if (detailBrowser->height() != height)
+                detailBrowser->setFixedHeight(qMax(24, height));
+        };
+        connect(m_organizationTaskDetail->document()->documentLayout(),
+                &QAbstractTextDocumentLayout::documentSizeChanged, this,
+                fitDetailBrowser);
+        bodyLayout->addWidget(ui->detailTitle);
+        bodyLayout->addWidget(m_organizationTaskSide);
+        bodyLayout->addWidget(m_organizationTaskDetail);
+        bodyLayout->addStretch(1);
+        detailScroll->setWidget(detailBodyWidget);
+
+        auto *commentBar = new QFrame;
+        commentBar->setObjectName(QStringLiteral("tasksNextCommentBar"));
+        auto *commentBarLayout = new QVBoxLayout(commentBar);
+        commentBarLayout->setContentsMargins(12, 10, 12, 12);
+        auto *commentBox = new QFrame;
+        commentBox->setObjectName(QStringLiteral("tasksNextCommentBox"));
+        auto *commentBoxRow = new QHBoxLayout(commentBox);
+        commentBoxRow->setContentsMargins(10, 4, 6, 4);
+        commentBoxRow->setSpacing(6);
+        m_organizationTaskQuickComment->setFixedHeight(
+            m_organizationTaskQuickComment->fontMetrics().lineSpacing() * 2 + 12);
+        commentBoxRow->addWidget(m_organizationTaskQuickComment, 1);
+        commentBoxRow->addWidget(m_organizationTaskQuickCommentSend, 0,
+                                 Qt::AlignBottom);
+        commentBarLayout->addWidget(commentBox);
+
+        detailLayout->addWidget(detailHeader);
+        detailLayout->addWidget(actionHost);
+        detailLayout->addWidget(detailScroll, 1);
+        detailLayout->addWidget(commentBar);
+        splitter->setStretchFactor(0, 1);
+        splitter->setStretchFactor(1, 0);
+        splitter->setSizes({960, 400});
+
+        hooks->detail = [this, ui, fitDetailBrowser] {
+            const QJsonObject task = selectedOrganizationTask(
+                m_organizationTasksTable, m_organizationTasks);
+            const QString id = taskText(task, QStringLiteral("id"));
+            if (ui->detailId) {
+                ui->detailId->setText(id.left(8));
+                ui->detailId->setToolTip(id);
+            }
+            if (ui->detailTitle) {
+                ui->detailTitle->setText(taskText(task, QStringLiteral("title")));
+                ui->detailTitle->setVisible(!task.isEmpty());
+            }
+            if (ui->detailMore)
+                ui->detailMore->setEnabled(!task.isEmpty());
+            if (ui->detailPanel && task.isEmpty())
+                ui->detailPanel->hide();
+            fitDetailBrowser();
+        };
+
+        hooks->render = [this, ui, syncBoardSelection] {
+            if (!m_organizationTasksTable)
+                return;
+            if (ui->filter && !ui->filter->hasFocus() &&
+                ui->filter->text().trimmed() != m_organizationTasksSearchMirror)
+                ui->filter->setText(m_organizationTasksSearchMirror);
+            int open = 0;
+            int withAgents = 0;
+            int inProgress = 0;
+            for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+                const QJsonObject task = value.toObject();
+                if (organizationTaskIsClosed(task))
+                    continue;
+                ++open;
+                if (taskText(task, QStringLiteral("assigneeKind")) ==
+                    QLatin1String("agent"))
+                    ++withAgents;
+                if (taskText(task, QStringLiteral("status")) ==
+                    QLatin1String("active"))
+                    ++inProgress;
+            }
+            if (ui->summary) {
+                QStringList parts{
+                    QStringLiteral("%1 open").arg(open),
+                    QStringLiteral("%1 with agents").arg(withAgents),
+                    QStringLiteral("%1 in progress").arg(inProgress),
+                    QStringLiteral("%1 closed")
+                        .arg(m_organizationTasks.size() - open)};
+                if (m_organizationTasksCanManage)
+                    parts << QStringLiteral("manager");
+                ui->summary->setText(
+                    parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+            }
+            if (ui->assignee) {
+                QString who = QStringLiteral("Everyone");
+                if (m_organizationTaskPeopleGroup) {
+                    for (QAbstractButton *button :
+                         m_organizationTaskPeopleGroup->buttons()) {
+                        if (button->property("assigneeFilter").toString() ==
+                            m_organizationTaskAssigneeFilter) {
+                            who = button->accessibleName();
+                            break;
+                        }
+                    }
+                }
+                ui->assignee->setText(who);
+            }
+
+            const QString statusFilter = m_organizationTaskStatusFilter;
+            QHash<QString, QList<int>> byColumn;
+            for (int index : std::as_const(m_organizationTaskMatches)) {
+                if (index < 0 || index >= m_organizationTasks.size())
+                    continue;
+                byColumn[tasksBoardColumn(m_organizationTasks.at(index).toObject())]
+                    .append(index);
+            }
+            ui->syncing = true;
+            for (const TasksNextLane &lane : ui->lanes) {
+                if (!lane.frame || !lane.list)
+                    continue;
+                const bool doneLane = lane.key == QLatin1String("done");
+                const bool visible =
+                    statusFilter == QLatin1String("all") ||
+                    (statusFilter == QLatin1String("closed")) == doneLane;
+                lane.frame->setVisible(visible);
+                const QList<int> indices = byColumn.value(lane.key);
+                if (lane.count)
+                    lane.count->setText(QString::number(indices.size()));
+                if (lane.add)
+                    lane.add->setVisible(m_organizationTasksCanManage);
+                const QSignalBlocker blocker(lane.list);
+                const int scroll = lane.list->verticalScrollBar()->value();
+                lane.list->clear();
+                for (int index : indices) {
+                    const QJsonObject task = m_organizationTasks.at(index).toObject();
+                    const QString id = taskText(task, QStringLiteral("id"));
+                    const QString statusKey = taskStatusKey(task);
+                    const QString department =
+                        taskText(task, QStringLiteral("department"));
+                    const QString repository =
+                        taskText(task, QStringLiteral("repository"));
+                    const QJsonObject qa = task.value(QStringLiteral("qa")).toObject();
+                    const QString qaStatus = taskText(qa, QStringLiteral("status"));
+                    const bool qaRequested =
+                        qa.value(QStringLiteral("requestedAt")).toDouble() > 0;
+                    auto *item =
+                        new QListWidgetItem(taskText(task, QStringLiteral("title")));
+                    item->setData(kBoardIdRole, id);
+                    item->setData(kBoardShortIdRole, id.left(6));
+                    QString project = repository.section(QLatin1Char('/'), -1);
+                    if (project.isEmpty() &&
+                        department.compare(QLatin1String("general"),
+                                           Qt::CaseInsensitive) != 0)
+                        project = department;
+                    item->setData(kBoardProjectRole, project);
+                    if (task.contains(QStringLiteral("priority")))
+                        item->setData(
+                            kBoardPriorityRole,
+                            QStringLiteral("P%1").arg(
+                                task.value(QStringLiteral("priority")).toInt()));
+                    item->setData(kBoardDoneRole, organizationTaskIsClosed(task));
+                    const QString kind =
+                        taskText(task, QStringLiteral("assigneeKind"));
+                    const QString assignee =
+                        taskText(task, QStringLiteral("assignee"));
+                    QPixmap face;
+                    bool working = false;
+                    organizationTaskAgentFace(task, &face, &working);
+                    QString avatarKind = QStringLiteral("none");
+                    if (!face.isNull() || kind == QLatin1String("agent")) {
+                        avatarKind = QStringLiteral("agent");
+                    } else if (kind == QLatin1String("user") && !assignee.isEmpty()) {
+                        avatarKind = QStringLiteral("user");
+                        face = taskPersonFace(
+                            QVariant(chatSenderAvatarSource(QString(), assignee)),
+                            assignee, kBoardAvatar, 0.5);
+                    }
+                    item->setData(kBoardAvatarKindRole, avatarKind);
+                    if (!face.isNull())
+                        item->setData(kBoardAvatarRole, face);
+                    item->setData(kBoardWorkingRole, working);
+                    item->setData(kBoardChecklistRole,
+                                  tasksBoardChecklist(promptTextWithoutAttachments(
+                                      taskText(task, QStringLiteral("details")))));
+                    item->setData(kBoardProgressRole,
+                                  task.value(QStringLiteral("progress")).toInt());
+                    const QList<forkmesh::taskwork::WorkItem> workItems =
+                        forkmesh::taskwork::fromJsonArray(
+                            task.value(QStringLiteral("workItems")).toArray());
+                    QString branch = workItems.isEmpty()
+                                         ? QString()
+                                         : workItems.constFirst().branch;
+                    if (workItems.size() > 1)
+                        branch += QStringLiteral(" +%1").arg(workItems.size() - 1);
+                    if (branch.isEmpty()) {
+                        const int sessionId = localAgentSessionIdForTask(id);
+                        for (const AgentSession &session :
+                             std::as_const(m_agentSessions)) {
+                            if (sessionId > 0 && session.id == sessionId) {
+                                branch = session.branchName;
+                                break;
+                            }
+                        }
+                    }
+                    item->setData(kBoardBranchRole, branch);
+                    item->setData(
+                        kBoardAttachmentsRole,
+                        int(task.value(QStringLiteral("attachments")).toArray().size()));
+                    item->setData(kBoardQaStateRole,
+                                  qaStatus == QLatin1String("passed") ||
+                                          qaStatus == QLatin1String("failed")
+                                      ? qaStatus
+                                  : qaRequested ? QStringLiteral("requested")
+                                                : QString());
+                    item->setData(kBoardQaRole,
+                                  qaStatus == QLatin1String("passed")
+                                      ? QStringLiteral("QA passed")
+                                  : qaStatus == QLatin1String("failed")
+                                      ? QStringLiteral("QA failed")
+                                  : qaRequested ? QStringLiteral("In QA")
+                                                : QString());
+                    item->setData(
+                        kBoardAgeRole,
+                        taskCreatedAge(qint64(
+                            task.value(QStringLiteral("createdAt")).toDouble())));
+                    item->setToolTip(taskRowTooltipHtml(task, statusKey, department,
+                                                        repository, qaStatus,
+                                                        qaRequested));
+                    lane.list->addItem(item);
+                }
+                lane.list->verticalScrollBar()->setValue(scroll);
+            }
+            ui->syncing = false;
+            syncBoardSelection();
+        };
+    }
 
     // The startup pull answered before this page existed: render its answer
     // rather than asking the relay for the same list a second time.
@@ -3509,6 +5244,7 @@ void MainWindow::renderOrganizationTaskRows(const QString &selectTaskId)
         m_organizationTasksTable->selectRow(0);
     renderOrganizationTaskDetail();
     updateOrganizationTaskActions();
+    runTasksNextHook(m_organizationTasksTable, true);
 }
 
 void MainWindow::appendOrganizationTaskRows(int count)
@@ -4169,7 +5905,13 @@ void MainWindow::renderOrganizationTaskDetail()
     m_organizationTaskDetail->setHtml(
         taskDetailHtml(task, m_organizationTaskImageData,
                        m_organizationTaskImageMime,
-                       m_organizationTaskHistory.value(taskId)));
+                       m_organizationTaskHistory.value(taskId),
+                       Theme::isNext() && m_organizationTaskFields &&
+                               m_organizationTaskFields->isHidden()
+                           ? taskFieldsHtml(task,
+                                            localAgentRunLabelForTask(taskId),
+                                            sessionId)
+                           : QString()));
     if (m_organizationTaskFields) {
         m_organizationTaskFields->setHtml(taskFieldsHtml(
             task, localAgentRunLabelForTask(taskId), sessionId));
@@ -4198,6 +5940,7 @@ void MainWindow::renderOrganizationTaskDetail()
                  m_organizationTaskHistoryAt.value(taskId) >
              kOrganizationTaskHistoryStaleMs))
         loadOrganizationTaskHistory(taskId);
+    runTasksNextHook(m_organizationTasksTable, false);
 }
 
 int MainWindow::localAgentSessionIdForTask(const QString &taskId) const
@@ -4827,6 +6570,26 @@ void MainWindow::refreshQuickAddTaskAssignees()
             : QSettings().value(kQuickAddTaskAssigneeSetting).toString();
     const QIcon nobody =
         themedOcticon(QStringLiteral("person"), QColor("#8b949e"), 18);
+    bool unchanged = m_quickAddTaskAssignee->currentIndex() >= 0 &&
+                     m_quickAddTaskAssignee->count() == members.size() + 1 &&
+                     m_quickAddTaskAssignee->itemData(0).toString() ==
+                         QLatin1String("unassigned");
+    for (int i = 0; unchanged && i < members.size(); ++i) {
+        const QString &member = members.at(i);
+        unchanged =
+            m_quickAddTaskAssignee->itemData(i + 1).toString() ==
+                QStringLiteral("user:") + member &&
+            m_quickAddTaskAssignee->itemText(i + 1) ==
+                (member == actor ? QStringLiteral("%1 (you)").arg(member) : member);
+    }
+    if (unchanged) {
+        for (int i = 0; i < members.size(); ++i) {
+            const QPixmap face = chatSenderAvatarSource(QString(), members.at(i));
+            m_quickAddTaskAssignee->setItemIcon(i + 1,
+                                                face.isNull() ? nobody : QIcon(face));
+        }
+        return;
+    }
     {
         const QSignalBlocker blocker(m_quickAddTaskAssignee);
         m_quickAddTaskAssignee->clear();

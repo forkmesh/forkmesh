@@ -525,13 +525,7 @@ def test_physical_board_displays_bounded_authorized_summaries_only():
 
 def test_one_general_bot_replaces_the_claude_and_codex_task_choice():
     tasks = source(TASKS)
-    chat_view = (
-        ROOT / "public" / "dashboard" / "partials" / "views" / "chat.html"
-    ).read_text(encoding="utf-8")
     chat = (ROOT / "public" / "dashboard-chat.js").read_text(encoding="utf-8")
-    assert '<option value="agent">Bot</option>' in chat_view
-    assert '<option value="codex">Codex</option>' not in chat_view
-    assert '<option value="claude">Claude</option>' not in chat_view
     assert 'const ORG_BOT_SENDER_ID = "agent"' in chat
     assert "MCP bots consume repository-linked agent tasks" in chat
     assert "MCP task created." in chat

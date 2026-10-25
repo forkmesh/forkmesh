@@ -1,7 +1,10 @@
 # Group call end-to-end encryption (call e2ee v2)
 
 Status: v1 designed and built 2026-10-21 (commit fc5bdd5210); v2 built the
-same day on top of it. Not yet wired into the live calls. Idea 5 of "Beyond
+same day on top of it. Live in group calls on the newer call engine: the
+browser's [fmm-browser.md](../app/fmm-browser.md) (`fmm-e2ee.js`) and the
+iPhone's native group call (`NativeGroupCall.swift`, `FmmVerifyViews.swift`)
+run the keys and the verification round. Idea 5 of "Beyond
 FaceTime" in [fm-media.md](fm-media.md). Media keys come from a hybrid
 X25519 + ML-KEM-768 exchange on every epoch, with a new epoch on every join
 and leave. A short verification code is made safe by a commit-then-reveal

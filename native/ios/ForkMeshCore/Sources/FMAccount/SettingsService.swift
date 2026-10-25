@@ -661,6 +661,20 @@ public final class SettingsService {
         notifyListeners()
     }
 
+    public func settlePermissionPacing() {
+        PermissionPacing.settle(prefs, freshInstall: needsStarterPack)
+    }
+
+    public var needsPermissionsIntro: Bool {
+        track()
+        return PermissionPacing.needsIntro(prefs)
+    }
+
+    public func finishPermissionsIntro() {
+        PermissionPacing.finishIntro(prefs)
+        notifyListeners()
+    }
+
     public var signInOn: Bool {
         track()
         return prefs.bool(forKey: SettingsService.signInOnKey) ?? true

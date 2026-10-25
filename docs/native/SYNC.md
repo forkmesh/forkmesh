@@ -185,9 +185,32 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | synced | 2ca5862405 |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
 | S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | synced | 0416f062e3 |
-| S113 | 2026-10-20 | Calls | feature | When a caller hangs up before you answer, the chat shows a missed-call line. | 4606848384 | synced | 4606848384 |
-| S114 | 2026-10-20 | Chat | feature | Stick a sticker on a message from Add sticker, next to Add reaction. | 8d354cdada | synced | 8d354cdada |
-| S115 | 2026-10-21 | Calls | fix | In China the app rings calls itself instead of through the system call screen. | 6303bbe848 | n/a | CallKit and PushKit are iOS-only; Android always rings through its own call notification |
-| S116 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
-| S117 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
+| S113 | 2026-10-23 | Settings | fix | With Diagnostics on, the status dots show above the Dynamic Island and the desktop and node lights sit just under the clock. | 977c57037b | pending |  |
+| S114 | 2026-10-23 | Chat | fix | A chat line shown as Guest switches to the sender's account name once the server confirms their device. | 8215287d99 | pending |  |
+| S115 | 2026-10-23 | Settings | ui | With Diagnostics on, the desktop and node lights sit above the clock with more room and the diagnostic charts sit filled above the battery. | 0eff45f617 | pending |  |
+| S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
+| S117 | 2026-10-23 | Market | feature | Each Feed post has a share button to view it on the website or copy its public link. | 98e35b20f3 | synced | 6a733017ec |
+| S118 | 2026-10-23 | Agents | feature | When a merge is blocked by uncommitted edits on the desktop, a Set aside and merge button saves them on a wip/ branch, merges, and puts them back. | 07bb2e29c5 | pending |  |
+| S119 | 2026-10-23 | Settings | ui | With Diagnostics on, the core node and desktop lights show tiny CPU, memory and disk bars, sit further from the corner, and the desktop charts left the top right. | a345e3890b | pending |  |
+| S120 | 2026-10-23 | DJ Studio | feature | DJ Studio's queue opens its menu (with Remove from Queue) when a song is held, drags a song onto a deck as soon as the finger moves across the queue, and plays a song added while nothing is playing right away. | fcd3936166 | pending |  |
+| S121 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
+| S122 | 2026-10-23 | Inbox | ui | Each ping in the Inbox shows the logo of the instance it came from, under the ping's icon. | 9d95e08a10 | pending |  |
+| S123 | 2026-10-23 | DJ Studio | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and its menu says both in full. | 6740ef7e4c | pending |  |
+| S124 | 2026-10-23 | Chat | fix | Reinstalling ForkMesh and restoring your identity key from the projects folder keeps your chat key, so safety numbers stay the same and nobody sees you as a new device. | b8b8103211 | pending |  |
+| S125 | 2026-10-23 | Chat | fix | Calls reconnect by themselves after a network drop or when the other person's audio goes silent, and a call that cannot connect ends after 30 seconds with a clear message. | 407a9d2c6f | pending |  |
+| S126 | 2026-10-23 | Chat | feature | A back button on the call screen returns to the chat while the call continues in a small window you can drag to any edge and tap to reopen. | 407a9d2c6f | pending |  |
+| S127 | 2026-10-23 | Chat | ui | Video calls show your own camera with the other person's picture and name until their video arrives, and their picture again when their camera goes off. | 407a9d2c6f | pending |  |
+| S128 | 2026-10-23 | Chat | feature | The call quality pill has a diagnostics button that turns red on a problem and explains the cause, the fixes and a prompt for an AI assistant. | 407a9d2c6f | pending |  |
+| S129 | 2026-10-23 | Chat | feature | The pre-call check can record a 10-second microphone test and play it back before you call. | 407a9d2c6f | pending |  |
+| S130 | 2026-10-23 | Chat | fix | App sounds, speech and dictation no longer cut off your microphone during a call, and call audio comes back after an interruption. | 407a9d2c6f | pending |  |
+| S131 | 2026-10-23 | Chat | fix | Answering a call works even when the permission prompt stays open, and says why when the call can no longer be answered. | 407a9d2c6f | pending |  |
+| S132 | 2026-10-23 | Chat | fix | Video calls switch to the other person's picture as soon as it arrives and play through the loudspeaker. | a53238311c | pending |  |
+| S133 | 2026-10-23 | Chat | fix | The pre-call microphone test records your voice and plays it back on the speaker, even with the phone on silent. | a53238311c | pending |  |
+| S134 | 2026-10-24 | Shell | feature | The tour offers Essentials, Advanced and The whole shebang, and each stop shows a live copy of the screen it describes that you can try, with a button that opens the real one. | e763e201e9 | pending |  |
+| S135 | 2026-10-24 | Shell | feature | A new install asks for no permissions at launch: a short screen explains what may be asked and why, notifications are asked after the first message sent, and Bluetooth and local network when #mesh is first opened. | 9fa10c9e70 | pending |  |
+| S136 | 2026-10-20 | Calls | feature | When a caller hangs up before you answer, the chat shows a missed-call line. | 4606848384 | synced | 4606848384 |
+| S137 | 2026-10-20 | Chat | feature | Stick a sticker on a message from Add sticker, next to Add reaction. | 8d354cdada | synced | 8d354cdada |
+| S138 | 2026-10-21 | Calls | fix | In China the app rings calls itself instead of through the system call screen. | 6303bbe848 | n/a | CallKit and PushKit are iOS-only; Android always rings through its own call notification |
+| S139 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
+| S140 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
 <!-- ledger:end -->

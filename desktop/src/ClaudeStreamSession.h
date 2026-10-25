@@ -4,6 +4,7 @@
 #include "AgentJsonlFramer.h"
 #include "AgentRuntimeSession.h"
 
+#include <QHash>
 #include <QJsonObject>
 #include <QMap>
 #include <QObject>
@@ -59,6 +60,25 @@ public:
     bool sendCommand(const AgentRuntimeCommand &command) override;
     bool sendUserText(const QString &text) override;
     bool sendToolResult(const QString &toolUseId, const QString &content);
+    bool hostControl() const { return m_hostControl; }
+    bool claimTitleRequest()
+    {
+        if (m_titleRequested)
+            return false;
+        m_titleRequested = true;
+        return true;
+    }
+    QString cliSessionId() const { return m_cliSessionId; }
+    bool hasPendingPrompt(const QString &key) const { return m_pendingPrompts.contains(key); }
+    QJsonObject pendingPrompt(const QString &key) const { return m_pendingPrompts.value(key); }
+    bool respondToElicitation(const QString &key, const QString &action,
+                              const QJsonObject &content = {});
+    using ControlCallback = std::function<void(bool ok, const QJsonObject &response)>;
+    bool sendControlRequest(const QJsonObject &body, ControlCallback callback = {});
+    bool generateSessionTitle(const QString &description,
+                              std::function<void(QString)> done);
+    bool renameSession(const QString &title);
+    bool stopTask(const QString &taskId);
     void stop() override;
     bool running() const override;
     bool acceptsInput() const override;
@@ -96,6 +116,8 @@ private:
                            ParsedLine parsed);
     void deliverParsedLines();
     void notePermissionModeResponse(const QJsonObject &ev);
+    bool handleControlLine(QJsonObject &ev);
+    void resetControl();
     void processExited(int exitCode);
     void finishAfterParsing();
     bool writeUserTurn(const QString &text);
@@ -120,6 +142,8 @@ private:
     bool m_toolAllowlist = false;
     // Extra --settings JSON (the external-call gate hook); no single quotes.
     QString m_extraSettings;
+    QString m_mcpConfig;
+    QStringList m_mcpReadOnly;
     QString m_initialPrompt;
     QString m_permissionMode;
     QString m_launchedPermissionMode; // what the running process started under
@@ -138,6 +162,13 @@ private:
     int m_memoryLimitMb = 0;
     forkmesh::agentguard::Config m_guardrails;
     QString m_resumeFallbackPrompt;
+    bool m_hostControl = false;
+    QString m_sessionTitle;
+    QString m_cliSessionId;
+    bool m_titleRequested = false;
+    QHash<QString, QJsonObject> m_pendingPrompts;
+    QHash<QString, QString> m_promptKeyByRequest;
+    QHash<QString, ControlCallback> m_controlCallbacks;
     bool m_conversationOpened = false;
     bool m_resumeFallbackUsed = false; // one retry per start(), never a loop
     bool m_exitReported = false;       // one finished() per launch, never two

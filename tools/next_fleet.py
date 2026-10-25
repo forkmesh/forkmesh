@@ -18,8 +18,8 @@
     next_fleet.py destroy nN|rN   --yes [--execute] [--force]
     next_fleet.py replace-core nOLD --new nNEW [--execute]
     next_fleet.py enable-ipv6 nN|rN [--reboot] [--execute]
-    next_fleet.py add-core [--region R] [--plan P] [--snapshot ID] [--name nN] [--execute]
-    next_fleet.py add-core-options [--json]
+    next_fleet.py add-core [--region R] [--plan P] [--snapshot ID] [--name nN] [--replace nOLD] [--execute]
+    next_fleet.py add-core-options [--replace nOLD] [--json]
     next_fleet.py add-core-status  [--name nN] [--json]
     next_fleet.py remove-core nN [--destroy-instance] [--execute]
     next_fleet.py remove-core-plan nN [--destroy-instance] [--json]
@@ -2554,6 +2554,9 @@ def main(argv=None, vultr=None, ssh=None) -> int:
     p.add_argument("--snapshot", help="boot from this keyless Vultr snapshot id")
     p.add_argument("--name", help="nN to add or resume (default: the next free "
                    "number, or the unfinished run)")
+    p.add_argument("--replace", metavar="nOLD", help="once the new core serves, "
+                   "take this core out of the fleet in the same run (its instance "
+                   "is kept) and commit both changes together")
     p.add_argument("--no-events", dest="events", action="store_false",
                    help="no FMNEXT-ADD-CORE progress lines")
     common.add_execute_flags(p)
@@ -2561,6 +2564,7 @@ def main(argv=None, vultr=None, ssh=None) -> int:
                        "for add-core (read-only)")
     p.add_argument("--provider", choices=next_cloud.PROVIDERS,
                    default=next_cloud.DEFAULT_PROVIDER)
+    p.add_argument("--replace", metavar="nOLD")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("add-core-status", help="the last add-core run (read-only)")
     p.add_argument("--name")

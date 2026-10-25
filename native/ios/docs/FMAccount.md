@@ -163,6 +163,19 @@ credentials and share drop).
   the pending flag makes the next launch erase again, even though the
   preferences are no longer empty.
 
+## PermissionPacing (`PermissionPacing.swift`)
+
+Device-wide keys that keep a fresh install free of permission prompts
+(`docs/native/PERMISSIONS.md`). `settle(prefs, freshInstall:)` runs once at boot
+(`SettingsService.settlePermissionPacing`, fresh when the active project still
+needs its starter pack): a fresh install stores `permissions/intro` = `pending`;
+an update stores `seen` and `permissions/nearby-opened` = true, so nothing
+changes for people who already answered the old launch prompts. Later calls
+keep the first answer. `SettingsService.needsPermissionsIntro` and
+`finishPermissionsIntro` drive the intro screen; `reasons`, `title`, `summary`
+and `footnote` are its text. `nearbyAllowed` / `markNearbyOpened` drive the
+mesh hold.
+
 ## Sync status and trust lists (conformance ports; pure functions over `JSONObject`)
 
 - `SyncStatus.evaluate(evidence) -> JSONObject` (forkmesh-sync-status-v1: `state`, `label`,

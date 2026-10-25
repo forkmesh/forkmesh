@@ -1236,7 +1236,7 @@
     }
     const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
-    return { ...data, pull: ownPull, targetRepo: repo };
+    return { ...data, pull: ownPull, targetRepo: repo, refusedBy: targetRepo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
@@ -1398,6 +1398,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -1503,6 +1511,34 @@
     }
   }
 
+  function syncWebIssueListClaim(number, event) {
+    if (!event) return;
+    const rows = new Set([state.issuesView?.items, state.issueRelationIndex?.items]
+      .map((items) => (Array.isArray(items) ? items.find((issue) => Number(issue.number) === Number(number)) : null))
+      .filter(Boolean));
+    rows.forEach((row) => {
+      row.events = Array.isArray(row.events) ? row.events.slice() : [];
+      row.events.push(event);
+    });
+  }
+
+  async function webIssueClaimBlockers(repo, number) {
+    try {
+      const settings = await loadRepoCollabSettings(repo);
+      const limit = Number(settings?.assignmentLimit) || 0;
+      if (!limit) return [];
+      const [issues, pulls] = await Promise.all([
+        loadRepoIssueRelationIndex(repo),
+        loadRepoDevelopmentPulls(repo),
+      ]);
+      if (!Array.isArray(pulls)) return [];
+      const held = issueAssignmentsWithoutPull(state.session?.nodeName, issues, pulls, number);
+      return held.length >= limit ? held : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   // The Issues list, its Open/Closed filter and the tab badge are all served
   // from the cached rows in state, and the mirror only learns about the signed
   // status event once the owner node drains its inbox. Move the row here so
@@ -1556,13 +1592,14 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -1573,6 +1610,7 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
       return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }
@@ -1690,6 +1728,13 @@
       return;
     }
     if (action === "vote") type = "vote";
+    if (action === "claim" && !detail.parsed?.issueMutationAuthorized) {
+      const held = await webIssueClaimBlockers(repo, number);
+      if (held.length) {
+        showErrorNotice(issueAssignmentLimitMessage(held));
+        return;
+      }
+    }
     if (action === "claim" || action === "release") {
       type = "claim";
       fields = {
@@ -1738,6 +1783,7 @@
       const result = await submitWebIssueEvent(repo, number, type, fields);
       optimisticWebIssueEvent(result.event);
       if (type === "status") syncWebIssueListStatus(number, fields.status);
+      if (type === "claim") syncWebIssueListClaim(number, result.event);
       if (action === "delete-issue") {
         state.issuesView.items = (state.issuesView.items || []).filter(
           (issue) => Number(issue.number) !== number,
@@ -2681,7 +2727,8 @@
     }
     container.classList.toggle("font-mono", !avatarPng);
     const handle = profileAvatarHandle(session);
-    if (container.dataset.profileAvatarFor !== handle || container.dataset.profileAvatarState === "image") {
+    if (container.dataset.profileAvatarFor !== handle
+      || ["image", "bot"].includes(container.dataset.profileAvatarState)) {
       delete container.dataset.profileAvatarState;
       delete container.dataset.profileAvatarTried;
     }
@@ -2757,13 +2804,22 @@
     container.classList.remove("font-mono");
   }
 
+  function showProfileAvatarBot(container) {
+    const kind = botAvatarKind(container.dataset.profileAvatarFor);
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!kind || !initialEl) return;
+    initialEl.innerHTML = botAvatarSvg(kind, "h-auto w-1/2");
+    initialEl.classList.add("flex", "h-full", "w-full", "items-center", "justify-center");
+    container.dataset.profileAvatarState = "bot";
+  }
+
   function hydrateProfileAvatar(container) {
     const handle = container?.dataset?.profileAvatarFor;
     if (!handle) return;
     const repos = profileAvatarRosterRepos(handle);
     const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
     const known = container.dataset.profileAvatarState;
-    if (known === "image" || known === "loading"
+    if (known === "image" || known === "loading" || known === "bot"
       || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
     container.dataset.profileAvatarState = "loading";
     container.dataset.profileAvatarTried = tried;
@@ -2771,6 +2827,7 @@
       if (container.dataset.profileAvatarFor !== handle) return;
       container.dataset.profileAvatarState = src ? "image" : "initial";
       if (src) showProfileAvatarPicture(container, src);
+      else showProfileAvatarBot(container);
     });
   }
 

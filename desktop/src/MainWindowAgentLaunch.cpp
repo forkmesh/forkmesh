@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "MessageBoxClicks.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowInternal.h"
 #include "UiSounds.h"
 #include "LocalControlAgentOps.h"
@@ -987,7 +988,7 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     if (switchToTab)
         switchToAgentsTab(sessionId);
 
-    if (titleFromPrompt &&
+    if (titleFromPrompt && provider != QLatin1String("claude-code") &&
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool())
         requestAgentTitle(provider, task,
                           [this, sessionId, provider](const QString &agentTitle) {
@@ -1791,6 +1792,32 @@ void MainWindow::purgeExpiredAgentRecycleBin()
     }
 }
 
+void MainWindow::purgeExpiredAgentRecycleBinInBackground()
+{
+    if (!m_agentStore || m_agentRecyclePurgeInFlight)
+        return;
+    m_agentRecyclePurgeInFlight = true;
+    AgentStore *store = m_agentStore;
+    const qint64 retentionMs = agentRecycleRetentionMs();
+    runOffThread<int>(
+        [store, retentionMs] {
+            return store->purgeExpiredRecycledSessions(
+                retentionMs, QDateTime::currentMSecsSinceEpoch());
+        },
+        [this](int purged) {
+            m_agentRecyclePurgeInFlight = false;
+            if (purged <= 0)
+                return;
+            logSystem(QStringLiteral("Removed %1 expired agent recycle bin "
+                                     "entr%2 (retention %3 hours).")
+                          .arg(purged)
+                          .arg(purged == 1 ? QStringLiteral("y")
+                                           : QStringLiteral("ies"))
+                          .arg(agentRecycleRetentionHours()));
+            reloadAgentRecycleBin();
+        });
+}
+
 void MainWindow::deleteAgentSessionEntry(int sessionId)
 {
     if (isCloudSession(sessionId)) {
@@ -2001,8 +2028,14 @@ void MainWindow::purgeSessionState(int sessionId)
         stream->deleteLater();
     if (CodexAppServerSession *stream = m_codexStreams.take(sessionId))
         stream->deleteLater();
-    m_streamEvents.remove(sessionId);
-    m_streamRaw.remove(sessionId);
+    if (auto events = m_streamEvents.find(sessionId); events != m_streamEvents.end()) {
+        releaseOffGuiThread(std::move(*events));
+        m_streamEvents.erase(events);
+    }
+    if (auto raw = m_streamRaw.find(sessionId); raw != m_streamRaw.end()) {
+        releaseOffGuiThread(std::move(*raw));
+        m_streamRaw.erase(raw);
+    }
     m_streamFiles.remove(sessionId);
     m_streamWorktree.remove(sessionId);
     m_streamPending.remove(sessionId);
@@ -2040,7 +2073,6 @@ void MainWindow::purgeSessionState(int sessionId)
     if (m_agentTranscriptRenderSession == sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         if (m_agentTranscript)
             m_agentTranscript->setBulkPopulate(false);
     }
@@ -2111,6 +2143,11 @@ void MainWindow::switchToAgentsTab(int sessionId)
     const AgentSession *session = findAgentSession(sessionId);
     if (!session)
         return;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("agents session"), [this]() -> QWidget * {
+            return m_repoDetailStack ? m_repoDetailStack->widget(kRepoAgentsTab)
+                                     : nullptr;
+        });
     const AgentSession target = *session;
     clearTeammateDoneUnseen(sessionId);
     showSection(0);
@@ -2150,7 +2187,12 @@ void MainWindow::switchToAgentsTab(int sessionId)
 
 void MainWindow::openAgentsOverview()
 {
-    if (m_selectedAgentSessionId > 0 && findAgentSession(m_selectedAgentSessionId)) {
+    const bool repoOpen = m_repoDetailIndex >= 0 && m_repoDetailStack;
+    const auto reachable = [&](const AgentSession &s) {
+        return repoOpen || repoIndexFor(s.owner, s.name) >= 0;
+    };
+    if (const AgentSession *selected = findAgentSession(m_selectedAgentSessionId);
+        m_selectedAgentSessionId > 0 && selected && reachable(*selected)) {
         switchToAgentsTab(m_selectedAgentSessionId);
         return;
     }
@@ -2160,6 +2202,8 @@ void MainWindow::openAgentsOverview()
     for (const AgentSession &s : std::as_const(m_agentSessions)) {
         if (hideTeammates && s.hasTeammateAttribution())
             continue;
+        if (!reachable(s))
+            continue;
         if (!newest || s.createdAtMs > newest->createdAtMs)
             newest = &s;
     }
@@ -2167,14 +2211,18 @@ void MainWindow::openAgentsOverview()
         switchToAgentsTab(newest->id);
         return;
     }
-    if (m_repoDetailIndex >= 0 && m_repoDetailStack) {
-        showSection(0);
-        ensureRepoDetailTabBuilt(3);
-        m_repoDetailStack->setCurrentIndex(3);
-        if (m_agentsNavButton)
-            m_agentsNavButton->setChecked(true);
-        reloadAgents(AgentReloadScan::FromCache);
-    }
+    if (!repoOpen && !m_repositories.isEmpty())
+        openRepoDetail(0, kRepoAgentsTab);
+    if (m_repoDetailIndex < 0 || !m_repoDetailStack)
+        return;
+    showSection(0);
+    ensureRepoDetailTabBuilt(kRepoAgentsTab);
+    if (m_repoDetailTabs && m_repoDetailTabs->button(kRepoAgentsTab))
+        m_repoDetailTabs->button(kRepoAgentsTab)->setChecked(true);
+    m_repoDetailStack->setCurrentIndex(kRepoAgentsTab);
+    if (m_agentsNavButton)
+        m_agentsNavButton->setChecked(true);
+    reloadAgents(AgentReloadScan::FromCache);
 }
 
 void MainWindow::openRepoAgentsList()

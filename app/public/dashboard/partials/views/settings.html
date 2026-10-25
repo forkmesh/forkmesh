@@ -92,6 +92,11 @@
                       <i data-lucide="smile-plus" class="h-5 w-5"></i>
                       Reactions, GIFs &amp; tips
                     </button>
+                    <button data-settings-section-link="ai-review" data-ai-review-settings-link hidden type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                      <i data-lucide="sparkles" class="h-5 w-5"></i>
+                      AI review
+                    </button>
                     <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bot" class="h-5 w-5"></i>
@@ -308,7 +313,7 @@
 
                   <section id="settings-notifications" data-settings-section="notifications" data-ping-settings class="hidden pb-8">
                     <style>
-                      [data-ping-settings], [data-genie-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: rgb(var(--dashboard-primary-rgb)); }
+                      [data-ping-settings], [data-genie-setting], [data-season-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: rgb(var(--dashboard-primary-rgb)); }
                       .ping-switch { position: relative; flex-shrink: 0; width: 2.25rem; height: 1.3rem; border-radius: 999px; background: var(--ps-border); transition: background .15s; }
                       .ping-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.3rem - 4px); height: calc(1.3rem - 4px); border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: translate .15s; }
                       .ping-switch[aria-checked="true"] { background: var(--ps-on); }
@@ -557,6 +562,19 @@
                           </button>
                           <p id="account-password-status" data-account-password-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
                           <p class="text-xs text-muted-foreground">Forgot your current password? <a class="font-semibold text-accent hover:underline" href="/forgot-password">Reset it by email</a> instead.</p>
+                        </form>
+                      </div>
+                      <div data-account-recovery class="rounded-md border border-border bg-card p-4">
+                        <h3 class="text-base font-semibold text-foreground">Recovery code</h3>
+                        <p class="mt-1 text-sm leading-6 text-muted-foreground">An account without an email address sets a new password with its recovery code on the reset page. Making a new code replaces the old one. It is shown once, so store it in a password manager or on paper.</p>
+                        <form data-credential-scope class="mt-4 grid gap-3">
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Current password
+                            <input data-account-recovery-password type="password" autocomplete="current-password" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                          </label>
+                          <button data-account-recovery-new type="button" class="fm-btn w-fit">Make a new recovery code</button>
+                          <code data-account-recovery-code hidden class="w-fit select-all rounded-md border border-border px-3 py-2 font-mono text-sm text-foreground"></code>
+                          <p data-account-recovery-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
                         </form>
                       </div>
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -856,6 +874,42 @@
                     </div>
                   </section>
 
+                  <section id="settings-ai-review" data-settings-section="ai-review" data-ai-review-settings class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">AI review</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">An automated first-pass review of pull requests by Cloudflare Workers AI, posted as one ForkBot comment per head commit. It never approves, requests changes or merges. Only the pull request's text (title, description, commit messages, file list and diff) is sent, under this instance's Cloudflare account.</p>
+                    <form data-ai-review-settings-form class="mt-5 grid min-w-0 max-w-3xl gap-4 rounded-md border border-border bg-card px-4 py-4 sm:grid-cols-2">
+                      <label class="flex min-w-0 items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-enabled type="checkbox" class="shrink-0"> Review pull requests automatically</label>
+                      <label class="flex min-w-0 items-start gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-default-on type="checkbox" class="mt-1 shrink-0"><span class="min-w-0 [overflow-wrap:anywhere]">On for every public repository unless its <code class="font-mono text-xs">.forkmesh/pulls.json</code> says <code class="font-mono text-xs">"aiReview": false</code>. Otherwise repositories opt in with <code class="font-mono text-xs">"aiReview": true</code>.</span></label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Cloudflare account ID
+                        <input data-ai-review-account autocomplete="off" spellcheck="false" maxlength="32" placeholder="32 hexadecimal characters" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">API token <span class="font-normal text-muted-foreground">(Workers AI permission only)</span>
+                        <input data-ai-review-token type="password" autocomplete="off" spellcheck="false" placeholder="Paste a token to set or replace it" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground sm:col-span-2">Model <span class="font-normal text-muted-foreground">(models are limited to an approved list)</span>
+                        <select data-ai-review-model class="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"></select>
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per day (instance)
+                        <input data-ai-review-daily-cap type="number" min="0" max="5000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Largest diff to review (KB)
+                        <input data-ai-review-max-diff type="number" min="16" max="4096" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per repository per day
+                        <input data-ai-review-repo-daily type="number" min="1" max="1000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per pull request author per day
+                        <input data-ai-review-author-daily type="number" min="1" max="1000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label data-ai-review-binding-row hidden class="flex items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-binding type="checkbox"> Use this server's AI binding when no token is set</label>
+                      <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                        <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                        <button type="button" data-ai-review-clear-token class="fm-btn">Remove token</button>
+                        <p data-ai-review-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                      </div>
+                    </form>
+                  </section>
+
                   <section id="settings-apps" data-settings-section="apps" class="hidden pb-8">
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Installed apps</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Apps you installed, and the apps installed for organizations you run: what each may do, when it last acted, and a Revoke button that deletes its tokens at once. Organization owners and admins also approve members' app requests and set which apps members may request there.</p>
@@ -950,7 +1004,27 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Appearance</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Choose the dashboard theme for this device.</p>
                     <div class="mt-5 grid max-w-3xl gap-4">
-                      <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Dashboard theme">
+                      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Dashboard theme">
+                        <button
+                          data-appearance-theme="system"
+                          type="button"
+                          role="radio"
+                          aria-checked="false"
+                          class="grid min-h-24 gap-3 rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-secondary"
+                        >
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                              <i data-lucide="monitor" class="h-4 w-4"></i>
+                              System
+                            </span>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-accent" data-appearance-check></i>
+                          </span>
+                          <span class="grid gap-1.5">
+                            <span class="h-2 rounded-full bg-secondary"></span>
+                            <span class="h-2 w-4/5 rounded-full bg-muted-foreground/40"></span>
+                            <span class="h-6 rounded-md border border-border bg-background"></span>
+                          </span>
+                        </button>
                         <button
                           data-appearance-theme="dark"
                           type="button"
@@ -1015,6 +1089,23 @@
                             </div>
                           </div>
                           <button data-home-redirect type="button" role="switch" aria-checked="true" aria-label="Open the dashboard from forkmesh.com" class="ping-switch mt-1"></button>
+                        </div>
+                      </div>
+                      <div data-season-setting hidden class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="ghost" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Halloween theme</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">Turns the green buttons, status dots and activity graph orange, hangs a spider web, puts a witch hat on profile pictures and dresses up the Genie, for everyone on this ForkMesh. Only platform administrators and moderators see this setting.</p>
+                            </div>
+                          </div>
+                          <button data-season-toggle type="button" role="switch" aria-checked="false" aria-label="Halloween theme" class="ping-switch mt-1"></button>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
+                          <label for="season-until" class="text-sm text-foreground">Turn off automatically</label>
+                          <input id="season-until" data-season-until type="datetime-local" class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground" />
+                          <p data-season-status role="status" aria-live="polite" class="min-h-4 basis-full text-xs text-muted-foreground"></p>
                         </div>
                       </div>
                     </div>

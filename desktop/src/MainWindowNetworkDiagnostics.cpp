@@ -26,9 +26,11 @@
 #include "RewardPoolSigner.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
+#include "FontSizing.h"
 
 #include <QBrush>
 #include <QCheckBox>
+#include <QScrollArea>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -346,7 +348,7 @@ QWidget *MainWindow::buildFirewallSection()
     auto *title = new QLabel(QStringLiteral("Firewall"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
     title->setFont(titleFont);
     outer->addWidget(title);
@@ -1101,6 +1103,21 @@ private:
 };
 } // namespace
 
+namespace {
+void nextComposeNetworkSummary(QLabel *label)
+{
+    if (!label)
+        return;
+    QStringList parts;
+    for (const char *key : {"nextNodesPart", "nextDiagPart"}) {
+        const QString part = label->property(key).toString();
+        if (!part.isEmpty())
+            parts.append(part);
+    }
+    label->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+}
+} // namespace
+
 void MainWindow::updateNetworkCounts(int relays, int nodes, int hosts)
 {
     if (relays >= 0)
@@ -1120,16 +1137,11 @@ void MainWindow::updateNetworkCounts(int relays, int nodes, int hosts)
                 kNetworkNodesTab,
                 label(QStringLiteral("Nodes"),
                       m_networkNodeCount + m_networkRelayCount));
-        if (m_networkTabs->count() > kNetworkHostsTab)
-            m_networkTabs->setTabText(
-                kNetworkHostsTab,
-                label(QStringLiteral("Hosts"), m_networkHostCount));
     }
 
     if (auto *railButton =
             dynamic_cast<ActivityRailButton *>(m_networkNavButton))
-        railButton->setBadgeCount(m_networkRelayCount + m_networkNodeCount +
-                                  m_networkHostCount);
+        railButton->setBadgeCount(m_networkRelayCount + m_networkNodeCount);
 }
 
 void MainWindow::updateNetworkDeployBlink()
@@ -1150,24 +1162,43 @@ void MainWindow::updateNetworkDeployBlink()
 
 QWidget *MainWindow::buildNetworkDiagnosticsSection()
 {
+    const bool next = Theme::isNext();
     auto *page = new QWidget;
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(24, 12, 24, 14);
-    outer->setSpacing(8);
+    outer->setSpacing(next ? 10 : 8);
 
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
     header->setSpacing(10);
+    QHBoxLayout *titleRow = header;
+    QVBoxLayout *titleColumn = nullptr;
+    if (next) {
+        header->setSpacing(6);
+        titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        titleRow = new QHBoxLayout;
+        titleRow->setContentsMargins(0, 0, 0, 0);
+        titleRow->setSpacing(6);
+        titleColumn->addLayout(titleRow);
+        header->addLayout(titleColumn, 1);
+    }
 
     auto *title = new QLabel(QStringLiteral("Network"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
+    if (next) {
+        titleFont = title->font();
+        titleFont.setPixelSize(15);
+        titleFont.setWeight(QFont::DemiBold);
+    }
     title->setFont(titleFont);
-    header->addWidget(title);
+    titleRow->addWidget(title);
 
-    header->addWidget(makeInlineHelpButton(
+    titleRow->addWidget(makeInlineHelpButton(
         QStringLiteral("About network diagnostics"), QStringLiteral(
             "The relays, nodes and hosts this client talks to, plus live endpoint "
             "usage, websocket Durable Object details and the outbound request "
@@ -1175,7 +1206,16 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
 
     m_networkDiagnosticsStatus = new QLabel;
     m_networkDiagnosticsStatus->setObjectName("mutedLabel");
-    header->addWidget(m_networkDiagnosticsStatus, 1);
+    if (next) {
+        titleRow->addStretch(1);
+        m_networkDiagnosticsStatus->setProperty("networkRole", QStringLiteral("summary"));
+        m_networkDiagnosticsStatus->setTextFormat(Qt::PlainText);
+        m_networkDiagnosticsStatus->setSizePolicy(QSizePolicy::Ignored,
+                                                  QSizePolicy::Preferred);
+        titleColumn->addWidget(m_networkDiagnosticsStatus);
+    } else {
+        header->addWidget(m_networkDiagnosticsStatus, 1);
+    }
 
     // Every tab used to carry its own Refresh, which put two of them a row
     // apart in the same corner. This is the page's one refresh control, and it
@@ -1189,6 +1229,36 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     connect(m_networkDiagnosticsRefreshButton, &QPushButton::clicked, this,
             &MainWindow::refreshCurrentNetworkTab);
     header->addWidget(m_networkDiagnosticsRefreshButton);
+    if (next) {
+        m_networkDiagnosticsRefreshButton->setProperty("networkRole", QStringLiteral("ghost"));
+        auto *addNode = new QPushButton(QStringLiteral("Add node"));
+        addNode->setObjectName(QStringLiteral("networkAddNodeButton"));
+        addNode->setCursor(Qt::PointingHandCursor);
+        addNode->setToolTip(QStringLiteral(
+            "Add a host in the Hosts rail beside the node list: its address, SSH "
+            "login and node name, then Add host and Install ForkMesh. The rail "
+            "also creates Vultr mirrors."));
+        addNode->setIcon(QIcon(kit::tintedIcon(QStringLiteral("plus"),
+                                               Theme::color(Theme::Role::Bg), 14,
+                                               page->devicePixelRatioF())));
+        addNode->setIconSize(QSize(14, 14));
+        connect(addNode, &QPushButton::clicked, this, [this] {
+            showNetworkTab(kNetworkHostsTab);
+            revealHostsRailSection(m_hostIpEdit);
+            QTimer::singleShot(0, this, [this] {
+                if (!m_hostIpEdit || !m_hostIpEdit->isVisible())
+                    return;
+                for (QWidget *w = m_hostIpEdit->parentWidget(); w; w = w->parentWidget()) {
+                    if (auto *scroll = qobject_cast<QScrollArea *>(w)) {
+                        scroll->ensureWidgetVisible(m_hostIpEdit, 0, 64);
+                        break;
+                    }
+                }
+                m_hostIpEdit->setFocus(Qt::OtherFocusReason);
+            });
+        });
+        header->addWidget(addNode);
+    }
     outer->addLayout(header);
 
     auto *tabs = new QTabWidget;
@@ -1200,7 +1270,6 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     m_networkTabs = tabs;
 
     tabs->addTab(buildNodesSection(), QStringLiteral("Nodes"));
-    tabs->addTab(buildHostsSection(), QStringLiteral("Hosts"));
     connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
         refreshNetworkTab(index);
         scheduleNavRecord();
@@ -1580,6 +1649,30 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     tabs->addTab(decisionsPage, QStringLiteral("Recent Firewall Decisions"));
     installFirewallRuleEditing(editDecisionRule);
 
+    if (next) {
+        tabs->setTabText(m_networkWebRequestsTabIndex, QStringLiteral("Web requests"));
+        tabs->setTabText(m_networkFirewallRulesTabIndex, QStringLiteral("Firewall rules"));
+        tabs->setTabText(tabs->indexOf(decisionsPage),
+                         QStringLiteral("Recent firewall decisions"));
+        for (int index = 0; index < tabs->count(); ++index) {
+            if (QLayout *tabLayout = tabs->widget(index)->layout()) {
+                const QMargins margins = tabLayout->contentsMargins();
+                tabLayout->setContentsMargins(margins.left(), 16, margins.right(),
+                                              margins.bottom());
+            }
+        }
+        for (QTableWidget *grid :
+             {m_networkEndpointsTable, m_networkWebRequestsTable, m_networkDiagnosticsTable,
+              m_requestFirewallRulesTable, m_requestFirewallHistoryTable}) {
+            grid->verticalHeader()->setDefaultSectionSize(36);
+            grid->setProperty("networkGrid", true);
+        }
+        for (QWidget *tabPage : {endpointsPage, webRequestsPage, socketsPage, whitelistPage,
+                                 decisionsPage})
+            if (auto *tabLayout = qobject_cast<QVBoxLayout *>(tabPage->layout()))
+                tabLayout->setSpacing(12);
+    }
+
     // Every grid on this page is a wide table of short columns, and a sortable
     // header otherwise reserves an arrow slot -- about a caption's worth of
     // width -- in each one, for an arrow only the sorted column ever draws.
@@ -1627,7 +1720,7 @@ void MainWindow::refreshNetworkDiagnostics()
         rxFrames += networkDiagInt(row, "rxFrames");
     }
     if (m_networkDiagnosticsStatus) {
-        m_networkDiagnosticsStatus->setText(
+        const QString status =
             QStringLiteral("%1 endpoint(s) - %2/%3 websocket(s) connected - "
                            "%4 sent in %5 frame(s), %6 received in %7 frame(s)")
                 .arg(endpointStats.size() + rows.size())
@@ -1636,7 +1729,37 @@ void MainWindow::refreshNetworkDiagnostics()
                 .arg(networkDiagBytes(txBytes))
                 .arg(txFrames)
                 .arg(networkDiagBytes(rxBytes))
-                .arg(rxFrames));
+                .arg(rxFrames);
+        if (Theme::isNext()) {
+            const qsizetype endpoints = endpointStats.size() + rows.size();
+            m_networkDiagnosticsStatus->setToolTip(status);
+            m_networkDiagnosticsStatus->setProperty(
+                "nextDiagPart",
+                QString::fromUtf8("%1 endpoint%2 \xC2\xB7 %3 / %4 websocket%5 connected "
+                                  "\xC2\xB7 %6 sent, %7 received")
+                    .arg(endpoints)
+                    .arg(endpoints == 1 ? QString() : QStringLiteral("s"))
+                    .arg(connected)
+                    .arg(rows.size())
+                    .arg(rows.size() == 1 ? QString() : QStringLiteral("s"))
+                    .arg(networkDiagBytes(txBytes), networkDiagBytes(rxBytes)));
+            nextComposeNetworkSummary(m_networkDiagnosticsStatus);
+            QWidget *nodesPage =
+                m_networkTabs ? m_networkTabs->widget(kNetworkNodesTab) : nullptr;
+            if (auto *tile = nodesPage ? nodesPage->findChild<QFrame *>(
+                                             QStringLiteral("networkStatTraffic"))
+                                       : nullptr) {
+                if (auto *value = tile->findChild<QLabel *>(QStringLiteral("networkStatValue")))
+                    value->setText(networkDiagBytes(txBytes + rxBytes));
+                if (auto *hint = tile->findChild<QLabel *>(QStringLiteral("networkStatHint")))
+                    hint->setText(QString::fromUtf8("%1 sent \xC2\xB7 %2 received")
+                                      .arg(networkDiagBytes(txBytes), networkDiagBytes(rxBytes)));
+                tile->setToolTip(QStringLiteral(
+                    "Bytes this app sent and received over its relay websockets"));
+            }
+        } else {
+            m_networkDiagnosticsStatus->setText(status);
+        }
     }
 
     if (m_networkTabs && m_networkTabs->currentIndex() <= kNetworkHostsTab)

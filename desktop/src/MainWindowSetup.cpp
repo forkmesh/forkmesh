@@ -21,6 +21,7 @@
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
 #include "PrivateMirrorStore.h"
+#include "RestartTiming.h"
 #include "SourceTreeWatch.h"
 #include "UserAvatarStore.h"
 #include "SettingsWrite.h"
@@ -30,6 +31,7 @@
 #include <QItemSelectionModel>
 #include <QNetworkInformation>
 #include <QProcessEnvironment>
+#include <QThreadPool>
 #include <QtConcurrent/QtConcurrentRun>
 
 #ifndef Q_OS_WIN
@@ -159,14 +161,29 @@ void MainWindow::loadCachedAvatars()
     }));
 }
 
-void MainWindow::saveChatHistory()
-{
-    const QString path = chatHistoryPath();
-    if (path.isEmpty())
-        return;
+namespace {
 
+QThreadPool &chatHistoryWriter()
+{
+    static QThreadPool *pool = [] {
+        auto *made = new QThreadPool;
+        made->setMaxThreadCount(1);
+        if (QCoreApplication *app = QCoreApplication::instance())
+            QObject::connect(app, &QCoreApplication::aboutToQuit, app,
+                             [made] { made->waitForDone(); });
+        return made;
+    }();
+    return *pool;
+}
+
+QByteArray chatHistoryBytes(const QHash<QString, QList<ChatMessage>> &history,
+                            const QStringList &openDmPeers,
+                            const QHash<QString, QString> &dmNameMap,
+                            const QHash<QString, int> &unreadCounts,
+                            const QString &current)
+{
     QJsonObject conversations;
-    for (auto it = m_history.constBegin(); it != m_history.constEnd(); ++it) {
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         QJsonArray arr;
         const QList<ChatMessage> &msgs = it.value();
         const int first = std::max(0, int(msgs.size()) - 1000);
@@ -204,26 +221,44 @@ void MainWindow::saveChatHistory()
     }
 
     QJsonArray openDms;
-    for (const QString &peer : std::as_const(m_openDms))
+    for (const QString &peer : openDmPeers)
         openDms.append(peer);
     QJsonObject dmNames;
-    for (auto it = m_dmNames.constBegin(); it != m_dmNames.constEnd(); ++it)
+    for (auto it = dmNameMap.constBegin(); it != dmNameMap.constEnd(); ++it)
         dmNames.insert(it.key(), it.value());
 
     QJsonObject unreadObj;
-    for (auto it = m_unreadCounts.constBegin(); it != m_unreadCounts.constEnd(); ++it)
+    for (auto it = unreadCounts.constBegin(); it != unreadCounts.constEnd(); ++it)
         unreadObj.insert(it.key(), it.value());
 
-    const QJsonObject root{{"current", m_currentConversation},
+    const QJsonObject root{{"current", current},
                            {"openDms", openDms},
                            {"dmNames", dmNames},
                            {"unread", unreadObj},
                            {"conversations", conversations}};
-    forkmesh::ownerfile::write(path, QJsonDocument(root).toJson(QJsonDocument::Compact));
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
+} // namespace
+
+void MainWindow::saveChatHistory()
+{
+    const QString path = chatHistoryPath();
+    if (path.isEmpty())
+        return;
+    chatHistoryWriter().start(
+        [path, history = m_history, openDms = m_openDms, dmNames = m_dmNames,
+         unread = m_unreadCounts, current = m_currentConversation] {
+            forkmesh::ownerfile::write(
+                path, chatHistoryBytes(history, openDms, dmNames, unread, current));
+        });
+    if (m_closingDown)
+        chatHistoryWriter().waitForDone();
 }
 
 void MainWindow::loadChatHistory()
 {
+    chatHistoryWriter().waitForDone();
     QString path = chatHistoryPath();
     bool migrated = false;
     if (!path.isEmpty() && !QFileInfo::exists(path)) {
@@ -1417,6 +1452,24 @@ void MainWindow::testSetRunnersPayload(const QJsonObject &payload)
     m_runners = forkmesh::runners::parseRunners(payload);
     m_runnersLoaded = true;
     setRunnerAttention(forkmesh::runners::runnerAttentionFromRunners(m_runners));
+}
+
+void MainWindow::testSetDirectoryInstances(const QJsonArray &instances)
+{
+    m_directoryInstances = instances;
+    m_directoryInstancesFetchedMs = QDateTime::currentMSecsSinceEpoch();
+}
+
+QStringList MainWindow::testNodeDirectoryVisualCaptions() const
+{
+    QStringList captions;
+    if (!m_nodesTable)
+        return captions;
+    const QHeaderView *header = m_nodesTable->horizontalHeader();
+    for (int visual = 0; visual < header->count(); ++visual)
+        if (QTableWidgetItem *item = m_nodesTable->horizontalHeaderItem(header->logicalIndex(visual)))
+            captions.append(item->text());
+    return captions;
 }
 
 QStringList MainWindow::testRelayRowNames() const
@@ -3333,6 +3386,22 @@ void MainWindow::startLocalMesh()
         m_localMesh->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());
         m_localMesh->announceNow();
         startLocalControl();
+        return;
+    }
+    if (m_localMeshKeyState != 2) {
+        if (m_localMeshKeyState == 1)
+            return;
+        m_localMeshKeyState = 1;
+        QThread *warm = QThread::create([room = forkmesh::localmesh::roomName()] {
+            RoomCrypto::warmDefaultKey(room);
+        });
+        connect(warm, &QThread::finished, warm, &QObject::deleteLater);
+        connect(warm, &QThread::finished, this, [this] {
+            m_localMeshKeyState = 2;
+            if (!m_closingDown)
+                startLocalMesh();
+        });
+        warm->start();
         return;
     }
     // Deliberately not gated on offline mode, an account, or a sign-in: the
@@ -5844,12 +5913,17 @@ void MainWindow::flushFooterLogLines()
 {
     if (m_footerLogFlushTimer)
         m_footerLogFlushTimer->stop();
-    const auto appendLines = [this](QTextEdit *view, const QStringList &lines,
+    const auto appendLines = [this](QTextEdit *view, QStringList lines,
                                     int keep, int slack) {
         QTextDocument *doc = view->document();
         QTextCursor batch(doc);
         batch.beginEditBlock();
-        for (const QString &clean : lines) {
+        if (keep > 0 && lines.size() >= keep) {
+            lines = lines.mid(lines.size() - keep);
+            batch.select(QTextCursor::Document);
+            batch.removeSelectedText();
+        }
+        for (const QString &clean : std::as_const(lines)) {
             view->append(footerLogLineHtml(clean, view));
             if (QTextBlock last = doc->lastBlock(); last.isValid())
                 last.setUserData(new FooterLogLineData(clean));
@@ -6236,10 +6310,12 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
     // that finished on an unchanged tree installs. Bounded, so a tree that
     // will not sit still cannot keep the restart spinning forever.
     auto build = std::make_shared<std::function<void(int)>>();
+    auto compiled = std::make_shared<QStringList>();
     // Held weakly by its own body: the in-flight step callbacks own the strong
     // references, so the chain frees itself once the restart ends either way.
     std::weak_ptr<std::function<void(int)>> weakBuild = build;
-    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild](int pass) {
+    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild,
+              compiled](int pass) {
         constexpr int kMaxBuildPasses = 3;
         auto build = weakBuild.lock();
         if (!build)
@@ -6264,7 +6340,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 return head;
             },
             [this, clientDir, buildDir, scratchDir, appPath, build, pass,
-             jobs](QString headBefore) {
+             jobs, compiled](QString headBefore) {
                 logRestart(QStringLiteral("build pass %1: %2 parallel jobs, HEAD %3")
                                .arg(pass)
                                .arg(jobs)
@@ -6273,8 +6349,16 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 const int logStart =
                     m_updateLog ? m_updateLog->document()->characterCount() : 0;
                 auto settle = [this, clientDir, buildDir, appPath, build, pass,
-                               headBefore, logStart](bool ok, const QString &changed,
-                                                     const QString &headAfter) {
+                               headBefore, logStart,
+                               compiled](bool ok, const QString &changed,
+                                         const QString &headAfter) {
+                    const QString output =
+                        m_updateLog ? m_updateLog->toPlainText().mid(logStart)
+                                    : QString();
+                    for (const QString &source :
+                         forkmesh::restarttiming::compiledSources(output))
+                        if (!compiled->contains(source))
+                            compiled->append(source);
                     if (!changed.isEmpty()) {
                         const QString note =
                             QStringLiteral("the sources changed while build pass %1 ran "
@@ -6296,9 +6380,6 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                                               : QStringLiteral("; out of passes")));
                     }
                     if (!ok) {
-                        const QString output =
-                            m_updateLog ? m_updateLog->toPlainText().mid(logStart)
-                                        : QString();
                         stopRefreshSpin();
                         stopRestartSpin();
                         // Out of passes on a tree that kept moving: the error is most
@@ -6321,6 +6402,16 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                             m_buildButton->setEnabled(true);
                         return;
                     }
+                    const QString summary =
+                        forkmesh::restarttiming::rebuiltSummary(*compiled);
+                    logRestart(summary);
+                    appendUpdateLog(QStringLiteral("\n==> %1\n").arg(summary));
+                    if (compiled->size() > 1)
+                        appendUpdateLog(QStringLiteral("    %1\n").arg(
+                            compiled->join(QStringLiteral("\n    "))));
+                    logSystem(QStringLiteral("Rebuild & restart: %1").arg(summary));
+                    QSettings().setValue(QStringLiteral("restartTiming/pendingSummary"),
+                                         summary);
                     buildMirrorNodeCompanion(clientDir, buildDir,
                                              [this, buildDir, appPath] {
                         const QString built = builtExecutablePath(buildDir);

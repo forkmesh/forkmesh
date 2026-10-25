@@ -100,7 +100,31 @@ WORLD_TARGETED_INTERACTION_KINDS = (
     "handshake-offer",
     "handshake-accept",
     "handshake-decline",
+    "bubble-invite",
+    "bubble-knock",
+    "bubble-decline",
 )
+WORLD_REACTION_VALUES = frozenset({
+    "thumbs_up", "thumbs_down", "victory", "ok", "rock", "point_up",
+    "open_palm", "wave", "heart", "clap", "laugh", "fire",
+})
+WORLD_VOICE_ROOM_RE = re.compile(
+    r"(?:world|channel|space:[a-z0-9]+(?:-[a-z0-9]+){0,9}"
+    r"|adhoc:[0-9a-f]{16}|bubble:[0-9a-f]{16})")
+WORLD_VOICE_ROOM_MAX = 64
+WORLD_VOICE_NAME_MAX = 24
+WORLD_VOICE_SECRET_RE = re.compile(r"[0-9a-f]{32}")
+WORLD_VOICE_SIGNAL_TYPES = frozenset({
+    "group-call-presence", "group-call-key",
+})
+WORLD_VOICE_PEER_RE = re.compile(r"[0-9a-f]{32}")
+WORLD_VOICE_KEY_RE = re.compile(r"[A-Za-z0-9+/]{22}==")
+WORLD_WORDS_MAX = 9_999_999
+WORLD_RIG_RATE_MAX_PER_WINDOW = 16
+WORLD_RIG_RATE_HARD_MAX_PER_WINDOW = 40
+WORLD_RIG_RADIUS_UNITS = 90.0
+WORLD_VOICE_RATE_MAX_PER_WINDOW = 6
+WORLD_RIG_B64_RE = re.compile(r"[A-Za-z0-9+/]{180}[A-Za-z0-9+/=]{4}")
 WORLD_EMOTE_VALUES = frozenset({
     "backflip",
     "celebrate",
@@ -196,6 +220,7 @@ WORLD_PUBLIC_FIELDS = (
     "publicDoor", "statusEmoji", "statusNote", "outfitColor",
     "outfitStyle", "faceImage", "solana", "home",
     "x", "y", "z", "yaw", "lookYaw", "lookPitch", "moving", "updatedAt",
+    "voice", "voiceName", "mic", "cam", "words",
 )
 
 WORLD_DRONE_RACE_MAX_RINGS = 64
@@ -434,6 +459,110 @@ def clean_status_note(value):
     return note
 
 
+def world_voice_room(value):
+    room = str(value or "").strip()
+    if len(room) > WORLD_VOICE_ROOM_MAX:
+        return ""
+    return room if WORLD_VOICE_ROOM_RE.fullmatch(room) else ""
+
+
+def clean_voice_room_name(value):
+    name = unicodedata.normalize("NFKC", str(value or "")).strip()
+    name = " ".join(name.split())[:WORLD_VOICE_NAME_MAX].strip()
+    if not name:
+        return ""
+    for character in name:
+        if (
+            unicodedata.category(character)[:1] not in {"L", "M", "N"}
+            and character not in {" ", "'", "\u2019", "-"}
+        ):
+            return ""
+    return name
+
+
+def _bounded_int(value, low, high, fallback=0):
+    if isinstance(value, bool):
+        return fallback
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(number):
+        return fallback
+    return int(max(low, min(high, round(number))))
+
+
+def _bounded_int_list(value, length_max, low, high, length_min=0):
+    if not isinstance(value, list) or not (
+            length_min <= len(value) <= length_max):
+        return None
+    return [_bounded_int(item, low, high) for item in value]
+
+
+def sanitize_rig(payload):
+    if not isinstance(payload, dict) or payload.get("type") != "rig":
+        return None
+    if _bounded_int(payload.get("v"), 0, 255) != 1:
+        return None
+    rig = {"v": 1}
+    angles = _bounded_int_list(payload.get("p"), 3, -1600, 1600, 3)
+    if angles is None:
+        return None
+    rig["p"] = angles
+    for field in ("d", "a"):
+        value = payload.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not WORLD_RIG_B64_RE.fullmatch(value):
+            return None
+        rig[field] = value
+    channels = _bounded_int_list(payload.get("x"), 10, -100, 100)
+    rig["x"] = channels if channels is not None else []
+    hands = payload.get("h")
+    rig["h"] = []
+    if isinstance(hands, list):
+        for hand in hands[:2]:
+            cleaned = _bounded_int_list(hand, 9, -255, 255, 9)
+            if cleaned is not None:
+                rig["h"].append(cleaned)
+    rig["t"] = 1 if payload.get("t") in (1, True) else 0
+    rig["l"] = _bounded_int(payload.get("l"), 0, 100)
+    rig["w"] = _bounded_int(payload.get("w"), 0, WORLD_WORDS_MAX)
+    return rig
+
+
+def sanitize_voice_signal(payload, sender_state):
+    if not isinstance(payload, dict) or not isinstance(sender_state, dict):
+        return None
+    if payload.get("type") != "voice-signal":
+        return None
+    room = world_voice_room(payload.get("room"))
+    if not room or room == "channel" or room != sender_state.get("voice"):
+        return None
+    frame = payload.get("frame")
+    if not isinstance(frame, dict):
+        return None
+    kind = str(frame.get("type") or "")
+    if kind not in WORLD_VOICE_SIGNAL_TYPES:
+        return None
+    peer = str(frame.get("peer") or "")
+    if not WORLD_VOICE_PEER_RE.fullmatch(peer):
+        return None
+    cleaned = {"type": kind, "peer": peer}
+    if kind == "group-call-presence":
+        cleaned["call"] = "out" if frame.get("call") == "out" else "in"
+        cleaned["media"] = (
+            "video" if frame.get("media") == "video" else "audio")
+    else:
+        key = str(frame.get("key") or "")
+        key_id = _bounded_int(frame.get("keyId"), -1, 255, -1)
+        if key_id < 0 or not WORLD_VOICE_KEY_RE.fullmatch(key):
+            return None
+        cleaned["keyId"] = key_id
+        cleaned["key"] = key
+    return {"room": room, "frame": cleaned}
+
+
 def _choice(value, allowed, fallback):
     choice = str(value or "").strip().lower()
     return choice if choice in allowed else fallback
@@ -618,6 +747,11 @@ def default_presence(peer_id, now):
         "lookYaw": 0.0,
         "lookPitch": 0.0,
         "moving": False,
+        "voice": "",
+        "voiceName": "",
+        "mic": False,
+        "cam": False,
+        "words": 0,
         "updatedAt": int(now),
     }
 
@@ -901,6 +1035,24 @@ def sanitize_message(payload, current, now, country_source="",
                 else "")
         if "space" in payload:
             state["space"] = world_space(payload.get("space"))
+        if "voice" in payload:
+            state["voice"] = (
+                world_voice_room(payload.get("voice"))
+                if state.get("accountStatus") != "Guest" else "")
+        if "voiceName" in payload:
+            state["voiceName"] = clean_voice_room_name(
+                payload.get("voiceName"))
+        if not str(state.get("voice") or "").startswith("adhoc:"):
+            state["voiceName"] = ""
+        for flag in ("mic", "cam"):
+            if flag in payload:
+                state[flag] = payload.get(flag) is True
+        if not state.get("voice"):
+            state["mic"] = False
+            state["cam"] = False
+        if "words" in payload:
+            state["words"] = _bounded_int(
+                payload.get("words"), 0, WORLD_WORDS_MAX)
         if isinstance(payload.get("shareNodes"), bool):
             try:
                 trusted_count = int(trusted_node_count or 0)
@@ -1004,7 +1156,29 @@ def sanitize_interaction(payload, sender_state):
         target = str(payload.get("target") or "").strip()
         if not _PEER_ID_RE.fullmatch(target) or target == sender:
             return None
+        if kind.startswith("bubble-") and (
+                sender_state.get("accountStatus") == "Guest"):
+            return None
+        if kind == "bubble-invite":
+            room = world_voice_room(payload.get("room"))
+            secret = str(payload.get("secret") or "")
+            if (
+                not room.startswith("bubble:")
+                or not WORLD_VOICE_SECRET_RE.fullmatch(secret)
+            ):
+                return None
+            return {"type": "interaction", "kind": kind, "target": target,
+                    "room": room, "secret": secret}
         return {"type": "interaction", "kind": kind, "target": target}
+    if kind == "reaction":
+        reaction = str(payload.get("reaction") or "").strip().lower()
+        if reaction not in WORLD_REACTION_VALUES:
+            return None
+        target = str(payload.get("target") or "").strip()
+        if target and (not _PEER_ID_RE.fullmatch(target) or target == sender):
+            target = ""
+        return {"type": "interaction", "kind": "reaction",
+                "reaction": reaction, "target": target}
     if kind == "emote":
         emote = str(payload.get("emote") or "").strip().lower()
         if emote not in WORLD_EMOTE_VALUES:

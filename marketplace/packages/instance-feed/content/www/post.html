@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Feed post · ForkMesh</title>
+    <meta name="description" content="A post from the ForkMesh Feed." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/feed/post.css?v=${version}" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/feed/post.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="fp-wrap">
+      <p class="eyebrow">Feed</p>
+      <p class="fp-status" data-fp-status role="status">Loading the post…</p>
+      <div class="fp-thread" data-fp-thread hidden></div>
+      <div class="fp-actions" data-fp-actions hidden>
+        <button type="button" class="secondary-button" data-fp-copy>Copy link</button>
+        <a class="secondary-button" data-fp-open href="/dashboard/instance-feed">Reply in Feed</a>
+      </div>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

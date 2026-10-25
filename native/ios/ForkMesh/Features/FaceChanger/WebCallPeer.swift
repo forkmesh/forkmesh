@@ -43,12 +43,31 @@ enum WebCallError: Error {
 final class WebCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: WebCallPeer?
     private(set) var route: DirectCallRoute?
+    private(set) var remoteVideo = false
+    private(set) var remoteVideoSeen = false
+    private(set) var micLost = false
     let quality = CallQualityMonitor()
     var voice: @MainActor () -> String = { "" }
 
-    func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
+    static let setupOptions: JSONValue = .object(["resilient": .bool(true), "staged": .bool(true)])
+
+    private func setupArguments(_ media: DirectCallKind, _ iceServers: [String]) -> [JSONValue] {
+        [
+            .string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice()), .string(""),
+            .string(""), .null, Self.setupOptions,
+        ]
+    }
+
+    private func resetCall() {
         route = nil
+        remoteVideo = false
+        remoteVideoSeen = false
+        micLost = false
         quality.reset()
+    }
+
+    func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
+        resetCall()
         if let previewed = current, previewed.previewing, media == .video {
             return try await adopt(previewed, media: media, iceServers: iceServers)
         }
@@ -60,8 +79,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         current = peer
         do {
             try await peer.load()
-            _ = try await peer.run(
-                "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
+            _ = try await peer.run("setup", setupArguments(media, iceServers))
         } catch {
             peer.close()
             throw error
@@ -73,8 +91,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         previewed.previewing = false
         previewed.dropRecording()
         do {
-            _ = try await previewed.run(
-                "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
+            _ = try await previewed.run("setup", setupArguments(media, iceServers))
         } catch {
             previewed.close()
             throw error
@@ -86,8 +103,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         let peer = WebCallPeer { [weak self] (closed: WebCallPeer) in
             guard let self, self.current === closed else { return }
             self.current = nil
-            self.route = nil
-            self.quality.reset()
+            self.resetCall()
         }
         peer.onRoute = { [weak self, weak peer] (found: DirectCallRoute?) in
             guard let self, let peer, self.current === peer, !peer.previewing else { return }
@@ -96,6 +112,15 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         peer.onQuality = { [weak self, weak peer] (event: CallQualityEvent) in
             guard let self, let peer, self.current === peer else { return }
             self.quality.apply(event)
+        }
+        peer.onRemoteVideo = { [weak self, weak peer] (on: Bool, seen: Bool) in
+            guard let self, let peer, self.current === peer, !peer.previewing else { return }
+            self.remoteVideo = on
+            self.remoteVideoSeen = seen
+        }
+        peer.onMic = { [weak self, weak peer] (ok: Bool) in
+            guard let self, let peer, self.current === peer else { return }
+            self.micLost = !ok
         }
         return peer
     }
@@ -160,8 +185,11 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
+    var onConnection: (@MainActor (DirectCallConnection) -> Void)?
     var onRoute: (@MainActor (DirectCallRoute?) -> Void)?
     var onQuality: (@MainActor (CallQualityEvent) -> Void)?
+    var onRemoteVideo: (@MainActor (Bool, Bool) -> Void)?
+    var onMic: (@MainActor (Bool) -> Void)?
     let webView: WKWebView
     private let proxy = WebCallMessageProxy()
     private let onDispose: @MainActor (WebCallPeer) -> Void
@@ -266,6 +294,12 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
             onRoute?(DirectCallRoute(rawValue: message["route"]?.text ?? ""))
         case "quality":
             if let event = CallQualityEvent(message) { onQuality?(event) }
+        case "connection":
+            if let state = DirectCallConnection(rawValue: message["state"]?.text ?? "") { onConnection?(state) }
+        case "remote-video":
+            onRemoteVideo?(message["on"]?.boolValue ?? false, message["seen"]?.boolValue ?? false)
+        case "mic":
+            onMic?(message["ok"]?.boolValue ?? false)
         case "live":
             onLive?()
         case "closed":
@@ -348,6 +382,18 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
 
     func acceptAnswer(_ answer: JSONObject) async throws {
         try await run("accept", [.object(answer)])
+    }
+
+    func restartOffer() async throws -> JSONObject? {
+        try await run("restart").objectValue
+    }
+
+    func resumeMedia() {
+        Task { _ = try? await run("wake") }
+    }
+
+    func setLayout(mini: Bool) {
+        Task { _ = try? await run("layout", [.string(mini ? "mini" : "full")]) }
     }
 
     func add(candidate: JSONObject) async {

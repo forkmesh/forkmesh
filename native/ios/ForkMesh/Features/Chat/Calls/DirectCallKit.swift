@@ -202,15 +202,12 @@ final class DirectCallKit: NSObject {
 
     private func accept(_ callId: String) {
         Task { @MainActor [weak self] in
-            guard let engine = self?.engine, let invite = engine.invite, invite.callId.lowercased() == callId else {
+            guard let engine = self?.engine else { return }
+            guard let invite = engine.invite, invite.callId.lowercased() == callId else {
+                if engine.callId.lowercased() != callId { ChatFeature.hub()?.post(DirectCallActions.answerGone) }
                 return
             }
-            CallRinger.shared.hush()
-            guard await WebCallPeerFactory.requestAccess(for: invite.media) else {
-                await engine.declineInvite()
-                return
-            }
-            await engine.acceptInvite()
+            DirectCallActions.accept(engine, hub: ChatFeature.hub())
         }
     }
 

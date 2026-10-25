@@ -173,6 +173,59 @@ static QUrl chatMentionProfileUrl(const QString &serverInput,
     return url;
 }
 
+static QPixmap nextChatInitials(const QString &name, int side)
+{
+    const qreal dpr = iconDevicePixelRatio();
+    QPixmap pixmap(qMax(1, qRound(side * dpr)), qMax(1, qRound(side * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    painter.drawEllipse(QRectF(0, 0, side, side));
+    QString initials;
+    for (const QString &part : name.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        initials += part.left(1).toUpper();
+        if (initials.size() >= 2)
+            break;
+    }
+    if (initials.isEmpty())
+        initials = QStringLiteral("?");
+    QFont font = painter.font();
+    font.setPixelSize(qMax(7, qRound(side * 0.4)));
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(Theme::color(Theme::Role::FgMuted));
+    painter.drawText(QRect(0, 0, side, side), Qt::AlignCenter, initials);
+    return pixmap;
+}
+
+static QPixmap nextChatFacePile(const QList<QPixmap> &faces, int side)
+{
+    if (faces.isEmpty())
+        return QPixmap();
+    const qreal dpr = iconDevicePixelRatio();
+    const int step = side - 6;
+    const int width = side + step * int(faces.size() - 1);
+    QPixmap pile(qMax(1, qRound(width * dpr)), qMax(1, qRound(side * dpr)));
+    pile.setDevicePixelRatio(dpr);
+    pile.fill(Qt::transparent);
+    QPainter painter(&pile);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    for (int index = int(faces.size()) - 1; index >= 0; --index) {
+        const QRectF slot(index * step, 0, side, side);
+        painter.setCompositionMode(QPainter::CompositionMode_Clear);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Qt::black);
+        painter.drawEllipse(slot.adjusted(-1.5, -1.5, 1.5, 1.5));
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        painter.drawPixmap(slot, faces.at(index), QRectF(QPointF(0, 0), faces.at(index).size()));
+    }
+    return pile;
+}
+
 QString MainWindow::senderColor(const QString &sender) const
 {
     const uint hash = qHash(sender);
@@ -441,6 +494,25 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
                              forkmesh::userstatus::tooltip(
                                  status, QDateTime::currentMSecsSinceEpoch()));
     }
+    if (Theme::isNext()) {
+        row->setProperty("chatSelfName",
+                         isDiscordConversation(message.conversation) && m_discordClient
+                             ? m_discordClient->botName()
+                             : chatDisplayName());
+        if (!threadSummary.isEmpty()) {
+            qint64 latestReplyMs = 0;
+            for (const ChatMessage &reply : m_history.value(message.conversation)) {
+                if (reply.threadRootId == message.id && !reply.deleted)
+                    latestReplyMs = qMax(latestReplyMs, reply.timestampMs);
+            }
+            if (auto *meta = row->findChild<QLabel *>(
+                    QStringLiteral("threadSummaryMeta")))
+                if (latestReplyMs > 0)
+                    meta->setText(QString::fromUtf8("\xC2\xB7 last ") +
+                                  MessageRow::chatStampLabel(
+                                      QDateTime::fromMSecsSinceEpoch(latestReplyMs)));
+        }
+    }
     if (m_reactions.contains(message.id))
         row->setReactions(m_reactions.value(message.id));
     row->setReceiptMark(chatReceiptMark(message));
@@ -526,6 +598,24 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
 
 QWidget *MainWindow::chatDayDivider(const QDate &day)
 {
+    if (Theme::isNext()) {
+        auto *divider = new QWidget;
+        divider->setObjectName(QStringLiteral("chatDayDivider"));
+        const QDate today = QDate::currentDate();
+        auto *label = new QLabel(day == today ? QStringLiteral("Today")
+                                 : day == today.addDays(-1)
+                                     ? QStringLiteral("Yesterday")
+                                     : MessageRow::chatDayLabel(day));
+        label->setObjectName(QStringLiteral("chatDayDividerLabel"));
+        label->setAlignment(Qt::AlignCenter);
+        auto *layout = new QHBoxLayout(divider);
+        layout->setContentsMargins(0, 12, 0, 4);
+        layout->setSpacing(0);
+        layout->addStretch(1);
+        layout->addWidget(label, 0, Qt::AlignVCenter);
+        layout->addStretch(1);
+        return divider;
+    }
     auto *divider = new QWidget;
     divider->setObjectName(QStringLiteral("chatDayDivider"));
     auto *label = new QLabel(MessageRow::chatDayLabel(day));
@@ -955,7 +1045,6 @@ void MainWindow::onMessage(const ChatMessage &message)
     refreshChatListPreview(conversation);
 
     if (conversation == m_currentConversation) {
-        schedulePromptChatPreview();
         const bool wasAtBottom = m_stickToBottom;
         // A reply changes its root's summary row, and a message that landed
         // earlier than the one before it changes the order — both need the
@@ -2277,6 +2366,20 @@ void MainWindow::refreshChatMembers()
                 QStringLiteral("DISCORD PARTICIPANTS SEEN HERE — %1")
                     .arg(names.size()));
         }
+        if (m_chatMembersButton && Theme::isNext()) {
+            QList<QPixmap> faces;
+            for (const QString &name : names) {
+                if (faces.size() >= 3)
+                    break;
+                faces.append(nextChatInitials(name, 20));
+            }
+            const QPixmap pile = nextChatFacePile(faces, 20);
+            if (!pile.isNull()) {
+                m_chatMembersButton->setProperty("forkmeshOcticon", QVariant());
+                m_chatMembersButton->setIcon(QIcon(pile));
+                m_chatMembersButton->setIconSize(pile.deviceIndependentSize().toSize());
+            }
+        }
         if (m_chatMembersButton) {
             m_chatMembersButton->setText(QString::number(names.size()));
             m_chatMembersButton->setToolTip(
@@ -2632,6 +2735,23 @@ void MainWindow::refreshChatMembers()
                 : QString::fromUtf8(
                       "DATABASE USERS IN THIS ROOM \xE2\x80\x94 %1")
                       .arg(groups.size()));
+    }
+    if (m_chatMembersButton && Theme::isNext()) {
+        QList<QPixmap> faces;
+        for (const ChatUserGroup &group : std::as_const(groups)) {
+            if (faces.size() >= 3)
+                break;
+            const QPixmap known =
+                chatSenderAvatarSource(group.primary.id, group.primary.name);
+            faces.append(known.isNull() ? nextChatInitials(group.primary.name, 20)
+                                        : roundedAvatar(known, 20, 0.5));
+        }
+        const QPixmap pile = nextChatFacePile(faces, 20);
+        if (!pile.isNull()) {
+            m_chatMembersButton->setProperty("forkmeshOcticon", QVariant());
+            m_chatMembersButton->setIcon(QIcon(pile));
+            m_chatMembersButton->setIconSize(pile.deviceIndependentSize().toSize());
+        }
     }
     if (m_chatMembersButton) {
         const int shownCount =
@@ -3751,6 +3871,7 @@ void MainWindow::refreshChatListPreview(const QString &conversation)
 {
     if (conversation.isEmpty())
         return;
+    schedulePromptChatPreview();
     const forkmesh::chatlist::Preview preview = chatListPreview(conversation);
     const auto apply = [&preview](auto &&read, auto &&write) {
         if (read(ChannelGroupTree::kPreviewRole).toString() != preview.text)
@@ -3812,6 +3933,37 @@ QPixmap MainWindow::chatListAvatar(const QString &peerId, const QString &name,
         QLatin1Char('|') +
         (away ? QLatin1Char('a') : online ? QLatin1Char('o') : QLatin1Char('-')) +
         faint.name();
+    if (Theme::isNext()) {
+        const QString nextKey = key + QStringLiteral("|next|") +
+                                Theme::hex(Theme::Role::SurfaceActive) +
+                                Theme::hex(Theme::Role::Success);
+        const QPixmap nextCached = m_chatMemberAvatarCache.value(nextKey);
+        if (!nextCached.isNull())
+            return nextCached;
+        constexpr int side = 20;
+        QPixmap face = source.isNull() ? nextChatInitials(name, side)
+                                       : roundedAvatar(source, side, 0.5);
+        if (face.isNull())
+            return face;
+        {
+            const QRectF dot(side - 7.5, side - 7.5, 8, 8);
+            QPainter painter(&face);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(Qt::NoPen);
+            painter.setCompositionMode(QPainter::CompositionMode_Clear);
+            painter.setBrush(Qt::black);
+            painter.drawEllipse(dot.adjusted(-2, -2, 2, 2));
+            painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            painter.setBrush(Theme::color(online ? (away ? Theme::Role::Warning
+                                                         : Theme::Role::Success)
+                                                 : Theme::Role::FgSubtle));
+            painter.drawEllipse(dot);
+        }
+        if (m_chatMemberAvatarCache.size() > 512)
+            m_chatMemberAvatarCache.clear();
+        m_chatMemberAvatarCache.insert(nextKey, face);
+        return face;
+    }
     const QPixmap cached = m_chatMemberAvatarCache.value(key);
     if (!cached.isNull())
         return cached;
@@ -3884,7 +4036,7 @@ void MainWindow::updateChatConversationHeading()
         if (QWidget *bar = m_channelTopicLabel->parentWidget()) {
             if (auto *divider = bar->findChild<QFrame *>(
                     QStringLiteral("channelTopicDivider")))
-                divider->setVisible(!topic.isEmpty());
+                divider->setVisible(!topic.isEmpty() && !Theme::isNext());
         }
     }
     if (m_serverCopiesLabel) {
@@ -3907,7 +4059,9 @@ void MainWindow::updateChatConversationHeading()
         m_officeChannelMirror->isServerVisibleConversation(
             m_currentConversation)) {
         m_encryptionLabel->setPixmap(tintedOcticonPixmap(
-            QStringLiteral("server"), QColor(QStringLiteral("#8b949e")), 16));
+            QStringLiteral("server"),
+            Theme::nextOr(Theme::Role::FgSubtle, QColor(QStringLiteral("#8b949e"))),
+            Theme::isNext() ? 14 : 16));
         m_encryptionLabel->setToolTip(
             QStringLiteral("Server-visible notices written by ForkMesh; not "
                            "end-to-end encrypted. Only you can see this "
@@ -3925,7 +4079,8 @@ void MainWindow::updateChatConversationHeading()
             discord ? QStringLiteral("server")
                     : publicChannel ? QStringLiteral("unlock")
                                     : QStringLiteral("lock"),
-            QColor(QStringLiteral("#8b949e")), 16));
+            Theme::nextOr(Theme::Role::FgSubtle, QColor(QStringLiteral("#8b949e"))),
+            Theme::isNext() ? 14 : 16));
         m_encryptionLabel->setToolTip(
             discord
                 ? QStringLiteral("Discord bot connection over TLS; Discord and "
@@ -3938,6 +4093,46 @@ void MainWindow::updateChatConversationHeading()
                           forkmesh::relayrules::RoomKind::Public).tooltip
                     : forkmesh::relayrules::roomBadge(
                           forkmesh::relayrules::RoomKind::Private).tooltip);
+    }
+    auto *footerText = m_channelList
+                           ? qobject_cast<QLabel *>(
+                                 m_channelList->property("chatEncryptionFooterText")
+                                     .value<QObject *>())
+                           : nullptr;
+    if (footerText && m_encryptionLabel) {
+        const bool serverVisible =
+            m_officeChannelMirror &&
+            m_officeChannelMirror->isServerVisibleConversation(m_currentConversation);
+        const bool discord = isDiscordConversation(m_currentConversation);
+        const bool mesh = isLocalMeshConversation(m_currentConversation);
+        const bool office = isOfficeConversation(m_currentConversation);
+        const bool publicChannel =
+            m_currentConversation.startsWith(QLatin1Char('#')) &&
+            !m_privateChannels.contains(m_currentConversation) &&
+            (!office || (m_officeChannelMirror &&
+                         !m_officeChannelMirror->isPrivateConversation(
+                             m_currentConversation)));
+        QString text;
+        bool sealed = false;
+        if (serverVisible)
+            text = QStringLiteral("Server-visible notices, not end-to-end encrypted");
+        else if (discord)
+            text = QStringLiteral("Discord connection: Discord can read this channel");
+        else if (mesh)
+            text = QStringLiteral("Nearby only: anyone nearby can read it");
+        else if (publicChannel) {
+            text = QStringLiteral("Sealed to this room's devices; the relay cannot "
+                                  "read it");
+            sealed = true;
+        } else {
+            text = QStringLiteral("End-to-end encrypted on every device");
+            sealed = true;
+        }
+        footerText->setText(text);
+        footerText->setToolTip(m_encryptionLabel->toolTip());
+        if (auto *footerIcon = qobject_cast<QWidget *>(
+                m_channelList->property("chatEncryptionFooterIcon").value<QObject *>()))
+            footerIcon->setVisible(sealed);
     }
 }
 
@@ -6183,6 +6378,20 @@ void MainWindow::refreshTypingLabel()
         names.append(name);
     names.removeDuplicates();
 
+    if (Theme::isNext()) {
+        const QString dots = QString::fromUtf8("\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2  ");
+        if (names.isEmpty())
+            m_typingLabel->clear();
+        else if (names.size() == 1)
+            m_typingLabel->setText(dots + names.first() + " is typing");
+        else if (names.size() == 2)
+            m_typingLabel->setText(dots + names.at(0) + " and " + names.at(1) +
+                                   " are typing");
+        else
+            m_typingLabel->setText(dots + QString::number(names.size()) +
+                                   " people are typing");
+        return;
+    }
     if (names.isEmpty()) {
         m_typingLabel->clear();
     } else if (names.size() == 1) {

@@ -54,6 +54,7 @@ struct Snapshot {
     int stallCount = 0;
     QStringList stalls;
     QStringList crashes;
+    QStringList securityIncidents;
     QString healthFindings;
     QString qtReport;
     QString logLocations;
@@ -76,6 +77,36 @@ Baseline baselineFrom(const Snapshot &snapshot, int sequence);
 QJsonObject toJson(const Baseline &baseline);
 Baseline baselineFromJson(const QJsonObject &object);
 QStringList findings(const Snapshot &snapshot);
+
+struct AlertInputs {
+    int crashes = 0;
+    int stalls = 0;
+    qint64 loopLagP95Ms = -1;
+    double cpuPercent = -1.0;
+    qint64 residentBytes = -1;
+    qint64 hostMemoryTotal = -1;
+    qint64 hostMemoryAvailable = -1;
+    qint64 diskTotal = -1;
+    qint64 diskFree = -1;
+    int openFiles = -1;
+    int openFileLimit = -1;
+    int securityIncidents = 0;
+    QString securitySample;
+};
+
+struct Alert {
+    QStringList performance;
+    QStringList security;
+    QStringList ui;
+    bool detected() const
+    {
+        return !performance.isEmpty() || !security.isEmpty() || !ui.isEmpty();
+    }
+    QString summary() const;
+};
+
+bool isSecurityIncident(const QString &message);
+Alert alert(const AlertInputs &inputs);
 QString build(const Snapshot &snapshot, const Baseline &previous);
 
 } // namespace forkmesh::diagreport

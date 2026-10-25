@@ -358,12 +358,19 @@ final class NativeCallMedia {
         return (track, pipeline)
     }
 
-    func beginAudio() {
+    func beginAudio(video: Bool = false) {
         audioUsers += 1
-        guard !callKitOwnsAudio else { return }
+        let configuration = RTCAudioSessionConfiguration.webRTC()
+        configuration.category = AVAudioSession.Category.playAndRecord.rawValue
+        configuration.mode = (video ? AVAudioSession.Mode.videoChat : AVAudioSession.Mode.voiceChat).rawValue
+        RTCAudioSessionConfiguration.setWebRTC(configuration)
         let session = RTCAudioSession.sharedInstance()
         session.lockForConfiguration()
-        try? session.setConfiguration(RTCAudioSessionConfiguration.webRTC(), active: true)
+        if callKitOwnsAudio {
+            try? session.setConfiguration(configuration)
+        } else {
+            try? session.setConfiguration(configuration, active: true)
+        }
         session.unlockForConfiguration()
         session.isAudioEnabled = true
     }
@@ -376,6 +383,18 @@ final class NativeCallMedia {
         session.lockForConfiguration()
         try? session.setActive(false)
         session.unlockForConfiguration()
+    }
+
+    func resumeAudio() {
+        guard audioUsers > 0 || callKitOwnsAudio else { return }
+        let session = RTCAudioSession.sharedInstance()
+        if !callKitOwnsAudio {
+            session.lockForConfiguration()
+            try? session.setActive(true)
+            session.unlockForConfiguration()
+        }
+        session.isAudioEnabled = false
+        session.isAudioEnabled = true
     }
 
     func callKitActivated(_ audioSession: AVAudioSession) {
@@ -412,12 +431,55 @@ final class NativeCallMedia {
         for sender in connection.senders {
             guard let kind = sender.track?.kind else { continue }
             let parameters = sender.parameters
+            let video = kind == kRTCMediaStreamTrackKindVideo
+            let level = video ? CallMediaTuning.videoPriority : CallMediaTuning.audioPriority
             for encoding in parameters.encodings {
-                encoding.maxBitrateBps = NSNumber(
-                    value: kind == kRTCMediaStreamTrackKindVideo ? videoBitrate : CallMediaTuning.audioMaxBitrate)
-                encoding.networkPriority = .high
+                encoding.maxBitrateBps = NSNumber(value: video ? videoBitrate : CallMediaTuning.audioMaxBitrate)
+                encoding.networkPriority = priority(level)
+                encoding.bitratePriority = bitratePriority(level)
             }
             sender.parameters = parameters
+        }
+    }
+
+    static func priority(_ level: String) -> RTCPriority {
+        switch level {
+        case "very-low": return .veryLow
+        case "low": return .low
+        case "medium": return .medium
+        default: return .high
+        }
+    }
+
+    static func bitratePriority(_ level: String) -> Double {
+        switch level {
+        case "very-low": return 0.5
+        case "low": return 1
+        case "medium": return 2
+        default: return 4
+        }
+    }
+
+    static func preferRed(_ connection: RTCPeerConnection) {
+        let capabilities = NSSelectorFromString("rtpReceiverCapabilitiesForKind:")
+        let setter = NSSelectorFromString("setCodecPreferences:error:")
+        let factory = NativeCallMedia.shared.factory
+        guard factory.responds(to: capabilities),
+            let found = factory.perform(capabilities, with: kRTCMediaStreamTrackKindAudio)?.takeUnretainedValue()
+                as? NSObject,
+            let codecs = found.value(forKey: "codecs") as? [NSObject]
+        else { return }
+        let mimeTypes = codecs.map { ($0.value(forKey: "mimeType") as? String) ?? "" }
+        guard let order = CallMediaTuning.orderedAudioCodecs(mimeTypes) else { return }
+        var remaining = Array(zip(mimeTypes, codecs))
+        var ordered: [NSObject] = []
+        for mimeType in order {
+            guard let index = remaining.firstIndex(where: { $0.0 == mimeType }) else { continue }
+            ordered.append(remaining.remove(at: index).1)
+        }
+        for transceiver in connection.transceivers where transceiver.mediaType == .audio {
+            guard transceiver.responds(to: setter) else { continue }
+            _ = transceiver.perform(setter, with: ordered as NSArray, with: nil)
         }
     }
 

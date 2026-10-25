@@ -115,7 +115,7 @@ final class GlassesWatcher: NSObject {
         player?.stop()
         player = nil
         if !PromptDictation.isListening && DesktopAlarm.shared.ringing == nil {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 
@@ -132,7 +132,7 @@ final class GlassesWatcher: NSObject {
         haptics = nil
         ringing = nil
         if !PromptDictation.isListening && DesktopAlarm.shared.ringing == nil {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 

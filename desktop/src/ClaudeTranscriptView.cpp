@@ -64,6 +64,8 @@
 #include <QShowEvent>
 #include <QScrollBar>
 #include <QSvgRenderer>
+#include <QCache>
+#include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -1804,6 +1806,24 @@ public:
     std::function<void()> onToggle;
     std::function<void()> onApproval;
     std::function<QString()> hoverCommand;
+    std::function<void()> onStateChange;
+
+    void setStatusDot(bool on)
+    {
+        if (m_statusDot == on)
+            return;
+        m_statusDot = on;
+        update();
+    }
+    void markSettled()
+    {
+        m_settled = true;
+        update();
+        if (onStateChange)
+            onStateChange();
+    }
+    bool runningFlag() const { return m_pulse && !m_pulse->isHidden(); }
+    bool failedFlag() const { return !m_outcome.isEmpty(); }
 
     CommandHoverCard *hoverCard() const { return m_hover.visibleCard(); }
 
@@ -1860,12 +1880,16 @@ public:
         m_pulse->setVisible(on);
         m_pulse->setRunning(on);
         update();
+        if (onStateChange)
+            onStateChange();
     }
 
     void setOutcome(const QString &text)
     {
         m_outcome = text;
         update();
+        if (onStateChange)
+            onStateChange();
     }
 
     void setLineCount(int lines)
@@ -1924,6 +1948,16 @@ protected:
             arrow.lineTo(tip.x() + 3.5, tip.y() - 1.75);
         }
         g.drawPath(arrow);
+
+        if (m_statusDot) {
+            const QColor dot = !m_outcome.isEmpty() ? QColor(m_p.del)
+                               : runningFlag()      ? QColor(m_p.accent)
+                               : m_settled          ? QColor(m_p.add)
+                                                    : QColor(m_p.muted);
+            g.setPen(Qt::NoPen);
+            g.setBrush(dot);
+            g.drawEllipse(QPointF(kLead + 4.0, height() / 2.0), 3.0, 3.0);
+        }
 
         const int shown = shownBadges();
         const bool overflow = m_icons.size() > shown;
@@ -2122,6 +2156,8 @@ private:
         update();
     }
 
+    int dotLead() const { return m_statusDot ? 14 : 0; }
+
     int shownBadges() const
     {
         return qMin(int(m_icons.size()), kMaxBadges);
@@ -2134,7 +2170,8 @@ private:
 
     QRect badgeRect(int i) const
     {
-        return QRect(kLead + i * kStep, (height() - kBadge) / 2, kBadge, kBadge);
+        return QRect(kLead + dotLead() + i * kStep, (height() - kBadge) / 2, kBadge,
+                     kBadge);
     }
 
     QRect chevronRect() const
@@ -2168,7 +2205,8 @@ private:
     QRect textRect() const
     {
         const int badgeCount = badgeSlots();
-        const int left = kLead + (badgeCount ? kBadge + (badgeCount - 1) * kStep + 8 : 2);
+        const int left = kLead + dotLead() +
+                         (badgeCount ? kBadge + (badgeCount - 1) * kStep + 8 : 2);
         int right = statusRect().left() - 6;
         if (!m_outcome.isEmpty())
             right = outcomeRect().left() - 8;
@@ -2273,6 +2311,8 @@ private:
     QString m_elapsed;
     PulseDot *m_pulse = nullptr;
     int m_hoverBadge = -1;
+    bool m_statusDot = false;
+    bool m_settled = false;
     HoverCardHost m_hover{this, m_p};
 };
 
@@ -2559,6 +2599,8 @@ public:
         kAvatarX + kAvatarPx / 2 - CommandHeader::kLead - CommandHeader::kBadge / 2;
     static constexpr int kSpeakerRailW = kCommandRailW + CommandHeader::kLead;
 
+    QWidget *content() const { return m_content; }
+
     RailItem(QWidget *content, const ClaudeTranscriptView::RowStyle &style,
              std::function<void()> onActivate = {}, QWidget *parent = nullptr)
         : QWidget(parent), m_style(style), m_onActivate(std::move(onActivate))
@@ -2594,6 +2636,7 @@ public:
         auto *hv = new QVBoxLayout(holder);
         hv->setContentsMargins(0, kGap, 0, 0);
         hv->setSpacing(0);
+        m_content = content;
         content->setParent(holder);
         content->setMinimumWidth(0);
         content->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -2670,6 +2713,7 @@ private:
         }
     }
 
+    QPointer<QWidget> m_content;
     ClaudeTranscriptView::RowStyle m_style;
     std::function<void()> m_onActivate;
     QPoint m_pressAt;
@@ -2982,6 +3026,434 @@ public:
 protected:
     void wheelEvent(QWheelEvent *e) override { e->accept(); }
 };
+
+namespace {
+
+QString nextProseHtml(const QString &markdown, const QString &codeBg)
+{
+    static QCache<QString, QString> cache(4 * 1024 * 1024);
+    const QFont prose = proseFont();
+    const QString key = codeBg + QLatin1Char('\x1f') + prose.key() + QLatin1Char('\x1f') +
+                        markdown;
+    if (const QString *hit = cache.object(key))
+        return *hit;
+    QTextDocument doc;
+    doc.setDefaultFont(prose);
+    doc.setMarkdown(markdown);
+    QList<QPair<int, int>> spans;
+    for (QTextBlock block = doc.begin(); block.isValid(); block = block.next()) {
+        const QTextBlockFormat format = block.blockFormat();
+        if (format.nonBreakableLines() || format.hasProperty(QTextFormat::BlockCodeFence) ||
+            format.hasProperty(QTextFormat::BlockCodeLanguage))
+            continue;
+        QTextBlockFormat spaced = format;
+        spaced.setLineHeight(165, QTextBlockFormat::ProportionalHeight);
+        QTextCursor(block).setBlockFormat(spaced);
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (fragment.isValid() && fragment.charFormat().fontFixedPitch())
+                spans.append({fragment.position(), fragment.length()});
+        }
+    }
+    if (!spans.isEmpty()) {
+        QFont mono = monoFont();
+        mono.setPixelSize(qMax(10, (prose.pixelSize() > 0 ? prose.pixelSize() : 15) - 2));
+        QTextCharFormat chip;
+        chip.setFont(mono, QTextCharFormat::FontPropertiesSpecifiedOnly);
+        chip.setBackground(QColor(codeBg));
+        for (const auto &span : std::as_const(spans)) {
+            QTextCursor cursor(&doc);
+            cursor.setPosition(span.first);
+            cursor.setPosition(span.first + span.second, QTextCursor::KeepAnchor);
+            cursor.mergeCharFormat(chip);
+        }
+    }
+    const QString html = doc.toHtml();
+    cache.insert(key, new QString(html), qMax<qsizetype>(1, html.size()));
+    return html;
+}
+
+QString commandCountText(int count)
+{
+    return count == 1 ? QStringLiteral("1 command")
+                      : QStringLiteral("%1 commands").arg(count);
+}
+
+class TranscriptCommandGroupHeader : public QWidget
+{
+public:
+    explicit TranscriptCommandGroupHeader(const ClaudeTranscriptView::Palette &p,
+                                          QWidget *parent = nullptr)
+        : QWidget(parent), m_p(p)
+    {
+        setObjectName(QStringLiteral("agentCommandGroupSummary"));
+        setAttribute(Qt::WA_Hover);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::TabFocus);
+        setFixedHeight(28);
+        setMinimumWidth(0);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        QFont font = proseFont();
+        font.setPixelSize(13);
+        setFont(font);
+    }
+
+    std::function<void()> onToggle;
+
+    void setState(int total, int running, int failed, bool open)
+    {
+        m_total = total;
+        m_running = running;
+        m_failed = failed;
+        m_open = open;
+        setAccessibleName(summaryText() +
+                          (failed > 0 ? QStringLiteral(" (%1 failed)").arg(failed)
+                                      : QString()));
+        setAccessibleDescription(open ? QStringLiteral("Press to hide the commands")
+                                      : QStringLiteral("Press to show the commands"));
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter g(this);
+        g.setRenderHint(QPainter::Antialiasing);
+        const bool hot = underMouse() || hasFocus();
+        const QColor tone(hot ? m_p.text : m_p.muted);
+        const qreal dpr = devicePixelRatioF();
+        const QPixmap icon = tintedOcticon(QStringLiteral("terminal"), tone, 14, dpr);
+        g.drawPixmap(QPointF(2, std::round((height() - 14) / 2.0)), icon);
+        const QFontMetrics fm(font());
+        int x = 22;
+        const QString main = summaryText();
+        g.setPen(tone);
+        g.drawText(QRect(x, 0, width() - x, height()), Qt::AlignLeft | Qt::AlignVCenter, main);
+        x += fm.horizontalAdvance(main);
+        if (m_failed > 0) {
+            const QString failed = QStringLiteral(" (%1 failed)").arg(m_failed);
+            g.setPen(QColor(m_p.del));
+            g.drawText(QRect(x, 0, qMax(0, width() - x), height()),
+                       Qt::AlignLeft | Qt::AlignVCenter, failed);
+            x += fm.horizontalAdvance(failed);
+        }
+        const QPointF tip(x + 10.0, height() / 2.0);
+        QPen pen(tone, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        g.setPen(pen);
+        g.setBrush(Qt::NoBrush);
+        QPainterPath arrow;
+        if (m_open) {
+            arrow.moveTo(tip + QPointF(-3.5, -1.75));
+            arrow.lineTo(tip + QPointF(0.0, 1.75));
+            arrow.lineTo(tip + QPointF(3.5, -1.75));
+        } else {
+            arrow.moveTo(tip + QPointF(-1.75, -3.5));
+            arrow.lineTo(tip + QPointF(1.75, 0.0));
+            arrow.lineTo(tip + QPointF(-1.75, 3.5));
+        }
+        g.drawPath(arrow);
+    }
+
+    void enterEvent(QEnterEvent *e) override
+    {
+        update();
+        QWidget::enterEvent(e);
+    }
+
+    void leaveEvent(QEvent *e) override
+    {
+        update();
+        QWidget::leaveEvent(e);
+    }
+
+    void focusInEvent(QFocusEvent *e) override
+    {
+        update();
+        QWidget::focusInEvent(e);
+    }
+
+    void focusOutEvent(QFocusEvent *e) override
+    {
+        update();
+        QWidget::focusOutEvent(e);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton && rect().contains(e->position().toPoint()) &&
+            onToggle) {
+            onToggle();
+            e->accept();
+            return;
+        }
+        QWidget::mouseReleaseEvent(e);
+    }
+
+    void keyPressEvent(QKeyEvent *e) override
+    {
+        if ((e->key() == Qt::Key_Space || e->key() == Qt::Key_Return ||
+             e->key() == Qt::Key_Enter) &&
+            onToggle) {
+            onToggle();
+            e->accept();
+            return;
+        }
+        QWidget::keyPressEvent(e);
+    }
+
+private:
+    QString summaryText() const
+    {
+        return (m_running > 0 ? QStringLiteral("Running ") : QStringLiteral("Ran ")) +
+               commandCountText(m_total);
+    }
+
+    ClaudeTranscriptView::Palette m_p;
+    int m_total = 0;
+    int m_running = 0;
+    int m_failed = 0;
+    bool m_open = false;
+};
+
+class TranscriptCommandGroup : public QFrame
+{
+public:
+    explicit TranscriptCommandGroup(const ClaudeTranscriptView::Palette &p,
+                                    QWidget *parent = nullptr)
+        : QFrame(parent), m_edge(p.aiEdge)
+    {
+        setObjectName(QStringLiteral("agentCommandGroup"));
+        setStyleSheet(QStringLiteral(
+            "QFrame#agentCommandGroup{background:transparent;border:none;}"));
+        setMinimumWidth(0);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        m_layout = new QVBoxLayout(this);
+        m_layout->setContentsMargins(0, 0, 0, 0);
+        m_layout->setSpacing(4);
+        m_header = new TranscriptCommandGroupHeader(p, this);
+        m_header->onToggle = [this] { setExpanded(!m_open); };
+        m_header->hide();
+        m_layout->addWidget(m_header);
+        m_panel = new TranscriptPanel(p.aiBg, p.aiEdge, 12, this);
+        m_cards = new QVBoxLayout(m_panel);
+        m_cards->setContentsMargins(10, 4, 10, 4);
+        m_cards->setSpacing(0);
+        m_panel->hide();
+        m_layout->addWidget(m_panel);
+    }
+
+    void addCard(CommandCard *card)
+    {
+        if (!card)
+            return;
+        card->header()->onStateChange = [this] { refresh(); };
+        m_list.append(card);
+        if (m_list.size() == 1) {
+            m_layout->addWidget(card);
+        } else {
+            if (m_list.size() == 2) {
+                CommandCard *first = m_list.first();
+                if (first) {
+                    first->header()->setStatusDot(true);
+                    m_cards->addWidget(first);
+                    first->show();
+                }
+                m_header->show();
+            }
+            auto *rule = new QWidget(m_panel);
+            rule->setFixedHeight(1);
+            rule->setStyleSheet(Theme::remapSheet(
+                QStringLiteral("background:%1;border:none;").arg(m_edge)));
+            m_cards->addWidget(rule);
+            card->header()->setStatusDot(true);
+            m_cards->addWidget(card);
+            m_panel->setVisible(m_open);
+        }
+        refresh();
+    }
+
+    void setExpanded(bool on)
+    {
+        m_open = on;
+        if (m_list.size() > 1)
+            m_panel->setVisible(on);
+        refresh();
+    }
+
+    void refresh()
+    {
+        int running = 0;
+        int failed = 0;
+        int total = 0;
+        for (const QPointer<CommandCard> &card : std::as_const(m_list)) {
+            if (!card)
+                continue;
+            ++total;
+            if (card->header()->runningFlag())
+                ++running;
+            if (card->header()->failedFlag())
+                ++failed;
+        }
+        m_header->setState(total, running, failed, m_open);
+    }
+
+private:
+    QString m_edge;
+    QVBoxLayout *m_layout = nullptr;
+    TranscriptCommandGroupHeader *m_header = nullptr;
+    TranscriptPanel *m_panel = nullptr;
+    QVBoxLayout *m_cards = nullptr;
+    QList<QPointer<CommandCard>> m_list;
+    bool m_open = false;
+};
+
+TranscriptCommandGroup *commandGroupBefore(QVBoxLayout *column, int pos)
+{
+    if (!column || pos <= 0 || pos > column->count())
+        return nullptr;
+    QLayoutItem *item = column->itemAt(pos - 1);
+    auto *rail = item ? dynamic_cast<RailItem *>(item->widget()) : nullptr;
+    return rail ? dynamic_cast<TranscriptCommandGroup *>(rail->content()) : nullptr;
+}
+
+class TranscriptUserBubble : public QWidget
+{
+public:
+    explicit TranscriptUserBubble(const QColor &fill, QWidget *parent = nullptr)
+        : QWidget(parent), m_fill(fill)
+    {
+        setObjectName(QStringLiteral("transcriptUserBubble"));
+        setAttribute(Qt::WA_StyledBackground, false);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter g(this);
+        g.setRenderHint(QPainter::Antialiasing);
+        const QRectF r(rect());
+        if (r.width() <= 0 || r.height() <= 0)
+            return;
+        const qreal big = qMin<qreal>(16.0, qMin(r.width(), r.height()) / 2.0);
+        const qreal small = qMin<qreal>(6.0, big);
+        QPainterPath path;
+        path.moveTo(r.left() + big, r.top());
+        path.lineTo(r.right() - big, r.top());
+        path.arcTo(QRectF(r.right() - 2 * big, r.top(), 2 * big, 2 * big), 90, -90);
+        path.lineTo(r.right(), r.bottom() - small);
+        path.arcTo(QRectF(r.right() - 2 * small, r.bottom() - 2 * small, 2 * small, 2 * small),
+                   0, -90);
+        path.lineTo(r.left() + big, r.bottom());
+        path.arcTo(QRectF(r.left(), r.bottom() - 2 * big, 2 * big, 2 * big), 270, -90);
+        path.lineTo(r.left(), r.top() + big);
+        path.arcTo(QRectF(r.left(), r.top(), 2 * big, 2 * big), 180, -90);
+        path.closeSubpath();
+        g.fillPath(path, m_fill);
+    }
+
+private:
+    QColor m_fill;
+};
+
+class TranscriptUserBubbleRow : public QWidget
+{
+public:
+    TranscriptUserBubbleRow(TranscriptUserBubble *bubble, QLabel *time, int textWidth,
+                            const QList<QPointer<QWidget>> &images,
+                            QWidget *parent = nullptr)
+        : QWidget(parent), m_bubble(bubble), m_time(time), m_textWidth(textWidth),
+          m_images(images)
+    {
+        m_bubble->setParent(this);
+        if (m_time)
+            m_time->setParent(this);
+        QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        policy.setHeightForWidth(true);
+        setSizePolicy(policy);
+        setMinimumWidth(0);
+    }
+
+    bool hasHeightForWidth() const override { return true; }
+
+    int heightForWidth(int w) const override
+    {
+        int h = bubbleHeight(bubbleWidth(w));
+        if (m_time && !m_time->isHidden())
+            h += kTimeGap + m_time->sizeHint().height();
+        return h;
+    }
+
+    QSize sizeHint() const override
+    {
+        const int w = naturalWidth();
+        return QSize(w, heightForWidth(w));
+    }
+
+    QSize minimumSizeHint() const override { return QSize(0, 0); }
+
+protected:
+    bool event(QEvent *e) override
+    {
+        if (e->type() == QEvent::LayoutRequest) {
+            updateGeometry();
+            place();
+        }
+        return QWidget::event(e);
+    }
+
+    void resizeEvent(QResizeEvent *e) override
+    {
+        QWidget::resizeEvent(e);
+        place();
+    }
+
+private:
+    static constexpr int kTimeGap = 4;
+
+    int naturalWidth() const
+    {
+        int w = m_textWidth;
+        for (const QPointer<QWidget> &image : m_images)
+            if (image)
+                w = qMax(w, image->sizeHint().width());
+        const QMargins margins =
+            m_bubble->layout() ? m_bubble->layout()->contentsMargins() : QMargins();
+        return w + margins.left() + margins.right();
+    }
+
+    int bubbleWidth(int w) const
+    {
+        const int natural = naturalWidth();
+        if (w <= 0)
+            return natural;
+        return qMax(1, qMin(w, qMin(natural, qMax(120, int(w * 0.8)))));
+    }
+
+    int bubbleHeight(int w) const
+    {
+        const int h = m_bubble->heightForWidth(w);
+        return h > 0 ? h : m_bubble->sizeHint().height();
+    }
+
+    void place()
+    {
+        const int bw = bubbleWidth(width());
+        const int bh = bubbleHeight(bw);
+        m_bubble->setGeometry(width() - bw, 0, bw, bh);
+        if (m_time && !m_time->isHidden()) {
+            const QSize ts = m_time->sizeHint();
+            m_time->setGeometry(qMax(0, width() - ts.width() - 4), bh + kTimeGap,
+                                qMin(width(), ts.width()), ts.height());
+        }
+    }
+
+    TranscriptUserBubble *m_bubble = nullptr;
+    QPointer<QLabel> m_time;
+    int m_textWidth = 0;
+    QList<QPointer<QWidget>> m_images;
+};
+
+}
 
 ClaudeTranscriptView::ClaudeTranscriptView(QWidget *parent) : QScrollArea(parent)
 {
@@ -3463,11 +3935,36 @@ void ClaudeTranscriptView::clear()
     while (m_col->count() > 1) { // keep the trailing spacer
         QLayoutItem *it = m_col->takeAt(m_col->count() - 2);
         if (QWidget *w = it->widget())
-            w->deleteLater();
+            retireRow(w);
         delete it;
     }
     if (hostUpdates)
         host->setUpdatesEnabled(true);
+}
+
+void ClaudeTranscriptView::retireRow(QWidget *row)
+{
+    row->hide();
+    m_retiredRows.append(row);
+    if (m_retiredRowsScheduled)
+        return;
+    m_retiredRowsScheduled = true;
+    QTimer::singleShot(0, this, [this] { deleteRetiredRows(); });
+}
+
+void ClaudeTranscriptView::deleteRetiredRows()
+{
+    m_retiredRowsScheduled = false;
+    QElapsedTimer budget;
+    budget.start();
+    while (!m_retiredRows.isEmpty() && budget.elapsed() < 8) {
+        const QPointer<QWidget> row = m_retiredRows.takeLast();
+        delete row.data();
+    }
+    if (m_retiredRows.isEmpty() || m_retiredRowsScheduled)
+        return;
+    m_retiredRowsScheduled = true;
+    QTimer::singleShot(0, this, [this] { deleteRetiredRows(); });
 }
 
 QString ClaudeTranscriptView::accentFor(const QString &name) const
@@ -4166,7 +4663,7 @@ void ClaudeTranscriptView::appendAgentText(const QString &id, const QString &tex
         created->setTextFormat(Qt::MarkdownText);
         created->setWordWrap(true);
         enableReferenceLinks(created);
-        created->setFont(monoFont());
+        created->setFont(Theme::isNext() ? proseFont() : monoFont());
         created->setStyleSheet(Theme::remapSheet(
             QStringLiteral("color:%1;background:transparent;border:none;")
                 .arg(m_p.text)));
@@ -4177,6 +4674,8 @@ void ClaudeTranscriptView::appendAgentText(const QString &id, const QString &tex
         m_liveAgentText.insert(id, label);
         m_liveAgentRows.insert(id, row);
     }
+    if (label->textFormat() != Qt::MarkdownText)
+        label->setTextFormat(Qt::MarkdownText);
     m_liveAgentTextValue[id] += text;
     label->setProperty(kProseMarkdown, m_liveAgentTextValue.value(id));
     m_dirtyAgentText.insert(id);
@@ -4190,7 +4689,12 @@ void ClaudeTranscriptView::completeAgentText(const QString &id,
     if (label) {
         const QString complete = text.isEmpty() ? m_liveAgentTextValue.value(id) : text;
         m_dirtyAgentText.remove(id); // this call writes the final text itself
-        label->setText(linkifyReferences(complete));
+        if (Theme::isNext()) {
+            label->setTextFormat(Qt::RichText);
+            label->setText(nextProseHtml(linkifyReferences(complete), m_p.chipBg));
+        } else {
+            label->setText(linkifyReferences(complete));
+        }
         label->setProperty(kProseMarkdown, complete);
         m_liveAgentTextValue[id] = complete;
         return;
@@ -4556,8 +5060,13 @@ void ClaudeTranscriptView::stampSpeakerCaption(QWidget *row, const QDateTime &at
 bool ClaudeTranscriptView::addAssistantText(const QString &markdown)
 {
     auto *l = new CacheLabel;
-    l->setTextFormat(Qt::MarkdownText);
-    l->setText(linkifyReferences(markdown));
+    if (Theme::isNext()) {
+        l->setTextFormat(Qt::RichText);
+        l->setText(nextProseHtml(linkifyReferences(markdown), m_p.chipBg));
+    } else {
+        l->setTextFormat(Qt::MarkdownText);
+        l->setText(linkifyReferences(markdown));
+    }
     l->setProperty(kProseMarkdown, markdown);
     l->setWordWrap(true);
     enableReferenceLinks(l);
@@ -4591,12 +5100,14 @@ void ClaudeTranscriptView::addUserTurn(const QString &text, const QDateTime &at)
     if (m_openInlineChoices)
         lockInlineChoices(m_openInlineChoices); // a reply arrived; stop offering it
 
+    const bool next = Theme::isNext();
     auto *frame = new QWidget;
     frame->setStyleSheet(Theme::remapSheet(QStringLiteral("background:transparent;")));
     auto *v = new QVBoxLayout(frame);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(6);
-    v->addWidget(speakerCaption(true, at));
+    if (!next)
+        v->addWidget(speakerCaption(true, at));
     if (m_prependAt < 0 && m_promptDeck)
         m_promptDeck->addPrompt(text);
 
@@ -4616,6 +5127,53 @@ void ClaudeTranscriptView::addUserTurn(const QString &text, const QDateTime &at)
     }
 
     const QString bodyText = prose.join(QLatin1Char('\n')).trimmed();
+    if (next) {
+        auto *bubble = new TranscriptUserBubble(Theme::color(Theme::Role::SurfaceActive));
+        auto *bv = new QVBoxLayout(bubble);
+        bv->setContentsMargins(16, 10, 16, 10);
+        bv->setSpacing(6);
+        int textWidth = 0;
+        if (!bodyText.isEmpty()) {
+            auto *body = new CacheLabel(
+                QStringLiteral("<p style=\"margin:0;line-height:155%;\">%1</p>")
+                    .arg(referenceHtml(bodyText)));
+            body->setTextFormat(Qt::RichText);
+            body->setWordWrap(true);
+            enableReferenceLinks(body);
+            body->setFont(proseFont());
+            body->setStyleSheet(Theme::remapSheet(
+                QStringLiteral("color:%1;background:transparent;border:none;").arg(m_p.text)));
+            const QFontMetrics metrics(body->font());
+            for (const QString &line : bodyText.split(QLatin1Char('\n')))
+                textWidth = qMax(textWidth, metrics.horizontalAdvance(line));
+            textWidth += 4;
+            bv->addWidget(body);
+        }
+        QList<QPointer<QWidget>> thumbs;
+        for (const QString &path : images) {
+            auto *thumb = new ThumbImage(path, m_p.border);
+            thumbs.append(thumb);
+            bv->addWidget(thumb, 0, Qt::AlignLeft);
+        }
+        auto *time = new QLabel;
+        time->setObjectName(QStringLiteral("speakerCaptionTime"));
+        QFont timeFont = proseFont();
+        timeFont.setPixelSize(11);
+        time->setFont(timeFont);
+        time->setStyleSheet(QStringLiteral("color:%1;background:transparent;border:none;")
+                                .arg(Theme::hex(Theme::Role::FgSubtle)));
+        time->setVisible(at.isValid());
+        if (at.isValid()) {
+            const QDateTime local = at.toLocalTime();
+            time->setText(local.date() == QDate::currentDate()
+                              ? local.toString(QStringLiteral("h:mm AP"))
+                              : local.toString(QStringLiteral("MMM d, h:mm AP")));
+            time->setToolTip(local.toString(QStringLiteral("dddd, MMMM d, yyyy h:mm:ss AP")));
+        }
+        v->addWidget(new TranscriptUserBubbleRow(bubble, time, textWidth, thumbs));
+        addUserRow(frame);
+        return;
+    }
     if (!bodyText.isEmpty()) {
         auto *body = new CacheLabel(referenceHtml(bodyText));
         body->setTextFormat(Qt::RichText);
@@ -4718,6 +5276,7 @@ void ClaudeTranscriptView::addToolResult(const QString &id, const QString &text,
                                                         : QDateTime::currentDateTime();
         if (it->startedAt.isValid() && endedAt.isValid())
             header->setElapsed(it->startedAt.msecsTo(endedAt));
+        header->markSettled();
     }
     if (text.trimmed().isEmpty())
         return;
@@ -4891,7 +5450,13 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
     v->setContentsMargins(14, 12, 14, 12);
     v->setSpacing(10);
 
-    auto *heading = new QLabel(QStringLiteral("Agent needs your input"));
+    const QString headingText =
+        input.value(QStringLiteral("title")).toString().simplified().left(160);
+    auto *heading = new QLabel(headingText.isEmpty()
+                                   ? QStringLiteral("Agent needs your input")
+                                   : headingText);
+    heading->setTextFormat(Qt::PlainText);
+    heading->setWordWrap(true);
     heading->setStyleSheet(Theme::remapSheet(QStringLiteral(
         "color:%1;font-weight:700;background:transparent;border:none;").arg(m_p.accent)));
     v->addWidget(heading);
@@ -4941,6 +5506,7 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
         qv2->setSpacing(6);
 
         auto *qlabel = new QLabel(st.question);
+        qlabel->setTextFormat(Qt::PlainText);
         qlabel->setWordWrap(true);
         qlabel->setStyleSheet(Theme::remapSheet(QStringLiteral(
             "color:%1;font-weight:600;background:transparent;border:none;").arg(m_p.text)));
@@ -4963,6 +5529,7 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
             st.optionLabels.append(label);
             if (!desc.trimmed().isEmpty()) {
                 auto *d = new QLabel(desc);
+                d->setTextFormat(Qt::PlainText);
                 d->setWordWrap(true);
                 d->setStyleSheet(Theme::remapSheet(QStringLiteral(
                     "color:%1;background:transparent;border:none;"
@@ -5664,6 +6231,26 @@ void ClaudeTranscriptView::addCommand(const QString &id, const QString &command,
     paintCommandApproval(header, commandApprovalFor(tc.toolUseId));
     header->setRunning(!m_bulkPopulate);
     m_toolCards.insert(id, tc);
+    if (Theme::isNext()) {
+        int pos = m_prependAt >= 0 ? m_prependAt : m_col->count() - 1;
+        if (m_prependAt < 0 && m_activity) {
+            const int at = m_col->indexOf(m_activity);
+            if (at >= 0)
+                pos = at;
+        }
+        if (TranscriptCommandGroup *group = commandGroupBefore(m_col, pos)) {
+            if (!m_keepExplore) {
+                m_exploreBlock = nullptr;
+                m_exploreLines = nullptr;
+            }
+            group->addCard(card);
+            return;
+        }
+        auto *group = new TranscriptCommandGroup(m_p);
+        group->addCard(card);
+        addRow(group, accentFor(QStringLiteral("Bash")));
+        return;
+    }
     addRow(card, accentFor(QStringLiteral("Bash")));
 }
 
@@ -6308,6 +6895,8 @@ void ClaudeTranscriptView::scrollToCurrentMatch()
             c->setExpanded(true);
         else if (auto *card = dynamic_cast<CommandCard *>(w))
             card->setExpanded(true);
+        else if (auto *group = dynamic_cast<TranscriptCommandGroup *>(w))
+            group->setExpanded(true);
         else if (auto *edit = dynamic_cast<FileEditCard *>(w))
             edit->setExpanded(true);
         else if (auto *o = dynamic_cast<OutputPeek *>(w))

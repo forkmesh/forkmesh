@@ -399,6 +399,11 @@ struct HomeShell: View {
         return fleet.shownSystems
     }
 
+    private var islandFleet: [FleetLight] {
+        guard statusPageOn, diagnosticsEnabled, let fleet = fleet, fleet.loaded else { return [] }
+        return fleet.shownLights
+    }
+
     private var diagnosticsTroubled: Bool {
         diagnosticsEnabled && statusPageOn && fleet?.loaded == true && fleet?.allHealthy == false
     }
@@ -748,8 +753,11 @@ struct HomeShell: View {
                 }
             }
             .overlay(alignment: .top) {
-                if !islandSystems.isEmpty {
-                    ShellIslandStatusDots(lights: islandSystems)
+                if diagnosticsEnabled {
+                    ShellIslandStatusDots(
+                        lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
+                        desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,
+                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light)
                 }
             }
             .overlay { hubDropdown }
@@ -904,6 +912,9 @@ struct HomeShell: View {
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }
                 }
+                if diagnosticsEnabled, let desktopLoad = InsightsFeature.desktopLoadLight {
+                    Task { await desktopLoad.refresh() }
+                }
             }
             .onChange(of: auth?.isAuthenticated) { (_: Bool?, _: Bool?) in
                 navigator.accountChanged()
@@ -926,7 +937,7 @@ struct HomeShell: View {
                 })
             }
             .sheet(isPresented: $showTour) {
-                TourView(onFinish: { showTour = false })
+                TourView(onFinish: { showTour = false }, onJump: { (jump: TourJump) in tourJump(jump) })
             }
             .sheet(isPresented: $genie.sheetShown, onDismiss: genieClosed) {
                 if let session = genie.session {
@@ -1265,6 +1276,22 @@ struct HomeShell: View {
             showHub = false
         } else if page != nil {
             page = nil
+        }
+    }
+
+    private func tourJump(_ jump: TourJump) {
+        showTour = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            switch jump {
+            case let .tab(tab): selectTab(tab)
+            case .home: showHome()
+            case .hub: openHub()
+            case .composer: openComposer(nil)
+            case .palette: openPalette()
+            case .projects: showProjects = true
+            case let .route(route): openRoute(route)
+            }
         }
     }
 

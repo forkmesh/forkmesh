@@ -11,7 +11,7 @@ tips-only variant ([../www/genie-spider.md](../www/genie-spider.md)).
 | Part | File | Tests |
 | --- | --- | --- |
 | Watch list, health, CRM and Marketing digests, shipped changes, README check, coach and suggestions, lessons, said-log, agent briefing | `desktop/src/GenieVitals.{h,cpp}` | `forkmesh-genie-vitals-tests` |
-| The Genie special agent | `.forkmesh/teammates/genie.json` | `app/tests/test_genie_spider_special_agent.py` |
+| The Genie special agent | `.forkmesh/workflows/genie.json` | `app/tests/test_genie_spider_special_agent.py` |
 | QPainter spider, dances and effects (`GenieMagic`, `paintMagic`) | `desktop/src/GenieSpiderPainter.{h,cpp}` | none |
 | Crawling widget, tip bubble, coach panel, desktop stage, silk and effects layers | `desktop/src/GenieSpiderWidget.{h,cpp}` | none |
 | Landmark scan, keep-clear spot, interaction plans and bag | `desktop/src/GenieLandmarks.{h,cpp}` | `forkmesh-genie-landmarks-tests` (offscreen) |
@@ -32,6 +32,13 @@ platforms.
 - It can be dragged and thrown; the flight uses the phone's physics (gravity
   2,200 px/s², quadratic drag, throw capped at 4,200 px/s, floor and wall
   restitution, skidding), stepped at 120 Hz.
+- Only a spot the user chose is saved: `GenieSpiderWidget::placed` fires when a
+  drag or a throw from the desktop settles, and `genie/spot` (or
+  `genie/desktopSpot`) is written then, skipped when unchanged. `moved` fires
+  on every arrival, wander and hop included, and only re-places the coach.
+  Saving on `moved` rewrote `ForkMesh.conf` every 11 s (16 of 36 rewrites in a
+  3-minute watch for report #10), each one two `fdatasync` calls that the next
+  `QSettings` on the GUI thread paid for.
 - A plain click shows one 5–10 word line (`GenieCoaching::lines`) in a bubble
   for 5 s; a drag says nothing; a 0.55 s press opens the menu. The one line it
   says unasked announces a badge: when a fresh `badge` ping celebrates,
@@ -53,7 +60,10 @@ platforms.
 
 The frame timer runs at 60 fps in flight, 24 fps while walking, reacting or
 hovered, lower at rest and when the app is inactive, and stops while hidden or
-minimized. Frames are painted to an image only when a tick changed them; the
+minimized. A tick that finds the window unexposed or minimized, or the
+application hidden or suspended, only re-arms itself at 2 Hz: every repaint of
+the window is a GPU buffer swap that the compositor can hold for seconds
+(2026-10-22 stall logs). Frames are painted to an image only when a tick changed them; the
 head, turban, joints and eye sockets are cached images.
 
 ## Playing with the window and keeping clear
@@ -107,7 +117,7 @@ button.
 ## Replying to the spider: the Genie special agent
 
 Each tip bubble has **Reply** and the menu has **Reply to the spider…**. Both
-open the Genie special agent's page (`.forkmesh/teammates/genie.json`) with the
+open the Genie special agent's page (`.forkmesh/workflows/genie.json`) with the
 tip quoted in the composer. The agent is on-demand, read-only plus external
 tools, and sets `"lowCostModel": true` (see [agents-ui.md](agents-ui.md)). Each
 run's prompt carries `genieAgentBriefing`: health, recent tips, closed stages,

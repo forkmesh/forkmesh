@@ -5,7 +5,9 @@ sandboxing, website jobs, mirrors, errors): [../agents/README.md](../agents/READ
 
 ## Agents page
 
-Rail **Agents**. Main sources:
+Rail **Agents**. The rail button directly above it, **Sessions**, opens the
+[Sessions page](#sessions-page), a Claude-desktop style view of the same
+sessions. Main sources:
 
 | Part | Files |
 | --- | --- |
@@ -24,6 +26,15 @@ The toolbar has **Tool efficiency** (`src/AgentToolEfficiencyBoard.*`),
 **Models** (page 3 of `agentPageStack`), **Usage**, **Listen** and
 **Announcer**. Watch is a Market package page in the rail (see
 [Watch](#watch-market-package-agent-watch)).
+
+The page is tab 3 of an open repository, and its list shows only that
+repository's agents. `openAgentsOverview` opens the selected or newest agent
+whose repository is open or in the repository list; with no repository open
+it opens the first repository on its Agents tab. Rail **Agents** with no
+repository at all unchecks the button, shows Repos and a notice that agents
+work inside a repository; the tour and the composer's Models link keep their
+own handling. Before 2026-10-23 a click with no repository open did nothing,
+which left a checked Agents button over an unchanged page in both designs.
 
 ### Usage page: Refresh and reset times (2026-10-19)
 
@@ -189,6 +200,89 @@ age, and turns the ones picked into ordinary stored agents.
   longer live is imported and the message continues it. Attachments are
   refused for these rows.
 
+### Claude Code session control (2026-10-23)
+
+A Claude Code run on the desktop is a full stream-json host of its Claude Code
+session, the way an IDE or Claude's desktop app hosts one.
+`launchCliRuntime` sets the launch option `hostControl`, and
+`ClaudeStreamSession` then:
+
+- adds `--permission-prompt-tool stdio` and writes an `initialize` control
+  request before the task. It declares the dialog kinds the desktop renders
+  (`refusal_fallback_prompt`, `fable_overage_consent_prompt`,
+  `auto_mode_server_fallback`), asks for sub-session progress summaries
+  (`agentProgressSummaries`) and declares a per-task stop control
+  (`perTaskStopAffordance`). An issue run, or a run you named yourself, passes
+  its title as `title`, so Claude Code keeps that name;
+- keeps every control request it has not answered under a card id
+  (`claude-approval-<request>` for tool approvals, `claude-input-<request>` for
+  dialogs and MCP input, the tool use id for `AskUserQuestion`) and answers it
+  when the card is answered;
+- refuses a request nobody renders (`hook_callback`, `mcp_message`, ...) with
+  an error at once, so the CLI never waits on it, and never answers a dialog
+  kind it did not declare (the CLI's rule: answering one would count as the
+  user dismissing it). Neither marks the session Waiting;
+- drops a pending prompt when the CLI withdraws it (`control_cancel_request`);
+  the card then reads "Claude Code withdrew this question";
+- routes the answers to its own requests (`generate_session_title`,
+  `rename_session`, `stop_task`) to callbacks and keeps them out of the
+  transcript.
+
+The mapping from requests to cards and from answers to responses is pure code
+in `ClaudeControlProtocol.{h,cpp}`; `MainWindowAgentClaudeControl.cpp` puts it
+on screen. Shapes were checked against Claude Code 2.1.309.
+
+**Names.** On the first `system/init` of each process the desktop sends
+`generate_session_title` with the prompt (`persist: true`), so the run is named
+by its own Claude Code session and the name is saved in the session's
+transcript; a resumed session gets its saved name back instead of a new one.
+`system/session_title_changed` (a `/rename`, a rename on claude.ai, or the echo
+of ours) renames the run at any time; a repeated name changes nothing.
+`titledBy` records `Claude Code session` or `Claude Code rename`. The run is
+renamed only when its title came from its prompt or from an earlier namer:
+issue runs keep the issue title and a caller's name (a PR review, a conflict
+fix) stays. The one-shot `claude -p --model haiku` namer
+(`requestAgentTitle`) no longer runs for Claude Code, so the two never race;
+a queued or held Claude run shows its prompt title until it starts. Settings >
+Agents > "Agent titles" turns Claude's naming off too.
+
+**Rename.** The agent list's context menu has **Rename…**. The new name is
+saved with `titledBy` `You` (no namer overrides it) and sent to a running
+session with `rename_session` (`source: host`, the CLI's session id); a session
+renamed while stopped gets the name on its next start.
+
+**Prompts.** Each prompt is a question card in the transcript
+(`ClaudeTranscriptView::addAskUserQuestion`; its heading comes from the card's
+`title`, and question and option text are plain text):
+
+| Request | Card | Answers |
+| --- | --- | --- |
+| `can_use_tool` | "Claude Code asks to use *tool*": the command, file, URL or query, a path outside the working folders, and why it asks | **Allow once**; **Allow and remember** (only with `permission_suggestions`, described in words, sent back as `updatedPermissions`); **Deny**; typed text denies and is sent to Claude as what to do instead |
+| `can_use_tool` for `ExitPlanMode` | "Claude Code finished planning" | **Approve and accept edits** / **Approve and ask before edits** (a `setMode` to `acceptEdits` / `default`; the session's mode label follows), **Keep planning**; typed text is plan feedback |
+| `can_use_tool` for `AskUserQuestion` | the transcript's own card for the tool call | sent as `updatedInput.answers`, one per question, instead of a late tool result |
+| `request_user_dialog` | "Claude Code needs a decision" with the dialog's own choices | `{behavior: completed, result}`; typed text on the refusal dialog edits the prompt and is sent as the next turn |
+
+An MCP `elicitation` opens a small window (`ClaudeElicitationDialog`): a form
+built from `requested_schema` (choices for `enum`/`oneOf`, a check box for
+booleans, password echo for `format: password`, required fields marked `*`),
+or for URL mode the link with **Open link** (http and https only) and
+**Done**. **Send** checks required fields and number types; **Decline** and
+**Cancel** answer `decline` and `cancel`, and so does closing the window.
+
+In Ask, Edit and Plan modes the CLI now really asks. Before, a headless run
+without a prompt tool refused every call that needed approval. The external-call
+gate's PreToolUse hook still runs first and still only denies.
+
+**Sub-sessions.** Claude Code's subagents, background shells and workflows
+are the run's sub-sessions. `agentclitasks::Ledger` keeps each open task's
+description, subagent type, nesting (`parent_task_id`, `spawn_depth`), last
+progress summary (`task_progress.summary`, else its changed description), last
+tool, tokens and tool calls. A strip above the transcript
+(`agentSubSessionStrip`) lists them, nested under the sub-session that started
+them, with **Stop** (`stop_task`) while the session is live. A finished
+sub-session leaves the strip; its Agent card in the transcript keeps the
+report.
+
 ### List views, sort and filters
 
 - The list's toolbar (`agentsActionBar`) is an `OverflowActionRow` too
@@ -241,6 +335,11 @@ receive them in `agents.list`, and a change rings `agents.changed`.
   externally started rows are never touched, and each is disabled when the
   folder has nothing to start or stop. Stopping a folder takes only its own
   sessions off the queue.
+- Filing external Claude Code rows saves once per scan, on the next event-loop
+  turn, and `AgentFolders::save()` skips the write when the stored JSON is
+  unchanged. Each newly surfaced session used to rewrite and fsync
+  `ForkMesh.conf` from inside the scan result (five stalls of about a second,
+  2026-10-22).
 
 ### Unread dot
 
@@ -369,6 +468,35 @@ event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
   back down on every update (2026-10-21). Only opening a session, or a reader
   already at the tail, lands at the end.
 
+**Keeping live updates cheap (2026-10-22 stall log).**
+
+- A live event appends rows; it never rebuilds the view. When the view is
+  behind by up to 32 events (a modal dialog was open, or a notice was added
+  from inside another event's handling), `applyTranscriptEvent` draws the
+  missing ones in place; a longer gap goes through `renderTranscriptTail`.
+  Only a session that is not on screen yet takes `renderTranscriptForSession`.
+  Rebuilding on every event froze the window for up to 17 s
+  (`beginBatchBuild` grabbing and hiding the whole column per event).
+- The time-sliced replay reads `m_streamEvents` by index instead of keeping
+  its own copy. The copy shared the list, so every live event appended
+  during a replay copied the whole history.
+- `ClaudeTranscriptView::clear()` hides the old rows and deletes them a few
+  at a time, 8 ms per event-loop turn (`retireRow`, `deleteRetiredRows`).
+  `deleteLater()` on every row destroyed hundreds of command cards in one
+  deferred-delete pass, up to 22 s (`~CommandLineView`, `~TranscriptPanel`).
+- Deleting a session hands its event list and raw buffer to a pool thread to
+  free (`releaseOffGuiThread`, `MainWindowAgentsInternal.h`); `QJsonObject` is
+  implicitly shared, so whichever owner drops the last reference frees it.
+  Erasing a long history from `m_streamEvents` took 1.7 s on the GUI thread.
+- The raw buffer keeps its last 300,000 characters as before, but a line
+  longer than that replaces the buffer with its own tail instead of being
+  appended and then cut (`appendBoundedStreamRaw`).
+- Rate-limit events from a transcript are applied at most once every 2 s,
+  latest payload wins: each change rewrote a dozen settings and the nested
+  `QSettings` in `refreshCodexUsageRemaining` synced the file mid-event.
+- `disabledAgentToolFamilies()` is cached and updated by
+  `setAgentToolFamilyEnabled`; it was read from `QSettings` for every event.
+
 ### Composer
 
 The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
@@ -381,8 +509,8 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 | **Vibe** (`promptVibeCheck`, sparkle icon) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
 
 - The three toggles are icon buttons in the composer's floating button bar
-  (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
-  pop-out buttons, with the resize grip at its right end. An "on" toggle gets a
+  (`FloatingPromptBar`, `promptDragHandle`), after the channel picker and
+  before the clear (×) and reset buttons. An "on" toggle gets a
   thin accent border, so the branch icon (on by default) reads as connected.
   They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
   left until 2026-10-22, which crowded the grip and hid what was on.
@@ -391,26 +519,68 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The fade and the gaps between buttons still drag the composer; the grip in
-  the top-right corner resizes it with the bottom-left corner fixed. Until
-  2026-10-22 the bar was a full-width strip with a centre drag pill and the
-  grip on the left.
+  The whole body drags the composer, not just the bar: `promptWrapper` and
+  every widget in it that is not a control (`isPromptDragSurface`: not a
+  button, picker, text field, slider or list) are watched, so a press on the
+  chat lines, the bottom bar's empty space or the gaps around the send
+  column that moves past the drag distance hands off to the bar's drag
+  (`handlePromptPlacementEvent`). Each widget is watched directly because a
+  rich-text label keeps its own presses instead of passing them up. The
+  composer can be moved anywhere or dragged out of the window into its own.
+  The prompt text, buttons and pickers keep their presses, and a plain click
+  on a chat line still opens its channel. This works from the centred
+  Agents-page layout too: the first drag lifts the composer out to float.
+  Until 2026-10-22 the bar was a full-width
+  strip with a centre drag pill and the grip on the left.
+- **Channel picker** (`promptChannelButton`, `m_promptChannelButton`): the
+  bar's first control names the chat channel the composer is in
+  (`m_currentConversation`) with a ▾. Clicking it opens `promptChannelMenu`
+  (`showPromptChannelMenu`): one row per channel (the sidebar's `m_channels`
+  plus `unlistedChatConversations`), then a "Direct messages" section with
+  one row per direct message (`m_openDms`, `m_officeDirectConversations` and
+  unlisted ones), each with its user and chat counts after a tab, the current
+  one checked. Picking a row calls `switchConversation`. The last row,
+  "Message someone…" (`promptChannelMessagePerson`), opens the new-message
+  people picker (`showNewMessageDialog`), so the composer can send straight to
+  a person who has no conversation yet. Until 2026-10-24 direct messages were
+  left out of this menu unless one was open. Users come from the
+  office mirror's member count, else the open room's members button, else
+  the distinct senders in the loaded history plus you; chats are the loaded
+  top-level messages. Until 2026-10-24 this spot showed the characters left
+  of the 16,000 the prompt holds; the limit still applies, uncounted.
+- The reset button (`promptResetButton`, sync icon) at the bar's right end
+  snaps the composer back to its default size and place
+  (`resetPromptOverlayPlacement`), as double-clicking the bar does. There is
+  no pop-out button since 2026-10-24: dragging the composer out of the window
+  still tears it off into its own window, and a double-click docks it.
+- **Resizing**: every edge and corner of the composer is a resize handle
+  (`PromptResizeEdge`, `promptResizeEdge`, eight invisible bands 5 px thick
+  with 10 px corners, children of `promptOverlayHost` laid over
+  `promptWrapper`). The cursor shows the direction; dragging moves only the
+  grabbed edges (`resizedPromptRect`), keeps the 280×120 minimum and stops at
+  the window's edges. A docked composer lifts off the footer on the first
+  resize, as it does on a drag; a popped-out composer asks the window system
+  to resize from that edge (`startSystemResize`). The bands show whenever the
+  composer does, the centred Agents-page layout included (its first resize
+  lifts it out to float); only the collapsed avatar has none. Until
+  2026-10-24 they hid with the button bar, so the centred composer could not
+  be resized. The bar keeps a 10 px right margin so the top-right
+  corner never covers its buttons. Until 2026-10-23 a small grip at the right
+  end of the bar was the only handle and always resized from the top-right
+  corner.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
-  one-line rows over the prompt with the latest messages of the conversation
-  the composer sends to, each with the sender's small round avatar
-  (16 px). With a chat room open on the Chat page (`promptChatRoom`: #general
-  or any other room, channel or direct message), the rows are that room's
-  latest top-level messages (`chatActorAvatar`), and Enter (and the centred
-  layout's send button) post the prompt to the room through **send to**
-  (below). Otherwise the rows follow the agent open above, else
-  the last selected one (`promptChatTargetSessionId`), with the agent's model
-  icon and your avatar. Agent rows come from the session's stream events
-  (`_local_user`, `assistant` text, `_codex_agent_complete`), last paragraph of
-  each, elided to the width; with no events, the prompt and
-  `m_lastAssistantText`. Clicking an agent preview opens that agent.
-  `refreshPromptChatPreview` runs (debounced 250 ms) from
-  `updateQuickAddEnterTarget`, on each new event of that session and on each
-  new message in the open room. The rows are painted at a fixed pitch (avatar
+  one-line rows over the prompt with the three latest top-level chat messages
+  across every loaded conversation (`m_history`), newest last. Each row is
+  the sender's small round avatar (16 px, `chatActorAvatar`), then the
+  channel (muted), the user (bold), a compact time (`now`, `5m`, `3h`, `2d`,
+  then the date, muted) and the message, elided to the width. Clicking a row
+  opens its channel on the Chat page. The rows never come from agent
+  sessions: until 2026-10-24 they followed the agent open above when no chat
+  room was open. With a chat room open on the Chat page (`promptChatRoom`),
+  Enter (and the centred layout's send button) post the prompt to the room
+  through **chat** (below). `refreshPromptChatPreview` runs (debounced
+  250 ms) whenever a conversation's sidebar preview changes
+  (`refreshChatListPreview`). The rows are painted at a fixed pitch (avatar
   height plus a 4 px gap) and the docked composer's height is recomputed
   whenever the row count changes (`baseAnchoredHeight`), so the third line is
   never clipped; before 2026-10-22 the height only followed showing or hiding
@@ -419,10 +589,12 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   workspace layout's send button reads **Add** when it is the Enter target).
   For part of 2026-10-22 it read **chat** over a preview; the label went back
   to **add** because "chat" now means a chat channel (below).
-- The top of the send column is **send to: #channel**
+- The top of the send column is **chat**
   (`m_quickAddSendToChannelButton`, object name still `quickAddGenieButton`
-  for the stylesheets): it names the chat conversation open on the Chat page
-  (`m_currentConversation`, labelled by `chatConversationLabel`) and posts the
+  for the stylesheets): it sends to the channel the picker names
+  (`m_currentConversation`, labelled by `chatConversationLabel`; the tooltip
+  and accessible name carry it, the label read **send to: #channel** until
+  2026-10-24) and posts the
   prompt there through `sendChatText`, the same path as the Chat page's own
   composer (`sendCurrentMessage`), refusing attachments and a room you cannot
   post in. `updateChatConversationHeading` and `updateQuickAddEnterTarget`
@@ -433,7 +605,7 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   the **task** button, which filed the prompt in General: that lives in the
   agent/model dropdown as **Task · assign**, where leaving the assignee on
   Unassigned files the task in General.
-- **new** (plus), **add** (paper airplane) and **send to** (comment) carry
+- **new** (plus), **add** (paper airplane) and **chat** (comment) carry
   small icons in both interfaces (`tintComposerActionButton`; on the accent
   fill of the Enter target the icon uses the on-accent colour).
 
@@ -605,6 +777,92 @@ A background task that never reports back keeps the run Running until it is
 stopped. The unit test is `forkmesh-agent-cli-tasks-tests`
 (`desktop/tests/test_agent_cli_tasks.cpp`).
 
+## Sessions page
+
+Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
+`kSessionsSectionIndex`), directly above **Agents** (2026-10-22). It is the
+Claude-desktop way to manage the same sessions the Agents page lists: one list
+of every session, the open session's live transcript, and a composer that can
+talk to it or relay between sessions.
+
+| Part | Files |
+| --- | --- |
+| Page, list, relays | `src/MainWindowSessions.cpp` |
+| Styles | `resources/theme/next/63-sessions.qss` |
+| Hooks | `applyTranscriptEvent` (`MainWindowAgentEvents.cpp`), `refreshAgentTable` and `refreshAgentDotMatrix` (`MainWindowAgentList.cpp`), `applyExternalClaudeScan` (`MainWindowAgentCliSession.cpp`), `refreshAgentTranscriptTheme` |
+
+**Rail.** The button is in `m_navGroup`, so it is checked by `showSection` like
+every section button, and the Agents button unchecks through
+`updateRepoActivityRail`. It sits in the Work group, follows the `agents`
+package (`syncPackageSurfaces`, desktop-offline dot), and the Code button is
+inserted above it. A saved rail order from before the button existed places
+it just above Agents (`applyRailOrder`). It ranks a quarter step before
+Agents, not half a step: icons missing from the saved order rank half a step
+after their saved neighbour, so at half a step Sessions tied with them and,
+coming earlier in the default order, pushed itself between an icon and its
+default neighbour (a saved order of Files then Agents put Sessions between
+Files and Stats).
+
+**Layout.**
+
+- Sidebar: **New session** (the page's one green button), search, a
+  **Between sessions** filter, then **Active** (Waiting first, then Running,
+  then Queued) and **Recent** (newest first, at most 300). Each row is painted
+  by a delegate: status dot, title, repository · branch · model, age, unread
+  dot and a `⇄ N` badge when the session sent or received messages from other
+  sessions. Right-click: Open in Agents, Continue, Stop, Send message to
+  another session…, Delete (confirms through `deleteAgentSessionFromRow`).
+- Centre: header (title, status chip, repository, branch, provider/model,
+  mode, Stop, Continue, Open in Agents), the **Between sessions** strip (the
+  last six messages to or from the open session; click one to open the other
+  session), and the page's own `ClaudeTranscriptView`. It never borrows the
+  Agents page's view.
+- Composer: Enter sends, Shift+Enter adds a line. **To** defaults to the open
+  session; **Also send to** sends the same text to a second session;
+  **Forward last reply to…** sends the open session's latest reply to another
+  session. In new-session mode the row shows Repository and Agent instead,
+  and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
+  the new session.
+
+**Sources.** Local sessions render `m_streamEvents` (loaded with
+`ensureStreamEventsLoadedAsync`; a session with no events shows its prompt and
+last reply). External Claude Code sessions read their `.jsonl` off the GUI
+thread from the page's own offset (the last 400 KB first, then only what was
+appended), redacted like the Agents page. Cloud runs render
+`cloudAgentTranscriptEvents` and redraw when the relay history changes.
+
+**Sending.** Local and cloud sessions go through `sendPromptToAgentSession`.
+An external Claude Code session is messaged through `ClaudePeerMessaging`
+(the same peer check as the phone's outside-session prompt: refused or held
+messages are reported). One with no messaging socket shows the composer
+disabled with the reason.
+
+**Messages between sessions.** A forward or a context-menu message is sent
+as the source session, not as the user: `hub::messageEnvelope`, the same
+permission rule as agent-to-agent messages (`hub::messageAllowed`: a session
+in a less permissive mode may not direct a more permissive one; an outside
+session's mode counts as unknown), and the same `m_agentMessageLimiter`.
+Both sessions are logged like `MainWindowAgentHub.cpp` does: the sender gets
+a "Sent a message to agent #N" notice, the receiver "==> Message from agent
+#M". Messages that agents send each other through the hub show up too:
+`applyTranscriptEvent` hands every event to `noteSessionsPageEvent`, which
+spots the envelope's lead line and records it for the strip, the badge and
+the filter (kept in memory, at most 200).
+
+**No stalls.**
+
+- The `applyTranscriptEvent` hook only notes the event: when the page is
+  hidden it marks the transcript dirty and returns; when visible it queues
+  one coalesced catch-up.
+- Transcript rows are built from a queue in 8 ms slices on single-shot
+  timers, at most the last 300 events at first (**Load earlier** adds 300),
+  with bulk populate during a replay. Slices stop while the page is hidden
+  and resume when it is shown.
+- The list refreshes on a 400 ms coalescing timer only while visible, updates
+  rows in place when the order is unchanged, and has no widgets per row.
+  There is no polling: refreshes come from the Agents list's own
+  notifications and the external-session scan.
+
 ## Workspace layout in the new interface
 
 In the new interface (`app/design` = `next`) the Agents page has a **New**
@@ -641,6 +899,11 @@ The browser tab (`src/WorkspaceBrowserPane.*`, library
 `-DFORKMESH_BROWSER_PANE=ON` and Qt WebEngine. Only `http` and `https` load.
 
 ## Tool efficiency and Models board
+
+The tool-efficiency page is built the first time it is opened
+(`ensureAgentEfficiencyPage`); until then a placeholder holds its slot in the
+page stack. Building and style-polishing it during deferred startup stalled
+the window. The `test*` accessors for its widgets build it first.
 
 **Runs view** (`src/AgentRunTable.*`, `src/AgentRunEfficiencyLog.*`). A run is
 one prompt to its `result` event, recorded with provider, model, tool families
@@ -843,16 +1106,19 @@ A free Market package hosted in the desktop, not part of the core app; see
 
 ## Special agents (formerly Brains, Team and Teammates)
 
-Rail **Special Agents**. A special agent is a named role definition owned by
-the repository in `.forkmesh/teammates/*.json` (`src/TeammateStore.*`,
-`src/MainWindowTeammates.cpp`). It runs on demand, on a cron cadence, on
+Rail **Special Agents**. A special agent is a workflow owned by the
+repository in `.forkmesh/workflows/<id>.json` whose Special agent step holds
+the role (`src/TeammateStore.*` reads it through `src/RepoWorkflow.*`;
+`src/MainWindowTeammates.cpp`). Older `.forkmesh/teammates/*.json` files still
+load and move on their next save. It runs on demand, on a cron cadence, on
 events or continually with a decision gate (see
 [www/docs/qt-client.md](../../www/docs/qt-client.md)); error-log and crash
-repair are special agent tasks ([diagnostics.md](diagnostics.md)). Its
-session is an ordinary agent session.
+repair are special agent tasks ([diagnostics.md](diagnostics.md)). Every run
+is a workflow run with its own record and output file
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 
 Only user-visible text says "special agent". Stored and wire names keep
-"teammate": `.forkmesh/teammates/`, `Teammate*` classes, `teammates/*`
+"teammate": legacy `.forkmesh/teammates/`, `Teammate*` classes, `teammates/*`
 settings, the `teammates.` local-control family, the `#team` room and `team`
 sender id, `teammate-*.png` portraits. Pausing all automatic runs sets
 `schedule.active` to `false` and keeps the cadence.
@@ -889,9 +1155,14 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
 
 ### Sessions
 
-- Each special agent works in its own session: `ownTeammateSession` returns
-  `lastSessionId` only for that agent's own run, and `teammateWithRuntime`
-  keeps runtime fields across saves.
+- A run is a workflow run: `runTeammate` starts the agent's workflow
+  (`runTeammateWorkflow`) and its Special agent step starts a fresh session
+  through `startTeammateSession`, filed in the **Workflows** agent folder.
+  A mention or a direct prompt to an agent with a conversation continues that
+  session instead, as chat, without a workflow run.
+  `ownTeammateSession` still names the newest session the agent started, so
+  steering, Stop and the face's status work as before, and
+  `teammateWithRuntime` keeps runtime fields across saves.
 - Mentions go through `deliverTeammateMessage` (steer while working, else
   continue). **Run team**, **Generate briefing** and `@all` use one session
   per member.
@@ -915,8 +1186,12 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   (`<data>/teammate-workspaces/<repository digest>/<id>.json`), are added to
   every run's prompt and never widen permissions. Widget changes the agent
   proposes are applied only with the operator's approval.
-- **Rail.** `src/MainWindowTeammateRail.cpp` builds `#teammateRail`
-  (`ui/showTeammateRail`), sorted by last run. Each 54 px item has an animated
+- **Rail.** Until 2026-10-24 `src/MainWindowTeammateRail.cpp` built
+  `#teammateRail` (`ui/showTeammateRail`); the right edge now holds the generic
+  side rail, where a special agent appears when its workflow is dragged there
+  or pinned right ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+  The faces, moods and HUD buttons below still drive the Special Agents
+  page's tiles and cards. Each 54 px item had an animated
   face (`facePoseAt`, one shared clock), a status border, a staleness tint
   (`teammates::runStaleness`), a play button, a mood emoji and a menu. The
   mood (`src/TeammateMood.*`) is scored from 100 weighted signals and sent to
@@ -940,6 +1215,9 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   startup sign-in resolves and every 15 minutes. The channel reminder
   (`ui/packageRailReminder`) files one `channel_reminder` ping for the worst
   square after an hour without change.
+- **Pins.** The special agent menu's **Open in Workflows** and **Pin to rail** put the
+  agent's workflow on the Workflows page or on the top, left, right or bottom
+  rail ([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 - **Phones** show the same faces, moods and status in an adaptive tile grid
   ([../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
 
@@ -950,8 +1228,9 @@ Build the test targets with `cmake -S desktop -B desktop/build
 
 | Area | Tests |
 | --- | --- |
-| Window behaviour | `forkmesh-window-tests` with `--workspace-snapshots-only`, `--agent-list-view-only`, `--agent-folders-only`, `--agent-task-link-only`, `--command-approval-only`, `--agent-code-only`; `tests/test_window_resize.cpp` |
+| Window behaviour | `forkmesh-window-tests` with `--workspace-snapshots-only`, `--agent-list-view-only`, `--agent-folders-only`, `--agent-task-link-only`, `--command-approval-only`, `--agent-code-only`, `--sessions-only` (Sessions page: rail placement, list, live transcript, composer, relays); `tests/test_window_resize.cpp` |
 | Transcript tools | `forkmesh-claude-transcript-tools-tests` |
+| Claude Code session control | `forkmesh-claude-control-tests`, `forkmesh-agent-cli-tasks-tests`, `runHostControlProtocolTest` in `forkmesh-agent-transport-tests` (a scripted `claude` on stdio) |
 | List | `forkmesh-agent-folders-tests`, `forkmesh-agent-ticker-tests` |
 | Cloud | `forkmesh-agent-cloud-stream-tests`, `tests/test_agent_cloud_sessions.cpp`, `tests/test_upstream_checkout_sync.cpp`, `tests/validate_cloud_agent_stream_contract.py`, `tests/validate_cloud_agent_watch_contract.py` |
 | Accounts | `tests/test_claude_account_routing.cpp`, `tests/test_runner_login.cpp` |

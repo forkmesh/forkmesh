@@ -22,6 +22,16 @@ class InstanceFeedTest {
         return client to calls
     }
 
+    fun testPublicLinksNameTheWebsite() {
+        assertEq("https://forkmesh.com/feed?post=$first", InstanceFeed.publicUrl(first, "https://app.forkmesh.com"))
+        assertEq("https://forkmesh.com/feed?post=$first", InstanceFeed.publicUrl(first, "https://world.forkmesh.com/"))
+        assertEq("https://forkmesh.com/feed?post=$first", InstanceFeed.publicUrl(first, "https://app.next.forkmesh.com"))
+        assertEq("https://feed.example.org/feed?post=$first", InstanceFeed.publicUrl(first, "https://feed.example.org"))
+        assertEq("http://10.0.2.2:8787/feed?post=$first", InstanceFeed.publicUrl(first, "http://10.0.2.2:8787"))
+        assertEq("https://forkmesh.com/feed?post=$first", InstanceFeed.publicUrl(first, ""))
+        assertEq(null, InstanceFeed.publicUrl("nope", "https://app.forkmesh.com"))
+    }
+
     fun testParsesTimelineWithBoostsAndProfile() {
         val (client, calls) = recording {
             ApiJsonResult(200, mapOf(

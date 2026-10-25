@@ -80,6 +80,12 @@ class Draft
 public:
     static Draft blank();
     static Draft fromJson(const QJsonObject &workflow);
+    static Draft fromLocal(const QJsonObject &workflow, const QString &repo);
+    QJsonObject localJson() const;
+    bool isLocal() const { return !repo.isEmpty(); }
+    QString addTrigger(const Catalog &catalog, const QString &type);
+    void retype(const Catalog &catalog, const QString &nodeId, const QString &type);
+    bool hasAgentStep() const;
 
     QJsonObject graph() const;
     QJsonObject body() const;
@@ -113,7 +119,14 @@ public:
     QJsonArray nodes;
     QJsonArray connections;
     QString hookPath;
+    QString repo;
+    QString icon;
+    QString description;
+    qint64 createdAtMs = 0;
 };
+
+QString localWorkflowId(const QString &name);
+QString localStatusLabel(const QString &status);
 
 QStringList freeDiskSpaceArguments(const QString &checkout, const QString &step);
 QJsonObject freeDiskSpaceReply(const QString &step, const QByteArray &output, qint64 ms);

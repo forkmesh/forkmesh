@@ -85,6 +85,12 @@ be seen.
 | iPhone | `native/ios/ForkMeshCore/Sources/FMBase/HiddenUnicode.swift`, `native/ios/ForkMesh/Platform/HiddenUnicodeInputGuard.swift`, installed by `AppDelegate` | every `UITextField` and `UITextView` text change, SwiftUI fields included |
 | Android | `native/android/core/.../security/HiddenUnicode.kt`, `app/.../ui/kit/FmSafeInput.kt` | `FmTextField`, `AccountFilledField`, every raw `BasicTextField` / `OutlinedTextField`, and an `InputFilter` on the two `EditText`s |
 
+The desktop guard runs from an application-wide filter on every widget's
+`Polish` event, so `guardWidget` checks the widget's type before reading its
+`forkmeshHiddenUnicodeGuard` property: a dynamic-property read is a string
+search through the class's properties, and it used to run for every label,
+button and frame created.
+
 ### Exactness exceptions
 
 Some text has to stay byte for byte:

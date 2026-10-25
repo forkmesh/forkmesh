@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QSettings>
 
@@ -55,47 +56,62 @@ bool protectedBranch(const QString &branch, const QString &checkoutBranch)
 
 }
 
+void MainWindow::ensureAgentIntakeServer()
+{
+    if (m_agentIntake || m_agentIntakeFailed || forkmesh::vm::active())
+        return;
+    auto server = std::make_unique<intake::Server>();
+    QString error;
+    if (!server->listen(&error)) {
+        m_agentIntakeFailed = true;
+        qWarning().noquote() << "agent intake socket unavailable:" << error;
+        return;
+    }
+    server->setAsyncHandler([this](const intake::Request &request,
+                                   intake::Server::Reply reply) {
+        const int requester =
+            intake::authorizedSession(m_agentIntakeTokens, request.token);
+        if (requester <= 0) {
+            const QString terminal = terminalCallerForToken(request.token);
+            if (!terminal.isEmpty() &&
+                request.method.startsWith(forkmesh::terminalbridge::MethodPrefix)) {
+                reply(handleTerminalRequest(0, terminal, request.method, request.params));
+                return;
+            }
+            reply(intake::unauthorizedReply(request.method));
+            return;
+        }
+        if (request.method.startsWith(forkmesh::terminalbridge::MethodPrefix)) {
+            reply(handleTerminalRequest(requester, QString(), request.method, request.params));
+            return;
+        }
+        if (request.method.startsWith(intake::ReleaseMethodPrefix)) {
+            handleAgentReleaseRequest(requester, request, std::move(reply));
+            return;
+        }
+        if (request.method == forkmesh::agentwindows::CaptureMethod) {
+            agentWindows()->capture(requester, request.params, std::move(reply));
+            return;
+        }
+        if (request.method == forkmesh::agentwindows::ActMethod) {
+            agentWindows()->act(requester, request.params, std::move(reply));
+            return;
+        }
+        if (request.method == forkmesh::agenthub::RunnersMethod) {
+            listRunnersForAgent(requester, std::move(reply));
+            return;
+        }
+        reply(handleAgentIntakeRequest(request));
+    });
+    m_agentIntake = std::move(server);
+}
+
 QStringList MainWindow::agentIntakeEnv(int sessionId)
 {
     const QStringList cleared{intake::SocketEnv, intake::TokenEnv};
     if (sessionId <= 0 || forkmesh::vm::active())
         return cleared;
-    if (!m_agentIntake && !m_agentIntakeFailed) {
-        auto server = std::make_unique<intake::Server>();
-        QString error;
-        if (!server->listen(&error)) {
-            m_agentIntakeFailed = true;
-            qWarning().noquote() << "agent intake socket unavailable:" << error;
-            return cleared;
-        }
-        server->setAsyncHandler([this](const intake::Request &request,
-                                       intake::Server::Reply reply) {
-            const int requester =
-                intake::authorizedSession(m_agentIntakeTokens, request.token);
-            if (requester <= 0) {
-                reply(intake::unauthorizedReply(request.method));
-                return;
-            }
-            if (request.method.startsWith(intake::ReleaseMethodPrefix)) {
-                handleAgentReleaseRequest(requester, request, std::move(reply));
-                return;
-            }
-            if (request.method == forkmesh::agentwindows::CaptureMethod) {
-                agentWindows()->capture(requester, request.params, std::move(reply));
-                return;
-            }
-            if (request.method == forkmesh::agentwindows::ActMethod) {
-                agentWindows()->act(requester, request.params, std::move(reply));
-                return;
-            }
-            if (request.method == forkmesh::agenthub::RunnersMethod) {
-                listRunnersForAgent(requester, std::move(reply));
-                return;
-            }
-            reply(handleAgentIntakeRequest(request));
-        });
-        m_agentIntake = std::move(server);
-    }
+    ensureAgentIntakeServer();
     if (!m_agentIntake)
         return cleared;
     QString &token = m_agentIntakeTokens[sessionId];
@@ -103,6 +119,21 @@ QStringList MainWindow::agentIntakeEnv(int sessionId)
         token = intake::mintToken(sessionId);
     return {QStringLiteral("%1=%2").arg(intake::SocketEnv, m_agentIntake->socketPath()),
             QStringLiteral("%1=%2").arg(intake::TokenEnv, token)};
+}
+
+void MainWindow::addAgentRunMcpConfig(int sessionId, QJsonObject &options)
+{
+    const QString token = m_agentIntakeTokens.value(sessionId);
+    if (sessionId <= 0 || forkmesh::vm::active() || token.isEmpty() || !m_agentIntake)
+        return;
+    const QString config = writeForkmeshMcpConfig(
+        QStringLiteral("agent-mcp"), QStringLiteral("session-%1.json").arg(sessionId),
+        {{intake::SocketEnv, m_agentIntake->socketPath()}, {intake::TokenEnv, token}});
+    if (config.isEmpty())
+        return;
+    options.insert(QStringLiteral("mcpConfig"), config);
+    options.insert(QStringLiteral("mcpReadOnly"),
+                   QJsonArray{config, QFileInfo(mcpServerScriptPath()).absolutePath()});
 }
 
 QJsonObject MainWindow::handleAgentIntakeRequest(const intake::Request &request)

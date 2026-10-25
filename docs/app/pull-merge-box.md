@@ -28,7 +28,10 @@ The Approve and Always run buttons stay in the pull's Checks section
 The footer says whether the pull can merge, why not, and holds the controls.
 Only someone who may merge (the repository's owner, or for an organization's
 repository an owner of the organization) sees the merge controls; everyone
-else sees the same rows and who can merge.
+else sees the same rows and who can merge. The status button in the pull's
+header (`repoPullMergeStatus`) said a green "Ready to merge" to everyone, and
+contributors read it as permission to merge their own pull request; anyone
+who may not merge now sees "Waiting for a maintainer to merge" instead.
 
 *Re-run failed* is shown only to someone who may merge and only when the
 Actions read named its executor node: `actions/control` refuses a request
@@ -56,24 +59,134 @@ branch.
   branch-backed pull lands as a merge commit, and a patch-backed pull is
   replayed onto the newest base. It is shown as a warning, not a blocker.
 
+## Review chip in the pull request list
+
+Each open row of the pull request list shows its review state instead of its
+branches: **Approved**, **Changes requested** or **Review required**, with a
+title such as "Approved by 2 reviewers". `review_state` in
+`app/host/forkmesh_host/repo_views.py` (server-rendered list) and
+`pullListReviewState` in `06-repo-content.js` (client) compute it the same
+way, over each reviewer's latest review with the pull's author left out
+(`review_policy` / `pullReviewPolicy`): any request for changes wins, one
+approval and no blockers is Approved, and a closed or draft pull with neither
+shows no chip. The mirror gateway's `.forkmesh/pulls` listing
+(`tools/mirror_gateway.py`) carries every committed review's
+`(reviewer, state)` in file order so the list can compute it.
+
+The chip is a summary, not the merge gate. On a protected branch only an
+owner's or admin's approval counts ([branch-protection.md](branch-protection.md#approvals)),
+so a pull approved by another contributor shows **Approved** while the
+Review row of the merge box still waits. Tests:
+`app/tests/test_pull_list_review_state.py`.
+
+## Merge status button and compact header
+
+An open pull request shows a merge status button beside the copy-link button
+in its header (`renderRepoPullMergeStatus`, styles `.fm-merge-status`), so a
+reviewer sees whether it can merge without scrolling to the box. It reads the
+same `repoPullMergeModel` (`repoPullMergeStatus`) and is re-rendered by
+`updateRepoPullMergePanel` whenever the box is:
+
+- red when any row blocks the merge (changes requested, failing checks,
+  conflicts, unmet rules) or the footer is an error;
+- orange when the merge is waiting on something (review required, checks
+  running or incomplete, mergeability unknown), or a merge is in progress;
+- green when nothing is in the way. Being behind the base does not change the
+  colour, since it does not block a clean merge.
+
+The label names the first problem, a `+N` counter counts the others, and the
+tooltip lists every row title. Clicking it opens the Conversation section and
+scrolls to the merge box (`showRepoPullMergeBox`). Merged and closed pulls show
+no button: the state pill already says it.
+
+While a pull request is open the repository's own title row (name, Public,
+Fork, Star) is hidden by a `:has()` rule in `shell.html`, because the pull's
+title is the page heading and those repository actions stay a click away on
+the Code tab. The new-pull composer and batch view keep the row.
+
+The Reviewers sidebar is compact, the way GitHub draws it: one line for the
+review gate (shield icon, approval and blocking counts as icons), then one
+line per reviewer with a state icon (check approved, file-diff changes
+requested, speech bubble commented) and a history icon when the review is on
+an older commit. The words live in each icon's tooltip and label.
+
 ## Update branch
 
 A branch-backed pull (`derive: branch`, its head is a branch of this
-repository) that is behind and merges cleanly gets **Update branch** for an
-organization owner. It posts `forkmesh.pull-update-v1` to `/api/repo/<o>/<r>/pulls/<n>/update`
+repository) that is behind gets **Update branch**, as on GitHub. It posts
+`forkmesh.pull-update-v1` to `/api/repo/<o>/<r>/pulls/<n>/update`
 (`repository_pull_merge_handler`, mutation `update`); the mirror merges the
 base into the head branch (`update-pull-branch`, `_update_execute_locked` and
 `server/merge.go`). Only merging is supported: the executor has no rebase
 mode, so none is offered.
 
-- A pull from someone else's copy (a fork on another node, a web or
-  cross-node submission) is patch-backed: its commits travel in the ledger as
+- **Who.** Contributors had to fetch, merge and push by hand every time the
+  base moved, because only an organization owner could press the button.
+  Anyone who may push to the head branch may now update it
+  (`_account_may_write_branch`): the repository's owner, an organization
+  member with write permission or better, or a contributor whose head is in
+  their own `pr/<account>/` namespace on a repository open to contributor
+  pushes. Being the pull's author is not enough on its own, because a pull
+  can name any branch of the repository as its head. The page offers the
+  button on the same basis (`loadRepoPullUpdateAuthorization`); the relay
+  decides.
+- **Protected heads.** An update that would move a protected branch is
+  refused (`branch_protected`), for owners too: a protected branch changes
+  only by merging an approved pull request.
+- **Outcome.** A clean update shows "Synced this branch with `<base>`" and
+  the time. When the branch conflicts with the base, nothing is changed and
+  the box says to resolve the conflicts locally and push; there is no
+  web conflict editor. The button is shown on a conflicting branch too, so
+  pressing it gives that answer.
+- A pull from someone else's copy (a fork, a web or cross-node submission)
+  is patch-backed: its commits travel in the ledger as
   `commits.mbox`/`changes.patch`, there is no branch here to update, and no
-  maintainer can push to the author's copy. The box says so, says that only
-  the author can refresh it by rebasing and resubmitting, and that it can
-  still be merged while behind.
-- A visitor or the author of a branch-backed pull sees the commands to merge
-  the base locally and push.
+  maintainer can push to the author's copy. Being behind does not matter for
+  it: the mirror replays the series onto the newest base when it merges. The
+  row used to warn "N commits behind", which sent contributors to rebase and
+  resubmit for nothing; it now says it merges cleanly and needs no update.
+- A visitor sees the commands to merge the base locally and push.
+
+## Live progress
+
+After *Merge pull request* or *Update branch* the box shows what the mirror is
+doing instead of one static line: a spinner, the current step ("Verifying the
+reviewed commits…", "Merging into main…", "Publishing…"), the time since the
+click, a step list with a tick and the mirror-reported duration for each
+finished step, and the mirror's name. A merge ends with "Merged as `abc1234`"
+linking to the merge commit (an update with "New head"); a failure marks the
+step that refused (from the error when the last poll had not seen it yet),
+keeps the reason and *Merge again*, which resumes the same request id when the
+answer was "not yet". A failure no mirror ever held keeps the plain line.
+Phases come from the executor ([merge-executor.md, "Progress"](../server/merge-executor.md#progress)).
+
+Before a mirror holds the job the step is "Waiting for an online mirror…";
+after 8 seconds it becomes "Waiting for an online mirror to pick this up (no
+mirror has accepted it yet)" with what to expect: it keeps retrying while the
+page is open, a retry can never apply it twice, and on a single-server
+instance the node may be restarting. When the mirror that took the job stops
+answering, the page names it and says only that mirror may finish it.
+
+Updates come from the request the page was already repeating with the same
+request id (`postRepoPullMutation`), not a new endpoint or socket: the
+repository dashboard has no realtime channel for pull requests (the only
+WebSocket is the notes editor's), and the job lives on one mirror the relay
+proxies to. While a job is in flight the page asks after 1, 2, then every 3
+seconds, starting again at 1 second on each new phase; it stops on a terminal
+answer, and asks nothing when no merge or update is in flight. While the tab
+is hidden it keeps asking every 10 seconds, and that time does not count
+against the 150-second budget: the relay learns that a job finished only
+from these polls, so a page that stopped asking while hidden (as it did
+until 2026-10-24) could leave a finished merge unrecorded once the tab was
+closed. Progress is painted only into the merge box of the pull request that
+asked (`pullDetailIsCurrent`), so opening another pull mid-merge no longer
+shows the first one's steps there, and a job that is run again starts its
+step list afresh. A
+poll changes only the step line's text, so a screen reader announces each new
+step once (`role="status"`, `aria-live="polite"` on that line only; the
+elapsed clock is `aria-hidden`). A one-second ticker updates the clock and
+stops itself when no clock is on the page. With `prefers-reduced-motion` the
+spinner is a still ring with a dot.
 
 ## "The pull-request metadata changed"
 

@@ -115,6 +115,10 @@ def test_approved_instances_become_world_portals_and_celebrate_for_ten_minutes()
     assert "10 * 60 * 1000" in APP
     assert "startInstanceDirectoryPolling" in APP
     assert "world-instance-fireworks" in APP
-    assert "A new independent World joined the federation" in APP
+    celebrate = APP.split("celebrateRecentInstance(instances = []) {", 1)[1].split(
+        "\n  }\n", 1
+    )[0]
+    assert "this.notifyChatArea(" in celebrate
+    assert "joined the ForkMesh federation: " in celebrate
     assert "@keyframes world-instance-firework" in CSS
     assert "@media (prefers-reduced-motion: reduce)" in CSS
