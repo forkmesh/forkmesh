@@ -900,8 +900,9 @@ Rules of construction:
   `placeWorkspaceComposer`.
 
 The browser tab (`src/WorkspaceBrowserPane.*`, library
-`forkmesh-browser-pane`) opens pages in the system browser unless built with
-`-DFORKMESH_BROWSER_PANE=ON` and Qt WebEngine. Only `http` and `https` load.
+`forkmesh-browser-pane`) embeds an ungoogled Qt WebEngine view when the build
+finds Qt WebEngine, and opens pages in the system browser otherwise; see
+[browser.md](browser.md).
 
 ## Tool efficiency and Models board
 

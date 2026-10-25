@@ -2488,6 +2488,8 @@ public:
     QStringList testSideRailKeys() const;
     void testSetSideRailBrowserOpen(bool open) { setSideRailBrowserOpen(open); }
     forkmesh::ui::TerminalTabsPage *testTerminalsPage() const { return m_terminalsPage; }
+    QWidget *testSideRailTerminalPanel() const { return m_sideRailTerminalPanel; }
+    void testToggleTerminals() { toggleTerminals(); }
     int testTerminalsSectionIndex() const { return kTerminalsSectionIndex; }
     QString testOpenTerminalTab(const QString &kind, const QString &command, const QString &cwd)
     {
@@ -8979,6 +8981,15 @@ private:
     void setSideRailBrowserOpen(bool open);
     void openInSideRailBrowser(const QString &address);
     QWidget *buildTerminalsSection();
+    forkmesh::ui::TerminalTabsPage *ensureTerminalsPage();
+    void dockTerminals(bool sidePane);
+    bool sideRailFits() const;
+    bool sideRailTerminalsOpen() const;
+    void setSideRailTerminalsOpen(bool open);
+    void revealTerminals();
+    void toggleTerminals();
+    QString defaultTerminalFolder() const;
+    QString openUserTerminal(const QString &kind, const QString &cwd);
     void showTerminalLauncher();
     void showTerminalsPage();
     QString openTerminalTab(const QString &kind, const QString &command, const QString &cwd,
@@ -9110,6 +9121,11 @@ private:
     void notifyRepoWorkflowsChanged();
     void openWorkflowInPage(const QString &repo, const QString &workflowId);
     void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
+    QJsonObject accountWorkflowPinInfo(const QString &workflowId) const;
+    QPixmap accountWorkflowIcon(int side) const;
+    void runAccountWorkflowFromRail(const QString &workflowId);
+    void runAccountWorkflowAction(const QString &workflowId, const QString &action, const QJsonObject &payload,
+                                  const forkmesh::market::NativePackageReplyHandler &done);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
@@ -13322,6 +13338,11 @@ private:
     forkmesh::ui::WorkspaceBrowserPane *m_sideRailBrowser = nullptr;
     QPointer<QCheckBox> m_sideRailCheck;
     forkmesh::ui::TerminalTabsPage *m_terminalsPage = nullptr;
+    QWidget *m_sideRailTerminalPanel = nullptr;
+    QBoxLayout *m_sideRailTerminalHost = nullptr;
+    QPushButton *m_sideRailTerminalButton = nullptr;
+    QWidget *m_terminalsSectionHost = nullptr;
+    QWidget *m_terminalsSectionNote = nullptr;
     QHash<QString, QString> m_terminalIntakeTokens;
     forkmesh::agentintake::RateLimiter m_terminalInputLimiter{
         forkmesh::terminalbridge::kInputLimit, forkmesh::terminalbridge::kInputWindowMs};
