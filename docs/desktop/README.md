@@ -444,6 +444,12 @@ The full description is in
   [Desktop agent sandboxing](#desktop-agent-sandboxing).
 - Actions steps run in a bubblewrap sandbox unless a workflow says
   `sandbox: false` ([below](#actions-outside-the-sandbox)).
+- A desktop Actions step stops after 90 minutes unless the step sets
+  `timeout-minutes` (1–1440, as on the instance runner), which replaces that
+  limit for the step; the run's 4-hour limit still caps it. Any other value
+  makes the workflow invalid. Before this the desktop ignored the key, so
+  `.forkmesh/desktop-ci.yml` could not get past 90 minutes
+  ([build-and-test.md](build-and-test.md#ci)).
 
 ### Actions outside the sandbox
 

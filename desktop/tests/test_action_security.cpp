@@ -706,6 +706,26 @@ int main(int argc, char **argv)
         check(!automatic.valid && automatic.error.contains(QStringLiteral("workflow_dispatch")),
               "sandbox: false is refused with any trigger besides workflow_dispatch");
     }
+    const ActionWorkflow stepTimeout = ActionFile::parse(
+        QStringLiteral(".forkmesh/long.yml"),
+        QStringLiteral("on: push\njobs:\n  build:\n    steps:\n"
+                       "      - name: long\n        timeout-minutes: 220\n"
+                       "        run: echo hi\n      - run: echo done\n"));
+    check(stepTimeout.valid && stepTimeout.steps.size() == 2 &&
+              stepTimeout.steps.at(0).timeoutMinutes == 220 &&
+              stepTimeout.steps.at(1).timeoutMinutes == 0,
+          "a step's timeout-minutes is read and other steps keep the default");
+    for (const QString &minutes :
+         {QStringLiteral("0"), QStringLiteral("1441"), QStringLiteral("ninety"),
+          QStringLiteral("1.5")}) {
+        const ActionWorkflow badTimeout = ActionFile::parse(
+            QStringLiteral(".forkmesh/long.yml"),
+            QStringLiteral("on: push\nsteps:\n  - timeout-minutes: %1\n    run: echo hi\n")
+                .arg(minutes));
+        check(!badTimeout.valid &&
+                  badTimeout.error.contains(QStringLiteral("timeout-minutes")),
+              "a timeout-minutes that is not 1 to 1440 whole minutes is refused");
+    }
     QString sandboxReason;
     if (!ActionRunner::sandboxAvailable(&sandboxReason)) {
         std::printf("  SKIP sandbox integration: %s\n",
@@ -884,6 +904,22 @@ int main(int argc, char **argv)
                   timed.persisted.status == ActionStatus::Failed &&
                   timed.log.contains(QStringLiteral("time limit")),
               "stale workflow processes are killed at the configured deadline");
+
+        const QString longStepWorkflow = QStringLiteral(
+            "name: Long step\non: push\nsteps:\n"
+            "  - name: outlives the default step limit\n"
+            "    timeout-minutes: 1\n"
+            "    run: sleep 1\n");
+        check(writeFile(workflowPath, longStepWorkflow.toUtf8()),
+              "long-step workflow fixture is written");
+        const QString longStepCommit =
+            commitAll(repository, QStringLiteral("long step workflow"));
+        const RunResult longStep =
+            runWorkflow(repository, longStepCommit, longStepWorkflow,
+                        &store, 178, timeoutLimits);
+        check(longStep.finished && longStep.signalOk &&
+                  longStep.persisted.status == ActionStatus::Success,
+              "a step's timeout-minutes replaces the node's default step limit");
 
         const QString diskWorkflow = QStringLiteral(
             "name: Disk quota\non: push\nsteps:\n"
