@@ -57,6 +57,7 @@ FUNCS = {
     "_resolve_claimable_node", "_account_row_by_pubkey", "valid_node_pubkey",
     "_transfer_pending", "_admin_authorized", "_admin_request_ownership",
     "_account_ownership_transfer_confirm", "_park_ownership_transfer",
+    "_send_signup_verification",
 }
 
 # The registration endpoint the installer's Go daemon calls lives in the
@@ -225,11 +226,14 @@ def _harness(accounts):
     async def touch_registered_node(_env, _name_bi, _rec):
         return None
 
-    async def _send_verification_email(_env, _request, _name, _email):
+    async def _send_verification_email(_env, _request, _name, _email, rec=None):
         return True
 
     async def _enqueue_verification(_env, _name_bi, _name, _email):
         return None
+
+    async def _claim_signup_verification(_env, _name, _email):
+        return True
 
     async def _account_public_payload(_env, rec, **_kwargs):
         return {"name": rec.get("name", ""), "sessionToken": "session-token"}
@@ -292,6 +296,7 @@ def _harness(accounts):
         "touch_registered_node": touch_registered_node,
         "_send_verification_email": _send_verification_email,
         "_enqueue_verification": _enqueue_verification,
+        "_claim_signup_verification": _claim_signup_verification,
         "_account_public_payload": _account_public_payload,
         "_request_account_session_token": _request_account_session_token,
         "_authed_account_name": _authed_account_name,

@@ -266,6 +266,14 @@ Widgets; iterate on those before building the app.
 - Qt builds use at most two compiler jobs. The desktop workflow keeps its
   cache independently from the Worker and deployment workflows, so parallel
   runs do not force a cold Qt rebuild.
+- The desktop workflow's step sets `timeout-minutes: 220`. The desktop
+  runner's default step limit is 90 minutes, and a change to `MainWindow.h`
+  misses ccache for every `MainWindow*.cpp` in `forkmesh-window-tests`: at
+  two jobs on a busy desktop that rebuild alone ran past 90 minutes. Run 8092
+  on 2026-10-25 (main `f86a1b189b`, which carried a `MainWindow.h` change)
+  was killed at 66% with "Critical Qt client contracts exceeded the process
+  time limit". The objects it did compile stay in the kept cache, so the
+  next run starts further on.
 - CI never builds the `forkmesh` app target; `src/main.cpp` and the app link
   are only checked by building locally.
 - `.forkmesh/release.yml` and `tools/package/*.sh` produce release binaries
