@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QSettings>
 
@@ -118,6 +119,21 @@ QStringList MainWindow::agentIntakeEnv(int sessionId)
         token = intake::mintToken(sessionId);
     return {QStringLiteral("%1=%2").arg(intake::SocketEnv, m_agentIntake->socketPath()),
             QStringLiteral("%1=%2").arg(intake::TokenEnv, token)};
+}
+
+void MainWindow::addAgentRunMcpConfig(int sessionId, QJsonObject &options)
+{
+    const QString token = m_agentIntakeTokens.value(sessionId);
+    if (sessionId <= 0 || forkmesh::vm::active() || token.isEmpty() || !m_agentIntake)
+        return;
+    const QString config = writeForkmeshMcpConfig(
+        QStringLiteral("agent-mcp"), QStringLiteral("session-%1.json").arg(sessionId),
+        {{intake::SocketEnv, m_agentIntake->socketPath()}, {intake::TokenEnv, token}});
+    if (config.isEmpty())
+        return;
+    options.insert(QStringLiteral("mcpConfig"), config);
+    options.insert(QStringLiteral("mcpReadOnly"),
+                   QJsonArray{config, QFileInfo(mcpServerScriptPath()).absolutePath()});
 }
 
 QJsonObject MainWindow::handleAgentIntakeRequest(const intake::Request &request)

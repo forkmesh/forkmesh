@@ -233,16 +233,29 @@ def header_block(rules, prefix: str, indent: str = "\t"):
         name = "@%s_h%d" % (prefix, index)
         matchers.append("%s path_regexp %s_h%d %s" % (
             name, prefix, index, alternation([pattern])))
-        replaced = {h.lower() for op, h, _ in ops if op == "set"}
-        for op, header, value in ops:
-            if op == "unset" and header.lower() in replaced:
-                continue
-            if op == "unset":
-                directives.append("%sheader %s -%s" % (indent, name, header))
-            else:
-                directives.append("%sheader %s %s %s" % (
-                    indent, name, header, _caddy_quote(value)))
+        directives += _rule_directives(ops, indent + "header " + name + " ")
     return matchers, directives
+
+
+def _rule_directives(ops, lead: str):
+    replaced = {h.lower() for op, h, _ in ops if op == "set"}
+    directives = []
+    for op, header, value in ops:
+        if op == "unset" and header.lower() in replaced:
+            continue
+        if op == "unset":
+            directives.append("%s-%s" % (lead, header))
+        else:
+            directives.append("%s%s %s" % (lead, header, _caddy_quote(value)))
+    return directives
+
+
+def path_rule_directives(rules, path: str, indent: str = "\t"):
+    directives = []
+    for pattern, ops in rules:
+        if pattern == path:
+            directives += _rule_directives(ops, indent + "header ")
+    return directives
 
 
 # --------------------------------------------------------------------------
@@ -317,8 +330,8 @@ def app_routes(worker_first_patterns, headers_text: str, root: str) -> str:
 def world_routes(worker_first_patterns, headers_text: str, root: str,
                  app_root: str, app_headers_text: str = "") -> str:
     positive, negative = split_worker_first(worker_first_patterns)
-    header_matchers, header_directives = header_block(
-        parse_headers_file(headers_text) if headers_text else [], "world")
+    world_rules = parse_headers_file(headers_text) if headers_text else []
+    header_matchers, header_directives = header_block(world_rules, "world")
     app_matchers, app_directives = header_block(
         parse_headers_file(app_headers_text) if app_headers_text else [],
         "wapp", indent="\t\t")
@@ -379,7 +392,7 @@ def world_routes(worker_first_patterns, headers_text: str, root: str,
     world_index = [
         "handle @world_index {",
         "\troot * %s" % root,
-    ] + header_directives + [
+    ] + header_directives + path_rule_directives(world_rules, "/world") + [
         "\theader Cache-Control \"no-store, max-age=0, must-revalidate\"",
         "\trewrite * /world/index.html",
         "\tfile_server {",

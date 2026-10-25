@@ -8988,6 +8988,8 @@ private:
                             bool shared = true, QString *error = nullptr);
     QJsonObject terminalJson(const QString &terminalId, const QString &callerTerminal) const;
     QString terminalMcpConfigPath(const QString &terminalId);
+    QString writeForkmeshMcpConfig(const QString &folder, const QString &fileName,
+                                   const QJsonObject &extraEnv);
     QJsonObject handleTerminalRequest(int sessionId, const QString &terminalId,
                                       const QString &method, const QJsonObject &params);
     QString terminalCallerForToken(const QString &token) const;
@@ -15063,6 +15065,7 @@ private:
     quint64 m_codexAccessFailureSeq = 0;
     std::unique_ptr<forkmesh::agentnet::Server> m_agentNetworkGate;
     QStringList agentIntakeEnv(int sessionId);
+    void addAgentRunMcpConfig(int sessionId, QJsonObject &options);
     QJsonObject handleAgentIntakeRequest(const forkmesh::agentintake::Request &request);
     QJsonObject createAgentFromIntake(int requesterId,
                                       const forkmesh::agentintake::CreateRequest &request);

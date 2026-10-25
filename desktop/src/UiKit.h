@@ -212,6 +212,9 @@ QWidget *labeledField(const QString &label, QWidget *field,
                       const QString &hint = QString(),
                       QWidget *parent = nullptr);
 
+inline constexpr int kCellDisplayChars = 512;
+QString cellDisplayText(const QString &text, int maxChars = kCellDisplayChars);
+
 void installStockPolish();
 void syncStockWidgets();
 void prepareComboPopup(QComboBox *combo);
