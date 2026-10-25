@@ -802,10 +802,10 @@ QWidget *MainWindow::buildBreadcrumb()
         terminalButton->setProperty("terminalLauncherButton", true);
         terminalButton->setCursor(Qt::PointingHandCursor);
         terminalButton->setFixedSize(32, 30);
-        terminalButton->setToolTip(QStringLiteral("Open a terminal tab"));
-        terminalButton->setAccessibleName(QStringLiteral("Open a terminal tab"));
+        terminalButton->setToolTip(QStringLiteral("Show or hide terminals"));
+        terminalButton->setAccessibleName(QStringLiteral("Show or hide terminals"));
         setOcticon(terminalButton, QStringLiteral("terminal"), 14);
-        connect(terminalButton, &QPushButton::clicked, this, [this] { showTerminalLauncher(); });
+        connect(terminalButton, &QPushButton::clicked, this, [this] { toggleTerminals(); });
         chromeRow->addWidget(terminalButton);
     }
     QPushButton *viewModeButton = buildViewModeButton();
@@ -3762,8 +3762,10 @@ void MainWindow::updateConnectionStatus()
 
 void MainWindow::updateAdminCrownBadge()
 {
-    if (!m_isAdmin)
+    if (!m_isAdmin) {
         renderUsersSignupReferralCode(QJsonObject());
+        closeUsersDetail();
+    }
     if (!m_isAdmin && !m_usersQuarantinePayload.isEmpty()) {
         // Quarantine rows contain preserved investigation evidence that must
         // not survive an administrator signing out on a shared desktop.

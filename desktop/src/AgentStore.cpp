@@ -432,6 +432,8 @@ QJsonObject AgentSession::toJson() const
     obj["taskGrade"] = qBound(0, taskGrade, 5);
     obj["orgAgentJob"] = orgAgentJob;
     obj["webSessionId"] = webSessionId;
+    if (!claudeAppSessionId.isEmpty())
+        obj["claudeAppSessionId"] = claudeAppSessionId;
     if (!claudeImportId.isEmpty())
         obj["claudeImport"] = QJsonObject{{"id", claudeImportId},
                                           {"path", claudeImportPath},
@@ -551,6 +553,8 @@ AgentSession AgentSession::fromJson(const QJsonObject &obj)
     if (session.webSessionId.isEmpty())
         session.webSessionId =
             session.orgAgentJob.value("sessionId").toString().trimmed();
+    session.claudeAppSessionId =
+        obj.value("claudeAppSessionId").toString().trimmed();
     const QJsonObject claudeImport = obj.value("claudeImport").toObject();
     session.claudeImportId = claudeImport.value("id").toString();
     session.claudeImportPath = claudeImport.value("path").toString();
@@ -1010,6 +1014,31 @@ QList<QJsonObject> AgentStore::loadEvents(const AgentSession &session) const
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return events;
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+        const QJsonDocument doc = QJsonDocument::fromJson(line);
+        if (doc.isObject())
+            events.append(doc.object());
+    }
+    return events;
+}
+
+QList<QJsonObject> AgentStore::loadRecentEvents(const AgentSession &session,
+                                                qint64 tailBytes) const
+{
+    const QString path = sessionDir(session) + QStringLiteral("/events.jsonl");
+    transcriptEventWriter().flushPath(path);
+    QList<QJsonObject> events;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return events;
+    const qint64 size = file.size();
+    if (tailBytes > 0 && size > tailBytes) {
+        file.seek(size - tailBytes - 1);
+        file.readLine();
+    }
     while (!file.atEnd()) {
         const QByteArray line = file.readLine().trimmed();
         if (line.isEmpty())

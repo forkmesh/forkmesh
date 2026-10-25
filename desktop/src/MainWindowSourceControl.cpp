@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "DiffChangeBlock.h"
 #include "SecretDiffBanner.h"
 #include "FlowLayout.h"
 #include "HeaderWrapLayout.h"
@@ -36,6 +37,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QWidgetAction>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -4473,9 +4475,12 @@ void MainWindow::renderScmCombinedDiff()
         !m_scmDiffRenderKey.isEmpty())
         return;
 
-    const QString html =
-        renderDiffHtml(m_scmCombinedPatch, files, dir, QString(), QString(),
-                       QString(), QHash<QString, QString>(), viewed, expanded);
+    DiffRenderAppearance appearance = currentDiffRenderAppearance();
+    appearance.changeArrows = true;
+    appearance.changeArrowsStagedFiles = m_scmCombinedStagedFiles;
+    const QString html = renderDiffHtmlSplit(
+        diffSplitPref(), m_scmCombinedPatch, files, dir, QString(), QString(),
+        QString(), QHash<QString, QString>(), viewed, expanded, appearance);
     QString body = html;
     if (cleanTree) {
         const quint64 statusGeneration = m_scmStatusGeneration;
@@ -5210,8 +5215,72 @@ bool MainWindow::testScmAutoViewedRoundTrip()
 }
 #endif
 
+void MainWindow::applyScmChangeBlock(const QUrl &url)
+{
+    if (sourceControlShowsRange() || !m_scmPatchValid)
+        return;
+    const QString dir = sourceControlGitDir();
+    const QUrlQuery query(url);
+    const QString path = url.path(QUrl::FullyDecoded);
+    const bool staged = query.queryItemValue(QStringLiteral("s")) == QLatin1String("1");
+    const bool toNew = query.queryItemValue(QStringLiteral("d")) == QLatin1String("new");
+    bool oldOk = false;
+    bool newOk = false;
+    const int oldStart = query.queryItemValue(QStringLiteral("o")).toInt(&oldOk);
+    const int newStart = query.queryItemValue(QStringLiteral("n")).toInt(&newOk);
+    if (dir.isEmpty() || path.isEmpty() || !oldOk || !newOk || (staged && toNew))
+        return;
+
+    const QStringList sections =
+        forkmesh::diffblock::splitFilePatches(m_scmCombinedPatch);
+    QString blockPatch;
+    for (int i = 0; i < sections.size() && blockPatch.isEmpty(); ++i) {
+        if ((i < m_scmCombinedStagedFiles) != staged ||
+            forkmesh::diffblock::filePatchPath(sections.at(i)) != path)
+            continue;
+        blockPatch = forkmesh::diffblock::changeBlockPatch(sections.at(i), oldStart,
+                                                           newStart);
+    }
+    if (blockPatch.isEmpty()) {
+        flashMessage(QStringLiteral("That change has moved; refreshing the diff."));
+        refreshSourceControl();
+        return;
+    }
+
+    QStringList args{QStringLiteral("apply"), QStringLiteral("--unidiff-zero"),
+                     QStringLiteral("--whitespace=nowarn")};
+    if (staged || toNew)
+        args << QStringLiteral("--cached");
+    if (!toNew)
+        args << QStringLiteral("-R");
+    const QString title = staged  ? QStringLiteral("Unstage change")
+                          : toNew ? QStringLiteral("Stage change")
+                                  : QStringLiteral("Revert change");
+    queueScmMutation(
+        QStringLiteral("block|") + dir + QLatin1Char('|') + path + QLatin1Char('|') +
+            url.query(),
+        [dir, args, input = blockPatch.toUtf8()] {
+            ScmMutationResult result;
+            result.ok = runGitCaptureInput(dir, args, input, &result.out,
+                                           &result.error);
+            return result;
+        },
+        [this, title](const ScmMutationResult &result) {
+            if (!result.ok)
+                QMessageBox::warning(this, title,
+                                     result.error.isEmpty()
+                                         ? QStringLiteral("git apply failed.")
+                                         : result.error);
+            refreshSourceControl();
+        });
+}
+
 void MainWindow::onScmDiffAnchorClicked(const QUrl &url)
 {
+    if (url.scheme() == QLatin1String("scmblock")) {
+        applyScmChangeBlock(url);
+        return;
+    }
     if (url.scheme() == QLatin1String("fmmergerange")) {
         m_mergeRange = mergeRangeIndexForKey(url.path());
         renderScmCombinedDiff(); // the pane memo is keyed by range

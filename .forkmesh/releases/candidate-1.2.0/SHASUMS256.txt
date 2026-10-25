@@ -1,4 +1,0 @@
-804f3ff46007930c3b322cc76d7155a4b465d0a45b3cc7299ca10a77ee97fbe0  forkmesh-linux-x86_64
-a710bd5d961c6cd42c37e1c8935bade4e9b653d8118c5f7f3de659eaf4f9d00d  forkmesh-linux-x86_64.AppImage
-c861bcf616d1c26cfcc0cb370a3540562e8dd1f33fac7038e35858aa7a576d68  forkmesh-linux-x86_64.AppImage.zsync
-8d85dd4306fef584b8c8d8b1815487e8e72ba51515b93ecc8df054eecb619ee3  forkmesh-mirror-node-linux-x86_64

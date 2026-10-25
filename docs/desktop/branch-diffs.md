@@ -40,3 +40,34 @@ therefore run on a worker, and the result streams into the view.
   Viewed tick during a stream re-renders rather than swapping in place.
 - The image-preview memo (`diffImageInlineFor()`) is locked because renders run
   on several threads.
+
+## Scrolling a paged diff
+
+A large diff is planned into bounded pages (about 96 K characters each), and
+the view only holds two of them at once. Scrolling past the edge of that window
+swaps one page out and the next one in, keeping the rows on screen where they
+were (`moveDiffWindowAtEdge()` in `desktop/src/MainWindowShared.cpp`).
+
+The scroll bar thumb is drawn for the whole diff, not for the two pages in the
+document. Before this, each page swap shrank the document under the scroll bar,
+so the thumb jumped back up every time the next page loaded.
+
+- **Thumb geometry** (`diffGlobalScrollGeometry()`): the position is the height
+  of the pages above the window plus the view's own scroll value. The range adds
+  the height of the pages below the window and the END OF DIFF runway if it is
+  not in the document yet. A page swap moves the window and the offset by the
+  same amount, so the thumb stays where it was.
+- **Page heights**: pages that have been on screen keep their measured height
+  (`measureResidentDiffPages()`). Pages not shown yet are estimated from their
+  character count at the measured pixels per character. A width change or a
+  restyle clears the measurements, and a Viewed fold clears the pages it
+  rewrote.
+- **Mouse on the bar**: the window filter paints the bar itself and handles
+  presses. Dragging the thumb or clicking the track maps the point to a page and
+  an offset inside it (`scrollDiffToGlobal()`). A point outside the window shows
+  that page (`showDiffPageAtScroll()`) with repaints held until it has streamed
+  in. A drag that arrives while a page is still streaming is kept and applied
+  once that page is in. The arrow buttons and the wheel work as before.
+
+Test: `checkDiffStreamResponsiveness()` in `desktop/tests/test_window_resize.cpp`
+(`forkmesh-window-tests --diff-stream-only`).

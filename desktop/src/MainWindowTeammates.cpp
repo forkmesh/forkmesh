@@ -2332,7 +2332,8 @@ QString MainWindow::teammateLatestOutput(const AgentSession *session) const
 
     QString output = agentClosingSummary(session->id).trimmed();
     if (output.isEmpty() && m_agentStore)
-        output = assistantOutputFromEvents(m_agentStore->loadEvents(*session));
+        output = assistantOutputFromEvents(m_agentStore->loadRecentEvents(
+            *session, AgentStore::kLatestOutputTailBytes));
     if (!output.isEmpty())
         return output;
     if (!session->lastError.trimmed().isEmpty())
@@ -8411,7 +8412,8 @@ void MainWindow::finishTeammateCreatorRun(int sessionId)
     const int repoIndex = repoIndexFor(session->owner, session->name);
     QString output = m_agentStore
                          ? assistantOutputFromEvents(
-                               m_agentStore->loadEvents(*session))
+                               m_agentStore->loadRecentEvents(
+                                   *session, AgentStore::kLatestOutputTailBytes))
                          : QString();
     if (output.trimmed().isEmpty())
         output = agentClosingSummary(sessionId);

@@ -972,7 +972,9 @@ void MainWindow::selectNote(const QString &id, const QString &storage)
         if (answer != QMessageBox::Yes)
             return;
     }
-    if (id != m_selectedNote.value(QStringLiteral("id")).toString())
+    const bool opening =
+        id != m_selectedNote.value(QStringLiteral("id")).toString();
+    if (opening)
         clearNoteConflict();
     if (storage == QLatin1String("local")) {
         const int index = localNoteIndex(m_localNotes, id);
@@ -992,12 +994,14 @@ void MainWindow::selectNote(const QString &id, const QString &storage)
         updateNotePublishState();
         markNoteClean();
         renderNoteLinkedItems();
+        if (opening)
+            showOpenedNoteView();
         return;
     }
     requestNotes(QByteArrayLiteral("GET"),
                  QStringLiteral("/api/notes/%1").arg(id), {},
-                 [this](bool ok, const QJsonObject &payload,
-                        const QString &error) {
+                 [this, opening](bool ok, const QJsonObject &payload,
+                                 const QString &error) {
         if (!ok) {
             m_notesStatus->setText(QStringLiteral("Note unavailable: %1").arg(error));
             flashMessage(QStringLiteral("Could not open that note: %1")
@@ -1017,6 +1021,8 @@ void MainWindow::selectNote(const QString &id, const QString &storage)
         updateNotePublishState();
         markNoteClean();
         renderNoteLinkedItems();
+        if (opening)
+            showOpenedNoteView();
         if (m_notesList && !m_notesList->currentItem()) {
             const QSignalBlocker blocker(m_notesList);
             for (int row = 0; row < m_notesList->count(); ++row) {
@@ -1026,6 +1032,14 @@ void MainWindow::selectNote(const QString &id, const QString &storage)
             }
         }
     });
+}
+
+void MainWindow::showOpenedNoteView()
+{
+    if (m_noteEditor->markdown().trimmed().isEmpty())
+        m_noteEditor->showWriteArea();
+    else
+        m_noteEditor->showPreviewArea();
 }
 
 // A note chosen in the top search box. The list may still be loading (the
@@ -1060,6 +1074,7 @@ void MainWindow::createNote()
     m_selectedNoteStorage = QStringLiteral("local");
     m_noteTitle->setText(QStringLiteral("Untitled note"));
     m_noteEditor->setMarkdown(QString());
+    m_noteEditor->showWriteArea();
     m_noteStorageMode->setCurrentIndex(0);
     m_notePublic->setChecked(false);
     updateNotePublishState();

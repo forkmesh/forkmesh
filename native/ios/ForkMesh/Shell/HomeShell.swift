@@ -757,6 +757,7 @@ struct HomeShell: View {
                     ShellIslandStatusDots(
                         lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
                         desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,
+                        desktops: Services.get(ShellLocalDesktopBridge.self)?.desktopLights ?? [],
                         desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light)
                 }
             }

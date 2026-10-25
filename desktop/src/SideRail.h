@@ -18,6 +18,7 @@ inline const QString kLegacyShowSetting = QStringLiteral("ui/showTeammateRail");
 inline const QString kBrowserOpenSetting = QStringLiteral("ui/sideRailBrowserOpen");
 inline const QString kBrowserWidthSetting = QStringLiteral("ui/sideRailBrowserWidth");
 inline const QString kBrowserUrlSetting = QStringLiteral("ui/sideRailBrowserUrl");
+inline const QString kTerminalWidthSetting = QStringLiteral("ui/sideRailTerminalWidth");
 inline const QString kWorkflowKind = QStringLiteral("workflow");
 inline const QString kPageKind = QStringLiteral("page");
 inline const QString kLinkKind = QStringLiteral("link");
@@ -26,6 +27,7 @@ inline constexpr int kMaxItems = 40;
 inline constexpr int kMaxTitleChars = 80;
 inline constexpr int kMaxUrlChars = 2048;
 inline constexpr int kDefaultBrowserWidth = 420;
+inline constexpr int kDefaultTerminalWidth = 560;
 inline constexpr int kMinBrowserWidth = 280;
 inline constexpr int kMaxBrowserWidth = 1200;
 

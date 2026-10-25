@@ -1337,8 +1337,11 @@ keeps the old layout. The page carries the `usersNextPage` property.
   menu, extended selection and Shift+Up/Down. Rows are 48 px
   (`UsersNextRowHeight` re-sets the height on `Show`, after the stock data
   table polish sets 38 px).
-  - Person (`UsersNextPersonDelegate`, column 0): the avatar if one is cached,
-    else an initials circle, the Discord display name (or the user name),
+  - Person (`UsersNextPersonDelegate`, column 0): the uploaded avatar from
+    the user directory, else the generated portrait (`forkMeshAvatarPng` of
+    the user name, the stand-in Chat and Issues use, so one person keeps one
+    face), else an initials circle; then the Discord display name (or the
+    user name),
     a "You" badge on the signed-in account (`accountOwner()`), and the muted
     `@user`. Sorting still uses the user name.
   - Email verified and Status get a status dot (`UsersNextDotDelegate`:
@@ -1350,6 +1353,32 @@ keeps the old layout. The page carries the `usersNextPage` property.
     Quarantine, Delete, Refresh; Unquarantine, Refresh on the quarantine
     tab): each item copies its button's text, icon, tooltip and enabled state
     and calls its `click()`.
+- **Profile rail** (`#usersDetailPanel`, `buildUsersDetailPanel`,
+  `renderUsersDetail`, both designs). Clicking a row in either tab opens a
+  360 px rail right of the tabs: the avatar (uploaded, else the generated
+  portrait), name and `@user`, the custom status, You / Admin / status badges,
+  then every column of that row as label and value, grouped into Account,
+  Email, Discord, Activity, Device, Signup, Referrals and Fingerprints
+  (Quarantine first on the quarantine tab; any column left out of the groups
+  lands in Other). The values are the table's own cell text, so the rail never
+  shows a field the table does not. It is opened by a click (`cellClicked`),
+  not by selection, so Shift+Up/Down range selection does not pop it open;
+  once open it follows the current row. It re-renders after every directory
+  refresh, keeping its scroll position, and closes when the user leaves the
+  directory, the tab changes, or the close button is pressed. Closing deletes
+  the rail's widgets, and losing admin closes it (`updateAdminCrownBadge`), so
+  protected fields do not outlive a shared-desktop sign-out.
+- **Classic avatars.** Classic keeps its one-line rows, but column 0 of both
+  tables gets `UsersAvatarDelegate`: a 22 px round face, the uploaded avatar
+  or else the same generated portrait. Both delegates build faces lazily for
+  painted rows and cache them, so a directory of a thousand users does not
+  render a thousand portraits on every refresh. The rail's Classic look (bold
+  name and section titles, muted labels) is set in code, because the rail's
+  stylesheet lives in the Next theme only.
+- **Avatars after a session restart.** `startSession` empties `m_avatars`;
+  it now empties `m_chatDirectoryAvatarDigests` too. The directory only
+  decodes an avatar whose digest changed, so keeping the digests left every
+  row without its picture until that person uploaded a new one.
 - **Left out on purpose.** "Invite people", the Pending invites and Roles
   tabs, role pickers and the Two-factor column: the directory has no invites,
   roles beyond the admin flag, or two-factor state. Tab counts are not added
@@ -2122,51 +2151,70 @@ branch is behind `Theme::isNext()` and the sheet is a Next overlay.
   selected pill is filled with the foreground colour, as in the mockup. The same
   overlay centres `marketSearchEmpty` under the pills when a search finds
   nothing.
-- **Grid.** The All, Installed and Not installed list hosts use
-  `MarketGridLayout`, a `QVBoxLayout` subclass that lays its widget items out
-  in columns (330 px minimum, up to four, 16 px gaps, rows as tall as their
-  tallest card); any other widget (the package settings page) and an expanded
-  card take a full row. Because it is still the same `QVBoxLayout` member,
-  `addWidget`, `takeAt`, `itemAt`, `clearPackageCards`, `applyMarketSearch`
-  and the tests' layout walks are unchanged. Packs and Guides stay lists of
-  12 px hairline cards.
+- **Grid or list.** A two-button toggle after the sort combo
+  (`#marketNextViewToggle`: `marketViewGridButton` with the `apps` icon,
+  `marketViewListButton` with `list-unordered`) switches the All, Installed and
+  Not installed lists between a grid and a list. The choice is saved in
+  `market/view` (`grid` or `list`), set on each list host as `marketNextList`,
+  and the cards are rebuilt for it. The three hosts use `MarketGridLayout`, a
+  `QVBoxLayout` subclass that lays its widget items out in columns (330 px
+  minimum, up to four, 16 px gaps, rows as tall as their tallest card), or one
+  card per row with 8 px gaps in list mode; any other widget (the package
+  settings page) takes a full row. Because it is still the same `QVBoxLayout`
+  member, `addWidget`, `takeAt`, `itemAt`, `clearPackageCards`,
+  `applyMarketSearch` and the tests' layout walks are unchanged. Packs and
+  Guides stay lists of 12 px hairline cards.
 - **Cards.** `arrangeMarketNextCard` re-lays the widgets the Classic builder
-  made (all stay descendants of `marketPackageCard`, with the same object
-  names, properties and connections): the preview on top in a rounded frame
-  (painted cover-fit by the card's event filter; Next decodes it once at
-  640×360 instead of 240×135), name and muted version, price on the right,
-  "@author · Category · N downloads" (the full Classic line is its tooltip), a
-  description clamped to two lines, and a footer with the Install button
-  (`marketPackageAction-*`, accent) or a "✓ Installed" badge (plus "Active"
-  for the applied theme), an amber "Not reproducible" when the build is not,
-  and "N permissions" on the right.
-- **Details.** Clicking a card (or "N permissions",
-  `#marketNextDetailsToggle`) expands it in place across the row: the card
-  keeps its column on the left and shows `#marketNextDetails` beside it (below
-  it in one column). It holds type, licence and install status
-  (`#marketNextFacts`), ratings and usage (`marketPackageStats`), the trust
-  checks as icon items (`#marketNextTrust`), the permissions as a hairline list
-  (`#marketNextPermissions`, amber for anything not low risk, "Needs no
-  permissions." when empty), the native-code warning (`marketNativeNotice`),
-  bundled packages (`marketNestedPackages`), Show on (`marketPackagePlaces`,
-  its check boxes stacked in a bordered list) with `marketPackageNotShownHere`,
-  and Settings, Install from a saved copy and Remove. One card per list is
-  open at a time; the open package is remembered on the list host
-  (`nextExpandedPackage`), so it stays open when an install or a count report
-  rebuilds the cards. The Classic `marketTrust` and permissions labels are
-  hidden duplicates of the new trust row and list.
+  made (with the same object names, properties and connections). In the grid:
+  the preview on top in a rounded frame (painted cover-fit by the card's event
+  filter; Next decodes it once at 640×360 instead of 240×135), name and muted
+  version, price on the right, "@author · Category · N downloads" (the full
+  Classic line is its tooltip), a description clamped to two lines, and a
+  footer with the Install button (`marketPackageAction-*`, accent) or a
+  "✓ Installed" badge (plus "Active" for the applied theme), an amber "Not
+  reproducible" when the build is not, and "N permissions" on the right. In
+  the list (`nextMarketList` on the card): a 112×63 preview, then name, meta
+  and a one-line description, then the warning, price, Install or badges and
+  "N permissions" in one row.
+- **Details pane.** Clicking a card (or "N permissions",
+  `#marketNextDetailsToggle`) opens its details in `#marketNextDetailsPane`, a
+  380 px pane right of the tabs with the package name
+  (`#marketNextPaneTitle`), a close button (`#marketNextPaneClose`) and a
+  scroll area. Clicking the open card again, or the close button, closes it;
+  the open card has an accent border (`nextMarketSelected`). The pane shows
+  the card's own `#marketNextDetails` widget, moved in while it is open and
+  handed back when another card opens: the preview (`#marketNextPaneShot`),
+  version and price, the meta line and the full description, type, licence
+  and install status (`#marketNextFacts`), ratings and usage
+  (`marketPackageStats`), the trust checks as icon items (`#marketNextTrust`),
+  the permissions as a hairline list (`#marketNextPermissions`, amber for
+  anything not low risk, "Needs no permissions." when empty), the native-code
+  warning (`marketNativeNotice`), bundled packages (`marketNestedPackages`),
+  Show on (`marketPackagePlaces`, its check boxes stacked in a bordered list)
+  with `marketPackageNotShownHere`, and Settings, Install from a saved copy and
+  Install or Remove. Install in the pane (`#marketNextPaneAction`) clicks the
+  card's own `marketPackageAction-*`, so it takes the same path. The pane
+  remembers the package, not the card: when an install or a count report
+  rebuilds the cards, or the tab changes, `restore()` reattaches the new card
+  of the same package from the current list (or All, when the package moved
+  out of it) and keeps the scroll position; it hides on Packs and Guides and
+  closes when the package is gone or the package settings page opens. A card
+  owns its details widget and deletes it with itself. The Classic
+  `marketTrust` and permissions labels are hidden duplicates of the new trust
+  row and list.
 - **Rich text.** The package settings title and guide "from" captions use
   `Theme::nextOrHex(FgMuted, "#8b949e")`, so Classic keeps its grey.
 - **Left out on purpose.** The "Extensions" pill (the Market has no such
   category filter; the four existing categories and All are shown), the
   illustrated placeholder thumbnails (each card shows the package's own
-  preview), and a separate slide-over sheet (the details expand inside the
-  card so every control stays a descendant of the card and its list, which the
-  window tests and the search filter rely on).
+  preview). The details used to expand inside the card so every control
+  stayed a descendant of it; the window tests run Classic, and the search
+  filter walks only the list layouts, so the pane does not affect them.
 - **Live switch.** The header, tabs and grid are built once, so a live design
   switch shows them after the page is rebuilt; cards rebuilt in the other
   design still work in either layout (a Next card in a Classic list stacks
-  full width, a Classic card in the grid takes a full row).
+  full width and, with no pane on the page, opens its details below itself; a
+  Classic card in the grid takes a full row).
 
 ## Must not break
 

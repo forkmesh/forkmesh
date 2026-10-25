@@ -165,6 +165,56 @@ platform's normal termination request. If the kernel denies that request, the
 detail dialog requests administrator permission through PolicyKit or a masked
 sudo password prompt and passes it to the privileged termination command.
 
+Under the CPU and Memory gauges, two sliders set the agent governor's limits
+(**Agent CPU limit**, **Agent memory limit**: the share agents may use, 40 % to 95 %). Each slider is the share left to agents,
+so it writes `100 - value` to `agents/cpuReservePercent` and
+`agents/memoryReservePercent` (5 to 60 %, the same settings the Governor page
+lists). While dragging, the caption previews the result of
+`agentresources::budgetFor` (CPU cores for agents and kept; slice
+`MemoryHigh` and the reserve); the change is saved when the slider is
+released, or 0.5 s after the last keyboard step, never on every pixel of a
+drag. `setReservePercents` stores the new budget, so agents started afterwards
+get the new per-agent limits and build-job count, and `applyBudget()` makes the
+running governor `systemctl --user set-property --runtime` the slice's
+`MemoryHigh`/`MemoryMax` and `CPUQuota`, plus `MemoryHigh`/`MemoryMax` on each
+running `forkmesh-agent-*.scope`. The CPU cap jumps to the new ceiling less
+what other programs use now (`retargetCpuQuota`, never below the floor), and
+the governor's usual cooldowns take over from there. Each change is logged as
+a `limits` event on the Governor page. When agents are not contained (no
+systemd, governor switched off), the sliders still save and the note beside
+them says why the limits are not applied yet. The view takes the budget
+through `governanceSource`/`onGovernanceChanged` hooks set in
+`MainWindowLogs.cpp`, so its tests run without systemd.
+
+Between the gauges and the share strips, two cards describe the processor and
+the kernel's tuning (`desktopprocs::readMachine` / `refreshMachine`):
+
+- **Cores**: the CPU model (trademarks and "N-Core Processor" removed by
+  `shortCpuModel`), physical cores and threads, the P/E split, L3 size, base
+  and peak clock, then one bar per online thread. Each bar's height is that
+  thread's busy share since the last sample (per-CPU lines of `/proc/stat`,
+  `applyCpuTicks`), and the strip under it is the core temperature
+  (green / amber from 75 °C / red from 90 °C). Threads are grouped by kind:
+  `/sys/devices/cpu_core/cpus` are P-cores and `/sys/devices/cpu_atom/cpus`
+  E-cores on Intel hybrid chips; other machines show one group. The header
+  gives the average clock (`scaling_cur_freq`) and the package temperature.
+  Temperatures come from the `coretemp` hwmon (`Package id N`, `Core N`
+  matched to each thread's `topology/core_id`) or `k10temp`/`zenpower`
+  (`Tctl`/`Tdie`, package only).
+- **CPU and memory settings**: governor (a mix is listed per governor) and
+  scaling driver with its `intel_pstate`/`amd_pstate` status, energy
+  performance preference, the allowed clock range and turbo (`no_turbo` or
+  `cpufreq/boost`; turbo off shows amber), pressure stall (`/proc/pressure`
+  `some avg10`; amber when memory or I/O reaches 10 % or CPU 50 %),
+  transparent huge pages and defrag, swappiness, zswap and swap devices,
+  overcommit mode, dirty ratios, `vfs_cache_pressure`, kernel release, uptime,
+  SMT and NUMA nodes. Hovering a row explains the setting.
+
+Topology, model, cache and temperature sensor paths are read once; clocks,
+governors, temperatures and settings are re-read every sample (about 200 small
+sysfs reads on a 32-thread machine). Every reader takes a root folder so the
+tests feed it a fake `/sys` and `/proc` tree.
+
 #### From a phone (`diag.process`, `diag.processStop`)
 
 The phone's **Memory** list (`diag.processes`) carries the same role
@@ -547,6 +597,42 @@ returned, so summed frame totals overstate a function's own cost.
     `writeQueuedApprovals` (`ActionStore.cpp`) and RoomSeal's `storeValues`.
     A GUI-thread `QSettings()` waits on the lock for as long as their fsync
     takes.
+- **Idle frame rate, teammate output and firewall defaults (report #12,
+  2026-10-24).** The report showed 86 % CPU and about 2,500 paint events a
+  second with nobody using the window. Sampling the GUI thread with gdb
+  (40 stacks, `SIGWINCH` as the stop signal so a stray one is harmless) put
+  23 of them in `QWaylandWindow::waitForFrameSync` under `swapBuffers`, and a
+  breakpoint on `QWidgetRepaintManager::sync()` counted 59 frames a second.
+  Breaking on the first `QWidget::update()` after each frame named what kept
+  it going: the top-chrome Agents squares, the Actions strip and the Genie
+  spider, each on its own timer.
+  - `AgentDotMatrix` repainted from two unaligned timers: its own 60 ms sweep
+    and the 45 ms agent scanner tick, whose decaying activity meter changes
+    every beat, so `setDots` called `update()` 22 times a second. A change that
+    only moves a running square's meter is now stored for the next sweep frame
+    (`sameSquares`). The scanner tick calls `refreshAgentDots()`, which leaves
+    out `scheduleSessionsPageRefresh()`: the Sessions page does not read the
+    meter, and every beat re-queued its rebuild.
+  - The Agents squares and the Actions strip share one 60 ms clock
+    (`ChromeDotGrid::animationClock`, held through `holdAnimationClock` while
+    something runs), so their repaints land in the same frame. The strip used
+    40 ms while badges breathe and 90 ms for running cells; its phase steps
+    were scaled to keep the same speeds.
+  - `teammateLatestOutput` read and parsed the whole `events.jsonl` of a
+    teammate's session on the GUI thread for each Team page row (1.3 s stall
+    under `loadTeammatesPanel`; event files reach 15 MB). It and the
+    teammate-creator result now read the last 512 KB
+    (`AgentStore::loadRecentEvents`, `kLatestOutputTailBytes`), where the
+    latest assistant text is.
+  - `defaultApprovedFirewallRules()` parses the shipped rule list once; the
+    firewall page asked for it on every rebuild.
+  - No change: the `KebabHeaderView::sectionSizeFromContents` stalls under
+    `renderUsersPage` sampled FreeType loading a font's tables for the first
+    time. The `QSettings` fsync stalls under `syncMirrorActionsConfiguration`
+    and `noteEventTiming` are the worker-held lock described above. The 33 s
+    theme switch ran inside `QApplication::setStyleSheet` on about 8,000
+    widgets while a CI build loaded the machine; its binary was rebuilt
+    before the report, so the click could not be traced further.
 - **Data tables, action output bursts and firewall defaults (report #13,
   2026-10-24).** The running binary was built from current source.
   - An 8.6 s paint (`STALL-20261024T214153582-p2840065-0006`) and two
@@ -580,6 +666,42 @@ returned, so summed frame totals overstate a function's own cost.
     `agentStatusIconColor`) already skips unchanged rows (adhoc #2104). The
     sample's other frames were stale, so the time could not be pinned to
     the loop. The two compositor buffer-swap stalls wait on Wayland.
+- **Data-table column fits, origin attribution, Deploy nodes runs (report
+  #14, 2026-10-24).** The running binary was built at 21:55 from `main`
+  before the report #13 fixes were merged, so its cell-text cap was not in
+  it.
+  - A 1,882 ms stall (`STALL-20261024T220959001-p3540757-0002`) ran from
+    `QTableWidgetItem::setData` through `QHeaderView::sectionPosition` into
+    `QTableView::sizeHintForColumn`. In the Next design `syncDataTable` turns
+    every Interactive column of a `dataTable` into `ResizeToContents`, which
+    undoes `makeColumnsResizable`'s freeze. A pending section resize then
+    runs on the next cell update and measures up to
+    `resizeContentsPrecision()` rows per column, 1,000 by default. Data
+    tables now fit from `kit::kDataTableFitRows` (100) rows around the
+    viewport. A smaller bound a page already set (the Users tables use one)
+    is kept, and leaving the Next design restores the old value.
+    `forkmesh-ui-kit-tests` times 20 cell updates on a 3,000-row data table
+    at both settings and checks the restore.
+  - `QtRuntimeDiagnostics::noteEventTiming` and `hiddenunicode::guardWidget`
+    were named as the likely origin of 16 stall groups. The first is the
+    event-timing hook, which runs after every delivery. The second is the
+    input guard, which runs on every `Polish` event and only casts the
+    widget. Both are glue frames now, so a style-sheet polish stall names
+    the code that created the widgets. `forkmesh-stall-watchdog-tests`
+    covers it.
+  - The NEW "Action failed before UI refresh" errors for Deploy nodes (runs
+    7888 and 7903) were "The node deploy agent did not pick up this run
+    within 3 minutes". The agent only scanned `<data>/actions/sandbox`, and
+    Action sandboxes had moved to the TMP disk at 20:30. See
+    `docs/deploy/auto-deploy.md`.
+  - No change: the 513 ms `show_sys` stall had no resolved application
+    frame. The two style-sheet polish stalls had no application caller
+    under the glue frames. The new compositor buffer-swap stalls wait on
+    Wayland. The 90% CPU comes from about 48 repaint passes a second of
+    the whole window (MainWindow, `appWindowFrame` and `windowFade` each
+    painted about 74,700 times in 26 minutes) with 7 agents running.
+    Nothing in the report names the widget that asks for them, so this
+    needs a run with paint-request tracing.
 
 ### Background file writes
 
