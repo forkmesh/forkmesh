@@ -43,6 +43,7 @@ export function createGroupCalls({
   callAccount = () => "",
   callId = () => "",
   prepareLocal = null,
+  acquireMedia = null,
   fmm = {},
 }) {
   const presence = new Map();
@@ -298,10 +299,13 @@ export function createGroupCalls({
     if (!mode && !fmmReady) return { error: "This browser cannot join end-to-end encrypted group calls." };
     let local;
     try {
-      local = await scope.navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: media === "video" ? { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24 } } : false,
-      });
+      local = typeof acquireMedia === "function"
+        ? await acquireMedia(media)
+        : await scope.navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: media === "video" ? { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24 } } : false,
+        });
+      if (!local) throw new Error("no media");
     } catch (_) {
       return { error: "Allow the microphone" + (media === "video" ? " and camera" : "") + " to join the call." };
     }
@@ -315,6 +319,7 @@ export function createGroupCalls({
       ws: null,
       worker: new scope.Worker(workerUrl, { name: "forkmesh-group-call-crypto" }),
       local,
+      ownsLocal: typeof acquireMedia !== "function",
       outgoing: null,
       engine: "",
       fmmReady,
@@ -417,7 +422,7 @@ export function createGroupCalls({
     return connectWebRtc(current, access);
   }
 
-  async function localForFmm(current) {
+  async function outgoingMedia(current) {
     if (current.outgoing) return current.outgoing;
     let prepared = null;
     if (typeof prepareLocal === "function") {
@@ -473,7 +478,7 @@ export function createGroupCalls({
       current.peer = "";
       return false;
     }
-    const outgoing = await localForFmm(current);
+    const outgoing = await outgoingMedia(current);
     let session;
     try {
       session = await startFmmCall({
@@ -551,15 +556,17 @@ export function createGroupCalls({
 
   async function connectWebRtc(current, access) {
     if (!access?.url || !access?.ticket || !current.mode) return false;
+    const outgoing = await outgoingMedia(current);
+    if (call !== current) return false;
     current.engine = "webrtc";
     const config = { bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" };
     if (current.mode === "streams") config.encodedInsertableStreams = true;
     const pc = new scope.RTCPeerConnection(config);
     current.pc = pc;
     for (const kind of ["audio", "video"]) {
-      const track = current.local.getTracks().find((item) => item.kind === kind) || null;
+      const track = outgoing.stream.getTracks().find((item) => item.kind === kind) || null;
       const transceiver = track
-        ? pc.addTransceiver(track, { direction: "sendonly", streams: [current.local] })
+        ? pc.addTransceiver(track, { direction: "sendonly", streams: [outgoing.stream] })
         : pc.addTransceiver(kind, { direction: "sendonly" });
       attachSender(transceiver.sender, kind);
     }
@@ -599,7 +606,7 @@ export function createGroupCalls({
     for (const timer of current.timers) clearInterval(timer);
     dropConnection(current);
     current.outgoing?.stop?.();
-    current.local.getTracks().forEach((track) => track.stop());
+    if (current.ownsLocal) current.local.getTracks().forEach((track) => track.stop());
     current.worker.terminate();
     lastError = current.error;
     onChange();
@@ -609,6 +616,7 @@ export function createGroupCalls({
     if (!call) return;
     call.muted = !call.muted;
     call.local.getAudioTracks().forEach((track) => { track.enabled = !call.muted; });
+    call.outgoing?.stream?.getAudioTracks().forEach((track) => { track.enabled = !call.muted; });
     call.fmm?.mute(call.muted, call.cameraOff);
     onChange();
   }
@@ -617,6 +625,7 @@ export function createGroupCalls({
     if (!call) return;
     call.cameraOff = !call.cameraOff;
     call.local.getVideoTracks().forEach((track) => { track.enabled = !call.cameraOff; });
+    call.outgoing?.stream?.getVideoTracks().forEach((track) => { track.enabled = !call.cameraOff; });
     call.fmm?.mute(call.muted, call.cameraOff);
     onChange();
   }
