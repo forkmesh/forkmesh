@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "coreLinked": true,
   "sources": [
     "TimersFeature.h",
-    "TimersFeature.cpp"
+    "TimersFeature.cpp",
+    "TimersClock.h",
+    "TimersClock.cpp"
   ],
   "mocHeaders": [],
   "testSources": [

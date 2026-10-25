@@ -26,13 +26,15 @@
 #include "../src/SettingsSectionsView.h"
 #include "../src/LogTimelineChart.h"
 #include "OnboardingTour.h"
+#include "TimersClock.h"
 #include "../src/PlatformLogFilter.h"
 #include "../src/PromptFlightOverlay.h"
 #include "../src/ProjectRegistry.h"
 #include "../src/PullStore.h"
 #include "../src/PublicMirrorRuntime.h"
 #include "../src/QtRuntimeDiagnostics.h"
-#include "../src/RepositoryCalendar.h"
+#include "CalendarPage.h"
+#include "RepositoryCalendar.h"
 #include "../src/RewardPoolSigner.h"
 #include "../src/SecretDiffBanner.h"
 #include "../src/ServerNode.h"
@@ -4924,9 +4926,11 @@ void checkCalendarActivityRendering(MainWindow &window)
         });
     }
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("month"));
-    QTableWidget *monthTable = window.testCalendarMonthTable();
-    QLabel *status = window.testCalendarStatus();
+    forkmesh::calendar::CalendarPage calendarPage(
+        window.testNativePackageHost(QStringLiteral("calendar")), nullptr);
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("month"));
+    QTableWidget *monthTable = calendarPage.monthTable();
+    QLabel *status = calendarPage.status();
     check(monthTable != nullptr && status != nullptr,
           QStringLiteral("Calendar month view is built for the activity check"));
     if (!monthTable || !status)
@@ -4952,8 +4956,8 @@ void checkCalendarActivityRendering(MainWindow &window)
                          "(lines = %1, last = %2)")
               .arg(busyLines.size()).arg(busyLines.value(busyLines.size() - 1)));
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("week"));
-    QTableWidget *weekTable = window.testCalendarWeekTable();
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("week"));
+    QTableWidget *weekTable = calendarPage.weekTable();
     QString weekCell;
     if (weekTable) {
         for (int row = 0; row < weekTable->rowCount() && weekCell.isEmpty(); ++row) {
@@ -4973,8 +4977,8 @@ void checkCalendarActivityRendering(MainWindow &window)
                          "(lines = %1, last = %2)")
               .arg(weekLines.size()).arg(weekLines.value(weekLines.size() - 1)));
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("agenda"));
-    QListWidget *agenda = window.testCalendarAgendaList();
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("agenda"));
+    QListWidget *agenda = calendarPage.agendaList();
     check(agenda != nullptr, QStringLiteral("Calendar agenda view is built"));
     if (!agenda)
         return;
@@ -4984,7 +4988,7 @@ void checkCalendarActivityRendering(MainWindow &window)
           QStringLiteral("the agenda renders a page and offers the rest "
                          "(rows = %1, last = %2)")
               .arg(agenda->count()).arg(agenda->item(agenda->count() - 1)->text()));
-    window.testExtendCalendarAgenda(300);
+    calendarPage.extendAgenda(300);
     check(agenda->count() == 400,
           QStringLiteral("asking for more agenda rows renders the remainder "
                          "(rows = %1)").arg(agenda->count()));
@@ -9551,10 +9555,16 @@ void checkTimerPingCredential(MainWindow &window)
 {
     const qint64 endsAt = 1760000000000;
     window.testWithOwnerSigningAccount(QStringLiteral("jett"), [&] {
+        forkmesh::timers::TimersClock clock(
+            window.testNativePackageHost(QStringLiteral("timers")), nullptr);
         QByteArray body;
-        const QUrl url = window.testTimerPingRequest(
-            QStringLiteral("a1b2c3d4e5f6"), QStringLiteral("countdown"),
-            endsAt, QStringLiteral("tea"), &body);
+        QNetworkRequest request;
+        const QUrl url =
+            clock.pingRequest(QStringLiteral("a1b2c3d4e5f6"),
+                              QStringLiteral("countdown"), endsAt,
+                              QStringLiteral("tea"), &request, &body)
+                ? request.url()
+                : QUrl();
         check(url.isValid() && url.scheme() == QLatin1String("https") &&
                   url.path() == QLatin1String("/api/notifications/timer"),
               QString("a finished countdown pings the account through the "
@@ -15330,7 +15340,7 @@ void checkUiSnapshots(MainWindow &window)
         }
     }
 
-    NextAccess::showSection(window, 16);
+    window.testShowNotesSection();
     QApplication::processEvents();
     if (auto *notes = window.findChild<QWidget *>(QStringLiteral("notesSection"))) {
         const auto button = [notes](const QString &text) -> QPushButton * {
@@ -15372,10 +15382,18 @@ void checkUiSnapshots(MainWindow &window)
     };
     const Page pages[] = {
         {0, "home"},     {1, "settings"}, {2, "chat"},   {4, "log"},
-        {7, "hosts"},    {14, "control"}, {15, "tasks"}, {16, "notes"},
-        {17, "users"},   {18, "files"},   {19, "calendar"}, {20, "market"},
+        {7, "hosts"},    {14, "control"}, {15, "tasks"}, {-1, "notes"},
+        {17, "users"},   {18, "files"},   {20, "market"},
         {21, "ledger"},  {22, "team"},    {23, "stats"}, {24, "health"},
         {25, "memory"},
+    };
+    const auto calendarPage = [&window] {
+        return dynamic_cast<forkmesh::calendar::CalendarPage *>(
+            window.testNativePackagePage(QStringLiteral("calendar")));
+    };
+    const auto renderCalendarFixture = [&](const QString &mode) {
+        if (forkmesh::calendar::CalendarPage *page = calendarPage())
+            page->renderActivity(calendarFixture, QDate::currentDate(), mode);
     };
     const auto settle = [] {
         for (int pass = 0; pass < 4; ++pass) {
@@ -15456,7 +15474,7 @@ void checkUiSnapshots(MainWindow &window)
                   QStringLiteral("the sidebar toggle shows only in the new design (%1)")
                       .arg(label));
 
-        NextAccess::showSection(window, 16);
+        window.testShowNotesSection();
         settle();
         if (auto *notes = window.findChild<QWidget *>(QStringLiteral("notesSection"))) {
             for (QPushButton *candidate : notes->findChildren<QPushButton *>()) {
@@ -15474,24 +15492,26 @@ void checkUiSnapshots(MainWindow &window)
                 break;
             }
         }
-        window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                          QStringLiteral("month"));
         for (const Page &page : pages) {
             if (page.section >= NextAccess::sectionCount(window))
                 continue;
-            NextAccess::showSection(window, page.section);
+            if (page.section < 0)
+                window.testShowNotesSection();
+            else
+                NextAccess::showSection(window, page.section);
             if (grab(dir, QString::fromLatin1(page.name)))
                 ++saved;
         }
-        for (const char *mode : {"week", "agenda"}) {
-            window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                              QLatin1String(mode));
-            NextAccess::showSection(window, 19);
-            if (grab(dir, QStringLiteral("calendar-") + QLatin1String(mode)))
-                ++saved;
+        if (calendarPage()) {
+            for (const char *mode : {"month", "week", "agenda"}) {
+                window.testShowNativePackage(QStringLiteral("calendar"));
+                renderCalendarFixture(QLatin1String(mode));
+                if (grab(dir, QLatin1String(mode) == QLatin1String("month")
+                                  ? QStringLiteral("calendar")
+                                  : QStringLiteral("calendar-") + QLatin1String(mode)))
+                    ++saved;
+            }
         }
-        window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                          QStringLiteral("month"));
         window.testRenderNetworkRepos(reposFixture);
         settle();
         for (QTableWidget *table : window.findChildren<QTableWidget *>(
@@ -15687,12 +15707,15 @@ void checkUiSnapshots(MainWindow &window)
             const struct {
                 int section;
                 const char *name;
-            } smallPages[] = {{0, "home"}, {2, "chat"}, {16, "notes"},
-                              {19, "calendar"}, {24, "health"}};
+            } smallPages[] = {{0, "home"}, {2, "chat"}, {-1, "notes"},
+                              {24, "health"}};
             for (const auto &page : smallPages) {
                 if (page.section >= NextAccess::sectionCount(window))
                     continue;
-                NextAccess::showSection(window, page.section);
+                if (page.section < 0)
+                    window.testShowNotesSection();
+                else
+                    NextAccess::showSection(window, page.section);
                 settle();
                 check(window.size() == small,
                       QStringLiteral("%1 does not push the window wider (%2, got %3)")
@@ -21824,10 +21847,42 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // Timers is a package too: its whole contribution is the clock in the
     // window's top bar. It is not installed by default, so the clock appears
     // only once it is, and removing it takes the clock and its entries away.
-    QWidget *timersStrip =
-        window.findChild<QWidget *>(QStringLiteral("timersNavStrip"));
-    QPushButton *timersClock =
-        window.findChild<QPushButton *>(QStringLiteral("timersClockButton"));
+    const auto timersStripNow = [&] {
+        return dynamic_cast<forkmesh::timers::TimersClock *>(
+            window.testNativePackageChrome(QStringLiteral("timers")));
+    };
+    const auto addTimer = [&](const QString &request,
+                              const QString &kind = QString()) {
+        forkmesh::timers::TimerKind parsed = forkmesh::timers::TimerKind::Countdown;
+        if (!kind.isEmpty() &&
+            !forkmesh::timers::TimersFeature::kindFromName(kind, &parsed))
+            return false;
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock && clock->addTimer(request, parsed);
+    };
+    const auto timerChipTexts = [&] {
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock ? clock->chipTexts() : QStringList();
+    };
+    const auto timerCommand = [&](const QString &labelPrefix,
+                                  const QString &command) {
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock && clock->command(labelPrefix, command);
+    };
+    const auto advanceTimers = [&](qint64 milliseconds) {
+        if (forkmesh::timers::TimersClock *clock = timersStripNow())
+            clock->advance(milliseconds);
+    };
+    const auto timersClockSlot = [&] {
+        return window.testNativePackageChromeSlot(QStringLiteral("timers"));
+    };
+    const auto dropTimersClock = [&](qreal fraction) {
+        QWidget *bar = window.testNativePackageChromeBar();
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        if (bar && clock)
+            clock->dropAt(bar->mapToGlobal(QPoint(qRound(bar->width() * fraction),
+                                                  bar->height() / 2)));
+    };
     const auto clickTimersAction = [&](const QString &text) {
         for (QPushButton *action :
              allMarketActions(QStringLiteral("marketPackageAction-timers"))) {
@@ -21857,12 +21912,14 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         return modeless && choice != nullptr;
     };
     const auto timerChipsNamed = [&](const QString &objectName) {
-        return timersStrip ? timersStrip->findChildren<QPushButton *>(objectName)
-                           : QList<QPushButton *>();
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock ? clock->findChildren<QPushButton *>(objectName)
+                     : QList<QPushButton *>();
     };
     check(!window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && timersStrip->isHidden() &&
-              !window.testAddTimer(QStringLiteral("10m nothing")),
+              !timersStripNow() &&
+              !window.findChild<QWidget *>(QStringLiteral("timersNavStrip")) &&
+              !addTimer(QStringLiteral("10m nothing")),
           QStringLiteral("Timers is not installed by default, so the top bar "
                          "carries no clock"));
 
@@ -21870,26 +21927,32 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         clickTimersAction(QStringLiteral("Install")) &&
         window.findChildren<QMessageBox *>(QStringLiteral("packageInstallImport"))
             .isEmpty();
+    QWidget *timersStrip = timersStripNow();
+    QPushButton *timersClock =
+        timersStrip
+            ? timersStrip->findChild<QPushButton *>(QStringLiteral("timersClockButton"))
+            : nullptr;
     check(timersInstalled &&
               window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && !timersStrip->isHidden() && timersClock &&
+              timersStrip && !timersStrip->isHidden() &&
+              timersStrip->window() == &window && timersClock &&
               !timersClock->icon().isNull() &&
-              window.testTimerChipTexts().isEmpty(),
+              timerChipTexts().isEmpty(),
           QStringLiteral("installing Timers puts a little clock in the window's "
                          "top bar"));
 
-    const QString clockSlotBefore = window.testTimersClockSlot();
-    window.testDropTimersClock(0.9);
+    const QString clockSlotBefore = timersClockSlot();
+    dropTimersClock(0.9);
     QApplication::processEvents();
-    const QString clockSlotRight = window.testTimersClockSlot();
+    const QString clockSlotRight = timersClockSlot();
     const QString storedRight =
         QSettings().value(QStringLiteral("ui/timersClockPlacement")).toString();
-    window.testDropTimersClock(0.5);
+    dropTimersClock(0.5);
     QApplication::processEvents();
-    const QString clockSlotCenter = window.testTimersClockSlot();
-    window.testDropTimersClock(0.1);
+    const QString clockSlotCenter = timersClockSlot();
+    dropTimersClock(0.1);
     QApplication::processEvents();
-    const QString clockSlotLeft = window.testTimersClockSlot();
+    const QString clockSlotLeft = timersClockSlot();
     check(clockSlotBefore == QStringLiteral("left") &&
               clockSlotRight == QStringLiteral("right") &&
               storedRight == QStringLiteral("right") &&
@@ -21904,13 +21967,11 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                    clockSlotLeft, storedRight));
 
     const bool timerEntriesAdded =
-        window.testAddTimer(QStringLiteral("25m standup")) &&
-        window.testAddTimer(QStringLiteral("coffee in 4m"),
-                            QStringLiteral("countdown")) &&
-        window.testAddTimer(QStringLiteral("focus"), QStringLiteral("timer")) &&
-        window.testAddTimer(QStringLiteral("in 2h review"),
-                            QStringLiteral("alarm"));
-    QStringList timerChips = window.testTimerChipTexts();
+        addTimer(QStringLiteral("25m standup")) &&
+        addTimer(QStringLiteral("coffee in 4m"), QStringLiteral("countdown")) &&
+        addTimer(QStringLiteral("focus"), QStringLiteral("timer")) &&
+        addTimer(QStringLiteral("in 2h review"), QStringLiteral("alarm"));
+    QStringList timerChips = timerChipTexts();
     QPushButton *alarmChip = nullptr;
     QPushButton *stopwatchChip = nullptr;
     if (timersStrip) {
@@ -21932,16 +21993,16 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
           QStringLiteral("countdowns, an alarm and a timer each become a "
                          "top-bar chip, soonest first (chips=%1)")
               .arg(timerChips.join(QStringLiteral(", "))));
-    check(!window.testAddTimer(QStringLiteral("do the thing")) &&
-              !window.testAddTimer(QStringLiteral("7"), QStringLiteral("alarm")) &&
-              window.testTimerChipTexts().size() == 4,
+    check(!addTimer(QStringLiteral("do the thing")) &&
+              !addTimer(QStringLiteral("7"), QStringLiteral("alarm")) &&
+              timerChipTexts().size() == 4,
           QStringLiteral("a countdown with no length or an alarm with no time "
                          "adds nothing"));
 
-    window.testTimerCommand(QStringLiteral("coffee"), QStringLiteral("pause"));
-    window.testAdvanceTimers(26 * 60 * 1000);
+    timerCommand(QStringLiteral("coffee"), QStringLiteral("pause"));
+    advanceTimers(26 * 60 * 1000);
     QApplication::processEvents();
-    timerChips = window.testTimerChipTexts();
+    timerChips = timerChipTexts();
     check(timerChips.size() == 4 &&
               timerChips.at(0).startsWith(QStringLiteral("+")) &&
               timerChips.at(0).endsWith(QStringLiteral("standup")) &&
@@ -21956,12 +22017,12 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                          "countdown holds its remainder (chips=%1)")
               .arg(timerChips.join(QStringLiteral(", "))));
 
-    window.testAdvanceTimers(2 * 60 * 60 * 1000);
+    advanceTimers(2 * 60 * 60 * 1000);
     QApplication::processEvents();
     const int doneAfterAlarm =
         int(timerChipsNamed(QStringLiteral("timerChipDone")).size());
     const bool alarmSnoozed =
-        window.testTimerCommand(QStringLiteral("review"), QStringLiteral("snooze"));
+        timerCommand(QStringLiteral("review"), QStringLiteral("snooze"));
     QApplication::processEvents();
     check(doneAfterAlarm == 2 && alarmSnoozed &&
               timerChipsNamed(QStringLiteral("timerChipDone")).size() == 1,
@@ -22043,7 +22104,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               window.testPackageInstalled(QStringLiteral("timers")) &&
               QSettings().value(timersStateKey).toString().contains(
                   QStringLiteral("standup")) &&
-              !window.testTimerChipTexts().isEmpty(),
+              !timerChipTexts().isEmpty(),
           QStringLiteral("importing the saved copy brings the timers back with "
                          "the package"));
 
@@ -22055,19 +22116,19 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         QStringLiteral("packageRemoveConfirmButton"));
     window.testSetPackageDataFilePath(QString());
     check(timersRemoved && !window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && timersStrip->isHidden() &&
-              window.testTimerChipTexts().isEmpty() &&
+              !timersStripNow() && timerChipTexts().isEmpty() &&
               !QSettings().contains(timersStateKey),
           QStringLiteral("removing Timers takes the clock off the top bar and "
                          "its entries out of settings"));
-    check(!window.testAddTimer(QStringLiteral("10m nothing")),
+    check(!addTimer(QStringLiteral("10m nothing")),
           QStringLiteral("with Timers removed nothing can be added to the clock"));
 
     const bool timersReinstalled = clickTimersAction(QStringLiteral("Install"));
+    timersStrip = timersStripNow();
     check(timersReinstalled &&
               window.testPackageInstalled(QStringLiteral("timers")) &&
               timersStrip && !timersStrip->isHidden() &&
-              window.testTimerChipTexts().isEmpty(),
+              timerChipTexts().isEmpty(),
           QStringLiteral("reinstalling Timers brings back a bare clock without "
                          "an application restart"));
 
@@ -22100,7 +22161,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         if (fiveHourTimer)
             fiveHourTimer->click();
         QApplication::processEvents();
-        const QStringList usageChips = window.testTimerChipTexts();
+        const QStringList usageChips = timerChipTexts();
         check(timerButtonShown && !creditsHasTimer && usageChips.size() == 1 &&
                   (usageChips.first().startsWith(QStringLiteral("2:00:00 ")) ||
                    usageChips.first().startsWith(QStringLiteral("1:59:5"))) &&
@@ -22113,7 +22174,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         if (QMenu *stillOpen = window.findChild<QMenu *>(
                 QStringLiteral("claudeAccountUsageMenu")))
             stillOpen->close();
-        window.testTimerCommand(QStringLiteral("Claude"), QStringLiteral("remove"));
+        timerCommand(QStringLiteral("Claude"), QStringLiteral("remove"));
         QApplication::processEvents();
     }
     // Leave the profile as a default install has it for the checks below.

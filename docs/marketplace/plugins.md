@@ -104,11 +104,13 @@ can only shrink.
 | `capture` | `MainWindowMarket.cpp` creates `CaptureFeature` |
 | `discord` | `MainWindowSetup.cpp` runs `DiscordClient` and shows Discord rooms in Chat |
 | `ledger` | `MainWindowLedger.cpp` (about 3,700 lines, payouts and tip transfers) uses `LedgerFeature` |
-| `timers` | `MainWindowTimers.cpp` and the top search use `TimersFeature` |
 | `tour` | `MainWindowOnboarding.cpp` creates `OnboardingTour` |
 
 Each one moves out by turning the window code that drives it into the plugin's
 own page or a socket in `NativePackageHost`, then dropping `coreLinked`.
+Timers moved out on 2026-10-25: its clock is a top-bar widget the plugin
+registers (`chromeFactory`), so it is a module now
+([package-modules](../desktop/package-modules.md#top-bar-widgets)).
 
 ## App
 
