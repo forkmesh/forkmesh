@@ -3130,6 +3130,26 @@ QWidget *MainWindow::buildStatusBar()
         m_qtDiagnosticTiles.append(tile);
         debugTiles.append(tile);
     }
+    const struct {
+        QWidget **slot;
+        const char *name;
+        const char *label;
+        const char *accessible;
+    } diskTiles[] = {
+        {&m_debugTmpDataTile, "debugTmpDataTile", "DATA", "Data on the TMP disk"},
+        {&m_debugUsbTile, "debugUsbLinkTile", "USB", "USB drive link speed"},
+        {&m_debugTmpTile, "debugTmpDiskTile", "TMP", "TMP fast disk"},
+    };
+    for (const auto &definition : diskTiles) {
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label), debugContent,
+                                           kResourceSparklineCompactSide, 2);
+        tile->setObjectName(QString::fromLatin1(definition.name));
+        tile->setAccessibleName(QString::fromLatin1(definition.accessible));
+        tile->setLoading(true);
+        tile->onClicked = [this] { refreshFastScratchDisk(false); };
+        *definition.slot = tile;
+        debugTiles.append(tile);
+    }
     for (int first = 0; first < debugTiles.size(); first += 4) {
         auto *quad = new QWidget(debugContent);
         quad->setObjectName(QStringLiteral("debugTileQuad"));

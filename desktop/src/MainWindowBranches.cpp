@@ -4062,8 +4062,9 @@ MainWindow::WorktreeRemoval MainWindow::removeWorktreeAndBranch(
                                        "its entry and finished the cleanup.")
                             .arg(worktreePath);
     }
-    const QString scratch = forkmesh::agentscratch::folderFor(worktreePath);
-    if (!scratch.isEmpty() && QFileInfo::exists(scratch)) {
+    for (const QString &scratch : forkmesh::agentscratch::foldersFor(worktreePath)) {
+        if (!QFileInfo::exists(scratch))
+            continue;
         if (forkmesh::agentscratch::remove(scratch)) {
             removal.logs << QStringLiteral("Agents: removed scratch folder %1.").arg(scratch);
             runGitCapture(repoPath, {QStringLiteral("worktree"), QStringLiteral("prune")},

@@ -947,6 +947,8 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildVulnReportTab(); }, "Security", "shield-check");
 
+    addLazyTab([this] { return buildFastDiskTab(); }, "TMP disk", "database");
+
     addLazyTab([this] { return buildDataSection(); }, "Data", "package");
 
     m_settingsSections = sections;

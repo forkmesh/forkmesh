@@ -847,6 +847,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     startupStep(QStringLiteral("Restoring actions and agent sessions"));
     // Only the store and its runners here; reading the run records off disk is
     // the expensive half and waits for warmDeferredStartupSurfaces().
+    traceStep(QStringLiteral("find the TMP disk"), [this] { initFastScratchDisk(); });
     traceStep(QStringLiteral("create the Actions store"),
               [this] { initActionStore(); });
     traceStep(QStringLiteral("restore agent sessions"), [this] { initAgents(); });

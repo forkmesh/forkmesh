@@ -1038,7 +1038,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        codexEnv << forkmesh::agentscratch::environment(scratch);
+        codexEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
@@ -1119,7 +1119,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        launchEnv << forkmesh::agentscratch::environment(scratch);
+        launchEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
