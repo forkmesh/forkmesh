@@ -8,6 +8,9 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Desktop",
+     "items": [
+      "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running."
      "title": "Agents",
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
