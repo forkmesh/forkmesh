@@ -385,3 +385,9 @@ diagnostics chart" in the panel hides it (`forkmesh.world.voiceChart`).
   presence every few seconds instead.
 - Phones: the World pages on iOS and Android get this through the browser;
   no native port.
+- When face tracking cannot start (no WebGL float render targets, a model
+  that fails to load), the camera stays on and sends plain video if "Also
+  send video" is ticked; only without it does the camera turn back off. Until
+  2026-10-25 any tracking failure stopped the camera, so it flashed on and
+  off. The failure reason is logged to the console as
+  `World camera: face tracking failed to start`.
