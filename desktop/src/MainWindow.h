@@ -4979,6 +4979,7 @@ private:
     void renderNotesList(const QString &selectId = QString(),
                          bool reselect = true);
     void selectNote(const QString &id, const QString &storage);
+    void showOpenedNoteView();
     void createNote();
     void saveNote();
     void deleteNote();
