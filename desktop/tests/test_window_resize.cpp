@@ -10789,6 +10789,175 @@ void checkStatsPage(MainWindow &window)
           QStringLiteral("every catalog stat yields a value or a reason"));
 }
 
+void checkMarketNextView(MainWindow &window)
+{
+    const QString shots = qEnvironmentVariable("FORKMESH_MARKET_SHOT");
+    const auto settle = [] {
+        for (int pass = 0; pass < 6; ++pass) {
+            QApplication::processEvents();
+            QThread::msleep(20);
+        }
+        QApplication::processEvents();
+    };
+    const auto shoot = [&window, &shots, &settle](const QString &name) {
+        if (shots.isEmpty())
+            return;
+        settle();
+        QDir().mkpath(shots);
+        window.grab().save(QDir(shots).filePath(name + QStringLiteral(".png")));
+    };
+    QSettings settings;
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    settings.remove(QStringLiteral("market/view"));
+    MainWindow::applyTheme();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowMarketSection();
+    settle();
+
+    auto *marketList = window.findChild<QScrollArea *>(QStringLiteral("marketList"));
+    auto *gridButton =
+        window.findChild<QPushButton *>(QStringLiteral("marketViewGridButton"));
+    auto *listButton =
+        window.findChild<QPushButton *>(QStringLiteral("marketViewListButton"));
+    auto *pane = window.findChild<QFrame *>(QStringLiteral("marketNextDetailsPane"));
+    auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("marketTabs"));
+    check(marketList && gridButton && listButton && pane && tabs,
+          QStringLiteral("the Next Market has the grid and list buttons and a "
+                         "details pane"));
+    if (!marketList || !gridButton || !listButton || !pane || !tabs)
+        return;
+    const auto cards = [marketList] {
+        QList<QWidget *> found;
+        QLayout *layout = marketList->widget()->layout();
+        for (int i = 0; layout && i < layout->count(); ++i) {
+            QWidget *card = layout->itemAt(i)->widget();
+            if (card && card->objectName() == QLatin1String("marketPackageCard") &&
+                !card->isHidden())
+                found << card;
+        }
+        return found;
+    };
+    const auto clickMain = [](QWidget *card) {
+        QWidget *main = card ? card->findChild<QWidget *>(
+                                   QStringLiteral("marketNextCardMain"),
+                                   Qt::FindDirectChildrenOnly)
+                             : nullptr;
+        if (!main)
+            return false;
+        const QPointF local(main->width() / 2.0, 8.0);
+        const QPointF global = main->mapToGlobal(local);
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(main, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(main, &release);
+        return true;
+    };
+    QList<QWidget *> gridCards = cards();
+    check(gridCards.size() >= 3 && gridButton->isChecked() && !listButton->isChecked() &&
+              pane->isHidden(),
+          QStringLiteral("the Market opens as a grid with the details pane closed"));
+    if (gridCards.size() < 3)
+        return;
+    check(gridCards.at(0)->geometry().top() == gridCards.at(1)->geometry().top() &&
+              gridCards.at(0)->geometry().left() < gridCards.at(1)->geometry().left(),
+          QStringLiteral("grid cards share a row"));
+    shoot(QStringLiteral("market-grid"));
+
+    QWidget *first = gridCards.at(0);
+    const QString firstId = first->property("packageId").toString();
+    check(clickMain(first), QStringLiteral("a grid card has a clickable main area"));
+    settle();
+    QWidget *details = first->findChild<QWidget *>(QStringLiteral("marketNextDetails"));
+    QWidget *paneDetails = pane->findChild<QWidget *>(QStringLiteral("marketNextDetails"));
+    auto *paneTitle = pane->findChild<QLabel *>(QStringLiteral("marketNextPaneTitle"));
+    check(pane->isVisible() && !details && paneDetails && paneDetails->isVisible() &&
+              paneTitle &&
+              paneTitle->text() == first->property("packageName").toString() &&
+              first->property("nextMarketSelected").toBool() &&
+              pane->geometry().left() >= tabs->geometry().right(),
+          QStringLiteral("clicking a grid card shows its details in the pane right "
+                         "of the list"));
+    if (marketList->viewport()->width() >= 2 * 330 + 16 + 48)
+        check(first->width() < marketList->viewport()->width() / 2,
+              QStringLiteral("the open card keeps its grid column"));
+    shoot(QStringLiteral("market-grid-details"));
+
+    QWidget *second = gridCards.at(1);
+    clickMain(second);
+    settle();
+    check(pane->isVisible() &&
+              first->findChild<QWidget *>(QStringLiteral("marketNextDetails")) &&
+              !first->property("nextMarketSelected").toBool() &&
+              second->property("nextMarketSelected").toBool() &&
+              pane->findChildren<QWidget *>(QStringLiteral("marketNextDetails")).size() == 1,
+          QStringLiteral("opening another card hands the first card its details back"));
+    clickMain(second);
+    settle();
+    check(pane->isHidden() && !second->property("nextMarketSelected").toBool(),
+          QStringLiteral("clicking the open card again closes the pane"));
+
+    clickMain(first);
+    settle();
+    listButton->click();
+    settle();
+    QList<QWidget *> listCards = cards();
+    check(listButton->isChecked() && !gridButton->isChecked() &&
+              settings.value(QStringLiteral("market/view")).toString() ==
+                  QLatin1String("list") &&
+              listCards.size() == gridCards.size(),
+          QStringLiteral("the list button switches the Market to a list and saves it"));
+    bool stacked = listCards.size() >= 2;
+    for (int i = 1; stacked && i < listCards.size(); ++i)
+        stacked = listCards.at(i)->geometry().top() > listCards.at(i - 1)->geometry().bottom() &&
+                  listCards.at(i)->geometry().left() == listCards.at(0)->geometry().left();
+    auto *listShot = listCards.isEmpty()
+        ? nullptr
+        : listCards.at(0)->findChild<QLabel *>(QStringLiteral("marketPackageScreenshot"));
+    check(stacked && listShot && listShot->height() < 80 &&
+              listCards.at(0)->property("nextMarketList").toBool() &&
+              listCards.at(0)->height() < 120,
+          QStringLiteral("list rows stack one per row with a small preview"));
+    QWidget *reopened = nullptr;
+    for (QWidget *card : listCards) {
+        if (card->property("packageId").toString() == firstId)
+            reopened = card;
+    }
+    check(pane->isVisible() && reopened &&
+              reopened->property("nextMarketSelected").toBool() &&
+              pane->findChildren<QWidget *>(QStringLiteral("marketNextDetails")).size() == 1,
+          QStringLiteral("the open package stays open in the pane when the cards "
+                         "are rebuilt as a list"));
+    shoot(QStringLiteral("market-list-details"));
+
+    tabs->setCurrentIndex(tabs->count() - 1);
+    settle();
+    check(pane->isHidden(), QStringLiteral("the pane hides on the Guides tab"));
+    tabs->setCurrentIndex(0);
+    settle();
+    check(pane->isVisible(), QStringLiteral("the pane comes back on the All tab"));
+    if (auto *close = pane->findChild<QPushButton *>(QStringLiteral("marketNextPaneClose")))
+        close->click();
+    settle();
+    check(pane->isHidden() &&
+              (!reopened || !reopened->property("nextMarketSelected").toBool()),
+          QStringLiteral("the close button closes the pane"));
+    shoot(QStringLiteral("market-list"));
+
+    gridButton->click();
+    settle();
+    check(settings.value(QStringLiteral("market/view")).toString() ==
+                  QLatin1String("grid") &&
+              cards().size() == gridCards.size(),
+          QStringLiteral("the grid button switches back to the grid"));
+    settings.remove(QStringLiteral("market/view"));
+    settings.remove(QStringLiteral("app/design"));
+    settings.remove(QStringLiteral("app/theme"));
+}
+
 // The agent detail's Code button: the session's live diff with its busiest
 // files as chips, Viewed marks that a later edit takes back, and Raw leaving it.
 void checkWorkspaceDesign(MainWindow &window)
@@ -15761,6 +15930,8 @@ else:
         app.arguments().contains(QStringLiteral("--agent-code-only"));
     const bool workspaceDesignOnly =
         app.arguments().contains(QStringLiteral("--workspace-design-only"));
+    const bool marketViewOnly =
+        app.arguments().contains(QStringLiteral("--market-view-only"));
 
     if (offThreadTeardownOnly) {
         struct SyntheticFrame {
@@ -16436,6 +16607,12 @@ else:
 
     if (projectSettingsOnly) {
         checkProjectSettingsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (marketViewOnly) {
+        checkMarketNextView(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
