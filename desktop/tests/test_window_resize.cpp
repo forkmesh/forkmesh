@@ -14443,6 +14443,85 @@ void checkAgentDeleteDropsBranchCount(MainWindow &window)
               .arg(after));
 }
 
+void checkAgentSendToDesktop(MainWindow &window)
+{
+    AgentSession movable;
+    movable.id = 133940;
+    movable.owner = QStringLiteral("me");
+    movable.name = QStringLiteral("r");
+    movable.provider = QStringLiteral("claude-code");
+    movable.prompt = QStringLiteral("Send to desktop fixture");
+    movable.branchName = QStringLiteral("agent/send-to-desktop");
+    movable.status = AgentStatus::Stopped;
+    window.testAddAgentSession(movable);
+    AgentSession apiOnly = movable;
+    apiOnly.id = 133941;
+    apiOnly.provider = QStringLiteral("claude-api");
+    window.testAddAgentSession(apiOnly);
+    const QString apiBlocker = window.testAgentCloudHandoffBlocker(apiOnly.id);
+    window.testSetAgentHandoffDesktops(QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("desktops"),
+         QJsonArray{
+             QJsonObject{{QStringLiteral("key"), QStringLiteral("laptop-key")},
+                         {QStringLiteral("node"), QStringLiteral("laptop")},
+                         {QStringLiteral("lastSeen"), 2000}},
+             QJsonObject{{QStringLiteral("key"), QStringLiteral("studio-key")},
+                         {QStringLiteral("node"), QStringLiteral("studio")},
+                         {QStringLiteral("lastSeen"), 1000}}}}});
+    const auto sendMenu = [](QMenu *menu) -> QMenu * {
+        if (!menu)
+            return nullptr;
+        for (QAction *action : menu->actions())
+            if (action->objectName() ==
+                QStringLiteral("agentListSendToDesktopAction"))
+                return action->menu();
+        return nullptr;
+    };
+    std::unique_ptr<QMenu> apiSendMenu(
+        window.testBuildAgentListContextMenu(apiOnly.id));
+    QMenu *apiSend = sendMenu(apiSendMenu.get());
+    std::unique_ptr<QMenu> movableMenu(
+        window.testBuildAgentListContextMenu(movable.id));
+    QMenu *movableSend = sendMenu(movableMenu.get());
+    QStringList targets;
+    QStringList keys;
+    if (movableSend) {
+        emit movableSend->aboutToShow();
+        for (const QAction *action : movableSend->actions())
+            if (action->objectName() ==
+                QStringLiteral("agentListSendToDesktopTarget")) {
+                targets << action->text();
+                keys << action->data().toString();
+            }
+    }
+    check(apiSend && !apiSend->menuAction()->isEnabled() &&
+              apiSend->menuAction()->toolTip() == apiBlocker &&
+              targets == QStringList{QStringLiteral("laptop"),
+                                     QStringLiteral("studio")} &&
+              keys == QStringList{QStringLiteral("laptop-key"),
+                                  QStringLiteral("studio-key")},
+          QString("the right-click menu offers sending a session to "
+                  "each of the account's other desktops (targets=[%1])")
+              .arg(targets.join(QLatin1Char(','))));
+    window.testSetAgentHandoffDesktops(QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("desktops"), QJsonArray()}});
+    QStringList notes;
+    if (movableSend) {
+        emit movableSend->aboutToShow();
+        for (const QAction *action : movableSend->actions())
+            notes << action->text();
+    }
+    check(notes == QStringList{QStringLiteral(
+                       "No other desktop is signed in to this account")},
+          QString("an account with one desktop says there is nowhere "
+                  "to send the session ([%1])")
+              .arg(notes.join(QLatin1Char(','))));
+    window.testRemoveAgentSession(movable.id);
+    window.testRemoveAgentSession(apiOnly.id);
+}
+
 void checkAgentTaskLink(MainWindow &window)
 {
     const auto menuActions = [&window](int sessionId) {
@@ -16250,6 +16329,8 @@ else:
         app.arguments().contains(QStringLiteral("--task-list-view-only"));
     const bool agentTaskLinkOnly =
         app.arguments().contains(QStringLiteral("--agent-task-link-only"));
+    const bool agentSendToDesktopOnly =
+        app.arguments().contains(QStringLiteral("--agent-send-desktop-only"));
     const bool commandApprovalOnly =
         app.arguments().contains(QStringLiteral("--command-approval-only"));
     const bool highMemoryPanelOnly =
@@ -20436,6 +20517,12 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
 
     if (agentTaskLinkOnly) {
         checkAgentTaskLink(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (agentSendToDesktopOnly) {
+        checkAgentSendToDesktop(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -29793,6 +29880,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       "move and says why a row cannot go (api=[%1] "
                       "cloud=[%2])")
                   .arg(apiEntryTip, cloudEntryTip));
+        checkAgentSendToDesktop(window);
         // Delete sits on the same menu, enabled whether or not the row can
         // move to the cloud.
         std::unique_ptr<QMenu> apiMenu(

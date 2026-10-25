@@ -1862,6 +1862,25 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     }
     menu->addSeparator();
     addProxy(menu, window.m_agentMoveToCloudButton, QStringLiteral("cloud"));
+    if (window.m_agentMoveToCloudButton &&
+        !window.m_agentMoveToCloudButton->isHidden()) {
+        const int sessionId = window.m_selectedAgentSessionId;
+        const bool movable = window.m_agentMoveToCloudButton->isEnabled();
+        QMenu *toDesktop = menu->addMenu(
+            glyph(QStringLiteral("device-desktop"), Theme::Role::FgMuted),
+            QStringLiteral("Send to another desktop"));
+        toDesktop->setObjectName(QStringLiteral("agentSendToDesktopMenu"));
+        toDesktop->setToolTipsVisible(true);
+        toDesktop->menuAction()->setEnabled(movable);
+        toDesktop->menuAction()->setToolTip(
+            movable ? QStringLiteral("Have one of this account's other "
+                                     "desktops continue this session")
+                    : window.m_agentMoveToCloudButton->toolTip());
+        QObject::connect(toDesktop, &QMenu::aboutToShow, self,
+                         [self, toDesktop, sessionId] {
+            self->fillAgentHandoffDesktopMenu(toDesktop, sessionId);
+        });
+    }
     addProxy(menu, window.m_agentContinueHereButton,
              QStringLiteral("device-desktop"));
     addProxy(menu, window.m_agentRetryInCloudButton, QStringLiteral("sync"));
