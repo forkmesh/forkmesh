@@ -24475,18 +24475,21 @@ else:
               QStringLiteral("nodesUpdateAllBinaryButton")) != nullptr,
           QStringLiteral("Nodes offers a fleet-wide binary update action"));
 
-    // 32 columns of one-line facts have to fit a screen, so the directory
-    // stays compact: single-line rows, and the sort-arrow slot -- about a
-    // caption's worth of width -- reserved in the sorted column alone rather
-    // than in every column that never draws one.
+    // 32 columns of facts have to fit a screen, so the directory stays
+    // compact: two-line rows (value over caption), and the sort-arrow slot --
+    // about a caption's worth of width -- reserved in the sorted column alone
+    // rather than in every column that never draws one.
     QTableWidget *nodeDirectory = nullptr;
     for (QTableWidget *grid : window.findChildren<QTableWidget *>()) {
         if (grid->property("nodesDirectory").toBool())
             nodeDirectory = grid;
     }
     check(nodeDirectory && nodeDirectory->rowCount() > 0 &&
-              nodeDirectory->rowHeight(0) <= 26,
-          QStringLiteral("Nodes keeps the directory on single-line rows"));
+              nodeDirectory->rowHeight(0) >= 40 && nodeDirectory->rowHeight(0) <= 52,
+          QStringLiteral("Nodes keeps the directory on compact two-line rows (%1 px)")
+              .arg(nodeDirectory && nodeDirectory->rowCount() > 0
+                       ? nodeDirectory->rowHeight(0)
+                       : -1));
     auto *nodeHeader =
         nodeDirectory ? qobject_cast<forkmesh::ui::KebabHeaderView *>(
                             nodeDirectory->horizontalHeader())

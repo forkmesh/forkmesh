@@ -738,8 +738,9 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
     tooltip.
   - On the right are the page's one Refresh (`repoAction`, ghost through
     `networkRole="ghost"`, same slot) and an inverse "Add node" button
-    (`networkAddNodeButton`). Add node opens the Hosts tab and focuses the
-    "Add a host" form's address field. It adds no new flow.
+    (`networkAddNodeButton`). Add node opens the Add a host section of the
+    Hosts rail beside the node list and focuses its address field. It adds no
+    new flow.
 - **Tabs.** `#networkTabs` uses underline tabs (accent underline on the
   current tab) in place of the pills from `10-shell.qss`. Tabs that were
   title case are renamed in sentence case in Next ("Web requests",
@@ -819,15 +820,17 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
   - The Services list with running dots: nodes report no services.
     Capabilities stay in the Caps column tooltip.
   - Open shell and Restart: the Nodes directory has no per-node shell or
-    restart. Those stay on saved hosts in the Hosts tab.
+    restart. Those stay on saved hosts in the Hosts rail.
   - The Relay traffic delta ("+12%"), and the mockup's mesh invite command
     and dialog: no such data or flow exists.
   - The mockup hides most columns. They stay visible here, and the column
     menu still hides them.
-- **Hosts tab.** Only the shared tab padding changed; the layout is as before.
-- **Tests.** `test_window_resize.cpp` pins 26 px node rows and the "Web
-  Requests" tab label. Both hold in Classic, the test default. The Next values
-  are cosmetic.
+- **Hosts.** The Hosts tab is gone: saved hosts, fleet servers, runners and
+  directory instances are rows of the node list, and the host controls sit in
+  a compact rail beside it ([networking.md](networking.md#network--nodes)).
+- **Tests.** `test_window_resize.cpp` pins compact two-line node rows (40 to
+  52 px) and the "Web Requests" tab label. Both hold in Classic, the test
+  default. The Next values are cosmetic.
 - **Live switch.** The layout is built once, so a live switch shows it after
   the page is rebuilt.
 
