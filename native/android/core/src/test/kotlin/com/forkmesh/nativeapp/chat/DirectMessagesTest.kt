@@ -39,6 +39,37 @@ class DirectMessagesTest {
         api, connector, store, { "https://app.forkmesh.com" }, { "me-node" }, { "Me" }, loop = loop,
     )
 
+    fun testARefreshThatChangesNothingDoesNotRedraw() {
+        val api = FakeAccountApi()
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(mapOf("id" to conversationId, "otherUser" to "pat", "unreadCount" to 0L)),
+            "nextCursor" to "",
+        )
+        val dm = service(api, FakeOfficeConnector())
+        var redraws = 0
+        var loadingSeen = false
+        dm.addListener {
+            redraws++
+            if (dm.loading) loadingSeen = true
+        }
+        dm.refresh()
+        expect(loadingSeen)
+        expect(!dm.loading)
+        val first = redraws
+        expect(first > 0)
+        loadingSeen = false
+        dm.refresh()
+        assertEq(first, redraws)
+        expect(!loadingSeen)
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(mapOf("id" to conversationId, "otherUser" to "pat", "unreadCount" to 0L, "updatedAt" to 5L)),
+            "nextCursor" to "",
+        )
+        dm.refresh()
+        expect(redraws > first)
+        expect(!loadingSeen)
+    }
+
     private val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
 
     private val scope = "direct:$conversationId"
