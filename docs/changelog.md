@@ -2,14 +2,14 @@
 
 ForkMesh has one changelog, `changelog/changelog.json`. Two places show it:
 
-- **forkmesh.com/changelog**: `www/templates/pages/changelog.html` prints the
-  entries through the `changelog_releases` variable that
-  `app/tools/site_templates.py` fills from the file
-  ([www/templates.md](www/templates.md)). The site also serves the file itself
-  at `/changelog.json` (`build_site_assets.stage_www`). A self-hosted
-  instance serves the same rendered page at its own `/changelog`
-  (`build_site_assets.stage_app` bundles it; the `changelog` plugin, on by
-  default, see [INSTANCES.md](INSTANCES.md#plugins)).
+- **forkmesh.com/changelog**: `www/templates/pages/changelog.html` is an
+  empty page; `www/public/changelog.js` fetches `/changelog.json` and prints
+  the entries in the browser ([www/templates.md](www/templates.md)). The
+  build copies the file next to the page (`build_site_assets.stage_www`,
+  `stage_app` and `stage_cutover`). A self-hosted instance serves the same
+  page and file at its own `/changelog` and `/changelog.json` (the
+  `changelog` plugin, on by default, see
+  [INSTANCES.md](INSTANCES.md#plugins)).
 - **The phone apps' What's new**, under the version row of the You hub
   ([native/NAVIGATION.md](native/NAVIGATION.md)). The iOS build step "Bundle
   the changelog" and the release host's Android APK build export the file into
@@ -26,42 +26,66 @@ they were, and the apps' notes of builds 218 to 302 as two entries
 ## The file
 
 ```json
-{"schema": 2, "entries": [
-  {"date": "2026-10-21", "version": "", "title": "Neighbours, stickers and runners",
-   "pitch": "One sentence under the title.",
-   "sections": [{"title": "Chat", "items": ["Stick stickers on messages."]}]}
-]}
+{
+ "schema": 3,
+ "releases": [
+  {"date": "2026-10-21", "title": "Neighbours, stickers and runners", "pitch": "One sentence under the title."},
+  {"date": "2026-07", "version": "0.7.0", "title": "The Living Code City"}
+ ],
+ "notes": [
+  {"date": "2026-10-25", "area": "Chat", "text": "Stick stickers on messages."},
+  {"date": "2026-07", "version": "0.7.0", "area": "Highlights", "text": "**Everyone enters.** Guests and members."}
+ ]
+}
 ```
 
-- Entries are newest first. `date` is `YYYY-MM-DD`, or `YYYY-MM` for the
-  early releases that only had a month.
-- `version` is optional; the website shows it as a `vX` tag and an anchor
-  (`/changelog#v0.7.0`), entries without one are anchored by date.
-- `title` and `pitch` are optional.
-- Section titles are areas: Highlights, Market, Calls, Projects, Chat,
-  Agents, World, Settings, iPhone, Android, Desktop, Server, Other
-  improvements. The website prints the area names only when an entry has more
-  than one section.
-- Items are one plain sentence each. `**Lead.**` prints in bold on the
-  website and as plain text in the apps.
+- `notes` is a flat list, one note per line. A note's `date` (`YYYY-MM-DD`,
+  or `YYYY-MM` for the early releases that only had a month) and optional
+  `version` say which entry it belongs to; the website and the apps group the
+  notes into one entry per date and version, newest first, whatever order the
+  lines are in.
+- `area` is one of Highlights, Market, Calls, Projects, Chat, Agents, World,
+  Settings, iPhone, Android, Desktop, Server, Other improvements. Areas are
+  shown in that order; the website prints the area names only when an entry
+  has more than one.
+- `text` is one plain sentence. `**Lead.**` prints in bold on the website and
+  as plain text in the apps.
+- `releases` is optional and names an entry: one line per date and version
+  with a `title`, a `pitch` and the `version` the website shows as a `vX` tag
+  and an anchor (`/changelog#v0.7.0`); entries without one are anchored by
+  date. The five releases v0.1.0 to v0.5.0 share the month `2026-06`, which
+  is why notes carry the version too.
 
-`python3 tools/changelog.py check` validates the file, including an area
-that appears twice in one entry;
-`tools/test_changelog.py` runs it and checks that the rendered page shows
-every line the apps show.
+`python3 tools/changelog.py check` validates the file and its layout (every
+note and release on its own line, as `changelog.py format` writes it);
+`tools/test_changelog.py` runs it, runs `changelog.js` under Node to check
+the website groups the notes exactly as the apps do, and merges two
+branches that each add a note.
 
-### Merge conflicts
+### Why one line per note
 
-Two branches that add notes on the same day conflict in today's entry.
-Deleting the conflict markers and keeping both sides' lines is not a
-resolution: on 2026-10-25 a chain of such merges into `main` left the file
-missing the commas and `]`/`},` lines between sections, and two entries with
-the same area twice. Every `/changelog` page then failed, and the deploy
-stopped on `app/tests/host/test_instance_changelog_e2e.py`. Resolve by
-taking one side's file and re-adding the other side's lines with
-`changelog.py add` (or merging them into the existing section by hand), then
-run `python3 tools/changelog.py check` and re-render the site before you
-commit the merge.
+Until 2026-10-25 (schema 2) notes were nested inside a day's entry and
+area section, so two branches that added notes on the same day edited the
+same lines, and resolving the conflict by keeping both sides dropped the
+commas and the `]`/`},` lines between sections. On 2026-10-25 a chain of such
+merges left `main` with invalid JSON; every `/changelog` page failed and the
+deploy stopped on `app/tests/host/test_instance_changelog_e2e.py`. The
+website was also a second copy: `www/public/changelog.html` had every entry
+rendered into it and had to be re-rendered, and conflicted, with each note.
+
+Now every note is a whole line ending in a comma, and `add` puts new ones on
+the first line of `notes`, so the last line, the oldest note without a
+comma, never changes. `.gitattributes` sets `merge=union` on the file: when
+two branches both add lines at the top, git keeps both sides' lines instead
+of stopping on a conflict, and the result is still valid JSON. The order of
+the lines does not matter, so neither side has to come first.
+
+Union merging only goes wrong when two branches change the same existing
+line: both versions are kept, which `check` reports as a repeated note when
+the text is the same and otherwise leaves two lines to clean up by hand. A
+tool that ignores `.gitattributes` (a forge's web merge button) still stops
+on a conflict; keeping both sides' lines is then the right resolution. Run
+`python3 tools/changelog.py check` after any merge that touched the file.
 
 ## Adding a note
 
@@ -69,14 +93,12 @@ A change a user can notice adds a line:
 
 ```sh
 python3 tools/changelog.py add --area Chat "Stick stickers on messages."
-python3 app/tools/site_templates.py
 ```
 
-`add` puts the line in today's entry, creating it at the top when the newest
-entry is older, keeps the areas in order and skips a line that is already
-there. Re-render the website so `www/public/changelog.html` matches
-(the website deploy refuses a stale page). Give a busy day's entry a `title`
-and `pitch` by editing the file.
+`add` puts the note, dated today (or `--date`), on the first line of
+`notes`, and skips one that is already there on that date. Nothing needs
+re-rendering: the website reads the file. Give a busy day's entry a `title`
+and `pitch` by adding a line at the top of `releases`.
 
 `python3 tools/changelog.py draft [--since DATE|COMMIT]` prints suggested
 lines from the merged commits since the newest entry (`tools/changelog_draft.py`:
