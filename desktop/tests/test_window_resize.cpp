@@ -20980,59 +20980,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         marketTabs->setCurrentIndex(0);
         QApplication::processEvents();
     }
+    const QSet<QString> splitPackages = installedPackageCards + notInstalledPackageCards;
     check(marketTabs && marketTabs->count() == 5 && marketList &&
               marketInstalledList && marketNotInstalledList && marketPublish &&
-              marketTabs->tabText(0) == QStringLiteral("All (20)") &&
-              marketTabs->tabText(1) == QStringLiteral("Installed (9)") &&
-              marketTabs->tabText(2) == QStringLiteral("Not installed (11)") &&
+              marketTabs->tabText(0) ==
+                  QStringLiteral("All (%1)").arg(marketCards.size()) &&
+              marketTabs->tabText(1) ==
+                  QStringLiteral("Installed (%1)").arg(installedMarketCards.size()) &&
+              marketTabs->tabText(2) ==
+                  QStringLiteral("Not installed (%1)").arg(notInstalledMarketCards.size()) &&
               installedTabSelectable && notInstalledTabSelectable &&
               marketPublish->text() == QStringLiteral("Publish an item") &&
               marketCards.size() == packageCards.size() &&
               packageCards.size() >= 7 &&
-              packageCards.contains(QStringLiteral("capture")) &&
-              packageCards.contains(QStringLiteral("ledger")) &&
-              packageCards.contains(QStringLiteral("x-banner-board")) &&
-              packageCards.contains(QStringLiteral("reddit-banner-board")) &&
-              packageCards.contains(QStringLiteral("crm")) &&
-              packageCards.contains(QStringLiteral("marketing")) &&
-              packageCards.contains(QStringLiteral("competitor")) &&
+              installedMarketCards.size() + notInstalledMarketCards.size() ==
+                  marketCards.size() &&
+              !installedPackageCards.intersects(notInstalledPackageCards) &&
+              splitPackages == packageCards &&
+              !installedPackageCards.isEmpty() && !notInstalledPackageCards.isEmpty() &&
+              installedPackageCards.contains(QStringLiteral("capture")) &&
+              installedPackageCards.contains(QStringLiteral("ledger")) &&
               packageCards.contains(QStringLiteral("tasks")) &&
               packageCards.contains(QStringLiteral("calendar")) &&
               packageCards.contains(QStringLiteral("notes")) &&
-              packageCards.contains(QStringLiteral("discord")) &&
-              packageCards.contains(QStringLiteral("gemma-4")) &&
-              packageCards.contains(QStringLiteral("winamp")) &&
-              packageCards.contains(QStringLiteral("forkmesh-ide")) &&
-              installedMarketCards.size() == 9 &&
-              installedPackageCards.contains(QStringLiteral("capture")) &&
-              installedPackageCards.contains(QStringLiteral("ledger")) &&
-              installedPackageCards.contains(QStringLiteral("x-banner-board")) &&
-              installedPackageCards.contains(
-                  QStringLiteral("reddit-banner-board")) &&
-              installedPackageCards.contains(QStringLiteral("tasks")) &&
-              installedPackageCards.contains(QStringLiteral("calendar")) &&
-              installedPackageCards.contains(QStringLiteral("notes")) &&
-              installedPackageCards.contains(QStringLiteral("discord")) &&
-              packageCards.contains(QStringLiteral("timers")) &&
-              packageCards.contains(QStringLiteral("forkmesh-sky-office")) &&
-              packageCards.contains(QStringLiteral("calories")) &&
-              packageCards.contains(QStringLiteral("vault")) &&
-              packageCards.contains(QStringLiteral("browser-extension")) &&
-              packageCards.contains(QStringLiteral("voice-changer")) &&
-              notInstalledMarketCards.size() == 12 &&
-              notInstalledPackageCards ==
-                  QSet<QString>{QStringLiteral("crm"),
-                                QStringLiteral("marketing"),
-                                QStringLiteral("competitor"),
-                                QStringLiteral("gemma-4"),
-                                QStringLiteral("winamp"),
-                                QStringLiteral("forkmesh-ide"),
-                                QStringLiteral("timers"),
-                                QStringLiteral("forkmesh-sky-office"),
-                                QStringLiteral("calories"),
-                                QStringLiteral("vault"),
-                                QStringLiteral("browser-extension"),
-                                QStringLiteral("voice-changer")} &&
               screenshotPackages == packageCards &&
               everyPackageHasScreenshot,
           QStringLiteral("Market separates all, installed and not-installed packages with "

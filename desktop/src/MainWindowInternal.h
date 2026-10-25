@@ -270,6 +270,8 @@ protected:
     }
 };
 
+bool diffBytesAreWebp(const QByteArray &bytes);
+QImage diffDecodeWebp(const QByteArray &bytes);
 QString openAiAuthHeader(const QString &apiKey);
 QNetworkRequest openAiRequest(const QUrl &url, const QString &apiKey);
 QString apiErrorSummary(QNetworkReply *reply, const QByteArray &body);

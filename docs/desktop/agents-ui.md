@@ -492,6 +492,11 @@ with no list at all.
   `5 tasks (2 done, 1 in progress, 2 open)`, rows are `◻` open, `◼` in
   progress (bold, showing the `activeForm`), `✔` done (struck through). At
   most `kMaxRows` (8) rows show, then `… +N more`.
+- The bar emits `heightChanged` only when its text, fold or visibility
+  changes. `clear()` resets it on every session switch, and an unconditional
+  signal ran `layoutPromptDeck()` mid-replay, so a session with no tasks could
+  lose the bottom-follow latch ("a deferred Agent transcript replay stays
+  pinned to its latest turn").
 - Click the header to fold the list to one line, which then names the
   current task. The bar folds itself when every task is done and opens
   again when new work arrives, unless the user folded it. A new prompt after

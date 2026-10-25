@@ -209,8 +209,12 @@ static void testBar()
     Tracker tracker;
     AgentTaskListBar bar;
     bar.resize(400, 100);
+    int heightSignals = 0;
+    QObject::connect(&bar, &AgentTaskListBar::heightChanged, [&heightSignals] { ++heightSignals; });
+    bar.setTasks(tracker);
     bar.setTasks(tracker);
     check(bar.isHidden(), QStringLiteral("hidden without tasks"));
+    check(heightSignals == 0, QStringLiteral("an empty list never asks the transcript to relayout"));
     tracker.ingest(toolUse(QStringLiteral("t1"), QStringLiteral("TodoWrite"),
                            parse(R"({"todos":[
         {"content":"A","status":"completed"},
