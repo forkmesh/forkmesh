@@ -186,14 +186,9 @@
           <time class="when" datetime="2026-10-25">October 25, 2026</time>
         </div>
         <div class="release-body">
-          <h3>Market</h3>
+          <h3>Projects</h3>
           <ul>
-            <li>The desktop Market opens without waiting for package previews, which appear as each one loads.</li>
-            <li>Market previews in WebP format now show on Linux desktops without Qt's WebP plugin, instead of reading Preview unavailable.</li>
-          </ul>
-          <h3>Chat</h3>
-          <ul>
-            <li>Sending a chat message no longer freezes the desktop for a moment while it saves its message counter to disk.</li>
+            <li>Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs.</li>
           </ul>
           <h3>Agents</h3>
           <ul>
@@ -222,6 +217,10 @@
             <li>A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.</li>
             <li>The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.</li>
             <li>A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.</li>
+            <li>The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint.</li>
+            <li>Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.</li>
+            <li>Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.</li>
+            <li>When ForkMesh finds a disk labelled TMP that is not set to mount at startup, it asks for your password once and adds it to /etc/fstab, so the fast scratch disk is there after every reboot.</li>
           </ul>
           <h3>Server</h3>
           <ul>
@@ -230,6 +229,15 @@
           <h3>Other improvements</h3>
           <ul>
             <li>Signing up now sends your verification email once, instead of a new one each time the request was repeated.</li>
+          </ul>
+          <h3>Market</h3>
+          <ul>
+            <li>The desktop Market opens without waiting for package previews, which appear as each one loads.</li>
+            <li>Market previews in WebP format now show on Linux desktops without Qt's WebP plugin, instead of reading Preview unavailable.</li>
+          </ul>
+          <h3>Chat</h3>
+          <ul>
+            <li>Sending a chat message no longer freezes the desktop for a moment while it saves its message counter to disk.</li>
           </ul>
         </div>
       </section>

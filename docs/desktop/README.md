@@ -111,6 +111,23 @@ Everything is in `desktop/`.
   new-project dialog no longer offers the current project's instances, which
   belong to it. Projects that already shared an instance before this rule are
   left as they are.
+- **Add project dialog (2026-10-25).** Matches the phone's New project sheet.
+  It takes a name, an optional instance address with a Check button, a logo,
+  "Use my account in this project" (off by default, so a new project is a new
+  account unless asked) and one of three plugin packs, the phone's
+  `StarterPack`: Minimal (`code`), Standard (`agents`, `chat`, `inbox`,
+  `code`, `tour`) and Everything (every bundled plugin but the organization
+  ones), each with its dependencies (`projects::starterPackages`). Check reads
+  `/api/version` (the `x-forkmesh-worker` header, or `ok` with `rev` and
+  `worker`) and then `/api/instance`, filling the name from the instance's
+  project name and the logo from its `logo` path or favicon; an instance
+  another project owns is refused there. Below, "Instances on ForkMesh" lists
+  forkmesh.com and every listed https instance from
+  `GET /api/start/instances` by project name and host, with Add to fill and
+  check it. A project created with a checked instance seeds it as
+  `project/instanceChosen` and connects to it on first start instead of
+  asking. The description field is gone from this dialog; Project settings
+  still edits it.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no

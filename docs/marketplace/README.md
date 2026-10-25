@@ -351,8 +351,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
-  loop, tempo and crossfader controls on responsive web, mobile and desktop
-  surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
+  loop, tempo and crossfader controls on responsive web and mobile surfaces,
+  and a native four-deck desktop studio with EQ, effects and hot cues; [details](video-mix-dj-studio.md), iOS performance checks in
   [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
