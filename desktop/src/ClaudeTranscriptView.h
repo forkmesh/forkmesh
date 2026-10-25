@@ -12,6 +12,7 @@
 #include <QVector>
 
 #include "ClaudeTranscriptTools.h"
+#include "TranscriptCoverage.h"
 
 #include <functional>
 
@@ -180,6 +181,11 @@ public:
     void addSkippedNotice(int count);
     void prependEarlierEvents(const QList<QJsonObject> &events, int stillSkipped);
 
+    const QVector<forkmesh::transcriptcoverage::Gap> &coverageGaps() const
+    {
+        return m_coverage.gaps();
+    }
+
     int search(const QString &query);
     void searchNext();
     void searchPrev();
@@ -203,6 +209,7 @@ public:
 signals:
     void searchResultsChanged(int current, int total);
     void referenceActivated(const QString &href);
+    void coverageGapsActivated();
 
 private:
     friend class CacheLabel;
@@ -212,6 +219,10 @@ private:
 
     void applyScheme(bool dark);
     void layoutPromptDeck();
+    void noteCoverage(const QJsonObject &ev);
+    void refreshCoverageButton();
+    void layoutCoverageButton();
+    QString coverageToolTip() const;
     QWidget *addRow(QWidget *card, const RowStyle &style);
     QWidget *addRow(QWidget *card, const QString &nodeColor = QString(),
                     RowGlyph glyph = GlyphDot);
@@ -311,6 +322,8 @@ private:
     bool m_stickBottom = true;
     ScrollJumpButtons *m_jumpButtons = nullptr; // floating ▲/▼ jump corner
     PromptDeckBar *m_promptDeck = nullptr;
+    QToolButton *m_coverageButton = nullptr;
+    forkmesh::transcriptcoverage::Tracker m_coverage;
     bool m_splitDiffs = false;            // side-by-side vs unified diffs
     QWidget *m_activity = nullptr;        // live "what it's doing" ticker row
     QLabel *m_activityLabel = nullptr;

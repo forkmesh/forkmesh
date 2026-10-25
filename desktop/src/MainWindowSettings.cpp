@@ -3396,11 +3396,12 @@ void MainWindow::buildSettingsAgentProviderParts(SettingsSectionParts &parts)
     }
     workspaceNameModelCombo->setCurrentIndex(
         workspaceNameModelIndex >= 0 ? workspaceNameModelIndex : 0);
+    workspaceNameModelCombo->setObjectName("workspaceNameModelCombo");
     workspaceNameModelCombo->setToolTip(
-        "Optionally send each new ad-hoc task to the selected Cloudflare "
-        "Workers AI model for a short semantic branch/worktree name. The "
-        "coding prompt is not rewritten, and local naming is used if the "
-        "request fails.");
+        "The Cloudflare Workers AI model that names each new ad-hoc task's "
+        "branch/worktree and title when Cloudflare naming is on. The coding "
+        "prompt is not rewritten, and local naming is used if the request "
+        "fails.");
     connect(workspaceNameModelCombo, &QComboBox::currentIndexChanged, this,
             [workspaceNameModelCombo] {
                 QSettings().setValue(
@@ -3747,13 +3748,14 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
     agentForm->setLabelAlignment(Qt::AlignLeft);
     agentForm->setSpacing(8);
     auto *agentTitleCheck = new QCheckBox(
-        "Ask Claude Code or Codex to title each run started from a prompt");
+        "Ask Claude Code or Codex to name each run started from a prompt");
     agentTitleCheck->setObjectName("agentTitleFromAgentCheck");
     agentTitleCheck->setToolTip(
-        "A run starts at once with a title cut from its prompt, then the "
-        "agent's own CLI (Claude Haiku, or Codex at low effort) reads the "
-        "whole prompt and writes a short descriptive title for the Agents "
-        "list. Other agents keep the title cut from the prompt.");
+        "Before a Claude Code or Codex run starts, its own CLI reads the "
+        "prompt and writes a short title and branch name, the way Claude's "
+        "desktop app names Code sessions: a small fast model first (Claude "
+        "Haiku, GPT-5.4-Mini), then the run's own model if that fails. Other "
+        "agents keep the title cut from the prompt.");
     agentTitleCheck->setChecked(
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool());
     connect(agentTitleCheck, &QCheckBox::toggled, this, [](bool on) {
@@ -3762,6 +3764,21 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
 
     agentForm->addRow("Default agent", m_defaultAgentProviderCombo);
     agentForm->addRow("Agent titles", agentTitleCheck);
+    auto *cloudflareNamingCheck =
+        new QCheckBox("Use Cloudflare AI for branch, worktree and run names");
+    cloudflareNamingCheck->setObjectName("agentCloudflareNamingCheck");
+    cloudflareNamingCheck->setToolTip(
+        "Off: Claude Code and Codex name their own runs. On: the Cloudflare "
+        "Workers AI model below names them instead.");
+    cloudflareNamingCheck->setChecked(
+        QSettings().value(kAgentCloudflareNamingSetting, false).toBool());
+    workspaceNameModelCombo->setEnabled(cloudflareNamingCheck->isChecked());
+    connect(cloudflareNamingCheck, &QCheckBox::toggled, this,
+            [workspaceNameModelCombo](bool on) {
+                QSettings().setValue(kAgentCloudflareNamingSetting, on);
+                workspaceNameModelCombo->setEnabled(on);
+            });
+    agentForm->addRow("Cloudflare naming", cloudflareNamingCheck);
     agentForm->addRow("Branch/worktree names", workspaceNameModelCombo);
     agentForm->addRow("Composer models", m_composerModelVisibilityList);
     agentForm->addRow("Max running agents", m_maxRunningAgentsEdit);
@@ -5538,6 +5555,30 @@ void MainWindow::refreshSuggestedApps()
                 .arg(found)
                 .arg(apps.size()));
     }
+    scheduleAgentUsagePagesRefresh();
+}
+
+bool MainWindow::suggestedAppInstalling(const QString &id) const
+{
+    return m_suggestedAppInstallProcess &&
+           m_suggestedAppInstallProcess->state() != QProcess::NotRunning &&
+           m_suggestedAppInstallingId == id;
+}
+
+QString MainWindow::suggestedAppInstallManager(const QString &id,
+                                               QString *blocker) const
+{
+    const auto *app = forkmesh::environment::suggestedAppById(id);
+    if (!app) {
+        if (blocker)
+            *blocker = QStringLiteral("ForkMesh does not know how to install this tool.");
+        return {};
+    }
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        *app, availableSuggestedAppInstallers());
+    if (blocker)
+        *blocker = plan.unavailableReason;
+    return plan.managerName;
 }
 
 void MainWindow::testSuggestedApp(const QString &id)
@@ -5684,6 +5725,7 @@ void MainWindow::installSuggestedApp(const QString &id)
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_suggestedAppInstallProcess = process;
     m_suggestedAppInstallingId = id;
+    m_suggestedAppInstallProblems.remove(id);
     auto output = std::make_shared<QString>();
     refreshSuggestedApps();
     if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
@@ -5734,6 +5776,8 @@ void MainWindow::installSuggestedApp(const QString &id)
                 logSystem(QStringLiteral("Suggested app %1 install failed (exit %2).")
                               .arg(name)
                               .arg(exitCode));
+                m_suggestedAppInstallProblems.insert(
+                    id, tail.isEmpty() ? QStringLiteral("exit %1").arg(exitCode) : tail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,
@@ -5755,6 +5799,9 @@ void MainWindow::installSuggestedApp(const QString &id)
                 process->deleteLater();
                 refreshSuggestedApps();
                 logSystem(QStringLiteral("Could not start the %1 installer.").arg(name));
+                m_suggestedAppInstallProblems.insert(
+                    id, detail.isEmpty() ? QStringLiteral("the installer did not start")
+                                         : detail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,

@@ -115,6 +115,7 @@ import * as cameraRuntime from "./runtime/camera.js";
 import * as avatarSelectionRuntime from "./runtime/avatar-selection.js";
 import * as remotePlayersRuntime from "./runtime/remote-players.js";
 import * as avatarVoiceRuntime from "./runtime/avatar-voice.js";
+import * as genieSpiderRuntime from "./runtime/genie-spider.js";
 import * as networkRuntime from "./runtime/network.js";
 import { instanceHexArrival } from "./instance-hexes.js";
 import * as territoryRuntime from "./instance-territory.js";
@@ -898,6 +899,15 @@ export async function createWorldScene({
   );
   Object.assign(
     fns,
+    genieSpiderRuntime.functions({
+      THREE,
+      reducedMotion,
+      ctx,
+      fns,
+    }),
+  );
+  Object.assign(
+    fns,
     networkRuntime.functions({
       THREE,
       identity,
@@ -1131,7 +1141,14 @@ export async function createWorldScene({
     setAvatarRig,
     setAvatarSpeech,
     setPrivacyBubbles,
+    setAvatarOnAir,
     playAvatarReaction,
+    avatarScreenPoint,
+    playGenieSpiderAct,
+    reactGenieSpider,
+    setGenieSpiderEnabled,
+    genieSpiderState,
+    genieSpiderActs,
     voiceAvatarIds,
     avatarNear,
     avatarFacePhoto,
@@ -1554,7 +1571,8 @@ export async function createWorldScene({
       avatar.userData.badgeDetail === "reading" ||
       Boolean(avatar.userData.voiceRig) ||
       Boolean(avatar.userData.rigFaceTexture) ||
-      avatar.userData.wordBadge?.visible === true,
+      avatar.userData.wordBadge?.visible === true ||
+      avatar.userData.onAirSign?.visible === true,
     gpuBusy: () =>
       programPacer.stats.paced
         ? programPacer.busy()
@@ -2712,7 +2730,14 @@ export async function createWorldScene({
     setAvatarRig,
     setAvatarSpeech,
     setPrivacyBubbles,
+    setAvatarOnAir,
     playAvatarReaction,
+    avatarScreenPoint,
+    playGenieSpiderAct,
+    reactGenieSpider,
+    setGenieSpiderEnabled,
+    genieSpiderState,
+    genieSpiderActs,
     voiceAvatarIds,
     avatarNear,
     avatarFacePhoto,
