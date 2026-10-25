@@ -7,6 +7,7 @@
 #include "RepoStatsStore.h"
 #include "KebabHeaderView.h"
 #include "FontSizing.h"
+#include "GitLayout.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QCheckBox>
@@ -1065,6 +1066,7 @@ public:
 
     std::function<void()> sync;
     std::function<void()> mirrorEnabled;
+    std::function<void()> relayout;
     QPointer<QWidget> header;
     QPointer<GitSidePanel> side;
     QPointer<QWidget> branchPair;
@@ -2216,8 +2218,8 @@ QWidget *MainWindow::buildSourceControlPanel()
             controls->addWidget(m_scmSyncRow);
         }
         header->setContentsMargins(next ? QMargins(10, 8, 8, 4) : QMargins(0, 0, 0, 0));
-        scmSetShown(title, !next);
-        scmSetShown(m_scmCountLabel, !next);
+        scmSetShown(title, !next || gitLayoutCompact());
+        scmSetShown(m_scmCountLabel, !next || gitLayoutCompact());
         scmSetShown(m_scmMessage, !next);
         summaryField->setVisible(next);
         descriptionField->setVisible(next);
@@ -2593,7 +2595,7 @@ QWidget *MainWindow::buildSourceControlPanel()
 
         connect(changesTab, &QPushButton::clicked, chrome, [this, chrome, applyTab] {
             chrome->tab = 0;
-            applyTab(chrome->arranged == 1);
+            applyTab(chrome->pageArranged == 1);
             if (m_commitsStack &&
                 m_commitsStack->currentIndex() == kCommitWorkspaceCommitPage)
                 setCommitWorkspacePage(kCommitWorkspaceChangesPage);
@@ -2602,7 +2604,7 @@ QWidget *MainWindow::buildSourceControlPanel()
         });
         connect(historyTab, &QPushButton::clicked, chrome, [this, chrome, applyTab] {
             chrome->tab = 1;
-            applyTab(chrome->arranged == 1);
+            applyTab(chrome->pageArranged == 1);
             refreshCommitMarkersIfStale();
             if (m_commitsStack && m_commitsTable && !m_currentCommitHash.isEmpty() &&
                 m_commitsStack->currentIndex() == kCommitWorkspaceChangesPage) {
@@ -2622,7 +2624,7 @@ QWidget *MainWindow::buildSourceControlPanel()
         });
         connect(m_commitsStack, &QStackedWidget::currentChanged, chrome,
                 [chrome, applyTab](int index) {
-                    if (chrome->arranged != 1)
+                    if (chrome->pageArranged != 1)
                         return;
                     const int tab = index == kCommitWorkspaceCommitPage ? 1 : 0;
                     if (chrome->tab == tab)
@@ -2637,16 +2639,24 @@ QWidget *MainWindow::buildSourceControlPanel()
         return true;
     };
 
-    const auto applyPage = [chrome, arrangePage, installPage] {
-        const bool next = chrome->arranged == 1;
+    const auto applyPage = [this, chrome, title, arrangePage, installPage] {
+        const bool next = chrome->arranged == 1 && !gitLayoutCompact();
+        if (chrome->arranged == 1) {
+            scmSetShown(title, !next);
+            scmSetShown(m_scmCountLabel, !next);
+        }
         if (next && !chrome->installed && !installPage())
             return;
         if (chrome->pageArranged == int(next))
             return;
         chrome->pageArranged = int(next);
+        if (next && m_commitsStack)
+            chrome->tab =
+                m_commitsStack->currentIndex() == kCommitWorkspaceCommitPage ? 1 : 0;
         arrangePage(next);
         chrome->schedule();
     };
+    chrome->relayout = applyPage;
 
     const auto applyNextLayout = [chrome, arrangePanel, applyPage](bool next) {
         if (chrome->arranged != int(next)) {
@@ -3813,6 +3823,30 @@ void MainWindow::refreshSourceControl(bool force)
     }
         });
 }
+
+void MainWindow::applyGitLayout()
+{
+    if (ScmNextChrome *chrome = scmNextChrome(m_scmPanel); chrome && chrome->relayout)
+        chrome->relayout();
+}
+
+#ifdef FORKMESH_WINDOW_TESTS
+QString MainWindow::testGitLayoutState() const
+{
+    const auto shown = [](const QWidget *widget) {
+        return widget && !widget->isHidden() ? 1 : 0;
+    };
+    const QWidget *pair =
+        m_commitsBranchButton ? m_commitsBranchButton->parentWidget() : nullptr;
+    const QWidget *host = pair ? pair->parentWidget() : nullptr;
+    return QStringLiteral("header=%1 side=%2 files=%3 history=%4 branch=%5")
+        .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextHeader"))))
+        .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextSide"))))
+        .arg(shown(m_gitFilesSlot))
+        .arg(shown(m_gitHistorySlot))
+        .arg(host ? host->objectName() : QString());
+}
+#endif
 
 void MainWindow::updateScmCommitControlVisibility()
 {

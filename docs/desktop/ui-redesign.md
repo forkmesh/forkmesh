@@ -1818,6 +1818,15 @@ re-arranges both ways on a live design switch: Next to Classic puts every
 moved widget back where `buildRepoCommitsTab` placed it, in the same order.
 A window that starts in Classic is never touched.
 
+- **Git layout** (view menu, Next only; `GitLayout.h`, setting
+  `git/layout`). "New" is the page described below. "Compact" brings back
+  the page as it was before this restyle (commit 68b35e6386): changed files
+  on top of the left column and history underneath, no branches column and
+  no page header, with the branch picker, Fetch, Pull and rescan back in the
+  history header and the "▾ CHANGES" caption showing the count again. Only
+  the page arrangement changes (`arrangePage(false)`); the change rows, the
+  commit box and the history rows keep the new design. Switching runs
+  `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).
   - "Git" (`#gitNextTitle`) over a muted summary (`#gitNextSummary`): the

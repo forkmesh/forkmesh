@@ -5,6 +5,7 @@
 #include "../src/MainWindowNextAccess.h"
 #include "../src/InstanceTheme.h"
 #include "../src/OverflowActionRow.h"
+#include "../src/GitLayout.h"
 #include "../src/WorkspaceLayout.h"
 #include "../src/OfficeChannelMirror.h"
 #include "../src/WindowFrameControl.h"
@@ -15418,6 +15419,62 @@ void checkSessionsPage(MainWindow &window)
     window.testRemoveAgentSession(planner.id);
     window.testShowHomeSection();
     QApplication::processEvents();
+}
+
+void checkGitCompactLayout(MainWindow &window)
+{
+    QSettings settings;
+    const QVariant designWas = settings.value(QStringLiteral("app/design"));
+    const auto settle = [] {
+        for (int i = 0; i < 10; ++i)
+            QApplication::processEvents();
+    };
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_GIT_LAYOUT_SHOT");
+    const auto shot = [&](const QString &name) {
+        if (!shotPrefix.isEmpty())
+            window.grab().save(shotPrefix + QLatin1Char('-') + name +
+                               QStringLiteral(".png"));
+    };
+
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    forkmesh::ui::setGitLayoutCompact(false);
+    MainWindow::applyTheme();
+    settle();
+    const QString fresh = window.testGitLayoutState();
+    check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
+              fresh.endsWith(QStringLiteral(" branch=gitNextHeader")),
+          QStringLiteral("the New Git layout has the page header, the branches "
+                         "column and the branch picker in the header (%1)")
+              .arg(fresh));
+    shot(QStringLiteral("new"));
+
+    forkmesh::ui::setGitLayoutCompact(true);
+    window.testApplyGitLayout();
+    settle();
+    const QString compact = window.testGitLayoutState();
+    check(compact == QStringLiteral(
+                         "header=0 side=0 files=1 history=1 branch=gitHistoryHeader"),
+          QStringLiteral("the Compact Git layout stacks files over history with "
+                         "the branch picker in the history header (%1)")
+              .arg(compact));
+    shot(QStringLiteral("compact"));
+
+    forkmesh::ui::setGitLayoutCompact(false);
+    window.testApplyGitLayout();
+    settle();
+    const QString back = window.testGitLayoutState();
+    check(back == fresh,
+          QStringLiteral("switching back to the New Git layout restores it (%1)")
+              .arg(back));
+
+    if (designWas.isValid())
+        settings.setValue(QStringLiteral("app/design"), designWas);
+    else
+        settings.remove(QStringLiteral("app/design"));
+    settings.remove(QLatin1String(forkmesh::ui::kGitLayoutSetting));
+    forkmesh::ui::gitLayoutState() = -1;
+    MainWindow::applyTheme();
+    settle();
 }
 
 int runWorkspaceSnapshots(MainWindow &window);
@@ -31735,6 +31792,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         check(window.testGitWorkspaceIsExclusive(),
               QStringLiteral("a branch diff gives the Git rail exclusive ownership: "
                              "no Code chrome and no visible diff outside Git"));
+        checkGitCompactLayout(window);
         // adhoc #269: the divider between the Git file pane and the detail
         // pane has to travel much further than the widths of the two header
         // rows it used to be pinned by. Dragged out, the branch title shares
