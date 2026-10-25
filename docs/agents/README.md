@@ -34,18 +34,35 @@ follows a run through every layer. The desktop UI for agents is described in
   words); the branch and worktree slug (`titleSlug()`) is 4 words / 30
   characters.
 - **Claude Code and Codex name their own runs (2026-10-25).** Before a Claude
-  Code or Codex run with a worktree starts, its own CLI reads the whole prompt
-  (`requestAgentTitle()`; Settings > Agents > "Agent titles", on by default):
-  a one-shot, tool-less `claude -p` / `codex exec` call that replies
-  `{"title": ...}`, at most 2 at once, killed after 20 s. It runs on the model
-  chosen for the run (`agentNamingModel()`: the run's model, else the
-  provider's default model setting; `auto` and an unset model use the CLI's
-  own default), not a separate small model, so the name comes from the same
-  model as the work. The title names the run in the Agents list and its
-  `<id>-<slug>` branch and worktree; `titledBy` is `promptNamerLabel()`, e.g.
-  `Claude Code namer (opus)`. A failed or slow reply falls back to the local
-  name. A direct-checkout run has no branch to name, so it starts at once and
-  Codex titles it in parallel.
+  Code or Codex run with a worktree starts, its own CLI names it the way
+  Claude's desktop app names a Code session (`generate_title_and_branch` in
+  its bundle; read from the 2026-10-22 Linux build):
+  - one tool-less call returns both names, `<title>…</title><branch>…</branch>`
+    (`agentTitleRequest()`, `parseAgentTitle()` in `AgentWorktree.h`). The
+    title is 2–5 words in sentence case, a noun phrase rather than "Fix …";
+    the branch is up to 4 lowercase ASCII words joined by dashes. The prompt
+    is our own wording of the same rules, capped at 4,000 characters;
+  - a title over 200 characters is refused; a branch that is not
+    `[a-z0-9]+(-[a-z0-9]+)*` or is over 60 characters is rebuilt from the
+    title (`branchSlug()`, as the desktop's `slugifyToBranch`). The desktop's
+    `claude/` prefix is dropped and our `<id>-` prefix kept
+    (`adHocBranchName()`), so two runs never share a branch;
+  - the small fast model goes first (`haiku`; `gpt-5.4-mini` for Codex), then
+    the run's own model (`agentNamingModel()`) if that fails, as the desktop
+    falls back from its `small_fast` model to the session model. Claude gets
+    `--system-prompt`; Codex, which has none, gets it ahead of the request;
+  - each try is killed after 30 s. Three failed namings in a row turn the
+    namer off for that CLI for 5 minutes (the desktop does this for its
+    direct API path). At most 2 namings run at once;
+  - the desktop can also call the API directly, or have claude.ai's server
+    do it; ForkMesh holds neither credential, so it always spawns the CLI.
+  The title names the run in the Agents list; `titledBy` is
+  `promptNamerLabel()` with the model that answered, e.g.
+  `Claude Code namer (haiku)`. With no title the run keeps its prompt title;
+  with no branch it keeps the local `<id>-<slug>` name. Settings > Agents >
+  "Agent titles" (on by default) turns this off. A direct-checkout run has no
+  branch to name, so it starts at once: Codex titles it in parallel and
+  Claude Code's own session names it.
 - **Cloudflare naming is opt-in.** Settings > Agents > "Cloudflare naming"
   (`agents/cloudflareNaming`, off by default) sends the prompt to the Workers
   AI model picked under "Branch/worktree names" instead, with the desktop's

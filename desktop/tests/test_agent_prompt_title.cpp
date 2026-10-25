@@ -52,42 +52,54 @@ int main()
              "blank prompt has no title");
 
     using forkmesh::agentwt::agentTitleRequest;
+    using forkmesh::agentwt::adHocBranchName;
     using forkmesh::agentwt::parseAgentTitle;
 
     const QString request = agentTitleRequest(QStringLiteral(
         "  the titles for agents are not looking great  "));
     expectEq(QString::number(request.contains(QStringLiteral(
-                 "<<<\nthe titles for agents are not looking great\n>>>"))),
+                 "<description>the titles for agents are not looking great</description>"))),
              QStringLiteral("1"), "title request fences the trimmed prompt");
-    expectEq(QString::number(request.contains(QStringLiteral("{\"title\""))),
-             QStringLiteral("1"), "title request asks for a JSON title");
+    expectEq(QString::number(request.contains(QStringLiteral("<title>")) &&
+                             request.contains(QStringLiteral("<branch>"))),
+             QStringLiteral("1"), "title request asks for a tagged title and branch");
     expectEq(QString::number(
                  agentTitleRequest(QString(7000, QLatin1Char('x')))
-                     .count(QLatin1Char('x')) <= 6000 + 8),
+                     .count(QLatin1Char('x')) <= 4000 + 8),
              QStringLiteral("1"), "title request caps a long prompt");
 
-    expectEq(parseAgentTitle(
-                 "```json\n{\"title\": \"Improve descriptive titles for "
-                 "starting agents\"}\n```\n"),
-             QStringLiteral("Improve descriptive titles for starting agents"),
-             "fenced JSON reply");
-    expectEq(parseAgentTitle("{\"title\":\"  \\\"fix the login crash on "
-                             "Windows.\\\"  \"}"),
-             QStringLiteral("Fix the login crash on Windows"),
-             "quotes, trailing period and case cleaned");
-    expectEq(parseAgentTitle("Sure! Here you go."), QString(),
-             "reply without JSON has no title");
-    expectEq(parseAgentTitle("{\"name\":\"Fix it\"}"), QString(),
-             "JSON without a title field has no title");
-    expectEq(parseAgentTitle("{\"title\":\"one two three four five six "
-                             "seven eight nine ten eleven twelve thirteen\"}"),
-             QString(), "a paragraph is not a title");
-    expectEq(parseAgentTitle("{\"title\":\"Rework the extraordinarily "
-                             "complicated synchronization pipeline "
-                             "configuration handling\"}"),
-             QStringLiteral("Rework the extraordinarily complicated "
-                            "synchronization pipeline"),
-             "long title cut at a word boundary");
+    const auto tagged = parseAgentTitle(
+        "<title>Safari reports export button</title>\n"
+        "<branch>safari-reports-export</branch>\n");
+    expectEq(tagged.title, QStringLiteral("Safari reports export button"),
+             "tagged title");
+    expectEq(tagged.branch, QStringLiteral("safari-reports-export"),
+             "tagged branch");
+    expectEq(parseAgentTitle("<title>Slow backup</title>"
+                             "<branch>claude/slow-backup</branch>")
+                 .branch,
+             QStringLiteral("slow-backup"), "claude/ prefix dropped");
+    expectEq(parseAgentTitle("<title>Mobile login: button bug!</title>"
+                             "<branch>Mobile Login</branch>")
+                 .branch,
+             QStringLiteral("mobile-login-button-bug"),
+             "invalid branch rebuilt from the title");
+    expectEq(parseAgentTitle("<title>Mobile login</title>").branch,
+             QStringLiteral("mobile-login"), "missing branch rebuilt from the title");
+    expectEq(parseAgentTitle("<title>Écran d’accueil</title>").branch,
+             QStringLiteral("cran-d-accueil"), "non-ASCII letters dropped from the slug");
+    expectEq(parseAgentTitle("Sure! Here you go.").title, QString(),
+             "reply without tags has no title");
+    expectEq(parseAgentTitle("<branch>fix-it</branch>").title, QString(),
+             "branch alone has no title");
+    expectEq(parseAgentTitle(QByteArray("<title>") + QByteArray(201, 'a') +
+                             QByteArray("</title>"))
+                 .title,
+             QString(), "an over-long title is refused");
+    expectEq(adHocBranchName(42, QStringLiteral("slow-backup")),
+             QStringLiteral("42-slow-backup"), "branch name keeps the session id");
+    expectEq(adHocBranchName(42, QString()), QStringLiteral("42"),
+             "empty branch names by id");
 
     using forkmesh::agentwt::isPromptNamerLabel;
     using forkmesh::agentwt::promptNamerLabel;

@@ -3751,10 +3751,11 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
         "Ask Claude Code or Codex to name each run started from a prompt");
     agentTitleCheck->setObjectName("agentTitleFromAgentCheck");
     agentTitleCheck->setToolTip(
-        "Before a Claude Code or Codex run starts, its own CLI reads the whole "
-        "prompt with the model chosen for the run and writes a short title. "
-        "The title names the run in the Agents list and its branch and "
-        "worktree. Other agents keep the title cut from the prompt.");
+        "Before a Claude Code or Codex run starts, its own CLI reads the "
+        "prompt and writes a short title and branch name, the way Claude's "
+        "desktop app names Code sessions: a small fast model first (Claude "
+        "Haiku, GPT-5.4-Mini), then the run's own model if that fails. Other "
+        "agents keep the title cut from the prompt.");
     agentTitleCheck->setChecked(
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool());
     connect(agentTitleCheck, &QCheckBox::toggled, this, [](bool on) {

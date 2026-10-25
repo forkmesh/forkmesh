@@ -233,7 +233,7 @@ in `ClaudeControlProtocol.{h,cpp}`; `MainWindowAgentClaudeControl.cpp` puts it
 on screen. Shapes were checked against Claude Code 2.1.309.
 
 **Names.** A run started from a prompt is usually named before launch by a
-one-shot `claude -p` on the run's own model (see
+one-shot `claude -p`, Haiku first and then the run's own model (see
 [../agents/README.md](../agents/README.md#local-runs-desktop)); that name
 goes in as `title` and is sent again with `rename_session`, like a name you
 gave it. Otherwise, on the first `system/init` of each process the desktop sends

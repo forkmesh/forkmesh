@@ -131,6 +131,7 @@ namespace forkmesh::ui { class OverflowActionRow; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
+namespace forkmesh::agentwt { struct AgentTitle; }
 namespace forkmesh::agentresources {
 struct GovernorSnapshot;
 struct SliceCounters;
@@ -15576,8 +15577,11 @@ private:
         const QString &prompt, const QString &model,
         std::function<void(QString)> completion);
     void requestAgentTitle(const QString &provider, const QString &prompt,
-                           const QString &model, int timeoutMs,
-                           std::function<void(QString)> completion);
+                           const QString &model,
+                           std::function<void(forkmesh::agentwt::AgentTitle)> completion);
+    void runAgentTitleCli(const QString &provider, const QString &prompt,
+                          QStringList models,
+                          std::function<void(forkmesh::agentwt::AgentTitle)> completion);
     void applyAgentTitle(int sessionId, const QString &provider,
                          const QString &model, const QString &title);
     void handleClaudeControlEvent(int sessionId, const QJsonObject &event);
