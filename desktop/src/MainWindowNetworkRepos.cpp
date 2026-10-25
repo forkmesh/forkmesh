@@ -66,12 +66,11 @@ void MainWindow::refreshNetworkTab(int tabIndex)
     case kNetworkNodesTab:
         refreshRelayNodes();
         refreshRunners();
+        refreshHostsTable();
+        refreshFleetNodesTable();
+        fetchDirectoryInstances(true);
         refreshNodesTable();
         loadMirrorNodesPanel();
-        break;
-    case kNetworkHostsTab:
-        refreshHostsTable();
-        refreshRunners();
         break;
     default:
         refreshFirewallTables();

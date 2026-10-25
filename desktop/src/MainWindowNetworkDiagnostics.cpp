@@ -1137,16 +1137,11 @@ void MainWindow::updateNetworkCounts(int relays, int nodes, int hosts)
                 kNetworkNodesTab,
                 label(QStringLiteral("Nodes"),
                       m_networkNodeCount + m_networkRelayCount));
-        if (m_networkTabs->count() > kNetworkHostsTab)
-            m_networkTabs->setTabText(
-                kNetworkHostsTab,
-                label(QStringLiteral("Hosts"), m_networkHostCount));
     }
 
     if (auto *railButton =
             dynamic_cast<ActivityRailButton *>(m_networkNavButton))
-        railButton->setBadgeCount(m_networkRelayCount + m_networkNodeCount +
-                                  m_networkHostCount);
+        railButton->setBadgeCount(m_networkRelayCount + m_networkNodeCount);
 }
 
 void MainWindow::updateNetworkDeployBlink()
@@ -1240,14 +1235,16 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
         addNode->setObjectName(QStringLiteral("networkAddNodeButton"));
         addNode->setCursor(Qt::PointingHandCursor);
         addNode->setToolTip(QStringLiteral(
-            "Add a host on the Hosts tab: its address, SSH login and node name, "
-            "then Add host and Install ForkMesh. Hosts also creates Vultr mirrors."));
+            "Add a host in the Hosts rail beside the node list: its address, SSH "
+            "login and node name, then Add host and Install ForkMesh. The rail "
+            "also creates Vultr mirrors."));
         addNode->setIcon(QIcon(kit::tintedIcon(QStringLiteral("plus"),
                                                Theme::color(Theme::Role::Bg), 14,
                                                page->devicePixelRatioF())));
         addNode->setIconSize(QSize(14, 14));
         connect(addNode, &QPushButton::clicked, this, [this] {
             showNetworkTab(kNetworkHostsTab);
+            revealHostsRailSection(m_hostIpEdit);
             QTimer::singleShot(0, this, [this] {
                 if (!m_hostIpEdit || !m_hostIpEdit->isVisible())
                     return;
@@ -1273,7 +1270,6 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     m_networkTabs = tabs;
 
     tabs->addTab(buildNodesSection(), QStringLiteral("Nodes"));
-    tabs->addTab(buildHostsSection(), QStringLiteral("Hosts"));
     connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
         refreshNetworkTab(index);
         scheduleNavRecord();
