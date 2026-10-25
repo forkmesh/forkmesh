@@ -2488,6 +2488,8 @@ public:
     QStringList testSideRailKeys() const;
     void testSetSideRailBrowserOpen(bool open) { setSideRailBrowserOpen(open); }
     forkmesh::ui::TerminalTabsPage *testTerminalsPage() const { return m_terminalsPage; }
+    QWidget *testSideRailTerminalPanel() const { return m_sideRailTerminalPanel; }
+    void testToggleTerminals() { toggleTerminals(); }
     int testTerminalsSectionIndex() const { return kTerminalsSectionIndex; }
     QString testOpenTerminalTab(const QString &kind, const QString &command, const QString &cwd)
     {
@@ -8977,6 +8979,15 @@ private:
     void setSideRailBrowserOpen(bool open);
     void openInSideRailBrowser(const QString &address);
     QWidget *buildTerminalsSection();
+    forkmesh::ui::TerminalTabsPage *ensureTerminalsPage();
+    void dockTerminals(bool sidePane);
+    bool sideRailFits() const;
+    bool sideRailTerminalsOpen() const;
+    void setSideRailTerminalsOpen(bool open);
+    void revealTerminals();
+    void toggleTerminals();
+    QString defaultTerminalFolder() const;
+    QString openUserTerminal(const QString &kind, const QString &cwd);
     void showTerminalLauncher();
     void showTerminalsPage();
     QString openTerminalTab(const QString &kind, const QString &command, const QString &cwd,
@@ -13320,6 +13331,11 @@ private:
     forkmesh::ui::WorkspaceBrowserPane *m_sideRailBrowser = nullptr;
     QPointer<QCheckBox> m_sideRailCheck;
     forkmesh::ui::TerminalTabsPage *m_terminalsPage = nullptr;
+    QWidget *m_sideRailTerminalPanel = nullptr;
+    QBoxLayout *m_sideRailTerminalHost = nullptr;
+    QPushButton *m_sideRailTerminalButton = nullptr;
+    QWidget *m_terminalsSectionHost = nullptr;
+    QWidget *m_terminalsSectionNote = nullptr;
     QHash<QString, QString> m_terminalIntakeTokens;
     forkmesh::agentintake::RateLimiter m_terminalInputLimiter{
         forkmesh::terminalbridge::kInputLimit, forkmesh::terminalbridge::kInputWindowMs};

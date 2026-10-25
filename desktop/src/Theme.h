@@ -694,11 +694,11 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #0d1117; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #0d1117; }
 #sideRailColumn { border-left: 1px solid #30363d; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRailBrowserHandle:hover { background-color: #30363d; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #30363d; }
 QLabel#sideRailBrowserTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
 QFrame#sideRailSeparator { color: #30363d; background-color: #30363d; border: none; max-height: 1px; }
 QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
@@ -2880,8 +2880,8 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #ffffff; }
-#sideRailBrowserHandle:hover { background-color: #d0d7de; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #ffffff; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #d0d7de; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#sideRailBrowserTitle { color: #656d76; font-size: 9px; font-weight: 600; }

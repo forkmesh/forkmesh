@@ -240,15 +240,15 @@ private:
     int m_indicatorY = -1;
 };
 
-class BrowserResizeHandle final : public QWidget
+class PanelResizeHandle final : public QWidget
 {
 public:
     std::function<void(int)> resized;
     std::function<void()> finished;
 
-    explicit BrowserResizeHandle(QWidget *panel) : QWidget(panel), m_panel(panel)
+    PanelResizeHandle(QWidget *panel, const QString &name) : QWidget(panel), m_panel(panel)
     {
-        setObjectName(QStringLiteral("sideRailBrowserHandle"));
+        setObjectName(name);
         setFixedWidth(5);
         setCursor(Qt::SizeHorCursor);
     }
@@ -315,12 +315,16 @@ void MainWindow::setSideRailEnabled(bool enabled)
     applySideRailVisibility();
 }
 
+bool MainWindow::sideRailFits() const
+{
+    return !appViewModeHidesShellChrome(m_viewMode) && width() >= kSideRailMinWindowWidth;
+}
+
 void MainWindow::applySideRailVisibility()
 {
     if (!m_sideRail)
         return;
-    const bool visible = sideRailEnabled() && !appViewModeHidesShellChrome(m_viewMode) &&
-                         width() >= kSideRailMinWindowWidth;
+    const bool visible = sideRailEnabled() && sideRailFits();
     if (visible == !m_sideRail->isHidden())
         return;
     m_sideRail->setVisible(visible);
@@ -346,7 +350,7 @@ QWidget *MainWindow::buildSideRail()
     auto *panelRow = new QHBoxLayout(panel);
     panelRow->setContentsMargins(0, kRepoTabRowTopInset, 4, 8);
     panelRow->setSpacing(0);
-    auto *handle = new BrowserResizeHandle(panel);
+    auto *handle = new PanelResizeHandle(panel, QStringLiteral("sideRailBrowserHandle"));
     handle->resized = [panel](int width) { panel->setFixedWidth(sr::clampBrowserWidth(width)); };
     handle->finished = [panel] { QSettings().setValue(sr::kBrowserWidthSetting, panel->width()); };
     panelRow->addWidget(handle);
@@ -385,6 +389,35 @@ QWidget *MainWindow::buildSideRail()
     m_sideRailBrowserPanel = panel;
     row->addWidget(panel);
 
+    auto *terminalPanel = new QWidget;
+    terminalPanel->setObjectName(QStringLiteral("sideRailTerminalPanel"));
+    terminalPanel->setAccessibleName(QStringLiteral("Terminals"));
+    terminalPanel->setAttribute(Qt::WA_StyledBackground, true);
+    terminalPanel->setFixedWidth(sr::clampBrowserWidth(
+        QSettings().value(sr::kTerminalWidthSetting, sr::kDefaultTerminalWidth).toInt()));
+    auto *terminalRow = new QHBoxLayout(terminalPanel);
+    terminalRow->setContentsMargins(0, kRepoTabRowTopInset, 0, 8);
+    terminalRow->setSpacing(0);
+    auto *terminalHandle =
+        new PanelResizeHandle(terminalPanel, QStringLiteral("sideRailTerminalHandle"));
+    terminalHandle->resized = [terminalPanel](int width) {
+        terminalPanel->setFixedWidth(sr::clampBrowserWidth(width));
+    };
+    terminalHandle->finished = [terminalPanel] {
+        QSettings().setValue(sr::kTerminalWidthSetting, terminalPanel->width());
+    };
+    terminalRow->addWidget(terminalHandle);
+    auto *terminalColumn = new QVBoxLayout;
+    terminalColumn->setContentsMargins(0, 0, 0, 0);
+    terminalColumn->setSpacing(0);
+    terminalRow->addLayout(terminalColumn, 1);
+    terminalPanel->hide();
+    m_sideRailTerminalPanel = terminalPanel;
+    m_sideRailTerminalHost = terminalColumn;
+    row->addWidget(terminalPanel);
+    if (m_terminalsPage)
+        dockTerminals(true);
+
     auto *column = new QWidget;
     column->setObjectName(QStringLiteral("sideRailColumn"));
     column->setFixedWidth(kSideRailWidth);
@@ -393,9 +426,11 @@ QWidget *MainWindow::buildSideRail()
     columnLayout->setSpacing(2);
 
     QPushButton *terminal = railToolButton("sideRailTerminalButton",
-                                           QStringLiteral("Open a terminal tab"));
+                                           QStringLiteral("Open a terminal"));
+    terminal->setCheckable(true);
     setOcticon(terminal, QStringLiteral("terminal"), 18);
-    connect(terminal, &QPushButton::clicked, this, [this] { showTerminalLauncher(); });
+    connect(terminal, &QPushButton::clicked, this, [this] { toggleTerminals(); });
+    m_sideRailTerminalButton = terminal;
     columnLayout->addWidget(terminal, 0, Qt::AlignHCenter);
     QPushButton *browse = railToolButton("sideRailBrowserButton",
                                          QStringLiteral("Show the side browser"));
@@ -693,7 +728,7 @@ void MainWindow::showSideRailItemMenu(const sr::Item &item, const QPoint &global
 void MainWindow::showSideRailMenu(const QPoint &globalPos)
 {
     QMenu menu(this);
-    connect(menu.addAction(QStringLiteral("Open a terminal tab…")), &QAction::triggered, this,
+    connect(menu.addAction(QStringLiteral("Open a terminal with options…")), &QAction::triggered, this,
             [this] { QTimer::singleShot(0, this, [this] { showTerminalLauncher(); }); });
     connect(menu.addAction(sideRailBrowserOpen() ? QStringLiteral("Hide the side browser")
                                                  : QStringLiteral("Show the side browser")),
@@ -795,6 +830,47 @@ void MainWindow::setSideRailBrowserOpen(bool open)
             m_sideRailBrowser->navigate(last);
         else
             m_sideRailBrowser->focusAddress();
+    }
+}
+
+bool MainWindow::sideRailTerminalsOpen() const
+{
+    return m_sideRailTerminalPanel && !m_sideRailTerminalPanel->isHidden();
+}
+
+void MainWindow::setSideRailTerminalsOpen(bool open)
+{
+    if (!m_sideRailTerminalPanel)
+        return;
+    if (open && m_terminalsPage)
+        dockTerminals(true);
+    m_sideRailTerminalPanel->setVisible(open);
+    if (m_sideRailTerminalButton) {
+        const QSignalBlocker blocker(m_sideRailTerminalButton);
+        m_sideRailTerminalButton->setChecked(open);
+        m_sideRailTerminalButton->setToolTip(
+            open ? QStringLiteral("Hide terminals")
+                 : (m_terminalsPage && m_terminalsPage->count() > 0
+                        ? QStringLiteral("Show terminals")
+                        : QStringLiteral("Open a terminal")));
+    }
+    if (open && m_terminalsPage)
+        m_terminalsPage->focusCurrent();
+}
+
+void MainWindow::revealTerminals()
+{
+    if (!ensureTerminalsPage())
+        return;
+    if (m_sideRailTerminalPanel && sideRailFits()) {
+        if (!sideRailEnabled())
+            setSideRailEnabled(true);
+        setSideRailTerminalsOpen(true);
+    } else {
+        setSideRailTerminalsOpen(false);
+        dockTerminals(false);
+        showSection(kTerminalsSectionIndex);
+        m_terminalsPage->focusCurrent();
     }
 }
 
