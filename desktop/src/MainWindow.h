@@ -4842,6 +4842,7 @@ private:
     void refreshFastScratchDisk(bool clean);
     void updateFastDiskTiles();
     void updateFastDiskSettingsPanel();
+    void setupFastDiskBootMount(bool automatic);
     void eraseFastScratchDisk();
     void updateQtDiagnosticTiles();
     void showQtDiagnosticsDialog();
@@ -13007,6 +13008,10 @@ private:
     QTimer *m_fastDiskTimer = nullptr;
     forkmesh::fastdisk::Volume m_fastDiskVolume;
     forkmesh::fastdisk::Usage m_fastDiskUsage;
+    forkmesh::fastdisk::BootMount m_fastDiskBoot;
+    QSet<QString> m_fastDiskBootAsked;
+    bool m_fastDiskBootRunning = false;
+    QPointer<QPushButton> m_fastDiskBootButton;
     QVector<forkmesh::usblink::Finding> m_usbFindings;
     QSet<QString> m_usbWarned;
     qint64 m_fastDiskLastCleanMs = 0;
