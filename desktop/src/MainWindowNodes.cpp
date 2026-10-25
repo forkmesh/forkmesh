@@ -116,6 +116,10 @@ enum NodeCol {
     kNodeColActions,
     kNodeColCount,
 };
+constexpr int kNodeSavedHostKeyRole = Qt::UserRole + 70;
+constexpr int kNodeHeaderIconRole = Qt::UserRole + 71;
+constexpr int kNodeRowHeight = 48;
+
 bool isProtectedMeshNode(const QString &node)
 {
     const QString key = node.trimmed().toLower();
@@ -231,6 +235,8 @@ QString nextNodeRoleIcon(const QString &roleKey)
         return QStringLiteral("sync");
     if (roleKey == QLatin1String("relay"))
         return QStringLiteral("broadcast");
+    if (roleKey == QLatin1String("instance"))
+        return QStringLiteral("organization");
     return QStringLiteral("device-desktop");
 }
 
@@ -249,13 +255,26 @@ struct NextNodeBadge {
     bool soft = false;
 };
 
-class NextNodeCellDelegate : public QStyledItemDelegate
+QString nodeStatusIcon(const QString &status)
+{
+    if (status.startsWith(QLatin1String("Online")) ||
+        status.contains(QLatin1String("Ready")))
+        return QStringLiteral("check-circle");
+    if (status.startsWith(QLatin1String("Checking")) || status.isEmpty())
+        return QStringLiteral("clock");
+    if (status.startsWith(QLatin1String("Offline")) ||
+        status.startsWith(QLatin1String("Unreachable")))
+        return QStringLiteral("circle-slash");
+    return QStringLiteral("broadcast");
+}
+
+class NodeCellDelegate : public QStyledItemDelegate
 {
 public:
-    enum Kind { Name, Muted, Mono };
+    enum Kind { Name, Stat, Mono, Meter };
 
-    NextNodeCellDelegate(Kind kind, QObject *parent)
-        : QStyledItemDelegate(parent), m_kind(kind)
+    NodeCellDelegate(Kind kind, QTableWidget *table)
+        : QStyledItemDelegate(table), m_kind(kind), m_table(table)
     {
     }
 
@@ -267,49 +286,66 @@ public:
         const QRect cell = option.rect.adjusted(kPad, 0, -kPad, 0);
         if (m_kind == Name)
             paintName(painter, cell, option, index);
+        else if (m_kind == Meter)
+            paintMeter(painter, cell, option, index);
         else
-            paintText(painter, cell, option, index);
+            paintStat(painter, cell, option, index);
         painter->restore();
     }
 
     QSize sizeHint(const QStyleOptionViewItem &option,
                    const QModelIndex &index) const override
     {
-        const QSize base = QStyledItemDelegate::sizeHint(option, index);
+        if (m_kind == Meter)
+            return QSize(104, kNodeRowHeight);
         if (m_kind != Name) {
-            const QFontMetrics metrics(textFont(option));
-            return QSize(metrics.horizontalAdvance(displayText(index)) + 2 * kPad + 4,
-                         base.height());
+            const int value =
+                QFontMetrics(valueFont(option)).horizontalAdvance(displayText(index));
+            const int caption =
+                QFontMetrics(captionFont(option)).horizontalAdvance(captionText(index));
+            return QSize(2 * kPad + kIcon + kIconGap + qMax(value, caption) + 4,
+                         kNodeRowHeight);
         }
         const NextNodeName split = nextSplitNodeName(index.data().toString());
         const QFontMetrics metrics(nameFont(option, index));
-        int width = 2 * kPad + kDot + kGap + metrics.horizontalAdvance(split.name) + 4;
-        if (split.child)
-            width += kIndent;
+        int line = metrics.horizontalAdvance(split.name);
         const QFontMetrics badgeMetrics(badgeFont(option));
         for (const NextNodeBadge &badge : badges(index, split))
-            width += kGap + badgeMetrics.horizontalAdvance(badge.text) + 10;
-        return QSize(width, base.height());
+            line += kGap + badgeMetrics.horizontalAdvance(badge.text) + 10;
+        const int sub = qMin(260, QFontMetrics(captionFont(option))
+                                      .horizontalAdvance(subtitle(index)));
+        int width = 2 * kPad + kAvatar + kGap + qMax(line, sub) + 4;
+        if (split.child)
+            width += kIndent;
+        return QSize(width, kNodeRowHeight);
     }
 
 private:
     static constexpr int kPad = 10;
-    static constexpr int kDot = 6;
+    static constexpr int kAvatar = 28;
+    static constexpr int kDot = 9;
     static constexpr int kGap = 8;
+    static constexpr int kIcon = 13;
+    static constexpr int kIconGap = 6;
     static constexpr int kIndent = 18;
 
-    QFont textFont(const QStyleOptionViewItem &option) const
+    QFont valueFont(const QStyleOptionViewItem &option) const
     {
         return m_kind == Mono ? nextNodeFont(option.font, 12, true, QFont::Normal)
-                              : nextNodeFont(option.font, 13, false, QFont::Normal);
+                              : nextNodeFont(option.font, 12, false, QFont::Medium);
+    }
+
+    static QFont captionFont(const QStyleOptionViewItem &option)
+    {
+        return nextNodeFont(option.font, 10, false, QFont::Normal);
     }
 
     static QFont nameFont(const QStyleOptionViewItem &option, const QModelIndex &index)
     {
         const QFont itemFont = index.data(Qt::FontRole).value<QFont>();
         const bool strong = index.data(Qt::FontRole).isValid() && itemFont.bold();
-        return nextNodeFont(option.font, 12, true,
-                            strong ? QFont::Medium : QFont::Normal);
+        return nextNodeFont(option.font, 13, false,
+                            strong ? QFont::DemiBold : QFont::Medium);
     }
 
     static QFont badgeFont(const QStyleOptionViewItem &option)
@@ -317,11 +353,54 @@ private:
         return nextNodeFont(option.font, 10, false, QFont::Medium);
     }
 
+    static QString cellText(const QModelIndex &index, int column)
+    {
+        const QString text = index.siblingAtColumn(column).data().toString().trimmed();
+        return text == nextNodeDash() ? QString() : text;
+    }
+
     static QString displayText(const QModelIndex &index)
     {
-        QString text = index.data().toString();
+        QString text = index.data().toString().simplified();
         text.replace(QStringLiteral(" (serving)"), QString::fromUtf8(" \xC2\xB7 serving"));
-        return text;
+        return text.isEmpty() ? nextNodeDash() : text;
+    }
+
+    QString captionText(const QModelIndex &index) const
+    {
+        const QTableWidgetItem *header = m_table->horizontalHeaderItem(index.column());
+        return header ? header->text() : QString();
+    }
+
+    QString statIcon(const QModelIndex &index) const
+    {
+        if (index.column() == kNodeColStatus)
+            return nodeStatusIcon(index.data().toString().trimmed());
+        const QTableWidgetItem *header = m_table->horizontalHeaderItem(index.column());
+        return header ? header->data(kNodeHeaderIconRole).toString() : QString();
+    }
+
+    static QString subtitle(const QModelIndex &index)
+    {
+        const QModelIndex name = index.siblingAtColumn(kNodeColName);
+        if (name.data(kNodeGroupChildRole).toBool())
+            return QString();
+        QStringList parts;
+        const QString role = cellText(index, kNodeColRole);
+        if (!role.isEmpty())
+            parts.append(role);
+        QString place = cellText(index, kNodeColPlatform);
+        if (place.isEmpty())
+            place = cellText(index, kNodeColRegion);
+        if (!place.isEmpty())
+            parts.append(place);
+        const QString endpoint = cellText(index, kNodeColEndpoint);
+        if (!endpoint.isEmpty())
+            parts.append(endpoint);
+        const QString version = cellText(index, kNodeColVersion);
+        if (!version.isEmpty())
+            parts.append(version);
+        return parts.join(QString::fromUtf8(" \xC2\xB7 "));
     }
 
     static QList<NextNodeBadge> badges(const QModelIndex &index, const NextNodeName &split)
@@ -332,31 +411,109 @@ private:
         if (split.source)
             out.append({QStringLiteral("Source of truth"), false});
         const QModelIndex name = index.siblingAtColumn(kNodeColName);
-        if (name.data(Qt::UserRole + 5).toString() == QLatin1String("relay") &&
+        const QString kind = name.data(Qt::UserRole + 5).toString();
+        if (kind == QLatin1String("relay") &&
             index.siblingAtColumn(kNodeColScope).data().toString() ==
                 QLatin1String("active"))
             out.append({QStringLiteral("Active relay"), false});
+        if (!split.child && !name.data(kNodeSavedHostKeyRole).toString().isEmpty())
+            out.append({QStringLiteral("Host"), false});
         return out;
     }
 
-    void paintText(QPainter *painter, const QRect &cell,
+    static QRect topLine(const QRect &cell)
+    {
+        return QRect(cell.left(), cell.center().y() - 17, cell.width(), 18);
+    }
+
+    static QRect bottomLine(const QRect &cell)
+    {
+        return QRect(cell.left(), cell.center().y() + 2, cell.width(), 15);
+    }
+
+    void paintIcon(QPainter *painter, const QString &name, const QColor &color,
+                   int x, int centerY, int px) const
+    {
+        if (name.isEmpty())
+            return;
+        const qreal ratio = m_table->devicePixelRatioF();
+        painter->drawPixmap(QPointF(x, centerY - px / 2.0),
+                            kit::tintedIcon(name, color, px, ratio));
+    }
+
+    void paintStat(QPainter *painter, const QRect &cell,
                    const QStyleOptionViewItem &option, const QModelIndex &index) const
     {
+        const QString text = displayText(index);
+        const bool empty = text == nextNodeDash();
         const QVariant foreground = index.data(Qt::ForegroundRole);
-        QColor color = Theme::color(Theme::Role::FgMuted);
-        if (foreground.isValid())
+        QColor color = empty ? Theme::color(Theme::Role::FgSubtle)
+                             : Theme::color(Theme::Role::Fg);
+        if (foreground.isValid() && !empty)
             color = foreground.value<QBrush>().color();
-        const QFont font = textFont(option);
-        painter->setFont(font);
+        const QRect top = topLine(cell);
+        const QString icon = statIcon(index);
+        int x = cell.left();
+        if (!icon.isEmpty()) {
+            const QColor iconColor = index.column() == kNodeColStatus && !empty
+                                         ? color
+                                         : Theme::color(Theme::Role::FgMuted);
+            paintIcon(painter, icon, iconColor, x, top.center().y() + 1, kIcon);
+            x += kIcon + kIconGap;
+        }
+        const QFont value = valueFont(option);
+        painter->setFont(value);
         painter->setPen(color);
-        const QVariant alignment = index.data(Qt::TextAlignmentRole);
-        Qt::Alignment align = alignment.isValid()
-                                  ? Qt::Alignment(alignment.toInt())
-                                  : Qt::Alignment(Qt::AlignLeft | Qt::AlignVCenter);
-        align = (align & Qt::AlignHorizontal_Mask) | Qt::AlignVCenter;
-        const QString text =
-            QFontMetrics(font).elidedText(displayText(index), Qt::ElideRight, cell.width());
-        painter->drawText(cell, int(align), text);
+        const int room = qMax(0, cell.right() - x + 1);
+        painter->drawText(QRect(x, top.top(), room, top.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(value).elidedText(text, Qt::ElideRight, room));
+        const QRect bottom = bottomLine(cell);
+        const QFont caption = captionFont(option);
+        painter->setFont(caption);
+        painter->setPen(Theme::color(Theme::Role::FgSubtle));
+        painter->drawText(QRect(x, bottom.top(), room, bottom.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(caption).elidedText(captionText(index),
+                                                           Qt::ElideRight, room));
+    }
+
+    void paintMeter(QPainter *painter, const QRect &cell,
+                    const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        const QVariant data = index.data(kProgressBarRole);
+        const int pct = data.isValid() ? qBound(-1, data.toInt(), 100) : -1;
+        const QRect top = topLine(cell);
+        paintIcon(painter, statIcon(index), Theme::color(Theme::Role::FgMuted),
+                  cell.left(), top.center().y() + 1, kIcon);
+        const int x = cell.left() + kIcon + kIconGap;
+        const QFont caption = captionFont(option);
+        painter->setFont(caption);
+        painter->setPen(Theme::color(Theme::Role::FgMuted));
+        painter->drawText(QRect(x, top.top(), qMax(0, cell.right() - x), top.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter, captionText(index));
+        const QFont value = valueFont(option);
+        painter->setFont(value);
+        QColor fill = Theme::color(Theme::Role::Accent);
+        if (pct >= 90)
+            fill = Theme::color(Theme::Role::Danger);
+        else if (pct >= 70)
+            fill = Theme::color(Theme::Role::Warning);
+        painter->setPen(pct >= 0 ? Theme::color(Theme::Role::Fg)
+                                 : Theme::color(Theme::Role::FgSubtle));
+        painter->drawText(top, Qt::AlignRight | Qt::AlignVCenter,
+                          pct >= 0 ? QStringLiteral("%1%").arg(pct) : nextNodeDash());
+        const QRect bottom = bottomLine(cell);
+        const QRectF track(cell.left(), bottom.center().y() - 2.5, cell.width(), 5);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(Theme::color(Theme::Role::SurfaceActive));
+        painter->drawRoundedRect(track, 2.5, 2.5);
+        if (pct > 0) {
+            QRectF bar = track;
+            bar.setWidth(qMax(track.height(), track.width() * pct / 100.0));
+            painter->setBrush(fill);
+            painter->drawRoundedRect(bar, 2.5, 2.5);
+        }
     }
 
     void paintName(QPainter *painter, QRect cell, const QStyleOptionViewItem &option,
@@ -365,20 +522,55 @@ private:
         const NextNodeName split = nextSplitNodeName(index.data().toString());
         const QFont font = nameFont(option, index);
         const QFontMetrics metrics(font);
+        const int centerY = cell.center().y();
         if (split.child) {
-            painter->setFont(font);
+            const QFont small = nextNodeFont(option.font, 12, true, QFont::Normal);
+            painter->setFont(small);
             painter->setPen(Theme::color(Theme::Role::FgSubtle));
-            painter->drawText(QRect(cell.left(), cell.top(), kIndent, cell.height()),
+            painter->drawText(QRect(cell.left() + kAvatar / 2, cell.top(), kIndent,
+                                    cell.height()),
                               Qt::AlignLeft | Qt::AlignVCenter,
                               QString::fromUtf8("\xE2\x94\x94"));
-            cell.setLeft(cell.left() + kIndent);
+            const int x = cell.left() + kAvatar / 2 + kIndent;
+            painter->setPen(nextNodeDotColor(index));
+            painter->setBrush(nextNodeDotColor(index));
+            painter->drawEllipse(QRectF(x, centerY - 3, 6, 6));
+            painter->setPen(Theme::color(Theme::Role::FgMuted));
+            const int room = qMax(0, cell.right() - x - 12);
+            painter->drawText(QRect(x + 12, cell.top(), room, cell.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              QFontMetrics(small).elidedText(split.name, Qt::ElideRight,
+                                                             room));
+            return;
         }
-        const int centerY = cell.center().y();
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(nextNodeDotColor(index));
-        painter->drawEllipse(QRectF(cell.left(), centerY - kDot / 2.0 + 0.5, kDot, kDot));
-        cell.setLeft(cell.left() + kDot + kGap);
 
+        const QModelIndex nameIndex = index.siblingAtColumn(kNodeColName);
+        const QString kind = nameIndex.data(Qt::UserRole + 5).toString();
+        const QString roleKey =
+            index.siblingAtColumn(kNodeColRole).data(Qt::UserRole).toString();
+        const QRectF avatar(cell.left(), centerY - kAvatar / 2.0, kAvatar, kAvatar);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(split.self ? Theme::color(Theme::Role::AccentSubtle)
+                                     : Theme::color(Theme::Role::SurfaceActive));
+        painter->drawRoundedRect(avatar, 7, 7);
+        const QIcon decoration = index.data(Qt::DecorationRole).value<QIcon>();
+        if (kind == QLatin1String("relay") && !decoration.isNull()) {
+            const QRect glyph(int(avatar.center().x()) - 8, int(avatar.center().y()) - 8,
+                              16, 16);
+            decoration.paint(painter, glyph);
+        } else {
+            paintIcon(painter, nextNodeRoleIcon(roleKey),
+                      split.self ? Theme::color(Theme::Role::AccentFg)
+                                 : Theme::color(Theme::Role::FgMuted),
+                      int(avatar.center().x()) - 8, int(avatar.center().y()), 16);
+        }
+        const QRectF dot(avatar.right() - kDot + 2, avatar.bottom() - kDot + 2, kDot, kDot);
+        painter->setPen(QPen(Theme::color(Theme::Role::Bg), 2));
+        painter->setBrush(nextNodeDotColor(index));
+        painter->drawEllipse(dot);
+        cell.setLeft(cell.left() + kAvatar + kGap + 2);
+
+        const QRect top = topLine(cell);
         const QList<NextNodeBadge> list = badges(index, split);
         const QFont small = badgeFont(option);
         const QFontMetrics smallMetrics(small);
@@ -388,18 +580,18 @@ private:
         const int nameRoom = qMax(0, cell.width() - badgesWidth);
         const QString name = metrics.elidedText(split.name, Qt::ElideRight, nameRoom);
         painter->setFont(font);
-        painter->setPen(split.child ? Theme::color(Theme::Role::FgMuted)
-                                    : Theme::color(Theme::Role::Fg));
-        painter->drawText(QRect(cell.left(), cell.top(), nameRoom, cell.height()),
+        painter->setPen(Theme::color(Theme::Role::Fg));
+        painter->drawText(QRect(cell.left(), top.top(), nameRoom, top.height()),
                           Qt::AlignLeft | Qt::AlignVCenter, name);
         int x = cell.left() + metrics.horizontalAdvance(name);
         painter->setFont(small);
+        const int pillCenter = top.center().y() + 1;
         for (const NextNodeBadge &badge : list) {
             x += kGap;
             const int width = smallMetrics.horizontalAdvance(badge.text) + 10;
             if (x + width > cell.right() + 1)
                 break;
-            const QRectF pill(x, centerY - 8 + 0.5, width, 16);
+            const QRectF pill(x, pillCenter - 7.5, width, 15);
             if (badge.soft) {
                 painter->setPen(Qt::NoPen);
                 painter->setBrush(Theme::color(Theme::Role::AccentSubtle));
@@ -414,9 +606,18 @@ private:
             painter->drawText(pill, Qt::AlignCenter, badge.text);
             x += width;
         }
+
+        const QRect bottom = bottomLine(cell);
+        const QFont caption = nextNodeFont(option.font, 11, false, QFont::Normal);
+        painter->setFont(caption);
+        painter->setPen(Theme::color(Theme::Role::FgMuted));
+        painter->drawText(bottom, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(caption).elidedText(subtitle(index), Qt::ElideRight,
+                                                           bottom.width()));
     }
 
     Kind m_kind;
+    QTableWidget *m_table;
 };
 
 class NextNodesTableChrome : public QObject
@@ -546,6 +747,55 @@ protected:
 
 private:
     int m_value = -1;
+};
+
+class NodeRightColumnSync : public QObject
+{
+public:
+    NodeRightColumnSync(QWidget *column, QWidget *page, const QList<QWidget *> &parts)
+        : QObject(column), m_column(column), m_page(page)
+    {
+        page->installEventFilter(this);
+        fit();
+        for (QWidget *part : parts) {
+            if (!part)
+                continue;
+            m_parts.append(part);
+            part->installEventFilter(this);
+        }
+        sync();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_page) {
+            if (event->type() == QEvent::Resize)
+                fit();
+            return false;
+        }
+        if (event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent)
+            sync();
+        return false;
+    }
+
+private:
+    void fit()
+    {
+        m_column->setFixedWidth(qBound(240, m_page->width() / 4, 320));
+    }
+
+    void sync()
+    {
+        bool any = false;
+        for (const QPointer<QWidget> &part : std::as_const(m_parts))
+            any = any || (part && !part->isHidden());
+        m_column->setVisible(any);
+    }
+
+    QWidget *m_column;
+    QWidget *m_page;
+    QList<QPointer<QWidget>> m_parts;
 };
 
 QFrame *nextStatTile(const QString &objectName, const QString &label, QWidget *parent)
@@ -718,7 +968,7 @@ QFrame *nextBuildNodePanel(QWidget *parent)
     auto *panel = new QFrame(parent);
     panel->setObjectName(QStringLiteral("networkNodePanel"));
     panel->setAttribute(Qt::WA_StyledBackground, true);
-    panel->setFixedWidth(320);
+    panel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     panel->hide();
     auto *layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -1079,10 +1329,16 @@ QWidget *MainWindow::buildNodesSection()
 
     auto *subtitle = new QLabel(QString::fromUtf8(
         "Every node on the network with its role: core servers, runners, "
-        "mirror servers, desktop nodes and the relays this app talks to. It "
-        "lists every registered node from the relay directory, including "
-        "offline ones, every fleet or registered runner and every configured "
-        "relay, probed live for its status, response time and version. Each "
+        "mirror servers, desktop nodes, the relays this app talks to and the "
+        "self-hosted instances in the public ForkMesh directory, such as OWASP "
+        "BLT. It lists every registered node from the relay directory, "
+        "including offline ones, every saved host, every fleet server or "
+        "registered runner and every configured relay, probed live for its "
+        "status, response time and version. Each row has two lines: the node "
+        "and what it is on the left, then each stat with its icon, CPU, RAM "
+        "and disk first. The Hosts rail on the right adds, installs, updates "
+        "and checks saved hosts, creates Vultr mirrors and holds the runner "
+        "and fleet controls; click a host's row to pick it there. Each "
         "node's row also shows its copy of the repository chosen under "
         "Repository mirrors, compared with that repository's source of truth; "
         "a node holding several copies lists each one on its own line beneath "
@@ -1150,33 +1406,32 @@ QWidget *MainWindow::buildNodesSection()
         QTimer::singleShot(0, this,
                            &MainWindow::runHostInstallAllFromBinary);
     });
-    QWidget *mirrorSection = nullptr;
+    auto *nodesColumn = new QWidget(page);
+    nodesColumn->setObjectName(QStringLiteral("networkNodesColumn"));
+    auto *column = new QVBoxLayout(nodesColumn);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(next ? 16 : 6);
+    QWidget *mirrorSection = buildMirrorNodesSection();
     if (controls) {
         controls->addWidget(updateAll);
-        outer->addLayout(controls);
-        outer->addWidget(buildMirrorNodesSection());
-    } else {
-        mirrorSection = buildMirrorNodesSection();
+        column->addLayout(controls);
+        column->addWidget(mirrorSection);
     }
 
     m_nodesTable = new QTableWidget(0, kNodeColCount);
     installColumnHeaderMenu(m_nodesTable, true);
     m_nodesTable->setObjectName("issueTable");
     m_nodesTable->setProperty("nodesDirectory", true);
-    // Icon + caption headers, the same shape the Mirror nodes table uses: the
-    // glyph carries the meaning at a glance and the tooltip spells out what the
-    // column actually reports (many of these are per-repository facts from the
-    // node's freshest signed catalog record).
     struct NodeHeaderIcon {
         int column;
         const char *icon;
-        const char *text;  // caption: terse, the icon carries the rest
-        const char *label; // tooltip: the full meaning of the column
+        const char *text;
+        const char *label;
     };
     static constexpr NodeHeaderIcon kNodeHeaderIcons[] = {
         {kNodeColName, "device-desktop", "Node", "Node"},
         {kNodeColRole, "server", "Role",
-         "Role: core, runner, mirror, desktop node or relay"},
+         "Role: core, runner, mirror, desktop node, instance or relay"},
         {kNodeColScope, "people", "Scope",
          "Runner scope (pool or personal), or whether a relay is the active "
          "instance"},
@@ -1194,7 +1449,7 @@ QWidget *MainWindow::buildNodesSection()
          "Direct HTTPS endpoint the relay routes clones to"},
         {kNodeColChecked, "check-circle", "Checked",
          "When that endpoint was last health checked"},
-        {kNodeColLatency, "rocket", "Latency",
+        {kNodeColLatency, "stopwatch", "Latency",
          "Endpoint response time at the last health check"},
         {kNodeColRegion, "cloud", "Region", "Region the endpoint answered from"},
         {kNodeColIntegrity, "lock", "Integrity", "Endpoint integrity"},
@@ -1229,9 +1484,9 @@ QWidget *MainWindow::buildNodesSection()
         {kNodeColClones, "download", "Clones", "Clones served"},
         {kNodeColWebsite, "eye", "Web hits", "Website requests served"},
         {kNodeColHealth, "shield-check", "Health", "Reported diagnostics"},
-        {kNodeColCpu, "graph", "CPU", "CPU"},
-        {kNodeColRam, "server", "RAM", "RAM"},
-        {kNodeColDisk, "file-directory", "Disk", "Disk"},
+        {kNodeColCpu, "pulse", "CPU", "CPU busy across all cores"},
+        {kNodeColRam, "layers", "RAM", "Memory in use"},
+        {kNodeColDisk, "file-directory", "Disk", "Disk in use"},
         {kNodeColId, "key", "Node id", "Node id (Ed25519 public key)"},
         {kNodeColActions, "gear", "Actions", "Actions"},
     };
@@ -1245,20 +1500,18 @@ QWidget *MainWindow::buildNodesSection()
                                               Theme::remapColor(QColor("#8b949e")), 14));
         headerItem->setText(QString::fromUtf8(h.text));
         headerItem->setToolTip(QString::fromUtf8(h.label));
+        headerItem->setData(kNodeHeaderIconRole, QString::fromLatin1(h.icon));
         if (h.column == kNodeColRole)
             headerItem->setData(Qt::UserRole, QStringLiteral("role"));
         m_nodesTable->setHorizontalHeaderItem(h.column, headerItem);
     }
-    // Captions ride alongside the icons across 32 columns; the theme's global
-    // 14px would push the header far past the width of the panel. An inline
-    // stylesheet is the only thing that beats the theme's QSS font size.
     m_nodesTable->horizontalHeader()->setStyleSheet(
         next ? QStringLiteral("QHeaderView::section { font-size: 12px; font-weight: 400;"
                               " padding: 0px 10px; min-height: 34px; }")
              : Theme::remapSheet(
                    "QHeaderView::section { font-size: 10px; padding: 2px 3px; }"));
     m_nodesTable->horizontalHeader()->setMinimumSectionSize(22);
-    m_nodesTable->verticalHeader()->setDefaultSectionSize(next ? 44 : 26);
+    m_nodesTable->verticalHeader()->setDefaultSectionSize(kNodeRowHeight);
     m_nodesTable->setWordWrap(false);
     m_nodesTable->verticalHeader()->setVisible(false);
     m_nodesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -1273,36 +1526,34 @@ QWidget *MainWindow::buildNodesSection()
     for (int c = kNodeColName + 1; c < kNodeColCount; ++c)
         m_nodesTable->horizontalHeader()->setSectionResizeMode(
             c, QHeaderView::ResizeToContents);
-    // Actions holds a real Delete button, and nothing that sizes columns here
-    // measures cell widgets: ResizeToContents and makeColumnsResizable() both
-    // size a column from its items, and the items in this one are empty, so the
-    // column collapses and every button is clipped to a red sliver. Keep it
-    // interactive so those passes leave it alone -- refreshNodeActionButtons()
-    // widens it to the button, the way the hosts table sizes its own actions.
     m_nodesTable->horizontalHeader()->setSectionResizeMode(
         kNodeColActions, QHeaderView::Interactive);
-    makeColumnsResizable(m_nodesTable); // spreadsheet-style draggable columns (#263)
-    auto *resourceBars = new ResourceBarDelegate(m_nodesTable);
-    resourceBars->mutedSelectionBand = true;
+    makeColumnsResizable(m_nodesTable);
+    m_nodesTable->setItemDelegateForColumn(
+        kNodeColName, new NodeCellDelegate(NodeCellDelegate::Name, m_nodesTable));
+    auto *meters = new NodeCellDelegate(NodeCellDelegate::Meter, m_nodesTable);
     for (int col : {kNodeColCpu, kNodeColRam, kNodeColDisk})
-        m_nodesTable->setItemDelegateForColumn(col, resourceBars);
+        m_nodesTable->setItemDelegateForColumn(col, meters);
+    auto *mono = new NodeCellDelegate(NodeCellDelegate::Mono, m_nodesTable);
+    for (int col : {kNodeColVersion, kNodeColRevision, kNodeColId})
+        m_nodesTable->setItemDelegateForColumn(col, mono);
+    auto *stat = new NodeCellDelegate(NodeCellDelegate::Stat, m_nodesTable);
+    for (int col = kNodeColName + 1; col < kNodeColCount; ++col) {
+        if (col == kNodeColSynced || col == kNodeColActions || col == kNodeColCpu ||
+            col == kNodeColRam || col == kNodeColDisk || col == kNodeColVersion ||
+            col == kNodeColRevision || col == kNodeColId)
+            continue;
+        m_nodesTable->setItemDelegateForColumn(col, stat);
+    }
     m_nodesTable->setItemDelegateForColumn(
         kNodeColSynced, new MirrorSyncDelegate(m_nodesTable));
-    if (next) {
-        m_nodesTable->setItemDelegateForColumn(
-            kNodeColName,
-            new NextNodeCellDelegate(NextNodeCellDelegate::Name, m_nodesTable));
-        auto *muted = new NextNodeCellDelegate(NextNodeCellDelegate::Muted, m_nodesTable);
-        for (int col : {kNodeColRole, kNodeColScope, kNodeColStatus, kNodeColActivity,
-                        kNodeColOwner, kNodeColLatency, kNodeColRegion})
-            m_nodesTable->setItemDelegateForColumn(col, muted);
-        auto *mono = new NextNodeCellDelegate(NextNodeCellDelegate::Mono, m_nodesTable);
-        for (int col : {kNodeColVersion, kNodeColRevision})
-            m_nodesTable->setItemDelegateForColumn(col, mono);
-        new NextNodesTableChrome(m_nodesTable);
+    new NextNodesTableChrome(m_nodesTable);
+    {
         QHeaderView *header = m_nodesTable->horizontalHeader();
-        header->moveSection(header->visualIndex(kNodeColLatency),
-                            header->visualIndex(kNodeColStatus) + 1);
+        int at = 1;
+        for (int col : {kNodeColStatus, kNodeColCpu, kNodeColRam, kNodeColDisk,
+                        kNodeColLatency, kNodeColHealth})
+            header->moveSection(header->visualIndex(col), at++);
     }
     auto *pacmanTick = new QTimer(m_nodesTable);
     pacmanTick->setInterval(1000);
@@ -1346,14 +1597,15 @@ QWidget *MainWindow::buildNodesSection()
             [this](int row, int) { activateNodeDirectoryRow(row); });
     connect(m_nodesTable->horizontalHeader(),
             &QHeaderView::sortIndicatorChanged, this, &MainWindow::sortNodesTable);
+    connect(m_nodesTable, &QTableWidget::cellClicked, this, [this](int row, int) {
+        const QTableWidgetItem *name = m_nodesTable->item(row, kNodeColName);
+        const QString hostKey =
+            name ? name->data(kNodeSavedHostKeyRole).toString() : QString();
+        if (!hostKey.isEmpty())
+            selectSavedHostInRail(hostKey);
+    });
+    QFrame *panel = nullptr;
     if (next) {
-        auto *body = new QHBoxLayout;
-        body->setContentsMargins(0, 0, 0, 0);
-        body->setSpacing(16);
-        auto *column = new QVBoxLayout;
-        column->setContentsMargins(0, 0, 0, 0);
-        column->setSpacing(16);
-
         auto *stats = new QHBoxLayout;
         stats->setContentsMargins(0, 0, 0, 0);
         stats->setSpacing(12);
@@ -1386,6 +1638,7 @@ QWidget *MainWindow::buildNodesSection()
             {QStringLiteral("runner"), QStringLiteral("Runners")},
             {QStringLiteral("mirror"), QStringLiteral("Mirrors")},
             {QStringLiteral("desktop"), QStringLiteral("Desktop nodes")},
+            {QStringLiteral("instance"), QStringLiteral("Instances")},
             {QStringLiteral("relay"), QStringLiteral("Relays")}};
         QStringList labels;
         for (int i = 0; i < m_nodesRoleFilter->count(); ++i) {
@@ -1418,7 +1671,9 @@ QWidget *MainWindow::buildNodesSection()
             "Show only nodes whose name, role, owner, status, region, platform or "
             "endpoint contains this text"));
         filter->setClearButtonEnabled(true);
-        filter->setFixedWidth(224);
+        filter->setMinimumWidth(120);
+        filter->setMaximumWidth(224);
+        filter->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         filter->addAction(QIcon(kit::tintedIcon(QStringLiteral("search"),
                                                 Theme::color(Theme::Role::FgSubtle), 14,
                                                 page->devicePixelRatioF())),
@@ -1441,11 +1696,8 @@ QWidget *MainWindow::buildNodesSection()
         column->addLayout(tableStack, 1);
         m_nodesStatus->setProperty("networkRole", QStringLiteral("footnote"));
         column->addWidget(m_nodesStatus);
-        body->addLayout(column, 1);
 
-        QFrame *panel = nextBuildNodePanel(page);
-        body->addWidget(panel);
-        outer->addLayout(body, 1);
+        panel = nextBuildNodePanel(page);
 
         connect(m_nodesTable, &QTableWidget::cellClicked, panel,
                 [this, panel](int row, int) {
@@ -1491,8 +1743,31 @@ QWidget *MainWindow::buildNodesSection()
             });
         }
     } else {
-        outer->addWidget(m_nodesTable, 1);
+        column->addWidget(m_nodesTable, 1);
     }
+
+    m_hostsViewStack = new QStackedWidget(page);
+    m_hostsViewStack->setObjectName(QStringLiteral("hostsViewStack"));
+    m_hostsViewStack->addWidget(nodesColumn);
+    m_hostsViewStack->addWidget(buildHostsLiveView());
+
+    auto *rightColumn = new QWidget(page);
+    rightColumn->setObjectName(QStringLiteral("networkRightColumn"));
+    auto *right = new QVBoxLayout(rightColumn);
+    right->setContentsMargins(0, 0, 0, 0);
+    right->setSpacing(12);
+    if (panel)
+        right->addWidget(panel, 3);
+    m_hostsRail = buildHostsSection();
+    right->addWidget(m_hostsRail, 2);
+    new NodeRightColumnSync(rightColumn, page, {panel, m_hostsRail});
+
+    auto *body = new QHBoxLayout;
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(next ? 16 : 10);
+    body->addWidget(m_hostsViewStack, 1);
+    body->addWidget(rightColumn);
+    outer->addLayout(body, 1);
 
     refreshChatUserDirectory();
     fetchRelayOnlineNodes();
@@ -1708,6 +1983,7 @@ void MainWindow::refreshNodesTable()
     if (m_nodesTable && m_nodesTable->isVisible()) {
         fetchRelayOnlineNodes();
         fetchNodesCatalogInfo();
+        fetchDirectoryInstances();
     }
 
     QList<NodeMenuEntry> visible;
@@ -1737,7 +2013,61 @@ void MainWindow::refreshNodesTable()
         }
     }
 
-    updateNetworkCounts(-1, meshRows.size() + runners.size(), -1);
+    QSet<QString> listed = meshNames;
+    for (const forkmesh::nodedir::RunnerRow &runner : std::as_const(runners)) {
+        listed.insert(runner.name.trimmed().toLower());
+        listed.insert(forkmesh::nodedir::runnerKey(runner.name));
+    }
+    QList<QJsonObject> hostRows;
+    {
+        QSettings settings;
+        const QJsonArray hosts =
+            forkmesh::control::loadSavedHosts(settings, kHostsSetting, nullptr);
+        for (const QJsonValue &value : hosts) {
+            const QJsonObject host = value.toObject();
+            const QString key =
+                host.value(QStringLiteral("name")).toString().trimmed().toLower();
+            if (key.isEmpty() || listed.contains(key) ||
+                listed.contains(forkmesh::nodedir::runnerKey(key)))
+                continue;
+            listed.insert(key);
+            hostRows.append(host);
+        }
+    }
+    QList<forkmesh::corelogs::CoreNode> coreRows;
+    for (const forkmesh::corelogs::CoreNode &node :
+         forkmesh::corelogs::mergeFleetNodes(forkmesh::corelogs::loadFleetNodes(),
+                                             m_vultrFleetNodes)) {
+        if (node.role == QLatin1String("runner"))
+            continue;
+        const QString key = node.name.trimmed().toLower();
+        if (key.isEmpty() || listed.contains(key) ||
+            listed.contains(QStringLiteral("fmnext-") + key) ||
+            (!node.label.isEmpty() && listed.contains(node.label.trimmed().toLower())))
+            continue;
+        listed.insert(key);
+        coreRows.append(node);
+    }
+    QList<QJsonObject> instanceRows;
+    {
+        QSet<QString> relayHosts;
+        for (const ServerConfig &server : std::as_const(m_servers))
+            relayHosts.insert(serverHost(server.url).toLower());
+        for (const QJsonValue &value : std::as_const(m_directoryInstances)) {
+            const QJsonObject instance = value.toObject();
+            const QString host =
+                QUrl(instance.value(QStringLiteral("url")).toString()).host().toLower();
+            if (host.isEmpty() || relayHosts.contains(host))
+                continue;
+            relayHosts.insert(host);
+            instanceRows.append(instance);
+        }
+    }
+
+    updateNetworkCounts(-1,
+                        int(meshRows.size() + runners.size() + hostRows.size() +
+                            coreRows.size() + instanceRows.size()),
+                        -1);
     m_nodeDotEntries = visible;
     refreshNodeDotMatrix();
     if (!m_nodesTable)
@@ -1762,7 +2092,8 @@ void MainWindow::refreshNodesTable()
     m_nodesTableStale = false;
 
     m_nodesTable->clearContents();
-    m_nodesTable->setRowCount(meshRows.size() + m_servers.size() + runners.size());
+    m_nodesTable->setRowCount(int(meshRows.size() + m_servers.size() + runners.size() +
+                                  hostRows.size() + coreRows.size() + instanceRows.size()));
     const qint64 tableNowMs = QDateTime::currentMSecsSinceEpoch();
     bool sawCatalogRecord = false;
     int row = 0;
@@ -1777,7 +2108,14 @@ void MainWindow::refreshNodesTable()
         fillRelayNodeRow(row++, i);
     for (const forkmesh::nodedir::RunnerRow &runner : std::as_const(runners))
         fillRunnerNodeRow(row++, runner, tableNowMs);
+    for (const QJsonObject &host : std::as_const(hostRows))
+        fillSavedHostNodeRow(row++, host);
+    for (const forkmesh::corelogs::CoreNode &node : std::as_const(coreRows))
+        fillFleetCoreNodeRow(row++, node);
+    for (const QJsonObject &instance : std::as_const(instanceRows))
+        fillInstanceNodeRow(row++, instance);
     mergeMirrorRowsIntoNodesTable();
+    markSavedHostNodeRows();
     if (sawCatalogRecord &&
         !m_nodesTable->property("catalogColumnsFitted").toBool()) {
         m_nodesTable->setProperty("catalogColumnsFitted", true);
@@ -2321,6 +2659,303 @@ void MainWindow::fillRunnerNodeRow(int row,
     m_nodesTable->setItem(row, kNodeColActions, actionItem);
 }
 
+void MainWindow::fillSavedHostNodeRow(int row, const QJsonObject &host)
+{
+    if (!m_nodesTable)
+        return;
+    const QString dash = nextNodeDash();
+    const QString name = host.value(QStringLiteral("name")).toString().trimmed();
+    const QString ip = host.value(QStringLiteral("ip")).toString().trimmed();
+    const QString user = host.value(QStringLiteral("user")).toString().trimmed();
+    const QString key = forkmesh::control::savedHostCredentialKey(name, ip, user);
+    QString reach = m_hostReachability.value(key);
+    reach.remove(QRegularExpression(QStringLiteral("^[^\\p{L}]+")));
+    reach = reach.trimmed();
+    const bool checking = reach.isEmpty() || reach.startsWith(QLatin1String("Checking"));
+    const bool online = reach.startsWith(QLatin1String("Online")) &&
+                        !reach.contains(QLatin1String("missing"), Qt::CaseInsensitive);
+    auto *nameItem =
+        new QTableWidgetItem(osBadgeIcon(QStringLiteral("linux"), online, 16), name);
+    nameItem->setData(Qt::UserRole, name);
+    nameItem->setData(Qt::UserRole + 5, QStringLiteral("host"));
+    nameItem->setData(kNodeSavedHostKeyRole, key);
+    if (!checking && !online)
+        nameItem->setData(kNodeLightRole, 1);
+    QStringList tip{QStringLiteral("Saved host %1@%2").arg(user, ip)};
+    const QString claude = m_hostClaudeAvailability.value(key);
+    const QString codex = m_hostCodexAvailability.value(key);
+    if (!claude.isEmpty())
+        tip.append(QStringLiteral("Claude: %1").arg(claude));
+    if (!codex.isEmpty())
+        tip.append(QStringLiteral("Codex: %1").arg(codex));
+    tip.append(QStringLiteral("Its controls are in the Hosts rail on the right."));
+    nameItem->setToolTip(tip.join(QLatin1Char('\n')));
+    m_nodesTable->setItem(row, kNodeColName, nameItem);
+    {
+        forkmesh::noderole::Facts facts;
+        facts.name = name;
+        facts.savedHost = true;
+        m_nodesTable->setItem(row, kNodeColRole, makeNodeRoleCell(nodeRoleFor(facts)));
+    }
+    m_nodesTable->setItem(row, kNodeColScope, new QTableWidgetItem(QStringLiteral("saved host")));
+    QString status = checking ? QString::fromUtf8("Checking\xE2\x80\xA6") : reach;
+    if (!checking && !online && !status.startsWith(QLatin1String("Offline")) &&
+        status.contains(QLatin1String("Unreachable"), Qt::CaseInsensitive))
+        status = QStringLiteral("Offline");
+    auto *statusItem = new QTableWidgetItem(status);
+    statusItem->setToolTip(QStringLiteral("SSH check of %1@%2 from this desktop").arg(user, ip));
+    if (online)
+        statusItem->setForeground(Theme::color(Theme::Role::Success));
+    else if (!checking)
+        statusItem->setForeground(Theme::color(Theme::Role::Warning));
+    m_nodesTable->setItem(row, kNodeColStatus, statusItem);
+    auto *endpointItem = new QTableWidgetItem(ip.isEmpty() ? dash : ip);
+    endpointItem->setToolTip(QStringLiteral("%1@%2").arg(user, ip));
+    m_nodesTable->setItem(row, kNodeColEndpoint, endpointItem);
+    const QString region = host.value(QStringLiteral("region")).toString().trimmed();
+    m_nodesTable->setItem(row, kNodeColRegion, new QTableWidgetItem(region.isEmpty() ? dash : region));
+    QStringList platform;
+    for (const char *field : {"provider", "planType"}) {
+        const QString value = host.value(QLatin1String(field)).toString().trimmed();
+        if (!value.isEmpty())
+            platform.append(value);
+    }
+    m_nodesTable->setItem(row, kNodeColPlatform,
+                          new QTableWidgetItem(platform.isEmpty()
+                                                   ? dash
+                                                   : platform.join(QString::fromUtf8(" \xC2\xB7 "))));
+    QStringList agents;
+    if (claude.contains(QLatin1String("signed in"), Qt::CaseInsensitive) ||
+        claude.startsWith(QString::fromUtf8("\xE2\x9C\x93")))
+        agents.append(QStringLiteral("Claude"));
+    if (codex.contains(QLatin1String("signed in"), Qt::CaseInsensitive) ||
+        codex.startsWith(QString::fromUtf8("\xE2\x9C\x93")))
+        agents.append(QStringLiteral("Codex"));
+    auto *activityItem = new QTableWidgetItem(agents.isEmpty() ? dash : agents.join(QStringLiteral(" + ")));
+    activityItem->setToolTip(tip.mid(1).join(QLatin1Char('\n')));
+    m_nodesTable->setItem(row, kNodeColActivity, activityItem);
+    for (int column : {int(kNodeColCpu), int(kNodeColRam), int(kNodeColDisk)})
+        m_nodesTable->setItem(row, column, makeCpuUsageCell(-1.0));
+    auto *actionItem = new QTableWidgetItem(QStringLiteral("Logs"));
+    actionItem->setData(Qt::UserRole, name);
+    actionItem->setData(Qt::UserRole + 3, QStringLiteral("host"));
+    actionItem->setData(Qt::UserRole + 4, key);
+    actionItem->setForeground(Theme::nextOr(Theme::Role::AccentFg, QColor("#58a6ff")));
+    actionItem->setToolTip(QStringLiteral("Open a live SSH log tail for %1").arg(name));
+    actionItem->setFlags(Qt::ItemIsEnabled);
+    m_nodesTable->setItem(row, kNodeColActions, actionItem);
+}
+
+void MainWindow::fillFleetCoreNodeRow(int row, const forkmesh::corelogs::CoreNode &node)
+{
+    if (!m_nodesTable)
+        return;
+    const QString dash = nextNodeDash();
+    const QString readiness = m_fleetNodeReadiness.value(node.name);
+    const bool ready = readiness.contains(QLatin1String("Ready")) &&
+                       !readiness.startsWith(QLatin1String("Not"));
+    const bool probed = node.name.startsWith(QLatin1Char('n'));
+    QString status = QStringLiteral("Listed");
+    if (ready)
+        status = QStringLiteral("Online");
+    else if (readiness == QLatin1String("Unreachable"))
+        status = QStringLiteral("Offline");
+    else if (!readiness.isEmpty())
+        status = readiness;
+    else if (probed)
+        status = QString::fromUtf8("Checking\xE2\x80\xA6");
+    auto *nameItem = new QTableWidgetItem(osBadgeIcon(QStringLiteral("linux"), ready, 16),
+                                          node.name);
+    nameItem->setData(Qt::UserRole, node.name);
+    nameItem->setData(Qt::UserRole + 5, QStringLiteral("core"));
+    nameItem->setData(Qt::UserRole + 6, node.name);
+    if (readiness.startsWith(QLatin1String("Not ready")))
+        nameItem->setData(kNodeLightRole, 1);
+    nameItem->setToolTip(node.label.isEmpty()
+                             ? QStringLiteral("ForkMesh fleet server")
+                             : QStringLiteral("ForkMesh fleet server %1").arg(node.label));
+    m_nodesTable->setItem(row, kNodeColName, nameItem);
+    m_nodesTable->setItem(row, kNodeColRole, makeNodeRoleCell(forkmesh::noderole::Role::Core));
+    m_nodesTable->setItem(row, kNodeColScope,
+                          new QTableWidgetItem(node.name.startsWith(QLatin1Char('a'))
+                                                   ? QStringLiteral("autoscaled")
+                                                   : QStringLiteral("fleet")));
+    auto *statusItem = new QTableWidgetItem(status);
+    if (ready)
+        statusItem->setForeground(Theme::color(Theme::Role::Success));
+    statusItem->setToolTip(probed ? QStringLiteral("https://%1.next.forkmesh.com/readyz: %2")
+                                        .arg(node.name, readiness.isEmpty()
+                                                            ? QStringLiteral("not checked yet")
+                                                            : readiness)
+                                  : QStringLiteral("Listed in the fleet inventory"));
+    m_nodesTable->setItem(row, kNodeColStatus, statusItem);
+    auto *endpointItem = new QTableWidgetItem(node.address.isEmpty() ? dash : node.address);
+    if (!node.label.isEmpty())
+        endpointItem->setToolTip(node.label);
+    m_nodesTable->setItem(row, kNodeColEndpoint, endpointItem);
+    m_nodesTable->setItem(row, kNodeColPlatform, new QTableWidgetItem(QStringLiteral("Vultr")));
+    for (int column : {int(kNodeColCpu), int(kNodeColRam), int(kNodeColDisk)})
+        m_nodesTable->setItem(row, column, makeCpuUsageCell(-1.0));
+    auto *actionItem = new QTableWidgetItem(QStringLiteral("Logs"));
+    actionItem->setData(Qt::UserRole, node.name);
+    actionItem->setData(Qt::UserRole + 3, QStringLiteral("runner"));
+    actionItem->setData(Qt::UserRole + 4, node.name);
+    actionItem->setForeground(Theme::nextOr(Theme::Role::AccentFg, QColor("#58a6ff")));
+    actionItem->setToolTip(QStringLiteral("Open the Log page filtered to %1's journal").arg(node.name));
+    actionItem->setFlags(Qt::ItemIsEnabled);
+    m_nodesTable->setItem(row, kNodeColActions, actionItem);
+}
+
+void MainWindow::fillInstanceNodeRow(int row, const QJsonObject &instance)
+{
+    if (!m_nodesTable)
+        return;
+    const QString dash = nextNodeDash();
+    const QString url = instance.value(QStringLiteral("url")).toString().trimmed();
+    const QString host = QUrl(url).host();
+    QString name = instance.value(QStringLiteral("name")).toString().trimmed();
+    if (name.isEmpty())
+        name = host;
+    const bool online = instance.value(QStringLiteral("status")).toString() ==
+                        QLatin1String("online");
+    auto *nameItem = new QTableWidgetItem(name);
+    nameItem->setData(Qt::UserRole, name);
+    nameItem->setData(Qt::UserRole + 5, QStringLiteral("instance"));
+    nameItem->setData(Qt::UserRole + 6, host);
+    nameItem->setToolTip(QStringLiteral("%1\nSelf-hosted ForkMesh instance in the public "
+                                        "directory%2")
+                             .arg(url, instance.value(QStringLiteral("world")).toBool()
+                                           ? QStringLiteral(", with a World hexagon")
+                                           : QString()));
+    m_nodesTable->setItem(row, kNodeColName, nameItem);
+    m_nodesTable->setItem(row, kNodeColRole,
+                          makeNodeRoleCell(forkmesh::noderole::Role::Instance));
+    m_nodesTable->setItem(row, kNodeColScope,
+                          new QTableWidgetItem(instance.value(QStringLiteral("world")).toBool()
+                                                   ? QStringLiteral("world")
+                                                   : QStringLiteral("listed")));
+    auto *statusItem = new QTableWidgetItem(online ? QStringLiteral("Online")
+                                                   : QString::fromUtf8("Checking\xE2\x80\xA6"));
+    if (online)
+        statusItem->setForeground(Theme::color(Theme::Role::Success));
+    statusItem->setToolTip(QStringLiteral("The directory probes https://%1/readyz every 15 minutes")
+                               .arg(host));
+    m_nodesTable->setItem(row, kNodeColStatus, statusItem);
+    auto *endpointItem = new QTableWidgetItem(host.isEmpty() ? dash : host);
+    endpointItem->setToolTip(url);
+    m_nodesTable->setItem(row, kNodeColEndpoint, endpointItem);
+    const qint64 checkedSecs = qint64(instance.value(QStringLiteral("checkedAt")).toDouble()) / 1000;
+    auto *checkedItem = new SortTableWidgetItem(
+        checkedSecs > 0 ? formatShortRelativeTime(checkedSecs) + QStringLiteral(" ago") : dash);
+    checkedItem->setData(kTableSortRole, double(checkedSecs));
+    checkedItem->setToolTip(QStringLiteral("Last directory health check"));
+    m_nodesTable->setItem(row, kNodeColChecked, checkedItem);
+    for (int column : {int(kNodeColCpu), int(kNodeColRam), int(kNodeColDisk)})
+        m_nodesTable->setItem(row, column, makeCpuUsageCell(-1.0));
+    auto *actionItem = new QTableWidgetItem(url.isEmpty() ? QString() : QStringLiteral("Website"));
+    actionItem->setData(Qt::UserRole, name);
+    actionItem->setData(Qt::UserRole + 3, QStringLiteral("instance"));
+    actionItem->setData(Qt::UserRole + 4, url);
+    actionItem->setForeground(Theme::nextOr(Theme::Role::AccentFg, QColor("#58a6ff")));
+    actionItem->setToolTip(QStringLiteral("Open %1 in the browser").arg(name));
+    actionItem->setFlags(Qt::ItemIsEnabled);
+    m_nodesTable->setItem(row, kNodeColActions, actionItem);
+}
+
+void MainWindow::markSavedHostNodeRows()
+{
+    if (!m_nodesTable)
+        return;
+    QSettings settings;
+    const QJsonArray hosts =
+        forkmesh::control::loadSavedHosts(settings, kHostsSetting, nullptr);
+    QHash<QString, QString> keyByName;
+    for (const QJsonValue &value : hosts) {
+        const QJsonObject host = value.toObject();
+        const QString name = host.value(QStringLiteral("name")).toString().trimmed();
+        if (name.isEmpty())
+            continue;
+        keyByName.insert(name.toLower(),
+                         forkmesh::control::savedHostCredentialKey(
+                             name, host.value(QStringLiteral("ip")).toString(),
+                             host.value(QStringLiteral("user")).toString()));
+    }
+    for (int row = 0; row < m_nodesTable->rowCount(); ++row) {
+        QTableWidgetItem *name = m_nodesTable->item(row, kNodeColName);
+        if (!name || name->data(kNodeGroupChildRole).toBool())
+            continue;
+        const QString kind = name->data(Qt::UserRole + 5).toString();
+        if (kind == QLatin1String("relay") || kind == QLatin1String("instance"))
+            continue;
+        const QString key = keyByName.value(name->data(Qt::UserRole).toString().trimmed().toLower());
+        if (!key.isEmpty())
+            name->setData(kNodeSavedHostKeyRole, key);
+    }
+}
+
+void MainWindow::fetchDirectoryInstances(bool force)
+{
+#ifndef FORKMESH_WINDOW_TESTS
+    if (!m_networkAccess)
+        return;
+    const QString backoffKey = QStringLiteral("directory-instances");
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 minIntervalMs = force ? 60000 : 10 * 60000;
+    if (m_directoryInstancesFetchedMs > 0 &&
+        now - m_directoryInstancesFetchedMs < minIntervalMs)
+        return;
+    if (!m_pollBackoff.ready(backoffKey, now))
+        return;
+    m_directoryInstancesFetchedMs = now;
+    QUrl url(kDefaultServerUrl);
+    url.setScheme(url.scheme() == QLatin1String("ws") ? QStringLiteral("http")
+                                                      : QStringLiteral("https"));
+    url.setPath(QStringLiteral("/api/start/instances"));
+    url.setQuery(QString());
+    url.setFragment(QString());
+    QNetworkRequest request(url);
+    request.setRawHeader("accept", "application/json");
+    request.setTransferTimeout(15000);
+    QNetworkReply *reply = m_networkAccess->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, backoffKey] {
+        const QByteArray body = reply->read(512 * 1024);
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        const QJsonObject resp = QJsonDocument::fromJson(body).object();
+        if (!ok || !resp.value(QStringLiteral("ok")).toBool()) {
+            m_pollBackoff.noteFailure(backoffKey, QDateTime::currentMSecsSinceEpoch());
+            return;
+        }
+        m_pollBackoff.noteSuccess(backoffKey);
+        QJsonArray instances;
+        for (const QJsonValue &value : resp.value(QStringLiteral("instances")).toArray()) {
+            const QJsonObject instance = value.toObject();
+            const QUrl site(instance.value(QStringLiteral("url")).toString());
+            if (site.scheme() != QLatin1String("https") || site.host().isEmpty())
+                continue;
+            instances.append(instance);
+        }
+        if (instances == m_directoryInstances)
+            return;
+        m_directoryInstances = instances;
+        scheduleNodesTableRefresh();
+    });
+#else
+    Q_UNUSED(force);
+#endif
+}
+
+void MainWindow::scheduleNodesTableRefresh()
+{
+    if (!m_nodesTable || m_nodesTableRefreshQueued)
+        return;
+    m_nodesTableRefreshQueued = true;
+    QTimer::singleShot(250, this, [this] {
+        m_nodesTableRefreshQueued = false;
+        refreshNodesTable();
+    });
+}
+
 void MainWindow::activateNodeDirectoryRow(int row)
 {
     if (!m_nodesTable || row < 0 || row >= m_nodesTable->rowCount())
@@ -2331,6 +2966,20 @@ void MainWindow::activateNodeDirectoryRow(int row)
     const QString kind = action->data(Qt::UserRole + 3).toString();
     if (kind == QLatin1String("relay")) {
         openServerWebsite(action->data(Qt::UserRole + 4).toInt());
+    } else if (kind == QLatin1String("instance")) {
+        const QUrl url(action->data(Qt::UserRole + 4).toString());
+        if (url.scheme() == QLatin1String("https") && !url.host().isEmpty())
+            QDesktopServices::openUrl(url);
+    } else if (kind == QLatin1String("host")) {
+        const QString key = action->data(Qt::UserRole + 4).toString();
+        for (int hostRow = 0; m_hostsTable && hostRow < m_hostsTable->rowCount(); ++hostRow) {
+            const QTableWidgetItem *host = m_hostsTable->item(hostRow, 0);
+            if (host && host->data(Qt::UserRole).toString() == key) {
+                selectSavedHostInRail(key);
+                viewHostLogsForSelection(hostRow);
+                break;
+            }
+        }
     } else if (kind == QLatin1String("runner")) {
         const QString feed = action->data(Qt::UserRole + 4).toString();
         if (!feed.isEmpty())

@@ -2657,6 +2657,8 @@ public:
     void testSetRelayOnlineNodes(const QStringList &nodes);
     void testSetVultrFleetJson(const QByteArray &instancesJson);
     void testSetRunnersPayload(const QJsonObject &payload);
+    void testSetDirectoryInstances(const QJsonArray &instances);
+    QStringList testNodeDirectoryVisualCaptions() const;
     QPushButton *testRunnerAttentionButton() const
     {
         return m_runnerAttentionButton;
@@ -5959,6 +5961,15 @@ private:
     void fillRunnerNodeRow(int row, const forkmesh::nodedir::RunnerRow &runner,
                            qint64 nowMs);
     QList<forkmesh::nodedir::RunnerRow> directoryRunnerRows() const;
+    void fillSavedHostNodeRow(int row, const QJsonObject &host);
+    void fillFleetCoreNodeRow(int row, const forkmesh::corelogs::CoreNode &node);
+    void fillInstanceNodeRow(int row, const QJsonObject &instance);
+    void markSavedHostNodeRows();
+    void fetchDirectoryInstances(bool force = false);
+    void scheduleNodesTableRefresh();
+    bool hostsRailOnScreen() const;
+    void revealHostsRailSection(QWidget *child);
+    void selectSavedHostInRail(const QString &hostKey);
     void activateNodeDirectoryRow(int row);
     void showNodesForRole(const QString &roleKey);
     void openNodeLogsFor(const QString &feedName);
@@ -12280,6 +12291,11 @@ private:
     QProcess *m_hostAgentInstallProcess = nullptr; // Claude/Codex CLI install
     QProcess *m_hostDiskProcess = nullptr;    // running ssh size-map read, if any
     QStackedWidget *m_hostsViewStack = nullptr;   // saved-host list | live view
+    QWidget *m_hostsRail = nullptr;
+    QJsonArray m_directoryInstances;
+    qint64 m_directoryInstancesFetchedMs = 0;
+    QHash<QString, QString> m_fleetNodeReadiness;
+    bool m_nodesTableRefreshQueued = false;
     QPushButton *m_hostsLiveViewButton = nullptr;
     QWidget *m_hostsLivePanes = nullptr;          // row of per-host live panes
     QLabel *m_hostsLiveSummary = nullptr;
@@ -12452,7 +12468,7 @@ private:
     QTimer *m_networkWebRequestsRefreshTimer = nullptr;
     QTabWidget *m_networkTabs = nullptr;
     static constexpr int kNetworkNodesTab = 0;
-    static constexpr int kNetworkHostsTab = 1;
+    static constexpr int kNetworkHostsTab = kNetworkNodesTab;
     static constexpr int kRetiredMirrorNodesDetailTab = 13;
     int m_networkRelayCount = 0;
     int m_networkNodeCount = 0;

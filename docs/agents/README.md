@@ -371,8 +371,8 @@ running jobs keep their binary. The update's exit status is unchanged.
 
 ## Operations
 
-- Mirror CLI sign-in: **Network → Hosts** has an agent-CLI installer and a
-  sign-in shell per host.
+- Mirror CLI sign-in: the Hosts rail beside **Network → Nodes** has an
+  agent-CLI installer and a sign-in shell per host.
 - A job stuck unclaimed: check the target node is online and advertises the
   provider.
 - A terminal report the relay keeps refusing (6 conflicts) is dropped
