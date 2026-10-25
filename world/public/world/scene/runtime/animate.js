@@ -409,6 +409,7 @@ export function functions({
       }
     }
     fns.updateAvatarVoice?.(delta, time);
+    fns.updateGenieSpider?.(delta, time);
     for (let index = ctx.rewardFlights.length - 1; index >= 0; index -= 1) {
       const flight = ctx.rewardFlights[index];
       const elapsed = time - flight.startedAt;

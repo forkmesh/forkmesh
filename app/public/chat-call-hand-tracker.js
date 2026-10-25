@@ -8,12 +8,14 @@ const PALM_SIZE = 192;
 const HAND_SIZE = 224;
 const PALM_SCORE = 0.55;
 const HAND_SCORE = 0.5;
+const HAND_KEEP_SCORE = 0.32;
 const PALM_SCALE = 2.6;
 const PALM_SHIFT = 0.5;
 const TRACK_SCALE = 2.0;
 const TRACK_SHIFT = 0.1;
 const MAX_HANDS = 2;
 const REDETECT_MS = 900;
+const SEARCH_MS = 300;
 
 export const HAND_POINTS = Object.freeze({
   wrist: 0,
@@ -367,7 +369,7 @@ export function createHandTracker(gl, models, format = floatTargets(gl)) {
     const [pointGroup, presenceGroup, sideGroup] = models.hand.outputs;
     const presence = readChannels(landmarks, presenceGroup)[0];
     const score = presence > 1 || presence < 0 ? 1 / (1 + Math.exp(-presence)) : presence;
-    if (score < HAND_SCORE) return null;
+    if (score < (roi.followed ? HAND_KEEP_SCORE : HAND_SCORE)) return null;
     const raw = readChannels(landmarks, pointGroup);
     const side = readChannels(landmarks, sideGroup)[0];
     const c = Math.cos(roi.angle);
@@ -383,7 +385,7 @@ export function createHandTracker(gl, models, format = floatTargets(gl)) {
 
   return {
     track(camera, width, height, time = performance.now()) {
-      if (rois.length < MAX_HANDS && time - lastDetect > REDETECT_MS) {
+      if (rois.length < MAX_HANDS && time - lastDetect > (rois.length ? REDETECT_MS : SEARCH_MS)) {
         lastDetect = time;
         for (const found of detect(camera, width, height)) {
           if (rois.length >= MAX_HANDS) break;
@@ -395,7 +397,7 @@ export function createHandTracker(gl, models, format = floatTargets(gl)) {
       for (const roi of rois) {
         const hand = landmark(camera, roi, width, height);
         if (!hand) continue;
-        const follow = roiFromHand(hand.points);
+        const follow = { ...roiFromHand(hand.points), followed: true };
         if (next.some((other) => Math.hypot(other.cx - follow.cx, other.cy - follow.cy) < other.size * 0.35)) continue;
         next.push(follow);
         const { palm } = fingerStates(hand.points);

@@ -20,6 +20,12 @@
      ]
     },
     {
+     "title": "World",
+     "items": [
+      "When your microphone or camera is on, a live chart scrolls your frame rate, mic level, tracking time and round trip, and a blinking On air sign shows under your face in the corner and on your avatar.",
+      "Your camera now moves your uploaded avatar photo instead of the drawn face, both on your body and in the top-right corner, and arms and hands follow you more steadily, including how far forward you reach.",
+      "Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included.",
+      "The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings."
      "title": "iPhone",
      "items": [
       "The iPhone app stays signed in to your instances after the phone restarts."
