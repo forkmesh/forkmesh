@@ -7,6 +7,7 @@
 #include "../src/AgentJail.h"
 #include "../src/AgentStore.h"
 #include "../src/AgentWorktree.h"
+#include "../src/SourceDir.h"
 #include "../src/BackgroundActivity.h"
 #include "../src/BackoffNetworkAccessManager.h"
 #include "../src/ChatHistoryLimits.h"
@@ -3332,7 +3333,7 @@ int main(int argc, char *argv[])
               "every shipped endpoint catalog entry is valid");
         {
             // Each entry names where its call is made, and the file exists.
-            const QDir repoRoot(QStringLiteral(FORKMESH_SOURCE_DIR "/.."));
+            const QDir repoRoot(forkmesh::sourceDir() + QStringLiteral("/.."));
             QStringList missing;
             for (const FW::EndpointProfile &profile : shippedProfiles) {
                 if (profile.sources.isEmpty())

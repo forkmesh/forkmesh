@@ -1,5 +1,6 @@
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
+#include "SourceDir.h"
 #include "TeammateStore.h"
 
 #include <QCoreApplication>
@@ -419,7 +420,7 @@ int main(int argc, char **argv)
     }
 
     const QString repositoryRoot =
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).absoluteFilePath(QStringLiteral(".."));
+        QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral(".."));
     const QDir shipped(QDir(repositoryRoot).filePath(kFolder));
     int shippedAgents = 0;
     for (const QFileInfo &info : shipped.entryInfoList({QStringLiteral("*.json")}, QDir::Files)) {
