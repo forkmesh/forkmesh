@@ -121,13 +121,21 @@ The desktop has no toasts or floating cards; information is shown inline.
   types) and every category while logging is off. It runs from
   `rebuildLogFilterButtons()`, which every on/off switch already calls.
 - Every chart is the size of one quadrant of the CPU/RAM/swap/disk chart: UP,
-  NET, LOG and LOOP make one 2x2 block, EVT, PAINT, UI and POOL another
-  (`kResourceSparklineCompactSide`). They are too small for captions, so
+  NET, LOG and STALL make one 2x2 block, LOOP, EVT, PAINT and UI another, POOL
+  and the TMP-disk tiles a third (`kResourceSparklineCompactSide`). They are too small for captions, so
   hovering a chart opens `SparklineHoverCard`: its name, the current value, a
   larger chart of the last minute, now/avg/min/peak, and the tile's diagnostic
   text. The card re-reads its tile every 250 ms while the pointer stays on it,
   so it is live, and moving to the next chart swaps it without the tooltip
   delay. The resource quadrants open the same card.
+- STALL (`debugStallTile`, 2026-10-25) is a live chart of UI stalls: each
+  second's point is the longest stall `StallWatchdog` reported in that second
+  (`m_debugStallPeakSinceSampleMs`, set by `onUiStall`, read by
+  `updateFooterDiagnostics`), on a 2-second scale (`kDebugStallChartMaxMs`) so
+  a 1.4 s freeze already shows amber. LOOP's scale tops out at 200 ms, so it
+  pegs on every freeze without telling a half-second one from a ten-second one.
+  Its card lists the session's stall count, the longest and the last; a click
+  opens the Log filtered to "UI stalled".
 - The footer CPU/RAM/stall indicator opens the stall details;
   `src/SystemPressure.*` reads Linux PSI to tell system-wide starvation from an
   app freeze.

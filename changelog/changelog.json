@@ -12,6 +12,12 @@
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
      ]
+    },
+    {
+     "title": "Desktop",
+     "items": [
+      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls."
+     ]
     }
    ]
   },
