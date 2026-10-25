@@ -60,7 +60,9 @@ At startup and then hourly, `cleanUnused()` removes:
 - anything in a live scratch folder's `tmp/` not modified for a day.
 
 The Action sandbox sweep (`ActionRunner::reclaimSandboxes`) already runs on
-whatever `sandboxDir()` returns. Every delete goes through
+whatever `sandboxDir()` returns. The node deploy agent
+(`tools/next_autodeploy.py`) scans both sandbox folders for Deploy nodes runs;
+see `docs/deploy/auto-deploy.md`. Every delete goes through
 `safedelete::removeTree` with the folder's own parent.
 
 ### Erasing it

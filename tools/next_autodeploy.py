@@ -648,13 +648,55 @@ def actions_root(layout=None) -> Path:
     return (layout or forkmesh_paths.resolve()).data_path("actions")
 
 
-def running_runs(root: Path) -> list:
-    sandbox = root / "sandbox"
-    runs = []
+TMP_DISK_LABEL = "TMP"
+TMP_DISK_LABEL_DIR = Path("/dev/disk/by-label")
+MOUNTS_FILE = Path("/proc/self/mounts")
+
+
+def _unescape_mount_field(value: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+
+def tmp_disk_actions_root(label_dir=None, mounts_file=None):
+    label_dir = Path(label_dir or TMP_DISK_LABEL_DIR)
+    mounts_file = Path(mounts_file or MOUNTS_FILE)
     try:
-        entries = list(os.scandir(sandbox))
-    except FileNotFoundError:
-        return runs
+        device = (label_dir / TMP_DISK_LABEL).resolve(strict=True)
+        text = mounts_file.read_text("utf-8", "replace")
+    except (OSError, RuntimeError):
+        return None
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        source, target = _unescape_mount_field(fields[0]), _unescape_mount_field(fields[1])
+        try:
+            if Path(source).resolve() != device:
+                continue
+        except (OSError, RuntimeError):
+            continue
+        if target == "/" or not os.path.isdir(target):
+            continue
+        return Path(target) / "ForkMesh" / "actions"
+    return None
+
+
+def sandbox_dirs(root: Path) -> list:
+    dirs = [root / "sandbox"]
+    fast = tmp_disk_actions_root()
+    if fast is not None and fast / "sandbox" not in dirs:
+        dirs.append(fast / "sandbox")
+    return dirs
+
+
+def running_runs(root: Path) -> list:
+    runs = []
+    entries = []
+    for sandbox in sandbox_dirs(root):
+        try:
+            entries.extend(os.scandir(sandbox))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
     newest = {}
     for entry in entries:
         match = RUN_DIR_RE.match(entry.name)

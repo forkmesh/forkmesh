@@ -30,6 +30,18 @@ install` copies `tools/next_autodeploy.py`, `next_common.py`,
 pinned worktree or the test archive of the commit being deployed, so it is
 always that commit's code.
 
+**Where it finds runs.** The agent looks for running "Deploy nodes" runs in
+`<data>/actions/sandbox` and, when a filesystem labelled `TMP` is mounted, in
+`<mount>/ForkMesh/actions/sandbox` too (`sandbox_dirs`,
+`tmp_disk_actions_root`). Run metadata stays in `<data>/actions/runs` either
+way. The desktop moved Action sandboxes to the TMP disk on 2026-10-24
+(`docs/desktop/tmp-disk.md`); an agent that only scanned the data folder never
+saw those runs, so every Deploy nodes run after that failed with "The node
+deploy agent did not pick up this run within 3 minutes". Because the agent
+updates itself only after a deploy, an agent from before this fix cannot pick
+up the run that would update it: run `python3 tools/next_autodeploy.py install`
+once from a checkout that has the fix.
+
 ## Trigger
 
 - **Only `main`** of the served repository, and only commits on the source
