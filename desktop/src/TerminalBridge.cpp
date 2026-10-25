@@ -236,7 +236,7 @@ QString tomlString(const QString &value)
         if (ch == QLatin1Char('"') || ch == QLatin1Char('\\'))
             out += QLatin1Char('\\') + QString(ch);
         else if (ch.unicode() < 0x20 || ch.unicode() == 0x7f)
-            out += QStringLiteral("\\u%1").arg(ch.unicode(), 4, 16, QLatin1Char('0'));
+            out += QStringLiteral("\\u%1").arg(static_cast<uint>(ch.unicode()), 4, 16, QLatin1Char('0'));
         else
             out += ch;
     }

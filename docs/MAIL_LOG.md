@@ -156,6 +156,34 @@ normal path, at most once a minute.
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
+## The sender
+
+Since 2026-10-25 every email the servers send comes from one verified
+mailbox, `founders@forkmesh.com`, so a recipient who replies reaches a person
+(the user's choice; before, most mail came from `no-reply@forkmesh.com`,
+which nobody reads).
+
+- `smtp_mail.SENDER` is the app's default when `MAIL_SENDER` and
+  `MAILTRAP_SENDER` are unset; package mail always uses it. The IDS direct
+  mailer (`mail_from` empty) and `tools/mac_adhoc_publish.py` use it too.
+- The envelope sender (Return-Path) stays `no-reply@<sender domain>`
+  (`smtp_mail.envelope_sender`, `sendmail -f` in the build notice), so
+  bounces and delivery reports go to the old address rather than the
+  founders inbox. SPF and DMARC still align: both are `forkmesh.com`.
+- Mail Postfix makes itself (cron and other system mail as
+  `root@forkmesh.com`, non-delivery notices from
+  `MAILER-DAEMON@nN.next.forkmesh.com`) is rewritten to the same sender by
+  `sender_canonical_maps = regexp:/etc/postfix/sender_canonical`
+  (`next_mail.SENDER_CANONICAL`). The table leaves `founders@` and
+  `no-reply@` untouched, so the app's mail, which OpenDKIM signs as it is
+  received over SMTP, is never rewritten after signing; locally made mail is
+  rewritten by cleanup before its milter signs it. Bounces keep their empty
+  envelope sender. Rolling the table out needs
+  `next_mail.py install nN --execute` on each core.
+- White-label instances keep their own `MAIL_SENDER`
+  ([INSTANCES.md](INSTANCES.md)); one that sends through SMTP gets the
+  envelope sender `no-reply@` its own domain.
+
 ## Branding
 
 Every card from `_forkmesh_email_card_html` starts with
