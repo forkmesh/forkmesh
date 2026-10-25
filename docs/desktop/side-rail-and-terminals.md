@@ -85,9 +85,10 @@ refreshes the Special Agents home pages.
 
 `#sideRailBrowserPanel` opens to the left of the rail with a
 `WorkspaceBrowserPane` (the same pane as the Agents workspace's Browser tab,
-library `forkmesh-browser-pane`). With Qt WebEngine (`-DFORKMESH_BROWSER_PANE=ON`)
-pages render inside it; without it the pane shows the address and opens pages
-in the system browser. Only `http` and `https` load. The panel's width is
+library `forkmesh-browser-pane`). When the build finds Qt WebEngine pages
+render inside it with Google's background services switched off
+([browser.md](browser.md)); without it the pane shows the address and opens
+pages in the system browser. Only `http` and `https` load. The panel's width is
 dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 420); whether it is open and the last address are kept in
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their
