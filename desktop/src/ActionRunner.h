@@ -69,6 +69,14 @@ public:
     void stop();
 
     void setSandboxLimitsForTesting(const ActionSandboxLimits &limits);
+#ifdef FORKMESH_ACTION_STORE_TESTS
+    void feedProcessOutputForTesting(const QByteArray &bytes)
+    {
+        emitProcessOutput(bytes);
+    }
+    int crashContextUpdatesForTesting() const { return m_crashContextUpdates; }
+    bool crashContextRefreshPendingForTesting() const;
+#endif
 
     // Cached for a minute; probeSandboxAvailability() is the uncached probe.
     static bool sandboxAvailable(QString *reason = nullptr);
@@ -207,5 +215,7 @@ private:
     QTimer *m_stepTimer = nullptr;
     QTimer *m_jobTimer = nullptr;
     QTimer *m_terminationTimer = nullptr;
+    QTimer *m_crashContextTimer = nullptr;
+    mutable int m_crashContextUpdates = 0;
     QProcess *m_process = nullptr;
 };

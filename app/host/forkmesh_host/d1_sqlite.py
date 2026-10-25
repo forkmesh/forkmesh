@@ -316,7 +316,7 @@ def apply_app_schema(db, entry_module):
 
     The migrations stamp the schema fingerprint, so ``ensure_schema`` takes
     its fast path on a database built only from app/migrations; but schema.py
-    still creates tables no migration does (``system_status_minute`` ...).
+    still creates tables no migration does (``issue_bounty`` ...).
     Production D1 has them from earlier full applies; a fresh database needs
     this once. Returns the number of statements that failed (ALTERs of
     columns that already exist are expected to).

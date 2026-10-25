@@ -171,6 +171,14 @@ Releases dropped from every channel at `HEAD` lose their blobs after the
 minimum age, so an old version stays downloadable by hash only while some
 channel still names it.
 
+Old candidates are retired by removing their `.forkmesh/releases/candidate-*`
+folders on `main`; nothing removes them on its own. On 2026-10-25 the 16
+candidates from 0.7.95 to 1.2.8 held 4.9 GB in every store, 4.3 GB of it named
+by no channel but themselves. `candidate-0.7.95` through `candidate-1.2.7` were
+removed, keeping `latest` and `candidate-1.2.8`, the one it was promoted from.
+`tools/forkmesh-release-host.py` never revisits a candidate older than
+`latest`, so removing older ones changes no rollout or completion.
+
 ## Protocols
 
 - `release.json`: `schema`, `repo`, `tag`, `tag_commit`, `build_commit`,

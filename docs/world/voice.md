@@ -156,14 +156,58 @@ fronts face -Z, the avatar's right is +X).
 
 ## Faces, voices and video
 
-The camera's default face is the person's avatar: their photo when they wear
-it on their World face, or their drawn portrait. "Also send video" adds a
+The camera's default face is the person's avatar: their uploaded photo, or
+the drawn portrait only for someone with no photo or who chose "generated" in
+settings. Until 2026-10-25 your own avatar showed the drawn portrait whenever
+the camera was on: the local puppet never got the photo's 68 anchor points
+(they were only sent to others), and anyone whose photo had no detectable
+face, or whose anchors had not arrived yet, fell back to the drawing too. Now
+`createAvatarPuppets` warps the photo whenever there is one: with the photo's
+own anchors when they are known, otherwise with `portraitFaceAnchors()`, the
+face template placed where a centred head-and-shoulders portrait has it (eyes
+at 42% of the height, face 62% of the width). Your own photo comes from the
+signed-in session (`ownFacePhoto` in `world.js`) when the 3D face has not
+loaded it yet, and `world-voice.js` hands the anchors to your local puppet.
+
+The same live face is copied into the round launcher in the top-right corner
+(`paintHudLiveFace`, a canvas over the photo), so you see your own face move
+there and on your body. It goes back to the still photo when tracking stops.
+
+## On air
+
+While your microphone or camera is on, a red "On air" sign blinks under the
+top-right face (`[data-world-on-air]`, set by `syncVoiceButtons`) and the
+launcher gets a red ring. Everyone else sees the same sign on your avatar's
+chest: `setAvatarOnAir` puts a small "ON AIR" plate on any avatar whose
+presence has `mic` or `cam`, blinking about once a second, and keeps that
+avatar at full detail. With reduced motion the corner sign does not blink. "Also send video" adds a
 video track to the room. It goes through the face changer with the face
 chosen in `forkmesh.chat.callFace` on the World origin, `avatar` by default,
 and the voice changer applies to the room audio in every mode. These are the
 same `createFmmLocal` stages `/chat` uses.
 
 ## Hands and reactions
+
+**Better arm and hand following (2026-10-25).**
+
+- Searching for a hand runs every 0.3 s while none is followed (0.9 s with
+  one), and a hand already followed is kept down to a 0.32 presence score
+  (0.5 for a new one), so hands no longer flicker out between frames.
+- Hand tracking runs on every camera frame when it takes under 14 ms.
+- With two hands, the one on the image's left is always the right hand and
+  the other the left, so both arms move instead of one arm jumping between
+  them. One hand keeps its side while it stays within 1.4 eye spans of where
+  it was (`assignHandSides`).
+- Each hand is smoothed with a speed-adaptive filter (slow movements are
+  steadied, fast ones follow at once) and held for 320 ms when tracking drops
+  for a moment (`createHandSmoother`).
+- Without a face in view, hands are placed against the image itself
+  (`imageFrame`) instead of being dropped.
+- Depth: the palm's size against the eye span says how far the hand is in
+  front of the face. It travels as a tenth hand value (`z`, -255..255,
+  hundredths; old 9-value hands still decode as 0, and `sanitize_rig`
+  accepts 9 or 10), and the avatar's hand reaches forward with it, up to
+  0.8 units.
 
 The hand models are MediaPipe's `palm_detection_lite` and
 `hand_landmark_lite` (Apache 2.0), converted to `.fmnn` by
@@ -182,6 +226,15 @@ swung three times in 1.4 s is a wave. A gesture held 450 ms fires once, with
 2.5 s between any two. On the five MediaPipe test photos (thumb up, victory,
 pointing up, fist, two open hands) the tracker found every hand and named
 every gesture.
+
+Every reaction also pops on screen (`world-reaction-pops.js`): a big emoji
+that springs up, wobbles and floats away over the reacting avatar's head
+(`avatarScreenPoint`), with eight small copies bursting outward, a gold ring
+and a name chip. Your own reactions pop big with "You · Thumbs up"; other
+people's pop over their avatar with their name, and big when aimed at you.
+Everyone in the World sees them, because the server already broadcasts every
+reaction. At most 14 are on screen; reduced motion shows only the emoji and
+label fading. The Genie spider joins in with a matching act.
 
 A fired gesture, or a reaction button in the voice panel, sends
 `{"type": "interaction", "kind": "reaction", "reaction", "target"}` where the
@@ -243,6 +296,27 @@ them (`fetchRooms`), and `joinRoom` loads them when asked for a room it does
 not know yet. Before this, `fetchRooms` was never called, so the Office
 meeting board only ever offered #general.
 
+## Camera and microphone permission
+
+The World page and the chat it embeds must be allowed to use the camera.
+Until 2026-10-24 every World route inherited the site-wide
+`Permissions-Policy: camera=()` from `www/public/_headers`, so turning on the
+camera logged "Permissions policy violation: camera is not allowed in this
+document" and the avatar never moved. Now:
+
+- `/world` and `/world/*` in `www/public/_headers` replace the policy with
+  `camera=(self), microphone=(self)`; everything else stays blocked.
+- The World's index handle in `deploy/core/caddy_routes.py` serves `/`,
+  `/world` and `/world/`, but Caddy evaluates header matchers before the
+  rewrite to `/world/index.html`, so `world.forkmesh.com/` only got the
+  `/*` rule. The handle now also applies the `/world` rule
+  (`path_rule_directives`), so the same document gets the same headers on
+  every index path.
+- `/chat?embed=world` reaches the App worker on the World host, and
+  `_apply_browser_security_headers` (`app/src/entry.py`) used to give it
+  `camera=()`. It now gives `/chat` and `/chat.html` the device-page policy
+  and `mediastream:` in `media-src`, the same as the static `/chat` rule.
+
 ## Performance badge and diagnostic report
 
 While a room, the microphone or the camera is on, a small badge above the
@@ -255,6 +329,19 @@ details and "Send diagnostic report", which posts to `/api/bug-reports`
 kind and size, mic, camera, engine and call state, the last 20 call quality
 samples, `diagnoseCall`'s findings, tracking statistics, renderer quality and
 device. It carries no names, room ids, secrets or audio.
+
+## Live diagnostics chart
+
+While a room, the microphone or the camera is on, a small chart above the
+performance badge scrolls the last 30 seconds, sampled every 100 ms
+(`world-voice-chart.js`, `sampleChart` in `world-voice.js`). It has four
+strips, each on its own scale with its current value at the right: frames per
+second, microphone level, face and hand tracking time, and the call's round
+trip. Separate strips instead of one shared axis, because the four measures
+have different units. A missing value (no camera, no call yet) breaks the
+line and shows "—". The canvas's label and the figure's title give the same
+numbers as text. Clicking it opens the voice panel; "Show the live
+diagnostics chart" in the panel hides it (`forkmesh.world.voiceChart`).
 
 ## Verified
 
@@ -269,7 +356,14 @@ device. It carries no names, room ids, secrets or audio.
   `deploy/core/caddy_routes.py`, and the shell, scene and Office wiring.
 - `app/tests/test_call_avatar_rig.py`: wire round trip and size, the closed
   neutral mouth, gestures from hand shapes, one fire per hold, syllable
-  counting, the photo warp, the hand model files.
+  counting, the photo warp, the hand model files, hand sides, smoothing and
+  hold, the no-face frame and depth on the wire.
+- `world/tests/test_world_voice_live_hud.py`: the chart's window, gaps,
+  scales and summary; reaction pops' burst, placement, cap and reduced
+  motion; the on-air and live-face wiring.
+- 2026-10-25, headless Chromium (SwiftShader) against the production backend:
+  the On air sign under the corner face, a big thumbs-up pop over your own
+  avatar and the chart drawn from samples all rendered.
 - In headless Chromium with a fake camera playing the Frania talking clip from
   `tools/testdata/face-stream/`: the face was tracked in every frame, mouth
   opening ran 0.05-0.77, and both the drawn face and a photo avatar (a still

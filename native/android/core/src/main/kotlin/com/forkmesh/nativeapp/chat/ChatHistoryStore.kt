@@ -358,4 +358,12 @@ class ChatHistoryStore(val directory: File) {
         written.remove(target.path)
         target.delete()
     }
+
+    @Synchronized
+    fun eraseAll(): Int {
+        val files = directory.listFiles { file -> file.isFile && file.name.startsWith("relay-") } ?: return 0
+        written.clear()
+        blocked.clear()
+        return files.count { it.delete() }
+    }
 }

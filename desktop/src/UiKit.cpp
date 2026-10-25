@@ -8,6 +8,7 @@
 #include <QChildEvent>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QEnterEvent>
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -378,9 +379,80 @@ InlineNotice::InlineNotice(QWidget *parent) : QFrame(parent)
     hide();
 }
 
+CountdownCloseButton::CountdownCloseButton(QWidget *parent) : QPushButton(parent)
+{
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setAttribute(Qt::WA_Hover, true);
+}
+
+void CountdownCloseButton::setProgress(qreal progress)
+{
+    if (qFuzzyCompare(progress + 2.0, m_progress + 2.0))
+        return;
+    m_progress = progress;
+    update();
+}
+
+qreal CountdownCloseButton::progress() const
+{
+    return m_progress;
+}
+
+void CountdownCloseButton::setRingColor(const QColor &color)
+{
+    m_ringColor = color;
+    update();
+}
+
+QSize CountdownCloseButton::sizeHint() const
+{
+    return QSize(20, 20);
+}
+
+QSize CountdownCloseButton::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+void CountdownCloseButton::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const qreal side = qMin(width(), height());
+    const QRectF box((width() - side) / 2.0, (height() - side) / 2.0, side, side);
+    const QColor iconColor = Theme::color(underMouse() ? Theme::Role::Fg
+                                                       : Theme::Role::FgMuted);
+    const int iconPx = 12;
+    const QPixmap icon =
+        tintedIcon(QStringLiteral("x"), iconColor, iconPx, devicePixelRatioF());
+    painter.drawPixmap(QPointF(box.center().x() - iconPx / 2.0,
+                               box.center().y() - iconPx / 2.0),
+                       icon);
+    if (m_progress < 0.0)
+        return;
+    const qreal stroke = 1.5;
+    const QRectF ring = box.adjusted(stroke, stroke, -stroke, -stroke);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(Theme::color(Theme::Role::Border), stroke));
+    painter.drawEllipse(ring);
+    QPen pen(m_ringColor.isValid() ? m_ringColor
+                                   : Theme::color(Theme::Role::AccentFg),
+             stroke);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    const int span = -qRound(qBound(0.0, m_progress, 1.0) * 360.0 * 16.0);
+    if (span != 0)
+        painter.drawArc(ring, 90 * 16, span);
+}
+
 QPushButton *InlineNotice::addAction(const QString &label, const QString &octicon)
 {
-    auto *button = new QPushButton(label, this);
+    return placeAction(new QPushButton(label, this), label, octicon);
+}
+
+QPushButton *InlineNotice::placeAction(QPushButton *button, const QString &label,
+                                       const QString &octicon)
+{
     button->setObjectName(QStringLiteral("ghostButton"));
     button->setProperty("buttonSize", QStringLiteral("xs"));
     button->setCursor(Qt::PointingHandCursor);
@@ -399,7 +471,8 @@ QPushButton *InlineNotice::addAction(const QString &label, const QString &octico
 
 QPushButton *InlineNotice::addCloseButton()
 {
-    QPushButton *button = addAction(QString(), QStringLiteral("x"));
+    m_close = new CountdownCloseButton(this);
+    QPushButton *button = placeAction(m_close, QString(), QString());
     button->setToolTip(QStringLiteral("Clear"));
     button->setAccessibleName(QStringLiteral("Clear notice"));
     button->setProperty("noticeAction", QStringLiteral("clear"));
@@ -409,6 +482,84 @@ QPushButton *InlineNotice::addCloseButton()
 QList<QPushButton *> InlineNotice::actions() const
 {
     return m_actions;
+}
+
+void InlineNotice::startCountdown(int durationMs, int elapsedMs,
+                                  std::function<void()> done)
+{
+    stopCountdown();
+    if (durationMs <= 0)
+        return;
+    m_countdownDone = std::move(done);
+    m_countdown = new QVariantAnimation(this);
+    m_countdown->setStartValue(0.0);
+    m_countdown->setEndValue(1.0);
+    m_countdown->setDuration(durationMs);
+    connect(m_countdown, &QVariantAnimation::valueChanged, this,
+            [this](const QVariant &value) {
+                if (m_close)
+                    m_close->setProgress(value.toReal());
+            });
+    connect(m_countdown, &QVariantAnimation::finished, this, [this] {
+        const std::function<void()> done = m_countdownDone;
+        if (done)
+            done();
+    });
+    if (m_close) {
+        const Tone ringTone = m_tone == Tone::Neutral ? Tone::Accent : m_tone;
+        m_close->setRingColor(Theme::color(toneRole(ringTone)));
+        m_close->setToolTip(QStringLiteral("Clears in %1 s. Hover to keep it.")
+                                .arg((durationMs + 999) / 1000));
+    }
+    m_countdown->start();
+    m_countdown->setCurrentTime(qBound(0, elapsedMs, durationMs));
+    if (underMouse())
+        m_countdown->pause();
+}
+
+void InlineNotice::stopCountdown()
+{
+    if (m_countdown) {
+        m_countdown->disconnect(this);
+        m_countdown->stop();
+        m_countdown->deleteLater();
+        m_countdown = nullptr;
+    }
+    m_countdownDone = nullptr;
+    if (m_close) {
+        m_close->setProgress(-1.0);
+        m_close->setToolTip(QStringLiteral("Clear"));
+    }
+}
+
+int InlineNotice::countdownElapsed() const
+{
+    return m_countdown ? m_countdown->currentTime() : 0;
+}
+
+bool InlineNotice::countdownRunning() const
+{
+    return m_countdown &&
+           m_countdown->state() == QAbstractAnimation::Running;
+}
+
+bool InlineNotice::countdownPaused() const
+{
+    return m_countdown && m_countdown->state() == QAbstractAnimation::Paused;
+}
+
+void InlineNotice::enterEvent(QEnterEvent *event)
+{
+    QFrame::enterEvent(event);
+    if (countdownRunning())
+        m_countdown->pause();
+}
+
+void InlineNotice::leaveEvent(QEvent *event)
+{
+    QFrame::leaveEvent(event);
+    if (countdownPaused())
+        m_countdown->resume();
 }
 
 void InlineNotice::showMessage(const QString &text, Tone tone)
@@ -425,6 +576,7 @@ void InlineNotice::showMessage(const QString &text, Tone tone)
 
 void InlineNotice::clear()
 {
+    stopCountdown();
     m_text->clear();
     hide();
 }
@@ -637,6 +789,16 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
     return wrapper;
 }
 
+QString cellDisplayText(const QString &text, int maxChars)
+{
+    if (maxChars <= 0 || text.size() <= maxChars)
+        return text;
+    qsizetype keep = maxChars;
+    if (text.at(keep - 1).isHighSurrogate())
+        --keep;
+    return text.left(keep) + QChar(0x2026);
+}
+
 namespace {
 
 const char kFloatingSurface[] = "floatingSurface";
@@ -742,6 +904,14 @@ public:
         }
         QStyledItemDelegate::paint(painter, opt, index);
     }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text = cellDisplayText(option->text);
+    }
 };
 
 void syncDataTableRows(QTableView *table, bool next, QVariantMap *state)
@@ -806,6 +976,10 @@ void syncDataTable(QTableView *table, bool next)
                 fitted.append(column);
             }
             horizontal->setHighlightSections(false);
+            const int fitRows = horizontal->resizeContentsPrecision();
+            state.insert(QStringLiteral("fitRows"), fitRows);
+            if (fitRows < 0 || fitRows > kDataTableFitRows)
+                horizontal->setResizeContentsPrecision(kDataTableFitRows);
         }
         state.insert(QStringLiteral("fitted"), fitted);
         state.insert(QStringLiteral("wordWrap"), table->wordWrap());
@@ -833,6 +1007,9 @@ void syncDataTable(QTableView *table, bool next)
         if (horizontal) {
             horizontal->setHighlightSections(
                 state.value(QStringLiteral("highlight")).toBool());
+            if (state.contains(QStringLiteral("fitRows")))
+                horizontal->setResizeContentsPrecision(
+                    state.value(QStringLiteral("fitRows")).toInt());
             const QVariantList fitted = state.value(QStringLiteral("fitted")).toList();
             for (const QVariant &column : fitted) {
                 if (column.toInt() < horizontal->count())

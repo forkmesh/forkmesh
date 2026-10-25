@@ -694,11 +694,11 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #0d1117; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #0d1117; }
 #sideRailColumn { border-left: 1px solid #30363d; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRailBrowserHandle:hover { background-color: #30363d; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #30363d; }
 QLabel#sideRailBrowserTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
 QFrame#sideRailSeparator { color: #30363d; background-color: #30363d; border: none; max-height: 1px; }
 QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
@@ -1144,6 +1144,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
 }
 #issueSearch {
     background-color: #0d1117; border: 1px solid #30363d;
@@ -1951,6 +1954,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,
@@ -2880,8 +2886,8 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #ffffff; }
-#sideRailBrowserHandle:hover { background-color: #d0d7de; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #ffffff; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #d0d7de; }
 #sideRailScroll QScrollBar:vertical { width: 6px; }
 #sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#sideRailBrowserTitle { color: #656d76; font-size: 9px; font-weight: 600; }
@@ -3385,6 +3391,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
 }
 #issueSearch {
     background-color: #ffffff; border: 1px solid #d0d7de;
@@ -4178,6 +4187,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,

@@ -7,6 +7,7 @@
 #include "AgentCliLocator.h"
 #include "AgentResourceGovernor.h"
 #include "AppPaths.h"
+#include "BrowserPrivacy.h"
 #include "ControlNode.h"
 #include "DirectorySizeScan.h"
 #include "DesktopDisplayReadiness.h"
@@ -761,6 +762,7 @@ int main(int argc, char *argv[])
 
 #ifdef FORKMESH_HAVE_WEBENGINE
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    forkmesh::browser::installUngoogledChromiumFlags();
 #endif
     forkmesh::logStartupTrace(QStringLiteral("BEGIN construct QApplication"));
     QElapsedTimer applicationConstruction;

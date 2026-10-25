@@ -701,7 +701,7 @@ QWidget *MainWindow::buildHostsSection()
     fleetCol->addWidget(m_addCoreNodeButton, 0, Qt::AlignLeft);
     auto *autoscalePanel = new FleetAutoscalePanel;
     autoscalePanel->setScriptPath(forkmesh::control::findNextAutoscaleScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR), QCoreApplication::applicationDirPath()));
+        forkmesh::sourceDir(), QCoreApplication::applicationDirPath()));
     fleetCol->addWidget(autoscalePanel);
     bodyCol->addWidget(hostsRailSection(QStringLiteral("fleet"),
                                         QStringLiteral("ForkMesh fleet"), nullptr,
@@ -1083,7 +1083,7 @@ void MainWindow::updateAddCoreNodeButton()
     if (!m_addCoreNodeButton)
         return;
     const QString script = forkmesh::control::findNextFleetScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR), QCoreApplication::applicationDirPath());
+        forkmesh::sourceDir(), QCoreApplication::applicationDirPath());
     const bool operatorDesktop =
         !script.isEmpty() &&
         QFileInfo::exists(forkmesh::corelogs::fleetInstancesPath());
@@ -1104,7 +1104,7 @@ void MainWindow::ensureAddCoreNodeController()
         return;
     m_addCoreNodeController = new forkmesh::fleet::AddCoreNodeController(
         forkmesh::control::findNextFleetScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         this);
     m_addCoreNodeController->setRunDirectory(
@@ -1170,7 +1170,7 @@ void MainWindow::ensureRemoveCoreNodeController()
         return;
     m_removeCoreNodeController = new forkmesh::fleet::RemoveCoreNodeController(
         forkmesh::control::findNextFleetScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         this);
     m_removeCoreNodeController->setRunDirectory(
@@ -1216,7 +1216,7 @@ void MainWindow::refreshFleetNodesTable()
         forkmesh::corelogs::loadFleetNodes();
     const bool canRemove =
         m_isAdmin && QFileInfo::exists(forkmesh::corelogs::fleetInstancesPath()) &&
-        !forkmesh::control::findNextFleetScript(QStringLiteral(FORKMESH_SOURCE_DIR),
+        !forkmesh::control::findNextFleetScript(forkmesh::sourceDir(),
                                                 QCoreApplication::applicationDirPath())
              .isEmpty();
     int coreCount = 0;

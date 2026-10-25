@@ -185,6 +185,41 @@ public enum ShellLocalDesktop: Equatable, Sendable {
     }
 }
 
+public enum ShellDesktopPresence: Equatable, Sendable {
+    case unknown
+    case checking
+    case online
+    case offline
+
+    public var label: String {
+        switch self {
+        case .unknown: return "Not checked yet"
+        case .checking: return "Checking…"
+        case .online: return "Running"
+        case .offline: return "Not running or not reachable"
+        }
+    }
+}
+
+public struct ShellDesktopLight: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let presence: ShellDesktopPresence
+    public let active: Bool
+
+    public init(id: String, name: String, presence: ShellDesktopPresence, active: Bool) {
+        self.id = id
+        self.name = name
+        self.presence = presence
+        self.active = active
+    }
+
+    public var label: String {
+        let base = "Desktop \(name), \(presence.label.lowercased())"
+        return active ? base + ", in use" : base
+    }
+}
+
 /// What the shell reads from the chat relay and asks of it. The Chat feature
 /// registers one (`Services.put(x, as: ShellChatBridge.self)`); without one
 /// the shell draws an offline relay.
@@ -216,6 +251,11 @@ extension ShellChatBridge {
 @MainActor
 public protocol ShellLocalDesktopBridge: AnyObject {
     var localDesktop: ShellLocalDesktop { get }
+    var desktopLights: [ShellDesktopLight] { get }
+}
+
+extension ShellLocalDesktopBridge {
+    public var desktopLights: [ShellDesktopLight] { [] }
 }
 
 public enum ShellBarSort: String, CaseIterable, Sendable {

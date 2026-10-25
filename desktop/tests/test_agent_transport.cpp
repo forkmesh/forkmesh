@@ -307,6 +307,22 @@ void runOrderedWriterTest()
     check(loaded.size() == 1 &&
               loaded.first().value(QStringLiteral("seq")).toInt() == 4,
           "clear and subsequent append keep queue order");
+
+    const QString filler(400, QLatin1Char('x'));
+    for (int seq = 5; seq <= 40; ++seq)
+        first.appendEvent(saved, QJsonObject{{QStringLiteral("seq"), seq},
+                                             {QStringLiteral("pad"), filler}});
+    AgentStore::flushTranscriptWrites();
+    const QList<QJsonObject> all = first.loadEvents(saved);
+    const QList<QJsonObject> recent = first.loadRecentEvents(saved, 2048);
+    bool recentWhole = !recent.isEmpty() && recent.size() < all.size();
+    for (int i = 0; i < recent.size(); ++i)
+        recentWhole = recentWhole &&
+                      recent.at(i) == all.at(all.size() - recent.size() + i);
+    check(recentWhole && recent.last().value(QStringLiteral("seq")).toInt() == 40,
+          "recent events read only the file's tail, whole lines in order");
+    check(first.loadRecentEvents(saved, 1 << 30).size() == all.size(),
+          "a tail larger than the file reads every event");
 }
 
 void runPendingPromptPersistenceTest()
@@ -1053,6 +1069,10 @@ void runHostControlProtocolTest()
     check(pump([&title] { return !title.isEmpty(); }, 5000) &&
               title == QLatin1String("Fix the login bug"),
           "Claude Code's session name comes back");
+    check(session.setPermissionMode(QStringLiteral("default")) &&
+              session.sendUserText(QStringLiteral("Keep going")) &&
+              session.sendUserText(QStringLiteral("And the tests")),
+          "a mid-run switch to Ask and two follow-ups are sent");
     check(session.renameSession(QStringLiteral("Login fix")), "a rename is sent");
 
     QList<QJsonObject> written;
@@ -1100,6 +1120,22 @@ void runHostControlProtocolTest()
             renamed = request.value(QStringLiteral("session_id")).toString() == QLatin1String("cli-7") &&
                       request.value(QStringLiteral("source")).toString() == QLatin1String("host");
     }
+    QStringList userTexts;
+    for (const QJsonObject &line : written)
+        if (line.value(QStringLiteral("type")).toString() == QLatin1String("user"))
+            userTexts.append(line.value(QStringLiteral("message")).toObject()
+                                 .value(QStringLiteral("content")).toString());
+    int keepGoing = -1;
+    for (int i = 0; i < userTexts.size() && keepGoing < 0; ++i)
+        if (userTexts.at(i).endsWith(QStringLiteral("Keep going")))
+            keepGoing = i;
+    check(keepGoing > 0 &&
+              userTexts.at(keepGoing).startsWith(QStringLiteral("[ForkMesh: permission mode changed.")) &&
+              userTexts.at(keepGoing).contains(QStringLiteral("from Edit mode (acceptEdits) to Ask mode (default)")),
+          qPrintable(QStringLiteral("the first message after a mode switch tells the agent the new mode: %1")
+                         .arg(userTexts.join(QStringLiteral(" | ")).left(600))));
+    check(userTexts.contains(QStringLiteral("And the tests")),
+          "the agent is told about a switch once, not on every message");
     check(refusedHook, "an unsupported request is refused instead of left hanging");
     check(!answeredDialog, "an undeclared dialog kind is never answered");
     check(allowed, "the approval carries Claude's suggested permission update");

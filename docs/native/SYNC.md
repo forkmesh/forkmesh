@@ -66,7 +66,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 [PARITY.md](PARITY.md) section 1.1; Android-specific decisions are in
 [ANDROID.md](ANDROID.md).
 
-<!-- triaged-through: 0efc715361 -->
+<!-- triaged-through: 9fa24dca2f -->
 
 ## Ledger
 
@@ -156,20 +156,20 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S081 | 2026-10-21 | Settings | ui | What's new shows the same notes as forkmesh.com/changelog, with each entry's title and summary. | 43557597fd | synced | 43557597fd |
 | S082 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
 | S083 | 2026-10-21 | Chat | feature | Incoming calls show on the iPhone's own call screen, also on the lock screen and when the app was closed | 5533f4d47f | n/a | Android has no CallKit or PushKit; its call notification already uses CallStyle |
-| S084 | 2026-10-21 | Chat | feature | Private chats can hold encrypted group audio and video calls, like Google Meet or Discord, from a Call button in the chat header | 042d1ed488 | pending |  |
-| S085 | 2026-10-21 | Chat | feature | Phone calls run on the native call engine with the voice changer and call backgrounds, instead of the web view | d5ab476f9e | pending |  |
-| S086 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | pending |  |
+| S084 | 2026-10-21 | Chat | feature | Private chats can hold encrypted group audio and video calls, like Google Meet or Discord, from a Call button in the chat header | 042d1ed488 | synced | e9fba93998 |
+| S085 | 2026-10-21 | Chat | feature | Phone calls run on the native call engine with the voice changer and call backgrounds, instead of the web view | d5ab476f9e | n/a | Android has no native WebRTC engine (libwebrtc is not brought back; FM Media will replace it); its WebView call page already has the voice changer and call backgrounds |
+| S086 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | n/a | Android calls run in the WebView call page, which already draws the chosen or custom face live (S111); there is no native engine to draw into |
 | S087 | 2026-10-21 | Chat | feature | Face changer in calls tracks the face in 3D on Face ID iPhones, keeps real hair around the new face and has cleaner edges than the browser | 9b199aef1b | pending |  |
-| S088 | 2026-10-21 | Chat | fix | Calls still ring an iPhone that has notifications turned off, and calling again right after a decline rings straight away. | 5f0db42ebf | pending |  |
+| S088 | 2026-10-21 | Chat | fix | Calls still ring an iPhone that has notifications turned off, and calling again right after a decline rings straight away. | 5f0db42ebf | synced | 9dc4b596dc |
 | S089 | 2026-10-21 | Calls | fix | Calls you place to an iPhone show its camera and play its voice once it answers. | 478fbe6a9c | n/a | Android calls run in the WebView page, which already adds its tracks with addTrack |
-| S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
-| S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
+| S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | synced | 9fa24dca2f |
+| S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | synced | 9fa24dca2f |
 | S092 | 2026-10-21 | Inbox | feature | Review and merge-conflict pings on your own pull requests have their own icon, label, settings switch and open the pull request | ff273c2c19 | synced | ff273c2c19 |
 | S093 | 2026-10-22 | Shell | feature | With Status Page installed, tiny status dots sit in the thin strip above the Dynamic Island on every screen. | 360acccbd4 | synced | 099513c76f |
 | S094 | 2026-10-21 | Chat | fix | The phone leaves private and hidden channels out of its relay hello and does not adopt channels it has hidden, so private channel names stay out of other projects and devices | fe664f0c09 | synced | 3d7fccfeed |
-| S095 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | pending |  |
+| S095 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | synced | b51fd52baf |
 | S096 | 2026-10-22 | Chat | fix | Frames addressed to one person (DM edits, reactions, typing, deletes, invites) are sealed to that person only, and private-channel frames for channels the phone is not in are dropped | 3d7fccfeed | synced | 3d7fccfeed |
-| S097 | 2026-10-22 | Chat | fix | Inbox chat pings are kept per project, removing a project erases its chat history, and every diagnostics report is scrubbed | 3d7fccfeed | pending |  |
+| S097 | 2026-10-22 | Chat | fix | Inbox chat pings are kept per project, removing a project erases its chat history, and every diagnostics report is scrubbed | 3d7fccfeed | synced | 894d7ac973 |
 | S098 | 2026-10-22 | Chat | feature | Chat relay hardening: DMs and private channels only through the server, signed device keys, sealed person frames, verified account names, server-kept blocks and webhook rooms marked server-visible | 440e84220c | synced | 440e84220c |
 | S099 | 2026-10-22 | Chat | fix | #mesh carries no account name, uses a random beacon id and says anyone nearby can read it; less identity in shared rooms | 440e84220c | synced | 440e84220c |
 | S100 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
@@ -208,4 +208,12 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S133 | 2026-10-23 | Chat | fix | The pre-call microphone test records your voice and plays it back on the speaker, even with the phone on silent. | a53238311c | pending |  |
 | S134 | 2026-10-24 | Shell | feature | The tour offers Essentials, Advanced and The whole shebang, and each stop shows a live copy of the screen it describes that you can try, with a button that opens the real one. | e763e201e9 | pending |  |
 | S135 | 2026-10-24 | Shell | feature | A new install asks for no permissions at launch: a short screen explains what may be asked and why, notifications are asked after the first message sent, and Bluetooth and local network when #mesh is first opened. | 9fa10c9e70 | pending |  |
+| S136 | 2026-10-20 | Calls | feature | When a caller hangs up before you answer, the chat shows a missed-call line. | 4606848384 | synced | 4606848384 |
+| S137 | 2026-10-20 | Chat | feature | Stick a sticker on a message from Add sticker, next to Add reaction. | 8d354cdada | synced | 8d354cdada |
+| S138 | 2026-10-21 | Calls | fix | In China the app rings calls itself instead of through the system call screen. | 6303bbe848 | n/a | CallKit and PushKit are iOS-only; Android always rings through its own call notification |
+| S139 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
+| S140 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
+| S141 | 2026-10-25 | Account | fix | The app stays signed in to your instances after the phone restarts. | d16277242c | n/a | Android is not directBootAware, so it never starts before the first unlock |
+| S141 | 2026-10-25 | Desktop | feature | With several desktops running, the Desktops page shows each one's status, Where it runs lets you pick one, and the icon above the clock stacks the desktops and the core nodes. | 38a83361e4 | pending |  |
+| S142 | 2026-10-25 | Agents | ui | The agent list's image tile shows tokens in and out as moving lines coloured by speed, the file count outlined by its churn, tiny branch and worktree icons, thin background-task lines and a green done bar when finished. | 170c95503c | pending |  |
 <!-- ledger:end -->

@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.chat
 
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
+import com.forkmesh.nativeapp.core.AppReturnGate
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -298,9 +299,10 @@ object ChatFeature {
                 }
         }
         scope.launch {
-            AppLifecycle.foreground.collect { foreground ->
-                sync.setForeground(foreground)
-                if (foreground) {
+            val returns = AppReturnGate()
+            AppLifecycle.visibility.collect { state ->
+                sync.setForeground(state.visible)
+                if (returns.isReturn(state)) {
                     room.onResumed()
                     local.announceNow()
                 }

@@ -136,8 +136,10 @@ def test_the_checked_in_changelog_is_valid():
 
 def test_problems_name_bad_entries():
     data = {"schema": 2, "entries": [entry("2026-10-01", ("Chat", ["A."])), entry("2026-10-02", ("Nope", ["B."])),
-                                     entry("soon", ("Chat", []))]}
+                                     entry("soon", ("Chat", [])),
+                                     entry("2026-09-01", ("Chat", ["C."]), ("Chat", ["D."]))]}
     found = changelog.problems(data)
+    assert "entry 4: section 'Chat' appears twice" in found
     assert "entry 2: entries must be newest first" in found
     assert any("entry 2: section 'Nope'" in problem for problem in found)
     assert "entry 3: date must be YYYY-MM-DD or YYYY-MM" in found

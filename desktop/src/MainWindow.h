@@ -1004,6 +1004,10 @@ public:
     QString testPageNoticeOpenText() const;
     void testClickPageNoticeOpen();
     void testClickPageNoticeClear();
+    void testSetPageNoticeCountdownMs(int ms) { m_pageNoticeCountdownMs = ms; }
+    bool testPageNoticeCountingDown() const;
+    bool testPageNoticeCountdownPaused() const;
+    void testHoverPageNotice(bool inside);
     QString testCurrentNoticePage() const { return currentNoticePage(); }
     void testClearPageNotices()
     {
@@ -1927,6 +1931,11 @@ public:
                                         const QString &header) const;
     void testSelectUsersRow(int row);
     void testSelectUsersQuarantineRow(int row);
+    void testClickUsersRow(int row) { openUsersDetail(m_usersTable, row); }
+    void testClickUsersQuarantineRow(int row)
+    {
+        openUsersDetail(m_usersQuarantineTable, row);
+    }
     QStringList testSelectedUsersActionTargets() const
     {
         return selectedUsersActionTargets();
@@ -2488,6 +2497,8 @@ public:
     QStringList testSideRailKeys() const;
     void testSetSideRailBrowserOpen(bool open) { setSideRailBrowserOpen(open); }
     forkmesh::ui::TerminalTabsPage *testTerminalsPage() const { return m_terminalsPage; }
+    QWidget *testSideRailTerminalPanel() const { return m_sideRailTerminalPanel; }
+    void testToggleTerminals() { toggleTerminals(); }
     int testTerminalsSectionIndex() const { return kTerminalsSectionIndex; }
     QString testOpenTerminalTab(const QString &kind, const QString &command, const QString &cwd)
     {
@@ -3899,6 +3910,8 @@ private:
     void cacheActiveAccountSession(const QString &instanceUrl);
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
+    QStringList accountDesktopKeysForSession(
+        const forkmesh::accounts::CachedSession &session);
     QString currentAccountInstanceUrl() const;
     QString accountSessionTokenForUrl(const QUrl &url) const;
     QString activeAccountSessionToken() const;
@@ -4979,6 +4992,7 @@ private:
     void renderNotesList(const QString &selectId = QString(),
                          bool reselect = true);
     void selectNote(const QString &id, const QString &storage);
+    void showOpenedNoteView();
     void createNote();
     void saveNote();
     void deleteNote();
@@ -6082,6 +6096,11 @@ private:
     void deleteSelectedUsers();
     void deleteNextSelectedUser();
     void finishUsersDeleteBatch();
+    QWidget *buildUsersDetailPanel();
+    void openUsersDetail(QTableWidget *table, int row);
+    void followUsersDetailSelection(QTableWidget *table);
+    void renderUsersDetail();
+    void closeUsersDetail();
 
     QWidget *buildFilesSection();
     QLayout *buildFilesEditorBar();
@@ -7292,6 +7311,7 @@ private:
     void openRepoAgentsList();
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
+    void refreshAgentDots();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();
@@ -8977,6 +8997,15 @@ private:
     void setSideRailBrowserOpen(bool open);
     void openInSideRailBrowser(const QString &address);
     QWidget *buildTerminalsSection();
+    forkmesh::ui::TerminalTabsPage *ensureTerminalsPage();
+    void dockTerminals(bool sidePane);
+    bool sideRailFits() const;
+    bool sideRailTerminalsOpen() const;
+    void setSideRailTerminalsOpen(bool open);
+    void revealTerminals();
+    void toggleTerminals();
+    QString defaultTerminalFolder() const;
+    QString openUserTerminal(const QString &kind, const QString &cwd);
     void showTerminalLauncher();
     void showTerminalsPage();
     QString openTerminalTab(const QString &kind, const QString &command, const QString &cwd,
@@ -9108,6 +9137,11 @@ private:
     void notifyRepoWorkflowsChanged();
     void openWorkflowInPage(const QString &repo, const QString &workflowId);
     void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
+    QJsonObject accountWorkflowPinInfo(const QString &workflowId) const;
+    QPixmap accountWorkflowIcon(int side) const;
+    void runAccountWorkflowFromRail(const QString &workflowId);
+    void runAccountWorkflowAction(const QString &workflowId, const QString &action, const QJsonObject &payload,
+                                  const forkmesh::market::NativePackageReplyHandler &done);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
@@ -9623,6 +9657,7 @@ private:
     void scmStageAll();
     void scmUnstageAll();
     void scmDiscardAll();
+    void applyScmChangeBlock(const QUrl &url);
     void scmCommit();
     void scmCommitAndPush();
     void scmStageAllCommitAndPush();
@@ -10669,6 +10704,7 @@ private:
         QString kind;
         int actionRunId = -1;
         qint64 pingId = 0;
+        int countdownElapsedMs = 0;
     };
     struct NoticeDestination {
         NotificationLink link;
@@ -11569,6 +11605,7 @@ private:
     QList<QPointer<QWidget>> m_pageNoticeRows;
     QStringList m_recentNotices;
     quint64 m_nextPageNoticeId = 1;
+    int m_pageNoticeCountdownMs = 5000;
     QString m_renderedNoticePage;
     QWidget *m_errorBorderOverlay = nullptr;
     QTimer *m_errorBorderTimer = nullptr;
@@ -12478,6 +12515,10 @@ private:
     QTabWidget *m_usersTabs = nullptr;
     QTableWidget *m_usersTable = nullptr;
     QTableWidget *m_usersQuarantineTable = nullptr;
+    QFrame *m_usersDetailPanel = nullptr;
+    QScrollArea *m_usersDetailScroll = nullptr;
+    QTableWidget *m_usersDetailTable = nullptr;
+    QString m_usersDetailName;
     QWidget *m_usersSignupReferralCodePanel = nullptr;
     QLabel *m_usersSignupReferralCodeStatus = nullptr;
     QLineEdit *m_usersSignupReferralCodeEdit = nullptr;
@@ -13320,6 +13361,11 @@ private:
     forkmesh::ui::WorkspaceBrowserPane *m_sideRailBrowser = nullptr;
     QPointer<QCheckBox> m_sideRailCheck;
     forkmesh::ui::TerminalTabsPage *m_terminalsPage = nullptr;
+    QWidget *m_sideRailTerminalPanel = nullptr;
+    QBoxLayout *m_sideRailTerminalHost = nullptr;
+    QPushButton *m_sideRailTerminalButton = nullptr;
+    QWidget *m_terminalsSectionHost = nullptr;
+    QWidget *m_terminalsSectionNote = nullptr;
     QHash<QString, QString> m_terminalIntakeTokens;
     forkmesh::agentintake::RateLimiter m_terminalInputLimiter{
         forkmesh::terminalbridge::kInputLimit, forkmesh::terminalbridge::kInputWindowMs};
@@ -14591,6 +14637,12 @@ private:
     // Sessions whose handoff POST is still in flight, so a second click on the
     // button cannot queue the same continuation twice.
     QSet<int> m_agentCloudHandoffsInFlight;
+    QSet<int> m_claudeDesktopPending;
+    QSet<QString> m_claudeDesktopChecked;
+    QStringList m_claudeDesktopLinkQueue;
+    QHash<QString, int> m_claudeDesktopLinkOwners;
+    QTimer *m_claudeDesktopLinkTimer = nullptr;
+    bool m_claudeDesktopBackfillRunning = false;
     QPlainTextEdit *m_agentLog = nullptr;
     QStackedWidget *m_agentOutputStack = nullptr; // log (0) | embedded terminal (1)
     TerminalWidget *m_agentTerminal = nullptr;  // Claude Code runs here
@@ -14835,6 +14887,8 @@ private:
     QHash<int, QString> m_streamRaw;
     QHash<int, qint64> m_sessionTokens; // live token total per session, for the list
     QHash<int, forkmesh::transcripttools::OutputTokenCounter> m_sessionOutputTokens;
+    QHash<int, forkmesh::transcripttools::InputTokenCounter> m_sessionInputTokens;
+    QHash<int, QPair<qint64, qint64>> m_sessionTokenFlow;
     QHash<int, AgentScannerState> m_scannerStates;
     QHash<int, AgentSpinState> m_agentSpinStates; // fireball orbit, per session
     QElapsedTimer m_agentSpinClock; // real time between fireball animation frames
@@ -15142,6 +15196,13 @@ private:
     bool publishAgentHandoffBranch(const AgentCloudHandoff &plan,
                                    int sessionId, QString *error);
     void moveAgentSessionToCloud(int sessionId);
+    bool claudeDesktopSessionsEnabled() const;
+    QString claudeDesktopBlocker(int sessionId);
+    void addAgentToClaudeDesktop(int sessionId, bool open);
+    void noteClaudeDesktopCandidate(const AgentSession &session);
+    void backfillClaudeDesktopSessions();
+    void queueClaudeDesktopLink(const QString &cliSessionId, bool front);
+    void pumpClaudeDesktopLinks();
     void finishAgentCloudHandoff(int sessionId, const QString &branch,
                                  const QJsonObject &payload);
     void showAgentListContextMenu(const QPoint &viewportPos);

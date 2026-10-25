@@ -206,6 +206,21 @@ Play, and Android releases ship as the signed
   to it until a later read succeeds, a file that does not parse is renamed
   `*.unreadable-<ms>` instead of being replaced, and a file from a newer or
   older build (`v` other than 1) is read field by field instead of discarded.
+- **Sign-ins survive a phone restart (iOS, 2026-10-25).** After a reboot iOS
+  wakes the app in the background (PushKit re-registers, a call push arrives)
+  before the user has unlocked the phone once. Until that first unlock the
+  Keychain answers `errSecInteractionNotAllowed` and UserDefaults reads empty.
+  So the launch saw a phone with no preferences, took it for a fresh install
+  and tried to erase the Keychain (`FreshInstallReset`). It also rewrote the
+  instance list as the built-in relay alone (`RelayDirectory.restore`) and let
+  the Keychain fall back to memory for the rest of the process
+  (`FallbackSecureStore`). When the user opened the app later it showed the
+  sign-in screen and had forgotten every instance. `AppBoot.start` now waits
+  until protected data is available or the Keychain stops answering locked
+  (`KeychainBackend.isLockedUntilFirstUnlock`). Only then does it build any
+  service. `FreshInstallReset` also refuses to erase anything while the
+  Keychain is locked. Incoming calls still ring meanwhile, because
+  `DirectCallKit` reports them to CallKit without the services.
 
 ## Protocols and interfaces
 
@@ -230,6 +245,16 @@ Play, and Android releases ship as the signed
   meeting; a phone outside that account needs a six-digit pairing code approved
   on the LAN. Frames are the twin of `desktop/src/LocalControl.{h,cpp}`, pinned
   by shared test vectors.
+- Owner-only families (hosts, agents, merge queue, ...) compare the account
+  name the desktop holds for the phone with its own account. A phone approved
+  by code keeps the name it had when approved, so a phone paired as a guest
+  used to be refused with "Only the account that owns this desktop can manage
+  its hosts" even after signing in to the owner's account. When a code-approved
+  phone now names an account its saved record lacks, the desktop asks
+  `devices/check`; only when the account lists the phone's key is the new name
+  recorded (the approval stays `code`, so signing out never forgets it). A
+  phone the account does not list keeps its old name, so a code-approved phone
+  cannot claim the owner's name on its own.
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
   desktop: [`native/ios/docs/FMCrypto.md`](../../native/ios/docs/FMCrypto.md).
 

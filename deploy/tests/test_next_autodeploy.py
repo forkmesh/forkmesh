@@ -55,6 +55,11 @@ def commit(repo, files, message):
     return git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True)
+def no_tmp_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(tmp_path / "no-labels"))
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "src"
@@ -392,6 +397,57 @@ def test_a_run_requeued_after_a_desktop_restart_follows_its_new_workspace(repo, 
     assert [run["workspace"] for run in auto.running_runs(tmp_path / "actions")] == [second]
 
 
+def tmp_disk(tmp_path, monkeypatch, target=None):
+    labels, device = tmp_path / "labels", tmp_path / "dev" / "sdz1"
+    labels.mkdir()
+    device.parent.mkdir()
+    device.write_text("")
+    (labels / "TMP").symlink_to(device)
+    mount = target or tmp_path / "media" / "TMP"
+    mount.mkdir(parents=True)
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/root / ext4 rw 0 0\n%s %s ext4 rw 0 0\n" % (
+        device, str(mount).replace(" ", "\\040")))
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(labels))
+    monkeypatch.setattr(auto, "TMP_DISK_MOUNTS", str(mounts))
+    return mount
+
+
+def test_tmp_disk_mount_matches_the_labelled_device_and_unescapes_spaces(tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch, tmp_path / "media" / "T M P")
+    assert auto.tmp_disk_mount() == mount
+    assert auto.sandbox_dirs(tmp_path / "actions") == [
+        tmp_path / "actions" / "sandbox", mount / "ForkMesh" / "actions" / "sandbox"]
+
+
+def test_no_tmp_disk_leaves_only_the_data_sandbox(tmp_path):
+    assert auto.tmp_disk_mount() is None
+    assert auto.sandbox_dirs(tmp_path / "actions") == [tmp_path / "actions" / "sandbox"]
+
+
+def test_a_tmp_disk_that_is_labelled_but_not_mounted_is_ignored(tmp_path, monkeypatch):
+    tmp_disk(tmp_path, monkeypatch)
+    (tmp_path / "mounts").write_text("/dev/root / ext4 rw 0 0\n")
+    assert auto.tmp_disk_mount() is None
+
+
+def test_a_run_whose_sandbox_is_on_the_tmp_disk_is_deployed(repo, tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch)
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    head = commit(repo, {"app/a.py": "tmp disk\n"}, "tmp disk")
+    legacy = make_run(tmp_path / "actions", 7903, head)
+    fast = (mount / "ForkMesh" / "actions" / "sandbox" / "forkmesh-run-7903-1790000099999"
+            / "workspace")
+    fast.mkdir(parents=True)
+    agent.tick()
+    assert agent.attached[7903] is not None
+    settle(agent, clock)
+    assert calls == [(head, "auto")]
+    assert result_line(fast).startswith(auto.RESULT_MARK + " ok deployed ")
+    assert not (legacy / auto.SINK_NAME).exists()
+
+
 def test_paused_or_disarmed_agent_answers_without_deploying(repo, tmp_path):
     clock, calls = Clock(), []
     agent = agent_for(repo, tmp_path, clock, calls, armed=False)
@@ -699,9 +755,59 @@ def test_a_failing_go_test_fails_the_gate_with_its_output(tmp_path, monkeypatch)
     lines = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted", "FAIL"]
     monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
         "server": (1, auto.failing_go_ids("server", lines), lines)})
+    again = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted again",
+             "FAIL"]
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        1, auto.failing_go_ids(module, again), again))
     with pytest.raises(auto.ToolError, match="server::TestAgentWork"):
         pipeline.test_gate("target", "base")
-    assert "key folder accepted" in "\n".join(log.lines)
+    assert "key folder accepted again" in "\n".join(log.lines)
+
+
+def test_a_go_test_that_only_fails_under_load_passes_when_rerun_alone(tmp_path, monkeypatch):
+    log = auto.Log(echo=False)
+    pipeline = auto.Pipeline(tmp_path, log, state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    monkeypatch.setattr(pipeline, "archive", lambda commit, work: None)
+    monkeypatch.setattr(pipeline, "venv", lambda src: tmp_path / "venv")
+    monkeypatch.setattr(pipeline, "prestage", lambda work, venv: None)
+    monkeypatch.setattr(pipeline, "test_files", lambda src: [])
+    lines = ["--- FAIL: TestCoreDeath (6.97s)", "    --- FAIL: TestCoreDeath/silent (3.56s)",
+             "        call_test.go:161: audio came back after 543ms, target 500 ms", "FAIL"]
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
+        "server": (1, auto.failing_go_ids("server", lines), lines)})
+    reruns = []
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        reruns.append((module, sorted(failures))) or (0, set(), ["ok"])))
+    pipeline.test_gate("target", None)
+    assert reruns == [("server", ["server::TestCoreDeath", "server::TestCoreDeath/silent"])]
+    assert "passed when rerun alone" in "\n".join(log.lines)
+
+
+def test_a_go_rerun_runs_only_the_failed_top_level_tests_one_package_at_a_time(tmp_path,
+                                                                               monkeypatch):
+    root = tmp_path / "goroot"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "go").write_text("")
+    monkeypatch.setattr(auto.shutil, "which",
+                        lambda name: str(root / "bin" / "go") if name == "go" else "/usr/bin/" + name)
+    seen = []
+
+    def fake_stream(command, say, **_kwargs):
+        seen.append(command)
+        say("--- FAIL: TestMultipath (1.0s)")
+        return 1
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    code, failures, _lines = pipeline.go_rerun(
+        tmp_path / "work", tmp_path / "venv", "server",
+        {"server::TestMultipath/blackhole", "server::TestMultipath", "server::TestCoreDeath"})
+    assert (code, failures) == (1, {"server::TestMultipath"})
+    assert seen[0][-10:] == [str(root.resolve() / "bin" / "go"), "test", "-C", "server",
+                             "-count=1", "-p", "1", "-run", "^(TestCoreDeath|TestMultipath)$",
+                             "./..."]
+    assert "--unshare-all" in seen[0]
 
 
 def test_go_tests_run_offline_in_the_sandbox_with_the_host_toolchain(tmp_path, monkeypatch):

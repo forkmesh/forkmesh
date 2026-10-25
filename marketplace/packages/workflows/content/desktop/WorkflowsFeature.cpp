@@ -33,6 +33,7 @@
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QSet>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -40,6 +41,7 @@
 #include <QStyle>
 #include <QTableWidget>
 #include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -239,12 +241,21 @@ WorkflowsFeature::WorkflowsFeature(const forkmesh::market::NativePackageHost &ho
     outer->setSpacing(10);
 
     auto *heading = new QHBoxLayout;
+    auto *titles = new QVBoxLayout;
+    titles->setSpacing(2);
     auto *title = new QLabel(QStringLiteral("Workflows"));
     title->setObjectName(QStringLiteral("pageTitle"));
-    heading->addWidget(title);
-    heading->addStretch();
+    titles->addWidget(title);
+    auto *subtitle = new QLabel(QStringLiteral(
+        "Special agents, workflows on this desktop and workflows on ForkMesh, in one list. Every one can run "
+        "with an assignment, keep a schedule, sit on a rail and show its latest output."));
+    subtitle->setObjectName(QStringLiteral("workflowsSubtitle"));
+    subtitle->setWordWrap(true);
+    titles->addWidget(subtitle);
+    heading->addLayout(titles, 1);
+    heading->addSpacing(12);
     m_newButton = button(QStringLiteral("New workflow"), "primaryButton");
-    m_newButton->setToolTip(QStringLiteral("Start blank, from an example, or import an n8n file or link"));
+    m_newButton->setToolTip(QStringLiteral("A special agent, a desktop workflow, or one that runs on ForkMesh"));
     auto *credentialsButton = button(QStringLiteral("Credentials"));
     credentialsButton->setToolTip(QStringLiteral("The integration accounts your steps sign in with"));
     auto *refreshButton = button(QStringLiteral("Refresh"));
@@ -262,6 +273,7 @@ WorkflowsFeature::WorkflowsFeature(const forkmesh::market::NativePackageHost &ho
     m_pages->addWidget(buildDashboard());
     m_pages->addWidget(buildEditor());
     outer->addWidget(m_pages, 1);
+    applyTheme();
 
     connect(m_newButton, &QPushButton::clicked, this, [this] { newWorkflowDialog(); });
     connect(credentialsButton, &QPushButton::clicked, this, [this] { credentialsDialog(); });
@@ -283,71 +295,46 @@ QWidget *WorkflowsFeature::buildDashboard()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(10);
+    layout->setSpacing(12);
 
-    auto *kpis = new QGridLayout;
-    kpis->setHorizontalSpacing(28);
-    kpis->setVerticalSpacing(2);
+    auto *kpis = new QHBoxLayout;
+    kpis->setSpacing(10);
     const QStringList names{QStringLiteral("Workflows"),    QStringLiteral("Active"),
                             QStringLiteral("Runs"),         QStringLiteral("Success rate"),
                             QStringLiteral("Avg. duration"), QStringLiteral("Last run"),
                             QStringLiteral("Next scheduled run")};
-    for (int column = 0; column < names.size(); ++column) {
-        kpis->addWidget(mutedLabel(names.at(column)), 0, column);
+    for (const QString &name : names) {
+        auto *tile = new QFrame;
+        tile->setObjectName(QStringLiteral("workflowsKpiTile"));
+        tile->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        auto *tileLayout = new QVBoxLayout(tile);
+        tileLayout->setContentsMargins(14, 10, 14, 10);
+        tileLayout->setSpacing(1);
+        auto *label = new QLabel(name);
+        label->setObjectName(QStringLiteral("workflowsKpiName"));
+        tileLayout->addWidget(label);
         auto *value = new QLabel(QStringLiteral("–"));
         value->setObjectName(QStringLiteral("workflowsKpi"));
-        value->setAccessibleName(names.at(column));
-        value->setStyleSheet(QStringLiteral("font-size: 22px; font-weight: 600;"));
-        kpis->addWidget(value, 1, column);
+        value->setAccessibleName(name);
+        tileLayout->addWidget(value);
         m_kpiValues.append(value);
-        auto *note = mutedLabel(QString());
-        note->setWordWrap(false);
-        kpis->addWidget(note, 2, column);
+        auto *note = new QLabel;
+        note->setObjectName(QStringLiteral("workflowsKpiNote"));
+        note->setMinimumWidth(0);
+        note->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        tileLayout->addWidget(note);
         m_kpiNotes.append(note);
+        kpis->addWidget(tile, 1);
     }
-    kpis->setColumnStretch(int(names.size()), 1);
     layout->addLayout(kpis);
 
     auto *splitter = new QSplitter(Qt::Vertical);
     splitter->setChildrenCollapsible(false);
-    splitter->addWidget(buildLocalSection());
-
-    auto *top = new QWidget;
-    auto *topLayout = new QVBoxLayout(top);
-    topLayout->setContentsMargins(0, 6, 0, 0);
-    topLayout->setSpacing(6);
-    auto *listHeading = new QHBoxLayout;
-    listHeading->addWidget(sectionLabel(QStringLiteral("Your workflows")));
-    listHeading->addStretch();
-    m_filter = new QLineEdit;
-    m_filter->setPlaceholderText(QStringLiteral("Filter by name or trigger"));
-    m_filter->setAccessibleName(QStringLiteral("Filter workflows"));
-    m_filter->setClearButtonEnabled(true);
-    m_filter->setMaximumWidth(260);
-    listHeading->addWidget(m_filter);
-    m_openButton = button(QStringLiteral("Edit"));
-    m_runButton = button(QStringLiteral("Run"));
-    m_toggleButton = button(QStringLiteral("Turn on"));
-    m_duplicateButton = button(QStringLiteral("Duplicate"));
-    m_deleteButton = button(QStringLiteral("Delete"), "dangerButton");
-    for (QPushButton *item : {m_openButton, m_runButton, m_toggleButton, m_duplicateButton, m_deleteButton})
-        listHeading->addWidget(item);
-    topLayout->addLayout(listHeading);
-    m_workflowTable = makeTable({QStringLiteral("Name"), QStringLiteral("Trigger"), QStringLiteral("Steps"),
-                                 QStringLiteral("State"), QStringLiteral("Last run"), QStringLiteral("Last result"),
-                                 QStringLiteral("Runs"), QStringLiteral("Next run"), QStringLiteral("Updated")},
-                                QStringLiteral("workflowsTable"));
-    topLayout->addWidget(m_workflowTable, 1);
-    m_emptyNote = mutedLabel(QStringLiteral(
-        "No workflows yet. Press New workflow to start blank, from an example, or from an n8n file."));
-    m_emptyNote->setAlignment(Qt::AlignHCenter);
-    m_emptyNote->setVisible(false);
-    topLayout->addWidget(m_emptyNote);
-    splitter->addWidget(top);
+    splitter->addWidget(buildCollection());
 
     auto *bottom = new QWidget;
     auto *bottomLayout = new QVBoxLayout(bottom);
-    bottomLayout->setContentsMargins(0, 6, 0, 0);
+    bottomLayout->setContentsMargins(0, 8, 0, 0);
     bottomLayout->setSpacing(6);
     auto *runHeading = new QHBoxLayout;
     runHeading->addWidget(sectionLabel(QStringLiteral("Recent runs")));
@@ -368,6 +355,7 @@ QWidget *WorkflowsFeature::buildDashboard()
     m_runTable = makeTable({QStringLiteral("Workflow"), QStringLiteral("Started"), QStringLiteral("Trigger"),
                             QStringLiteral("Result"), QStringLiteral("Duration"), QStringLiteral("Output")},
                            QStringLiteral("workflowsRuns"));
+    m_runTable->setIconSize(QSize(18, 18));
     runSplitter->addWidget(m_runTable);
     auto *detail = new QWidget;
     auto *detailLayout = new QVBoxLayout(detail);
@@ -386,35 +374,10 @@ QWidget *WorkflowsFeature::buildDashboard()
     runSplitter->setStretchFactor(1, 2);
     bottomLayout->addWidget(runSplitter, 1);
     splitter->addWidget(bottom);
-    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(0, 3);
     splitter->setStretchFactor(1, 1);
-    splitter->setStretchFactor(2, 1);
     layout->addWidget(splitter, 1);
 
-    connect(m_filter, &QLineEdit::textChanged, this, [this] {
-        renderWorkflowTable();
-        renderLocalTable();
-    });
-    connect(m_workflowTable, &QTableWidget::itemSelectionChanged, this, [this] {
-        const QJsonObject summary = selectedSummary();
-        const bool chosen = !summary.isEmpty();
-        for (QPushButton *item : {m_openButton, m_runButton, m_toggleButton, m_duplicateButton, m_deleteButton})
-            item->setEnabled(chosen && !m_busy);
-        m_toggleButton->setText(summary.value(QStringLiteral("active")).toBool() ? QStringLiteral("Turn off")
-                                                                                 : QStringLiteral("Turn on"));
-        m_toggleButton->setAccessibleName(m_toggleButton->text());
-    });
-    connect(m_workflowTable, &QTableWidget::cellDoubleClicked, this, [this] {
-        openWorkflow(text(selectedSummary(), "id"));
-    });
-    connect(m_openButton, &QPushButton::clicked, this, [this] { openWorkflow(text(selectedSummary(), "id")); });
-    connect(m_runButton, &QPushButton::clicked, this, [this] { runSummary(selectedSummary()); });
-    connect(m_toggleButton, &QPushButton::clicked, this, [this] { toggleActive(selectedSummary()); });
-    connect(m_duplicateButton, &QPushButton::clicked, this, [this] { duplicateWorkflow(selectedSummary()); });
-    connect(m_deleteButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedSummary();
-        deleteWorkflow(text(summary, "id"), text(summary, "name"));
-    });
     connect(m_runWorkflowFilter, &QComboBox::currentIndexChanged, this, [this] { renderRunTable(); });
     connect(m_runStatusFilter, &QComboBox::currentIndexChanged, this, [this] { renderRunTable(); });
     connect(m_runTable, &QTableWidget::itemSelectionChanged, this, [this] {
@@ -435,9 +398,484 @@ QWidget *WorkflowsFeature::buildDashboard()
         }
         openWorkflow(text(run, "workflowId"));
     });
-    for (QPushButton *item : {m_openButton, m_runButton, m_toggleButton, m_duplicateButton, m_deleteButton})
-        item->setEnabled(false);
     return page;
+}
+
+QWidget *WorkflowsFeature::buildCollection()
+{
+    auto *section = new QWidget;
+    section->setObjectName(QStringLiteral("workflowsCollectionSection"));
+    auto *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    auto *bar = new QHBoxLayout;
+    bar->setSpacing(6);
+    const QList<QPair<QString, QString>> scopes{{QString(), QStringLiteral("All")},
+                                                {QStringLiteral("agent"), QStringLiteral("Special agents")},
+                                                {QStringLiteral("desktop"), QStringLiteral("On this desktop")},
+                                                {QStringLiteral("account"), QStringLiteral("On ForkMesh")},
+                                                {QStringLiteral("pinned"), QStringLiteral("Pinned")},
+                                                {QStringLiteral("failing"), QStringLiteral("Needs attention")}};
+    for (const auto &scope : scopes) {
+        auto *chip = new QToolButton;
+        chip->setObjectName(QStringLiteral("workflowsScope"));
+        chip->setCheckable(true);
+        chip->setChecked(scope.first == m_scope);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setText(scope.second);
+        chip->setAccessibleName(QStringLiteral("Show %1").arg(scope.second.toLower()));
+        chip->setProperty("scope", scope.first);
+        connect(chip, &QToolButton::clicked, this, [this, value = scope.first] {
+            m_scope = value;
+            for (QToolButton *other : std::as_const(m_scopeButtons))
+                other->setChecked(other->property("scope").toString() == m_scope);
+            renderCollection();
+        });
+        m_scopeButtons.append(chip);
+        bar->addWidget(chip);
+    }
+    bar->addStretch(1);
+    m_collectionCount = new QLabel;
+    m_collectionCount->setObjectName(QStringLiteral("workflowsSubtitle"));
+    bar->addWidget(m_collectionCount);
+    bar->addSpacing(6);
+    m_filter = new QLineEdit;
+    m_filter->setPlaceholderText(QStringLiteral("Filter by name, trigger, repository or output"));
+    m_filter->setAccessibleName(QStringLiteral("Filter workflows"));
+    m_filter->setClearButtonEnabled(true);
+    m_filter->setMinimumWidth(180);
+    m_filter->setMaximumWidth(280);
+    bar->addWidget(m_filter);
+    m_sortCombo = new QComboBox;
+    m_sortCombo->setAccessibleName(QStringLiteral("Sort workflows"));
+    m_sortCombo->addItem(QStringLiteral("Name"), QStringLiteral("name"));
+    m_sortCombo->addItem(QStringLiteral("Last run"), QStringLiteral("recent"));
+    m_sortCombo->addItem(QStringLiteral("Next run"), QStringLiteral("next"));
+    m_sortCombo->addItem(QStringLiteral("Kind"), QStringLiteral("kind"));
+    bar->addWidget(m_sortCombo);
+    auto *views = new QWidget;
+    views->setObjectName(QStringLiteral("workflowsViewSwitch"));
+    views->setAttribute(Qt::WA_StyledBackground);
+    auto *viewsLayout = new QHBoxLayout(views);
+    viewsLayout->setContentsMargins(2, 2, 2, 2);
+    viewsLayout->setSpacing(2);
+    const QList<QPair<ViewMode, QString>> modes{{ViewMode::List, QStringLiteral("List view")},
+                                                {ViewMode::Thumbnails, QStringLiteral("Thumbnails view")},
+                                                {ViewMode::Compact, QStringLiteral("Compact grid view")}};
+    for (const auto &mode : modes) {
+        auto *button = new QToolButton;
+        button->setObjectName(QStringLiteral("workflowsViewButton"));
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAccessibleName(mode.second);
+        button->setToolTip(mode.second);
+        button->setIconSize(QSize(16, 16));
+        button->setProperty("viewMode", viewModeKey(mode.first));
+        connect(button, &QToolButton::clicked, this, [this, value = mode.first] { setViewMode(value); });
+        m_viewButtons.append(button);
+        viewsLayout->addWidget(button);
+    }
+    bar->addWidget(views);
+    layout->addLayout(bar);
+
+    m_collection = new QScrollArea;
+    m_collection->setObjectName(QStringLiteral("workflowsCollection"));
+    m_collection->setAccessibleName(QStringLiteral("Workflows"));
+    m_collection->setWidgetResizable(true);
+    m_collection->setFrameShape(QFrame::NoFrame);
+    m_collection->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *body = new QWidget;
+    body->setObjectName(QStringLiteral("workflowsCollectionBody"));
+    auto *bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    m_grid = new CardGrid;
+    bodyLayout->addWidget(m_grid);
+    m_collectionEmpty = new QLabel;
+    m_collectionEmpty->setObjectName(QStringLiteral("workflowsCollectionEmpty"));
+    m_collectionEmpty->setAlignment(Qt::AlignCenter);
+    m_collectionEmpty->setWordWrap(true);
+    m_collectionEmpty->setVisible(false);
+    bodyLayout->addWidget(m_collectionEmpty);
+    bodyLayout->addStretch(1);
+    m_collection->setWidget(body);
+    layout->addWidget(m_collection, 1);
+
+    m_viewMode = viewModeFromKey(QSettings().value(QStringLiteral("workflows/viewMode")).toString());
+    m_sort = QSettings().value(QStringLiteral("workflows/sort"), QStringLiteral("name")).toString();
+    m_sortCombo->setCurrentIndex(std::max(0, m_sortCombo->findData(m_sort)));
+    connect(m_sortCombo, &QComboBox::currentIndexChanged, this, [this] {
+        m_sort = m_sortCombo->currentData().toString();
+        QSettings().setValue(QStringLiteral("workflows/sort"), m_sort);
+        renderCollection();
+    });
+    connect(m_filter, &QLineEdit::textChanged, this, [this] { renderCollection(); });
+    return section;
+}
+
+void WorkflowsFeature::changeEvent(QEvent *event)
+{
+    forkmesh::market::NativePackageWidget::changeEvent(event);
+    if (!m_theming && (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange))
+        applyTheme();
+}
+
+void WorkflowsFeature::applyTheme()
+{
+    m_theming = true;
+    m_tones = Tones::from(palette());
+    const QString sheet = m_tones.sheet();
+    if (sheet != m_appliedSheet) {
+        m_appliedSheet = sheet;
+        setStyleSheet(sheet);
+    }
+    for (QToolButton *button : std::as_const(m_viewButtons)) {
+        const ViewMode mode = viewModeFromKey(button->property("viewMode").toString());
+        button->setChecked(mode == m_viewMode);
+        button->setIcon(glyphIcon(viewModeKey(mode), mode == m_viewMode ? m_tones.accent : m_tones.muted, 16));
+    }
+    m_theming = false;
+    if (m_grid)
+        renderCollection();
+}
+
+void WorkflowsFeature::setViewMode(ViewMode mode)
+{
+    m_viewMode = mode;
+    QSettings().setValue(QStringLiteral("workflows/viewMode"), viewModeKey(mode));
+    applyTheme();
+}
+
+void WorkflowsFeature::rebuildEntries()
+{
+    m_entries = unifiedWorkflows(m_workflows, m_runsByWorkflow, m_localWorkflows,
+                                 m_local.value(QStringLiteral("pins")).toArray());
+}
+
+QJsonObject WorkflowsFeature::entryFor(const QString &key) const
+{
+    for (const QJsonValue &value : m_entries)
+        if (text(value.toObject(), "key") == key)
+            return value.toObject();
+    return {};
+}
+
+QPixmap WorkflowsFeature::entryFace(const QJsonObject &entry) const
+{
+    if (text(entry, "source") != QLatin1String("local") || text(entry, "face").isEmpty())
+        return {};
+    QPixmap pixmap;
+    pixmap.loadFromData(QByteArray::fromBase64(text(entry, "face").toLatin1()), "PNG");
+    return pixmap;
+}
+
+void WorkflowsFeature::renderCollection()
+{
+    if (!m_grid)
+        return;
+    if (m_tones.window == QColor())
+        m_tones = Tones::from(palette());
+    QJsonArray shown;
+    for (const QJsonValue &value : std::as_const(m_entries))
+        if (workflowMatches(value.toObject(), m_filter->text(), m_scope))
+            shown.append(value);
+    sortWorkflows(shown, m_sort);
+    m_collection->setUpdatesEnabled(false);
+    QList<QWidget *> cards;
+    WorkflowCard::Options options;
+    options.mode = m_viewMode;
+    options.busy = m_busy;
+    options.canPin = localAvailable();
+    for (const QJsonValue &value : std::as_const(shown)) {
+        const QJsonObject entry = value.toObject();
+        options.selected = text(entry, "key") == m_selectedKey;
+        const QString key = text(entry, "key");
+        cards.append(new WorkflowCard(entry, entryFace(entry), m_tones, options,
+                                      [this, key](const QString &action, QWidget *anchor) {
+            entryAction(key, action, anchor);
+        }));
+    }
+    QWidget *header = nullptr;
+    if (m_viewMode == ViewMode::List && !cards.isEmpty()) {
+        header = new QWidget;
+        auto *row = new QHBoxLayout(header);
+        row->setContentsMargins(60, 0, 10, 0);
+        row->setSpacing(12);
+        const auto heading = [](const QString &value, int width) {
+            auto *label = new QLabel(value);
+            label->setObjectName(QStringLiteral("workflowListHeading"));
+            if (width > 0)
+                label->setFixedWidth(width);
+            return label;
+        };
+        row->addWidget(heading(QStringLiteral("Workflow and latest output"), 0), 1);
+        row->addWidget(heading(QStringLiteral("Trigger"), 150));
+        row->addWidget(heading(QStringLiteral("State"), 130));
+        row->addWidget(heading(QStringLiteral("Next or last"), 96));
+        row->addSpacing(274);
+    }
+    m_grid->setCards(cards, m_viewMode, header);
+    m_collection->setUpdatesEnabled(true);
+    const bool none = m_entries.isEmpty();
+    m_collectionEmpty->setVisible(cards.isEmpty() && (m_ready || !m_localWorkflows.isEmpty()));
+    m_collectionEmpty->setText(none ? QStringLiteral("No workflows yet. Press New workflow to make a special agent, run a "
+                                                     "shortcut on this desktop, or build one that runs on ForkMesh.")
+                                    : QStringLiteral("No workflows match. Clear the filter or pick All."));
+    int agents = 0;
+    for (const QJsonValue &value : std::as_const(m_entries))
+        agents += text(value.toObject(), "kind") == QLatin1String("agent") ? 1 : 0;
+    m_collectionCount->setText(cards.size() == m_entries.size()
+                                   ? QStringLiteral("%1 workflows · %2 special agents").arg(m_entries.size()).arg(agents)
+                                   : QStringLiteral("%1 of %2 shown").arg(cards.size()).arg(m_entries.size()));
+}
+
+void WorkflowsFeature::entryAction(const QString &key, const QString &action, QWidget *anchor)
+{
+    const QJsonObject entry = entryFor(key);
+    if (entry.isEmpty())
+        return;
+    const bool local = text(entry, "source") == QLatin1String("local");
+    if (action == QLatin1String("select")) {
+        m_selectedKey = key;
+        for (WorkflowCard *card : m_grid->cards())
+            card->setSelected(card->key() == key);
+        return;
+    }
+    if (action == QLatin1String("edit")) {
+        if (local)
+            openLocalWorkflow(text(entry, "repo"), text(entry, "id"));
+        else
+            openWorkflow(text(entry, "id"));
+        return;
+    }
+    if (action == QLatin1String("run")) {
+        runEntry(entry);
+        return;
+    }
+    if (action == QLatin1String("toggle")) {
+        toggleEntry(entry);
+        return;
+    }
+    if (action == QLatin1String("schedule")) {
+        localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("setSchedule"),
+                    {{QStringLiteral("active"), !entry.value(QStringLiteral("scheduleActive")).toBool()}},
+                    [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
+        return;
+    }
+    if (action == QLatin1String("pin")) {
+        showPinMenu(entry, anchor ? anchor->mapToGlobal(QPoint(0, anchor->height())) : QCursor::pos());
+        return;
+    }
+    if (action == QLatin1String("output")) {
+        showEntryOutput(entry);
+        return;
+    }
+    if (action == QLatin1String("menu")) {
+        showEntryMenu(entry, anchor ? anchor->mapToGlobal(QPoint(0, anchor->height())) : QCursor::pos());
+        return;
+    }
+    if (action == QLatin1String("menu-at"))
+        showEntryMenu(entry, QCursor::pos());
+}
+
+void WorkflowsFeature::runEntry(const QJsonObject &entry, const QString &assignment)
+{
+    const bool running = entry.value(QStringLiteral("running")).toBool() ||
+                         entry.value(QStringLiteral("agentWorking")).toBool();
+    if (text(entry, "source") == QLatin1String("local")) {
+        if (running) {
+            localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("stop"), {},
+                        [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
+            return;
+        }
+        runLocal(entry, assignment);
+        return;
+    }
+    runSummary(entry, assignment);
+}
+
+void WorkflowsFeature::askAssignment(const QJsonObject &entry)
+{
+    bool ok = false;
+    const QString assignment = QInputDialog::getMultiLineText(
+        this, QStringLiteral("Run %1").arg(text(entry, "name")),
+        text(entry, "source") == QLatin1String("local")
+            ? QStringLiteral("What should this run do?")
+            : QStringLiteral("What should this run do? Its steps get it as {{ $trigger.assignment }}."),
+        QString(), &ok);
+    if (ok && !assignment.trimmed().isEmpty())
+        runEntry(entry, assignment.trimmed());
+}
+
+void WorkflowsFeature::toggleEntry(const QJsonObject &entry)
+{
+    if (text(entry, "source") == QLatin1String("local")) {
+        localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("setEnabled"),
+                    {{QStringLiteral("enabled"), !entry.value(QStringLiteral("enabled")).toBool()}},
+                    [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
+        return;
+    }
+    toggleActive(QJsonObject{{QStringLiteral("id"), text(entry, "id")},
+                             {QStringLiteral("active"), entry.value(QStringLiteral("enabled")).toBool()}});
+}
+
+void WorkflowsFeature::showEntryOutput(const QJsonObject &entry)
+{
+    if (text(entry, "source") == QLatin1String("local") && !text(entry, "lastOutputFile").isEmpty()) {
+        localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("openOutput"),
+                    {{QStringLiteral("path"), text(entry, "lastOutputFile")}}, {});
+        return;
+    }
+    const QString runId = text(entry, "lastRunId");
+    if (runId.isEmpty())
+        return setStatus(QStringLiteral("%1 has not run yet.").arg(text(entry, "name")));
+    if (m_runWorkflowFilter->currentIndex() != 0 || m_runStatusFilter->currentIndex() != 0) {
+        m_runWorkflowFilter->setCurrentIndex(0);
+        m_runStatusFilter->setCurrentIndex(0);
+    }
+    for (int row = 0; row < m_runTable->rowCount(); ++row) {
+        QTableWidgetItem *item = m_runTable->item(row, 0);
+        if (item && item->data(Qt::UserRole + 1).toString() == runId) {
+            m_runTable->selectRow(row);
+            m_runTable->scrollToItem(item);
+            return;
+        }
+    }
+    setStatus(text(entry, "lastOutput").isEmpty() ? QStringLiteral("That run has no output.") : text(entry, "lastOutput"));
+}
+
+void WorkflowsFeature::deleteEntry(const QJsonObject &entry)
+{
+    if (text(entry, "source") != QLatin1String("local")) {
+        if (!text(entry, "pinned").isEmpty())
+            localAction(QString::fromLatin1(kAccountRepo), text(entry, "id"), QStringLiteral("unpin"), {},
+                        [](bool, const QJsonObject &, const QString &) {});
+        deleteWorkflow(text(entry, "id"), text(entry, "name"));
+        return;
+    }
+    if (QMessageBox::warning(this, QStringLiteral("Delete workflow"),
+                             QStringLiteral("Delete \"%1\"? This removes its file from %2%3.")
+                                 .arg(text(entry, "name"), text(entry, "repo"),
+                                      entry.value(QStringLiteral("specialAgent")).toBool()
+                                          ? QStringLiteral(", and with it the special agent")
+                                          : QString()),
+                             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("delete"), {},
+                [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
+}
+
+void WorkflowsFeature::addAgentStep(const QJsonObject &entry)
+{
+    m_pendingAgentStep = text(entry, "key");
+    openLocalWorkflow(text(entry, "repo"), text(entry, "id"));
+}
+
+void WorkflowsFeature::showEntryMenu(const QJsonObject &entry, const QPoint &globalPos)
+{
+    const bool local = text(entry, "source") == QLatin1String("local");
+    const bool running = entry.value(QStringLiteral("running")).toBool() ||
+                         entry.value(QStringLiteral("agentWorking")).toBool();
+    const bool enabled = entry.value(QStringLiteral("enabled")).toBool();
+    QMenu menu(this);
+    if (running) {
+        connect(menu.addAction(QStringLiteral("Stop")), &QAction::triggered, this, [this, entry] { runEntry(entry); });
+    } else {
+        QAction *run = menu.addAction(QStringLiteral("Run now"));
+        run->setEnabled(enabled && !(m_busy && !local));
+        connect(run, &QAction::triggered, this, [this, entry] { runEntry(entry); });
+        QAction *assigned = menu.addAction(QStringLiteral("Run with an assignment…"));
+        assigned->setEnabled(enabled && !(m_busy && !local));
+        connect(assigned, &QAction::triggered, this, [this, entry] { askAssignment(entry); });
+    }
+    connect(menu.addAction(QStringLiteral("Edit")), &QAction::triggered, this,
+            [this, key = text(entry, "key")] { entryAction(key, QStringLiteral("edit"), nullptr); });
+    QAction *output = menu.addAction(QStringLiteral("Show the last output"));
+    output->setEnabled(!text(entry, "lastRunId").isEmpty() || !text(entry, "lastOutputFile").isEmpty());
+    connect(output, &QAction::triggered, this, [this, entry] { showEntryOutput(entry); });
+    if (local) {
+        if (entry.value(QStringLiteral("specialAgent")).toBool())
+            connect(menu.addAction(QStringLiteral("Agent home")), &QAction::triggered, this, [this, entry] {
+                localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("openAgent"), {}, {});
+            });
+        else
+            connect(menu.addAction(QStringLiteral("Add a special agent step…")), &QAction::triggered, this,
+                    [this, entry] { addAgentStep(entry); });
+        if (entry.value(QStringLiteral("hasSchedule")).toBool())
+            connect(menu.addAction(entry.value(QStringLiteral("scheduleActive")).toBool()
+                                       ? QStringLiteral("Pause schedule")
+                                       : QStringLiteral("Start schedule")),
+                    &QAction::triggered, this,
+                    [this, key = text(entry, "key")] { entryAction(key, QStringLiteral("schedule"), nullptr); });
+        connect(menu.addAction(QStringLiteral("Show file")), &QAction::triggered, this, [this, entry] {
+            localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("openFile"), {}, {});
+        });
+    } else {
+        QAction *copy = menu.addAction(QStringLiteral("Duplicate"));
+        copy->setEnabled(!m_busy);
+        connect(copy, &QAction::triggered, this, [this, entry] {
+            duplicateWorkflow(QJsonObject{{QStringLiteral("id"), text(entry, "id")}});
+        });
+    }
+    if (localAvailable()) {
+        QMenu *pin = menu.addMenu(text(entry, "pinned").isEmpty()
+                                      ? QStringLiteral("Pin to rail")
+                                      : QStringLiteral("Pinned to the %1 rail").arg(text(entry, "pinned")));
+        const QString current = text(entry, "pinned");
+        for (const auto &rail : {QPair<QString, QString>{QStringLiteral("top"), QStringLiteral("Top rail")},
+                                 {QStringLiteral("left"), QStringLiteral("Left rail")},
+                                 {QStringLiteral("right"), QStringLiteral("Right rail")},
+                                 {QStringLiteral("bottom"), QStringLiteral("Bottom rail")}}) {
+            QAction *action = pin->addAction(rail.second);
+            action->setCheckable(true);
+            action->setChecked(current == rail.first);
+            connect(action, &QAction::triggered, this, [this, entry, value = rail.first] {
+                QJsonObject payload{{QStringLiteral("rail"), value}};
+                if (text(entry, "source") != QLatin1String("local")) {
+                    payload.insert(QStringLiteral("name"), text(entry, "name"));
+                    payload.insert(QStringLiteral("lastStatus"), text(entry, "lastStatus"));
+                }
+                localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("pin"), payload,
+                            [this](bool ok, const QJsonObject &, const QString &message) {
+                    setStatus(message, !ok);
+                    loadLocal();
+                });
+            });
+        }
+        if (!current.isEmpty()) {
+            pin->addSeparator();
+            connect(pin->addAction(QStringLiteral("Unpin")), &QAction::triggered, this, [this, entry] {
+                localAction(text(entry, "repo"), text(entry, "id"), QStringLiteral("unpin"), {},
+                            [this](bool ok, const QJsonObject &, const QString &message) {
+                    setStatus(message, !ok);
+                    loadLocal();
+                });
+            });
+        }
+    }
+    menu.addSeparator();
+    connect(menu.addAction(enabled ? QStringLiteral("Turn off") : QStringLiteral("Turn on")), &QAction::triggered, this,
+            [this, entry] { toggleEntry(entry); });
+    QAction *remove = menu.addAction(QStringLiteral("Delete…"));
+    remove->setEnabled(!running && !(m_busy && !local));
+    connect(remove, &QAction::triggered, this, [this, entry] { deleteEntry(entry); });
+    menu.exec(globalPos);
+}
+
+void WorkflowsFeature::syncAccountPins()
+{
+    if (!localAvailable() || !m_ready)
+        return;
+    QJsonArray rows;
+    for (const QJsonValue &value : std::as_const(m_workflows)) {
+        const QJsonObject summary = value.toObject();
+        rows.append(QJsonObject{{QStringLiteral("id"), text(summary, "id")},
+                                {QStringLiteral("name"), text(summary, "name")},
+                                {QStringLiteral("lastStatus"), text(summary, "lastStatus")}});
+    }
+    localAction(QString::fromLatin1(kAccountRepo), QString(), QStringLiteral("sync"),
+                {{QStringLiteral("workflows"), rows}}, [](bool, const QJsonObject &, const QString &) {});
 }
 
 QWidget *WorkflowsFeature::buildEditor()
@@ -603,7 +1041,8 @@ QWidget *WorkflowsFeature::buildEditor()
     });
     connect(m_editorPinButton, &QPushButton::clicked, this, [this] {
         if (m_draft.isLocal() && !m_draft.id.isEmpty())
-            showPinMenu(m_editorPinButton, m_draft.repo, m_draft.id);
+            showPinMenu(localSummary(m_draft.repo, m_draft.id),
+                        m_editorPinButton->mapToGlobal(QPoint(0, m_editorPinButton->height())));
     });
     connect(m_saveButton, &QPushButton::clicked, this, [this] { saveDraft(); });
     connect(m_runDraftButton, &QPushButton::clicked, this, [this] { runDraft(); });
@@ -728,10 +1167,11 @@ void WorkflowsFeature::loadWorkflows()
         m_workflows = payload.value(QStringLiteral("workflows")).toArray();
         m_ready = true;
         if (!m_busy)
-            setStatus(m_workflows.isEmpty() ? QStringLiteral("No workflows yet.")
-                                            : QStringLiteral("%1 workflows, updated %2.")
-                                                  .arg(m_workflows.size())
-                                                  .arg(QLocale().toString(QTime::currentTime(), QLocale::ShortFormat)));
+            setStatus(m_workflows.isEmpty() && m_localWorkflows.isEmpty()
+                          ? QStringLiteral("No workflows yet.")
+                          : QStringLiteral("%1 workflows, updated %2.")
+                                .arg(m_workflows.size() + m_localWorkflows.size())
+                                .arg(QLocale().toString(QTime::currentTime(), QLocale::ShortFormat)));
         rebuildRunFilter();
         renderDashboard();
         if (m_searchIndexChanged)
@@ -739,6 +1179,7 @@ void WorkflowsFeature::loadWorkflows()
         if (m_navigationBadgeChanged)
             m_navigationBadgeChanged();
         loadAllRuns();
+        syncAccountPins();
     });
 }
 
@@ -807,7 +1248,8 @@ void WorkflowsFeature::renderDashboard()
         for (const QJsonObject &run : all)
             m_allRuns.append(run);
     }
-    const Stats stats = computeStats(m_workflows, m_allRuns, now());
+    rebuildEntries();
+    const Stats stats = computeStats(statsWorkflows(m_entries), m_allRuns, now());
     const qint64 current = now();
     const QStringList values{
         QString::number(stats.workflows),
@@ -834,64 +1276,10 @@ void WorkflowsFeature::renderDashboard()
     }
     m_newButton->setEnabled(m_workflows.size() < kMaxWorkflows);
     m_newButton->setToolTip(m_workflows.size() < kMaxWorkflows
-                                ? QStringLiteral("Start blank, from an example, or import an n8n file or link")
-                                : QStringLiteral("You have 50 workflows, the most an account keeps"));
-    renderWorkflowTable();
+                                ? QStringLiteral("A special agent, a desktop workflow, or one that runs on ForkMesh")
+                                : QStringLiteral("You have 50 workflows on ForkMesh, the most an account keeps"));
+    renderCollection();
     renderRunTable();
-}
-
-void WorkflowsFeature::renderWorkflowTable()
-{
-    const QString chosen = text(selectedSummary(), "id");
-    const QString filter = m_filter->text().trimmed();
-    const qint64 current = now();
-    const QSignalBlocker block(m_workflowTable);
-    m_workflowTable->setRowCount(0);
-    for (const QJsonValue &value : std::as_const(m_workflows)) {
-        const QJsonObject summary = value.toObject();
-        const QString name = text(summary, "name");
-        const QString trigger = triggerLabel(text(summary, "trigger"));
-        if (!filter.isEmpty() && !name.contains(filter, Qt::CaseInsensitive) &&
-            !trigger.contains(filter, Qt::CaseInsensitive))
-            continue;
-        const int row = m_workflowTable->rowCount();
-        m_workflowTable->insertRow(row);
-        auto *nameItem = cell(name);
-        nameItem->setData(Qt::UserRole, text(summary, "id"));
-        m_workflowTable->setItem(row, 0, nameItem);
-        QString triggerText = trigger;
-        if (text(summary, "trigger") == QLatin1String("core.schedule"))
-            triggerText = everyText(int(integer(summary, "scheduleMinutes")));
-        if (triggerText.isEmpty())
-            triggerText = trigger;
-        m_workflowTable->setItem(row, 1, cell(triggerText));
-        m_workflowTable->setItem(row, 2, cell(QString::number(summary.value(QStringLiteral("nodes")).toInt())));
-        const bool active = summary.value(QStringLiteral("active")).toBool();
-        m_workflowTable->setItem(row, 3, cell(active ? QStringLiteral("On") : QStringLiteral("Off")));
-        m_workflowTable->setItem(row, 4, cell(relativeTime(integer(summary, "lastRunAt"), current),
-                                              timeText(integer(summary, "lastRunAt"))));
-        m_workflowTable->setItem(row, 5, statusCell(text(summary, "lastStatus")));
-        const QJsonArray runs = m_runsByWorkflow.value(text(summary, "id"));
-        int failed = 0;
-        for (const QJsonValue &run : runs)
-            failed += text(run.toObject(), "status") == QLatin1String("error") ? 1 : 0;
-        m_workflowTable->setItem(row, 6, cell(runs.isEmpty() ? QStringLiteral("–")
-                                                             : failed ? QStringLiteral("%1 (%2 failed)").arg(runs.size()).arg(failed)
-                                                                      : QString::number(runs.size())));
-        const qint64 next = active ? integer(summary, "nextRunAt") : 0;
-        m_workflowTable->setItem(row, 7, cell(next ? relativeTime(next, current) : QStringLiteral("–"), timeText(next)));
-        m_workflowTable->setItem(row, 8, cell(relativeTime(integer(summary, "updatedAt"), current),
-                                              timeText(integer(summary, "updatedAt"))));
-        if (text(summary, "id") == chosen)
-            m_workflowTable->selectRow(row);
-    }
-    m_emptyNote->setVisible(m_ready && m_workflows.isEmpty());
-    const QJsonObject summary = selectedSummary();
-    for (QPushButton *item : {m_openButton, m_runButton, m_toggleButton, m_duplicateButton, m_deleteButton})
-        item->setEnabled(!summary.isEmpty() && !m_busy);
-    m_toggleButton->setText(summary.value(QStringLiteral("active")).toBool() ? QStringLiteral("Turn off")
-                                                                             : QStringLiteral("Turn on"));
-    m_toggleButton->setAccessibleName(m_toggleButton->text());
 }
 
 void WorkflowsFeature::renderRunTable()
@@ -929,18 +1317,6 @@ void WorkflowsFeature::renderRunTable()
         if (text(run, "id") == text(chosen, "id"))
             m_runTable->selectRow(row);
     }
-}
-
-QJsonObject WorkflowsFeature::selectedSummary() const
-{
-    const int row = m_workflowTable->currentRow();
-    if (row < 0 || !m_workflowTable->item(row, 0) || m_workflowTable->selectedItems().isEmpty())
-        return {};
-    const QString id = m_workflowTable->item(row, 0)->data(Qt::UserRole).toString();
-    for (const QJsonValue &value : m_workflows)
-        if (text(value.toObject(), "id") == id)
-            return value.toObject();
-    return {};
 }
 
 QJsonObject WorkflowsFeature::selectedDashboardRun() const
@@ -1180,29 +1556,33 @@ void WorkflowsFeature::deleteWorkflow(const QString &id, const QString &name)
     });
 }
 
-void WorkflowsFeature::runSummary(const QJsonObject &summary)
+void WorkflowsFeature::runSummary(const QJsonObject &summary, const QString &assignment)
 {
     const QString id = text(summary, "id");
     if (id.isEmpty() || m_busy)
         return;
-    loadCatalog([this, id] {
-        fetchWorkflow(id, [this, id](const QJsonObject &workflow) {
+    loadCatalog([this, id, assignment] {
+        fetchWorkflow(id, [this, id, assignment](const QJsonObject &workflow) {
             const Draft draft = Draft::fromJson(workflow);
             if (draft.hasDesktopSteps(m_catalog)) {
                 runOnDesktop(draft);
                 return;
             }
-            runWorkflow(id);
+            QJsonObject body;
+            if (!assignment.isEmpty())
+                body.insert(QStringLiteral("payload"), QJsonObject{{QStringLiteral("assignment"), assignment}});
+            runWorkflow(id, body);
         });
     });
 }
 
-void WorkflowsFeature::runWorkflow(const QString &id)
+void WorkflowsFeature::runWorkflow(const QString &id, const QJsonObject &body)
 {
     m_busy = true;
     m_runDraftButton->setEnabled(false);
     setStatus(QStringLiteral("Running on ForkMesh…"));
-    request(QByteArrayLiteral("POST"), path(QStringLiteral("/%1/run").arg(id)), {},
+    renderCollection();
+    request(QByteArrayLiteral("POST"), path(QStringLiteral("/%1/run").arg(id)), body,
             [this, id](bool ok, const QJsonObject &payload, const QString &error) {
         m_busy = false;
         m_runDraftButton->setEnabled(true);
@@ -1267,6 +1647,10 @@ QList<forkmesh::market::NativePackageSearchHit> WorkflowsFeature::searchHits(con
 
 void WorkflowsFeature::activateSearchHit(const QString &id)
 {
+    if (id.startsWith(QLatin1String("run:"))) {
+        runSummary(QJsonObject{{QStringLiteral("id"), id.mid(4)}});
+        return;
+    }
     if (id.startsWith(QLatin1String("repo:"))) {
         const QString rest = id.mid(5);
         openLocalWorkflow(rest.section(QLatin1Char('|'), 0, 0), rest.section(QLatin1Char('|'), 1));
@@ -2042,7 +2426,7 @@ void WorkflowsFeature::runOnDesktop(const Draft &draft)
     m_desktopRun.startedAt = now();
     m_busy = true;
     setDirty(m_dirty);
-    renderWorkflowTable();
+    renderCollection();
     runDesktopStep(0);
 }
 
@@ -2278,198 +2662,10 @@ QIcon WorkflowsFeature::faceIcon(const QString &base64) const
     return QIcon(pixmap);
 }
 
-QWidget *WorkflowsFeature::buildLocalSection()
-{
-    auto *section = new QWidget;
-    m_localSection = section;
-    auto *layout = new QVBoxLayout(section);
-    layout->setContentsMargins(0, 6, 0, 0);
-    layout->setSpacing(6);
-    auto *heading = new QHBoxLayout;
-    heading->addWidget(sectionLabel(QStringLiteral("On this desktop")));
-    auto *about = mutedLabel(QStringLiteral("Special agents and other workflows your repositories keep in "
-                                            ".forkmesh/workflows. They run here, with your agents and shortcuts."));
-    about->setWordWrap(false);
-    heading->addWidget(about);
-    heading->addStretch();
-    m_localRunButton = button(QStringLiteral("Run"));
-    m_localEditButton = button(QStringLiteral("Edit"));
-    m_localAgentButton = button(QStringLiteral("Agent home"));
-    m_localPinButton = button(QStringLiteral("Pin to rail"));
-    m_localScheduleButton = button(QStringLiteral("Start schedule"));
-    m_localToggleButton = button(QStringLiteral("Turn off"));
-    m_localDeleteButton = button(QStringLiteral("Delete"), "dangerButton");
-    const QList<QPair<QPushButton *, QString>> localButtons{
-        {m_localRunButton, QStringLiteral("workflowsLocalRun")},
-        {m_localEditButton, QStringLiteral("workflowsLocalEdit")},
-        {m_localAgentButton, QStringLiteral("workflowsLocalAgent")},
-        {m_localPinButton, QStringLiteral("workflowsLocalPin")},
-        {m_localScheduleButton, QStringLiteral("workflowsLocalSchedule")},
-        {m_localToggleButton, QStringLiteral("workflowsLocalToggle")},
-        {m_localDeleteButton, QStringLiteral("workflowsLocalDelete")}};
-    for (const auto &entry : localButtons) {
-        entry.first->setProperty("localName", entry.second);
-        entry.first->setAccessibleName(QStringLiteral("Desktop workflow: %1").arg(entry.first->text()));
-        heading->addWidget(entry.first);
-        entry.first->setEnabled(false);
-    }
-    layout->addLayout(heading);
-    m_localTable = makeTable({QStringLiteral("Name"), QStringLiteral("Repository"), QStringLiteral("Kind"),
-                              QStringLiteral("Trigger"), QStringLiteral("State"), QStringLiteral("Last run"),
-                              QStringLiteral("Last result"), QStringLiteral("Next run"), QStringLiteral("Rail")},
-                             QStringLiteral("workflowsLocalTable"), new WorkflowDragTable);
-    m_localTable->setIconSize(QSize(22, 22));
-    m_localTable->setDragEnabled(true);
-    m_localTable->setDragDropMode(QAbstractItemView::DragOnly);
-    m_localTable->setToolTip(QStringLiteral("Drag a workflow onto the side rail to keep a run button there"));
-    m_localTable->setContextMenuPolicy(Qt::CustomContextMenu);
-    layout->addWidget(m_localTable, 1);
-    m_localEmpty = mutedLabel(QStringLiteral(
-        "No workflows on this desktop yet. Press New workflow and pick one under On this desktop, or add a "
-        "repository with a local checkout."));
-    m_localEmpty->setAlignment(Qt::AlignHCenter);
-    m_localEmpty->setVisible(false);
-    layout->addWidget(m_localEmpty);
-
-    const auto updateButtons = [this] {
-        const QJsonObject summary = selectedLocal();
-        const bool chosen = !summary.isEmpty();
-        const bool running = summary.value(QStringLiteral("running")).toBool() ||
-                             summary.value(QStringLiteral("agentWorking")).toBool();
-        m_localRunButton->setText(running ? QStringLiteral("Stop") : QStringLiteral("Run"));
-        m_localRunButton->setAccessibleName(QStringLiteral("Desktop workflow: %1").arg(m_localRunButton->text()));
-        m_localRunButton->setEnabled(chosen && (running || summary.value(QStringLiteral("enabled")).toBool()));
-        m_localEditButton->setEnabled(chosen);
-        m_localAgentButton->setEnabled(chosen && summary.value(QStringLiteral("specialAgent")).toBool());
-        m_localPinButton->setEnabled(chosen);
-        m_localPinButton->setText(text(summary, "pinned").isEmpty()
-                                      ? QStringLiteral("Pin to rail")
-                                      : QStringLiteral("Pinned: %1").arg(text(summary, "pinned")));
-        const bool hasSchedule = summary.value(QStringLiteral("hasSchedule")).toBool();
-        m_localScheduleButton->setEnabled(chosen && hasSchedule);
-        m_localScheduleButton->setText(summary.value(QStringLiteral("scheduleActive")).toBool()
-                                           ? QStringLiteral("Pause schedule")
-                                           : QStringLiteral("Start schedule"));
-        m_localToggleButton->setEnabled(chosen);
-        m_localToggleButton->setText(summary.value(QStringLiteral("enabled")).toBool() ? QStringLiteral("Turn off")
-                                                                                        : QStringLiteral("Turn on"));
-        m_localDeleteButton->setEnabled(chosen && !running);
-    };
-    connect(m_localTable, &QTableWidget::itemSelectionChanged, this, updateButtons);
-    connect(m_localTable, &QTableWidget::cellDoubleClicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        openLocalWorkflow(text(summary, "repo"), text(summary, "id"));
-    });
-    connect(m_localRunButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        if (summary.value(QStringLiteral("running")).toBool() || summary.value(QStringLiteral("agentWorking")).toBool())
-            localAction(text(summary, "repo"), text(summary, "id"), QStringLiteral("stop"), {},
-                        [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
-        else
-            runLocal(summary);
-    });
-    connect(m_localEditButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        openLocalWorkflow(text(summary, "repo"), text(summary, "id"));
-    });
-    connect(m_localAgentButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        localAction(text(summary, "repo"), text(summary, "id"), QStringLiteral("openAgent"), {}, {});
-    });
-    connect(m_localPinButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        showPinMenu(m_localPinButton, text(summary, "repo"), text(summary, "id"));
-    });
-    connect(m_localScheduleButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        localAction(text(summary, "repo"), text(summary, "id"), QStringLiteral("setSchedule"),
-                    {{QStringLiteral("active"), !summary.value(QStringLiteral("scheduleActive")).toBool()}},
-                    [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
-    });
-    connect(m_localToggleButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        localAction(text(summary, "repo"), text(summary, "id"), QStringLiteral("setEnabled"),
-                    {{QStringLiteral("enabled"), !summary.value(QStringLiteral("enabled")).toBool()}},
-                    [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
-    });
-    connect(m_localDeleteButton, &QPushButton::clicked, this, [this] {
-        const QJsonObject summary = selectedLocal();
-        if (QMessageBox::warning(this, QStringLiteral("Delete workflow"),
-                                 QStringLiteral("Delete \"%1\"? This removes its file from %2%3.")
-                                     .arg(text(summary, "name"), text(summary, "repo"),
-                                          summary.value(QStringLiteral("specialAgent")).toBool()
-                                              ? QStringLiteral(", and with it the special agent")
-                                              : QString()),
-                                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
-            return;
-        localAction(text(summary, "repo"), text(summary, "id"), QStringLiteral("delete"), {},
-                    [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
-    });
-    connect(m_localTable, &QWidget::customContextMenuRequested, this, [this](const QPoint &point) {
-        const QJsonObject summary = selectedLocal();
-        if (summary.isEmpty())
-            return;
-        const QString repo = text(summary, "repo");
-        const QString id = text(summary, "id");
-        QMenu menu(this);
-        const bool running = summary.value(QStringLiteral("running")).toBool();
-        if (running) {
-            connect(menu.addAction(QStringLiteral("Stop")), &QAction::triggered, this, [this, repo, id] {
-                localAction(repo, id, QStringLiteral("stop"), {}, {});
-            });
-        } else {
-            connect(menu.addAction(QStringLiteral("Run now")), &QAction::triggered, this,
-                    [this, summary] { runLocal(summary); });
-            connect(menu.addAction(QStringLiteral("Run with an assignment…")), &QAction::triggered, this,
-                    [this, summary] {
-                        bool ok = false;
-                        const QString assignment = QInputDialog::getMultiLineText(
-                            this, QStringLiteral("Run %1").arg(text(summary, "name")),
-                            QStringLiteral("What should this run do?"), QString(), &ok);
-                        if (ok && !assignment.trimmed().isEmpty())
-                            runLocal(summary, assignment.trimmed());
-                    });
-        }
-        connect(menu.addAction(QStringLiteral("Edit")), &QAction::triggered, this,
-                [this, repo, id] { openLocalWorkflow(repo, id); });
-        if (summary.value(QStringLiteral("specialAgent")).toBool())
-            connect(menu.addAction(QStringLiteral("Agent home")), &QAction::triggered, this,
-                    [this, repo, id] { localAction(repo, id, QStringLiteral("openAgent"), {}, {}); });
-        connect(menu.addAction(QStringLiteral("Show file")), &QAction::triggered, this,
-                [this, repo, id] { localAction(repo, id, QStringLiteral("openFile"), {}, {}); });
-        QMenu *pin = menu.addMenu(QStringLiteral("Pin to rail"));
-        const QString current = text(summary, "pinned");
-        for (const auto &rail : {QPair<QString, QString>{QStringLiteral("top"), QStringLiteral("Top rail")},
-                                 {QStringLiteral("left"), QStringLiteral("Left rail")},
-                                 {QStringLiteral("right"), QStringLiteral("Right rail")},
-                                 {QStringLiteral("bottom"), QStringLiteral("Bottom rail")}}) {
-            QAction *action = pin->addAction(rail.second);
-            action->setCheckable(true);
-            action->setChecked(current == rail.first);
-            connect(action, &QAction::triggered, this, [this, repo, id, value = rail.first] {
-                localAction(repo, id, QStringLiteral("pin"), {{QStringLiteral("rail"), value}},
-                            [this](bool ok, const QJsonObject &, const QString &message) { setStatus(message, !ok); });
-            });
-        }
-        if (!current.isEmpty()) {
-            pin->addSeparator();
-            connect(pin->addAction(QStringLiteral("Unpin")), &QAction::triggered, this, [this, repo, id] {
-                localAction(repo, id, QStringLiteral("unpin"), {}, {});
-            });
-        }
-        menu.exec(m_localTable->viewport()->mapToGlobal(point));
-    });
-    section->setVisible(false);
-    return section;
-}
-
 void WorkflowsFeature::loadLocal()
 {
-    if (!localAvailable()) {
-        if (m_localSection)
-            m_localSection->setVisible(false);
+    if (!localAvailable())
         return;
-    }
     m_local = m_repositoryWorkflows();
     if (m_localCatalog.isEmpty())
         m_localCatalog.load(m_local.value(QStringLiteral("catalog")).toObject());
@@ -2480,12 +2676,8 @@ void WorkflowsFeature::loadLocal()
         for (const QJsonValue &run : summary.value(QStringLiteral("recentRuns")).toArray())
             m_localRuns.append(localRunRow(run.toObject(), text(summary, "repo"), text(summary, "name")));
     }
-    if (m_localSection)
-        m_localSection->setVisible(true);
-    renderLocalTable();
     rebuildRunFilter();
-    if (m_ready || !m_localRuns.isEmpty())
-        renderDashboard();
+    renderDashboard();
     if (m_searchIndexChanged)
         m_searchIndexChanged();
     if (m_navigationBadgeChanged)
@@ -2519,79 +2711,6 @@ void WorkflowsFeature::rebuildRunFilter()
         m_runWorkflowFilter->addItem(text(summary, "name"), text(summary, "id"));
     }
     m_runWorkflowFilter->setCurrentIndex(std::max(0, m_runWorkflowFilter->findData(chosen)));
-}
-
-void WorkflowsFeature::renderLocalTable()
-{
-    if (!m_localTable)
-        return;
-    const QJsonObject chosen = selectedLocal();
-    const QString filter = m_filter->text().trimmed();
-    const qint64 current = now();
-    const QSignalBlocker block(m_localTable);
-    m_localTable->setRowCount(0);
-    for (const QJsonValue &value : std::as_const(m_localWorkflows)) {
-        const QJsonObject summary = value.toObject();
-        const QString name = text(summary, "name");
-        const bool agent = summary.value(QStringLiteral("specialAgent")).toBool();
-        const QString kind = agent ? QStringLiteral("Special agent") : QStringLiteral("Workflow");
-        if (!filter.isEmpty() && !name.contains(filter, Qt::CaseInsensitive) &&
-            !text(summary, "trigger").contains(filter, Qt::CaseInsensitive) &&
-            !text(summary, "repo").contains(filter, Qt::CaseInsensitive) && !kind.contains(filter, Qt::CaseInsensitive))
-            continue;
-        const int row = m_localTable->rowCount();
-        m_localTable->insertRow(row);
-        auto *nameItem = cell(name, text(summary, "description").isEmpty() ? name : text(summary, "description"));
-        nameItem->setIcon(faceIcon(text(summary, "face")));
-        nameItem->setData(Qt::UserRole, text(summary, "repo"));
-        nameItem->setData(Qt::UserRole + 1, text(summary, "id"));
-        m_localTable->setItem(row, 0, nameItem);
-        m_localTable->setItem(row, 1, cell(text(summary, "repo")));
-        m_localTable->setItem(row, 2, cell(kind + (summary.value(QStringLiteral("legacy")).toBool()
-                                                       ? QStringLiteral(" (not moved yet)")
-                                                       : QString()),
-                                           summary.value(QStringLiteral("legacy")).toBool()
-                                               ? QStringLiteral("Still in .forkmesh/teammates. Saving it moves it to "
-                                                                ".forkmesh/workflows.")
-                                               : text(summary, "path")));
-        m_localTable->setItem(row, 3, cell(text(summary, "trigger")));
-        QString state = summary.value(QStringLiteral("enabled")).toBool() ? QStringLiteral("On") : QStringLiteral("Off");
-        if (summary.value(QStringLiteral("running")).toBool())
-            state = QStringLiteral("Running · %1").arg(text(summary, "runningStep"));
-        else if (summary.value(QStringLiteral("agentWorking")).toBool())
-            state = QStringLiteral("Agent working");
-        if (!text(summary, "error").isEmpty())
-            state = QStringLiteral("Needs a fix");
-        m_localTable->setItem(row, 4, cell(state, text(summary, "error").isEmpty() ? state : text(summary, "error")));
-        m_localTable->setItem(row, 5, cell(relativeTime(integer(summary, "lastRunAt"), current),
-                                           timeText(integer(summary, "lastRunAt"))));
-        auto *result = statusCell(text(summary, "lastStatus"));
-        if (!text(summary, "lastSummary").isEmpty()) {
-            result->setText(QStringLiteral("%1 · %2").arg(localStatusLabel(text(summary, "lastStatus")),
-                                                         text(summary, "lastSummary")));
-            result->setToolTip(text(summary, "lastSummary"));
-        }
-        m_localTable->setItem(row, 6, result);
-        const qint64 next = integer(summary, "nextRunAt");
-        m_localTable->setItem(row, 7, cell(next ? relativeTime(next, current) : QStringLiteral("–"), timeText(next)));
-        m_localTable->setItem(row, 8, cell(text(summary, "pinned").isEmpty() ? QStringLiteral("–")
-                                                                             : text(summary, "pinned")));
-        if (text(summary, "repo") == text(chosen, "repo") && text(summary, "id") == text(chosen, "id"))
-            m_localTable->selectRow(row);
-    }
-    m_localEmpty->setVisible(m_localWorkflows.isEmpty());
-    m_localTable->itemSelectionChanged();
-}
-
-QJsonObject WorkflowsFeature::selectedLocal() const
-{
-    if (!m_localTable)
-        return {};
-    const int row = m_localTable->currentRow();
-    if (row < 0 || !m_localTable->item(row, 0) || m_localTable->selectedItems().isEmpty())
-        return {};
-    return localSummary(m_localTable->item(row, 0)->data(Qt::UserRole).toString(),
-                        m_localTable->item(row, 0)->data(Qt::UserRole + 1).toString());
 }
 
 QJsonObject WorkflowsFeature::localSummary(const QString &repo, const QString &id) const
@@ -2658,11 +2777,19 @@ void WorkflowsFeature::runLocal(const QJsonObject &summary, const QString &assig
     });
 }
 
-void WorkflowsFeature::showPinMenu(QPushButton *anchor, const QString &repo, const QString &id)
+void WorkflowsFeature::showPinMenu(const QJsonObject &entry, const QPoint &globalPos)
 {
+    const QString repo = text(entry, "repo");
+    const QString id = text(entry, "id");
     if (repo.isEmpty() || id.isEmpty())
         return;
-    const QString current = text(localSummary(repo, id), "pinned");
+    const QString current = text(entry, "pinned");
+    const auto done = [this](bool ok, const QJsonObject &, const QString &message) {
+        setStatus(message, !ok);
+        loadLocal();
+        if (m_pages->currentIndex() == 1)
+            renderLocalEditorBar();
+    };
     QMenu menu(this);
     for (const auto &rail : {QPair<QString, QString>{QStringLiteral("top"), QStringLiteral("Top rail")},
                              {QStringLiteral("left"), QStringLiteral("Left rail")},
@@ -2671,28 +2798,21 @@ void WorkflowsFeature::showPinMenu(QPushButton *anchor, const QString &repo, con
         QAction *action = menu.addAction(rail.second);
         action->setCheckable(true);
         action->setChecked(current == rail.first);
-        connect(action, &QAction::triggered, this, [this, repo, id, value = rail.first] {
-            localAction(repo, id, QStringLiteral("pin"), {{QStringLiteral("rail"), value}},
-                        [this](bool ok, const QJsonObject &, const QString &message) {
-                setStatus(message, !ok);
-                loadLocal();
-                if (m_pages->currentIndex() == 1)
-                    renderLocalEditorBar();
-            });
+        connect(action, &QAction::triggered, this, [this, entry, repo, id, done, value = rail.first] {
+            QJsonObject payload{{QStringLiteral("rail"), value}};
+            if (repo == QLatin1String(kAccountRepo)) {
+                payload.insert(QStringLiteral("name"), text(entry, "name"));
+                payload.insert(QStringLiteral("lastStatus"), text(entry, "lastStatus"));
+            }
+            localAction(repo, id, QStringLiteral("pin"), payload, done);
         });
     }
     if (!current.isEmpty()) {
         menu.addSeparator();
-        connect(menu.addAction(QStringLiteral("Unpin")), &QAction::triggered, this, [this, repo, id] {
-            localAction(repo, id, QStringLiteral("unpin"), {}, [this](bool ok, const QJsonObject &, const QString &message) {
-                setStatus(message, !ok);
-                loadLocal();
-                if (m_pages->currentIndex() == 1)
-                    renderLocalEditorBar();
-            });
-        });
+        connect(menu.addAction(QStringLiteral("Unpin")), &QAction::triggered, this,
+                [this, repo, id, done] { localAction(repo, id, QStringLiteral("unpin"), {}, done); });
     }
-    menu.exec(anchor ? anchor->mapToGlobal(QPoint(0, anchor->height())) : QCursor::pos());
+    menu.exec(globalPos);
 }
 
 void WorkflowsFeature::openLocalWorkflow(const QString &repo, const QString &id)
@@ -2710,6 +2830,26 @@ void WorkflowsFeature::openLocalWorkflow(const QString &repo, const QString &id)
         if (!ok)
             return setStatus(message, true);
         openDraft(Draft::fromLocal(payload.value(QStringLiteral("workflow")).toObject(), repo), false);
+        if (m_pendingAgentStep == QStringLiteral("local:%1|%2").arg(repo, m_draft.id)) {
+            m_pendingAgentStep.clear();
+            const QStringList order = m_draft.ordered();
+            const QString after = order.isEmpty() ? QString() : order.last();
+            const QString added = m_draft.addStep(m_localCatalog, QStringLiteral("agent.run"), after);
+            if (!added.isEmpty()) {
+                QJsonObject node = m_draft.node(added);
+                QJsonObject params = node.value(QStringLiteral("params")).toObject();
+                params.insert(QStringLiteral("specialty"), QStringLiteral("Special agent"));
+                params.insert(QStringLiteral("permissions"), QJsonArray{QStringLiteral("read-repositories")});
+                node.insert(QStringLiteral("params"), params);
+                m_draft.updateNode(node);
+                setDirty(true);
+                renderEditor();
+                selectStep(added);
+                setStatus(QStringLiteral("Added a special agent step to %1. Give it a role and instructions, then Save.")
+                              .arg(m_draft.name));
+                return;
+            }
+        }
         if (payload.value(QStringLiteral("legacy")).toBool())
             setStatus(QStringLiteral("%1 is still a .forkmesh/teammates file. Save moves it to .forkmesh/workflows.")
                           .arg(m_draft.name));

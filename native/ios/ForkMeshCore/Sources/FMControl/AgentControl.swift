@@ -137,6 +137,8 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
     public var createdAtMs = 0
     public var unread: Bool?
     public var backgroundTasks = 0
+    public var tokensIn = 0
+    public var tokensOut = 0
 
     public init(
         id: String, badge: AgentTransportBadge, title: String, repoOwner: String, repoName: String, node: String,
@@ -321,6 +323,8 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
         unified.createdAtMs = session.createdAtMs
         unified.unread = row.unread
         unified.backgroundTasks = row.backgroundTasks
+        unified.tokensIn = row.tokensIn
+        unified.tokensOut = row.tokensOut
         return unified
     }
 

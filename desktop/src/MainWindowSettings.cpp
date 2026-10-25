@@ -705,6 +705,7 @@ struct MainWindow::SettingsSectionParts {
     QCheckBox *issueModelMentionsCheck = nullptr;
     QCheckBox *excludeExternalClaudeCheck = nullptr;
     QCheckBox *publishAgentsToWebCheck = nullptr;
+    QCheckBox *claudeDesktopSessionsCheck = nullptr;
     QLabel *notifyLabel = nullptr;
     QHBoxLayout *pingPauseRow = nullptr;
     QCheckBox *nativeSystemNotificationsCheck = nullptr;
@@ -1728,11 +1729,26 @@ void MainWindow::buildSettingsAgentBehaviourParts(SettingsSectionParts &parts)
         QSettings().setValue(kPublishAgentsToWebSetting, enabled);
     });
 
+    auto *claudeDesktopSessionsCheck =
+        new QCheckBox("Add Claude Code agents to the Claude app");
+    claudeDesktopSessionsCheck->setObjectName(QStringLiteral("claudeDesktopSessionsCheck"));
+    claudeDesktopSessionsCheck->setChecked(claudeDesktopSessionsEnabled());
+    claudeDesktopSessionsCheck->setToolTip(
+        "When a Claude Code agent finishes, add its session to the Claude "
+        "desktop app's Code tab so it can be read and resumed there. The Claude "
+        "app switches to each session it adds. Codex agents stay in ForkMesh.");
+    connect(claudeDesktopSessionsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        QSettings().setValue(kClaudeDesktopSessionsSetting, enabled);
+        if (enabled)
+            backfillClaudeDesktopSessions();
+    });
+
     parts.autoSwitchToAgentCheck = autoSwitchToAgentCheck;
     parts.terminalTranscriptOutputCheck = terminalTranscriptOutputCheck;
     parts.issueModelMentionsCheck = issueModelMentionsCheck;
     parts.excludeExternalClaudeCheck = excludeExternalClaudeCheck;
     parts.publishAgentsToWebCheck = publishAgentsToWebCheck;
+    parts.claudeDesktopSessionsCheck = claudeDesktopSessionsCheck;
 }
 
 // Settings > Pings > PINGS: pause, delivery and the per-kind alert switches.
@@ -4440,6 +4456,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     agentBehaviourGroup->addWidget(parts.issueModelMentionsCheck);
     agentBehaviourGroup->addWidget(parts.excludeExternalClaudeCheck);
     agentBehaviourGroup->addWidget(parts.publishAgentsToWebCheck);
+    agentBehaviourGroup->addWidget(parts.claudeDesktopSessionsCheck);
 
     auto *nodeStatsGroup = generalTab->addSection();
     nodeStatsGroup->addLayout(settingsHeading(parts.nodeStatsLabel, "graph"));
@@ -11759,6 +11776,14 @@ void MainWindow::renderPageNotices(bool force)
     for (const QPointer<QWidget> &row : std::as_const(m_pageNoticeRows)) {
         if (!row)
             continue;
+        if (auto *shown = dynamic_cast<kit::InlineNotice *>(row.data())) {
+            const quint64 shownId = shown->property("pageNoticeId").toULongLong();
+            for (PageNotice &notice : m_pageNotices) {
+                if (notice.id == shownId)
+                    notice.countdownElapsedMs = shown->countdownElapsed();
+            }
+            shown->stopCountdown();
+        }
         m_pageNoticeLayout->removeWidget(row);
         row->hide();
         row->deleteLater();
@@ -11814,6 +11839,8 @@ void MainWindow::renderPageNotices(bool force)
         QPushButton *clear = row->addCloseButton();
         connect(clear, &QPushButton::clicked, this,
                 [this, id] { clearPageNotice(id); });
+        row->startCountdown(m_pageNoticeCountdownMs, notice.countdownElapsedMs,
+                            [this, id] { clearPageNotice(id); });
         m_pageNoticeLayout->addWidget(row);
         m_pageNoticeRows.append(row);
     }
@@ -11891,6 +11918,42 @@ void MainWindow::testClickPageNoticeClear()
     if (QPushButton *clear =
             firstNoticeAction(m_pageNoticeRows, QStringLiteral("clear")))
         clear->click();
+}
+
+static kit::InlineNotice *firstNoticeRow(const QList<QPointer<QWidget>> &rows)
+{
+    for (const QPointer<QWidget> &row : rows) {
+        if (auto *notice = dynamic_cast<kit::InlineNotice *>(row.data()))
+            return notice;
+    }
+    return nullptr;
+}
+
+bool MainWindow::testPageNoticeCountingDown() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownRunning();
+}
+
+bool MainWindow::testPageNoticeCountdownPaused() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownPaused();
+}
+
+void MainWindow::testHoverPageNotice(bool inside)
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    if (!row)
+        return;
+    if (inside) {
+        const QPointF local(row->rect().center());
+        QEnterEvent enter(local, local, QPointF(row->mapToGlobal(local)));
+        QCoreApplication::sendEvent(row, &enter);
+    } else {
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(row, &leave);
+    }
 }
 
 QString MainWindow::testLoadStatusText() const

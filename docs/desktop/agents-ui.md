@@ -599,7 +599,12 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   composer (`sendCurrentMessage`), refusing attachments and a room you cannot
   post in. `updateChatConversationHeading` and `updateQuickAddEnterTarget`
   refresh its label. While the Chat page is open (`promptChatRoom`) it takes
-  Enter, and **add** and **new** step aside. For part of 2026-10-22 the
+  Enter, and **add** and **new** step aside. It also carries the
+  `enterTarget` highlight then (the accent fill in the new interface, a solid
+  purple border in the classic one), so the button Enter will press is the one
+  lit up; until 2026-10-24 only **add** and **new** were ever highlighted,
+  which left nothing lit in a chat room. A package's own prompt takes the
+  highlight back. For part of 2026-10-22 the
   follow-up button did this as **chat**, by pasting the text into the room's
   own message box (`sendPromptToChatRoom`). It replaced
   the **task** button, which filed the prompt in General: that lives in the
@@ -895,8 +900,9 @@ Rules of construction:
   `placeWorkspaceComposer`.
 
 The browser tab (`src/WorkspaceBrowserPane.*`, library
-`forkmesh-browser-pane`) opens pages in the system browser unless built with
-`-DFORKMESH_BROWSER_PANE=ON` and Qt WebEngine. Only `http` and `https` load.
+`forkmesh-browser-pane`) embeds an ungoogled Qt WebEngine view when the build
+finds Qt WebEngine, and opens pages in the system browser otherwise; see
+[browser.md](browser.md).
 
 ## Tool efficiency and Models board
 

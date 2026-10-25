@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/icons/octicons">
         <file alias="alert.svg">icons/octicons/alert.svg</file>
+        <file alias="apps.svg">icons/octicons/apps.svg</file>
         <file alias="arrow-left.svg">icons/octicons/arrow-left.svg</file>
         <file alias="bell.svg">icons/octicons/bell.svg</file>
         <file alias="book.svg">icons/octicons/book.svg</file>

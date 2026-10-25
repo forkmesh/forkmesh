@@ -522,7 +522,7 @@ def sanitize_rig(payload):
     rig["h"] = []
     if isinstance(hands, list):
         for hand in hands[:2]:
-            cleaned = _bounded_int_list(hand, 9, -255, 255, 9)
+            cleaned = _bounded_int_list(hand, 10, -255, 255, 9)
             if cleaned is not None:
                 rig["h"].append(cleaned)
     rig["t"] = 1 if payload.get("t") in (1, True) else 0

@@ -1661,7 +1661,7 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
     QPushButton *theme = topIconButton("topThemeButton", QString());
     clusterRow->addWidget(theme);
     QPushButton *terminal = topIconButton("topTerminalButton",
-                                          QStringLiteral("Open a terminal tab"));
+                                          QStringLiteral("Open a terminal"));
     terminal->setIcon(QIcon(tintedOcticonPixmap(QStringLiteral("terminal"),
                                                 Theme::color(Theme::Role::FgMuted), 16)));
     clusterRow->addWidget(terminal);
@@ -1694,7 +1694,7 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
         window.applyTheme(window.m_packageRegistry.get());
     });
     QObject::connect(terminal, &QPushButton::clicked, &window,
-                     [&window] { window.showTerminalLauncher(); });
+                     [&window] { window.toggleTerminals(); });
     QObject::connect(team, &QPushButton::clicked, &window, [&window] {
         window.setSideRailEnabled(!window.sideRailEnabled());
     });
@@ -1753,9 +1753,12 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
         theme->setToolTip(dark ? QStringLiteral("Light mode") : QStringLiteral("Dark mode"));
         terminal->setIcon(QIcon(tintedOcticonPixmap(QStringLiteral("terminal"), muted, 16)));
         const int terminals = window.m_terminalsPage ? window.m_terminalsPage->count() : 0;
-        terminal->setToolTip(terminals > 0
-                                 ? QStringLiteral("Open a terminal tab (%1 open)").arg(terminals)
-                                 : QStringLiteral("Open a terminal tab"));
+        terminal->setToolTip(window.sideRailTerminalsOpen() && window.m_sideRail &&
+                                     window.m_sideRail->isVisible()
+                                 ? QStringLiteral("Hide terminals")
+                             : terminals > 0
+                                 ? QStringLiteral("Show terminals (%1 open)").arg(terminals)
+                                 : QStringLiteral("Open a terminal"));
         const bool teamOn = window.sideRailEnabled();
         team->setIcon(QIcon(panelGlyph(teamOn ? Theme::color(Theme::Role::Fg) : muted, true)));
         team->setToolTip(teamOn ? QStringLiteral("Hide the side rail")
