@@ -82,6 +82,24 @@ bool runningAsService()
 
 } // namespace
 
+QPixmap forkmesh::ui::currentProjectLogo(int side, QString *name)
+{
+    const QString slug = forkmesh::paths::projectSlug();
+    forkmesh::projects::Project current;
+    for (const forkmesh::projects::Project &project : forkmesh::projects::list(
+             forkmesh::paths::projectsRoot(), forkmesh::paths::homeDir())) {
+        if (project.slug == slug)
+            current = project;
+    }
+    if (current.slug.isEmpty()) {
+        current.slug = slug;
+        current.name = slug;
+    }
+    if (name)
+        *name = current.name;
+    return projectLogoPixmap(current, side);
+}
+
 QPushButton *MainWindow::buildProjectMenuButton()
 {
     m_projectMenuButton = new QPushButton;
