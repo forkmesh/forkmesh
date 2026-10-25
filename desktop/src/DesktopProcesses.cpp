@@ -5,8 +5,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QList>
+#include <QMap>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStringList>
+
+#include <algorithm>
 
 #if defined(Q_OS_LINUX)
 #include <dirent.h>
@@ -21,7 +25,6 @@ namespace desktopprocs {
 
 namespace {
 
-#if defined(Q_OS_LINUX)
 QByteArray readSmall(const QString &path)
 {
     QFile file(path);
@@ -29,6 +32,47 @@ QByteArray readSmall(const QString &path)
         return QByteArray();
     return file.read(64 * 1024);
 }
+
+QString readText(const QString &path)
+{
+    return QString::fromUtf8(readSmall(path)).trimmed();
+}
+
+qint64 readNumber(const QString &path)
+{
+    bool ok = false;
+    const qint64 value = readSmall(path).trimmed().toLongLong(&ok);
+    return ok ? value : -1;
+}
+
+QString summarize(const QMap<QString, int> &counts)
+{
+    if (counts.isEmpty())
+        return QString();
+    if (counts.size() == 1)
+        return counts.firstKey();
+    QStringList parts;
+    for (auto it = counts.cbegin(); it != counts.cend(); ++it)
+        parts.append(QStringLiteral("%1 \u00d7%2").arg(it.key()).arg(it.value()));
+    return QStringLiteral("mixed: ") + parts.join(QStringLiteral(", "));
+}
+
+qint64 cacheSizeBytes(const QString &text)
+{
+    QString value = text.trimmed().toUpper();
+    qint64 scale = 1;
+    if (value.endsWith(QLatin1Char('K')))
+        scale = 1024;
+    else if (value.endsWith(QLatin1Char('M')))
+        scale = 1024 * 1024;
+    if (scale > 1)
+        value.chop(1);
+    bool ok = false;
+    const qint64 number = value.toLongLong(&ok);
+    return ok ? number * scale : -1;
+}
+
+#if defined(Q_OS_LINUX)
 
 qint64 meminfoBytes(const QByteArray &meminfo, const char *key)
 {
@@ -210,6 +254,276 @@ void markTree(QList<Process> &processes, qint64 rootPid)
         seen.insert(index);
         processes[index].forkmesh = true;
         pending.append(children.value(processes.at(index).pid));
+    }
+}
+
+QList<int> parseCpuList(const QString &text)
+{
+    QList<int> cpus;
+    for (const QString &part : text.trimmed().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        const int dash = part.indexOf(QLatin1Char('-'));
+        bool firstOk = false;
+        bool lastOk = true;
+        const int first = (dash < 0 ? part : part.left(dash)).trimmed().toInt(&firstOk);
+        const int last = dash < 0 ? first : part.mid(dash + 1).trimmed().toInt(&lastOk);
+        if (!firstOk || !lastOk || first < 0 || last < first || last - first > 4096)
+            continue;
+        for (int cpu = first; cpu <= last; ++cpu)
+            cpus.append(cpu);
+    }
+    return cpus;
+}
+
+QHash<int, CpuTicks> parsePerCpuTicks(const QByteArray &procStat)
+{
+    QHash<int, CpuTicks> ticks;
+    for (const QByteArray &line : procStat.split('\n')) {
+        if (!line.startsWith("cpu"))
+            continue;
+        if (line.size() < 4 || line.at(3) < '0' || line.at(3) > '9')
+            continue;
+        const QList<QByteArray> fields = line.simplified().split(' ');
+        bool ok = false;
+        const int cpu = fields.at(0).mid(3).toInt(&ok);
+        if (!ok || fields.size() < 5)
+            continue;
+        CpuTicks entry;
+        qint64 idle = 0;
+        for (int i = 1; i < qMin(fields.size(), 9); ++i) {
+            const qint64 value = fields.at(i).toLongLong();
+            entry.total += value;
+            if (i == 4 || i == 5)
+                idle += value;
+        }
+        entry.busy = entry.total - idle;
+        ticks.insert(cpu, entry);
+    }
+    return ticks;
+}
+
+QString selectedChoice(const QString &text)
+{
+    const int open = text.indexOf(QLatin1Char('['));
+    const int close = text.indexOf(QLatin1Char(']'), open + 1);
+    if (open >= 0 && close > open)
+        return text.mid(open + 1, close - open - 1).trimmed();
+    return text.trimmed();
+}
+
+double pressureSome(const QByteArray &text)
+{
+    for (const QByteArray &line : text.split('\n')) {
+        if (!line.startsWith("some "))
+            continue;
+        for (const QByteArray &field : line.simplified().split(' ')) {
+            if (!field.startsWith("avg10="))
+                continue;
+            bool ok = false;
+            const double value = field.mid(6).toDouble(&ok);
+            return ok ? value : -1.0;
+        }
+    }
+    return -1.0;
+}
+
+QString shortCpuModel(const QString &model)
+{
+    QString text = model;
+    static const QRegularExpression noise(
+        QStringLiteral("\\((R|TM|tm|r)\\)|\\bCPU\\b|\\bProcessor\\b|\\b\\d+-Core\\b|@.*$"));
+    text.remove(noise);
+    return text.simplified();
+}
+
+QList<SwapDevice> parseSwaps(const QByteArray &text)
+{
+    QList<SwapDevice> swaps;
+    const QList<QByteArray> lines = text.split('\n');
+    for (int i = 1; i < lines.size(); ++i) {
+        const QList<QByteArray> fields = lines.at(i).simplified().split(' ');
+        if (fields.size() < 4)
+            continue;
+        SwapDevice device;
+        device.type = fields.at(0).contains("/zram") ? QStringLiteral("zram")
+                                                     : QString::fromUtf8(fields.at(1));
+        device.sizeBytes = fields.at(2).toLongLong() * 1024;
+        device.usedBytes = fields.at(3).toLongLong() * 1024;
+        swaps.append(device);
+    }
+    return swaps;
+}
+
+Machine readMachine(const QString &root)
+{
+    Machine machine;
+    const QString cpuRoot = root + QStringLiteral("/sys/devices/system/cpu");
+    QList<int> online = parseCpuList(readText(cpuRoot + QStringLiteral("/online")));
+    if (online.isEmpty()) {
+        const QStringList entries = QDir(cpuRoot).entryList(
+            {QStringLiteral("cpu*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &entry : entries) {
+            bool ok = false;
+            const int cpu = entry.mid(3).toInt(&ok);
+            if (ok)
+                online.append(cpu);
+        }
+        std::sort(online.begin(), online.end());
+    }
+    if (online.isEmpty())
+        return machine;
+    const QList<int> pList = parseCpuList(readText(root + QStringLiteral("/sys/devices/cpu_core/cpus")));
+    const QList<int> eList = parseCpuList(readText(root + QStringLiteral("/sys/devices/cpu_atom/cpus")));
+    QSet<QPair<int, int>> physical;
+    for (const int cpu : std::as_const(online)) {
+        const QString base = cpuRoot + QStringLiteral("/cpu%1").arg(cpu);
+        Core core;
+        core.cpu = cpu;
+        core.coreId = int(readNumber(base + QStringLiteral("/topology/core_id")));
+        core.package = int(qMax<qint64>(0, readNumber(base + QStringLiteral("/topology/physical_package_id"))));
+        if (pList.contains(cpu))
+            core.kind = QStringLiteral("P");
+        else if (eList.contains(cpu))
+            core.kind = QStringLiteral("E");
+        core.maxKhz = readNumber(base + QStringLiteral("/cpufreq/cpuinfo_max_freq"));
+        physical.insert({core.package, core.coreId < 0 ? cpu : core.coreId});
+        machine.cores.append(core);
+    }
+    machine.physicalCores = physical.size();
+    const QString cpu0 = cpuRoot + QStringLiteral("/cpu%1").arg(online.first());
+    machine.governors = readText(cpu0 + QStringLiteral("/cpufreq/scaling_available_governors"))
+                            .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    machine.driver = readText(cpu0 + QStringLiteral("/cpufreq/scaling_driver"));
+    machine.baseKhz = readNumber(cpu0 + QStringLiteral("/cpufreq/base_frequency"));
+    for (int index = 0; index < 10; ++index) {
+        const QString cache = cpu0 + QStringLiteral("/cache/index%1").arg(index);
+        if (readNumber(cache + QStringLiteral("/level")) == 3) {
+            machine.cacheL3Bytes = cacheSizeBytes(readText(cache + QStringLiteral("/size")));
+            break;
+        }
+    }
+    const QString cpuinfo = QString::fromUtf8(readSmall(root + QStringLiteral("/proc/cpuinfo")));
+    for (const QString &line : cpuinfo.split(QLatin1Char('\n'))) {
+        const int colon = line.indexOf(QLatin1Char(':'));
+        if (colon < 0)
+            continue;
+        const QString key = line.left(colon).trimmed();
+        if (key == QLatin1String("model name") || key == QLatin1String("Model")) {
+            machine.cpuModel = shortCpuModel(line.mid(colon + 1));
+            break;
+        }
+    }
+    machine.kernel = readText(root + QStringLiteral("/proc/sys/kernel/osrelease"));
+    const QStringList nodes = QDir(root + QStringLiteral("/sys/devices/system/node"))
+                                  .entryList({QStringLiteral("node*")}, QDir::Dirs);
+    machine.numaNodes = nodes.size();
+
+    QHash<QPair<int, int>, QString> coreTemps;
+    const QDir hwmon(root + QStringLiteral("/sys/class/hwmon"));
+    for (const QString &entry : hwmon.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString base = hwmon.filePath(entry);
+        const QString name = readText(base + QStringLiteral("/name"));
+        if (name != QLatin1String("coretemp") && name != QLatin1String("k10temp") &&
+            name != QLatin1String("zenpower") && name != QLatin1String("cpu_thermal"))
+            continue;
+        int package = 0;
+        QHash<int, QString> labelled;
+        const QStringList inputs = QDir(base).entryList({QStringLiteral("temp*_input")}, QDir::Files);
+        for (const QString &input : inputs) {
+            const QString path = base + QLatin1Char('/') + input;
+            QString label = readText(QString(path).replace(QStringLiteral("_input"), QStringLiteral("_label")));
+            if (label.startsWith(QLatin1String("Package id "))) {
+                package = label.mid(11).toInt();
+                if (machine.packageTempPath.isEmpty())
+                    machine.packageTempPath = path;
+            } else if (label.startsWith(QLatin1String("Core "))) {
+                labelled.insert(label.mid(5).toInt(), path);
+            } else if ((label == QLatin1String("Tctl") || label == QLatin1String("Tdie") ||
+                        label.isEmpty()) &&
+                       machine.packageTempPath.isEmpty()) {
+                machine.packageTempPath = path;
+            }
+        }
+        for (auto it = labelled.cbegin(); it != labelled.cend(); ++it)
+            coreTemps.insert({package, it.key()}, it.value());
+    }
+    for (Core &core : machine.cores)
+        core.tempPath = coreTemps.value({core.package, core.coreId});
+
+    machine.valid = true;
+    refreshMachine(machine, root);
+    return machine;
+}
+
+void refreshMachine(Machine &machine, const QString &root)
+{
+    const QString cpuRoot = root + QStringLiteral("/sys/devices/system/cpu");
+    QMap<QString, int> governors;
+    QMap<QString, int> preferences;
+    machine.minKhz = -1;
+    machine.maxKhz = -1;
+    for (Core &core : machine.cores) {
+        const QString freq = cpuRoot + QStringLiteral("/cpu%1/cpufreq").arg(core.cpu);
+        core.curKhz = readNumber(freq + QStringLiteral("/scaling_cur_freq"));
+        const QString governor = readText(freq + QStringLiteral("/scaling_governor"));
+        if (!governor.isEmpty())
+            ++governors[governor];
+        const QString preference = readText(freq + QStringLiteral("/energy_performance_preference"));
+        if (!preference.isEmpty())
+            ++preferences[preference];
+        const qint64 low = readNumber(freq + QStringLiteral("/scaling_min_freq"));
+        const qint64 high = readNumber(freq + QStringLiteral("/scaling_max_freq"));
+        if (low > 0)
+            machine.minKhz = machine.minKhz < 0 ? low : qMin(machine.minKhz, low);
+        if (high > 0)
+            machine.maxKhz = qMax(machine.maxKhz, high);
+        const qint64 temp = core.tempPath.isEmpty() ? -1 : readNumber(core.tempPath);
+        core.tempC = temp >= 0 ? temp / 1000.0 : -1.0;
+    }
+    machine.governor = summarize(governors);
+    machine.energyPreference = summarize(preferences);
+    machine.driverStatus = readText(cpuRoot + QStringLiteral("/intel_pstate/status"));
+    if (machine.driverStatus.isEmpty())
+        machine.driverStatus = readText(cpuRoot + QStringLiteral("/amd_pstate/status"));
+    const qint64 noTurbo = readNumber(cpuRoot + QStringLiteral("/intel_pstate/no_turbo"));
+    const qint64 boost = readNumber(cpuRoot + QStringLiteral("/cpufreq/boost"));
+    machine.turbo = noTurbo >= 0 ? int(noTurbo == 0) : boost >= 0 ? int(boost != 0) : -1;
+    machine.smt = readText(cpuRoot + QStringLiteral("/smt/control"));
+    const qint64 package = machine.packageTempPath.isEmpty() ? -1 : readNumber(machine.packageTempPath);
+    machine.packageTempC = package >= 0 ? package / 1000.0 : -1.0;
+    const QString pressure = root + QStringLiteral("/proc/pressure/");
+    machine.pressureCpu = pressureSome(readSmall(pressure + QStringLiteral("cpu")));
+    machine.pressureMemory = pressureSome(readSmall(pressure + QStringLiteral("memory")));
+    machine.pressureIo = pressureSome(readSmall(pressure + QStringLiteral("io")));
+    const QString thp = root + QStringLiteral("/sys/kernel/mm/transparent_hugepage/");
+    machine.hugePages = selectedChoice(readText(thp + QStringLiteral("enabled")));
+    machine.hugePagesDefrag = selectedChoice(readText(thp + QStringLiteral("defrag")));
+    const QString vm = root + QStringLiteral("/proc/sys/vm/");
+    machine.swappiness = int(readNumber(vm + QStringLiteral("swappiness")));
+    machine.overcommit = int(readNumber(vm + QStringLiteral("overcommit_memory")));
+    machine.dirtyRatio = int(readNumber(vm + QStringLiteral("dirty_ratio")));
+    machine.dirtyBackgroundRatio = int(readNumber(vm + QStringLiteral("dirty_background_ratio")));
+    machine.cachePressure = int(readNumber(vm + QStringLiteral("vfs_cache_pressure")));
+    const QString zswap = readText(root + QStringLiteral("/sys/module/zswap/parameters/enabled"));
+    machine.zswap = zswap.isEmpty() ? QString()
+                    : zswap == QLatin1String("Y") || zswap == QLatin1String("1")
+                        ? QStringLiteral("on")
+                        : QStringLiteral("off");
+    machine.swaps = parseSwaps(readSmall(root + QStringLiteral("/proc/swaps")));
+}
+
+void applyCpuTicks(Machine &machine, const QHash<int, CpuTicks> &previous,
+                   const QHash<int, CpuTicks> &current)
+{
+    for (Core &core : machine.cores) {
+        core.busy = -1.0;
+        const auto before = previous.constFind(core.cpu);
+        const auto now = current.constFind(core.cpu);
+        if (before == previous.cend() || now == current.cend())
+            continue;
+        const qint64 total = now->total - before->total;
+        if (total <= 0)
+            continue;
+        core.busy = qBound(0.0, 100.0 * double(now->busy - before->busy) / double(total), 100.0);
     }
 }
 
@@ -410,6 +724,14 @@ Snapshot Sampler::sample(qint64 nowMs)
         m_lastBusy = busy;
         m_lastTotal = total;
     }
+    const QHash<int, CpuTicks> cpuTicks = parsePerCpuTicks(cpu);
+    if (m_machine.valid)
+        refreshMachine(m_machine, QString());
+    else
+        m_machine = readMachine(QString());
+    applyCpuTicks(m_machine, m_lastCpuTicks, cpuTicks);
+    m_lastCpuTicks = cpuTicks;
+    snapshot.machine = m_machine;
     v.valid = true;
     snapshot.valid = true;
 #else
