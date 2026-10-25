@@ -27,6 +27,7 @@ SELECTOR = "fmnext"
 DKIM_NAME = "%s._domainkey.%s" % (SELECTOR, MAIL_DOMAIN)
 TXT_NAMES = (MAIL_DOMAIN, DKIM_NAME)
 SPF_KEEP = ("include:zohomail.com",)
+SENDER = "founders@forkmesh.com"
 SIGN_HEADERS = ("From", "Sender", "Reply-To", "Subject", "Date", "Message-ID",
                 "To", "Cc", "MIME-Version", "Content-Type",
                 "Content-Transfer-Encoding", "In-Reply-To", "References",
@@ -164,6 +165,7 @@ anvil_rate_time_unit = 3600s
 local_transport = error:local delivery is disabled
 alias_maps =
 alias_database =
+sender_canonical_maps = regexp:/etc/postfix/sender_canonical
 disable_vrfy_command = yes
 smtpd_banner = $myhostname ESMTP
 message_size_limit = 10485760
@@ -181,6 +183,12 @@ internal_mail_filter_classes = bounce
 maximal_queue_lifetime = 2d
 bounce_queue_lifetime = 1d
 """.format(host=mail_host(node), domain=MAIL_DOMAIN)
+
+
+SENDER_CANONICAL = """if !/^(founders|no-reply)@forkmesh\\.com$/
+/@([a-z0-9-]+\\.)*forkmesh\\.com$/ {sender}
+endif
+""".format(sender=SENDER)
 
 
 OPENDKIM_CONF = """Syslog yes
@@ -236,6 +244,7 @@ ExecStart=/usr/sbin/opendkim -x /etc/opendkim.conf
 def install_script(node):
     host = mail_host(node)
     files = {"/etc/postfix/main.cf": main_cf(node),
+             "/etc/postfix/sender_canonical": SENDER_CANONICAL,
              "/etc/opendkim.conf": OPENDKIM_CONF,
              "/etc/systemd/system/opendkim.service.d/fmnext.conf": OPENDKIM_DROPIN,
              "/etc/cloud/cloud.cfg.d/99-fmnext-hostname.cfg":

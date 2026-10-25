@@ -18,8 +18,11 @@ class QIcon;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
+class QSplitter;
+class QTimer;
 class QToolButton;
 class QStackedWidget;
 class QTableWidget;
@@ -95,8 +98,13 @@ private:
     void pumpRunQueue();
     void renderDashboard();
     void renderRunTable();
-    void showRunDetail(QTableWidget *steps, QLabel *summary, const QString &workflowId, const QString &runId);
+    void showRunDetail(QTableWidget *steps, QLabel *summary, const QString &workflowId, const QString &runId,
+                       QPlainTextEdit *output = nullptr);
     QJsonObject selectedDashboardRun() const;
+    void showSelectedRun();
+    void pollLiveRun();
+    void followRun(const QString &workflowKey, const QString &runId = QString());
+    void stopFollowing();
     void fetchWorkflow(const QString &id, std::function<void(const QJsonObject &)> done);
     void openWorkflow(const QString &id);
     void openDraft(const Draft &draft, bool dirty);
@@ -215,6 +223,15 @@ private:
     QTableWidget *m_runTable = nullptr;
     QLabel *m_runSummary = nullptr;
     QTableWidget *m_runSteps = nullptr;
+    QPlainTextEdit *m_runOutput = nullptr;
+    QSplitter *m_dashboardSplitter = nullptr;
+    QTimer *m_liveTimer = nullptr;
+    QString m_shownRunId;
+    QString m_shownStatus;
+    QString m_followWorkflow;
+    QString m_followRun;
+    qint64 m_followSince = 0;
+    QJsonObject m_pendingRun;
 
     QLineEdit *m_name = nullptr;
     QCheckBox *m_active = nullptr;
