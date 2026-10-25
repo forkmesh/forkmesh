@@ -94,22 +94,24 @@ Commission is paid by hand. Once a lead is `won` and the plan has stayed paid
 for 30 days, email the affiliate at their account address, pay them, then set
 the lead to `paid`.
 
-### Tax forms (not yet in the public terms)
+### Tax forms
 
-The public `/affiliates` page does not name a tax form yet. The owner decided
-on 2026-10-25:
+Before paying, collect a completed Form W-9 (US persons), W-8BEN (non-US
+individuals) or W-8BEN-E (non-US entities). The line is in the page's "What
+counts" list, its FAQ and text mirror, and the API's `terms`
+(`program()` in `app/src/affiliates.py`).
 
-- **Companies can be paid**, not only individuals. The tax-form line from the
-  Revenue Contest's unapproved decision D6 therefore needs W-8BEN-E added:
-  "Payment requires a completed Form W-9 (US persons), W-8BEN (non-US
-  individuals) or W-8BEN-E (non-US entities); payments may be subject to tax
-  reporting or withholding."
-- **No licensed tax professional has reviewed that wording.** It came from
-  the CPA teammate, who asked for that review before it is approved.
+It started as the tax-form sentence in the Revenue Contest's decision D6,
+which was never approved before that contest ended. On 2026-10-25 the owner
+approved it for affiliates, with two changes:
 
-Get that review before the line goes on `/affiliates` or the first commission
-is paid. No referral has been completed yet, so nobody has been paid under the
-current terms.
+- **Companies can be paid**, so W-8BEN-E was added; W-8BEN covers non-US
+  individuals only.
+- **No outside licensed review.** ForkMesh does its own CPA work, so the owner
+  approved the wording without one.
+
+No referral had been completed by then, so no one was paid under the earlier
+terms.
 
 ## Data
 
