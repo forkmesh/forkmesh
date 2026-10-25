@@ -1,4 +1,5 @@
 #include "AppPaths.h"
+#include "BackgroundFileWriter.h"
 #include "DesktopPingForward.h"
 #include "LocalControl.h"
 #include "MainWindow.h"
@@ -7,14 +8,11 @@
 
 #include <QAction>
 #include <QDateTime>
-#include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QFont>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMenu>
-#include <QSaveFile>
 
 namespace pingfixes = forkmesh::pingfixes;
 using namespace forkmesh::ui;
@@ -44,13 +42,8 @@ public:
 
     void save() const
     {
-        const QString target = path();
-        QDir().mkpath(QFileInfo(target).absolutePath());
-        QSaveFile file(target);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-            return;
-        file.write(QJsonDocument(ledger.toJson()).toJson(QJsonDocument::Compact));
-        file.commit();
+        forkmesh::diskwrite::writeLater(
+            path(), QJsonDocument(ledger.toJson()).toJson(QJsonDocument::Compact));
     }
 
     pingfixes::Ledger ledger;
