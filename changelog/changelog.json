@@ -39,11 +39,18 @@
      ]
     },
     {
+     "title": "Agents",
+     "items": [
+      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first."
+     ]
+    },
+    {
      "title": "World",
      "items": [
       "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page.",
       "Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.",
-      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World."
+      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World.",
+      "Turning on your camera in the World now works; the browser no longer blocks it."
      ]
     },
     {
@@ -83,6 +90,8 @@
       "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.",
       "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.",
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
+      "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.",
+      "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
       "Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture."
      ]
     },

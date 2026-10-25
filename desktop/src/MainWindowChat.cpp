@@ -7131,8 +7131,8 @@ void MainWindow::refreshQuickAddSendToChannelButton()
             picker->setText(label);
         picker->setToolTip(
             channel.isEmpty()
-                ? QStringLiteral("Pick the chat channel this prompt can be sent to")
-                : QStringLiteral("Chatting in %1. Click to switch channel.")
+                ? QStringLiteral("Pick the chat channel or person this prompt can be sent to")
+                : QStringLiteral("Chatting in %1. Click to switch channel or message a person.")
                       .arg(channel));
         picker->setAccessibleName(channel.isEmpty()
                                       ? QStringLiteral("Chat channel")
@@ -7185,23 +7185,32 @@ void MainWindow::showPromptChannelMenu()
 {
     if (!m_promptChannelButton)
         return;
+    const auto isDirect = [](const QString &conversation) {
+        return isDirectConversation(conversation) ||
+               forkmesh::office::isDirectOfficeConversation(conversation);
+    };
     QStringList conversations = m_channels;
+    QStringList directs;
+    for (const QString &peerId : std::as_const(m_openDms))
+        directs.append(dmKey(peerId));
+    for (const QString &conversation : std::as_const(m_officeDirectConversations))
+        if (!forkmesh::office::directPeerForConversation(conversation).isEmpty() &&
+            !directs.contains(conversation))
+            directs.append(conversation);
     for (const QString &conversation : unlistedChatConversations()) {
-        if (!isDirectConversation(conversation) &&
-            !forkmesh::office::isDirectOfficeConversation(conversation) &&
-            !conversations.contains(conversation))
-            conversations.append(conversation);
+        QStringList &into = isDirect(conversation) ? directs : conversations;
+        if (!into.contains(conversation))
+            into.append(conversation);
     }
-    if (!m_currentConversation.isEmpty() &&
-        !conversations.contains(m_currentConversation))
-        conversations.prepend(m_currentConversation);
+    if (!m_currentConversation.isEmpty()) {
+        QStringList &into = isDirect(m_currentConversation) ? directs : conversations;
+        if (!into.contains(m_currentConversation))
+            into.prepend(m_currentConversation);
+    }
     auto *menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->setObjectName(QStringLiteral("promptChannelMenu"));
-    if (conversations.isEmpty()) {
-        menu->addAction(QStringLiteral("No chat channels yet"))->setEnabled(false);
-    }
-    for (const QString &conversation : std::as_const(conversations)) {
+    const auto addRow = [this, menu](const QString &conversation) {
         int chats = 0;
         for (const ChatMessage &message : m_history.value(conversation))
             if (!message.deleted && message.threadRootId.isEmpty())
@@ -7223,7 +7232,23 @@ void MainWindow::showPromptChannelMenu()
             refreshQuickAddSendToChannelButton();
             schedulePromptChatPreview();
         });
+    };
+    if (conversations.isEmpty()) {
+        menu->addAction(QStringLiteral("No chat channels yet"))->setEnabled(false);
     }
+    for (const QString &conversation : std::as_const(conversations))
+        addRow(conversation);
+    menu->addSection(QStringLiteral("Direct messages"));
+    for (const QString &conversation : std::as_const(directs))
+        addRow(conversation);
+    QAction *person = menu->addAction(QString::fromUtf8("Message someone\xE2\x80\xA6"));
+    person->setObjectName(QStringLiteral("promptChannelMessagePerson"));
+    person->setToolTip(QStringLiteral("Pick a person and send this prompt to them directly"));
+    connect(person, &QAction::triggered, this, [this] {
+        showNewMessageDialog();
+        refreshQuickAddSendToChannelButton();
+        schedulePromptChatPreview();
+    });
     menu->popup(m_promptChannelButton->mapToGlobal(
         QPoint(0, m_promptChannelButton->height())));
 }

@@ -105,3 +105,19 @@ def test_world_versioned_files_stay_immutable_after_headers():
     app_block = app[app.index("handle @app_file {"):]
     app_block = app_block[:app_block.index("\n}\n")]
     assert app_block.count("_versioned Cache-Control") == 1
+
+
+def test_world_index_carries_the_world_rule_on_every_index_path():
+    text = (REPO / "www/public/_headers").read_text()
+    routes = caddy_routes.world_routes(WORLD_FIRST, text, "/srv/world",
+                                       "/srv/app")
+    block = routes[routes.index("handle @world_index {"):]
+    block = block[:block.index("\n}\n")]
+    lines = [line.strip() for line in block.splitlines()]
+    policies = [line for line in lines
+                if line.startswith("header Permissions-Policy ")]
+    assert policies and "camera=(self)" in policies[-1]
+    global_policy = next(index for index, line in enumerate(lines)
+                         if line.startswith("header @world_h0 Permissions-Policy"))
+    assert lines.index(policies[-1]) > global_policy
+    assert "header -X-Frame-Options" in lines
