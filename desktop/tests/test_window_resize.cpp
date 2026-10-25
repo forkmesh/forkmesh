@@ -42,7 +42,6 @@
 #include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
-#include "ForkMeshBuildCommit.h"
 #include "ForkMeshVersion.h"
 
 #include <chrono>
@@ -23318,8 +23317,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // fallback, restarts in place, and checks both the reported version and
     // exact source revision before the per-host pane can turn green.
     {
-        const QString expectedBuildCommit =
-            QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+        const QString expectedBuildCommit = forkmesh::desktopBuildCommit();
         const QRegularExpression exactCommit(
             QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
         const bool buildIsCommitted =

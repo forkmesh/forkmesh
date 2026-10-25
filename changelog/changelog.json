@@ -47,6 +47,7 @@
       "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.",
       "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.",
       "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.",
+      "Rebuild & restart is faster: it keeps its own compile cache that agent builds no longer push out, a new commit no longer recompiles two of the app's largest files, and the restart notice says how many compiles came from the cache."
       "The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint.",
       "Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.",
       "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.",
