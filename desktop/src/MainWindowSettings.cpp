@@ -5555,6 +5555,30 @@ void MainWindow::refreshSuggestedApps()
                 .arg(found)
                 .arg(apps.size()));
     }
+    scheduleAgentUsagePagesRefresh();
+}
+
+bool MainWindow::suggestedAppInstalling(const QString &id) const
+{
+    return m_suggestedAppInstallProcess &&
+           m_suggestedAppInstallProcess->state() != QProcess::NotRunning &&
+           m_suggestedAppInstallingId == id;
+}
+
+QString MainWindow::suggestedAppInstallManager(const QString &id,
+                                               QString *blocker) const
+{
+    const auto *app = forkmesh::environment::suggestedAppById(id);
+    if (!app) {
+        if (blocker)
+            *blocker = QStringLiteral("ForkMesh does not know how to install this tool.");
+        return {};
+    }
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        *app, availableSuggestedAppInstallers());
+    if (blocker)
+        *blocker = plan.unavailableReason;
+    return plan.managerName;
 }
 
 void MainWindow::testSuggestedApp(const QString &id)
@@ -5701,6 +5725,7 @@ void MainWindow::installSuggestedApp(const QString &id)
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_suggestedAppInstallProcess = process;
     m_suggestedAppInstallingId = id;
+    m_suggestedAppInstallProblems.remove(id);
     auto output = std::make_shared<QString>();
     refreshSuggestedApps();
     if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
@@ -5751,6 +5776,8 @@ void MainWindow::installSuggestedApp(const QString &id)
                 logSystem(QStringLiteral("Suggested app %1 install failed (exit %2).")
                               .arg(name)
                               .arg(exitCode));
+                m_suggestedAppInstallProblems.insert(
+                    id, tail.isEmpty() ? QStringLiteral("exit %1").arg(exitCode) : tail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,
@@ -5772,6 +5799,9 @@ void MainWindow::installSuggestedApp(const QString &id)
                 process->deleteLater();
                 refreshSuggestedApps();
                 logSystem(QStringLiteral("Could not start the %1 installer.").arg(name));
+                m_suggestedAppInstallProblems.insert(
+                    id, detail.isEmpty() ? QStringLiteral("the installer did not start")
+                                         : detail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,

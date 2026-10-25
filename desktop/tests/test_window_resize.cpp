@@ -11,6 +11,7 @@
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
 #include "../src/AgentWorktree.h"
+#include "../src/AgentCliLocator.h"
 #include "../src/AgentRunTable.h"
 #include "../src/AgentToolEfficiencyBoard.h"
 #include "../src/AgentGuardrailBoard.h"
@@ -932,7 +933,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
         const QStringList activityTileNames = {
             QStringLiteral("debugUptimeTile"),
             QStringLiteral("debugNetworkActivityTile"),
-            QStringLiteral("debugLogActivityTile")};
+            QStringLiteral("debugLogActivityTile"),
+            QStringLiteral("debugStallTile")};
         bool activityTilesReady = true;
         for (const QString &name : activityTileNames) {
             QWidget *tile = window.findChild<QWidget *>(name);
@@ -942,8 +944,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
                                  !tile->toolTip().isEmpty();
         }
         check(activityTilesReady,
-              QStringLiteral("the debug strip exposes live uptime, network and "
-                             "log activity tiles"));
+              QStringLiteral("the debug strip exposes live uptime, network, "
+                             "log and UI stall tiles"));
 
         // Qt's own machinery now has a live row beside the process-resource
         // chart. Deep event delivery accounting is scoped to this expanded
@@ -5163,6 +5165,54 @@ void checkChatReceiptMark()
     channel.setReceiptMark(ReceiptMark::None);
     check(mark && mark->isHidden(),
           QStringLiteral("clearing the mark hides it"));
+}
+
+void checkTranscriptCoverageIndicator()
+{
+    const auto ev = [](const char *json) {
+        return QJsonDocument::fromJson(QByteArray(json)).object();
+    };
+    ClaudeTranscriptView transcript;
+    transcript.resize(720, 500);
+    transcript.show();
+    QApplication::processEvents();
+    auto *pill = transcript.findChild<QToolButton *>(
+        QStringLiteral("transcriptCoverageGaps"));
+    transcript.handleEvent(ev(R"({"type":"result","subtype":"success","result":"ok"})"));
+    check(pill && pill->isHidden(),
+          QStringLiteral("a transcript that draws every raw log entry has no "
+                         "coverage pill"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done"})"));
+    transcript.handleEvent(ev(R"({"type":"system","subtype":"permission_denied"})"));
+    QApplication::processEvents();
+    const QRect area = transcript.viewport()->geometry();
+    check(pill && !pill->isHidden() && pill->text().contains(QStringLiteral("2 missing")) &&
+              area.contains(pill->geometry()) &&
+              pill->geometry().top() < area.top() + 20 &&
+              pill->geometry().right() > area.right() - 30,
+          QStringLiteral("raw log entries the transcript skips show a red pill "
+                         "at the top right with the number of missing kinds"));
+    check(transcript.coverageGaps().size() == 2 &&
+              transcript.coverageGaps().first().count == 2,
+          QStringLiteral("the transcript keeps each missing kind with its count"));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("claude"), QStringLiteral("plain stdout words")));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("codex"), QStringLiteral(R"({"method":"model/rerouted","params":{}})")));
+    check(pill && pill->text().contains(QStringLiteral("4 missing")),
+          QStringLiteral("Claude Code and Codex output lines that never became "
+                         "a transcript event add kinds"));
+    int activated = 0;
+    QObject::connect(&transcript, &ClaudeTranscriptView::coverageGapsActivated,
+                     [&activated] { ++activated; });
+    if (pill)
+        pill->click();
+    check(activated == 1,
+          QStringLiteral("clicking the coverage pill asks for an agent"));
+    transcript.clear();
+    check(pill && pill->isHidden() && transcript.coverageGaps().isEmpty(),
+          QStringLiteral("clearing the transcript clears its coverage pill"));
 }
 
 void checkChatRecipientLabel()
@@ -14213,6 +14263,34 @@ void checkCommandApprovalWithoutGitWait(MainWindow &window)
               .arg(approval));
 }
 
+void checkAgentUsageInstallButtons(MainWindow &window)
+{
+    window.testOpenAgentUsagePage();
+    QApplication::processEvents();
+    QWidget *usagePage = window.findChild<QWidget *>(QStringLiteral("agentUsagePage"));
+    const auto button = [usagePage](const QString &name) {
+        return usagePage ? usagePage->findChild<QPushButton *>(name) : nullptr;
+    };
+    const bool claudeInstalled = forkmesh::agentcli::installed(QStringLiteral("claude"));
+    const bool codexInstalled = forkmesh::agentcli::installed(QStringLiteral("codex"));
+    QPushButton *installClaude = button(QStringLiteral("agentUsagePageInstallClaude"));
+    QPushButton *installCodex = button(QStringLiteral("agentUsagePageInstallCodex"));
+    QPushButton *terminalClaude = button(QStringLiteral("agentUsagePageTerminalClaude"));
+    QPushButton *terminalCodex = button(QStringLiteral("agentUsagePageTerminalCodex"));
+    check(usagePage && (installClaude != nullptr) == !claudeInstalled &&
+              (installCodex != nullptr) == !codexInstalled &&
+              (!installClaude ||
+               installClaude->text() == QStringLiteral("Install Claude Code")) &&
+              (!installCodex || installCodex->text() == QStringLiteral("Install Codex")) &&
+              terminalClaude && terminalClaude->isEnabled() == claudeInstalled &&
+              terminalCodex && terminalCodex->isEnabled() == codexInstalled,
+          QString("the Usage page offers Install Claude Code or Install Codex "
+                  "only when that CLI is missing, and disables its terminal "
+                  "buttons until then (claude=%1 codex=%2)")
+              .arg(claudeInstalled)
+              .arg(codexInstalled));
+}
+
 void checkAgentUsageHoverCard(MainWindow &window)
 {
     const bool codexDefault =
@@ -16112,6 +16190,10 @@ else:
         app.arguments().contains(QStringLiteral("--footer-overlay-only"));
     const bool errorAlertOnly =
         app.arguments().contains(QStringLiteral("--error-alert-only"));
+    if (app.arguments().contains(QStringLiteral("--transcript-coverage-only"))) {
+        checkTranscriptCoverageIndicator();
+        return failures == 0 ? 0 : 1;
+    }
     if (app.arguments().contains(QStringLiteral("--recipient-label-only"))) {
         checkChatRecipientLabel();
         checkChatReceiptMark();
@@ -20373,6 +20455,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         window.resize(1440, 900);
         window.show();
         QApplication::processEvents();
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
@@ -20400,6 +20483,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
 
     checkChatUsernameProfile(window);
     checkChatVideoAttachmentPlays();
+    checkTranscriptCoverageIndicator();
     checkChatRecipientLabel();
     checkChatReceiptMark();
     checkCalendarActivityRendering(window);
@@ -29376,6 +29460,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       "provider switch (providers=%1)")
                   .arg(usageProviders.join(QLatin1Char(','))));
 
+        checkAgentUsageInstallButtons(window);
         checkAgentUsageHoverCard(window);
 
         if (savedDefaultProvider.isValid())
