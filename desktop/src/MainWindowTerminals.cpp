@@ -61,16 +61,123 @@ bool windowsHost()
 
 QWidget *MainWindow::buildTerminalsSection()
 {
+    auto *host = new QWidget;
+    host->setObjectName(QStringLiteral("terminalsSection"));
+    auto *layout = new QVBoxLayout(host);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->setSpacing(0);
+    auto *note = new QLabel(QStringLiteral(
+        "Your terminals are in the side pane on the right. Use the terminal button in the top "
+        "bar to show or hide them."));
+    note->setObjectName(QStringLiteral("terminalsSectionNote"));
+    note->setAlignment(Qt::AlignCenter);
+    note->setWordWrap(true);
+    layout->addWidget(note, 1);
+    m_terminalsSectionHost = host;
+    m_terminalsSectionNote = note;
+    return host;
+}
+
+TerminalTabsPage *MainWindow::ensureTerminalsPage()
+{
+    if (m_terminalsPage)
+        return m_terminalsPage;
     auto *page = new TerminalTabsPage;
-    page->setNewTabHandler([this] { showTerminalLauncher(); });
-    page->setClosedHandler([this](const QString &id) { forgetTerminal(id); });
+    page->setNewTabHandler([this](const QString &kind) {
+        if (kind.isEmpty()) {
+            showTerminalLauncher();
+            return;
+        }
+        TerminalTabsPage::Info current;
+        const bool here = m_terminalsPage &&
+                          m_terminalsPage->info(m_terminalsPage->currentId(), &current) &&
+                          !current.cwd.isEmpty();
+        openUserTerminal(kind, here ? current.cwd : defaultTerminalFolder());
+    });
+    page->setClosedHandler([this](const QString &id) {
+        forgetTerminal(id);
+        if (m_terminalsPage && m_terminalsPage->count() == 0)
+            setSideRailTerminalsOpen(false);
+    });
+    const QColor muted = Theme::color(Theme::Role::FgMuted);
+    TerminalTabsPage::Icons icons;
+    icons.add = QIcon(tintedOcticonPixmap(QStringLiteral("plus"), muted, 14));
+    icons.more = QIcon(tintedOcticonPixmap(QStringLiteral("chevron-down"), muted, 14));
+    icons.hide = QIcon(tintedOcticonPixmap(QStringLiteral("x"), muted, 12));
+    page->setIcons(icons);
     m_terminalsPage = page;
+    dockTerminals(m_sideRailTerminalHost != nullptr);
     return page;
+}
+
+void MainWindow::dockTerminals(bool sidePane)
+{
+    if (!m_terminalsPage)
+        return;
+    if (sidePane && !m_sideRailTerminalHost)
+        sidePane = false;
+    if (!sidePane)
+        ensureSectionBuilt(kTerminalsSectionIndex);
+    QWidget *host = sidePane ? m_sideRailTerminalPanel : m_terminalsSectionHost;
+    auto *layout = sidePane ? m_sideRailTerminalHost
+                            : (m_terminalsSectionHost
+                                   ? qobject_cast<QBoxLayout *>(m_terminalsSectionHost->layout())
+                                   : nullptr);
+    if (!host || !layout)
+        return;
+    if (m_terminalsPage->parentWidget() != host) {
+        layout->addWidget(m_terminalsPage, 1);
+        m_terminalsPage->show();
+    }
+    if (sidePane)
+        m_terminalsPage->setHideHandler([this] { setSideRailTerminalsOpen(false); });
+    else
+        m_terminalsPage->setHideHandler({});
+    if (m_terminalsSectionNote)
+        m_terminalsSectionNote->setVisible(m_terminalsPage->parentWidget() !=
+                                           m_terminalsSectionHost);
 }
 
 void MainWindow::showTerminalsPage()
 {
-    showSection(kTerminalsSectionIndex);
+    revealTerminals();
+}
+
+QString MainWindow::defaultTerminalFolder() const
+{
+    const int active = activeTeammateRepoIndex();
+    if (active >= 0 && active < m_repositories.size()) {
+        const QString path = m_repositories.at(active).localPath;
+        if (!path.isEmpty() && QDir(path).exists())
+            return path;
+    }
+    const QString last = QSettings().value(kLastFolderSetting).toString();
+    if (!last.isEmpty() && QDir(last).exists())
+        return last;
+    return QDir::homePath();
+}
+
+QString MainWindow::openUserTerminal(const QString &kind, const QString &cwd)
+{
+    QString error;
+    const QString id = openTerminalTab(kind, QString(), cwd, QString(), QString(),
+                                       QSettings().value(kShareSetting, true).toBool(), &error);
+    if (id.isEmpty())
+        flashMessage(error, true);
+    return id;
+}
+
+void MainWindow::toggleTerminals()
+{
+    if (sideRailTerminalsOpen() && m_sideRail && m_sideRail->isVisible()) {
+        setSideRailTerminalsOpen(false);
+        return;
+    }
+    if (!m_terminalsPage || m_terminalsPage->count() == 0)
+        openUserTerminal(bridge::ShellKind, defaultTerminalFolder());
+    else
+        revealTerminals();
+    setSideRailTerminalsOpen(sideRailTerminalsOpen());
 }
 
 void MainWindow::showTerminalLauncher()
@@ -81,8 +188,8 @@ void MainWindow::showTerminalLauncher()
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     auto *layout = new QVBoxLayout(dialog);
     auto *intro = new QLabel(QStringLiteral(
-        "Opens a terminal as a tab in this window. Agents this desktop launched, and "
-        "Claude Code started here, can read it and type into it with the ForkMesh "
+        "Opens a terminal as a tab in the side pane. Agents this desktop launched, and "
+        "Claude Code or Codex started here, can read it and type into it with the ForkMesh "
         "terminal tools while it is shared."));
     intro->setWordWrap(true);
     intro->setObjectName(QStringLiteral("statusLine"));
@@ -181,10 +288,9 @@ QString MainWindow::openTerminalTab(const QString &kind, const QString &command,
                                     const QString &cwd, const QString &title,
                                     const QString &openedBy, bool shared, QString *error)
 {
-    ensureSectionBuilt(kTerminalsSectionIndex);
-    if (!m_terminalsPage) {
+    if (!ensureTerminalsPage()) {
         if (error)
-            *error = QStringLiteral("The Terminals page could not be built.");
+            *error = QStringLiteral("The terminals pane could not be built.");
         return {};
     }
     if (m_terminalsPage->count() >= bridge::kMaxTabs) {
@@ -211,11 +317,17 @@ QString MainWindow::openTerminalTab(const QString &kind, const QString &command,
                     QStringLiteral("%1=%2").arg(intake::TokenEnv, token),
                     QStringLiteral("%1=%2").arg(bridge::TerminalIdEnv, spec.id)};
     }
-    const QString config = chosen == bridge::ClaudeKind ? terminalMcpConfigPath(spec.id) : QString();
-    spec.command = bridge::launchCommand(chosen, command, config, windowsHost());
+    const bool agentCli = chosen == bridge::ClaudeKind || chosen == bridge::CodexKind;
+    const QString config = agentCli ? terminalMcpConfigPath(spec.id) : QString();
+    const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+    spec.command = bridge::launchCommand(chosen, command, config, windowsHost(),
+                                         python.isEmpty() ? QStringLiteral("python3") : python,
+                                         mcpServerScriptPath());
+    if (openedBy.isEmpty())
+        revealTerminals();
     const QString id = m_terminalsPage->openTab(spec);
     if (openedBy.isEmpty())
-        showTerminalsPage();
+        m_terminalsPage->focusCurrent();
     else
         flashMessage(QStringLiteral("%1 opened a terminal tab: %2")
                          .arg(openedBy, bridge::kindLabel(chosen)));

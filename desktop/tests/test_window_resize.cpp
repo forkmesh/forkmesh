@@ -17602,9 +17602,60 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                     button->objectName() == QLatin1String("topTerminalButton"))
                     chromeTerminal = button;
             check(chromeTerminal != nullptr,
-                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+                  QStringLiteral("the top bar has a button that shows the terminals"));
+            QWidget *terminalPanel = window.testSideRailTerminalPanel();
+            const bool dockedRight = terminalPanel && terminals &&
+                                     terminalPanel->isAncestorOf(terminals) &&
+                                     terminalPanel->isVisible() && railTerminal &&
+                                     railTerminal->isChecked();
             if (railTerminal)
                 railTerminal->click();
+            settleRail();
+            const bool hiddenByRail = terminalPanel && !terminalPanel->isVisible() &&
+                                      terminals && terminals->count() == 1;
+            if (chromeTerminal)
+                chromeTerminal->click();
+            settleRail();
+            const bool shownByTop = terminalPanel && terminalPanel->isVisible() &&
+                                    terminals && terminals->count() == 1;
+            check(dockedRight && hiddenByRail && shownByTop,
+                  QString("terminals open in a pane on the right of the window, and the rail "
+                          "and top-bar terminal buttons hide and show it without opening "
+                          "more tabs (docked=%1 hidden=%2 shown=%3)")
+                      .arg(dockedRight)
+                      .arg(hiddenByRail)
+                      .arg(shownByTop));
+
+            auto *newTab = terminals ? terminals->findChild<QPushButton *>(
+                                           QStringLiteral("terminalsNewButton"))
+                                     : nullptr;
+            if (newTab)
+                newTab->click();
+            settleRail();
+            const bool plusOpened = terminals && terminals->count() == 2;
+            if (plusOpened)
+                terminals->closeTab(terminals->ids().constLast());
+            settleRail();
+            check(newTab && plusOpened,
+                  QString("the terminal pane's + button opens another shell tab at once "
+                          "(tabs=%1)")
+                      .arg(terminals ? terminals->count() : -1));
+
+            auto *kindsMenu = terminals ? terminals->findChild<QMenu *>(
+                                              QStringLiteral("terminalsNewKindMenu"))
+                                        : nullptr;
+            QStringList kindLabels;
+            if (kindsMenu)
+                for (QAction *action : kindsMenu->actions())
+                    if (!action->isSeparator())
+                        kindLabels << action->text();
+            check(kindLabels.contains(QStringLiteral("Claude Code")) &&
+                      kindLabels.contains(QStringLiteral("Codex")),
+                  QString("the terminal pane's menu opens Claude Code or Codex in a new tab "
+                          "(items=%1)")
+                      .arg(kindLabels.join(QStringLiteral(", "))));
+            if (kindsMenu && !kindsMenu->actions().isEmpty())
+                kindsMenu->actions().constLast()->trigger();
             settleRail();
             auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
             auto *launcherKind =
@@ -17624,16 +17675,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             const bool launched = !launchedId.isEmpty() &&
                                   waitForText(launchedId, QStringLiteral("fm-launched"));
             check(launcher && launcherKind && launcherOpen && launched,
-                  QString("the rail's terminal button opens the launcher, which opens a "
-                          "command in a new terminal tab (tabs=%1)")
+                  QString("the pane's menu opens the launcher, which opens a command in a new "
+                          "terminal tab (tabs=%1)")
                       .arg(openIds.size()));
             if (terminals)
                 for (const QString &id : terminals->ids())
                     terminals->closeTab(id);
             settleRail();
             check(terminals && terminals->count() == 0 &&
-                      window.testTerminalToken(terminalId).isEmpty(),
-                  QStringLiteral("closing a terminal tab drops its agent token"));
+                      window.testTerminalToken(terminalId).isEmpty() && terminalPanel &&
+                      !terminalPanel->isVisible(),
+                  QStringLiteral("closing the last terminal tab drops its agent token and "
+                                 "hides the terminal pane"));
+            window.testToggleTerminals();
+            settleRail();
+            const bool oneClickShell = terminals && terminals->count() == 1 && terminalPanel &&
+                                       terminalPanel->isVisible();
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(oneClickShell,
+                  QStringLiteral("with no terminals open, one click on the terminal button "
+                                 "opens a shell in the side pane"));
             window.resize(railWindowSize);
             window.testShowTeamSection();
             settleRail();

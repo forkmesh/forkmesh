@@ -229,8 +229,22 @@ QString shellQuote(const QString &value)
     return QLatin1Char('\'') + quoted + QLatin1Char('\'');
 }
 
+QString tomlString(const QString &value)
+{
+    QString out = QStringLiteral("\"");
+    for (const QChar ch : value) {
+        if (ch == QLatin1Char('"') || ch == QLatin1Char('\\'))
+            out += QLatin1Char('\\') + QString(ch);
+        else if (ch.unicode() < 0x20 || ch.unicode() == 0x7f)
+            out += QStringLiteral("\\u%1").arg(ch.unicode(), 4, 16, QLatin1Char('0'));
+        else
+            out += ch;
+    }
+    return out + QLatin1Char('"');
+}
+
 QString launchCommand(const QString &kind, const QString &command, const QString &mcpConfigPath,
-                      bool windows)
+                      bool windows, const QString &python, const QString &mcpServerScript)
 {
     if (kind == ClaudeKind) {
         if (mcpConfigPath.isEmpty())
@@ -239,8 +253,17 @@ QString launchCommand(const QString &kind, const QString &command, const QString
             .arg(windows ? QLatin1Char('"') + mcpConfigPath + QLatin1Char('"')
                          : shellQuote(mcpConfigPath));
     }
-    if (kind == CodexKind)
-        return QStringLiteral("codex");
+    if (kind == CodexKind) {
+        if (windows || mcpConfigPath.isEmpty() || python.isEmpty() || mcpServerScript.isEmpty())
+            return QStringLiteral("codex");
+        const QString server = QStringLiteral("mcp_servers.forkmesh.");
+        return QStringLiteral("codex -c %1 -c %2")
+            .arg(shellQuote(server + QStringLiteral("command=") + tomlString(python)),
+                 shellQuote(server + QStringLiteral("args=[%1, %2, %3]")
+                                         .arg(tomlString(mcpServerScript),
+                                              tomlString(QStringLiteral("--env-file")),
+                                              tomlString(mcpConfigPath))));
+    }
     if (kind == CommandKind)
         return command;
     return windows ? QStringLiteral("rem") : QStringLiteral("exec \"${SHELL:-bash}\" -i");
