@@ -4870,6 +4870,7 @@ const QString kClaudeCodeProvider = QStringLiteral("claude-code");
 const QString kAgentDonePingKind = QStringLiteral("agent-done");
 constexpr int kAgentDoneSummaryChars = 400;
 const QString kAgentDoneAlertSetting = QStringLiteral("notifications/agentDone");
+const QString kClaudeDesktopSessionsSetting = QStringLiteral("agents/claudeDesktopSessions");
 const QString kAgentStartPingSetting = QStringLiteral("notifications/agentStart");
 
 bool agentIsClaudeProvider(const QString &provider);
