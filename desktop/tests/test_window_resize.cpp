@@ -1,5 +1,6 @@
 #include "FleetAutoscalePanel.h"
 #include "../src/ActionStore.h"
+#include "../src/DesktopBuildCommit.h"
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
@@ -5911,10 +5912,34 @@ void checkInlinePageNotices(MainWindow &window)
           QStringLiteral("an error replaces the confirmation and its link "
                          "becomes an Open action"));
 
-    QThread::msleep(1200);
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("a notice counts down to closing itself"));
+    window.testHoverPageNotice(true);
     QApplication::processEvents();
-    check(window.testPageNoticeVisible(),
-          QStringLiteral("a notice has no countdown and stays where it is"));
+    check(window.testPageNoticeCountdownPaused(),
+          QStringLiteral("hovering a notice pauses its countdown"));
+    window.testHoverPageNotice(false);
+    QApplication::processEvents();
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("moving off a notice resumes its countdown"));
+
+    window.testSetPageNoticeCountdownMs(150);
+    window.testFlashMessage(QStringLiteral("Mirror sync finished"));
+    QApplication::processEvents();
+    window.testHoverPageNotice(true);
+    QThread::msleep(300);
+    QApplication::processEvents();
+    check(window.testPageNoticeTexts().contains(
+              QStringLiteral("Mirror sync finished")),
+          QStringLiteral("a hovered notice stays past its countdown"));
+    window.testHoverPageNotice(false);
+    for (int i = 0; i < 40 && window.testPageNoticeVisible(); ++i) {
+        QThread::msleep(20);
+        QApplication::processEvents();
+    }
+    check(!window.testPageNoticeVisible(),
+          QStringLiteral("a notice closes itself when its countdown ends"));
+    window.testSetPageNoticeCountdownMs(5000);
 
     for (int i = 0; i < 5; ++i)
         window.testFlashMessage(QStringLiteral("Clone %1 failed").arg(i), true);
@@ -22896,6 +22921,17 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             check(version && appPath && version->geometry().left() >=
                                                appPath->geometry().right(),
                   QStringLiteral("clickable version sits to the right of the app path"));
+            const QString buildShort =
+                forkmesh::shortBuildCommit(forkmesh::desktopBuildCommit());
+            check(version &&
+                      version->text() ==
+                          (buildShort.isEmpty()
+                               ? QStringLiteral("v" FORKMESH_VERSION)
+                               : QStringLiteral("v" FORKMESH_VERSION) +
+                                     QString::fromUtf8(" \xC2\xB7 ") +
+                                     buildShort),
+                  QStringLiteral("the version names the short commit the "
+                                 "build is on"));
 
             // Offline mode is the other always-available footer control. It
             // must be compact enough to retain the single-line bar, remember a
