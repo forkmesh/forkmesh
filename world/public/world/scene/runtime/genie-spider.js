@@ -1,5 +1,6 @@
 import { reactionTexture } from "../avatar-rig.js";
 import { canvasTexture } from "../canvas.js";
+import * as resources from "../resources.js";
 import {
   GENIE_EYES,
   GENIE_POOF_ACT,
@@ -150,7 +151,7 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
     }
   }
 
-  function dispose() {
+  function disposeSpider() {
     teardownEffects();
     if (!s.model) return;
     s.model.removeFromParent();
@@ -232,7 +233,7 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
   function say(text, emoji) {
     if (!text) return;
     const texture = canvasTexture(THREE, 512, 128, (context) => paintGenieSpeech(context, `${emoji ? `${emoji} ` : ""}${text}`));
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
+    const sprite = new THREE.Sprite(resources.uniqueMaterial(THREE, { map: texture, transparent: true, depthTest: false, depthWrite: false }, "SpriteMaterial"));
     sprite.name = "forkmesh-genie-spider-speech";
     sprite.renderOrder = 12;
     sprite.scale.set(5.2, 1.3, 1);
@@ -242,17 +243,16 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
 
   function startEffect(entry) {
     if (!entry.fx || entry.fx === "none" || reducedMotion) return;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(PARTICLES * 3), 3));
-    const material = new THREE.PointsMaterial({
+    const material = resources.uniqueMaterial(THREE, {
       map: reactionTexture(THREE, entry.emoji),
       size: 0.85,
       sizeAttenuation: true,
       transparent: true,
       depthWrite: false,
       alphaTest: 0.05,
-    });
-    const points = new THREE.Points(geometry, material);
+    }, "PointsMaterial");
+    const points = new THREE.Points(undefined, material);
+    points.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(PARTICLES * 3), 3));
     points.name = "forkmesh-genie-spider-effect";
     points.frustumCulled = false;
     points.renderOrder = 11;
@@ -261,9 +261,8 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
   }
 
   function startWeb() {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-    const web = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: "#e6ecf8", transparent: true, opacity: 0.85 }));
+    const web = new THREE.Line(undefined, resources.uniqueMaterial(THREE, { color: "#e6ecf8", transparent: true, opacity: 0.85 }, "LineBasicMaterial"));
+    web.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
     web.name = "forkmesh-genie-spider-web";
     web.frustumCulled = false;
     ctx.world.add(web);
@@ -524,7 +523,7 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
     s.enabled = Boolean(on);
     if (!s.enabled) {
       finish(performance.now());
-      dispose();
+      disposeSpider();
     }
     return s.enabled;
   }
@@ -555,6 +554,6 @@ export function functions({ THREE, reducedMotion, ctx, fns }) {
     setGenieSpiderEnabled,
     genieSpiderState,
     genieSpiderActs,
-    disposeGenieSpider: dispose,
+    disposeGenieSpider: disposeSpider,
   };
 }
