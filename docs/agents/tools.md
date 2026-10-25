@@ -9,7 +9,7 @@ lifecycle is in [README.md](README.md); access rules in
 
 | Where the agent runs | Runtime | Tools it gets | What limits them |
 | --- | --- | --- | --- |
-| Desktop, Claude Code provider | `claude` stream-json (`ClaudeStreamSession.cpp`) | Claude Code built-ins; MCP servers from `.mcp.json` and the user's config; the IDE bridge | Permission mode, tool families, folder lock, gate hook, optional allowlist |
+| Desktop, Claude Code provider | `claude` stream-json (`ClaudeStreamSession.cpp`) | Claude Code built-ins; the ForkMesh MCP server (`--mcp-config`), `.mcp.json` once approved and the user's config; the IDE bridge | Permission mode, tool families, folder lock, gate hook, optional allowlist |
 | Desktop, Codex provider | `codex app-server` (`CodexAppServerSession.cpp`) | Codex built-ins (shell, apply_patch, web search, view_image) | Approval policy `never`, folder lock, tool families Codex can switch off |
 | Desktop, legacy `claude` (API) provider | `ClaudeAgentScript.h` | One `bash` tool | Landlock, jail, gate, 60 turns |
 | Desktop, `local-llama` and `cloudflare-ai` | `tools/forkmesh_coding_agent.py` | 18 ForkMesh coding tools | Landlock, gate, tool families, path guardrails |
@@ -58,7 +58,7 @@ Launch: `claude --output-format stream-json --input-format stream-json
   workspace.
 - `--tools` only when the global tool allowlist is on.
 
-Never passed: `--allowedTools`, `--mcp-config`, `--strict-mcp-config`,
+Never passed: `--allowedTools`, `--strict-mcp-config`,
 `--append-system-prompt`, `--add-dir`.
 
 Tool guidance reaches the agent through the prompt:
@@ -79,11 +79,19 @@ IDE bridge port are added off the VM.
 
 ### MCP servers
 
-The desktop does not hand an MCP config to its runs. Claude Code loads the
-checked-in `.mcp.json` (one server, `forkmesh`, run as
-`python3 tools/forkmesh_mcp_server.py`) and whatever the user registered,
-for example with the `claude mcp add forkmesh --scope user …` command
-Settings > MCP copies.
+Every run gets `--mcp-config <data>/core/agent-mcp/session-<id>.json`
+(mode 0600, rewritten on each launch by `MainWindow::addAgentRunMcpConfig`):
+the `forkmesh` server (`forkmesh::mcp::configJson`, the same file the
+terminal tabs get) with the run's `FORKMESH_AGENT_INTAKE` and
+`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. Without it a run had no ForkMesh
+tools at all: a non-interactive `claude` skips a checked-in `.mcp.json` until
+the user approves it in an interactive session (`enabledMcpjsonServers`), and
+other repositories have no `.mcp.json`. So the terminal, window, browser and
+hub tools ([../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md))
+reach every run, as Claude Code's desktop app gives its sessions their panes.
+The flag adds to the user's own servers (no `--strict-mcp-config`), and a run
+with guardrails gets the config file and the server's folder as read-only
+paths. Runs in the KVM workspace, which have no intake socket, get no file.
 
 ### IDE bridge
 

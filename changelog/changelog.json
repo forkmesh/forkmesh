@@ -39,11 +39,18 @@
      ]
     },
     {
+     "title": "Agents",
+     "items": [
+      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first."
+     ]
+    },
+    {
      "title": "World",
      "items": [
       "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page.",
       "Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.",
-      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World."
+      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World.",
+      "Turning on your camera in the World now works; the browser no longer blocks it."
      ]
     },
     {
@@ -83,7 +90,8 @@
       "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.",
       "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.",
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
-      "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person."
+      "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.",
+      "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app."
      ]
     },
     {
@@ -170,6 +178,8 @@
     {
      "title": "Android",
      "items": [
+      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.",
+      "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.",
       "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
       "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.",
@@ -303,6 +313,9 @@
      "title": "Android",
      "items": [
       "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.",
+      "On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call.",
+      "Calls ring an Android phone that has notifications turned off, as long as its background connection is on.",
+      "Removing a project on Android erases its chat history, and performance reports hide conversation and channel names.",
       "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."
      ]
     },

@@ -20877,8 +20877,9 @@ def _apply_browser_security_headers(response, pathname):
     if "text/html" not in content_type:
         return response
     path = str(pathname or "/")
+    chat_page = path in ("/chat", "/chat.html")
     frameable = (
-        path in ("/chat", "/chat.html")
+        chat_page
         or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
@@ -20894,7 +20895,8 @@ def _apply_browser_security_headers(response, pathname):
             "frame-src 'self'",
             "frame-src 'self' " + _TURNSTILE_CHALLENGE_ORIGIN, 1,
         )
-    devices = _plugin_device_page(path)
+    devices = ("camera", "microphone") if chat_page else _plugin_device_page(
+        path)
     if devices:
         csp = csp.replace(
             "media-src 'self' blob: https:", _DEVICE_PAGE_MEDIA_SRC, 1)
