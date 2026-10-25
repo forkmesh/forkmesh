@@ -10,6 +10,7 @@ class QMimeData;
 namespace forkmesh::siderail {
 
 inline constexpr char kWorkflowMime[] = "application/x-forkmesh-workflow";
+inline constexpr char kWorkflowPinMime[] = "application/x-forkmesh-workflow-pin";
 inline constexpr char kItemMime[] = "application/x-forkmesh-side-rail-item";
 inline const QString kItemsSetting = QStringLiteral("ui/sideRailItems");
 inline const QString kShowSetting = QStringLiteral("ui/showSideRail");
@@ -61,6 +62,7 @@ bool acceptableLink(const QUrl &url);
 int clampBrowserWidth(int width);
 
 QByteArray encodeWorkflow(const QString &repo, const QString &id);
+QByteArray encodeWorkflowPin(const QString &repo, const QString &id);
 bool decodeWorkflow(const QByteArray &data, QString *repo, QString *id);
 QList<Item> itemsFromMime(const QMimeData *mime, const QString &railItemMime);
 

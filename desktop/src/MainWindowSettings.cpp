@@ -947,6 +947,8 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildVulnReportTab(); }, "Security", "shield-check");
 
+    addLazyTab([this] { return buildFastDiskTab(); }, "TMP disk", "database");
+
     addLazyTab([this] { return buildDataSection(); }, "Data", "package");
 
     m_settingsSections = sections;
@@ -7939,7 +7941,7 @@ QString withoutAddressTokens(const QString &text)
 QString withoutClearedTallies(const QString &lowerText)
 {
     static const QRegularExpression cleared(QStringLiteral(
-        "(?<![0-9a-z])(?:0|no)\\s+(?:fail(?:s|ed|ure|ures|ing)?|errors?)"
+        "(?<![0-9a-z])(?:0|no)\\s+(?:new\\s+)?(?:fail(?:s|ed|ure|ures|ing)?|errors?)"
         "(?![a-z])|(?<![0-9a-z])(?:fail(?:s|ed|ures)?|errors)\\s*[:=]?\\s*0"
         "(?![0-9.])"));
     QString kept = lowerText;

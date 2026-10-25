@@ -85,6 +85,17 @@ static void testMime()
               flows.first().id == QLatin1String("deploy"),
           "a dragged workflow becomes a workflow item");
 
+    QMimeData pin;
+    pin.setData(QLatin1String(sr::kWorkflowPinMime),
+                sr::encodeWorkflowPin(QStringLiteral("acme/site"), QStringLiteral("lint")));
+    const QList<sr::Item> pins = sr::itemsFromMime(&pin, QString());
+    check(pins.size() == 1 && pins.first().key() ==
+                                  sr::workflowItem(QStringLiteral("acme/site"), QStringLiteral("lint")).key(),
+          "a pin dragged from another strip becomes a workflow item");
+    QMimeData badPin;
+    badPin.setData(QLatin1String(sr::kWorkflowPinMime), QByteArrayLiteral("acme/site"));
+    check(sr::itemsFromMime(&badPin, QString()).isEmpty(), "a malformed pin drag is refused");
+
     QMimeData page;
     page.setData(QStringLiteral("x-rail"), QByteArrayLiteral("agents"));
     const QList<sr::Item> pages = sr::itemsFromMime(&page, QStringLiteral("x-rail"));

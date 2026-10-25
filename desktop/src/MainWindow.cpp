@@ -25,6 +25,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "SettingsSectionsView.h"
+#include "SettingsWrite.h"
 #include "SingleInstance.h"
 #include "BackgroundMode.h"
 #include "StatsDashboard.h"
@@ -166,7 +167,9 @@ MainWindow::~MainWindow()
             m_agentToolLedger->saveLater();
     }
     forkmesh::diskwrite::flush();
+    ActionStore::flushWrites();
     flushRepositorySyncTimes();
+    flushDeferredSettings();
 
     clearDesktopPackageExtensions();
 
@@ -844,6 +847,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     startupStep(QStringLiteral("Restoring actions and agent sessions"));
     // Only the store and its runners here; reading the run records off disk is
     // the expensive half and waits for warmDeferredStartupSurfaces().
+    traceStep(QStringLiteral("find the TMP disk"), [this] { initFastScratchDisk(); });
     traceStep(QStringLiteral("create the Actions store"),
               [this] { initActionStore(); });
     traceStep(QStringLiteral("restore agent sessions"), [this] { initAgents(); });
@@ -1451,9 +1455,15 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
     const QFont interfaceFont = Theme::interfaceFont(design, classicFont);
     if (qApp->font().families() != interfaceFont.families())
         qApp->setFont(interfaceFont);
-    qApp->setStyleSheet(design == Theme::Design::Next
-                            ? Theme::nextStyleSheet(dark)
-                            : Theme::styleSheetForPalette(dark, palette, overlay));
+    const QString styleSheet =
+        design == Theme::Design::Next
+            ? Theme::nextStyleSheet(dark)
+            : Theme::styleSheetForPalette(dark, palette, overlay);
+    if (qApp->styleSheet() != styleSheet) {
+        if (!qApp->styleSheet().isEmpty())
+            qApp->setStyleSheet(QString());
+        qApp->setStyleSheet(styleSheet);
+    }
     for (QWidget *widget : QApplication::topLevelWidgets()) {
         widget->setProperty("forkmeshTheme", activeThemeId);
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
@@ -1496,6 +1506,15 @@ void MainWindow::refreshThemedIcons()
         renderOrganizationTaskDetail();
 }
 
+void MainWindow::flushDeferredSettings()
+{
+    if (m_lastRepoDetailTabPending >= 0) {
+        forkmesh::settings::put(QSettings(), kLastRepoDetailTabSetting,
+                                m_lastRepoDetailTabPending);
+        m_lastRepoDetailTabPending = -1;
+    }
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     m_closingDown = true;
@@ -1520,6 +1539,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         QSettings().setValue(kWindowGeometrySetting, saveGeometry());
         savePromptOverlayPlacement();
     }
+    flushDeferredSettings();
     if (m_connectedAtMs > 0)
         QSettings().setValue(kConnectionTotalSetting,
                              m_totalConnectionMs +

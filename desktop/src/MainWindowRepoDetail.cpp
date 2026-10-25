@@ -8517,18 +8517,8 @@ void MainWindow::recordNavLocation()
     }
     captureNavSubPlace(here);
 
-    if (here.detailTab >= 0) {
-        // Keep this tiny preference buffered for the process lifetime.  A
-        // temporary QSettings flushes (including fdatasync on Linux) from its
-        // destructor; doing that during every navigation produced a measured
-        // half-second GUI stall.  The persistent instance still flushes on a
-        // normal application shutdown.
-        static QSettings navigationSettings;
-        if (navigationSettings.value(kLastRepoDetailTabSetting, -1).toInt() !=
-            here.detailTab)
-            navigationSettings.setValue(kLastRepoDetailTabSetting,
-                                        here.detailTab);
-    }
+    if (here.detailTab >= 0)
+        m_lastRepoDetailTabPending = here.detailTab;
 
     if (m_navHistoryIndex >= 0 && m_navHistoryIndex < m_navHistory.size() &&
         m_navHistory.at(m_navHistoryIndex) == here)
@@ -10610,7 +10600,7 @@ void MainWindow::finishSearchPageRun()
     const SavedSearchRun run = store.recordRun(saved->id, keys, counts,
                                                QDateTime::currentMSecsSinceEpoch(),
                                                true);
-    store.save();
+    store.saveLater();
     evaluateSecurityAlarms();
     for (const QString &key : run.newKeys) {
         QTreeWidgetItem *row = rowsByKey.value(key);
@@ -11219,7 +11209,7 @@ void MainWindow::runNextSavedSearchAlertCheck()
                     const bool pertinent = search->securityPertinent;
                     const SavedSearchRun run = store.recordRun(
                         id, keys, counts, QDateTime::currentMSecsSinceEpoch(), false);
-                    store.save();
+                    store.saveLater();
                     evaluateSecurityAlarms();
                     if (alerts && !run.baseline && !run.newKeys.isEmpty()) {
                         QMap<QString, int> newByKind;
@@ -15841,7 +15831,11 @@ void MainWindow::finishPendingRestartTiming()
     using namespace forkmesh::restarttiming;
     const QString runKey = QStringLiteral("restartTiming/pendingRun");
     const QString kindKey = QStringLiteral("restartTiming/pendingKind");
+    const QString summaryKey = QStringLiteral("restartTiming/pendingSummary");
     QSettings settings;
+    const QString summary = settings.value(summaryKey).toString();
+    if (settings.contains(summaryKey))
+        settings.remove(summaryKey);
     if (!settings.contains(runKey))
         return;
     const QString stored = settings.value(runKey).toString();
@@ -15858,6 +15852,8 @@ void MainWindow::finishPendingRestartTiming()
         (now - m_debugSessionUptime.elapsed()) - run.finishedAtMs;
     if (handoffMs < -5'000 || handoffMs > kRelaunchHandoffWindowMs)
         return; // left behind by a relaunch that never painted; not this launch
+    if (!summary.isEmpty())
+        QTimer::singleShot(0, this, [this, summary] { flashMessage(summary); });
     run.totalMs += qMax<qint64>(0, now - run.finishedAtMs);
     run.finishedAtMs = now;
     if (isPlausibleDuration(run.totalMs))

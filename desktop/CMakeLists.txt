@@ -812,6 +812,7 @@ set(FORKMESH_APP_SOURCES
     src/ComponentHealthBoard.h
     src/ComponentHealthBoard.cpp
     src/MainWindowComponentHealth.cpp
+    src/MainWindowFastDisk.cpp
     src/HomeBoard.h
     src/HomeBoard.cpp
     src/HomeLayout.h
@@ -1030,6 +1031,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentCredentialEnvironment.h
     src/AgentJail.h
     src/AgentScratch.h
+    src/FastScratchDisk.h
+    src/UsbLinkCheck.h
     src/AgentWorktree.h
     src/AgentWorkspaceNameGate.h
     src/VirtualMachineRuntime.h
@@ -3354,6 +3357,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_saved_search_store.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
     )
     target_link_libraries(forkmesh-saved-search-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-saved-search-tests PRIVATE src)
@@ -3362,6 +3367,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_security_alarm_state.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/SecurityAlarmState.h
         src/SecurityAlarmState.cpp
     )
@@ -3742,12 +3749,23 @@ forkmesh_link_opengl(forkmesh-window-tests)
     qt_add_executable(forkmesh-agent-scratch-tests
         tests/test_agent_scratch.cpp
         src/AgentScratch.h
+        src/FastScratchDisk.h
         src/AgentWorktree.h
         src/SafeDelete.h
         src/AppPaths.h
     )
     target_link_libraries(forkmesh-agent-scratch-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-agent-scratch-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-fast-disk-tests
+        tests/test_fast_scratch_disk.cpp
+        src/FastScratchDisk.h
+        src/UsbLinkCheck.h
+        src/AgentScratch.h
+        src/SafeDelete.h
+    )
+    target_link_libraries(forkmesh-fast-disk-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-fast-disk-tests PRIVATE src)
 
     # Project settings > Agents: the policy in project.json, the folder lock it
     # puts on launches, the external-call classifier and the Claude Code hook
@@ -4032,6 +4050,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-app-paths-tests
         forkmesh-safe-delete-tests
         forkmesh-agent-scratch-tests
+        forkmesh-fast-disk-tests
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests
@@ -4165,6 +4184,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-safe-delete-tests)
     add_test(NAME forkmesh-agent-scratch-tests
              COMMAND forkmesh-agent-scratch-tests)
+    add_test(NAME forkmesh-fast-disk-tests
+             COMMAND forkmesh-fast-disk-tests)
     add_test(NAME forkmesh-agent-parity-tests
              COMMAND forkmesh-agent-parity-tests)
     add_test(NAME forkmesh-process-reaper-tests
@@ -4587,6 +4608,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-app-paths-tests
         forkmesh-safe-delete-tests
         forkmesh-agent-scratch-tests
+        forkmesh-fast-disk-tests
         forkmesh-agent-parity-tests
         forkmesh-process-reaper-tests
         forkmesh-background-mode-tests

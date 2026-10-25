@@ -3,21 +3,22 @@
 #include "LocalControlInsights.h"
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
-#include "SideRail.h"
 #include "TeammateStore.h"
 
+#include <QApplication>
 #include <QBoxLayout>
 #include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDrag>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QMenu>
 #include <QMimeData>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -37,6 +38,25 @@ using forkmesh::teammates::Config;
 namespace {
 
 const QString kWorkflowPinsSetting = QStringLiteral("ui/workflowPins");
+const QString kWorkflowPinMimeType = QStringLiteral("application/x-forkmesh-workflow-pin");
+
+int workflowPinSide(const QString &rail)
+{
+    return rail == rw::kRailBottom ? 14 : (rail == rw::kRailTop ? 20 : 28);
+}
+
+bool draggedWorkflowPin(const QMimeData *mime, QString *repo, QString *workflowId)
+{
+    if (!mime || !mime->hasFormat(kWorkflowPinMimeType))
+        return false;
+    const QStringList parts =
+        QString::fromUtf8(mime->data(kWorkflowPinMimeType)).split(QLatin1Char('\n'));
+    if (parts.size() != 2 || parts.at(0).isEmpty() || parts.at(1).isEmpty())
+        return false;
+    *repo = parts.at(0);
+    *workflowId = parts.at(1);
+    return true;
+}
 const QString kHandleSession = QStringLiteral("session");
 const QString kHandleShortcut = QStringLiteral("shortcut");
 const QString kHandleProcess = QStringLiteral("process");
@@ -114,12 +134,6 @@ QString statusText(const QString &status)
     return status;
 }
 
-bool &pinDragActive()
-{
-    static bool active = false;
-    return active;
-}
-
 class WorkflowPinButton final : public QToolButton
 {
 public:
@@ -140,42 +154,6 @@ public:
     }
 
 protected:
-    void mousePressEvent(QMouseEvent *event) override
-    {
-        if (event->button() == Qt::LeftButton)
-            m_pressAt = event->position().toPoint();
-        QToolButton::mousePressEvent(event);
-    }
-
-    void mouseMoveEvent(QMouseEvent *event) override
-    {
-        if (!(event->buttons() & Qt::LeftButton) || m_pressAt.isNull() ||
-            (event->position().toPoint() - m_pressAt).manhattanLength() <
-                QApplication::startDragDistance()) {
-            QToolButton::mouseMoveEvent(event);
-            return;
-        }
-        m_pressAt = QPoint();
-        setDown(false);
-        auto *mime = new QMimeData;
-        mime->setData(QLatin1String(forkmesh::siderail::kWorkflowMime),
-                      forkmesh::siderail::encodeWorkflow(property("workflowRepo").toString(),
-                                                         property("workflowId").toString()));
-        auto *drag = new QDrag(this);
-        drag->setMimeData(mime);
-        drag->setPixmap(grab());
-        drag->setHotSpot(QPoint(width() / 2, height() / 2));
-        pinDragActive() = true;
-        drag->exec(Qt::CopyAction | Qt::MoveAction);
-        pinDragActive() = false;
-    }
-
-    void mouseReleaseEvent(QMouseEvent *event) override
-    {
-        m_pressAt = QPoint();
-        QToolButton::mouseReleaseEvent(event);
-    }
-
     void paintEvent(QPaintEvent *event) override
     {
         QToolButton::paintEvent(event);
@@ -201,7 +179,6 @@ private:
     int m_side = 24;
     QPixmap m_face;
     QString m_status;
-    QPoint m_pressAt;
 };
 
 } // namespace
@@ -824,6 +801,11 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
                 [this] { openWorkflowInPage(QString(), QString()); });
         menu.exec(strip->mapToGlobal(point));
     });
+    if (!m_workflowPinHook)
+        m_workflowPinHook = new RailEventHook(
+            [this](QObject *watched, QEvent *event) { return handleWorkflowPinEvent(watched, event); }, this);
+    strip->setAcceptDrops(true);
+    strip->installEventFilter(m_workflowPinHook);
     strip->hide();
     m_workflowPinStrips.insert(rail, strip);
     QTimer::singleShot(0, this, [this] { refreshWorkflowPins(); });
@@ -832,10 +814,8 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
 
 void MainWindow::refreshWorkflowPins()
 {
-    if (pinDragActive()) {
-        QTimer::singleShot(300, this, [this] { refreshWorkflowPins(); });
+    if (m_workflowPinDragging)
         return;
-    }
     if (m_workflowPinStrips.isEmpty()) {
         scheduleSideRailRefresh();
         return;
@@ -855,7 +835,7 @@ void MainWindow::refreshWorkflowPins()
                 widget->deleteLater();
             delete item;
         }
-        const int side = rail == rw::kRailBottom ? 14 : (rail == rw::kRailTop ? 20 : 28);
+        const int side = workflowPinSide(rail);
         int shown = 0;
         for (const rw::Pin &pin : pins) {
             if (pin.rail != rail)
@@ -907,6 +887,7 @@ void MainWindow::refreshWorkflowPins()
             connect(button, &QWidget::customContextMenuRequested, this, [this, button, repo, id](const QPoint &point) {
                 showWorkflowPinMenu(repo, id, button->mapToGlobal(point));
             });
+            button->installEventFilter(m_workflowPinHook);
             layout->addWidget(button, 0, Qt::AlignCenter);
             ++shown;
         }
@@ -915,6 +896,203 @@ void MainWindow::refreshWorkflowPins()
         strip->setVisible(shown > 0);
     }
     scheduleSideRailRefresh();
+}
+
+bool MainWindow::handleWorkflowPinEvent(QObject *watched, QEvent *event)
+{
+    auto *widget = qobject_cast<QWidget *>(watched);
+    if (!widget)
+        return false;
+    const QEvent::Type type = event->type();
+    const QString rail = widget->property("workflowRail").toString();
+    if (rail.isEmpty()) {
+        if (widget->objectName() != QLatin1String("workflowPinButton"))
+            return false;
+        if (type == QEvent::MouseButtonPress) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            m_workflowPinDragSource.clear();
+            if (mouse->button() == Qt::LeftButton) {
+                m_workflowPinDragSource = widget;
+                m_workflowPinDragStart = mouse->position().toPoint();
+            }
+        } else if (type == QEvent::MouseButtonRelease) {
+            m_workflowPinDragSource.clear();
+        } else if (type == QEvent::MouseMove) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (m_workflowPinDragSource != widget || !(mouse->buttons() & Qt::LeftButton) ||
+                (mouse->position().toPoint() - m_workflowPinDragStart).manhattanLength() <
+                    QApplication::startDragDistance())
+                return false;
+            m_workflowPinDragSource.clear();
+            startWorkflowPinDrag(widget, m_workflowPinDragStart);
+            return true;
+        }
+        return false;
+    }
+    if (type == QEvent::Resize) {
+        if (QWidget *outline = widget->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                                            Qt::FindDirectChildrenOnly))
+            outline->setGeometry(widget->rect());
+        return false;
+    }
+    if (type == QEvent::DragLeave) {
+        hideWorkflowPinDropIndicator();
+        return false;
+    }
+    if (type != QEvent::DragEnter && type != QEvent::DragMove && type != QEvent::Drop)
+        return false;
+    auto *drop = static_cast<QDropEvent *>(event);
+    QString repo;
+    QString workflowId;
+    if (!draggedWorkflowPin(drop->mimeData(), &repo, &workflowId))
+        return false;
+    const QPoint at = drop->position().toPoint();
+    const int slot = workflowPinSlotAt(widget, at, repo, workflowId);
+    drop->setDropAction(Qt::MoveAction);
+    drop->accept();
+    if (type != QEvent::Drop) {
+        showWorkflowPinDropIndicator(widget, at);
+        return true;
+    }
+    hideWorkflowPinDropIndicator();
+    const QList<rw::Pin> pins = rw::movePin(workflowPins(), {repo, workflowId, rail}, slot);
+    QSettings().setValue(kWorkflowPinsSetting, rw::serializePins(pins));
+    refreshWorkflowPins();
+    notifyRepoWorkflowsChanged();
+    return true;
+}
+
+void MainWindow::startWorkflowPinDrag(QWidget *button, const QPoint &hotSpot)
+{
+    if (auto *tool = qobject_cast<QAbstractButton *>(button))
+        tool->setDown(false);
+    auto *mime = new QMimeData;
+    mime->setData(kWorkflowPinMimeType, QStringLiteral("%1\n%2")
+                                            .arg(button->property("workflowRepo").toString(),
+                                                 button->property("workflowId").toString())
+                                            .toUtf8());
+    auto *drag = new QDrag(this);
+    drag->setMimeData(mime);
+    drag->setPixmap(button->grab());
+    drag->setHotSpot(hotSpot);
+    setWorkflowPinStripsOpen(true);
+    drag->exec(Qt::MoveAction);
+    setWorkflowPinStripsOpen(false);
+}
+
+void MainWindow::setWorkflowPinStripsOpen(bool open)
+{
+    m_workflowPinDragging = open;
+    const auto dropZone = [](QWidget *host) {
+        auto *frame = new QFrame(host);
+        frame->setObjectName(QStringLiteral("workflowPinDropZone"));
+        frame->setAttribute(Qt::WA_TransparentForMouseEvents);
+        frame->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("QFrame#workflowPinDropZone { background: transparent;"
+                           " border: 1px dashed #2ea043; border-radius: 6px; }")));
+        return frame;
+    };
+    if (QWidget *side = m_sideRailItemsLayout ? m_sideRailItemsLayout->parentWidget() : nullptr) {
+        QWidget *outline =
+            side->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"), Qt::FindDirectChildrenOnly);
+        if (!open) {
+            delete outline;
+        } else {
+            if (!outline)
+                outline = dropZone(side);
+            outline->setGeometry(side->rect());
+            outline->raise();
+            outline->show();
+        }
+    }
+    for (auto it = m_workflowPinStrips.cbegin(); it != m_workflowPinStrips.cend(); ++it) {
+        QWidget *strip = it.value();
+        if (!strip)
+            continue;
+        QWidget *outline =
+            strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"), Qt::FindDirectChildrenOnly);
+        if (!open) {
+            strip->setMinimumSize(0, 0);
+            delete outline;
+            continue;
+        }
+        const QString rail = it.key();
+        const int button = workflowPinSide(rail) + 6;
+        const bool vertical = rail == rw::kRailLeft || rail == rw::kRailRight;
+        strip->setMinimumSize(vertical ? button + 8 : button * 3, vertical ? button * 3 : button);
+        if (!outline)
+            outline = dropZone(strip);
+        outline->setGeometry(strip->rect());
+        outline->show();
+        strip->show();
+    }
+    if (!open) {
+        hideWorkflowPinDropIndicator();
+        refreshWorkflowPins();
+    }
+}
+
+int MainWindow::workflowPinSlotAt(QWidget *strip, const QPoint &at, const QString &repo,
+                                  const QString &workflowId) const
+{
+    auto *layout = strip ? qobject_cast<QBoxLayout *>(strip->layout()) : nullptr;
+    if (!layout)
+        return 0;
+    const bool vertical = layout->direction() == QBoxLayout::TopToBottom;
+    int slot = 0;
+    for (int i = 0; i < layout->count(); ++i) {
+        QWidget *button = layout->itemAt(i)->widget();
+        if (!button || button->isHidden() || button->objectName() != QLatin1String("workflowPinButton"))
+            continue;
+        if (button->property("workflowId").toString() == workflowId &&
+            button->property("workflowRepo").toString().compare(repo, Qt::CaseInsensitive) == 0)
+            continue;
+        const QPoint centre = button->geometry().center();
+        if ((vertical ? centre.y() : centre.x()) < (vertical ? at.y() : at.x()))
+            ++slot;
+    }
+    return slot;
+}
+
+void MainWindow::showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at)
+{
+    auto *layout = strip ? qobject_cast<QBoxLayout *>(strip->layout()) : nullptr;
+    if (!layout)
+        return;
+    if (!m_workflowPinDropIndicator) {
+        auto *line = new QFrame(strip);
+        line->setObjectName(QStringLiteral("workflowPinDropIndicator"));
+        line->setAttribute(Qt::WA_TransparentForMouseEvents);
+        line->setStyleSheet(Theme::remapSheet(QStringLiteral("background: #2ea043; border: none;")));
+        m_workflowPinDropIndicator = line;
+    }
+    if (m_workflowPinDropIndicator->parentWidget() != strip)
+        m_workflowPinDropIndicator->setParent(strip);
+    const bool vertical = layout->direction() == QBoxLayout::TopToBottom;
+    int edge = vertical ? layout->contentsMargins().top() : layout->contentsMargins().left();
+    for (int i = 0; i < layout->count(); ++i) {
+        QWidget *button = layout->itemAt(i)->widget();
+        if (!button || button->isHidden() || button->objectName() != QLatin1String("workflowPinButton"))
+            continue;
+        const QRect box = button->geometry();
+        if ((vertical ? box.center().y() : box.center().x()) >= (vertical ? at.y() : at.x())) {
+            edge = (vertical ? box.top() : box.left()) - 2;
+            break;
+        }
+        edge = (vertical ? box.bottom() : box.right()) + 2;
+    }
+    if (vertical)
+        m_workflowPinDropIndicator->setGeometry(2, qMax(0, edge - 1), qMax(8, strip->width() - 4), 2);
+    else
+        m_workflowPinDropIndicator->setGeometry(qMax(0, edge - 1), 2, 2, qMax(8, strip->height() - 4));
+    m_workflowPinDropIndicator->raise();
+    m_workflowPinDropIndicator->show();
+}
+
+void MainWindow::hideWorkflowPinDropIndicator()
+{
+    if (m_workflowPinDropIndicator)
+        m_workflowPinDropIndicator->hide();
 }
 
 void MainWindow::runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail)

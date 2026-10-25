@@ -163,6 +163,21 @@ running checkout as `RelWithDebInfo` and relaunch. It queues behind running
 agents, re-runs the pass if sources changed mid-build (up to three passes), and
 installs only a build of an unchanged tree.
 
+The build is incremental: Ninja recompiles only the sources that changed in that
+checkout since the last build. It does not see edits that are still in an agent's
+worktree under `.worktrees/` until they are merged into the checkout. On
+2026-10-24 three clicks (19:57, 20:06, 20:16) each ran `cmake --build`, found
+nothing to compile, and relaunched within seconds. That looked like a restart
+that skipped the rebuild. So after a successful build, the restart now says what it
+compiled. `compiledSources()` (`src/RestartTiming.h`) reads the
+`Building … object` lines of every pass, and `rebuiltSummary()` makes the line:
+`Rebuilt N changed files: A.cpp, B.cpp …` (the first five), or `No source
+changes since the last build; restarting the same build.` The line goes into the update
+log (followed by the full list), the restart trace and the app log. It is kept
+as `restartTiming/pendingSummary`, and the relaunched app shows it as a notice at its
+first paint (`finishPendingRestartTiming()`). It shows only when that launch is
+the relaunch, so a failed install leaves no stale notice.
+
 **Update, rebuild & restart** (`MainWindow::updateRebuildRestart()`,
 `src/MainWindowSetup.cpp`) runs `git pull --ff-only` from the mirror named by
 `/api/install-source`. If the pull fails, the update stops, reports why and
@@ -252,3 +267,11 @@ delta search runs and the step stays within its CPU limit
 - A build that started before a worktree reset compiled the old tree.
 - A merge rewriting a header mid-build can cause a PCH "redefinition" error;
   re-run the build.
+- `MainWindow.h` declares its `test*` hooks inside `#ifdef
+  FORKMESH_WINDOW_TESTS`, so a hook's definition needs the same guard. Without
+  it the window tests still build but the app (`forkmesh`) fails with "no
+  declaration matches", as `testRepoTabRowPanel` did on 2026-10-24. Build the
+  `forkmesh` target, not only `forkmesh-window-tests`, after adding one.
+- Two ninja processes linking the same target leave a binary that crashes in
+  `ld.so` before `main` while ninja reports it up to date. Delete that one
+  output file and link again.

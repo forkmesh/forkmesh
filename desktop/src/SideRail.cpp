@@ -219,6 +219,11 @@ QByteArray encodeWorkflow(const QString &repo, const QString &id)
         .toJson(QJsonDocument::Compact);
 }
 
+QByteArray encodeWorkflowPin(const QString &repo, const QString &id)
+{
+    return (repo.trimmed() + QLatin1Char('\n') + id.trimmed()).toUtf8();
+}
+
 bool decodeWorkflow(const QByteArray &data, QString *repo, QString *id)
 {
     const QJsonObject object = QJsonDocument::fromJson(data).object();
@@ -249,6 +254,14 @@ QList<Item> itemsFromMime(const QMimeData *mime, const QString &railItemMime)
         QString id;
         if (decodeWorkflow(mime->data(QLatin1String(kWorkflowMime)), &repo, &id))
             items.append(workflowItem(repo, id));
+        return items;
+    }
+    if (mime->hasFormat(QLatin1String(kWorkflowPinMime))) {
+        const QStringList parts =
+            QString::fromUtf8(mime->data(QLatin1String(kWorkflowPinMime))).split(QLatin1Char('\n'));
+        const Item item = parts.size() == 2 ? workflowItem(parts.at(0), parts.at(1)) : Item();
+        if (item.valid())
+            items.append(item);
         return items;
     }
     if (!railItemMime.isEmpty() && mime->hasFormat(railItemMime)) {

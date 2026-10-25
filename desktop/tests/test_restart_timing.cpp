@@ -114,6 +114,32 @@ int main(int argc, char **argv)
     check(!lastBuildProgress(QStringLiteral("-- Configuring done\n")).isValid(),
           "output without a progress line leaves the activity alone");
 
+    const QStringList compiled = compiledSources(QStringLiteral(
+        "[0/2] Re-checking globbed directories...\n"
+        "[1/3] Building CXX object CMakeFiles/forkmesh.dir/src/MainWindowGenie.cpp.o\n"
+        "[2/3] Building CXX object CMakeFiles/forkmesh-package-crm.dir/home/f/marketplace/packages/crm/content/desktop/CrmFeature.cpp.o\r\n"
+        "[ 50%] Building CXX object CMakeFiles/forkmesh.dir/src/MainWindowGenie.cpp.o\n"
+        "[3/3] Linking CXX executable forkmesh\n"));
+    check(compiled == QStringList({QStringLiteral("src/MainWindowGenie.cpp"),
+                                   QStringLiteral("home/f/marketplace/packages/crm/content/desktop/CrmFeature.cpp")}),
+          "each recompiled source is listed once, without its object suffix");
+    check(compiledSources(QStringLiteral(
+              "[1/2] Generating ForkMeshBuildCommit.h\n"
+              "[2/2] Re-checking globbed directories...\n")).isEmpty(),
+          "a build that compiled nothing lists no sources");
+    check(rebuiltSummary({}) ==
+              QStringLiteral("No source changes since the last build; restarting the same build."),
+          "a no-op build says so");
+    check(rebuiltSummary({QStringLiteral("src/A.cpp")}) ==
+              QStringLiteral("Rebuilt 1 changed file: A.cpp"),
+          "one rebuilt file is named");
+    check(rebuiltSummary({QStringLiteral("src/A.cpp"), QStringLiteral("src/B.cpp"),
+                          QStringLiteral("src/C.cpp"), QStringLiteral("src/D.cpp"),
+                          QStringLiteral("src/E.cpp"), QStringLiteral("src/F.cpp"),
+                          QStringLiteral("src/G.cpp")}) ==
+              QStringLiteral("Rebuilt 7 changed files: A.cpp, B.cpp, C.cpp, D.cpp, E.cpp and 2 more"),
+          "a long list names the first five and counts the rest");
+
     check(countdownText(60, QStringLiteral("compiling 412/1210"), 190'000, 30'000) ==
               QStringLiteral("60% · compiling 412/1210 · ~3m 10s left"),
           "the countdown says what the restart is doing and what is left");

@@ -10102,6 +10102,40 @@ void checkButtonPlacement(MainWindow &window)
                           QStringLiteral("Reset button placement")},
           QStringLiteral("a moved button offers to move back and to reset"));
 
+    const auto dropRailItemOn = [](QWidget *target, const QString &key) {
+        if (!target)
+            return false;
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), key.toUtf8());
+        const QPoint at = target->rect().center();
+        QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        QApplication::sendEvent(target, &enter);
+        if (!enter.isAccepted())
+            return false;
+        QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton,
+                        Qt::NoModifier);
+        QApplication::sendEvent(target, &drop);
+        QApplication::processEvents();
+        return drop.isAccepted();
+    };
+    QWidget *tabPanel = window.testRepoTabRowPanel();
+    check(tabPanel && tabPanel->acceptDrops() && dropRailItemOn(tabPanel, pulls) &&
+              window.testRepoTabRowKeys().contains(pulls) &&
+              !window.testRailOrderKeys().contains(pulls) &&
+              !QSettings().value(placementKey).toMap().contains(pulls),
+          QStringLiteral("dragging Pulls from the rail onto the tab bar moves it back (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(dropRailItemOn(tabPanel, QStringLiteral("settings")) &&
+              window.testRepoTabRowKeys().contains(QStringLiteral("settings")) &&
+              !window.testRailOrderKeys().contains(QStringLiteral("settings")),
+          QStringLiteral("dragging a rail icon onto the tab bar moves it there (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(!dropRailItemOn(tabPanel, QStringLiteral("settings")),
+          QStringLiteral("a button already in the tab bar is not dropped there again"));
+    window.testMoveButtonToPanel(pulls, QStringLiteral("rail"));
+    window.testMoveButtonToPanel(QStringLiteral("settings"), QStringLiteral("rail"));
+
     window.testShowStatsSection();
     QApplication::processEvents();
     if (QPushButton *pullsTab = window.testRepoPullsTab())
@@ -10239,6 +10273,17 @@ void checkButtonPlacement(MainWindow &window)
               !window.testRepoCodeBarKeys().contains(branches),
           QStringLiteral("Branches moves from the Code toolbar into the rail (%1)")
               .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+    {
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), branches.toUtf8());
+        QWidget *tabPanel = window.testRepoTabRowPanel();
+        QDragEnterEvent enter(QPoint(4, 4), Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        if (tabPanel)
+            QApplication::sendEvent(tabPanel, &enter);
+        check(tabPanel && !enter.isAccepted(),
+              QStringLiteral("a Code toolbar button in the rail does not drop on the tab bar"));
+    }
     check(window.testButtonPlacementMenuActions(branches) ==
               QStringList{QStringLiteral("Move to Code toolbar"),
                           QStringLiteral("Reset button placement")},
@@ -10364,6 +10409,79 @@ void checkRailHideKeepsOnHome(MainWindow &window)
               !QSettings().contains(hiddenKey) &&
               !QSettings().contains(placementKey),
           QStringLiteral("resetting button placement shows hidden items again"));
+}
+
+void checkWorkflowPinStripDrops(MainWindow &window)
+{
+    const QString pinsKey = QStringLiteral("ui/workflowPins");
+    const QStringList rails{QStringLiteral("top"), QStringLiteral("left"),
+                            QStringLiteral("bottom")};
+    window.show();
+    QApplication::processEvents();
+    bool built = true;
+    for (const QString &rail : rails)
+        built = built && window.testWorkflowPinStrip(rail);
+    QWidget *sideRail = window.testSideRail();
+    QWidget *right =
+        sideRail ? sideRail->findChild<QWidget *>(QStringLiteral("sideRailContent")) : nullptr;
+    check(built && right && right->acceptDrops() &&
+              !window.testWorkflowPinStrip(QStringLiteral("right")),
+          QStringLiteral("the top, left and bottom edges have workflow pin strips and the side "
+                         "rail takes right-rail pins"));
+    if (!built || !right)
+        return;
+    QSettings().setValue(
+        pinsKey, QStringLiteral("[{\"repo\":\"o/r\",\"workflow\":\"a\",\"rail\":\"top\"},"
+                                "{\"repo\":\"o/r\",\"workflow\":\"b\",\"rail\":\"left\"}]"));
+
+    window.testSetWorkflowPinStripsOpen(true);
+    QApplication::processEvents();
+    bool open = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        open = open && !strip->isHidden() && strip->acceptDrops() &&
+               strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    open = open && right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                               Qt::FindDirectChildrenOnly);
+    check(open, QStringLiteral("dragging a pin opens the three strips and the side rail as drop "
+                               "zones"));
+
+    QMimeData mime;
+    mime.setData(QStringLiteral("application/x-forkmesh-workflow-pin"), QByteArrayLiteral("o/r\na"));
+    const QPoint at = right->rect().center();
+    QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &enter);
+    QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &drop);
+    const QString saved = QSettings().value(pinsKey).toString();
+    check(enter.isAccepted() && drop.isAccepted() &&
+              saved.contains(QStringLiteral("\"workflow\":\"a\"")) &&
+              saved.indexOf(QStringLiteral("\"rail\":\"right\"")) >= 0 &&
+              !saved.contains(QStringLiteral("\"rail\":\"top\"")),
+          QStringLiteral("a pin dropped on the side rail moves to the right rail (%1)").arg(saved));
+
+    QWidget *bottom = window.testWorkflowPinStrip(QStringLiteral("bottom"));
+    QMimeData other;
+    other.setData(QStringLiteral("application/x-forkmesh-rail-item"), QByteArrayLiteral("settings"));
+    QDragEnterEvent stranger(bottom->rect().center(), Qt::MoveAction, &other, Qt::LeftButton,
+                             Qt::NoModifier);
+    QApplication::sendEvent(bottom, &stranger);
+    check(!stranger.isAccepted(), QStringLiteral("a pin strip ignores drags that are not pins"));
+
+    window.testSetWorkflowPinStripsOpen(false);
+    QApplication::processEvents();
+    bool closed = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        closed = closed && strip->isHidden() &&
+                 !strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    closed = closed && !right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                                    Qt::FindDirectChildrenOnly);
+    check(closed, QStringLiteral("after the drag, strips with no shown pins hide again"));
+    QSettings().remove(pinsKey);
+    QSettings().remove(QStringLiteral("ui/sideRailItems"));
 }
 
 void checkRailPageShortcuts(MainWindow &window)
@@ -10894,6 +11012,18 @@ void checkWorkspaceDesign(MainWindow &window)
     forkmesh::instancetheme::store({});
 
     NextAccess::setRailExpanded(window, false);
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    forkmesh::instancetheme::setMatchEnabled(true);
+    check(!window.testAppearanceIsDefault(),
+          QStringLiteral("a picked theme is not the install default"));
+    window.testResetAppearanceToDefaults();
+    settle();
+    check(window.testAppearanceIsDefault() &&
+              !settings.contains(QStringLiteral("app/theme")) &&
+              !settings.contains(QStringLiteral("app/design")) &&
+              !forkmesh::instancetheme::matchEnabled() && !Theme::isNext(),
+          QStringLiteral("Reset to default puts back the install's theme, "
+                         "interface and own colours"));
     settings.remove(QStringLiteral("app/design"));
     settings.remove(QStringLiteral("app/theme"));
     MainWindow::applyTheme();
@@ -11295,6 +11425,119 @@ void checkAgentCommandApprovalRender(MainWindow &window)
                          "Allowed chip (rows = %1, label = %2)")
               .arg(rows.size())
               .arg(rows.isEmpty() ? QString() : rows.first().approval.label));
+}
+
+void checkDeployLogBadges(MainWindow &window)
+{
+    const auto storedLine = [](const QString &message) {
+        return QStringLiteral("2026-01-01 00:00:00  ") + message;
+    };
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838]"))) !=
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate with no new failures is not an "
+                         "error"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: new test failures against the deployed "
+              "4eebecff140b: app/tests/test_x.py"))) ==
+              QStringLiteral("ERROR"),
+          QStringLiteral("a deploy test gate that found new failures still "
+                         "badges ERROR"));
+    check(window.testLogBadgeFor(storedLine(QStringLiteral(
+              "Deploy agent: tests: no new failures against the deployed "
+              "4eebecff140b (0 known)  [desktop/src/MainWindowLogs.cpp:2838|INFO]"))) ==
+              QStringLiteral("INFO"),
+          QStringLiteral("a deploy line stored as informational stays "
+                         "informational after a reload"));
+}
+
+class StyleChangeCounter final : public QObject
+{
+public:
+    QHash<QObject *, int> counts;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::StyleChange && watched->isWidgetType())
+            ++counts[watched];
+        return false;
+    }
+};
+
+void checkThemeSwitchRepolish(MainWindow &window)
+{
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    window.testShowChatSection();
+    window.testShowLogSection();
+    window.testShowMarketSection();
+    window.testShowLedgerSection();
+    window.testShowHostsSection();
+    window.testShowUsersSection();
+    window.testShowNodesSection();
+    window.testShowHomeSection();
+    settleAnimations();
+
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    auto switchTo = [&](const QString &theme, int *maxPerWidget, int *total) {
+        settings.setValue(QStringLiteral("app/theme"), theme);
+        StyleChangeCounter counter;
+        qApp->installEventFilter(&counter);
+        QElapsedTimer timer;
+        timer.start();
+        MainWindow::applyTheme();
+        const qint64 elapsed = timer.elapsed();
+        qApp->removeEventFilter(&counter);
+        *maxPerWidget = 0;
+        *total = 0;
+        for (const int count : std::as_const(counter.counts)) {
+            *maxPerWidget = qMax(*maxPerWidget, count);
+            *total += count;
+        }
+        qInfo().noquote() << QStringLiteral(
+                                 "theme switch to %1: %2 ms, %3 widgets, %4 "
+                                 "style changes, at most %5 on one widget")
+                                 .arg(theme)
+                                 .arg(elapsed)
+                                 .arg(QApplication::allWidgets().size())
+                                 .arg(*total)
+                                 .arg(*maxPerWidget);
+        settleAnimations();
+    };
+
+    int maxPerWidget = 0;
+    int total = 0;
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() > 128,
+          QStringLiteral("switching to the light theme recolours the app"));
+    check(total <= QApplication::allWidgets().size() * 3,
+          QStringLiteral("a theme switch restyles each widget about twice, "
+                         "not once per ancestor"));
+    const QString sheet = qApp->styleSheet();
+    switchTo(QStringLiteral("light"), &maxPerWidget, &total);
+    check(qApp->styleSheet() == sheet &&
+              total < QApplication::allWidgets().size() / 4,
+          QStringLiteral("applying the theme already shown leaves the "
+                         "application style sheet alone"));
+    switchTo(QStringLiteral("dark"), &maxPerWidget, &total);
+    check(Theme::color(Theme::Role::Bg).lightness() < 128 &&
+              !qApp->styleSheet().isEmpty(),
+          QStringLiteral("switching back to dark restores a dark style sheet"));
+
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    MainWindow::applyTheme();
+    settleAnimations();
 }
 
 void checkAppViewModes(MainWindow &window)
@@ -15940,6 +16183,18 @@ else:
           QStringLiteral("the shared app frame reserves exactly one pixel for "
                          "the perimeter on every side"));
 
+    if (app.arguments().contains(QStringLiteral("--deploy-log-badges-only"))) {
+        checkDeployLogBadges(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (app.arguments().contains(QStringLiteral("--theme-switch-only"))) {
+        checkThemeSwitchRepolish(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (viewModesOnly) {
         checkAppViewModes(window);
         stopChildProcesses(window);
@@ -16006,6 +16261,7 @@ else:
         checkRailSortAndGroups(window);
         checkRailDragReorder(window);
         checkButtonPlacement(window);
+        checkWorkflowPinStripDrops(window);
         checkRailPageShortcuts(window);
         checkStatsPage(window);
         checkMemoryPage(window);
@@ -16073,6 +16329,16 @@ else:
                   window.testRepoDetailTabDeferred(9),
               QStringLiteral("opening Agents builds only that deferred "
                              "repository tab, not every tab after it"));
+        settleAnimations();
+        const QString lastTabKey =
+            QStringLiteral("repositories/lastOpenDetailTab");
+        check(QSettings().value(lastTabKey, -1).toInt() == -1,
+              QStringLiteral("switching repository tabs does not rewrite the "
+                             "settings file"));
+        window.testFlushDeferredSettings();
+        check(QSettings().value(lastTabKey, -1).toInt() == 3,
+              QStringLiteral("the last repository tab is saved when the window "
+                             "closes"));
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -25501,6 +25767,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   "Git: fast-forwarded 12 branch(es) to main; 0 failed."))) ==
                   QStringLiteral("GIT"),
               QStringLiteral("a clean fast-forward sweep badges GIT, not ERROR"));
+        checkDeployLogBadges(window);
         check(window.testLogBadgeFor(storedLine(QStringLiteral(
                   "Deploy next_dns health-loop: n1 192.0.2.10 ok (fails 0) v6 "
                   "ok  [desktop/src/MainWindowLogs.cpp:2825]"))) !=

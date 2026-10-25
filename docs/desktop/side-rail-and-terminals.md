@@ -43,7 +43,12 @@ Classic.
 - **Drag and drop.** The item area accepts:
   - `application/x-forkmesh-workflow` (`{"repo","id"}` JSON) from the
     Workflows page's **On this desktop** table (`WorkflowDragTable` in the
-    Workflows package) and from workflow pins on the other rails;
+    Workflows package);
+  - `application/x-forkmesh-workflow-pin` (`repo\nid`) from a pin dragged off
+    another strip (`startWorkflowPinDrag`); during that drag the side rail
+    shows the same dashed outline as the strips. A workflow dragged off the
+    side rail carries this format too, so it can be dropped on the top, left
+    or bottom strip;
   - `application/x-forkmesh-rail-item` from the left rail (the drag that also
     reorders and pops out pages);
   - web URLs or a dragged web address;
@@ -58,9 +63,11 @@ Classic.
   right-rail pins that were made elsewhere. The separate right-hand pin strip
   is gone; right-rail pins show only in the side rail.
 - **Refreshes.** Rebuilds are coalesced (150 ms) and wait while a popup is
-  open or a side-rail item is being dragged. Workflow pins on other rails
-  also wait out a drag of one of their buttons (`pinDragActive`), so a drop
-  never deletes the widget the drag started from.
+  open or a side-rail item is being dragged, and pin strips do not rebuild
+  during a pin drag (`m_workflowPinDragging`), so a drop never deletes the
+  widget the drag started from. A pin that is already on a strip moves to the
+  side rail even when its repository is not open here; a new workflow needs
+  its checkout.
 
 ### What happened to the team rail
 

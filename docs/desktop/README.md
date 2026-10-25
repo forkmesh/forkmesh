@@ -14,6 +14,7 @@ Topic pages in this folder:
 
 - [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
 - [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
+- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
 - [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
@@ -127,7 +128,13 @@ Everything is in `desktop/`.
   beside the rail, split into labelled groups, and sorted (custom, by name, by
   use, or by badge count). Buttons can move between the rail, the repository
   tab bar and the Code toolbar, and any button that opens a page can be dropped
-  into the rail as a shortcut. All of this is stored as JSON under `ui/*`
+  into the rail as a shortcut. Moving works by drag in both directions: a
+  repository tab or Code toolbar button dragged onto the rail moves there, and
+  a rail icon dragged onto the bar it may live in (the repository tab bar, or
+  the Code toolbar for a Code toolbar button) moves back
+  (`handleButtonPanelDrop`, which outlines the bar while the icon is over it
+  and calls `moveButtonToPanel`). A bar the icon may not live in refuses the
+  drag, so the drop keeps the same rules as the "Move to …" menu. All of this is stored as JSON under `ui/*`
   settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
 - **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
@@ -149,11 +156,20 @@ Everything is in `desktop/`.
   from the rail" list to show one or all again. Moving the button to another
   bar, dropping it on the rail, or "Reset button placement" also shows it again.
 - **Pinned workflows.** Workflows (special agents among them) can be pinned to
-  four strips around the window: the top bar beside the activity indicators,
-  under the left rail, at the right edge and in the status bar
+  four places around the window: the top bar beside the activity indicators,
+  under the left rail, the side rail at the right edge and the status bar
   (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
   [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
-  A strip with no pins is hidden.
+  Right-rail pins have no strip of their own: they show among the side rail's
+  items ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+  A strip with no pins is hidden. A pin can be dragged from any strip to any
+  other, or to another place in its own strip: while a pin is dragged the three
+  strips, even empty ones, and the side rail show a dashed outline, and a line
+  marks where it will land (`handleWorkflowPinEvent`; the side rail draws its
+  own accent line). The drop saves the new order with
+  `rw::movePin`, which keeps the pin's slot among the pins of the target strip.
+  Strips do not rebuild during a drag (`m_workflowPinDragging`), because a
+  rebuild deletes the pin buttons, the dragged one included.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's

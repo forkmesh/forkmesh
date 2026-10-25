@@ -108,6 +108,9 @@ protected:
                       QJsonDocument(itemObject(m_item)).toJson(QJsonDocument::Compact));
         if (m_item.kind == sr::kLinkKind)
             mime->setUrls({QUrl(m_item.url)});
+        if (m_item.kind == sr::kWorkflowKind)
+            mime->setData(QLatin1String(sr::kWorkflowPinMime),
+                          sr::encodeWorkflowPin(m_item.repo, m_item.id));
         auto *drag = new QDrag(this);
         drag->setMimeData(mime);
         drag->setPixmap(grab());
@@ -499,7 +502,8 @@ bool MainWindow::dropOnSideRail(const QMimeData *mime, int index)
         if (item.kind == sr::kWorkflowKind) {
             const int repoIndex = repoIndexForKey(item.repo);
             rw::Workflow workflow;
-            if (repoIndex < 0 || !findRepoWorkflow(repoIndex, item.id, &workflow)) {
+            const bool pinned = !rw::pinnedRail(workflowPins(), item.repo, item.id).isEmpty();
+            if (!pinned && (repoIndex < 0 || !findRepoWorkflow(repoIndex, item.id, &workflow))) {
                 flashMessage(QStringLiteral("Open %1 on this desktop to put its workflow on the "
                                             "side rail.")
                                  .arg(item.repo),

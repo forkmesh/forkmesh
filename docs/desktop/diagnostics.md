@@ -30,7 +30,13 @@ Windows and macOS read paths from there.
   "errors: 0"), so the DNS health loop's `ok (fails 0)` lines no longer badge
   ERROR. The crash handler's "termination signal survived" note avoids the
   word "fail" for the same reason: a stop deferred while an Action runs is not
-  an error.
+  an error. "no new failures" counts as a cleared tally too.
+- A badge set by the caller (for example a deploy line's DEPLOY) lives only in
+  the style cache. When the cache is cleared, or the buffer is reloaded from
+  `network_log.txt` at start, the badge comes from the text again. The deploy
+  log follower therefore also stores its severity in the line's source suffix
+  (`|ERROR` or `|INFO`). The deploy agent's "tests: no new failures against
+  the deployed …" was showing up as an ERROR in diagnostic report #9.
 - Main categories: INFO, ERROR, GIT, WEB, STALL, BGBLOCK (a GUI-thread wait for
   background work), plus package lanes (for example **Sentry**). A
   `Push to owner/repo on branch → commit — subject` line always badges GIT,
@@ -492,6 +498,55 @@ returned, so summed frame totals overstate a function's own cost.
     reports, and the `noteBackgroundActivity` frames are stale return
     addresses whose leaves were GL buffer swaps, text layout and
     `purgeSessionState`.
+- **Theme switch, pull list and settings writes (report #9, 2026-10-24).**
+  The app was still running a binary built on 2026-10-23 02:57, before the
+  avatar cache above, so its `forkMeshAvatarPng` stalls were already fixed in
+  source.
+  - Choosing a theme or interface from the View menu froze the window for
+    16 s. Qt 6.8's `QApplication::setStyleSheet` repolishes every widget that
+    has cached style rules and then recurses into each one's children, so a
+    widget is restyled once per styled ancestor. `MainWindow::applyTheme` now
+    leaves an unchanged sheet alone. To change it, the app clears the sheet
+    and sets the new one, which goes through `QApplication::setStyle` (the
+    same path startup takes) and visits each widget once per pass. Offscreen
+    with 5,600 widgets: 83,000 `StyleChange` events (up to 21 on one widget)
+    and about 5.6 s per switch before; 11,700 events and 0.8 to 3.3 s after,
+    depending on machine load
+    (`forkmesh-window-tests --theme-switch-only`).
+  - `refreshPullList` checked each row for running checks by scanning every
+    action run (about 7,600); it now collects the running pull numbers once
+    per rebuild (`pullsWithRunningChecks`).
+  - The Genie spider saved its spot each time it finished a wander, every
+    5 to 24 s, and the repository page saved the open tab on each switch,
+    both through a static `QSettings`. See
+    [Settings writes](#settings-writes) for what each does now.
+  - No change: the `ActivityRailButton::paintEvent` and "Qt widget paint"
+    stalls wait in the GPU driver (`amdgpu_bo_free`, `QRhi::endFrame`) right
+    after the theme switch. The rich-text stalls run inside a layout pass
+    with no app frame. The `ensureSectionBuilt` stall sizes a
+    `ResizeToContents` table, but its action record had rotated out, so the
+    page could not be named. `saveMutedLogCategories`, `saveRepositories`
+    and `deleteCancelledRunsAutomatically` waited on the `QSettings` lock or
+    on `fdatasync` while the disk was busy (io full 55 %).
+  - Report #10, taken 14 minutes later from the same old binary while a build
+    kept the disk 30 to 88 % busy, added writes that waited on the disk:
+    - Action run output and the ping-fix ledger: see
+      [Background file writes](#background-file-writes).
+    - `savePromptOverlayPlacement` writes its five keys with `settings::put`,
+      so an unchanged placement no longer rewrites `ForkMesh.conf`.
+    - Already fixed in source by `19eee71df3`, which the running binary
+      predates: the chat ratchet save (`ChatDevice::saveRatchets`, 14 stalls
+      of up to 7.2 s) and `UserActivityLog::flush`.
+    - No change: `maxRunningAgents` and `storeRepositoryRecords` read or
+      write settings that are rarely changed, and they waited on the
+      `QSettings` lock while the disk was 75 to 88 % busy.
+  - Still open: four workers write `ForkMesh.conf` and take the process-wide
+    `QSettings` lock while they sync. They are the served-mirror-head scan
+    (`MainWindowActions.cpp`, `setValue` plus `sync()` under
+    `QtConcurrent::run`), `scanExternalActionsSources`,
+    `writeQueuedApprovals` (`ActionStore.cpp`) and RoomSeal's `storeValues`.
+    A GUI-thread `QSettings()` waits on the lock for as long as their fsync
+    takes.
 
 ### Background file writes
 
@@ -503,8 +558,37 @@ commits and their fsync off the GUI thread.
 - `writeNow(path, bytes)` drops any queued snapshot for the path, waits out one
   being written, then writes synchronously.
 - `flush()` waits for the queue; `MainWindow::~MainWindow` calls it.
-- Used by the agent ledgers, `merge-notes.json`, `diff-viewed.json` and the
-  diagnostic report. `AgentStore::saveSession` skips byte-identical writes.
+- Used by the agent ledgers, `merge-notes.json`, `diff-viewed.json`, the
+  diagnostic report, the ping quick-fix ledger (`PingFixState::save`) and the
+  saved searches after a search or alert run (`SavedSearchStore::saveLater`;
+  `save()` goes through `writeNow`, so a later click never lands under an
+  older queued snapshot). `AgentStore::saveSession` skips byte-identical writes.
+
+The agent transcript writers (`AgentStore`) append through
+`forkmesh::OrderedAppendWriter` (`src/OrderedAppendWriter.h`), one ordered
+writer thread per lane with `flushPath()` for readers.
+
+Action run files (report #10) have their own ordered writer in
+`src/ActionStore.cpp`, because a log append is not a whole-file snapshot and a
+deleted run must not come back:
+
+- `appendLog` and `saveRun` queue on one worker thread and return at once; the
+  GUI thread makes no file call. Appends to the same log are concatenated,
+  a newer `meta.json` replaces a queued one. The worker resolves the run folder
+  (canonical, else a matching legacy folder) when it writes.
+- `readLog` returns the file plus the queued tail. It waits only while that
+  same log is being written, and reads the file without the queue lock,
+  retrying when a write of that log finished in between.
+- `deleteRun` and `deleteRunsInBackground` drop the queued writes of the doomed
+  folders and wait out one in flight, so the worker cannot recreate them.
+- `ActionStore::flushWrites()` waits for the queue: the first run-cache scan,
+  `MainWindow::~MainWindow` and a `qAddPostRoutine` hook call it.
+- Why: under IO pressure (io full 30 to 38 %) the kernel throttles every
+  writer that dirties pages, so `write()` in `appendLog` (`ActionRunner::emitLog`,
+  9 stalls up to 1.3 s) and `close()` after the truncating rewrite of
+  `meta.json` (`ActionRunner::setStepStatus`, `cancelSupersededRuns`) blocked
+  the GUI thread. `forkmesh-action-security-tests` covers ordering, the queued
+  tail and deletion.
 
 ### Settings writes
 
@@ -527,6 +611,35 @@ a freeze.
   `ForkMesh.conf` written with `diskwrite::writeLater`; batch hot values on a
   timer flushed at quit. A worker does not help: `QSettings` shares one
   in-memory file per process.
+- Report #10, measured on the running app (`strace -k -e fdatasync -p`, and a
+  3-minute watch of which keys changed in `ForkMesh.conf`): 36 rewrites in 3
+  minutes, each two `fdatasync` calls (`ForkMesh.conf.lock` from `QLockFile`,
+  then the `QSaveFile` temp), 0.1 to 7 s apiece under load.
+  - A long-lived `QSettings` (the `static` ones in `genieSettings()` and
+    `MainWindow::recordNavLocation`) is not a buffer. Its `setValue` puts the key
+    in the in-memory file every `QSettings` in the process shares; the sync
+    runs from its own `QSettings::event` a moment later, or from the
+    constructor of the next `QSettings` anywhere on the GUI thread
+    (`initAccess` syncs). That is why stalls named readers such as
+    `maxRunningAgents()`, `defaultAgentProvider()` and
+    `disabledAgentToolFamilies()`.
+  - A sync on a worker (approvals, served mirror heads) holds that shared
+    file's mutex through the write and the fsync; a `QSettings()` constructed
+    on the GUI thread meanwhile waits in `QBasicMutex::lockInternal`
+    (`deleteCancelledRunsAutomatically`, sampled 560 ms).
+  - The top writer was the Genie spider saving `genie/spot` on every wander
+    ([genie.md](genie.md#the-spider)), 16 of the 36; it now saves only a spot
+    the user chose. The rest: `actions/approved\v2-*` (3, 95 KB each),
+    `repositories/items/*/lastSyncMs` (3, already batched),
+    `repositories/lastOpenDetailTab` (2), one each of
+    `stats/connectionTotalMs`, `actions/servedHeads/*` and
+    `ui/railClickCounts`.
+  - `repositories/lastOpenDetailTab` stays in memory
+    (`m_lastRepoDetailTabPending`) and is written by
+    `flushDeferredSettings()` from `closeEvent` and the destructor.
+  - Not done yet: moving `actions/approved\v2-*` into its own file would take
+    a quarter of `ForkMesh.conf` and its worker-held mutex off every read;
+    it needs a migration of security-relevant approval records.
 - `QSettings::sync()` rereads and parses the whole file even when nothing is
   pending, so never call it for an unchanged value. `PackageRegistry::setPlaces`
   returns before writing or syncing when the stored places already match:
@@ -702,7 +815,10 @@ drop-ins. Linux only.
   (`tests/test_stall_repair_routing.cpp`), and grouping/relay-flap checks in
   `tests/test_crypto.cpp`.
 - Window tests: `forkmesh-window-tests` (inline notices, error alerts,
-  `--error-log-triage-only`), `forkmesh-high-memory-panel-window-tests`,
+  `--error-log-triage-only`; `--theme-switch-only` counts `StyleChange`
+  events per theme switch; `--deploy-log-badges-only`; `--repo-lazy-only`
+  also checks the deferred last-tab write),
+  `forkmesh-high-memory-panel-window-tests`,
   `forkmesh-off-thread-teardown-window-tests`.
 - Source-text checks: `app/tests/test_qt_*_git_off_gui.py`,
   `tests/validate_error_log_regressions.py`.

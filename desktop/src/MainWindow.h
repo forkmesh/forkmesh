@@ -35,6 +35,8 @@
 #include "NetworkLogArchive.h" // netlog::Digest is held by value below
 #include "CrashLogScan.h"      // crashlog::Record is returned by value below
 #include "DiscussionInboxBackoff.h"
+#include "FastScratchDisk.h"
+#include "UsbLinkCheck.h"
 #include "NetworkBackoff.h"
 #include "DiscussionStore.h"
 #include "ForkMeshIdentity.h"
@@ -1825,6 +1827,7 @@ public:
     QStringList testRepoTabRowKeys() const;
     QStringList testRepoCodeBarKeys() const;
     void testBuildRepoCodeTab() { ensureRepoDetailTabBuilt(0); }
+    void testFlushDeferredSettings() { flushDeferredSettings(); }
     QPushButton *testRepoBranchesButton() const { return m_branchesButton; }
     void testMoveButtonToPanel(const QString &key, const QString &panel)
     {
@@ -1851,6 +1854,12 @@ public:
     void testBuildRepoDetailSection() { ensureRepoDetailSectionBuilt(); }
     QStringList testButtonPlacementMenuActions(const QString &key);
     QPushButton *testRepoPullsTab() const { return m_repoPullsTab; }
+    QWidget *testRepoTabRowPanel() const;
+    QWidget *testWorkflowPinStrip(const QString &rail) const
+    {
+        return m_workflowPinStrips.value(rail);
+    }
+    void testSetWorkflowPinStripsOpen(bool open) { setWorkflowPinStripsOpen(open); }
     int testRepoDetailTabIndex() const;
     int testSectionIndex() const;
     StatsTileData testStatsTileData(const QString &id) { return statsTileData(id); }
@@ -2968,6 +2977,8 @@ public:
         setAppViewMode(mode);
     }
     void testCycleAppViewMode() { cycleAppViewMode(); }
+    void testResetAppearanceToDefaults() { resetAppearanceToDefaults(); }
+    bool testAppearanceIsDefault() const { return appearanceIsDefault(); }
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
     void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
@@ -4559,6 +4570,9 @@ private:
     void cycleAppViewMode();
     void applyAppViewMode();
     void updateViewModeButton();
+    void setMatchInstanceThemeFromMenu(bool enabled);
+    bool appearanceIsDefault() const;
+    void resetAppearanceToDefaults();
     // Agents' third splitter pane: a header and a shell terminal, shown only
     // in Workspace. The shell starts the first time the pane is shown, in the
     // selected session's worktree; "+" replaces it with a fresh one there.
@@ -4805,6 +4819,11 @@ private:
     void startDiagnostics();
     static QString stallLogPath();
     void updateFooterDiagnostics();
+    void initFastScratchDisk();
+    void refreshFastScratchDisk(bool clean);
+    void updateFastDiskTiles();
+    void updateFastDiskSettingsPanel();
+    void eraseFastScratchDisk();
     void updateQtDiagnosticTiles();
     void showQtDiagnosticsDialog();
     void checkFileDescriptorPressure();
@@ -5281,6 +5300,7 @@ private:
                          QLineEdit *cfTokenEdit, QLineEdit *cfAccountEdit,
                          QLineEdit *vultrTokenEdit, QLabel *statusLabel);
     QWidget *buildDataSection();
+    QWidget *buildFastDiskTab();
     void refreshDataDirTable();
     void scanDataDirRow(quint64 generation, int row);
     void exportConfigData();
@@ -7652,6 +7672,9 @@ private:
     void applyRepoCodeBarOrder();
     QBoxLayout *buttonPanelLayout(const QString &panel) const;
     void moveButtonToPanel(const QString &key, const QString &panel);
+    bool handleButtonPanelDrop(QObject *watched, QEvent *event);
+    QWidget *movableButtonForRailKey(const QString &railKey) const;
+    void showButtonPanelDropZone(QWidget *panel, bool show);
     void resetButtonPlacement();
     void attachButtonPlacementMenu(QWidget *button);
     void addButtonPlacementActions(QMenu *menu, QWidget *button);
@@ -9059,6 +9082,13 @@ private:
     void unpinWorkflowFromRail(const QString &repo, const QString &workflowId);
     void addWorkflowPinActions(QMenu *menu, const QString &repo, const QString &workflowId);
     QWidget *buildWorkflowPinStrip(const QString &rail);
+    bool handleWorkflowPinEvent(QObject *watched, QEvent *event);
+    void startWorkflowPinDrag(QWidget *button, const QPoint &hotSpot);
+    void setWorkflowPinStripsOpen(bool open);
+    int workflowPinSlotAt(QWidget *strip, const QPoint &at, const QString &repo,
+                          const QString &workflowId) const;
+    void showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at);
+    void hideWorkflowPinDropIndicator();
     void refreshWorkflowPins();
     void showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos);
     QPixmap repoWorkflowIcon(const forkmesh::repoworkflows::Workflow &workflow, int side) const;
@@ -11088,6 +11118,7 @@ private:
     QPointer<QPushButton> m_railSortButton;
     QTimer *m_railCountSortTimer = nullptr;
     RailEventHook *m_railEventHook = nullptr;
+    RailEventHook *m_buttonPanelDropHook = nullptr;
     QPointer<QWidget> m_railDragSource;
     QPoint m_railDragStart;
     QObject *m_railDragReorder = nullptr;
@@ -11604,6 +11635,8 @@ private:
     QString m_cloudLogMonitorIdleReason;
     QWidget *m_globalOverlayHost = nullptr;
     void setupGenieSpider();
+    void flushDeferredSettings();
+    int m_lastRepoDetailTabPending = -1;
     bool genieSpiderShown() const;
     void setGenieSpiderShown(bool shown);
     void installGeniePetHost();
@@ -12898,6 +12931,19 @@ private:
     QWidget *m_debugUptimeTile = nullptr;
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
+    QWidget *m_debugTmpTile = nullptr;
+    QWidget *m_debugTmpDataTile = nullptr;
+    QWidget *m_debugUsbTile = nullptr;
+    QTimer *m_fastDiskTimer = nullptr;
+    forkmesh::fastdisk::Volume m_fastDiskVolume;
+    forkmesh::fastdisk::Usage m_fastDiskUsage;
+    QVector<forkmesh::usblink::Finding> m_usbFindings;
+    QSet<QString> m_usbWarned;
+    qint64 m_fastDiskLastCleanMs = 0;
+    bool m_fastDiskRefreshRunning = false;
+    QPointer<QLabel> m_fastDiskStatusLabel;
+    QPointer<QPushButton> m_fastDiskEraseButton;
+    QPointer<QCheckBox> m_fastDiskEnabledCheck;
     qint64 m_debugNetworkRequestTotal = 0;
     qint64 m_debugLastNetworkRequestTotal = -1;
     qint64 m_debugLastLogActivityTotal = -1;
@@ -13300,6 +13346,11 @@ private:
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
     QHash<QString, QPointer<QWidget>> m_workflowPinStrips;
+    RailEventHook *m_workflowPinHook = nullptr;
+    QPointer<QWidget> m_workflowPinDragSource;
+    QPoint m_workflowPinDragStart;
+    QPointer<QWidget> m_workflowPinDropIndicator;
+    bool m_workflowPinDragging = false;
     QTimer *m_repoWorkflowNotifyTimer = nullptr;
     QTableWidget *m_mirrorNodesTable = nullptr;
     QLabel *m_mirrorNodesSummary = nullptr;
