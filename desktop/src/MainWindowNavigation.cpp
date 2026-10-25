@@ -3762,8 +3762,10 @@ void MainWindow::updateConnectionStatus()
 
 void MainWindow::updateAdminCrownBadge()
 {
-    if (!m_isAdmin)
+    if (!m_isAdmin) {
         renderUsersSignupReferralCode(QJsonObject());
+        closeUsersDetail();
+    }
     if (!m_isAdmin && !m_usersQuarantinePayload.isEmpty()) {
         // Quarantine rows contain preserved investigation evidence that must
         // not survive an administrator signing out on a shared desktop.

@@ -41,9 +41,11 @@ Classic.
   - Page and link items have **Move up**, **Move down** and **Remove from the
     side rail**.
 - **Drag and drop.** The item area accepts:
-  - `application/x-forkmesh-workflow` (`{"repo","id"}` JSON) from the
-    Workflows page's **On this desktop** table (`WorkflowDragTable` in the
-    Workflows package);
+  - `application/x-forkmesh-workflow` (`{"repo","id"}` JSON) from a card on
+    the Workflows page (`WorkflowCard` in the Workflows package, which also
+    adds the pin format so a card drops on the strips); an account workflow
+    uses the repository key `@account/workflows` and runs through the page
+    ([../app/workflows.md](../app/workflows.md#one-list-on-the-desktop));
   - `application/x-forkmesh-workflow-pin` (`repo\nid`) from a pin dragged off
     another strip (`startWorkflowPinDrag`); during that drag the side rail
     shows the same dashed outline as the strips. A workflow dragged off the
@@ -85,9 +87,10 @@ refreshes the Special Agents home pages.
 
 `#sideRailBrowserPanel` opens to the left of the rail with a
 `WorkspaceBrowserPane` (the same pane as the Agents workspace's Browser tab,
-library `forkmesh-browser-pane`). With Qt WebEngine (`-DFORKMESH_BROWSER_PANE=ON`)
-pages render inside it; without it the pane shows the address and opens pages
-in the system browser. Only `http` and `https` load. The panel's width is
+library `forkmesh-browser-pane`). When the build finds Qt WebEngine pages
+render inside it with Google's background services switched off
+([browser.md](browser.md)); without it the pane shows the address and opens
+pages in the system browser. Only `http` and `https` load. The panel's width is
 dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 420); whether it is open and the last address are kept in
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their

@@ -6044,6 +6044,29 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
     const auto emitText = [](const QString &t) {
         return t.isEmpty() ? QStringLiteral("&nbsp;") : t.toHtmlEscaped();
     };
+    bool inChangeBlock = false;
+    const auto changeArrowsHtml = [&]() -> QString {
+        if (!appearance.changeArrows || fileIdx < 0 || files[fileIdx].binary ||
+            !files[fileIdx].status.isEmpty())
+            return QString();
+        const bool staged = fileIdx < appearance.changeArrowsStagedFiles;
+        const QString href =
+            QStringLiteral("scmblock:%1?s=%2&o=%3&n=%4&d=")
+                .arg(QString::fromLatin1(QUrl::toPercentEncoding(curPath())),
+                     staged ? QStringLiteral("1") : QStringLiteral("0"),
+                     QString::number(oldNo), QString::number(newNo));
+        QString arrows =
+            QStringLiteral("<a class='blockarrow' href='%1old' title='%2'>"
+                           "&#8594;</a>")
+                .arg(href, staged ? QStringLiteral("Unstage this change")
+                                  : QStringLiteral("Revert this change in the "
+                                                   "working file"));
+        if (!staged)
+            arrows += QStringLiteral("<a class='blockarrow' href='%1new' "
+                                     "title='Stage this change'>&#8592;</a>")
+                          .arg(href);
+        return arrows + QLatin1Char(' ');
+    };
     const auto oneSidedKind = [&]() -> int {
         if (fileIdx < 0)
             return 0;
@@ -6076,6 +6099,10 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
             return;
         }
         const int n = qMax(pendingDel.size(), pendingAdd.size());
+        const QString arrows =
+            n > 0 && !inChangeBlock ? changeArrowsHtml() : QString();
+        if (n > 0)
+            inChangeBlock = true;
         for (int i = 0; i < n; ++i) {
             const bool hasDel = i < pendingDel.size();
             const bool hasAdd = i < pendingAdd.size();
@@ -6088,14 +6115,17 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
                     ? diffintra::intraLineCellsHtml(pendingDel.at(i), pendingAdd.at(i),
                                                     kDiffIntraLineMaxHtmlChars)
                     : std::nullopt;
+            QString newGut =
+                gut(QStringLiteral("nln ") + addCls, newLn, QStringLiteral("new"));
+            if (i == 0 && !arrows.isEmpty())
+                newGut.insert(newGut.indexOf(QLatin1Char('>')) + 1, arrows);
             fileBody += QStringLiteral("<tr>%1<td class='code ocode %2' width='49%'>%3</td>"
                                        "%4<td class='code ncode %5' width='49%'>%6</td></tr>")
                             .arg(gut(delCls, oldLn, QStringLiteral("old")), delCls,
                                  intra ? intra->oldHtml
                                  : hasDel ? emitText(pendingDel.at(i))
                                           : QStringLiteral("&nbsp;"),
-                                 gut(QStringLiteral("nln ") + addCls, newLn,
-                                     QStringLiteral("new")),
+                                 newGut,
                                  addCls,
                                  intra ? intra->newHtml
                                  : hasAdd ? emitText(pendingAdd.at(i))
@@ -6218,6 +6248,7 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
         markdown.line(line);
         if (line.startsWith(QLatin1String("@@"))) {
             flushPairs();
+            inChangeBlock = false;
             const QRegularExpressionMatch m = hunkRe.match(line);
             if (m.hasMatch()) {
                 oldNo = m.captured(1).toInt();
@@ -6273,6 +6304,7 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
                                  emitText(text));
         } else {
             flushPairs();
+            inChangeBlock = false;
             const QString ln1 = QString::number(oldNo++);
             const QString ln2 = QString::number(newNo++);
             fileBody += QStringLiteral(
@@ -6535,6 +6567,8 @@ QString diffStyleSheet(int fontPt)
                "td.lnlink a { color:%11; text-decoration:none; }"
                "td.lnlink a.linecommenticon { color:#58a6ff; font-size:9px; "
                "padding-left:3px; }"
+               "td.ln a.blockarrow { color:#58a6ff; text-decoration:none; "
+               "font-weight:700; padding:0 2px; }"
                "td.notecell { padding:8px 12px; background:%1; "
                "border:1px solid %7; color:%8; white-space:normal; }"
                ".reviewthread { font-family:sans-serif; }"

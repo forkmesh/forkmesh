@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NativePackageExtension.h"
+#include "WorkflowsCards.h"
 #include "WorkflowsModel.h"
 
 #include <QHash>
@@ -18,6 +19,8 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QScrollArea;
+class QToolButton;
 class QStackedWidget;
 class QTableWidget;
 class QWidget;
@@ -39,23 +42,23 @@ public:
     int navigationBadge() const override;
     void repositoryWorkflowsChanged() override;
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
     using LocalAction = std::function<void(const QString &, const QString &, const QString &,
                                            const QJsonObject &, ReplyHandler)>;
 
     Catalog &catalog();
     bool localAvailable() const;
-    QWidget *buildLocalSection();
     void loadLocal();
-    void renderLocalTable();
-    QJsonObject selectedLocal() const;
     QJsonObject localSummary(const QString &repo, const QString &id) const;
     void localAction(const QString &repo, const QString &id, const QString &action, const QJsonObject &payload,
                      ReplyHandler done);
     void openLocalWorkflow(const QString &repo, const QString &id);
     void loadLocalRuns();
     void runLocal(const QJsonObject &summary, const QString &assignment = QString());
-    void showPinMenu(QPushButton *anchor, const QString &repo, const QString &id);
+    void showPinMenu(const QJsonObject &entry, const QPoint &globalPos);
     void startLocalDraft(const QString &kind, const QString &repo);
     QIcon faceIcon(const QString &base64) const;
     QJsonObject localRunRow(const QJsonObject &run, const QString &repo, const QString &workflowName) const;
@@ -69,16 +72,30 @@ private:
     void setStatus(const QString &text, bool error = false);
     QString failureText(const QJsonObject &payload, const QString &error) const;
     QWidget *buildDashboard();
+    QWidget *buildCollection();
+    void rebuildEntries();
+    void renderCollection();
+    QJsonObject entryFor(const QString &key) const;
+    QPixmap entryFace(const QJsonObject &entry) const;
+    void entryAction(const QString &key, const QString &action, QWidget *anchor);
+    void showEntryMenu(const QJsonObject &entry, const QPoint &globalPos);
+    void runEntry(const QJsonObject &entry, const QString &assignment = QString());
+    void askAssignment(const QJsonObject &entry);
+    void toggleEntry(const QJsonObject &entry);
+    void showEntryOutput(const QJsonObject &entry);
+    void deleteEntry(const QJsonObject &entry);
+    void addAgentStep(const QJsonObject &entry);
+    void setViewMode(ViewMode mode);
+    void applyTheme();
+    void syncAccountPins();
     QWidget *buildEditor();
     void loadCatalog(std::function<void()> done);
     void loadWorkflows();
     void loadAllRuns();
     void pumpRunQueue();
     void renderDashboard();
-    void renderWorkflowTable();
     void renderRunTable();
     void showRunDetail(QTableWidget *steps, QLabel *summary, const QString &workflowId, const QString &runId);
-    QJsonObject selectedSummary() const;
     QJsonObject selectedDashboardRun() const;
     void fetchWorkflow(const QString &id, std::function<void(const QJsonObject &)> done);
     void openWorkflow(const QString &id);
@@ -88,8 +105,8 @@ private:
     void toggleActive(const QJsonObject &summary);
     void duplicateWorkflow(const QJsonObject &summary);
     void deleteWorkflow(const QString &id, const QString &name);
-    void runWorkflow(const QString &id);
-    void runSummary(const QJsonObject &summary);
+    void runWorkflow(const QString &id, const QJsonObject &body = {});
+    void runSummary(const QJsonObject &summary, const QString &assignment = QString());
 
     void renderEditor();
     void renderStepList();
@@ -129,16 +146,22 @@ private:
     QJsonObject m_local;
     QJsonArray m_localWorkflows;
     QJsonArray m_localRuns;
-    QTableWidget *m_localTable = nullptr;
-    QLabel *m_localEmpty = nullptr;
-    QWidget *m_localSection = nullptr;
-    QPushButton *m_localRunButton = nullptr;
-    QPushButton *m_localEditButton = nullptr;
-    QPushButton *m_localPinButton = nullptr;
-    QPushButton *m_localAgentButton = nullptr;
-    QPushButton *m_localScheduleButton = nullptr;
-    QPushButton *m_localToggleButton = nullptr;
-    QPushButton *m_localDeleteButton = nullptr;
+    QJsonArray m_entries;
+    QString m_selectedKey;
+    QString m_scope;
+    QString m_sort = QStringLiteral("name");
+    ViewMode m_viewMode = ViewMode::Thumbnails;
+    Tones m_tones;
+    QString m_appliedSheet;
+    bool m_theming = false;
+    QString m_pendingAgentStep;
+    CardGrid *m_grid = nullptr;
+    QScrollArea *m_collection = nullptr;
+    QLabel *m_collectionEmpty = nullptr;
+    QLabel *m_collectionCount = nullptr;
+    QComboBox *m_sortCombo = nullptr;
+    QList<QToolButton *> m_scopeButtons;
+    QList<QToolButton *> m_viewButtons;
     QPushButton *m_editorPinButton = nullptr;
     QPushButton *m_editorAgentButton = nullptr;
     QComboBox *m_iconCombo = nullptr;
@@ -187,13 +210,6 @@ private:
     QList<QLabel *> m_kpiValues;
     QList<QLabel *> m_kpiNotes;
     QLineEdit *m_filter = nullptr;
-    QTableWidget *m_workflowTable = nullptr;
-    QPushButton *m_openButton = nullptr;
-    QPushButton *m_runButton = nullptr;
-    QPushButton *m_toggleButton = nullptr;
-    QPushButton *m_duplicateButton = nullptr;
-    QPushButton *m_deleteButton = nullptr;
-    QLabel *m_emptyNote = nullptr;
     QComboBox *m_runWorkflowFilter = nullptr;
     QComboBox *m_runStatusFilter = nullptr;
     QTableWidget *m_runTable = nullptr;
