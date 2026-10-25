@@ -189,6 +189,7 @@
           <h3>Market</h3>
           <ul>
             <li>The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one.</li>
+            <li>In the desktop Market you can switch between a grid and a list, and clicking a package opens its details in a pane on the right.</li>
           </ul>
           <h3>Calls</h3>
           <ul>
@@ -212,6 +213,7 @@
           <h3>Agents</h3>
           <ul>
             <li>Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first.</li>
+            <li>Claude Code agents now show up as sessions in the Claude desktop app's Code tab, where you can read and resume them; use Open in Claude app from an agent's menu, or turn it off in Settings &gt; Agents.</li>
           </ul>
           <h3>World</h3>
           <ul>
@@ -249,9 +251,13 @@
             <li>A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports.</li>
             <li>The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.</li>
             <li>The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.</li>
+            <li>The desktop app uses less CPU while agents or Actions run, and the Team page opens without reading every teammate's whole transcript.</li>
             <li>On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.</li>
             <li>The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.</li>
             <li>Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.</li>
+            <li>Notes open in the rendered preview; switch to Write to edit.</li>
+            <li>Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.</li>
+            <li>Long data tables no longer freeze for a second or two when a cell updates.</li>
             <li>The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo.</li>
           </ul>
           <h3>Server</h3>
@@ -259,6 +265,7 @@
             <li>Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.</li>
             <li>Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.</li>
             <li>The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.</li>
+            <li>Deploy nodes runs deploy again when Action sandboxes are on a TMP disk.</li>
           </ul>
         </div>
       </section>
@@ -321,6 +328,8 @@
           </ul>
           <h3>Android</h3>
           <ul>
+            <li>Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.</li>
+            <li>Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.</li>
             <li>On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.</li>
             <li>On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.</li>
             <li>On Android, Settings &gt; Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.</li>
@@ -432,6 +441,9 @@
           <h3>Android</h3>
           <ul>
             <li>Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.</li>
+            <li>On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call.</li>
+            <li>Calls ring an Android phone that has notifications turned off, as long as its background connection is on.</li>
+            <li>Removing a project on Android erases its chat history, and performance reports hide conversation and channel names.</li>
             <li>On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit.</li>
           </ul>
           <h3>Desktop</h3>

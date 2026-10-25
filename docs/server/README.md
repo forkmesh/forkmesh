@@ -252,6 +252,24 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `TestThreePeopleHoldACallThroughImpairedLinks` gets the same one retry
   for any failure, because its frame counts drop when the process is
   starved (`GO_LOAD_SENSITIVE_TESTS`, [../engineering/github-actions.md](../engineering/github-actions.md)).
+- **Real-time call tests take three attempts.** The call and QUIC tests that
+  judge wall-clock results run their peers, cores and `netsim` links in the
+  test process, so a starved process is a worse network, not a slower one:
+  on 2026-10-24 an agent sandbox measured RTTs of 40–100 ms on 15/25 ms
+  links, a 1.3 s failover with no goroutine stalled for more than 57 ms, and
+  listeners that ran 110–121 of 150 steps yet played 15–71 frames. A stall
+  allowance or a per-step frame count therefore cannot separate load from a
+  regression. `TestThreePeopleHoldACallThroughImpairedLinks`,
+  `TestCoreDeathMovesTheCallToTheStandbyCore` (audio back within 500 ms),
+  `TestMultipathPathFailureAudio` (a gap within one round trip of the
+  surviving path, no loss) and the lower bound of `TestAntiAmplificationLimit`
+  run through `retryTiming` (`timing_test.go` in `rtc/fmmserver` and
+  `rtc/quic`): each attempt builds fresh cores, parties and links, misses are
+  logged, and the test fails only when all three miss. Setup failures and
+  the anti-amplification upper bound still fail at once. They blocked
+  deploys `e162e9991b8f` (82 ms multipath gap) and `bf3a0be84066` (544 ms
+  failover) in run 7942, and earlier deploys on 2026-10-23 and 2026-10-24
+  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)).
 
 ## Related docs
 

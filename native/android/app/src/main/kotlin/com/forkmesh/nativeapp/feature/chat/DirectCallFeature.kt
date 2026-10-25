@@ -140,9 +140,11 @@ object DirectCallFeature {
         worker.execute { runCatching { block(current) } }
     }
 
+    val busy: Boolean get() = engine?.active == true || peers?.busy == true || precallState.value != null
+
     fun openPreCall(conversation: String, media: DirectCallKind): String? {
         val current = engine ?: return "Calls are not available right now."
-        if (current.active || peers?.busy == true) return "A call is already in progress."
+        if (current.active || peers?.busy == true || GroupCallFeature.active) return "A call is already in progress."
         if (precallState.value != null) return null
         val partner = partnerOf(conversation)
         if (partner.isEmpty()) return "The call could not start. Try again in a moment."

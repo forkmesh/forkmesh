@@ -6,7 +6,11 @@
 #include <QCoreApplication>
 #include <QImage>
 #include <QLocale>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QSet>
+#include <QTemporaryDir>
 
 #include <cstdio>
 
@@ -271,6 +275,112 @@ void testDesktopProcesses()
               tree.at(3).forkmesh && !tree.at(0).forkmesh && !tree.at(4).forkmesh,
           "the app and everything below it are ForkMesh's");
 
+    check(procs::parseCpuList(QStringLiteral("0-2,5,8-9\n")) ==
+              QList<int>({0, 1, 2, 5, 8, 9}) &&
+              procs::parseCpuList(QStringLiteral("x,3-1")).isEmpty(),
+          "a sysfs CPU list expands its ranges and skips nonsense");
+    const QHash<int, procs::CpuTicks> ticks = procs::parsePerCpuTicks(
+        "cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 5 0 5 30 10 0 0 0 0 0\ncpu1 1 1 1 1 0 0 0 0\n"
+        "intr 1 2 3\n");
+    check(ticks.size() == 2 && ticks.value(0).total == 50 && ticks.value(0).busy == 10,
+          "per-CPU ticks skip the total line and count iowait as idle");
+    check(procs::selectedChoice(QStringLiteral("always [madvise] never")) ==
+                  QLatin1String("madvise") &&
+              procs::selectedChoice(QStringLiteral("plain")) == QLatin1String("plain"),
+          "the bracketed choice of a sysfs setting is read");
+    check(qFuzzyCompare(procs::pressureSome("some avg10=12.50 avg60=1 avg300=0 total=9\n"
+                                            "full avg10=3.00 avg60=0 avg300=0 total=1\n"),
+                        12.5) &&
+              procs::pressureSome("") < 0.0,
+          "pressure stall reads the ten-second some average");
+    check(procs::shortCpuModel(QStringLiteral("Intel(R) Core(TM) i9-14900KS")) ==
+                  QLatin1String("Intel Core i9-14900KS") &&
+              procs::shortCpuModel(QStringLiteral("AMD Ryzen 9 7950X 16-Core Processor")) ==
+                  QLatin1String("AMD Ryzen 9 7950X") &&
+              procs::shortCpuModel(QStringLiteral("Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz")) ==
+                  QLatin1String("Intel Xeon E5-2680 v4"),
+          "the CPU model drops trademarks and core-count noise");
+    const QList<procs::SwapDevice> swaps = procs::parseSwaps(
+        "Filename Type Size Used Priority\n/dev/sda3 partition 1024 512 -2\n"
+        "/dev/zram0 partition 2048 0 100\n");
+    check(swaps.size() == 2 && swaps.at(0).type == QLatin1String("partition") &&
+              swaps.at(0).sizeBytes == 1024 * 1024 && swaps.at(1).type == QLatin1String("zram"),
+          "swap devices are listed with zram told apart");
+
+    QTemporaryDir fakeRoot;
+    auto put = [&fakeRoot](const QString &path, const QByteArray &text) {
+        const QString full = fakeRoot.path() + path;
+        QDir().mkpath(QFileInfo(full).path());
+        QFile file(full);
+        if (file.open(QIODevice::WriteOnly))
+            file.write(text);
+    };
+    put(QStringLiteral("/sys/devices/system/cpu/online"), "0-3\n");
+    put(QStringLiteral("/sys/devices/cpu_core/cpus"), "0-1\n");
+    put(QStringLiteral("/sys/devices/cpu_atom/cpus"), "2-3\n");
+    const QList<QPair<int, int>> topology{{0, 0}, {1, 0}, {2, 8}, {3, 9}};
+    for (const auto &entry : topology) {
+        const QString cpu = QStringLiteral("/sys/devices/system/cpu/cpu%1").arg(entry.first);
+        put(cpu + QStringLiteral("/topology/core_id"), QByteArray::number(entry.second));
+        put(cpu + QStringLiteral("/topology/physical_package_id"), "0");
+        put(cpu + QStringLiteral("/cpufreq/cpuinfo_max_freq"), entry.first < 2 ? "5900000" : "4400000");
+        put(cpu + QStringLiteral("/cpufreq/scaling_cur_freq"), "3000000");
+        put(cpu + QStringLiteral("/cpufreq/scaling_min_freq"), "800000");
+        put(cpu + QStringLiteral("/cpufreq/scaling_max_freq"), entry.first < 2 ? "5900000" : "4400000");
+        put(cpu + QStringLiteral("/cpufreq/scaling_governor"),
+            entry.first == 3 ? "performance\n" : "powersave\n");
+        put(cpu + QStringLiteral("/cpufreq/energy_performance_preference"), "balance_performance\n");
+    }
+    put(QStringLiteral("/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver"), "intel_pstate\n");
+    put(QStringLiteral("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"),
+        "performance powersave\n");
+    put(QStringLiteral("/sys/devices/system/cpu/cpu0/cpufreq/base_frequency"), "3200000\n");
+    put(QStringLiteral("/sys/devices/system/cpu/cpu0/cache/index3/level"), "3\n");
+    put(QStringLiteral("/sys/devices/system/cpu/cpu0/cache/index3/size"), "36864K\n");
+    put(QStringLiteral("/sys/devices/system/cpu/intel_pstate/status"), "active\n");
+    put(QStringLiteral("/sys/devices/system/cpu/intel_pstate/no_turbo"), "0\n");
+    put(QStringLiteral("/sys/devices/system/cpu/smt/control"), "on\n");
+    put(QStringLiteral("/sys/class/hwmon/hwmon3/name"), "coretemp\n");
+    put(QStringLiteral("/sys/class/hwmon/hwmon3/temp1_label"), "Package id 0\n");
+    put(QStringLiteral("/sys/class/hwmon/hwmon3/temp1_input"), "91000\n");
+    put(QStringLiteral("/sys/class/hwmon/hwmon3/temp2_label"), "Core 8\n");
+    put(QStringLiteral("/sys/class/hwmon/hwmon3/temp2_input"), "77000\n");
+    put(QStringLiteral("/proc/cpuinfo"), "processor\t: 0\nmodel name\t: Intel(R) Core(TM) i9-14900KS\n");
+    put(QStringLiteral("/proc/sys/kernel/osrelease"), "6.12.0-test\n");
+    put(QStringLiteral("/proc/pressure/cpu"), "some avg10=11.00 avg60=0 avg300=0 total=1\n");
+    put(QStringLiteral("/sys/kernel/mm/transparent_hugepage/enabled"), "[always] madvise never\n");
+    put(QStringLiteral("/proc/sys/vm/swappiness"), "60\n");
+    put(QStringLiteral("/proc/sys/vm/overcommit_memory"), "0\n");
+    put(QStringLiteral("/sys/module/zswap/parameters/enabled"), "N\n");
+    procs::Machine machine = procs::readMachine(fakeRoot.path());
+    check(machine.valid && machine.cpuModel == QLatin1String("Intel Core i9-14900KS") &&
+              machine.cores.size() == 4 && machine.physicalCores == 3 &&
+              machine.cores.at(0).kind == QLatin1String("P") &&
+              machine.cores.at(3).kind == QLatin1String("E") &&
+              machine.cacheL3Bytes == 36864LL * 1024 && machine.baseKhz == 3200000,
+          "the machine reader finds the model, threads, P/E cores and L3 cache");
+    check(machine.governor.startsWith(QLatin1String("mixed: ")) &&
+              machine.governor.contains(QLatin1String("performance")) &&
+              machine.energyPreference == QLatin1String("balance_performance") &&
+              machine.driver == QLatin1String("intel_pstate") &&
+              machine.driverStatus == QLatin1String("active") && machine.turbo == 1 &&
+              machine.minKhz == 800000 && machine.maxKhz == 5900000,
+          "governor, preference, driver, clock range and turbo are read: " + machine.governor);
+    check(qFuzzyCompare(machine.packageTempC, 91.0) &&
+              qFuzzyCompare(machine.cores.at(2).tempC, 77.0) && machine.cores.at(0).tempC < 0.0,
+          "coretemp gives the package and per-core temperatures");
+    check(qFuzzyCompare(machine.pressureCpu, 11.0) && machine.pressureIo < 0.0 &&
+              machine.hugePages == QLatin1String("always") && machine.swappiness == 60 &&
+              machine.overcommit == 0 && machine.zswap == QLatin1String("off") &&
+              machine.kernel == QLatin1String("6.12.0-test") && machine.smt == QLatin1String("on"),
+          "pressure, huge pages, swap and kernel settings are read");
+    QHash<int, procs::CpuTicks> before{{0, {10, 100}}, {1, {10, 100}}};
+    QHash<int, procs::CpuTicks> after{{0, {60, 200}}, {1, {10, 100}}};
+    procs::applyCpuTicks(machine, before, after);
+    check(qFuzzyCompare(machine.cores.at(0).busy, 50.0) && machine.cores.at(1).busy < 0.0 &&
+              machine.cores.at(2).busy < 0.0,
+          "each thread's busy share comes from its tick deltas");
+
 #if defined(Q_OS_LINUX)
     procs::Sampler sampler;
     sampler.sample(1000);
@@ -307,6 +417,7 @@ void testDesktopProcesses()
     fake.vitals.load1 = 1.5;
     fake.vitals.load5 = 1.2;
     fake.vitals.load15 = 1.0;
+    fake.machine = machine;
     auto add = [&fake](qint64 pid, const QString &name, double cpu, qint64 rss,
                        int threads, bool forkmesh) {
         procs::Process process;
@@ -356,6 +467,17 @@ void testDesktopProcesses()
     check(!findTip(view, QStringLiteral("% of CPU in use")).isEmpty() &&
               !findTip(view, QStringLiteral("of resident memory")).isEmpty(),
           "CPU and memory share strips explain each slice");
+    const QString core = findTip(view, QStringLiteral("CPU 0 \u00b7 performance core 0"));
+    check(core.contains(QLatin1String("50% busy")) &&
+              core.contains(QLatin1String("3.0 GHz of 5.9 GHz")),
+          "each thread's bar names its core kind, load and clock: " + core);
+    const QString governor = findTip(view, QStringLiteral("Governor: mixed"));
+    check(governor.contains(QLatin1String("intel_pstate active")) &&
+              governor.contains(QLatin1String("Available: performance, powersave")),
+          "the settings card spells out the governor and its choices: " + governor);
+    check(!findTip(view, QStringLiteral("Huge pages: always")).isEmpty() &&
+              !findTip(view, QStringLiteral("Stalled: CPU 11%")).isEmpty(),
+          "memory settings and pressure stall show on the settings card");
     view.setSortColumn(forkmesh::DesktopProcessView::SortColumn::Memory);
     check(view.shownProcesses().value(0).name == QLatin1String("chrome") &&
               view.shownProcesses().value(1).name == QLatin1String("forkmesh"),

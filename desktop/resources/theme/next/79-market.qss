@@ -28,6 +28,16 @@ QPushButton#marketPublishButton {
 }
 QPushButton#marketPublishButton:hover { background-color: @fgSecondary; }
 QPushButton#marketPublishButton:pressed { background-color: @fgMuted; }
+QFrame#marketNextViewToggle {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+QFrame#marketNextViewToggle QPushButton {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-width: 26px; max-width: 26px; min-height: 24px; max-height: 24px; padding: 0px;
+}
+QFrame#marketNextViewToggle QPushButton:hover { background-color: @surfaceRaised; }
+QFrame#marketNextViewToggle QPushButton:checked { background-color: @surfaceActive; }
+QFrame#marketNextViewToggle QPushButton:focus { border-color: @accent; }
 
 QWidget#marketCategoryButtons { background: transparent; }
 QWidget#marketCategoryButtons QPushButton {
@@ -58,16 +68,16 @@ QFrame#marketPackageCard[nextMarketCard="true"] {
     background-color: @surface; border: 1px solid @border; border-radius: 12px;
 }
 QFrame#marketPackageCard[nextMarketCard="true"]:hover { border-color: @borderStrong; }
-QFrame#marketPackageCard[nextMarketExpanded="true"] { border-color: @borderStrong; }
+QFrame#marketPackageCard[nextMarketSelected="true"] { border-color: @accent; }
 QWidget#marketNextCardMain, QWidget#marketNextDetails, QWidget#marketNextTrust,
-QWidget#marketNextTrustItem { background: transparent; }
+QWidget#marketNextTrustItem, QWidget#marketNextWarnRow { background: transparent; }
 QLabel[marketNextRole="name"] { color: @fg; font-size: 14px; font-weight: 600; background: transparent; }
 QFrame#marketPackageCard[nextMarketCard="true"] QLabel#marketPrice {
     color: @fg; font-size: 13px; font-weight: 500; background: transparent;
 }
 QLabel#mutedLabel[marketNextRole="meta"] { color: @fgMuted; font-size: 12px; background: transparent; }
 QLabel[marketNextRole="summary"] { color: @fgSecondary; font-size: 13px; background: transparent; }
-QFrame#marketPackageCard[nextMarketCard="true"] QLabel#marketPackageStats,
+QWidget#marketNextDetails QLabel#marketPackageStats,
 QLabel#marketNextFacts { color: @fgMuted; font-size: 12px; background: transparent; }
 QLabel#marketNextWarning { color: @warning; font-size: 12px; background: transparent; }
 QPushButton#marketNextDetailsToggle {
@@ -122,13 +132,13 @@ QLabel#marketNextPermissionText { color: @fgSecondary; font-size: 13px; backgrou
 QLabel#marketNextPermissionNone {
     color: @fgMuted; font-size: 13px; padding: 10px 12px; background: transparent;
 }
-QFrame#marketPackageCard[nextMarketCard="true"] QLabel#marketNativeNotice {
+QWidget#marketNextDetails QLabel#marketNativeNotice {
     color: @fgMuted; font-size: 12px; background: transparent;
 }
-QFrame#marketPackageCard[nextMarketCard="true"] QFrame#marketNestedPackages {
+QWidget#marketNextDetails QFrame#marketNestedPackages {
     background: transparent; border: none;
 }
-QFrame#marketPackageCard[nextMarketCard="true"] QFrame#marketNestedPackages QLabel {
+QWidget#marketNextDetails QFrame#marketNestedPackages QLabel {
     color: @fgSecondary; font-size: 13px; background: transparent;
 }
 QWidget#marketPackagePlaces[marketNext="true"] {
@@ -147,3 +157,19 @@ QFrame#marketPackageSettingsPage QLabel { background: transparent; }
 QFrame#marketPackCard QLabel#marketPackIncludes, QFrame#marketGuideCard QLabel#marketGuideLinks {
     color: @fgMuted; font-size: 12px;
 }
+
+QFrame#marketNextDetailsPane {
+    background-color: @surface; border: none; border-left: 1px solid @border;
+}
+QScrollArea#marketNextPaneScroll, QWidget#marketNextPaneBody { background: transparent; border: none; }
+QLabel#marketNextPaneTitle { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }
+QPushButton#marketNextPaneClose {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px;
+}
+QPushButton#marketNextPaneClose:hover { background-color: @surfaceRaised; }
+QPushButton#marketNextPaneClose:focus { border-color: @accent; }
+QLabel#marketNextPaneVersion { color: @fgSubtle; font-size: 12px; background: transparent; }
+QLabel#marketNextPanePrice { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
+QLabel#marketNextPaneMeta { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketNextPaneSummary { color: @fgSecondary; font-size: 13px; background: transparent; }

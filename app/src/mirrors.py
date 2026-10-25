@@ -953,7 +953,7 @@ def select_clone_fallback(owner, repo, rows, presence, now, stale_ms, source_onl
     # freshest-first pick.
     #
     # Pure (no I/O) so it is unit-testable like build_repo_mirrors_payload; the
-    # caller gathers the catalog rows + host_presence map and whether the named
+    # caller gathers the catalog rows + presence map and whether the named
     # owner is currently online. We never redirect away from an online source.
     owner_l = (owner or "").strip().lower()
     repo_l = (repo or "").strip().lower()

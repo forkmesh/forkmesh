@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QHeaderView>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -85,6 +86,59 @@ int main(int argc, char **argv)
           "a data table measures cells through its own row delegate");
     check(hugeHint == cappedHint,
           "a 2,000,000-character cell is measured as its capped display text");
+
+    const auto updateBurstMs = [](QTableWidget &grid, const QString &label) {
+        QElapsedTimer burst;
+        burst.start();
+        for (int i = 0; i < 20; ++i) {
+            grid.item(i, 1)->setText(QStringLiteral("%1 value %2").arg(label).arg(i));
+            grid.horizontalHeader()->sectionPosition(1);
+            QApplication::processEvents();
+        }
+        return burst.elapsed();
+    };
+    const auto fillGrid = [](QTableWidget &grid) {
+        grid.setProperty("dataTable", true);
+        for (int row = 0; row < grid.rowCount(); ++row) {
+            for (int column = 0; column < grid.columnCount(); ++column)
+                grid.setItem(row, column,
+                             new QTableWidgetItem(
+                                 QStringLiteral("row %1 column %2 value").arg(row).arg(column)));
+        }
+        grid.resize(900, 400);
+        grid.show();
+        QApplication::processEvents();
+        kit::syncStockWidgets();
+        QApplication::processEvents();
+    };
+    QTableWidget grid(3000, 4);
+    fillGrid(grid);
+    QHeaderView *gridHeader = grid.horizontalHeader();
+    check(gridHeader->sectionResizeMode(1) == QHeaderView::ResizeToContents,
+          "a data table fits its columns to their contents");
+    check(gridHeader->resizeContentsPrecision() == kit::kDataTableFitRows,
+          "a data table fits its columns from a bounded number of rows");
+    updateBurstMs(grid, QStringLiteral("warm"));
+    const qint64 boundedMs = updateBurstMs(grid, QStringLiteral("bounded"));
+    gridHeader->setResizeContentsPrecision(1000);
+    const qint64 defaultMs = updateBurstMs(grid, QStringLiteral("default"));
+    std::printf("20 cell updates on a 3,000-row data table: %lld ms fitting %d rows, "
+                "%lld ms at Qt's default of 1000\n",
+                static_cast<long long>(boundedMs), kit::kDataTableFitRows,
+                static_cast<long long>(defaultMs));
+    check(boundedMs < defaultMs,
+          "cell updates on a long data table cost less with the bounded fit");
+    QTableWidget narrow(10, 2);
+    narrow.horizontalHeader()->setResizeContentsPrecision(20);
+    fillGrid(narrow);
+    check(narrow.horizontalHeader()->resizeContentsPrecision() == 20,
+          "a data table keeps a smaller fit bound its page already chose");
+    gridHeader->setResizeContentsPrecision(kit::kDataTableFitRows);
+    Theme::setActiveDesign(Theme::Design::Classic, true);
+    kit::syncStockWidgets();
+    check(gridHeader->resizeContentsPrecision() == 1000 &&
+              gridHeader->sectionResizeMode(1) == QHeaderView::Interactive,
+          "leaving the Next design restores the column fit and resize mode");
 
     if (failures == 0)
         std::printf("\nAll UI kit tests passed.\n");

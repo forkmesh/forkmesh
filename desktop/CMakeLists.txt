@@ -506,6 +506,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
     src/MainWindowAgentCloud.cpp
+    src/MainWindowClaudeDesktop.cpp
     src/MainWindowAgentActions.cpp
     src/MainWindowAgentModels.cpp
     src/MainWindowAgentFeed.cpp
@@ -1022,6 +1023,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentStore.cpp
     src/AgentCloudSessions.h
     src/AgentCloudSessions.cpp
+    src/ClaudeDesktopSessions.h
+    src/ClaudeDesktopSessions.cpp
     src/AgentCloudStream.h
     src/AgentCloudStream.cpp
     src/RunnerLogin.h
@@ -2860,6 +2863,18 @@ if(FORKMESH_BUILD_TESTS)
         set_target_properties(forkmesh-agent-cloud-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-claude-desktop-sessions-tests
+        tests/test_claude_desktop_sessions.cpp
+        src/ClaudeDesktopSessions.h
+        src/ClaudeDesktopSessions.cpp
+    )
+    target_include_directories(forkmesh-claude-desktop-sessions-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-claude-desktop-sessions-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-claude-desktop-sessions-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-agent-cloud-stream-tests
         tests/test_agent_cloud_stream.cpp
         src/AgentCloudStream.h
@@ -4018,6 +4033,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-codex-tests forkmesh-agent-transport-tests
         forkmesh-agent-recycle-tests
         forkmesh-agent-cloud-tests
+        forkmesh-claude-desktop-sessions-tests
         forkmesh-agent-cloud-stream-tests
         forkmesh-agent-workspace-name-tests
         forkmesh-local-control-tests
@@ -4346,6 +4362,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-agent-recycle-tests)
     add_test(NAME forkmesh-agent-cloud-tests
         COMMAND forkmesh-agent-cloud-tests)
+    add_test(NAME forkmesh-claude-desktop-sessions-tests
+        COMMAND forkmesh-claude-desktop-sessions-tests)
     add_test(NAME forkmesh-agent-cloud-stream-tests
         COMMAND forkmesh-agent-cloud-stream-tests)
     add_test(NAME forkmesh-agent-workspace-name-tests
@@ -4589,6 +4607,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-boundary-tests
         forkmesh-agent-recycle-tests
         forkmesh-agent-cloud-tests
+        forkmesh-claude-desktop-sessions-tests
         forkmesh-agent-cloud-stream-tests
         forkmesh-agent-workspace-name-tests
         forkmesh-local-control-attachments-tests
