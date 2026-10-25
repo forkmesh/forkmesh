@@ -212,6 +212,7 @@
             <li>With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.</li>
             <li>The iPhone app stays signed in to your instances after the phone restarts.</li>
             <li>Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow.</li>
+            <li>Send to agent on a failed run's log now sends the failing step and the end of the log, where the error is, instead of its first lines.</li>
           </ul>
           <h3>Desktop</h3>
           <ul>
@@ -219,6 +220,11 @@
             <li>A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.</li>
             <li>A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.</li>
             <li>The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.</li>
+            <li>A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Signing up now sends your verification email once, instead of a new one each time the request was repeated.</li>
           </ul>
         </div>
       </section>

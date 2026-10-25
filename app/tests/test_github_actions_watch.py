@@ -300,6 +300,50 @@ def test_undelivered_alert_is_retried_with_the_same_dedupe_key():
     assert runtime.pings[0]["dedupe"].endswith(":down:%d" % first_changed)
 
 
+def test_hourly_sweep_pings_workflows_missing_from_the_run_page():
+    runtime = _Runtime()
+    module = _load(runtime)
+    sync = ".github/workflows/github-issue-sync.yml"
+    runtime.respond("/actions/runs?", 200, {"workflow_runs": [
+        _run(8, QUALITY, "success"),
+        _run(7, WORLD, "cancelled"),
+        _run(6, ".github/workflows/bridge.yml", "skipped")]})
+    runtime.respond("/actions/workflows?", 200, {"workflows": [
+        {"id": 11, "path": QUALITY, "state": "active"},
+        {"id": 12, "path": WORLD, "state": "active"},
+        {"id": 13, "path": sync, "state": "active"},
+        {"id": 14, "path": ".github/workflows/old.yml",
+         "state": "disabled_manually"}]})
+    runtime.respond("/actions/workflows/12/runs?", 200, {"workflow_runs": [
+        _run(7, WORLD, "cancelled"), _run(5, WORLD, "failure")]})
+    runtime.respond("/actions/workflows/13/runs?", 200, {"workflow_runs": [
+        _run(3, sync, "failure", event="schedule"),
+        _run(2, sync, "failure", event="schedule")]})
+
+    runtime.now = 1_790_002_800_000 + 60_000
+    assert not module["sweep_due"](runtime.now - 360_000)
+    assert module["sweep_due"](runtime.now)
+    result = _tick(module)
+    assert result == {"ok": True, "checked": 3, "failing": 2, "alerted": 2}
+    assert {ping["title"] for ping in runtime.pings} == {
+        "GitHub Actions: world-browser-e2e.yml is failing",
+        "GitHub Actions: github-issue-sync.yml is failing"}
+    swept = [url for url, _ in runtime.fetches if "/actions/workflows/" in url]
+    assert len(swept) == 2
+    assert all("branch=main" in url for url in swept)
+    assert not any("/workflows/14/" in url for url, _ in runtime.fetches)
+    assert not any("/workflows/11/" in url for url, _ in runtime.fetches)
+
+    runtime.pings.clear()
+    runtime.fetches.clear()
+    runtime.now += 300_000
+    assert _tick(module) == {
+        "ok": True, "checked": 1, "failing": 0, "alerted": 0}
+    assert len(runtime.fetches) == 1
+    assert runtime.state["github-actions:forkmesh/forkmesh:" + sync][
+        "pinged_state"] == "down"
+
+
 def test_github_errors_write_nothing():
     runtime = _Runtime()
     module = _load(runtime)
@@ -374,6 +418,6 @@ def test_status_cli_reports_failing_workflows_with_steps_and_detail():
         "      https://github.com/forkmesh/forkmesh/actions/runs/1008",
         "ok    World browser E2E  #5 0000000 success",
     ]
-    assert len(asked) == 3
+    assert len(asked) == 4
     with pytest.raises(RuntimeError):
         tool.collect(REPO, "main", fetch=lambda path: (403, None))

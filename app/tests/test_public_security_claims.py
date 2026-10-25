@@ -185,7 +185,7 @@ def test_retired_bounty_and_phone_mirror_advertising_stays_removed():
     assert "on-chain bounties" not in readme
     assert "mirror on your phone" not in readme
     assert "mirror on your phone" not in changelog
-    assert "phones are access clients" in " ".join(readme.split())
+    assert "mirroring remains a desktop or headless-node job" in " ".join(readme.split())
     assert "access client; git mirroring remains a desktop/headless-node job" in changelog
     assert "legacy worker-custodied bounty deposits and automatic payouts are frozen" in readme
 

@@ -854,7 +854,7 @@ def test_handle_suggestions_skip_taken_and_blocked_names(world, recovery):
 
 
 def _signup_namespace(world, policy, code_mode=False):
-    wanted = {"_account_signup", "_signup_policy"}
+    wanted = {"_account_signup", "_signup_policy", "_send_signup_verification"}
     tree = ast.parse(ENTRY.read_text(encoding="utf-8"))
     selected = [node for node in tree.body
                 if isinstance(node, ast.AsyncFunctionDef)
@@ -957,6 +957,7 @@ def _signup_namespace(world, policy, code_mode=False):
         "marketing_email": SimpleNamespace(apply_consent=lambda *a: None),
         "_save_account": save, "_record_signup_origin": nothing,
         "_send_verification_email": send_mail, "_enqueue_verification": nothing,
+        "_claim_signup_verification": true,
         "_users_directory_cache_forget": nothing,
         "edge_cache_delete": nothing, "CHAT_ACTIVITY_CACHE_KEY": "k",
         "_record_referral_signup": lambda *a: _value(""),

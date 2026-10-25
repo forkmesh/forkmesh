@@ -41,7 +41,8 @@
      "items": [
       "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
       "The iPhone app stays signed in to your instances after the phone restarts.",
-      "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow."
+      "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow.",
+      "Send to agent on a failed run's log now sends the failing step and the end of the log, where the error is, instead of its first lines."
      ]
     },
     {
@@ -50,7 +51,14 @@
       "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.",
       "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.",
       "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.",
-      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls."
+      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.",
+      "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Signing up now sends your verification email once, instead of a new one each time the request was repeated."
      ]
     }
    ]

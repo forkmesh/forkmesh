@@ -77,7 +77,9 @@ need `FORKMESH_ISSUE_SYNC_SOURCE_TOKEN` and
 `FORKMESH_ISSUE_SYNC_DESTINATION_TOKEN` (or one `FORKMESH_ISSUE_SYNC_TOKEN`). A
 hidden `forkmesh-issue-sync:v1` marker maps each copy and its content digest, so
 unchanged issues are not rewritten. `tools/github_issue_sync.py sync` runs the
-same logic locally with token names passed via `--*-token-env`.
+same logic locally with token names passed via `--*-token-env`. Until
+`FORKMESH_ISSUE_SYNC_DESTINATION` is set, the scheduled run writes a notice
+and skips the sync instead of failing; a manual run without it still fails.
 
 ## Native daily public-safe security scan
 
