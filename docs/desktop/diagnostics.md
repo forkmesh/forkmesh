@@ -165,6 +165,27 @@ platform's normal termination request. If the kernel denies that request, the
 detail dialog requests administrator permission through PolicyKit or a masked
 sudo password prompt and passes it to the privileged termination command.
 
+Under the CPU and Memory gauges, two sliders set the agent governor's limits
+(**Agent CPU limit**, **Agent memory limit**: the share agents may use, 40 % to 95 %). Each slider is the share left to agents,
+so it writes `100 - value` to `agents/cpuReservePercent` and
+`agents/memoryReservePercent` (5 to 60 %, the same settings the Governor page
+lists). While dragging, the caption previews the result of
+`agentresources::budgetFor` (CPU cores for agents and kept; slice
+`MemoryHigh` and the reserve); the change is saved when the slider is
+released, or 0.5 s after the last keyboard step, never on every pixel of a
+drag. `setReservePercents` stores the new budget, so agents started afterwards
+get the new per-agent limits and build-job count, and `applyBudget()` makes the
+running governor `systemctl --user set-property --runtime` the slice's
+`MemoryHigh`/`MemoryMax` and `CPUQuota`, plus `MemoryHigh`/`MemoryMax` on each
+running `forkmesh-agent-*.scope`. The CPU cap jumps to the new ceiling less
+what other programs use now (`retargetCpuQuota`, never below the floor), and
+the governor's usual cooldowns take over from there. Each change is logged as
+a `limits` event on the Governor page. When agents are not contained (no
+systemd, governor switched off), the sliders still save and the note beside
+them says why the limits are not applied yet. The view takes the budget
+through `governanceSource`/`onGovernanceChanged` hooks set in
+`MainWindowLogs.cpp`, so its tests run without systemd.
+
 Between the gauges and the share strips, two cards describe the processor and
 the kernel's tuning (`desktopprocs::readMachine` / `refreshMachine`):
 

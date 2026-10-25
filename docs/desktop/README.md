@@ -31,6 +31,7 @@ Topic pages in this folder:
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
+- [browser.md](browser.md): the embedded browser (Browser tab and side browser), the Chromium switches and blocked hosts that ungoogle it, its profile
 - [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 

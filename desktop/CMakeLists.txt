@@ -635,17 +635,20 @@ set_target_properties(forkmesh-resources PROPERTIES
     AUTOMOC OFF
     JOB_POOL_COMPILE forkmesh_heavy)
 
-option(FORKMESH_BROWSER_PANE "Embed Qt WebEngine in the workspace Browser tab" OFF)
-add_library(forkmesh-browser-pane STATIC src/WorkspaceBrowserPane.cpp)
+option(FORKMESH_BROWSER_PANE "Embed the ungoogled Qt WebEngine browser in the workspace Browser tab and side browser" ON)
+add_library(forkmesh-browser-pane STATIC
+    src/WorkspaceBrowserPane.cpp
+    src/BrowserPrivacy.h
+    src/BrowserPrivacy.cpp)
 target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::Widgets)
 set_target_properties(forkmesh-browser-pane PROPERTIES AUTOMOC OFF)
 if(FORKMESH_BROWSER_PANE)
-    find_package(Qt6 6.4 QUIET COMPONENTS WebEngineWidgets)
-    if(Qt6WebEngineWidgets_FOUND)
+    if(TARGET Qt6::WebEngineWidgets)
         target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::WebEngineWidgets)
         target_compile_definitions(forkmesh-browser-pane PRIVATE FORKMESH_HAVE_WEBENGINE)
+        message(STATUS "Browser pane: the Browser tab embeds ungoogled Qt WebEngine")
     else()
-        message(WARNING "FORKMESH_BROWSER_PANE is on but Qt WebEngine Widgets was not found; the Browser tab opens pages in the system browser")
+        message(STATUS "Browser pane: Qt WebEngine Widgets not found; the Browser tab opens pages in the system browser")
     endif()
 endif()
 
@@ -2160,6 +2163,19 @@ if(FORKMESH_BUILD_TESTS)
 
     # Per-repository index-writing git queue, index.lock liveness and the
     # merge timeout (docs/desktop/git-locking.md), against real repositories.
+    qt_add_executable(forkmesh-browser-privacy-tests
+        tests/test_browser_privacy.cpp
+        src/BrowserPrivacy.h
+        src/BrowserPrivacy.cpp
+    )
+    target_include_directories(forkmesh-browser-privacy-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-browser-privacy-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-browser-privacy-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-git-index-queue-tests
         tests/test_git_index_queue.cpp
         src/GitIndexQueue.h
@@ -4050,6 +4066,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
+        forkmesh-browser-privacy-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests
@@ -4411,6 +4428,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-public-mirror-tests)
     add_test(NAME forkmesh-upstream-sync-tests
              COMMAND forkmesh-upstream-sync-tests)
+    add_test(NAME forkmesh-browser-privacy-tests
+             COMMAND forkmesh-browser-privacy-tests)
     add_test(NAME forkmesh-git-index-queue-tests
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
@@ -4620,6 +4639,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
+        forkmesh-browser-privacy-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests

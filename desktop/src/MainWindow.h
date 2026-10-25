@@ -1927,6 +1927,11 @@ public:
                                         const QString &header) const;
     void testSelectUsersRow(int row);
     void testSelectUsersQuarantineRow(int row);
+    void testClickUsersRow(int row) { openUsersDetail(m_usersTable, row); }
+    void testClickUsersQuarantineRow(int row)
+    {
+        openUsersDetail(m_usersQuarantineTable, row);
+    }
     QStringList testSelectedUsersActionTargets() const
     {
         return selectedUsersActionTargets();
@@ -6085,6 +6090,11 @@ private:
     void deleteSelectedUsers();
     void deleteNextSelectedUser();
     void finishUsersDeleteBatch();
+    QWidget *buildUsersDetailPanel();
+    void openUsersDetail(QTableWidget *table, int row);
+    void followUsersDetailSelection(QTableWidget *table);
+    void renderUsersDetail();
+    void closeUsersDetail();
 
     QWidget *buildFilesSection();
     QLayout *buildFilesEditorBar();
@@ -9121,6 +9131,11 @@ private:
     void notifyRepoWorkflowsChanged();
     void openWorkflowInPage(const QString &repo, const QString &workflowId);
     void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
+    QJsonObject accountWorkflowPinInfo(const QString &workflowId) const;
+    QPixmap accountWorkflowIcon(int side) const;
+    void runAccountWorkflowFromRail(const QString &workflowId);
+    void runAccountWorkflowAction(const QString &workflowId, const QString &action, const QJsonObject &payload,
+                                  const forkmesh::market::NativePackageReplyHandler &done);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
@@ -12492,6 +12507,10 @@ private:
     QTabWidget *m_usersTabs = nullptr;
     QTableWidget *m_usersTable = nullptr;
     QTableWidget *m_usersQuarantineTable = nullptr;
+    QFrame *m_usersDetailPanel = nullptr;
+    QScrollArea *m_usersDetailScroll = nullptr;
+    QTableWidget *m_usersDetailTable = nullptr;
+    QString m_usersDetailName;
     QWidget *m_usersSignupReferralCodePanel = nullptr;
     QLabel *m_usersSignupReferralCodeStatus = nullptr;
     QLineEdit *m_usersSignupReferralCodeEdit = nullptr;
