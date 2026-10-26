@@ -11,16 +11,14 @@
      "title": "Projects",
      "items": [
       "You can now delete your own pull request reviews (an approval or change request keeps its verdict and loses only its text), and edit or delete your inline comments right in the Files changed tab.",
-      "Open pull requests no longer show a block of AI instructions: a Diff and files box links the diff, the patch and every changed file, and Summarize in ChatGPT opens ChatGPT asking for a summary of the pull request."
-     "title": "Calls",
-     "items": [
-      "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."
+      "Open pull requests no longer show a block of AI instructions: a Diff and files box links the diff, the patch and every changed file, and Summarize in ChatGPT opens ChatGPT asking for a summary of the pull request.",
+      "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."
      ]
     },
     {
-     "title": "Projects",
+     "title": "Calls",
      "items": [
-      "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."
+      "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."
      ]
     },
     {
