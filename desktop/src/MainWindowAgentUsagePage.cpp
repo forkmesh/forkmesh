@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "AgentCliLocator.h"
 #include "AgentUsageResetClock.h"
 
 #include <QAction>
@@ -285,6 +286,8 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
         const QString providerName =
             codex ? QStringLiteral("Codex") : QStringLiteral("Claude Code");
         const QString key = codex ? QStringLiteral("Codex") : QStringLiteral("Claude");
+        const QString cli = codex ? QStringLiteral("codex") : QStringLiteral("claude");
+        const bool cliInstalled = forkmesh::agentcli::installed(cli);
         const AgentAccountProfile active = activeAgentAccount(provider);
         const QList<AgentAccountProfile> profiles = agentAccountProfiles(provider);
         QString slot = key;
@@ -327,8 +330,50 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
             });
             header->addWidget(makeDefault);
         }
+        if (!cliInstalled)
+            header->addWidget(pageLabel(QStringLiteral("Not installed on this desktop"),
+                                        "statusLine", section),
+                              0, Qt::AlignVCenter);
         header->addStretch(1);
         sectionLayout->addLayout(header);
+
+        if (!cliInstalled) {
+            auto *install = new QHBoxLayout;
+            install->setSpacing(10);
+            const bool installing = suggestedAppInstalling(cli);
+            QString blocker;
+            const QString manager = suggestedAppInstallManager(cli, &blocker);
+            QPushButton *installButton = pageButton(
+                QStringLiteral("agentUsagePageInstall%1").arg(key),
+                installing ? QString::fromUtf8("Installing %1\xE2\x80\xA6").arg(providerName)
+                           : QStringLiteral("Install %1").arg(providerName),
+                blocker.isEmpty()
+                    ? QStringLiteral("Install %1 on this desktop with %2")
+                          .arg(providerName, manager)
+                    : blocker,
+                section);
+            installButton->setIcon(themedOcticon(QStringLiteral("download"), iconColor, 14));
+            const bool anyInstall = m_suggestedAppInstallProcess &&
+                                    m_suggestedAppInstallProcess->state() !=
+                                        QProcess::NotRunning;
+            installButton->setEnabled(!anyInstall && blocker.isEmpty());
+            connect(installButton, &QPushButton::clicked, this,
+                    [this, cli] { installSuggestedApp(cli); });
+            install->addWidget(installButton);
+            QString note = blocker;
+            if (note.isEmpty() && !installing &&
+                m_suggestedAppInstallProblems.contains(cli))
+                note = QStringLiteral("The last install failed: %1")
+                           .arg(m_suggestedAppInstallProblems.value(cli));
+            if (!note.isEmpty()) {
+                QLabel *noteLabel = pageLabel(note, "statusLine", section);
+                noteLabel->setWordWrap(true);
+                install->addWidget(noteLabel, 1, Qt::AlignVCenter);
+            } else {
+                install->addStretch(1);
+            }
+            sectionLayout->addLayout(install);
+        }
 
         auto *actions = new QHBoxLayout;
         actions->setSpacing(6);
@@ -351,6 +396,7 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
                                           QStringLiteral("agentClaudeTerminalDialog"),
                                           QStringLiteral("agentClaudeTerminal"));
         });
+        terminal->setEnabled(cliInstalled);
         actions->addWidget(terminal);
         QPushButton *systemTerminal = pageButton(
             QStringLiteral("agentUsagePageSystemTerminal%1").arg(key),
@@ -359,6 +405,7 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
             section);
         connect(systemTerminal, &QPushButton::clicked, this,
                 [this, provider] { launchAgentSystemTerminal(provider); });
+        systemTerminal->setEnabled(cliInstalled);
         actions->addWidget(systemTerminal);
         QPushButton *add = pageButton(
             QStringLiteral("agentUsagePageAddAccount%1").arg(key),

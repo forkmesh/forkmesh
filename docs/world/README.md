@@ -24,7 +24,8 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
-| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list ([voice.md](voice.md)) |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `world-reaction-pops.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list, the live diagnostics chart, on-air signs, on-screen reaction pops ([voice.md](voice.md)) |
+| `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | The Genie spider in the 3D World: model, 100 acts with things nearby ([genie-spider.md](genie-spider.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
@@ -143,9 +144,13 @@ On a software renderer the browser specs gate on frames, not milliseconds:
 
 - The input-response test keeps its 100 ms budget on hardware; under
   SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
-  doubled for SwiftShader's frame-to-frame jitter) and drops its first camera
-  drag, which carries about 700 ms of one-time work (816 ms against ~130 ms for
-  the next four on the mobile viewport).
+  doubled for SwiftShader's frame-to-frame jitter) and drops its first two
+  camera drags, one in each direction. Each carries about 500–700 ms of
+  one-time work for the part of the town it brings into view (816 ms against
+  ~130 ms for the next four on the mobile viewport). Dropping only the first
+  drag failed the GitHub runs of 25 Oct 2026: the first drag the other way
+  measured 615–1123 ms against a twelve-frame budget of 600–1000 ms, and the
+  three after it stayed under five frames.
 - `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
   a hardware run; under SwiftShader it asks that the world keeps presenting
   (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
@@ -1036,6 +1041,7 @@ them without changing page.
 ## Related docs
 
 - [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
+- [genie-spider.md](genie-spider.md): the Genie spider that follows you around the World
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)

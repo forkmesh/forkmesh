@@ -1,3 +1,4 @@
+import re
 import socket
 
 import next_mail
@@ -24,6 +25,31 @@ def test_postfix_bounce_notices_are_dkim_signed():
     cf = next_mail.main_cf({"name": "n4"})
     assert "non_smtpd_milters = $smtpd_milters\n" in cf
     assert "internal_mail_filter_classes = bounce\n" in cf
+
+
+def canonical(address):
+    lines = next_mail.SENDER_CANONICAL.strip().splitlines()
+    keep = re.compile(lines[0][len("if !/"):-1], re.I)
+    pattern, _, replacement = lines[1].partition(" ")
+    if keep.search(address) or not re.search(pattern[1:-1], address, re.I):
+        return address
+    return replacement
+
+
+def test_server_mail_goes_out_as_the_founders_mailbox():
+    assert "sender_canonical_maps = regexp:/etc/postfix/sender_canonical\n" in (
+        next_mail.main_cf({"name": "n4"}))
+    for system in ("root@forkmesh.com", "MAILER-DAEMON@n4.next.forkmesh.com",
+                   "postmaster@n3.next.forkmesh.com", "fmnext-mail@forkmesh.com"):
+        assert canonical(system) == "founders@forkmesh.com"
+    for kept in ("founders@forkmesh.com", "no-reply@forkmesh.com",
+                 "No-Reply@ForkMesh.com", "someone@example.org",
+                 "x@forkmesh.com.example.org"):
+        assert canonical(kept) == kept
+    script = next_mail.install_script({"name": "n4",
+                                       "public_ipv4": "203.0.113.4"})
+    assert "cat > /etc/postfix/sender_canonical <<'FMNEXT_EOF'\n%sFMNEXT_EOF" % (
+        next_mail.SENDER_CANONICAL) in script
 
 
 def test_postfix_prefers_ipv4_and_keeps_tls():

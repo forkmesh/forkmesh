@@ -6301,6 +6301,24 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
             m_buildButton->setEnabled(true);
         return;
     }
+    const QString cacheHome =
+        QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation);
+    QMap<QString, QString> buildEnv =
+        asUser.isEmpty()
+            ? forkmesh::restarttiming::ccacheEnvironment(
+                  qEnvironmentVariable("CCACHE_DIR"),
+                  forkmesh::fastdisk::ccacheDir(forkmesh::fastdisk::activeRoot()),
+                  cacheHome, freeBytesForPath(cacheHome))
+            : QMap<QString, QString>();
+    if (buildEnv.contains(QStringLiteral("CCACHE_DIR"))) {
+        QDir().mkpath(buildEnv.value(QStringLiteral("CCACHE_DIR")));
+        logRestart(QStringLiteral("compile cache: %1 (up to %2)")
+                       .arg(buildEnv.value(QStringLiteral("CCACHE_DIR")),
+                            buildEnv.value(QStringLiteral("CCACHE_MAXSIZE"))));
+    }
+    const QString cacheStats = scratchDir + QStringLiteral("/ccache-stats.log");
+    buildEnv.insert(QStringLiteral("TMPDIR"), scratchDir);
+    buildEnv.insert(QStringLiteral("CCACHE_STATSLOG"), cacheStats);
     // The build reads the checkout this app keeps merging into. A session
     // that finishes while the compiler runs lands its branch here, and a
     // header changed between the precompiled header and a source that uses it
@@ -6316,7 +6334,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
     // references, so the chain frees itself once the restart ends either way.
     std::weak_ptr<std::function<void(int)>> weakBuild = build;
     *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild,
-              compiled](int pass) {
+              compiled, buildEnv, cacheStats](int pass) {
         constexpr int kMaxBuildPasses = 3;
         auto build = weakBuild.lock();
         if (!build)
@@ -6341,7 +6359,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 return head;
             },
             [this, clientDir, buildDir, scratchDir, appPath, build, pass,
-             jobs, compiled](QString headBefore) {
+             jobs, compiled, buildEnv, cacheStats](QString headBefore) {
                 logRestart(QStringLiteral("build pass %1: %2 parallel jobs, HEAD %3")
                                .arg(pass)
                                .arg(jobs)
@@ -6350,8 +6368,8 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 const int logStart =
                     m_updateLog ? m_updateLog->document()->characterCount() : 0;
                 auto settle = [this, clientDir, buildDir, appPath, build, pass,
-                               headBefore, logStart,
-                               compiled](bool ok, const QString &changed,
+                               headBefore, logStart, compiled,
+                               cacheStats](bool ok, const QString &changed,
                                          const QString &headAfter) {
                     const QString output =
                         m_updateLog ? m_updateLog->toPlainText().mid(logStart)
@@ -6403,8 +6421,15 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                             m_buildButton->setEnabled(true);
                         return;
                     }
+                    QFile statsFile(cacheStats);
+                    const QString stats =
+                        statsFile.open(QIODevice::ReadOnly | QIODevice::Text)
+                            ? QString::fromUtf8(statsFile.readAll())
+                            : QString();
                     const QString summary =
-                        forkmesh::restarttiming::rebuiltSummary(*compiled);
+                        forkmesh::restarttiming::withCcacheSummary(
+                            forkmesh::restarttiming::rebuiltSummary(*compiled),
+                            forkmesh::restarttiming::ccacheCounts(stats));
                     logRestart(summary);
                     appendUpdateLog(QStringLiteral("\n==> %1\n").arg(summary));
                     if (compiled->size() > 1)
@@ -6436,8 +6461,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 runUpdateStepUser("cmake",
                                   {"--build", buildDir, "-j", QString::number(jobs)},
                                   buildDir, [finished] { finished(true); },
-                                  [finished] { finished(false); },
-                                  {{QStringLiteral("TMPDIR"), scratchDir}});
+                                  [finished] { finished(false); }, buildEnv);
             });
     };
     auto configure = [this, clientDir, buildDir, buildType, configured,

@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLockFile>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
 #include <QUrl>
@@ -212,6 +213,66 @@ QVector<InstanceChoice> decodeInstanceChoices(const QString &json)
     return choices;
 }
 
+QStringList starterPackages(StarterPack pack, const QStringList &available)
+{
+    static const QStringList minimal{QStringLiteral("code")};
+    static const QStringList standard{QStringLiteral("agents"), QStringLiteral("chat"),
+                                      QStringLiteral("inbox"), QStringLiteral("code"),
+                                      QStringLiteral("tour")};
+    static const QStringList organization{QStringLiteral("crm"), QStringLiteral("marketing"),
+                                          QStringLiteral("analytics"),
+                                          QStringLiteral("competitor")};
+    QStringList packages;
+    for (const QString &id : available) {
+        if (packages.contains(id))
+            continue;
+        const bool wanted = pack == StarterPack::Minimal    ? minimal.contains(id)
+                            : pack == StarterPack::Standard ? standard.contains(id)
+                                                            : !organization.contains(id);
+        if (wanted)
+            packages.append(id);
+    }
+    return packages;
+}
+
+QVector<DirectoryInstance> directoryInstances(const QJsonArray &rows, const QString &origin)
+{
+    static const QRegularExpression logoPath(
+        QStringLiteral("^/api/start/instances/[0-9a-f]{32}/logo\\?v=\\d+$"));
+    QVector<DirectoryInstance> found;
+    QStringList seen;
+    for (const QJsonValue &value : rows) {
+        const QJsonObject row = value.toObject();
+        if (!row.value(QStringLiteral("listed")).toBool())
+            continue;
+        const QUrl url(row.value(QStringLiteral("url")).toString().trimmed());
+        const QString host = url.host().toLower();
+        if (url.scheme() != QLatin1String("https") || host.isEmpty() || seen.contains(host))
+            continue;
+        seen.append(host);
+        DirectoryInstance entry;
+        entry.host = url.port() > 0 ? QStringLiteral("%1:%2").arg(host).arg(url.port()) : host;
+        entry.name = row.value(QStringLiteral("name")).toString().trimmed().left(40);
+        if (entry.name.isEmpty())
+            entry.name = entry.host;
+        const QString logo = row.value(QStringLiteral("logo")).toString();
+        if (logoPath.match(logo).hasMatch())
+            entry.logoUrl = origin + logo;
+        entry.online = row.value(QStringLiteral("status")).toString() == QLatin1String("online");
+        found.append(entry);
+    }
+    return found;
+}
+
+bool isForkMeshVersionReply(int status, bool workerHeader, const QJsonObject &body)
+{
+    if (status != 200)
+        return false;
+    return workerHeader || (body.value(QStringLiteral("ok")).toBool() &&
+                            body.contains(QStringLiteral("rev")) &&
+                            body.contains(QStringLiteral("worker")));
+}
+
 QString instanceKey(const QString &url)
 {
     QString raw = url.trimmed();
@@ -388,7 +449,12 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
         seed.setValue(QStringLiteral("network/offlineMode"), true);
         seed.setValue(QStringLiteral("network/offlineModeAutomatic"), false);
         seed.setValue(kInstancePendingSetting, true);
-        seed.setValue(kInstanceChoicesSetting, encodeInstanceChoices(request.instances));
+        QVector<InstanceChoice> choices = request.instances;
+        if (!request.instance.url.trimmed().isEmpty()) {
+            choices.prepend(request.instance);
+            seed.setValue(kInstanceChosenSetting, request.instance.url.trimmed());
+        }
+        seed.setValue(kInstanceChoicesSetting, encodeInstanceChoices(choices));
         seed.setValue(QStringLiteral("project/name"), name);
         seed.sync();
         if (seed.status() != QSettings::NoError) {

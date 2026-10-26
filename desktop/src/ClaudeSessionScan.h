@@ -25,7 +25,8 @@ namespace ClaudeSessionScan {
 
 QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
                                   const QSet<QString> &excludeCwds,
-                                  qint64 activeWindowMs);
+                                  qint64 activeWindowMs,
+                                  const QStringList &ownConfigDirs = {});
 
 QList<ExternalClaudeSession> listAll(const QStringList &configDirs,
                                      const QString &repoLocalPath,

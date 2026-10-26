@@ -1,5 +1,6 @@
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
+#include "SourceDir.h"
 #include "TeammateStore.h"
 
 #include <QCoreApplication>
@@ -349,8 +350,14 @@ int main(int argc, char **argv)
                       .isEmpty() &&
                   !startError.isEmpty(),
               "a workflow runs once at a time");
+        const int changesBefore = int(changes.size());
         runner.tick();
         check(started.size() == 1, "a step waits until its agent finishes");
+        const Run live = runner.activeRun(QStringLiteral("forkmesh/forkmesh"), QStringLiteral("chain"));
+        check(live.step(QStringLiteral("agent")) &&
+                  live.step(QStringLiteral("agent"))->output == QLatin1String("output 1") &&
+                  live.step(QStringLiteral("agent"))->status == kStatusRunning && changes.size() == changesBefore,
+              "a running step's output so far is in the active run, without saving the run each tick");
         clock += 5000;
         finished[1] = true;
         runner.tick();
@@ -419,7 +426,7 @@ int main(int argc, char **argv)
     }
 
     const QString repositoryRoot =
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).absoluteFilePath(QStringLiteral(".."));
+        QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral(".."));
     const QDir shipped(QDir(repositoryRoot).filePath(kFolder));
     int shippedAgents = 0;
     for (const QFileInfo &info : shipped.entryInfoList({QStringLiteral("*.json")}, QDir::Files)) {

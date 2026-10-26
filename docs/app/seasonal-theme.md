@@ -63,6 +63,30 @@ stored in `instance_settings` under `season` (`app/src/seasonal_theme.py`),
 and every change is written to the audit log as `admin.season` with the new
 season and `until`. The public answer never says who turned it on.
 
+## On the desktop
+
+The desktop has had its own `halloween` theme since the view menu's Theme
+section ([ui-redesign](../desktop/ui-redesign.md)), but it was only one entry
+in the Theme list, so the user could not find it in Settings. Settings →
+General now has a **Halloween theme** group under Appearance
+(`MainWindow::buildHalloweenSettings`):
+
+- **Use the Halloween theme on this desktop** (`halloweenLocalCheck`), for
+  everyone. It sets `appThemeCombo` to `halloween` and, when unticked, back to
+  the theme picked before (`system` if there was none). Picking Halloween in
+  the Theme list ticks it.
+- **Turn on the Halloween theme for everyone on this ForkMesh**
+  (`seasonEveryoneCheck`) with the same **Turn off automatically** time
+  (`seasonUntilEdit`, default 1 November 00:00), inside `seasonAdminBox`. The
+  box stays hidden until `GET /api/season/settings` answers 200 with the
+  account's session token (`refreshSeasonSettings`, run each time General
+  comes into view), so only administrators and moderators see it, as on the
+  web. Changes go to `POST /api/season/settings` with a bearer token; the
+  server's error codes get the same wording as the web card.
+
+The site-wide switch changes the website only. The desktop's own colours
+follow its Theme setting.
+
 ## Tests
 
 `app/tests/test_seasonal_theme.py` checks who can change the setting, the

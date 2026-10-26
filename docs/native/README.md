@@ -206,6 +206,21 @@ Play, and Android releases ship as the signed
   to it until a later read succeeds, a file that does not parse is renamed
   `*.unreadable-<ms>` instead of being replaced, and a file from a newer or
   older build (`v` other than 1) is read field by field instead of discarded.
+- **Sign-ins survive a phone restart (iOS, 2026-10-25).** After a reboot iOS
+  wakes the app in the background (PushKit re-registers, a call push arrives)
+  before the user has unlocked the phone once. Until that first unlock the
+  Keychain answers `errSecInteractionNotAllowed` and UserDefaults reads empty.
+  So the launch saw a phone with no preferences, took it for a fresh install
+  and tried to erase the Keychain (`FreshInstallReset`). It also rewrote the
+  instance list as the built-in relay alone (`RelayDirectory.restore`) and let
+  the Keychain fall back to memory for the rest of the process
+  (`FallbackSecureStore`). When the user opened the app later it showed the
+  sign-in screen and had forgotten every instance. `AppBoot.start` now waits
+  until protected data is available or the Keychain stops answering locked
+  (`KeychainBackend.isLockedUntilFirstUnlock`). Only then does it build any
+  service. `FreshInstallReset` also refuses to erase anything while the
+  Keychain is locked. Incoming calls still ring meanwhile, because
+  `DirectCallKit` reports them to CallKit without the services.
 
 ## Protocols and interfaces
 

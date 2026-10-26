@@ -1,4 +1,5 @@
 #include "MessageBoxClicks.h"
+#include "SourceDir.h"
 
 #include <QApplication>
 #include <QDirIterator>
@@ -84,18 +85,16 @@ int main(int argc, char **argv)
     check(guarded.isNull(),
           "a handler may delete the box or pump deferred deletes safely");
 
-#ifdef FORKMESH_SOURCE_DIR
     const QStringList direct =
-        directButtonClickedConnections(QStringLiteral(FORKMESH_SOURCE_DIR "/src")) +
+        directButtonClickedConnections(forkmesh::sourceDir() + QStringLiteral("/src")) +
         directButtonClickedConnections(
-            QStringLiteral(FORKMESH_SOURCE_DIR "/../marketplace/packages"));
+            forkmesh::sourceDir() + QStringLiteral("/../marketplace/packages"));
     for (const QString &path : direct)
         std::fprintf(stderr, "direct QMessageBox::buttonClicked: %s\n",
                      qPrintable(path));
     check(direct.isEmpty(),
           "every QMessageBox::buttonClicked handler goes through "
           "forkmesh::ui::onMessageBoxClicked");
-#endif
 
     if (failures == 0)
         std::printf("PASS: message box clicks\n");

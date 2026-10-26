@@ -1827,28 +1827,28 @@ void MainWindow::runControlNodeHealthCheck()
                     : QStringLiteral("git OK"));
     results <<
         (forkmesh::control::findCloudflareBootstrapScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("Cloudflare bootstrap source missing")
              : QStringLiteral("Cloudflare bootstrap OK"));
     results <<
         (forkmesh::control::findCloudflareTunnelBootstrapScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("Tunnel bootstrap missing")
              : QStringLiteral("Tunnel bootstrap OK"));
     results <<
         (forkmesh::control::findMirrorGatewayScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("mirror gateway missing")
              : QStringLiteral("mirror gateway OK"));
     results <<
         (forkmesh::control::findCloudflaredInstallerScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("verified cloudflared installer missing")
@@ -2077,7 +2077,7 @@ bool MainWindow::rebuildDirectMirrorGatewayConfiguration(
     const QString origin = normalizedHttpsOrigin(hostname);
     const QString gatewayScript =
         forkmesh::control::findMirrorGatewayScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath());
     if (gatewayScript.isEmpty()) {
         if (error)
@@ -2264,7 +2264,7 @@ void MainWindow::provisionDirectMirrorEndpoint(bool dryRun)
     const QString tunnelScript =
         forkmesh::control::
             findCloudflareTunnelBootstrapScript(
-                QStringLiteral(FORKMESH_SOURCE_DIR),
+                forkmesh::sourceDir(),
                 QCoreApplication::applicationDirPath());
     QString python =
         QStandardPaths::findExecutable(
@@ -2575,7 +2575,7 @@ void MainWindow::runCloudflareBootstrap(bool dryRun)
     }
     const QString script =
         forkmesh::control::findCloudflareBootstrapScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         flashMessage(
@@ -3075,7 +3075,7 @@ void MainWindow::exportCompleteSystemBundle()
         forkmesh::paths::dataDir(),
         settings.fileName(),
         forkmesh::control::siteDeployEnvFilePath(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         deployment, &error, systemExportExcludedNames());
     bool written = false;
@@ -3266,7 +3266,7 @@ void MainWindow::refreshSystemExportValues()
                    QStringLiteral("Native settings file"),
                    QDir::toNativeSeparators(settings.fileName()));
     const QString workerEnvironment = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     appendValueRow(m_exportValuesTable, QStringLiteral("Files"),
                    QStringLiteral("Worker environment"),
@@ -3916,7 +3916,7 @@ QWidget *MainWindow::buildSiteDeployCard()
     m_siteDeployStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_siteDeployStatus->setWordWrap(true);
     const QString deployScript = forkmesh::control::findSiteDeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_siteDeployReadyStatus =
         deployScript.isEmpty()
@@ -4105,7 +4105,7 @@ void MainWindow::runSiteDeploy(const QString &target)
     const bool force =
         m_siteDeployForceButton && m_siteDeployForceButton->isChecked();
     const QString script = forkmesh::control::findSiteDeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         const QString missing = QStringLiteral(
@@ -4332,7 +4332,7 @@ QWidget *MainWindow::buildNodeDeployCard()
     m_nodeDeployStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_nodeDeployStatus->setWordWrap(true);
     const QString script = forkmesh::control::findNextAutodeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_nodeDeployStatus->setText(
         script.isEmpty()
@@ -4387,7 +4387,7 @@ void MainWindow::runNodeDeploy()
         return;
     }
     const QString script = forkmesh::control::findNextAutodeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         const QString missing = QStringLiteral(
@@ -4600,7 +4600,7 @@ QWidget *MainWindow::buildCloudflareTokenCard()
     m_controlTokenTargets->setObjectName(QStringLiteral("mutedLabel"));
     m_controlTokenTargets->setWordWrap(true);
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_controlTokenTargets->setText(
         envPath.isEmpty()
@@ -5043,7 +5043,7 @@ void MainWindow::generateCloudflareApiToken()
         return;
     }
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (QMessageBox::question(
             this, QStringLiteral("Generate a Cloudflare API token"),
@@ -5183,7 +5183,7 @@ QStringList MainWindow::rememberVultrApiKey(const QString &apiKey,
     }
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     bool retryable = false;
@@ -5226,7 +5226,7 @@ void MainWindow::adoptRotatedCloudflareToken(const QString &token)
     applied << QStringLiteral("this device's CLOUDFLARE_API_TOKEN variable");
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     if (envPath.isEmpty()) {
@@ -5295,7 +5295,7 @@ QStringList MainWindow::rememberCloudflareApiToken(const QString &token,
     }
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     bool envChanged = false;

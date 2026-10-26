@@ -606,6 +606,14 @@ final class AppBoot {
             return
         }
         starting = true
+        while AppBoot.lockedUntilFirstUnlock {
+            try? await Task.sleep(for: .milliseconds(500))
+        }
         services = await AppServices.start(pushBridge: pushBridge)
+    }
+
+    private static var lockedUntilFirstUnlock: Bool {
+        if UIApplication.shared.isProtectedDataAvailable { return false }
+        return KeychainBackend.isLockedUntilFirstUnlock()
     }
 }

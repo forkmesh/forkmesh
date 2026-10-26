@@ -244,7 +244,8 @@ void MainWindow::startDiagnostics()
             QFile::rename(logPath, prev);
         }
         const QString buildInfo =
-            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src " FORKMESH_SOURCE_DIR ")");
+            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src ") + forkmesh::sourceDir() +
+            QStringLiteral(")");
         m_stallWatchdog->start(/*stallThresholdMs=*/500, logPath, buildInfo);
         if (!logPath.isEmpty())
             logSystem(QStringLiteral("UI-stall watchdog armed; reports append to %1")
@@ -375,6 +376,21 @@ void MainWindow::updateFooterDiagnostics()
     updateActivityTile(static_cast<ResourceSparkline *>(m_debugLogActivityTile),
                        m_debugAllLogCount, &m_debugLastLogActivityTotal,
                        QStringLiteral("Log"));
+    if (auto *stall = static_cast<ResourceSparkline *>(m_debugStallTile)) {
+        const qint64 peak = m_debugStallPeakSinceSampleMs;
+        m_debugStallPeakSinceSampleMs = 0;
+        stall->addSample(qMin<qint64>(peak, kDebugStallChartMaxMs),
+                         kDebugStallChartMaxMs, QStringLiteral("%1ms").arg(peak));
+        QString tip = QStringLiteral("UI stalls: %1 this session").arg(m_stallCount);
+        if (m_stallCount > 0)
+            tip += QStringLiteral(" · longest %1 ms · last %2 ago")
+                       .arg(m_debugStallLongestMs)
+                       .arg(formatDuration(QDateTime::currentMSecsSinceEpoch() -
+                                           m_debugStallLastAtMs));
+        tip += QStringLiteral("\nThe longest time the window froze each second. "
+                              "Click to see the stalls in the Log");
+        stall->setToolTip(tip);
+    }
 
     const qint64 fdNow = QDateTime::currentMSecsSinceEpoch();
     if (fdNow - m_fdPressureLastCheckMs >= 15000) {
@@ -826,6 +842,9 @@ void MainWindow::onUiStall(qint64 peakMs, const QString &stallId,
                            const QString &report, qint64 startedAtMs)
 {
     ++m_stallCount;
+    m_debugStallPeakSinceSampleMs = qMax(m_debugStallPeakSinceSampleMs, peakMs);
+    m_debugStallLongestMs = qMax(m_debugStallLongestMs, peakMs);
+    m_debugStallLastAtMs = QDateTime::currentMSecsSinceEpoch();
     const QString when = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
     const QString marker =
         stallId.isEmpty()
@@ -1144,7 +1163,7 @@ int MainWindow::stallReportRepoIndex() const
     for (const RepositoryRecord &repo : m_repositories)
         checkouts.append(repo.localPath);
     const int own = forkmesh::paths::checkoutContaining(
-        checkouts, QStringLiteral(FORKMESH_SOURCE_DIR));
+        checkouts, forkmesh::sourceDir());
     return own >= 0 ? own : issuesRepoIndex();
 }
 
@@ -1333,7 +1352,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
     dr::Snapshot s;
     s.takenAtMs = QDateTime::currentMSecsSinceEpoch();
     s.version = QStringLiteral(FORKMESH_VERSION);
-    s.sourceDir = QStringLiteral(FORKMESH_SOURCE_DIR);
+    s.sourceDir = forkmesh::sourceDir();
     s.platform = QStringLiteral("%1 (%2, kernel %3), %4")
                      .arg(QSysInfo::prettyProductName(),
                           QSysInfo::currentCpuArchitecture(),

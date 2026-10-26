@@ -1,28 +1,79 @@
-# Review with your agent: the pull request review prompt
+# Diff and files: the pull request summary link and review prompt
 
-Open pull requests show a **Review with your agent** box under the merge line:
-a prompt a reviewer copies into their coding agent or into a chat assistant
-such as ChatGPT. The answer is a review written straight to the pull
-request's author, ready to post, or a one-line approval when nothing needs to
-change. It is the review-side counterpart of the issue prompt
+Open pull requests show a **Diff and files** box under the merge line. It
+links the pull request's diff, patch and changed files, opens ChatGPT with a
+request to summarize the pull request, and copies a review prompt for a
+coding agent. It is the review-side counterpart of the issue prompt
 ([ai-disclosure.md](ai-disclosure.md)).
+
+The box used to be **Review with your agent** and showed the whole review
+prompt on the page: about a dozen lines of instructions to an AI on every
+open pull request. People asked (October 2026) for the page not to carry
+those directions, for a ChatGPT button that gives a summary, and for the diff,
+the patch and links to the files instead. The prompt is still one click away
+(**Copy review prompt**) but is no longer drawn.
 
 ## What the page shows
 
-- A header row: **Review with your agent**, then **Show all** (when the
-  prompt is longer than five lines or 360 characters), **Copy diff URL**
-  (when the page has a diff to show), and **Copy prompt**, which turns into
-  **Copied**.
-- The prompt, monospaced, with its line breaks, collapsed to about five lines
-  (`max-h-28`). **Show all** expands it and becomes **Show less**; the button
-  carries `aria-expanded` and `aria-controls`.
+- A header row: **Diff and files**; **Diff** (`<pull>.diff`) and **Patch**
+  (`<pull>.patch`) links when the page has a diff to show; **Show all** when
+  the file list is longer than five rows; **Summarize in ChatGPT**; and
+  **Copy review prompt**, which turns into **Copied**.
+- The changed files, one per row, monospaced, collapsed to about five rows
+  (`max-h-28`). **Show all** expands the list and becomes **Show less**; the
+  button carries `aria-expanded` and `aria-controls`. At most 50 files are
+  listed, then "and N more".
+- Each file links to the file at the pull request's head branch,
+  `<repo>/blob/<path>?ref=<head>` (the file page's own address). A deleted
+  file, or every file of a pull request whose head is on another node
+  (`owner:branch`, a branch this repository does not have), is listed without
+  a link.
 - Only on open pull requests. Closed and merged ones have no box.
 - For everyone, signed-out visitors included. The box sits in the header, so
   it is there on every tab (Conversation, Commits, Checks, Files changed).
 
+Links use the `primary` link colour (`--dashboard-link`); the buttons are
+plain secondary buttons, since green is kept for the page's one create button.
+
+### Summarize in ChatGPT
+
+A link (`target="_blank"`, `rel="noopener noreferrer"`, no script needed, so
+the first view has it too) to `https://chatgpt.com/?q=<summary request>`. The
+request carries no review rules, only what ChatGPT needs to read the pull
+request and the ask for a summary:
+
+```
+Summarize pull request #{number} in {repo} on {host}: {url}
+Title: "{title}"
+Author: {author}. Merges {head} into {base}.
+
+Diff: {diffUrl}
+Patch: <url>.patch
+Description, comments and diff as plain text: {textUrl}
+
+Changed files:
+- src/limits.py: <file link>
+- old name.txt
+- and 3 more
+
+Reply with a short summary of what it changes and why, file by file.
+```
+
+A link longer than 14,000 characters (the limit the CRM's Write with AI uses)
+drops the file list; if it is still too long, the button opens
+`https://chatgpt.com/` alone. Title, author, branch and file names are folded
+to one line, capped and stripped of invisible characters, as in the review
+prompt below. Code: `summary_text` and `chatgpt_url` in
+`app/host/forkmesh_host/pull_review_prompt.py`, `pullSummaryText` and
+`pullSummaryChatGptUrl` in `06-repo-content.js`; files come from the diff's
+`diff --git` lines (`changed_files`, `pullChangedFiles`).
+
+### Copy review prompt
+
+Copies the review prompt (the default below, or the repository's template).
 Copying uses the dashboard's shared `data-dashboard-copy` handler (Clipboard
 API with a textarea fallback). The prompt is escaped for HTML in the
-attribute and the preview; the clipboard gets the plain text.
+attribute; the clipboard gets the plain text.
 
 ## Repository template
 
@@ -111,7 +162,7 @@ the same bundle as the page and so cover every kind of open pull request:
 
 Both answer only for a repository the gateway serves publicly; anything else
 falls through to the Worker, as the `.diff` route always has. The
-**Copy diff URL** button shows when the page has a diff to show
+**Diff** and **Patch** links show when the page has a diff to show
 (`pull.patch` on the first view, `parsed.pullPatch.patch` in the dashboard).
 
 ## Default prompt
@@ -173,7 +224,10 @@ markup and Tailwind utilities as the dashboard's `renderPullReviewPrompt`.
 
 `app/tests/host/test_pull_review_prompt.py`: the default prompt's security
 clauses and reply rules, template parsing and caps, hidden characters,
-placeholders filled once, escaping, the diff and text addresses, the first
+placeholders filled once, escaping, the diff and text addresses, the file
+links (deleted files and other-node heads unlinked, the 50-file cap and the
+toggle), the ChatGPT summary link (no review rules in it, the length limit),
+the first
 view (open, closed, merged, branch-backed, per origin, signed out), and parity
 with the dashboard's own functions run under node (fields, template, prompt
 and markup), the dashboard contract, the rebuilt bundle and the Tailwind

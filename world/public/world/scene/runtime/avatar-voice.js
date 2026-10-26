@@ -1,11 +1,13 @@
 import {
   animateAvatarRig,
+  animateOnAirSign,
   animateWordBadge,
   createPrivacyBubble,
   placePrivacyBubble,
   reactionTexture,
   setAvatarFaceSource,
   setAvatarRigState,
+  syncAvatarOnAir,
   syncAvatarWordBadge,
 } from "../avatar-rig.js";
 import * as resources from "../resources.js";
@@ -18,8 +20,10 @@ export function functions({ THREE, identity, ctx }) {
   const rigged = new Map();
   const speech = new Map();
   const bubbles = new Map();
+  const onAir = new Set();
   const flights = [];
   const scratch = new THREE.Vector3();
+  const screenScratch = new THREE.Vector3();
 
   function avatarFor(peerId) {
     const id = String(peerId || "");
@@ -55,6 +59,15 @@ export function functions({ THREE, identity, ctx }) {
     return true;
   }
 
+  function setAvatarOnAir(peerId, on) {
+    const id = String(peerId || "") === identity.id ? "self" : String(peerId || "");
+    if (!id) return false;
+    if (on) onAir.add(id);
+    else onAir.delete(id);
+    const avatar = avatarFor(id);
+    return avatar ? syncAvatarOnAir(THREE, avatar, Boolean(on)) : false;
+  }
+
   function setPrivacyBubbles(groups) {
     const wanted = new Map();
     for (const group of Array.isArray(groups) ? groups : []) {
@@ -83,6 +96,22 @@ export function functions({ THREE, identity, ctx }) {
     avatar.getWorldPosition(target);
     target.y += 4.4 * (avatar.scale?.y || 1);
     return target;
+  }
+
+  function avatarScreenPoint(peerId) {
+    const avatar = avatarFor(peerId);
+    const canvas = ctx.renderer?.domElement;
+    if (!avatar?.parent || !ctx.camera || !canvas) return null;
+    headPosition(avatar, screenScratch);
+    screenScratch.y += 0.8;
+    screenScratch.project(ctx.camera);
+    if (!Number.isFinite(screenScratch.x) || screenScratch.z > 1) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + ((screenScratch.x + 1) / 2) * rect.width,
+      y: rect.top + ((1 - screenScratch.y) / 2) * rect.height,
+      onScreen: Math.abs(screenScratch.x) <= 1 && Math.abs(screenScratch.y) <= 1,
+    };
   }
 
   function playAvatarReaction(fromId, toId, emoji) {
@@ -162,6 +191,12 @@ export function functions({ THREE, identity, ctx }) {
       if (avatar && !avatar.userData.wordBadge) syncAvatarWordBadge(THREE, avatar, state);
       animateWordBadge(avatar?.userData?.wordBadge, now);
     }
+    for (const id of onAir) {
+      const avatar = avatarFor(id);
+      if (!avatar) continue;
+      if (!avatar.userData.onAirSign) syncAvatarOnAir(THREE, avatar, true);
+      animateOnAirSign(avatar.userData.onAirSign, now);
+    }
     updateBubbles(time);
     updateFlights(time);
   }
@@ -195,7 +230,9 @@ export function functions({ THREE, identity, ctx }) {
     setAvatarFaceCanvas,
     setAvatarSpeech,
     setPrivacyBubbles,
+    setAvatarOnAir,
     playAvatarReaction,
+    avatarScreenPoint,
     updateAvatarVoice,
     voiceAvatarIds,
     avatarNear,

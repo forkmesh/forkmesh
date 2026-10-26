@@ -105,4 +105,14 @@ private:
     QHash<QString, qint64> m_seen;
 };
 
+class InputTokenCounter
+{
+public:
+    qint64 add(const QJsonObject &message);
+    void clear() { m_seen.clear(); }
+
+private:
+    QHash<QString, qint64> m_seen;
+};
+
 }
