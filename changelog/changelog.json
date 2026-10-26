@@ -13,6 +13,7 @@
  "notes": [
   {"date": "2026-10-25", "area": "Market", "text": "The desktop Market opens without waiting for package previews, which appear as each one loads."},
   {"date": "2026-10-25", "area": "Chat", "text": "Sending a chat message no longer freezes the desktop for a moment while it saves its message counter to disk."},
+  {"date": "2026-10-25", "area": "Desktop", "text": "The Network page's node list is much narrower: each cell shows two facts, one per line, the node's role, owner, place and version sit under its name, columns that are empty for the current filter are hidden, and sorting moved to a Sort menu on the All / Core / Runners bar."},
   {"date": "2026-10-25", "area": "Agents", "text": "An agent started by a workflow now shows a link at the top back to its workflow."},
   {"date": "2026-10-25", "area": "Agents", "text": "Right-click an agent on the desktop and choose Send to another desktop to have one of your other computers carry on its work; it stops here and continues there on the same branch."},
   {"date": "2026-10-25", "area": "World", "text": "World forms no longer trigger the browser's missing-name warnings, and the World chat's Discord refresh no longer errors when one channel cannot be read."},
