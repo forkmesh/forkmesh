@@ -85,6 +85,8 @@ QJsonObject nodeSpec(const QString &type);
 
 bool toTeammate(const Workflow &workflow, forkmesh::teammates::Config *config,
                 QString *error = nullptr);
+QString agentStepId(const Workflow &workflow, const QString &nodeId);
+bool runsAgent(const Workflow &workflow, const QString &agentId);
 forkmesh::teammates::Config agentConfig(const Workflow &workflow, const QString &nodeId,
                                         QString *error = nullptr);
 void applyTeammate(Workflow *workflow, const forkmesh::teammates::Config &config);

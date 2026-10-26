@@ -7,7 +7,10 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStringList>
+
+#include <algorithm>
 
 namespace forkmesh::agents {
 
@@ -957,6 +960,55 @@ bool cloudAgentDeleteFoundNothing(int httpStatus, const QJsonObject &payload)
     return httpStatus == 404 &&
            payload.value(QStringLiteral("error")).toString() ==
                QLatin1String("not_found");
+}
+
+QList<HandoffDesktop> handoffDesktops(const QJsonObject &payload)
+{
+    QList<HandoffDesktop> desktops;
+    QSet<QString> keys;
+    for (const QJsonValue &value :
+         payload.value(QStringLiteral("desktops")).toArray()) {
+        const QJsonObject item = value.toObject();
+        HandoffDesktop desktop;
+        desktop.key = item.value(QStringLiteral("key")).toString().trimmed();
+        if (desktop.key.isEmpty() || keys.contains(desktop.key))
+            continue;
+        keys.insert(desktop.key);
+        desktop.node = item.value(QStringLiteral("node")).toString().trimmed();
+        if (desktop.node.isEmpty())
+            desktop.node = QStringLiteral("Unnamed desktop");
+        desktop.lastSeenMs =
+            qint64(item.value(QStringLiteral("lastSeen")).toDouble());
+        desktops.append(desktop);
+    }
+    std::stable_sort(desktops.begin(), desktops.end(),
+                     [](const HandoffDesktop &a, const HandoffDesktop &b) {
+                         return a.lastSeenMs > b.lastSeenMs;
+                     });
+    QHash<QString, int> names;
+    for (const HandoffDesktop &desktop : std::as_const(desktops))
+        ++names[desktop.node.toLower()];
+    for (HandoffDesktop &desktop : desktops)
+        desktop.label = names.value(desktop.node.toLower()) > 1
+                            ? QStringLiteral("%1 (%2)").arg(desktop.node,
+                                                            desktop.key.left(6))
+                            : desktop.node;
+    return desktops;
+}
+
+QString handoffDesktopSeenText(qint64 lastSeenMs, qint64 nowMs)
+{
+    if (lastSeenMs <= 0)
+        return QStringLiteral("Not seen online yet");
+    const qint64 minutes = qMax<qint64>(0, nowMs - lastSeenMs) / 60000;
+    if (minutes < 2)
+        return QStringLiteral("Seen just now");
+    if (minutes < 120)
+        return QStringLiteral("Seen %1 minutes ago").arg(minutes);
+    const qint64 hours = minutes / 60;
+    if (hours < 48)
+        return QStringLiteral("Seen %1 hours ago").arg(hours);
+    return QStringLiteral("Seen %1 days ago").arg(hours / 24);
 }
 
 } // namespace forkmesh::agents

@@ -433,7 +433,15 @@ schedules, events, monitors, mentions, Run team) starts the agent's workflow
 `startTeammateSession`, so the permission grant, `--disallowedTools`, the
 external-call gate, the run mode clamp and the guardrails are unchanged; the
 session is the step's runtime, filed in the **Workflows** agent folder. A run
-starts a fresh session. A mention or a direct prompt to an agent that already
+starts a fresh session. The user asked (2026-10-25) for a way back from such an
+agent to its workflow: the top of the agent pane shows **← Workflow: <name>**
+when the session's special agent id belongs to an agent step of a workflow in
+its repository (`rw::runsAgent`: the main agent step runs under the workflow
+id, any other under `rw::agentStepId`, `<workflow>-<step>`), and clicking it
+opens that workflow in the Workflows page (`openWorkflowInPage`). The lookup
+reads the repository's workflow files once per selected session
+(`refreshAgentWorkflowLink`); shared team runs have no single workflow and
+show no link. A mention or a direct prompt to an agent that already
 has a conversation is chat, not a run: it continues that session
 (`startTeammateSession`) without a workflow run. Shared "Run all in one session" runs are still
 one shared session. Schedules of workflows without an agent step are checked

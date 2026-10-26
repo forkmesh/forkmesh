@@ -76,6 +76,13 @@ private, unversioned state and it holds them in memory.
   on 2026-10-24 and dropped the rest without an error; Windows still uses it.
   The first build saved ids under `claudeDesktopSessionId` before the link
   went out, so that key is ignored.
+  The launcher (`processreaper::startReleasedQuietly`) gives `xdg-open` null
+  stdin, stdout and stderr and drops `FORKMESH_DESKTOP_INSTANCE`. Before
+  2026-10-25 a Claude app started this way inherited ForkMesh's terminal, so
+  its Chromium errors (`nss_util.cc ... NSS error code: -8018`,
+  `global_accelerator_listener_linux.cc ... BindShortcuts`,
+  `gpu_persistent_cache.cc`) showed up in ForkMesh's console as if they were
+  ForkMesh's own.
 - **Existing agents.** 90 s after start (and when the setting is switched
   on), `backfillClaudeDesktopSessions` links every account project folder
   into `~/.claude/projects` and registers every stored, finished Claude Code

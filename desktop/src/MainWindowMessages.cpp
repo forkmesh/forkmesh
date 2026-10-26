@@ -1686,7 +1686,7 @@ void MainWindow::onAvatar(const QString &peerId, const QByteArray &pngData)
     refreshVisibleRowAvatars();
     refreshChatMembers();
     refreshIssueAvatars();
-    refreshOrganizationTaskPeopleFaces();
+    notifyPackagesAccountPicturesChanged();
     if (m_agentTable)
         refreshAgentTable();
 }
@@ -2309,7 +2309,7 @@ void MainWindow::mergeChatUserDirectory(const QJsonArray &users)
         // The issue list and the open issue were painted before this arrived,
         // so they are still wearing the seeded stand-in portraits.
         refreshIssueAvatars();
-        refreshOrganizationTaskPeopleFaces();
+        notifyPackagesAccountPicturesChanged();
     }
     renderUsersPage(m_usersDirectoryPayload);
     for (MemberInfo &member : m_homeRoster) {

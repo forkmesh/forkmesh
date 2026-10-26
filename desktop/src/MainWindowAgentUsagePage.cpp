@@ -561,7 +561,7 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
                 const QString usageKey = QStringLiteral("%1_%2").arg(
                     profile.id, usage.label.toLower().replace('-', '_'));
                 meter->setObjectName(QStringLiteral("agentUsagePageMeter_%1").arg(usageKey));
-                if (m_timersFeature) {
+                if (hasNativePackageCommand(QStringLiteral("countdown.add"))) {
                     auto *timerButton = new QToolButton;
                     timerButton->setObjectName(
                         QStringLiteral("agentUsagePageTimer_%1").arg(usageKey));
@@ -689,7 +689,8 @@ void MainWindow::fillAgentUsageHoverCard()
     QString slot = key;
     QStringList signature{provider, active.id, QString::number(isDefault),
                           identity, QString::number(signedIn), stats,
-                          QString::number(m_timersFeature != nullptr)};
+                          QString::number(hasNativePackageCommand(
+                              QStringLiteral("countdown.add")))};
     for (int i = 0; i < profiles.size(); ++i) {
         if (profiles.at(i).id == active.id)
             slot = QStringLiteral("%1 %2").arg(key).arg(i + 1);
@@ -780,7 +781,7 @@ void MainWindow::fillAgentUsageHoverCard()
             row.usedPercent, card, row.resetAtMs, row.windowMs);
         const QString usageKey = row.label.toLower().replace('-', '_').replace(' ', '_');
         meter->setObjectName(QStringLiteral("agentUsageHoverMeter_%1").arg(usageKey));
-        if (m_timersFeature) {
+        if (hasNativePackageCommand(QStringLiteral("countdown.add"))) {
             auto *timerButton = new QToolButton;
             timerButton->setObjectName(
                 QStringLiteral("agentUsageHoverTimer_%1").arg(usageKey));

@@ -540,7 +540,7 @@ void MainWindow::reloadAgents(AgentReloadScan scan)
     refreshBranchAgentButton();
     for (const AgentSession &session : std::as_const(m_agentSessions))
         syncOrgTaskAgentStatus(session.id);
-    refreshOrganizationTaskAgentRows();
+    notifyPackagesAgentSessionsChanged();
     updateAgentsNavBadge();
     maybeStartQueuedRebuild();
     updateAgentActionState();
@@ -2042,7 +2042,10 @@ void MainWindow::applyAgentRowCells(int row, const AgentSession &session,
                      .arg(hit.count);
         tip << hit.snippet;
     }
-    issueCell->setText(title);
+    const QString progress = session.merged ? QString() : agentTaskProgress(session.id);
+    issueCell->setData(kAgentTitleBaseRole, title);
+    issueCell->setData(kAgentTaskProgressRole, progress);
+    issueCell->setText(agentTitleWithProgress(title, progress));
     const bool ticking = m_agentListView == AgentListView::Compact &&
                          !session.merged && session.status == AgentStatus::Running;
     issueCell->setData(kAgentTickerRole,

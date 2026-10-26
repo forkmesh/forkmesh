@@ -253,6 +253,34 @@ def test_a_devices_own_cloud_handoff_is_left_for_another_node():
     asyncio.run(scenario())
 
 
+def test_a_session_sent_to_another_desktop_is_left_for_it():
+    async def scenario():
+        store = QueueStore(2)
+        store.rows[0]["data"]["toKey"] = "some-other-desk"
+        handler = _load_handler(store)
+        response = await handler(
+            object(), _request(), "desktop1", "forkmesh")
+        assert response["data"]["jobs"][0]["jobId"] == 2
+        assert store.rows[0]["status"] == "queued"
+        assert store.rows[0]["lease_id"] == ""
+
+    asyncio.run(scenario())
+
+
+def test_a_session_sent_to_this_desktop_is_claimed():
+    async def scenario():
+        store = QueueStore(1)
+        store.rows[0]["data"]["fromKey"] = "some-other-desk"
+        store.rows[0]["data"]["toKey"] = store.claimant_key
+        handler = _load_handler(store)
+        response = await handler(
+            object(), _request(), "desktop1", "forkmesh")
+        assert response["data"]["jobs"][0]["jobId"] == 1
+        assert store.rows[0]["status"] == "leased"
+
+    asyncio.run(scenario())
+
+
 def test_another_nodes_cloud_handoff_is_claimed_normally():
     async def scenario():
         store = QueueStore(1)

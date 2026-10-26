@@ -9,4 +9,4 @@ The package is discovered exclusively through `marketplace/catalog.json`.
 Removing that catalog entry removes its staged dashboard page and navigation.
 
 On the desktop, Calendar answers the top search box
-(`desktop/src/MainWindowCalendar.cpp`, `desktop/src/MainWindowSearch.cpp`).
+(`content/desktop/CalendarPage.cpp`, built as its own module, `calendar.so`).

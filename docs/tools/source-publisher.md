@@ -129,6 +129,15 @@ and wakes the other cores.
   The next pass, 50 s later, went through. A refused `main` or ledger ref that
   does not read as outrun is now read once more after 10 s before the pass
   fails.
+- **Ledger grace.** `forkmesh/pulls` is written by the cores too (mirror
+  intake, web merges), and the desktop merges their records into its own
+  ledger on its next intake ("Merge divergent mirror collaboration
+  intake"). Until it does, every push of the ledger is refused (`fetch
+  first`). When that is the only refusal, the publisher logs it and waits
+  `LEDGER_GRACE_SECONDS` (10 minutes, from `ledgerSince` in
+  `publish-alert.json`) before it Pings. On 2026-10-25 pull #108's mirror
+  intake sent a "Repository publishing failed" Ping for a gap the desktop
+  closed four minutes later. Any other refused ref still Pings at once.
 - **Ping cause.** A refused ref is named in the Ping (`the cores refused
   refs/heads/forkmesh/pulls (non-fast-forward)`, plus the absorb reason for
   `main`). Before, the Ping carried the last 600 characters of git's output.

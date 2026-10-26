@@ -2288,4 +2288,12 @@ QIcon agentStatusModelIcon(const AgentSession &session)
     return agentModelIcon(session.provider, session.model);
 }
 
+QIcon agentFaceIcon(const QString &provider, const QString &model)
+{
+    AgentSession session;
+    session.provider = provider;
+    session.model = model;
+    return agentStatusModelIcon(session);
+}
+
 } // namespace forkmesh::ui
