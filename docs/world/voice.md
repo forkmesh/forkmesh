@@ -391,3 +391,7 @@ diagnostics chart" in the panel hides it (`forkmesh.world.voiceChart`).
   2026-10-25 any tracking failure stopped the camera, so it flashed on and
   off. The failure reason is logged to the console as
   `World camera: face tracking failed to start`.
+- When the browser refuses the camera, the notice names why
+  (`cameraErrorMessage`): blocked for the site, in use by another app, or no
+  camera found. Before 2026-10-25 every refusal read "Allow the camera…",
+  which sent people to a permission setting when the camera was missing.
