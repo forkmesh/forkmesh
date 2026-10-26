@@ -166,6 +166,11 @@ MainWindow::~MainWindow()
             QFile::exists(m_agentToolLedger->persistPath()))
             m_agentToolLedger->saveLater();
     }
+    if (m_agentPerformance) {
+        m_agentPerformance->changed = {};
+        if (!m_agentPerformance->isEmpty())
+            m_agentPerformance->saveLater();
+    }
     forkmesh::diskwrite::flush();
     ActionStore::flushWrites();
     flushRepositorySyncTimes();

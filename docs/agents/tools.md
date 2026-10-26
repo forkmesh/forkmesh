@@ -73,6 +73,25 @@ searches, reading long files by range and docs by headings, anchored edits,
 background waits instead of foreground sleeps, test output piped through
 `tail`), and the guardrail wording names the folders the lock allows.
 
+**Read guard.** `agentrules::claudeSettingsWithReadGuard` adds a
+`PreToolUse` hook on `Read` to every Claude Code launch, with or without the
+network gate. It refuses a Read with no `offset`, `limit` or `pages` of a text
+file over 32 KB (`kReadGuardBytes`, about 8K tokens) and tells the agent the
+file's line count, to Grep first and read a range, and that `offset 1` with a
+`limit` reads it all. Whole-file Reads were the largest Claude Code cost in
+the improvement log (about 1M tokens a week, mostly 4-13K token Swift, Kotlin
+and docs files) although the prompt already asked for ranges. Images, PDFs,
+notebooks, binary files and missing paths pass. The improvement log files the
+refusal as "whole-file read refused".
+
+Codex has no hook here, and its oversized shell results (about 2.3M tokens a
+week) were mostly chained `sed -n` reads of several files and `git diff` /
+`git log --stat` over whole branches. The prompt now says a chain or loop
+shares one output budget (`{ ...; } | head -n 300`) and how to read history
+(`--oneline`, `--stat` first, one path, default context), and the improvement
+log files those results as "chained reads" and "git history" with matching
+suggestions.
+
 The tool efficiency ledger (`AgentToolImprovementLog.cpp`) classifies every tool result into
 outcomes, empty probes, oversized results and known refusals, each with a
 suggested fix; finished runs are logged to `agent-runs.jsonl`

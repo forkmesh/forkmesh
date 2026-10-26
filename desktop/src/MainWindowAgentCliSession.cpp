@@ -1180,7 +1180,8 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
             claudeSettings = forkmesh::agentnet::claudeHookSettings(agentRunGatesCommands(sid));
         }
         claudeSettings = forkmesh::agentrules::claudeSettingsWithAllowRules(
-            claudeSettings, agentRunRules(sid).allowedToolRules);
+            forkmesh::agentrules::claudeSettingsWithReadGuard(claudeSettings),
+            agentRunRules(sid).allowedToolRules);
         if (!claudeSettings.isEmpty())
             runtimeLaunch.options.insert(QStringLiteral("claudeSettings"), claudeSettings);
         addAgentRunMcpConfig(sid, runtimeLaunch.options);
