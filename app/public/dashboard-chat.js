@@ -1215,6 +1215,7 @@ function mountForkMeshDashboardChat(options = {}) {
     try {
       const sources = await discoverDiscordSources();
       const messages = [];
+      let refreshFailed = false;
       // Discord applies rate limits across related connector routes. Fetching
       // every channel concurrently turns one provider-wide 429 into a burst
       // of identical failures, so read channels serially and stop immediately
@@ -1239,6 +1240,7 @@ function mountForkMeshDashboardChat(options = {}) {
           );
         } catch (error) {
           if (error?.status === 429 || error?.status >= 500) throw error;
+          refreshFailed = true;
           // A missing channel is isolated; continue with the remaining
           // configured channels without putting the whole connector on ice.
         }

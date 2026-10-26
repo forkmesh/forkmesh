@@ -344,7 +344,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).
-- **Face and voice:** `face-changer` (web page, a desktop rail link, and a
+- **Face and voice:** `face-changer` (web page, a native desktop page that
+  feeds a "ForkMesh Camera" other apps pick on Linux
+  ([face-changer-desktop.md](face-changer-desktop.md)), and a
   native Face Changer screen in the phone apps whose face, background and voice
   choices video calls use) and
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
@@ -480,9 +482,18 @@ catalog fails the configure with "Marketplace package discovery failed".
 - **Desktop.** `MainWindow::marketPreviewPixmap` reads each preview once with
   `QImageReader::setScaledSize` at the 240×135 card size and caches it in
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
-  Market never re-renders SVGs on the GUI thread. A package whose manifest
-  lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
-  qtimageformats plugin.
+  Market never re-renders SVGs on the GUI thread. The first read runs on a
+  worker (`QtConcurrent`): the card shows an empty frame, and
+  `applyMarketPreview` fills every card and details pane whose `previewKey`
+  matches when the image lands. Diagnostic report #15 (2026-10-24) caught the
+  first Market open decoding every preview inline, ~4 s under memory pressure,
+  in `QImageReader::read`. WebP needs Qt's optional qtimageformats plugin,
+  which many Linux installs lack, so when Qt cannot read a preview whose bytes
+  are WebP, the worker decodes it with the libwebp the app already links
+  (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at most 16 MB. Seven
+  packages (App Store Status, RSS Reader, Code Map, Size Map, Strata, Ember,
+  Synapse) ship only `.webp` previews and showed "Preview unavailable" on such
+  machines until 2026-10-25. PNG and SVG previews still need no plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a

@@ -1001,7 +1001,7 @@ export function createWorldOfficeTasksController({
               canManage && !doneTask && !activeTask
                 ? `<label class="world-task-inline-editor" title="Edit priority">
                     <span class="world-visually-hidden">Priority for ${escapeHTML(task.title)}</span>
-                    P<input type="number" min="1" max="99" value="${task.priority}"
+                    P<input name="world-task-priority" type="number" min="1" max="99" value="${task.priority}"
                       data-world-task-priority="${task.id}" aria-label="Priority for ${escapeHTML(task.title)}" />
                   </label>`
                 : `P${task.priority}`
@@ -1012,7 +1012,7 @@ export function createWorldOfficeTasksController({
               canManage && !doneTask && !activeTask
                 ? `<label class="world-task-inline-editor" title="Change assignee">
                     <span class="world-visually-hidden">Assignee for ${escapeHTML(task.title)}</span>
-                    <select data-world-task-assignee="${task.id}" aria-label="Assignee for ${escapeHTML(task.title)}">
+                    <select name="world-task-assignee" data-world-task-assignee="${task.id}" aria-label="Assignee for ${escapeHTML(task.title)}">
                       <option value="agent" ${task.assigneeKind === "agent" ? "selected" : ""}>Bot</option>
                       <option value="unassigned" ${task.assigneeKind === "unassigned" ? "selected" : ""}>Unassigned</option>
                       ${organizationMembers.map((name) => `<option value="user:${escapeHTML(name)}" ${task.assigneeKind === "user" && task.assignee === name ? "selected" : ""}>@${escapeHTML(name)}</option>`).join("")}
@@ -1108,7 +1108,7 @@ export function createWorldOfficeTasksController({
                 <summary>Add completion notes</summary>
                 <label class="world-office-task-completion-editor">
                   <span>What was changed, decided, and verified?</span>
-                  <textarea
+                  <textarea name="world-office-task-completion-note"
                     maxlength="4000"
                     rows="3"
                     data-world-office-task-completion-note="${task.id}"
@@ -1360,7 +1360,7 @@ export function createWorldOfficeTasksController({
               (own || canManage) && !doneTask
                 ? `<label class="world-office-task-completion-editor">
                     <span>What I did to complete this task</span>
-                    <textarea
+                    <textarea name="world-office-task-completion-note"
                       maxlength="4000"
                       rows="3"
                       data-world-office-task-completion-note="${task.id}"

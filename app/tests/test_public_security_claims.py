@@ -179,7 +179,7 @@ def test_marketing_copy_matches_guest_registration_and_bounded_availability():
 
 def test_retired_bounty_and_phone_mirror_advertising_stays_removed():
     readme = (PROJECT / "README.md").read_text(encoding="utf-8").lower()
-    changelog = (PUBLIC / "changelog.html").read_text(encoding="utf-8").lower()
+    changelog = (PROJECT / "changelog" / "changelog.json").read_text(encoding="utf-8").lower()
     assert "fund any issue with one click" not in readme
     assert "pays out to the contributor when their pr is merged" not in readme
     assert "on-chain bounties" not in readme

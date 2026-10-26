@@ -28,6 +28,8 @@ Every member belongs to three fixed public channels. The shared relay room
   a system message to `#welcome` through the incoming-webhook path, so it is
   stored in `chat_history`, without the per-user webhook bell.
 - Pushes and unread reminders never used member rows for public channels.
+- **Genie spider welcomes.** The web chat's Welcome button in `#welcome`
+  posts an animated genie spider: [chat-genie-welcome.md](chat-genie-welcome.md).
 
 Clients: [chat-private-rooms.md](chat-private-rooms.md) (web),
 `native/ios/docs/FMChat.md` (iPhone), [docs/desktop/README.md](../desktop/README.md).

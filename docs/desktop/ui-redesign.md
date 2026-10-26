@@ -91,7 +91,12 @@ Below the themes it has two more entries:
 
 - **Match the instance's theme** (`viewMenuMatchInstanceTheme`) toggles the same
   `ui/matchInstanceTheme` setting as the Settings checkbox (see the instance
-  theme item below). Turning it on from Halloween or a Market skin switches the
+  theme item below). While it is on, the entry names the theme the instance
+  sends, e.g. "Match the instance's theme (BLT)":
+  `forkmesh::instancetheme::label` gives the preset's name from the
+  `themes` catalogue in `GET /api/instance`, "Custom" for colours with no
+  preset and "Default" when the instance sends none.
+  Turning it on from Halloween or a Market skin switches the
   theme to `system` first, because both of those replace the instance colours
   and the toggle would otherwise seem to do nothing.
 - **Reset to default** (`viewMenuThemeReset`,
@@ -214,8 +219,10 @@ descenders.
   position" in the clock's menu or the top bar's right-click menu. A drag
   swallows the release, so it never opens the clock menu. The spot is
   `ui/timersClockPlacement` (`center` or `right`; removed for the default
-  `left`), kept when the package is removed. `installTimersClockSlots` records
-  the three rows; `setTimersClockPlacement` moves the strip between them.
+  `left`), kept when the package is removed. The clock is the Timers plugin's
+  top-bar widget (`TimersClock`, [package modules](package-modules.md#top-bar-widgets));
+  `installNativePackageChromeSlots` records the three rows and
+  `placeNativePackageChrome` moves the widget between them.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.
@@ -779,11 +786,36 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
       the role filter already shows, and hides child copy rows with their
       node.
     - The long lede moved into an "About nodes" help button.
+    - Sorting lives here, not in the column headers: a "Sort: <field>"
+      combo (`networkNodesSort`, every column but Actions, in display order)
+      and an ascending/descending button (`networkNodesSortOrder`). Both set
+      the header's sort indicator, so `sortNodesTable` is unchanged; the
+      choice is saved as `network/nodesSort` (the column's caption) and
+      `network/nodesSortOrder` (`asc`/`desc`).
   - **Nodes table.**
-    - It keeps all 44 columns, its sorting, column menu, actions, context
-      menus and double-click behaviour.
-    - Next rows are 44 px. Headers are 12 px text captions without icons.
-    - Latency moves (visually) after Status.
+    - The model keeps all 44 columns, its actions, context menus and
+      double-click behaviour, but the table shows far fewer: the header is
+      hidden (`nodePairs` property) and each shown cell holds two different
+      fields, one per line (`nextNodePairs`):
+      - Status over Activity, Latency over Checked, Health over Integrity,
+        Revision over Message and Author, Route over Reach, Repos over
+        Mirrors, Size over Git DB, Issues over Pulls and Discussions,
+        Commits over Branches, Artifacts over Worktrees, Clones over Web
+        hits, Caps over Scope.
+      - CPU, RAM and Disk share one cell as three small meters.
+      - Each line is its icon, a muted caption (left out where the value
+        says what it is: status, activity, latency, revision, message) and
+        the value. An empty value is a plain dash.
+      - A count's sync-back backlog (`nextNodeBacklogColumn`) follows it in
+        the warning colour as "↑N", instead of taking its own column.
+    - Role, owner, platform (or region), endpoint and version are folded
+      into the Node cell's second line, which absorbs the spare width
+      (`makeColumnsResizable` keeps Node flexible). Node id is only in the
+      details panel.
+    - `nextFitNodeColumns` (run at the end of `applyNodeRoleFilter`) hides a
+      cell whose fields are empty in every row the role and text filters
+      show, so a role tab only lists the columns its nodes report.
+    - Rows are 48 px.
     - `NextNodeCellDelegate` paints:
       - Node: a status dot (green online, grey offline, amber behind, red
         integrity failing), the mono name, and a soft "You" badge or outline
@@ -822,8 +854,8 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
     restart. Those stay on saved hosts in the Hosts rail.
   - The Relay traffic delta ("+12%"), and the mockup's mesh invite command
     and dialog: no such data or flow exists.
-  - The mockup hides most columns. They stay visible here, and the column
-    menu still hides them.
+  - The mockup hides most columns. Here they are paired two to a cell or
+    folded into the Node cell instead, so no field is lost.
 - **Hosts.** The Hosts tab is gone: saved hosts, fleet servers, runners and
   directory instances are rows of the node list, and the host controls sit in
   a compact rail beside it ([networking.md](networking.md#network--nodes)).
@@ -1014,8 +1046,8 @@ built with; the chart and table colours still follow the switch.
 
 ### Tasks
 
-In Next, the Tasks page (`MainWindow::buildOrganizationTasksSection`,
-`MainWindowTasks.cpp`, `41-tasks.qss`) is a board with a side panel, after
+In Next, the Tasks page (`TasksPage::buildOrganizationTasksSection`,
+`marketplace/packages/tasks/content/desktop/TasksPage.cpp`, `41-tasks.qss`) is a board with a side panel, after
 the mockup; Classic keeps the old list layout. The Next layout is built once,
 inside the builder, so a live design switch shows it only after restart.
 
@@ -1860,6 +1892,20 @@ re-arranges both ways on a live design switch: Next to Classic puts every
 moved widget back where `buildRepoCommitsTab` placed it, in the same order.
 A window that starts in Classic is never touched.
 
+- **Git layout** (view menu, Next only; `GitLayout.h`, setting
+  `git/layout`). "New" is the page described below. "Compact" brings back
+  the page as it was before this restyle (commit 68b35e6386): changed files
+  on top of the left column and history underneath, no branches column and
+  no page header, with the branch picker, Fetch, Pull and rescan back in the
+  history header and the "▾ CHANGES" caption showing the count again. Only
+  the page arrangement changes (`arrangePage(false)`); the change rows, the
+  commit box and the history rows keep the new design. The commit box now
+  sits in the files pane, so Compact gives the change list a three-row
+  minimum height and raises the files pane's 130 px floor to what the panel
+  needs; without them the files/history splitter squeezed the list to
+  nothing and cut off the Commit button in a short window. Switching back
+  restores the 130 px floor. Switching runs
+  `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).
   - "Git" (`#gitNextTitle`) over a muted summary (`#gitNextSummary`): the

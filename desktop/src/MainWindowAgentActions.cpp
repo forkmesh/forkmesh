@@ -16,6 +16,7 @@
 #include "AgentPromptImages.h"
 #include "AgentToolCatalog.h"
 #include "AgentToolEfficiencyBoard.h"
+#include "AgentPerformanceCharts.h"
 #include "AgentRunTable.h"
 #include "AgentToolUsageTable.h"
 #include "AgentGuardrailBoard.h"
@@ -29,9 +30,11 @@
 #include "CodexAppServerSession.h"
 #include "NodeEventSocket.h"
 #include "PromptFlightOverlay.h"
+#include "SystemStats.h"
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QThread>
 #include <QComboBox>
 #include <QDebug>
 #include <QScrollArea>
@@ -1362,7 +1365,7 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     clear->setCursor(Qt::PointingHandCursor);
     clear->setToolTip(QStringLiteral(
         "Forget every recorded tool call and improvement signal. Session "
-        "transcripts are untouched."));
+        "transcripts and the Trends history are untouched."));
     connect(clear, &QPushButton::clicked, this, [this] {
         if (!m_agentToolLedger)
             return;
@@ -1388,8 +1391,13 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     runsView->setToolTip(QStringLiteral(
         "Every agent run with its model tokens, tool calls and efficiency, "
         "compared with and without tool families switched off"));
+    auto *trendsView = new QPushButton(QStringLiteral("Trends"));
+    trendsView->setObjectName(QStringLiteral("agentEfficiencyTrendsView"));
+    trendsView->setToolTip(QStringLiteral(
+        "Charts of agent and tool performance over the last hour, 24 hours, "
+        "7 days and 30 days, each against the period before"));
     auto *viewGroup = new QButtonGroup(header);
-    for (QPushButton *button : {familiesView, toolsView, runsView}) {
+    for (QPushButton *button : {familiesView, toolsView, runsView, trendsView}) {
         button->setCheckable(true);
         button->setFlat(true);
         button->setCursor(Qt::PointingHandCursor);
@@ -1402,6 +1410,9 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
             [this] { showAgentToolUsageTable(true); });
     connect(runsView, &QPushButton::clicked, this,
             [this] { showAgentEfficiencyView(2); });
+    connect(trendsView, &QPushButton::clicked, this,
+            [this] { showAgentEfficiencyView(3); });
+    m_agentEfficiencyTrendsViewButton = trendsView;
     m_agentEfficiencyToolsViewButton = toolsView;
     m_agentEfficiencyRunsViewButton = runsView;
     m_agentEfficiencyFamiliesViewButton = familiesView;
@@ -1410,6 +1421,7 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     headerLayout->addWidget(familiesView);
     headerLayout->addWidget(toolsView);
     headerLayout->addWidget(runsView);
+    headerLayout->addWidget(trendsView);
     headerLayout->addWidget(subtitle, 1);
     headerLayout->addWidget(m_agentEfficiencyLive);
     headerLayout->addWidget(copyImprovements);
@@ -1521,6 +1533,55 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     m_agentEfficiencyViewStack->addWidget(toolsPane); // Tools
     m_agentEfficiencyViewStack->addWidget(runsPane);  // Runs
 
+    auto *trendsPane = new QWidget;
+    auto *trendsLayout = new QVBoxLayout(trendsPane);
+    trendsLayout->setContentsMargins(16, 6, 16, 0);
+    trendsLayout->setSpacing(4);
+    auto *trendsActions = new QHBoxLayout;
+    trendsActions->setContentsMargins(0, 0, 0, 0);
+    trendsActions->setSpacing(4);
+    auto *periodGroup = new QButtonGroup(trendsPane);
+    for (int period = 0; period < AgentPerformanceHistory::kPeriodCount; ++period) {
+        auto *button = new QPushButton(AgentPerformanceHistory::periodShortLabel(period));
+        button->setObjectName(QStringLiteral("agentPerformancePeriod%1").arg(period));
+        button->setCheckable(true);
+        button->setFlat(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(QStringLiteral("Show the last %1 against the %1 before it")
+                               .arg(AgentPerformanceHistory::periodLabel(period)));
+        button->setChecked(period == AgentPerformanceHistory::Day);
+        periodGroup->addButton(button, period);
+        trendsActions->addWidget(button);
+    }
+    auto *copyTrends = new QPushButton(QStringLiteral("Copy summary"));
+    copyTrends->setObjectName(QStringLiteral("agentPerformanceCopySummary"));
+    copyTrends->setFlat(true);
+    copyTrends->setCursor(Qt::PointingHandCursor);
+    copyTrends->setToolTip(QStringLiteral(
+        "Copy every metric for the shown period and the period before as a markdown table"));
+    trendsActions->addStretch(1);
+    trendsActions->addWidget(copyTrends);
+    m_agentPerformanceCharts = new AgentPerformanceCharts;
+    m_agentPerformanceCharts->setHistory(m_agentPerformance.get());
+    connect(periodGroup, &QButtonGroup::idClicked, this, [this](int period) {
+        if (m_agentPerformanceCharts)
+            m_agentPerformanceCharts->setPeriod(period);
+    });
+    connect(copyTrends, &QPushButton::clicked, this, [this] {
+        if (m_agentPerformance && m_agentPerformanceCharts)
+            QGuiApplication::clipboard()->setText(
+                m_agentPerformance->summaryMarkdown(m_agentPerformanceCharts->period()));
+    });
+    auto *trendsScroll = new QScrollArea;
+    trendsScroll->setObjectName(QStringLiteral("agentPerformanceScroll"));
+    trendsScroll->setWidgetResizable(true);
+    trendsScroll->setFrameShape(QFrame::NoFrame);
+    trendsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    trendsScroll->setWidget(m_agentPerformanceCharts);
+    trendsLayout->addLayout(trendsActions);
+    trendsLayout->addWidget(trendsScroll, 1);
+    m_agentEfficiencyViewStack->addWidget(trendsPane); // Trends
+
     auto *split = new QSplitter(Qt::Horizontal);
     split->setObjectName(QStringLiteral("agentEfficiencySplit"));
     split->setChildrenCollapsible(false);
@@ -1582,10 +1643,54 @@ void MainWindow::showAgentEfficiencyView(int index)
         m_agentEfficiencyToolsViewButton->setChecked(index == 1);
     if (m_agentEfficiencyRunsViewButton)
         m_agentEfficiencyRunsViewButton->setChecked(index == 2);
+    if (m_agentEfficiencyTrendsViewButton)
+        m_agentEfficiencyTrendsViewButton->setChecked(index == 3);
     if (index == 1 && m_agentToolUsageTable)
         m_agentToolUsageTable->refresh(m_agentToolLedger.get());
     if (index == 2 && m_agentRunTable)
         m_agentRunTable->refresh(m_agentRunLog.get());
+    if (index == 3 && m_agentPerformanceCharts)
+        m_agentPerformanceCharts->refresh();
+}
+
+#ifndef FORKMESH_VERSION
+#define FORKMESH_VERSION "dev"
+#endif
+
+void MainWindow::sampleAgentPerformance()
+{
+    if (!m_agentPerformance)
+        return;
+    AgentPerformanceHistory::SystemSample sample;
+    sample.runningAgents = runningAgentCount();
+    sample.agentLimit = maxRunningAgents();
+    const qint64 total = SystemStats::totalMemoryBytes();
+    const qint64 available = SystemStats::availableMemoryBytes();
+    if (total > 0 && available > 0 && available <= total) {
+        sample.memoryTotalBytes = total;
+        sample.memoryPercent = 100.0 * double(total - available) / double(total);
+    }
+    sample.cpuPercent = SystemStats::hostCpuPercent();
+    sample.cpuCount = QThread::idealThreadCount();
+    sample.build = QStringLiteral(FORKMESH_VERSION);
+    m_agentPerformance->recordSample(sample);
+    if (m_agentPerformanceCharts && m_agentPerformanceCharts->isVisible())
+        m_agentPerformanceCharts->refresh();
+}
+
+void MainWindow::scheduleAgentPerformanceSave()
+{
+    if (!m_agentPerformanceSaveTimer) {
+        m_agentPerformanceSaveTimer = new QTimer(this);
+        m_agentPerformanceSaveTimer->setSingleShot(true);
+        m_agentPerformanceSaveTimer->setInterval(30 * 1000);
+        connect(m_agentPerformanceSaveTimer, &QTimer::timeout, this, [this] {
+            if (m_agentPerformance)
+                m_agentPerformance->saveLater();
+        });
+    }
+    if (!m_agentPerformanceSaveTimer->isActive())
+        m_agentPerformanceSaveTimer->start();
 }
 
 void MainWindow::showAgentToolFamilyDetails(const QString &family)
@@ -1707,6 +1812,8 @@ void MainWindow::refreshAgentEfficiencyBoard()
         m_agentToolUsageTable->refresh(m_agentToolLedger.get());
     if (m_agentRunTable && m_agentRunTable->isVisible())
         m_agentRunTable->refresh(m_agentRunLog.get());
+    if (m_agentPerformanceCharts && m_agentPerformanceCharts->isVisible())
+        m_agentPerformanceCharts->refresh();
     refreshAgentToolFamilyDetails();
     if (m_agentEfficiencyLive) {
         const AgentToolLedgerTotals totals =

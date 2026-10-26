@@ -137,7 +137,8 @@ StateWriter &stateWriter()
 
 bool storedStateKey(const QString &key)
 {
-    return key.startsWith(QLatin1String("chat/e2ee/trustV3/")) ||
+    return key.startsWith(QLatin1String("chat/e2ee/ctrV3/")) ||
+           key.startsWith(QLatin1String("chat/e2ee/trustV3/")) ||
            key.startsWith(QLatin1String("chat/e2ee/ratchetV4/")) ||
            key.startsWith(QLatin1String("chat/e2ee/seenV3/"));
 }
@@ -453,7 +454,7 @@ QJsonObject ratchetsJson(const QHash<QString, RatchetPeer> &ratchets)
 }
 
 const char *const kStoredStateFamilies[] = {
-    "chat/e2ee/trustV3", "chat/e2ee/ratchetV4", "chat/e2ee/seenV3"};
+    "chat/e2ee/ctrV3", "chat/e2ee/trustV3", "chat/e2ee/ratchetV4", "chat/e2ee/seenV3"};
 
 QByteArray compactJson(const QJsonObject &object)
 {
@@ -1881,10 +1882,22 @@ qint64 ChatDevice::nextCounter(const QString &room)
 {
     Room &state = roomState(room);
     ++state.counter;
-    if (m_persistent && state.counter > state.reserved) {
+    if (!m_persistent)
+        return state.counter;
+    quint64 cover = state.reserveTicket;
+    if (state.counter > state.reserved - kCounterReserve / 2) {
+        const bool covered = state.counter <= state.reserved;
         state.reserved = state.counter + kCounterReserve - 1;
-        writeNow(settingKey("chat/e2ee/ctrV3/", room), state.reserved);
+        const QString key = settingKey("chat/e2ee/ctrV3/", room);
+        dropPending(key);
+        state.reserveTicket =
+            enqueueWrites({{key, [reserved = state.reserved] {
+                return QVariant(QByteArray::number(reserved));
+            }}});
+        if (!covered)
+            cover = state.reserveTicket;
     }
+    m_ticket = std::max(m_ticket, cover);
     return state.counter;
 }
 

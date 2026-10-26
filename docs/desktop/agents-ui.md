@@ -466,6 +466,55 @@ is matched to its card by `tool_use_id` (replays parse
 forms as `forkmesh-task:` before the commit alternative; a bare 32-hex id
 links as a commit.
 
+**Live task list (2026-10-25).** `AgentTaskListBar` sits below the rows, in
+the bottom viewport margin `layoutPromptDeck()` reserves, and shows the
+agent's current task list the way Claude Code desktop pins its list under the
+latest message: updated in place instead of a new `TodoWrite` row scrolling
+away with every change. Before this, the list only existed as those rows, and
+Claude Code's newer `TaskCreate`/`TaskUpdate` tools showed as one-line rows
+with no list at all.
+
+- `agenttasks::Tracker` (`src/AgentTaskList.cpp`) folds the stream:
+  `TodoWrite` and Codex plans replace a list; `TaskCreate` adds a task at once
+  and takes its id from the `Task #N created` result (a failed create is
+  dropped); `TaskUpdate` changes status, subject or active form, and
+  `deleted` removes the task.
+- Codex sends `turn/plan/updated` several times a turn, but
+  `CodexAppServerSession::emitToolUse` passes only the first one per turn
+  (the synthetic id is `plan-<turnId>`); later ones come only as
+  `_codex_tool_delta`. The tracker reads those deltas, so a Codex plan
+  updates live.
+- Subagents keep their own lists. Events with a `parent_tool_use_id` go to a
+  group headed by the Agent/Task call's `description` (`⎿ Explore the parser`),
+  shown indented under the main list. The group goes away when that subagent's
+  tool result arrives, as the subagent is done.
+- Wording and marks follow Claude Code: the header is
+  `5 tasks (2 done, 1 in progress, 2 open)`, rows are `◻` open, `◼` in
+  progress (bold, showing the `activeForm`), `✔` done (struck through). At
+  most `kMaxRows` (8) rows show, then `… +N more`.
+- The bar emits `heightChanged` only when its text, fold or visibility
+  changes. `clear()` resets it on every session switch, and an unconditional
+  signal ran `layoutPromptDeck()` mid-replay, so a session with no tasks could
+  lose the bottom-follow latch ("a deferred Agent transcript replay stays
+  pinned to its latest turn").
+- Click the header to fold the list to one line, which then names the
+  current task. The bar folds itself when every task is done and opens
+  again when new work arrives, unless the user folded it. A new prompt after
+  an all-done list clears it.
+- The Agents list shows the same progress on each row after the title,
+  e.g. `◼ 2/5 · Running tests`, `◻ 0/3` (nothing started) or `✔ 5/5`.
+  `MainWindow::m_agentTaskTrackers` keeps one tracker per session, fed by
+  `applyTranscriptEvent` through `feedAgentTaskTracker`, and built from
+  `m_streamEvents` the first time a row asks (`agentTaskProgress`); a session
+  whose history is not loaded shows nothing rather than an empty tracker
+  being cached. Running rows refresh it on the spin tick, which already
+  repaints them, by recomposing the text from `kAgentTitleBaseRole` and
+  `kAgentTaskProgressRole`, so a task change costs no table rebuild.
+- Events skipped when a long session opens on its tail still pass through
+  the tracker (`accumulateStatsOnly`), so the list is right after reopening.
+  Earlier events loaded by scrolling up (`prependEarlierEvents`) are not fed,
+  since they are older than what the tracker already holds.
+
 **Pinned prompt.** `PromptDeckBar` sits above the rows, in the top viewport
 margin `layoutPromptDeck()` reserves, and shows the last prompt in one line
 (2026-10-22). It is the desktop version of the phone's prompt deck:
@@ -712,6 +761,13 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.
+- Dropping local files on the prompt attaches images and videos and inserts
+  `@` mentions for anything else; typing `/` into an empty prompt opens the
+  "/" menu; Shift+Tab picks the next permission mode
+  ([claude-code-parity.md](claude-code-parity.md#what-was-added-on-2026-10-25)).
+- After a run's worktree is added, a `.worktreeinclude` in the checkout copies
+  the ignored files it lists (`.env` and the like) into it before the agent
+  starts (`copyWorktreeIncludes`, same page).
 - A run's worktree is added by `agentwt::addScript`, retried three times. A
   `git worktree add -b` that fails after making the branch (for example with
   the disk full) leaves `<id>-<slug>` behind, so the script checks the branch
@@ -994,6 +1050,18 @@ Rules of construction:
   moves into it. Below 700 px the diff is unified.
 - Hooks: `NextAccess::installWorkspace`, `syncWorkspace`,
   `placeWorkspaceComposer`.
+- `installWorkspace` finds the status row as the top row's layout that holds
+  `m_agentStatusPill`, wherever it sits, and puts it back at that index for
+  the classic layout. It used to read the first item; when the workflow link
+  was put above it (2026-10-25) the lookup failed, the workspace returned
+  early, and the new layout silently never installed.
+- Keyboard shortcuts (Ctrl+Tab between sessions, Ctrl+Shift+D / Ctrl+\` /
+  Ctrl+Shift+B for the panel tabs, Ctrl+\\ to close it, Ctrl+Shift+M / I / E
+  for the composer pickers, Ctrl+/ for the sheet) come from
+  `src/WorkspaceShortcuts.h` and are live only while this layout and the
+  Agents page are shown. The session menu's **Open in** opens the worktree
+  in an editor or the file manager. Both, and how they compare with Claude
+  Code desktop, are in [claude-code-parity.md](claude-code-parity.md).
 
 The browser tab (`src/WorkspaceBrowserPane.*`, library
 `forkmesh-browser-pane`) embeds an ungoogled Qt WebEngine view when the build
@@ -1014,6 +1082,33 @@ off at launch, outcome, time, tokens, tool calls and errors and estimated cost
 append to `agent-runs.jsonl` (last 2000) beside `tool-efficiency.json`; the
 top table groups by runtime and tool configuration with a **vs all on**
 column.
+
+**Trends view** (`src/AgentPerformanceHistory.*`, `src/AgentPerformanceCharts.*`).
+Twelve charts for the last hour, 24 hours, 7 days or 30 days, each with a
+dashed line for the period before and the change against it, so a change to
+the prompt, a tool family, the agent limit or the computer can be judged by
+its result: agents running (average, peak in the tooltip), memory used, CPU
+busy, tool calls, tool error rate, tool call time, context per call, tokens at
+stake, tool efficiency, runs finished (with failures), run time and model
+cost.
+
+- **Storage.** `performance-history.json` beside `tool-efficiency.json` keeps
+  two periods of buckets per range: 1 min for the hour, 15 min for 24 hours,
+  1 h for 7 days and 6 h for 30 days. Older buckets are dropped on write.
+- **Sources.** Tool calls come from the ledger's `callObserved`, tokens at
+  stake from the improvement log's `occurred`, runs from
+  `AgentRunEfficiencyLog::runFinished`. A one-minute timer samples running
+  agents (`runningAgentCount`), memory (`SystemStats`) and host CPU.
+- **Backfill.** A history created for the first time is seeded once from
+  `agent-runs.jsonl`, so the 7 and 30 day charts start with past runs (their
+  tool totals land at the run's end).
+- **Markers.** The sampler compares total memory (whole GB), CPU cores, the
+  agent limit and `FORKMESH_VERSION` with the last sample and draws a dotted
+  line where one changed, so "more RAM, more agents" shows on the chart.
+- **Copy summary** puts every metric for the shown period and the one before,
+  plus the markers, on the clipboard as a markdown table.
+- **Clear stats** leaves this history alone: it exists to compare across
+  changes.
 
 **Models board** (`src/AgentModelTable.*`, `src/MainWindowAgentModels.cpp`,
 numbers from the widget-free `AgentModelStats::build`): one row per model in
