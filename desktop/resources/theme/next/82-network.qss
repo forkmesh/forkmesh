@@ -67,6 +67,18 @@ QFrame#networkNodesToolbar QLineEdit#networkNodesFilter:hover { background-color
 QFrame#networkNodesToolbar QLineEdit#networkNodesFilter:focus {
     background-color: @surfaceRaised; border-color: @accent;
 }
+QFrame#networkNodesToolbar QComboBox#networkNodesSort {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-height: 28px; max-height: 28px; padding: 0px 8px; font-size: 12px; color: @fgMuted;
+}
+QFrame#networkNodesToolbar QComboBox#networkNodesSort:hover { background-color: @surfaceRaised; color: @fg; }
+QFrame#networkNodesToolbar QComboBox#networkNodesSort:focus { border-color: @accent; }
+QFrame#networkNodesToolbar QToolButton#networkNodesSortOrder {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px;
+}
+QFrame#networkNodesToolbar QToolButton#networkNodesSortOrder:hover { background-color: @surfaceRaised; }
+QFrame#networkNodesToolbar QToolButton#networkNodesSortOrder:focus { border-color: @accent; }
 QTableWidget#issueTable[nodesDirectory="true"] {
     background-color: @bg; border: 1px solid @border; border-top: none;
     border-top-left-radius: 0px; border-top-right-radius: 0px;

@@ -15,7 +15,7 @@ from marketplace_lib import (  # noqa: E402
 )
 
 CATALOG = load_catalog(MARKETPLACE / "catalog.json")
-CORE_LINKED = {"capture", "discord", "ledger", "timers", "tour"}
+CORE_LINKED = {"capture", "discord", "ledger", "tour"}
 
 
 def test_plugins_json_lists_known_plugins_once_and_sorted():

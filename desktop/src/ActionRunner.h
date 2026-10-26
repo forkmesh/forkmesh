@@ -186,6 +186,7 @@ private:
     ActionWorkflow m_workflow;
     QString m_mirror;
     QString m_sandboxRoot;
+    int m_sandboxLock = -1;
     QString m_worktree;
     QString m_workspace;
     QString m_sandboxHome;

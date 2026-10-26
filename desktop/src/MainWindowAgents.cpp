@@ -1241,6 +1241,21 @@ QWidget *MainWindow::buildAgentsTab()
     auto *topRow = new QVBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);
     topRow->setSpacing(4);
+    m_agentWorkflowLink = new QLabel;
+    m_agentWorkflowLink->setObjectName(QStringLiteral("agentWorkflowLink"));
+    m_agentWorkflowLink->setTextFormat(Qt::RichText);
+    m_agentWorkflowLink->setTextInteractionFlags(Qt::LinksAccessibleByMouse |
+                                                 Qt::LinksAccessibleByKeyboard);
+    m_agentWorkflowLink->setCursor(Qt::PointingHandCursor);
+    m_agentWorkflowLink->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_agentWorkflowLink->hide();
+    connect(m_agentWorkflowLink, &QLabel::linkActivated, this, [this] {
+        const QString repo = m_agentWorkflowLink->property("workflowRepo").toString();
+        const QString id = m_agentWorkflowLink->property("workflowId").toString();
+        if (!repo.isEmpty() && !id.isEmpty())
+            openWorkflowInPage(repo, id);
+    });
+    topRow->addWidget(m_agentWorkflowLink, 0, Qt::AlignLeft);
     auto *statusRow = new QHBoxLayout;
     statusRow->setContentsMargins(0, 0, 0, 0);
     statusRow->setSpacing(8);

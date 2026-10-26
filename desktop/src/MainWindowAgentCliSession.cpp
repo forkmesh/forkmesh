@@ -21,6 +21,7 @@
 #include "AgentRuntimeRegistry.h"
 #include "AgentResumeIdentity.h"
 #include "AgentWorktree.h"
+#include "WorktreeInclude.h"
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
@@ -29,6 +30,8 @@
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QFutureWatcher>
+#include <QtConcurrent>
 #include <QComboBox>
 #include <QDebug>
 #include <QScrollArea>
@@ -1229,6 +1232,39 @@ void MainWindow::failCliTranscriptLaunch(int sid, const QString &why)
     maybeStartQueuedRebuild();
 }
 
+void MainWindow::copyWorktreeIncludes(
+    int sid, const QString &repoPath, const QString &wtPath,
+    const std::function<void(const QString &)> &launch)
+{
+    namespace include = forkmesh::worktreeinclude;
+    if (!QFileInfo(QDir(repoPath).filePath(QLatin1String(include::kFileName))).isFile()) {
+        launch(wtPath);
+        return;
+    }
+    auto *watcher = new QFutureWatcher<include::Result>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, sid, watcher, wtPath, launch] {
+                const include::Result result = watcher->result();
+                watcher->deleteLater();
+                if (AgentSession *as = findAgentSession(sid);
+                    as && (result.copied > 0 || !result.errors.isEmpty())) {
+                    QString line = QStringLiteral("== .worktreeinclude: copied %1 file%2")
+                                       .arg(result.copied)
+                                       .arg(result.copied == 1 ? QString()
+                                                               : QStringLiteral("s"));
+                    if (!result.errors.isEmpty())
+                        line += QStringLiteral("; could not copy %1")
+                                    .arg(result.errors.join(QStringLiteral(", ")));
+                    m_agentStore->appendLog(*as, line + QLatin1Char('\n'));
+                }
+                if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
+                    return;
+                launch(wtPath);
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [repoPath, wtPath] { return include::apply(repoPath, wtPath); }));
+}
+
 void MainWindow::startCliTranscriptWorktree(
     int sid, const QString &repoPath, const QString &worktreeName,
     int issueNumber, const QString &branchName, const QString &baseRef,
@@ -1267,8 +1303,8 @@ void MainWindow::startCliTranscriptWorktree(
         auto *add = new QProcess(this);
         add->setWorkingDirectory(repoPath);
         connect(add, &QProcess::finished, this,
-                [this, sid, add, wtPath, script, launch, failLaunch, runAdd,
-                 firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
+                [this, sid, add, wtPath, repoPath, script, launch, failLaunch,
+                 runAdd, firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
                     const QString out = QString::fromUtf8(
                                             add->readAllStandardOutput())
                                             .trimmed();
@@ -1285,7 +1321,7 @@ void MainWindow::startCliTranscriptWorktree(
                         m_streamWorktree[sid] = wtPath;
                         m_taskWorkItemSessionWorktree.insert(sid, wtPath);
                         attachOrgTaskWorkItemForSession(sid);
-                        launch(wtPath);
+                        copyWorktreeIncludes(sid, repoPath, wtPath, launch);
                         return;
                     }
                     if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))

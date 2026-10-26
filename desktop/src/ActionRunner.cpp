@@ -30,6 +30,7 @@
 #include <functional>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <csignal>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -128,6 +129,49 @@ bool sandboxIsClaimed(const QString &name)
 {
     QMutexLocker locker(&liveSandboxMutex());
     return liveSandboxRoots().contains(name);
+}
+
+int lockSandboxTree(const QString &root)
+{
+#ifndef Q_OS_WIN
+    const QByteArray path = QFile::encodeName(root);
+    const int fd = ::open(path.constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0)
+        return -1;
+    if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+#else
+    Q_UNUSED(root)
+    return -1;
+#endif
+}
+
+void unlockSandboxTree(int &fd)
+{
+#ifndef Q_OS_WIN
+    if (fd >= 0)
+        ::close(fd);
+#endif
+    fd = -1;
+}
+
+bool sandboxTreeLocked(const QString &path)
+{
+#ifndef Q_OS_WIN
+    const QByteArray name = QFile::encodeName(path);
+    const int fd = ::open(name.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+    const bool held = ::flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK;
+    ::close(fd);
+    return held;
+#else
+    Q_UNUSED(path)
+    return false;
+#endif
 }
 
 // How long an unclaimed tree is left alone. Nothing in this process needs it —
@@ -397,6 +441,7 @@ ActionRunner::~ActionRunner()
     // drop the claim instead: the next run's sweep reclaims it rather than
     // leaving a gigabyte of checkout and build output on the disk for good.
     releaseSandboxClaim(m_sandboxRoot);
+    unlockSandboxTree(m_sandboxLock);
     m_stepTimer->stop();
     m_jobTimer->stop();
     m_terminationTimer->stop();
@@ -508,6 +553,8 @@ ActionSandboxSweep ActionRunner::reclaimSandboxes(const QString &base,
             if (sandboxIsClaimed(name))
                 continue;
             const QString path = dir.absoluteFilePath(name);
+            if (sandboxTreeLocked(path))
+                continue;
             // Both prefixes end in "-<ms>"; a tree whose name says nothing is
             // aged by its own timestamp rather than kept forever.
             bool parsed = false;
@@ -548,7 +595,7 @@ QString ActionRunner::removeUnclaimedSandbox(const QString &base, const QString 
     if (!name.startsWith(QLatin1String("forkmesh-run-")) &&
         !name.startsWith(kSandboxDiscardPrefix))
         return QStringLiteral("%1 is not an Actions sandbox tree").arg(path);
-    if (sandboxIsClaimed(name))
+    if (sandboxIsClaimed(name) || sandboxTreeLocked(path))
         return QStringLiteral("a running Action still uses %1").arg(name);
     QString why;
     if (!forkmesh::safedelete::removeTree(path, root, &why,
@@ -734,6 +781,14 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
         m_sandboxRoot,
         QFileDevice::ReadOwner | QFileDevice::WriteOwner |
             QFileDevice::ExeOwner);
+    unlockSandboxTree(m_sandboxLock);
+    m_sandboxLock = lockSandboxTree(m_sandboxRoot);
+#ifndef Q_OS_WIN
+    if (m_sandboxLock < 0)
+        emitLog(QString::fromUtf8(
+            "==> \xE2\x9A\xA0\xEF\xB8\x8F  Could not lock this run's sandbox; "
+            "another ForkMesh process on this computer may remove it mid-run."));
+#endif
 
     // Everything above is discarded when the run ends, so a C++ build starts
     // with no objects and a cold ccache every time — around fifteen minutes
@@ -914,7 +969,7 @@ void ActionRunner::terminateCurrentProcess(bool timedOut)
         const QString systemctl =
             QStandardPaths::findExecutable(QStringLiteral("systemctl"));
         if (!systemctl.isEmpty()) {
-            forkmesh::processreaper::startReleased(
+            forkmesh::processreaper::startReleasedQuietly(
                 systemctl, {QStringLiteral("--user"), QStringLiteral("kill"),
                             QStringLiteral("--kill-whom=all"), m_systemdUnit});
         }
@@ -2056,6 +2111,7 @@ bool ActionRunner::copySandboxTree(const QString &source,
 void ActionRunner::cleanupWorktree()
 {
     releaseSandboxClaim(m_sandboxRoot);
+    unlockSandboxTree(m_sandboxLock);
     if (m_sandboxRoot.isEmpty()) {
         releaseBuildCache();
         return;

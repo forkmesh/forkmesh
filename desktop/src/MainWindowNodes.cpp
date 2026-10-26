@@ -268,6 +268,80 @@ QString nodeStatusIcon(const QString &status)
     return QStringLiteral("broadcast");
 }
 
+struct NextNodePair {
+    int primary;
+    QList<int> secondary;
+};
+
+const QList<NextNodePair> &nextNodePairs()
+{
+    static const QList<NextNodePair> pairs{
+        {kNodeColStatus, {kNodeColActivity}},
+        {kNodeColLatency, {kNodeColChecked}},
+        {kNodeColCpu, {kNodeColRam, kNodeColDisk}},
+        {kNodeColHealth, {kNodeColIntegrity}},
+        {kNodeColSynced, {}},
+        {kNodeColRevision, {kNodeColMessage, kNodeColAuthor}},
+        {kNodeColRoute, {kNodeColReachability}},
+        {kNodeColRepos, {kNodeColMirrors}},
+        {kNodeColSize, {kNodeColGitDatabase}},
+        {kNodeColIssues, {kNodeColPulls, kNodeColDiscussions}},
+        {kNodeColCommits, {kNodeColBranches}},
+        {kNodeColArtifacts, {kNodeColWorktrees}},
+        {kNodeColClones, {kNodeColWebsite}},
+        {kNodeColCaps, {kNodeColScope}},
+    };
+    return pairs;
+}
+
+int nextNodeBacklogColumn(int column)
+{
+    switch (column) {
+    case kNodeColIssues:
+        return kNodeColIssuesToSource;
+    case kNodeColCommits:
+        return kNodeColCommitsToSource;
+    case kNodeColBranches:
+        return kNodeColBranchesToSource;
+    case kNodeColPulls:
+        return kNodeColPullsToSource;
+    case kNodeColDiscussions:
+        return kNodeColDiscussionsToSource;
+    default:
+        return -1;
+    }
+}
+
+const NextNodePair *nextNodePairFor(int column)
+{
+    for (const NextNodePair &pair : nextNodePairs())
+        if (pair.primary == column)
+            return &pair;
+    return nullptr;
+}
+
+bool nextNodeColumnFolded(int column)
+{
+    if (column == kNodeColRole || column == kNodeColOwner ||
+        column == kNodeColPlatform || column == kNodeColRegion ||
+        column == kNodeColEndpoint || column == kNodeColVersion ||
+        column == kNodeColId)
+        return true;
+    for (const NextNodePair &pair : nextNodePairs())
+        for (int secondary : pair.secondary)
+            if (secondary == column || nextNodeBacklogColumn(secondary) == column)
+                return true;
+    for (const NextNodePair &pair : nextNodePairs())
+        if (nextNodeBacklogColumn(pair.primary) == column)
+            return true;
+    return false;
+}
+
+bool nextNodePaired(const QTableWidget *table)
+{
+    return table && table->property("nodePairs").toBool();
+}
+
 class NodeCellDelegate : public QStyledItemDelegate
 {
 public:
@@ -284,8 +358,14 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
         const QRect cell = option.rect.adjusted(kPad, 0, -kPad, 0);
+        const NextNodePair *pair =
+            nextNodePaired(m_table) ? nextNodePairFor(index.column()) : nullptr;
         if (m_kind == Name)
             paintName(painter, cell, option, index);
+        else if (pair && m_kind == Meter)
+            paintMeters(painter, cell, option, index, *pair);
+        else if (pair)
+            paintPair(painter, cell, option, index, *pair);
         else if (m_kind == Meter)
             paintMeter(painter, cell, option, index);
         else
@@ -296,6 +376,20 @@ public:
     QSize sizeHint(const QStyleOptionViewItem &option,
                    const QModelIndex &index) const override
     {
+        const NextNodePair *pair =
+            nextNodePaired(m_table) ? nextNodePairFor(index.column()) : nullptr;
+        if (pair && m_kind == Meter)
+            return QSize(2 * kPad + 3 * kMiniMeter + 2 * kFieldGap, kNodeRowHeight);
+        if (pair && m_kind != Name) {
+            const int top = qMin(kLineCap, fieldWidth(option, index, index.column(), true));
+            int bottom = 0;
+            for (int column : pair->secondary) {
+                const int width = fieldWidth(option, index, column, false);
+                if (width > 0)
+                    bottom += (bottom > 0 ? kFieldGap : 0) + width;
+            }
+            return QSize(2 * kPad + qMax(top, qMin(kLineCap, bottom)) + 4, kNodeRowHeight);
+        }
         if (m_kind == Meter)
             return QSize(104, kNodeRowHeight);
         if (m_kind != Name) {
@@ -312,8 +406,9 @@ public:
         const QFontMetrics badgeMetrics(badgeFont(option));
         for (const NextNodeBadge &badge : badges(index, split))
             line += kGap + badgeMetrics.horizontalAdvance(badge.text) + 10;
-        const int sub = qMin(260, QFontMetrics(captionFont(option))
-                                      .horizontalAdvance(subtitle(index)));
+        const int sub = qMin(nextNodePaired(m_table) ? 420 : 260,
+                             QFontMetrics(captionFont(option))
+                                 .horizontalAdvance(subtitle(index)));
         int width = 2 * kPad + kAvatar + kGap + qMax(line, sub) + 4;
         if (split.child)
             width += kIndent;
@@ -328,6 +423,9 @@ private:
     static constexpr int kIcon = 13;
     static constexpr int kIconGap = 6;
     static constexpr int kIndent = 18;
+    static constexpr int kFieldGap = 10;
+    static constexpr int kLineCap = 220;
+    static constexpr int kMiniMeter = 54;
 
     QFont valueFont(const QStyleOptionViewItem &option) const
     {
@@ -380,7 +478,7 @@ private:
         return header ? header->data(kNodeHeaderIconRole).toString() : QString();
     }
 
-    static QString subtitle(const QModelIndex &index)
+    QString subtitle(const QModelIndex &index) const
     {
         const QModelIndex name = index.siblingAtColumn(kNodeColName);
         if (name.data(kNodeGroupChildRole).toBool())
@@ -389,6 +487,10 @@ private:
         const QString role = cellText(index, kNodeColRole);
         if (!role.isEmpty())
             parts.append(role);
+        const QString owner =
+            nextNodePaired(m_table) ? cellText(index, kNodeColOwner) : QString();
+        if (!owner.isEmpty())
+            parts.append(owner);
         QString place = cellText(index, kNodeColPlatform);
         if (place.isEmpty())
             place = cellText(index, kNodeColRegion);
@@ -476,6 +578,189 @@ private:
                           Qt::AlignLeft | Qt::AlignVCenter,
                           QFontMetrics(caption).elidedText(captionText(index),
                                                            Qt::ElideRight, room));
+    }
+
+    QString fieldLabel(int column) const
+    {
+        switch (column) {
+        case kNodeColStatus:
+        case kNodeColActivity:
+        case kNodeColLatency:
+        case kNodeColRevision:
+        case kNodeColMessage:
+            return QString();
+        default:
+            break;
+        }
+        const QTableWidgetItem *header = m_table->horizontalHeaderItem(column);
+        return header ? header->text() : QString();
+    }
+
+    QFont fieldValueFont(const QStyleOptionViewItem &option, int column, bool primary) const
+    {
+        const bool mono = column == kNodeColRevision;
+        if (primary)
+            return nextNodeFont(option.font, 12, mono, mono ? QFont::Normal : QFont::Medium);
+        return nextNodeFont(option.font, 11, mono, QFont::Normal);
+    }
+
+    int fieldWidth(const QStyleOptionViewItem &option, const QModelIndex &index, int column,
+                   bool primary) const
+    {
+        const QModelIndex field = index.siblingAtColumn(column);
+        const QString text = displayText(field);
+        if (text == nextNodeDash())
+            return primary ? QFontMetrics(fieldValueFont(option, column, primary))
+                                 .horizontalAdvance(text)
+                           : 0;
+        int width = (primary ? kIcon : kIcon - 1) + kIconGap +
+                    QFontMetrics(fieldValueFont(option, column, primary))
+                        .horizontalAdvance(text);
+        const QString label = fieldLabel(column);
+        if (!label.isEmpty())
+            width += QFontMetrics(captionFont(option)).horizontalAdvance(label) + 5;
+        const QString backlog = backlogText(index, column);
+        if (!backlog.isEmpty())
+            width += 4 + QFontMetrics(captionFont(option)).horizontalAdvance(backlog);
+        return width;
+    }
+
+    static QString backlogText(const QModelIndex &index, int column)
+    {
+        const int backlog = nextNodeBacklogColumn(column);
+        if (backlog < 0)
+            return QString();
+        const QString text = cellText(index, backlog);
+        if (text.isEmpty() || text == QLatin1String("0"))
+            return QString();
+        return QString::fromUtf8("\xE2\x86\x91") + text;
+    }
+
+    int paintField(QPainter *painter, const QRect &line, int x,
+                   const QStyleOptionViewItem &option, const QModelIndex &index,
+                   int column, bool primary) const
+    {
+        const QModelIndex field = index.siblingAtColumn(column);
+        const QString text = displayText(field);
+        const bool empty = text == nextNodeDash();
+        const QVariant foreground = field.data(Qt::ForegroundRole);
+        QColor color = empty ? Theme::color(Theme::Role::FgSubtle)
+                             : Theme::color(primary ? Theme::Role::Fg : Theme::Role::FgMuted);
+        if (foreground.isValid() && !empty)
+            color = foreground.value<QBrush>().color();
+        if (empty) {
+            painter->setFont(fieldValueFont(option, column, primary));
+            painter->setPen(color);
+            painter->drawText(QRect(x, line.top(), qMax(0, line.right() - x + 1), line.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter, text);
+            return x + QFontMetrics(fieldValueFont(option, column, primary)).horizontalAdvance(text);
+        }
+        const int iconPx = primary ? kIcon : kIcon - 1;
+        const QString icon = statIcon(field);
+        if (!icon.isEmpty()) {
+            const QColor iconColor =
+                column == kNodeColStatus && !empty
+                    ? color
+                    : Theme::color(primary ? Theme::Role::FgMuted : Theme::Role::FgSubtle);
+            paintIcon(painter, icon, iconColor, x, line.center().y() + 1, iconPx);
+        }
+        x += iconPx + kIconGap;
+        const QString label = fieldLabel(column);
+        if (!label.isEmpty()) {
+            const QFont caption = captionFont(option);
+            painter->setFont(caption);
+            painter->setPen(Theme::color(Theme::Role::FgSubtle));
+            const int room = qMax(0, line.right() - x + 1);
+            const QString shown =
+                QFontMetrics(caption).elidedText(label, Qt::ElideRight, room);
+            painter->drawText(QRect(x, line.top(), room, line.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter, shown);
+            x += QFontMetrics(caption).horizontalAdvance(shown) + 5;
+        }
+        const QFont value = fieldValueFont(option, column, primary);
+        painter->setFont(value);
+        painter->setPen(color);
+        const int room = qMax(0, line.right() - x + 1);
+        const QString shown = QFontMetrics(value).elidedText(text, Qt::ElideRight, room);
+        painter->drawText(QRect(x, line.top(), room, line.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter, shown);
+        x += QFontMetrics(value).horizontalAdvance(shown);
+        const QString backlog = backlogText(index, column);
+        if (!backlog.isEmpty() && x + 4 < line.right()) {
+            const QFont caption = captionFont(option);
+            painter->setFont(caption);
+            painter->setPen(Theme::color(Theme::Role::Warning));
+            const int left = x + 4;
+            const QString tail = QFontMetrics(caption).elidedText(
+                backlog, Qt::ElideRight, qMax(0, line.right() - left + 1));
+            painter->drawText(QRect(left, line.top(), qMax(0, line.right() - left + 1),
+                                    line.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter, tail);
+            x = left + QFontMetrics(caption).horizontalAdvance(tail);
+        }
+        return x;
+    }
+
+    void paintPair(QPainter *painter, const QRect &cell, const QStyleOptionViewItem &option,
+                   const QModelIndex &index, const NextNodePair &pair) const
+    {
+        paintField(painter, topLine(cell), cell.left(), option, index, pair.primary, true);
+        const QRect bottom = bottomLine(cell);
+        int x = cell.left();
+        bool first = true;
+        for (int column : pair.secondary) {
+            if (displayText(index.siblingAtColumn(column)) == nextNodeDash())
+                continue;
+            if (!first)
+                x += kFieldGap;
+            if (x >= bottom.right())
+                break;
+            x = paintField(painter, bottom, x, option, index, column, false);
+            first = false;
+        }
+    }
+
+    void paintMeters(QPainter *painter, const QRect &cell, const QStyleOptionViewItem &option,
+                     const QModelIndex &index, const NextNodePair &pair) const
+    {
+        QList<int> columns{pair.primary};
+        columns.append(pair.secondary);
+        const int count = int(columns.size());
+        const int width = qMax(0, (cell.width() - (count - 1) * kFieldGap) / count);
+        const QRect top = topLine(cell);
+        const QRect bottom = bottomLine(cell);
+        const QFont caption = captionFont(option);
+        const QFont value = nextNodeFont(option.font, 11, false, QFont::Medium);
+        for (int i = 0; i < count; ++i) {
+            const QModelIndex field = index.siblingAtColumn(columns.at(i));
+            const QVariant data = field.data(kProgressBarRole);
+            const int pct = data.isValid() ? qBound(-1, data.toInt(), 100) : -1;
+            const int left = cell.left() + i * (width + kFieldGap);
+            const QRect head(left, top.top(), width, top.height());
+            painter->setFont(caption);
+            painter->setPen(Theme::color(Theme::Role::FgSubtle));
+            painter->drawText(head, Qt::AlignLeft | Qt::AlignVCenter, captionText(field));
+            painter->setFont(value);
+            painter->setPen(pct >= 0 ? Theme::color(Theme::Role::Fg)
+                                     : Theme::color(Theme::Role::FgSubtle));
+            painter->drawText(head, Qt::AlignRight | Qt::AlignVCenter,
+                              pct >= 0 ? QStringLiteral("%1%").arg(pct) : nextNodeDash());
+            QColor fill = Theme::color(Theme::Role::Accent);
+            if (pct >= 90)
+                fill = Theme::color(Theme::Role::Danger);
+            else if (pct >= 70)
+                fill = Theme::color(Theme::Role::Warning);
+            const QRectF track(left, bottom.center().y() - 2, width, 4);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::SurfaceActive));
+            painter->drawRoundedRect(track, 2, 2);
+            if (pct > 0) {
+                QRectF bar = track;
+                bar.setWidth(qMax(track.height(), track.width() * pct / 100.0));
+                painter->setBrush(fill);
+                painter->drawRoundedRect(bar, 2, 2);
+            }
+        }
     }
 
     void paintMeter(QPainter *painter, const QRect &cell,
@@ -952,6 +1237,39 @@ void nextApplyNodeTextFilter(QTableWidget *table)
         }
         if (!headShown)
             table->setRowHidden(row, true);
+    }
+}
+
+void nextFitNodeColumns(QTableWidget *table)
+{
+    if (!nextNodePaired(table))
+        return;
+    for (const NextNodePair &pair : nextNodePairs()) {
+        QList<int> columns{pair.primary};
+        columns.append(pair.secondary);
+        for (int column : QList<int>(columns))
+            if (nextNodeBacklogColumn(column) >= 0)
+                columns.append(nextNodeBacklogColumn(column));
+        bool filled = false;
+        for (int row = 0; row < table->rowCount() && !filled; ++row) {
+            if (table->isRowHidden(row))
+                continue;
+            for (int column : std::as_const(columns)) {
+                const QTableWidgetItem *item = table->item(row, column);
+                if (!item)
+                    continue;
+                const QVariant meter = item->data(kProgressBarRole);
+                if ((meter.isValid() && meter.toInt() >= 0) ||
+                    !nextNodeCellText(table, row, column).isEmpty()) {
+                    filled = true;
+                    break;
+                }
+            }
+        }
+        const bool wasHidden = table->isColumnHidden(pair.primary);
+        table->setColumnHidden(pair.primary, !filled);
+        if (filled && wasHidden)
+            table->resizeColumnToContents(pair.primary);
     }
 }
 
@@ -1528,7 +1846,14 @@ QWidget *MainWindow::buildNodesSection()
             c, QHeaderView::ResizeToContents);
     m_nodesTable->horizontalHeader()->setSectionResizeMode(
         kNodeColActions, QHeaderView::Interactive);
-    makeColumnsResizable(m_nodesTable);
+    makeColumnsResizable(m_nodesTable, next ? int(kNodeColName) : -1);
+    if (next) {
+        m_nodesTable->setProperty("nodePairs", true);
+        m_nodesTable->horizontalHeader()->hide();
+        for (int col = 0; col < kNodeColCount; ++col)
+            if (nextNodeColumnFolded(col))
+                m_nodesTable->setColumnHidden(col, true);
+    }
     m_nodesTable->setItemDelegateForColumn(
         kNodeColName, new NodeCellDelegate(NodeCellDelegate::Name, m_nodesTable));
     auto *meters = new NodeCellDelegate(NodeCellDelegate::Meter, m_nodesTable);
@@ -1664,6 +1989,83 @@ QWidget *MainWindow::buildNodesSection()
         roleLabel->hide();
         m_nodesRoleFilter->hide();
         toolbarRow->addStretch(1);
+
+        QHeaderView *sortHeader = m_nodesTable->horizontalHeader();
+        auto *sortField = new QComboBox(toolbar);
+        sortField->setObjectName(QStringLiteral("networkNodesSort"));
+        sortField->setAccessibleName(QStringLiteral("Sort nodes by"));
+        sortField->setToolTip(QStringLiteral("Sort the nodes by this field"));
+        for (int visual = 0; visual < sortHeader->count(); ++visual) {
+            const int col = sortHeader->logicalIndex(visual);
+            const QTableWidgetItem *headerItem = m_nodesTable->horizontalHeaderItem(col);
+            if (col == kNodeColActions || !headerItem)
+                continue;
+            sortField->addItem(QStringLiteral("Sort: %1").arg(headerItem->text()), col);
+        }
+        auto *sortOrder = new QToolButton(toolbar);
+        sortOrder->setObjectName(QStringLiteral("networkNodesSortOrder"));
+        sortOrder->setAutoRaise(true);
+        sortOrder->setCursor(Qt::PointingHandCursor);
+        const auto syncSort = [this, sortHeader, sortField, sortOrder] {
+            const QSignalBlocker blocker(sortField);
+            const int at = sortField->findData(sortHeader->sortIndicatorSection());
+            if (at >= 0)
+                sortField->setCurrentIndex(at);
+            const bool ascending = sortHeader->sortIndicatorOrder() == Qt::AscendingOrder;
+            const QPixmap arrows =
+                kit::tintedIcon(QStringLiteral("sort-desc"), Theme::color(Theme::Role::FgMuted),
+                                14, m_nodesTable->devicePixelRatioF());
+            QPixmap flipped = arrows.transformed(QTransform().scale(1, -1));
+            flipped.setDevicePixelRatio(arrows.devicePixelRatio());
+            sortOrder->setIcon(QIcon(ascending ? flipped : arrows));
+            sortOrder->setToolTip(ascending
+                                      ? QStringLiteral("Ascending. Click to sort descending")
+                                      : QStringLiteral("Descending. Click to sort ascending"));
+            sortOrder->setAccessibleName(ascending ? QStringLiteral("Sort ascending")
+                                                   : QStringLiteral("Sort descending"));
+        };
+        const auto applySort = [this, sortHeader, sortField](Qt::SortOrder order) {
+            const int col = sortField->currentData().toInt();
+            const QTableWidgetItem *headerItem = m_nodesTable->horizontalHeaderItem(col);
+            QSettings settings;
+            settings.setValue(QStringLiteral("network/nodesSort"),
+                              headerItem ? headerItem->text() : QString());
+            settings.setValue(QStringLiteral("network/nodesSortOrder"),
+                              order == Qt::AscendingOrder ? QStringLiteral("asc")
+                                                          : QStringLiteral("desc"));
+            sortHeader->setSortIndicator(col, order);
+        };
+        {
+            const QSettings settings;
+            const QString savedField =
+                settings.value(QStringLiteral("network/nodesSort")).toString();
+            int savedColumn = -1;
+            for (int col = 0; col < kNodeColCount && !savedField.isEmpty(); ++col) {
+                const QTableWidgetItem *headerItem = m_nodesTable->horizontalHeaderItem(col);
+                if (headerItem && headerItem->text() == savedField)
+                    savedColumn = col;
+            }
+            const QString savedOrder =
+                settings.value(QStringLiteral("network/nodesSortOrder")).toString();
+            if (savedColumn >= 0) {
+                const QSignalBlocker blocker(sortHeader);
+                sortHeader->setSortIndicator(savedColumn, savedOrder == QLatin1String("asc")
+                                                              ? Qt::AscendingOrder
+                                                              : Qt::DescendingOrder);
+            }
+        }
+        syncSort();
+        connect(sortField, QOverload<int>::of(&QComboBox::currentIndexChanged), sortField,
+                [sortHeader, applySort](int) { applySort(sortHeader->sortIndicatorOrder()); });
+        connect(sortOrder, &QToolButton::clicked, sortOrder, [sortHeader, applySort] {
+            applySort(sortHeader->sortIndicatorOrder() == Qt::AscendingOrder
+                          ? Qt::DescendingOrder
+                          : Qt::AscendingOrder);
+        });
+        connect(sortHeader, &QHeaderView::sortIndicatorChanged, sortField,
+                [syncSort](int, Qt::SortOrder) { syncSort(); });
+        toolbarRow->addWidget(sortField);
+        toolbarRow->addWidget(sortOrder);
         auto *filter = new QLineEdit(toolbar);
         filter->setObjectName(QStringLiteral("networkNodesFilter"));
         filter->setPlaceholderText(QStringLiteral("Filter nodes"));
@@ -3099,8 +3501,10 @@ void MainWindow::applyNodeRoleFilter()
             table->setRowHidden(row, headHidden);
         }
     }
-    if (m_nodesTable && Theme::isNext())
+    if (m_nodesTable && Theme::isNext()) {
         nextApplyNodeTextFilter(m_nodesTable);
+        nextFitNodeColumns(m_nodesTable);
+    }
 }
 
 // Merge the roster, the chat directory's linked nodes and the relay's serving

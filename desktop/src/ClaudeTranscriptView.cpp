@@ -5,6 +5,7 @@
 #include "AgentPromptImages.h"
 #include "ClaudeTranscriptTools.h"
 #include "CodexTranscriptStyle.h"
+#include "AgentTaskListBar.h"
 #include "PromptDeckBar.h"
 #include "ScrollJumpButtons.h"
 #include "Theme.h"
@@ -3490,6 +3491,11 @@ ClaudeTranscriptView::ClaudeTranscriptView(QWidget *parent) : QScrollArea(parent
     connect(m_promptDeck, &PromptDeckBar::heightChanged, this,
             &ClaudeTranscriptView::layoutPromptDeck);
 
+    m_taskBar = new AgentTaskListBar(this);
+    m_taskBar->setFont(proseFont());
+    connect(m_taskBar, &AgentTaskListBar::heightChanged, this,
+            &ClaudeTranscriptView::layoutPromptDeck);
+
     m_coverageButton = new QToolButton(this);
     m_coverageButton->setObjectName(QStringLiteral("transcriptCoverageGaps"));
     m_coverageButton->setCursor(Qt::PointingHandCursor);
@@ -3546,14 +3552,19 @@ void ClaudeTranscriptView::layoutPromptDeck()
     const int top = 6;
     const int w = qMax(0, width() - left - right);
     const int h = m_promptDeck->isVisible() ? m_promptDeck->heightForWidth(w) : 0;
+    const int taskHeight =
+        m_taskBar && !m_taskBar->isHidden() ? m_taskBar->heightForWidth(w) : 0;
     const bool atBottom = m_stickBottom;
     if (h > 0) {
         m_promptDeck->setGeometry(left, top, w, h);
         m_promptDeck->raise();
-        setViewportMargins(0, h + top + 4, 0, 0);
-    } else {
-        setViewportMargins(0, 0, 0, 0);
     }
+    if (taskHeight > 0) {
+        m_taskBar->setGeometry(left, height() - taskHeight - top, w, taskHeight);
+        m_taskBar->raise();
+    }
+    setViewportMargins(0, h > 0 ? h + top + 4 : 0, 0,
+                       taskHeight > 0 ? taskHeight + top + 4 : 0);
     if (atBottom)
         verticalScrollBar()->setValue(verticalScrollBar()->maximum());
     layoutCoverageButton();
@@ -3925,6 +3936,9 @@ void ClaudeTranscriptView::applyScheme(bool dark)
         m_promptDeck->setColors(QColor(m_p.surface), tint, QColor(m_p.border),
                                 QColor(m_p.text), QColor(m_p.muted), QColor(m_p.accent));
     }
+    if (m_taskBar)
+        m_taskBar->setColors(QColor(m_p.surface), QColor(m_p.border), QColor(m_p.text),
+                             QColor(m_p.muted), QColor(m_p.accent), QColor(m_p.add));
 }
 
 void ClaudeTranscriptView::enableReferenceLinks(QLabel *label)
@@ -3992,6 +4006,8 @@ void ClaudeTranscriptView::clear()
         m_promptDeck->clearPrompts();
     m_coverage.clear();
     refreshCoverageButton();
+    m_tasks.clear();
+    m_taskBar->setTasks(m_tasks);
     if (m_col->count() <= 1)
         return;
     QWidget *host = m_col->parentWidget();
@@ -4136,6 +4152,12 @@ void ClaudeTranscriptView::accumulateStatsOnly(const QJsonObject &ev)
     const QString type = ev.value(QStringLiteral("type")).toString();
     if (type == QLatin1String("_local_user") && m_promptDeck)
         m_promptDeck->addPrompt(ev.value(QStringLiteral("text")).toString());
+    if (type == QLatin1String("_local_user") && m_tasks.allCompleted()) {
+        m_tasks.clear();
+        m_taskBar->setTasks(m_tasks);
+    } else if (m_tasks.ingest(ev)) {
+        m_taskBar->setTasks(m_tasks);
+    }
     if (type == QLatin1String("assistant")) {
         m_totalTokens += m_outputTokens.add(
             ev.value(QStringLiteral("message")).toObject());
@@ -4307,6 +4329,8 @@ void ClaudeTranscriptView::handleEvent(const QJsonObject &ev, bool countStats)
 {
     if (m_prependAt < 0)
         noteCoverage(ev);
+    if (m_prependAt < 0 && m_tasks.ingest(ev))
+        m_taskBar->setTasks(m_tasks);
     m_eventTime = eventTime(ev);
     const auto restoreRowSource =
         qScopeGuard([this, outer = std::exchange(m_rowSource, ev)] {
@@ -5168,6 +5192,10 @@ void ClaudeTranscriptView::addUserTurn(const QString &text, const QDateTime &at)
 {
     if (m_openInlineChoices)
         lockInlineChoices(m_openInlineChoices); // a reply arrived; stop offering it
+    if (m_tasks.allCompleted()) {
+        m_tasks.clear();
+        m_taskBar->setTasks(m_tasks);
+    }
 
     const bool next = Theme::isNext();
     auto *frame = new QWidget;

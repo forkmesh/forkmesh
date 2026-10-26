@@ -224,6 +224,7 @@ function render() {
   if (isOwner && connector.state === "guild_authorization_required") {
     const form = node("div", null, "world-discord-connect");
     const guild = document.createElement("input");
+    guild.name = "discord-guild";
     guild.inputMode = "numeric";
     guild.autocomplete = "off";
     guild.placeholder = "Discord Server ID";
@@ -271,6 +272,7 @@ function render() {
       if (!id) continue;
       const label = node("label");
       const checkbox = document.createElement("input");
+      checkbox.name = "discord-channel";
       checkbox.type = "checkbox";
       checkbox.value = id;
       checkbox.checked = selected.has(id);
@@ -349,6 +351,7 @@ function render() {
     if (canSend) {
       const composer = node("div", null, "world-discord-compose");
       const input = document.createElement("textarea");
+      input.name = "discord-message";
       input.maxLength = 2000;
       input.disabled = state.reading || state.writing;
       input.placeholder = "Send to the selected Discord channel";

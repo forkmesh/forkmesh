@@ -1,7 +1,11 @@
 # Desktop: the Notes page
 
-Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowNotes.cpp`
-(`requestNotes()`, `refreshNotes()`, `renderNotesList()`), list-row rules in
+Part of [the desktop docs](README.md). Code: the Notes plugin's
+`marketplace/packages/notes/content/desktop/NotesPage.cpp` (`requestNotes()`,
+`refreshNotes()`, `renderNotesList()`), built as `notes.so` apart from the
+window since 2026-10-25 ([package modules](package-modules.md#plugins-built-apart-from-the-window));
+the quick-add "take a note", note links and the note-to-task/issue conversions
+reach it through `NativePackageHost`. List-row rules in
 `desktop/src/NoteListEntry.h`, request proof in `desktop/src/NoteRequestProof.h`,
 link parsing, filters and export naming in `desktop/src/NoteTools.h`.
 Server: `app/src/notes.py`, with the `_NotesRuntime` boundary in `app/src/entry.py`.
