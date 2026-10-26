@@ -115,12 +115,15 @@ void MainWindow::installCleanupHost()
                                   item.worktree});
             }
         };
-        for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+        const QJsonArray catalog = m_organizationTaskStore
+                                       ? m_organizationTaskStore->tasks()
+                                       : QJsonArray();
+        for (const QJsonValue &value : catalog) {
             const QJsonObject task = value.toObject();
             titles.insert(task.value(QStringLiteral("id")).toString(),
                           task.value(QStringLiteral("title")).toString());
         }
-        for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+        for (const QJsonValue &value : catalog) {
             const QJsonObject task = value.toObject();
             add(task.value(QStringLiteral("id")).toString(),
                 tw::itemsForNode(

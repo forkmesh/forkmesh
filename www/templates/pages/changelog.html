@@ -9,6 +9,7 @@
 {% block head %}
     <link rel="stylesheet" href="/styles.css" />
     <script src="/static-page.js?v=${version}" defer></script>
+    <script src="/changelog.js?v=${version}" defer></script>
     <style>
       .log-page {
         width: min(1120px, calc(100% - 32px));
@@ -109,6 +110,12 @@
         color: var(--kit-ink);
         font-weight: 600;
       }
+      .log-status {
+        padding: 40px 0;
+        border-top: 1px solid var(--kit-line);
+        color: var(--kit-body);
+        font-size: 15px;
+      }
       .log-foot {
         display: flex;
         flex-wrap: wrap;
@@ -163,7 +170,12 @@
         </p>
       </section>
 
-{{ changelog_releases }}
+      <div id="changelog-releases" data-source="/changelog.json" aria-busy="true">
+        <p class="log-status">Loading the changelog…</p>
+      </div>
+      <noscript>
+        <p class="log-status">The changelog needs JavaScript to show. The notes are also at <a href="/changelog.json">/changelog.json</a>.</p>
+      </noscript>
 
       <div class="log-foot kit-card">
         <p>

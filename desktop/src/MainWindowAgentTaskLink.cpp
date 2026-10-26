@@ -231,11 +231,11 @@ void MainWindow::attachAgentSessionToOrgTask(int sessionId)
     if (!canLinkAgentSessionToOrgTask(sessionId))
         return;
     const bool fresh =
-        m_organizationTasksLoaded &&
-        QDateTime::currentMSecsSinceEpoch() - m_organizationTasksLoadedAt <
+        m_organizationTaskStore && m_organizationTaskStore->loaded() &&
+        QDateTime::currentMSecsSinceEpoch() - m_organizationTaskStore->loadedAt() <
             kAgentTaskPickerFreshMs;
     if (fresh) {
-        showAgentSessionOrgTaskPicker(sessionId, m_organizationTasks);
+        showAgentSessionOrgTaskPicker(sessionId, m_organizationTaskStore->tasks());
         return;
     }
     flashMessage(QStringLiteral("Loading organization tasks..."));
@@ -381,8 +381,7 @@ void MainWindow::linkAgentSessionToOrgTask(int sessionId, const QString &taskId,
     logSystem(message);
     flashMessage(message);
     refreshAgentTable();
-    if (m_organizationTasksLoaded)
-        refreshOrganizationTaskAgentRows();
+    notifyPackagesAgentSessionsChanged();
 }
 
 void MainWindow::detachAgentSessionFromOrgTask(int sessionId)
@@ -399,8 +398,7 @@ void MainWindow::detachAgentSessionFromOrgTask(int sessionId)
     flashMessage(message);
     refreshAgentTaskLinkUi(sessionId);
     refreshAgentTable();
-    if (m_organizationTasksLoaded)
-        refreshOrganizationTaskAgentRows();
+    notifyPackagesAgentSessionsChanged();
 }
 
 QString MainWindow::unlinkAgentSessionFromOrgTask(int sessionId)

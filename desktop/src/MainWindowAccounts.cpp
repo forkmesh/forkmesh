@@ -92,8 +92,8 @@ void MainWindow::logout()
     updateAdminCrownBadge();
     m_seenPendingUsers.clear();
     // Drop the cached catalog: the next account pulls its own on first open.
-    m_organizationTasksLoaded = false;
-    m_organizationTasksStartupPayload = QJsonObject();
+    if (m_organizationTaskStore)
+        m_organizationTaskStore->reset();
     m_adminPendingPolled = false;
     m_accountName.clear();
     m_accountEmail.clear();
@@ -694,8 +694,8 @@ void MainWindow::isolateAccountForServerSwitch(const QString &accountName)
     m_profileLinkedNodes.clear();
     m_nodeOwnerUser.clear();
     m_seenPendingUsers.clear();
-    m_organizationTasksLoaded = false;
-    m_organizationTasksStartupPayload = QJsonObject();
+    if (m_organizationTaskStore)
+        m_organizationTaskStore->reset();
     m_adminPendingPolled = false;
     forgetOwnUserStatus();
     forgetUserActivitySync();

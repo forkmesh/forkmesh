@@ -50,7 +50,10 @@ Agent session records stay in `data/agents/sessions`, so the agents plugin's
 other folders sit beside them without being read as sessions.
 
 Removing a plugin never deletes its folder: if `data/<plugin>` holds anything,
-the desktop says where it is, and the user decides.
+the desktop says where it is, and the user decides. It says so in a notice
+(`flashMessage`), not a dialog: the modal `QMessageBox` it used at first
+blocked `setPackageInstalled` until clicked, and the offscreen window tests,
+which uninstall packages, waited on it forever (2026-10-25).
 
 The desktop moves a box at its next start, under its single-instance lock,
 with renames only: `<project>/{config,cache,logs,ssh}` move into `data/core`,

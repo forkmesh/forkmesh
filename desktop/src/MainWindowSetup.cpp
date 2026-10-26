@@ -134,7 +134,7 @@ void MainWindow::loadCachedAvatars()
         refreshVisibleRowAvatars();
         refreshChatMembers();
         refreshIssueAvatars();
-        refreshOrganizationTaskPeopleFaces();
+        notifyPackagesAccountPicturesChanged();
     });
     watcher->setFuture(QtConcurrent::run([dir] {
         const forkmesh::BackgroundScope activity(
