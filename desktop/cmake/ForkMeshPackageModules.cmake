@@ -159,6 +159,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
         target_link_libraries(${_target} PRIVATE
             Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)
         forkmesh_link_multimedia(${_target})
+        forkmesh_link_webengine(${_target})
         forkmesh_link_opengl(${_target})
         forkmesh_link_webp(${_target})
         add_dependencies(${_target} forkmesh-version-header)
@@ -183,4 +184,8 @@ function(forkmesh_add_package_module_tests)
     add_test(NAME forkmesh-package-modules-resolve
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_package_modules.py"
                 "$<TARGET_FILE_DIR:forkmesh>")
+    add_test(NAME forkmesh-plugin-build-isolation
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_plugin_build_isolation.py"
+                "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../marketplace/packages"
+                "${CMAKE_MAKE_PROGRAM}")
 endfunction()

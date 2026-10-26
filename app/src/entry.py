@@ -12553,7 +12553,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
 
     async def _send_package_smtp(self, outbound, footer=True):
         via = {"via": "postfix", "node": smtp_mail.node(),
-               "sender": "no-reply@forkmesh.com"}
+               "sender": smtp_mail.SENDER}
         sender = outbound.get("from") if isinstance(
             outbound.get("from"), dict) else {}
         recipients = [r.get("email") for r in outbound.get("to") or []
@@ -12575,8 +12575,8 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             html = outbound.get("html")
         try:
             message_id = await smtp_mail.send(self.env, smtp_mail.build(
-                "no-reply@forkmesh.com",
-                str(sender.get("name") or "ForkMesh"), recipients[0],
+                smtp_mail.SENDER,
+                str(sender.get("name") or smtp_mail.SENDER_NAME), recipients[0],
                 outbound.get("subject"), outbound.get("text"),
                 html, "package"))
         except Exception as error:
@@ -22337,10 +22337,7 @@ async def _account_signup(env, request):
             {"newMember": bool(is_new_member)})
     except Exception:
         pass
-    if rec.get("email") and not rec["email_verified"]:
-        sent = await _send_verification_email(env, request, name, rec["email"], rec=rec)
-        if not sent:
-            await _enqueue_verification(env, name_bi, name, rec["email"])
+    await _send_signup_verification(env, request, name_bi, name, rec)
     # Drop the cached chat roster/activity so open chat pages and header badges
     # pick up the new account on their next poll instead of a TTL later.
     memos_clear = globals().get("_users_directory_memos_clear")
@@ -32820,7 +32817,7 @@ async def _send_email(env, to_email, subject, text, html=None,
         return False
     sender = (from_email or getattr(env, "MAIL_SENDER", "")
               or getattr(env, "MAILTRAP_SENDER", "")
-              or "no-reply@forkmesh.com").strip()
+              or smtp_mail.SENDER).strip()
     via = "postfix" if via_smtp else provider if token else ""
     node = smtp_mail.node() if via_smtp else ""
     body, body_html = text, html
@@ -33640,6 +33637,36 @@ async def _send_verification_email(env, request, name, email, rec=None):
         rec.update(fields)
     await _record_account_email(env, name, "verification", ok, fields)
     return ok
+
+
+async def _claim_signup_verification(env, name, email):
+    key = await blind_index(env, "verification-signup:" + "\n".join((
+        clean_string(name or "", MAX_NODE_NAME).strip().lower(),
+        clean_string(email or "", 254).strip().lower())))
+    try:
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO notification_email_sends "
+            "(send_bi, created_at) VALUES (?,?)",
+            key, int(Date.now()))
+    except Exception:
+        return True
+    try:
+        return int(result.meta.changes) > 0
+    except Exception:
+        return True
+
+
+async def _send_signup_verification(env, request, name_bi, name, rec):
+    email = rec.get("email") if isinstance(rec, dict) else ""
+    if not email or rec.get("email_verified"):
+        return False
+    if not await _claim_signup_verification(env, name, email):
+        return False
+    sent = await _send_verification_email(env, request, name, email, rec=rec)
+    if not sent:
+        await _enqueue_verification(env, name_bi, name, email)
+    return sent
 
 
 # --- "Send it again" for an unverified email ---------------------------------
@@ -44667,6 +44694,9 @@ async def repo_org_agent_jobs_handler(env, request, owner, repo):
         if record.get("fromKey") and record.get("fromKey") == claimant_key:
             # This is the device that moved the session into the cloud. Leave
             # the job queued and look past it, so another node can take it.
+            passed_over.append(job_id)
+            continue
+        if record.get("toKey") and record.get("toKey") != claimant_key:
             passed_over.append(job_id)
             continue
         lease_id = _ap_uuid()

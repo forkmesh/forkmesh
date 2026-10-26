@@ -2159,6 +2159,14 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box)
     if (natural.isValid() && !natural.isEmpty())
         reader.setScaledSize(natural.scaled(box, Qt::KeepAspectRatio));
     QImage image = reader.read();
+    if (image.isNull()) {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const QByteArray bytes = file.read(16 * 1024 * 1024);
+            if (forkmesh::ui::diffBytesAreWebp(bytes))
+                image = forkmesh::ui::diffDecodeWebp(bytes);
+        }
+    }
     if (!image.isNull() &&
         (image.width() > box.width() || image.height() > box.height()))
         image = image.scaled(box, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -3369,16 +3377,12 @@ bool MainWindow::setPackageInstalled(const QString &id, bool installed,
                 continue;
             const PackageManifest *removed = m_packageRegistry->package(removedId);
             const QString name = removed && !removed->name.isEmpty() ? removed->name : removedId;
-            kept << QStringLiteral("%1: %2").arg(name, QDir::toNativeSeparators(folder));
+            kept << QStringLiteral("%1 in %2").arg(name, QDir::toNativeSeparators(folder));
         }
-        if (!kept.isEmpty()) {
-            QMessageBox::information(
-                this, QStringLiteral("Plugin data kept"),
-                QStringLiteral("The plugin is removed, but its data stays on disk:\n\n%1\n\n"
-                               "Install the plugin again to use it, or delete the folder "
-                               "yourself if you no longer need it.")
-                    .arg(kept.join(QLatin1Char('\n'))));
-        }
+        if (!kept.isEmpty())
+            flashMessage(QStringLiteral("Plugin removed; its data stays on disk (%1). Install it "
+                                        "again to use it, or delete the folder yourself.")
+                             .arg(kept.join(QStringLiteral("; "))));
     }
 
     if (themePackage) {
@@ -4182,7 +4186,6 @@ void MainWindow::syncPackageRuntime()
     bool captureInstalled = false;
     bool ledgerInstalled = false;
     bool discordInstalled = false;
-    bool timersInstalled = false;
     bool tourInstalled = false;
     bool statusPageInstalled = false;
     QJsonArray localModels;
@@ -4208,8 +4211,6 @@ void MainWindow::syncPackageRuntime()
                 ledgerInstalled = true;
             else if (manifest.desktopEntrypoint == QLatin1String("builtin:discord"))
                 discordInstalled = true;
-            else if (manifest.desktopEntrypoint == QLatin1String("builtin:timers"))
-                timersInstalled = true;
             else if (manifest.desktopEntrypoint == QLatin1String("builtin:tour"))
                 tourInstalled = true;
             else if (manifest.desktopEntrypoint ==
@@ -4303,14 +4304,7 @@ void MainWindow::syncPackageRuntime()
         m_sectionStack->currentIndex() == kLedgerSectionIndex)
         showSection(kMarketSectionIndex);
 
-    // Timers contributes the clock in the window's top bar; its lifecycle
-    // lives with the rest of the strip in MainWindowTimers.cpp. Detaching takes
-    // the clock and its chips off the top bar, and the registry's uninstall
-    // clears the package's own settings, so the entries go with it.
-    if (timersInstalled)
-        attachTimersPackage();
-    else
-        detachTimersPackage();
+    syncNativePackageChrome();
 
     syncTourPackage(tourInstalled);
     syncStatusPagePackage(statusPageInstalled);
@@ -4366,9 +4360,6 @@ void MainWindow::syncPackageSurfaces()
         {m_railCodeButton, on(QStringLiteral("code"))},
         {m_railGitButton, on(QStringLiteral("commits"))},
         {m_chatButton, on(QStringLiteral("chat"))},
-        {m_notesNavButton, on(QStringLiteral("notes"))},
-        {m_calendarNavButton, on(QStringLiteral("calendar"))},
-        {m_tasksNavButton, on(QStringLiteral("tasks"))},
         {m_notificationButton, on(QStringLiteral("inbox"))},
         {m_networkNavButton,
          on(QStringLiteral("network")) || on(QStringLiteral("hosts"))},
@@ -4441,9 +4432,6 @@ void MainWindow::syncPackageSurfaces()
         const QHash<int, QString> sectionPackages = {
             {2, QStringLiteral("chat")},
             {3, QStringLiteral("inbox")},
-            {kNotesSectionIndex, QStringLiteral("notes")},
-            {kCalendarSectionIndex, QStringLiteral("calendar")},
-            {kOrganizationTasksSectionIndex, QStringLiteral("tasks")},
             {kTeamSectionIndex, QStringLiteral("special-agents")},
             {kStatsSectionIndex, QStringLiteral("stats")},
         };
@@ -4507,27 +4495,297 @@ bool MainWindow::testRepoTabShown(const QString &key) const
 }
 #endif
 
+forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
+    const PackageManifest &manifest,
+    const forkmesh::market::NativePackageContribution &contributionCopy)
+{
+    const QString id = manifest.id;
+    QStringList permissionIds;
+    for (const forkmesh::market::PackagePermission &permission :
+         manifest.permissions)
+        permissionIds.append(permission.id);
+    forkmesh::market::NativePackageHost host{
+        manifest.id,
+        manifest.name,
+        manifest.type,
+        manifest.version,
+        permissionIds,
+        [this, id, contributionCopy](
+            const QByteArray &method, const QString &path,
+            const QJsonObject &body,
+            forkmesh::market::NativePackageReplyHandler handler) {
+            requestNativePackage(id, contributionCopy, method, path, body,
+                                 std::move(handler));
+        },
+        m_networkAccess,
+        [this] { nativePackageSearchIndexChanged(); },
+        [this] {
+            refreshChatUserDirectory();
+            return ledgerRecipientCandidates();
+        },
+        [this] { updateQuickAddEnterTarget(); },
+        [this, id] { syncNativePackageBadge(id); },
+        [this] { return m_isAdmin; },
+        [this](forkmesh::market::NativePackageUserRecordsHandler done) {
+            fetchNativePackageUserRecords(std::move(done));
+        },
+        [this] { return nativePackageAgentName(); },
+        [this](const QString &prompt,
+               forkmesh::market::NativePackageAgentReplyHandler done) {
+            askNativePackageAgent(prompt, std::move(done));
+        },
+        [this] { schedulePackageRailRefresh(); },
+        [this] { return nativePackageSpecialAgents(); },
+        [this](const QString &agentId, const QString &action,
+               const QString &text,
+               forkmesh::market::NativePackageSpecialAgentActionHandler done) {
+            runNativePackageSpecialAgentAction(agentId, action, text,
+                                               std::move(done));
+        },
+    };
+    if (!permissionIds.contains(QStringLiteral("desktop.agents.run"))) {
+        host.specialAgents = nullptr;
+        host.specialAgentAction = nullptr;
+    }
+    if (permissionIds.contains(QStringLiteral("desktop.workflows.run"))) {
+        host.repositoryWorkflows = [this] { return nativePackageRepositoryWorkflows(); };
+        host.repositoryWorkflowAction =
+            [this](const QString &repo, const QString &workflowId, const QString &action,
+                   const QJsonObject &payload, forkmesh::market::NativePackageReplyHandler done) {
+                runNativePackageRepositoryWorkflowAction(repo, workflowId, action, payload,
+                                                         std::move(done));
+            };
+    }
+    host.accountName = [this] {
+        return AccountCapability::normalizedAccount(m_accountName);
+    };
+    host.openDirectMessage = [this](const QString &account) {
+        const QString name = account.trimmed().toLower();
+        if (forkmesh::ui::isValidNodeName(name))
+            startDirectMessageWith(name, QString(), QString());
+    };
+    host.openUserProfile = [this](const QString &account) {
+        const QString name = account.trimmed().toLower();
+        if (!forkmesh::ui::isValidNodeName(name))
+            return;
+        MemberInfo member;
+        member.id = QStringLiteral("user:") + name;
+        member.name = name;
+        member.nodeName = name;
+        member.ownerUser = name;
+        member.accountKind = QStringLiteral("user");
+        showChatUserProfile(member, {});
+    };
+    if (permissionIds.contains(QStringLiteral("chat.messages.share"))) {
+        host.chatTargets = [this] {
+            QList<forkmesh::market::NativePackageChatTarget> targets;
+            if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+                return targets;
+            QStringList seen;
+            const QStringList channels = m_officeChannelMirror->conversations();
+            const QStringList direct = m_officeChannelMirror->directConversations();
+            for (const QStringList &group : {channels, direct}) {
+                for (const QString &conversation : group) {
+                    if (seen.contains(conversation) ||
+                        !m_officeChannelMirror->canSend(conversation))
+                        continue;
+                    seen.append(conversation);
+                    targets.append({conversation, chatConversationLabel(conversation),
+                                    forkmesh::office::isDirectOfficeConversation(conversation)});
+                }
+            }
+            return targets;
+        };
+        host.sendChatMessage = [this](const QString &conversation, const QString &text) {
+            return m_officeChannelMirror && m_officeChannelMirror->isActive() &&
+                   m_officeChannelMirror->sendMessage(conversation, text);
+        };
+    }
+    host.openNetworkShare = [this](const QString &url, bool guest) {
+        openNetworkShareLocation(url, guest);
+    };
+    host.openWebPage = [this](const QString &path) {
+        const QUrl url = forkmesh::market::nativePackageWebPageUrl(
+            catalogApiUrl(), path);
+        if (!url.isValid()) {
+            flashMessage(QStringLiteral(
+                "That page cannot be opened from here."));
+            return;
+        }
+        QDesktopServices::openUrl(url);
+    };
+    host.publicPageUrl = [this](const QString &path) {
+        return forkmesh::market::nativePackagePublicPageUrl(catalogApiUrl(), path)
+            .toString(QUrl::FullyEncoded);
+    };
+    host.webPageUrl = [this](const QString &path) {
+        return forkmesh::market::nativePackageWebPageUrl(catalogApiUrl(), path)
+            .toString(QUrl::FullyEncoded);
+    };
+    if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
+        host.agentUsagePage = [this](QWidget *parent) {
+            return buildAgentUsagePage(parent);
+        };
+    if (permissionIds.contains(QStringLiteral("desktop.logins.use"))) {
+        const QString requester = manifest.name;
+        host.loginStoreName = [this] {
+            QString name;
+            return nativeLoginStore(&name) ? name : QString();
+        };
+        host.saveLogin = [this, requester](
+                             const forkmesh::market::NativePackageLogin &login,
+                             QWidget *asker,
+                             forkmesh::market::NativePackageLoginHandler done) {
+            QString name;
+            if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
+                store->saveLogin(login, requester, asker, std::move(done));
+            else
+                done({false, false, QStringLiteral("No password manager is installed."), {}});
+        };
+        host.findLogins = [this, requester](
+                              const QString &url, QWidget *asker,
+                              forkmesh::market::NativePackageLoginHandler done) {
+            QString name;
+            if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
+                store->findLogins(url, requester, asker, std::move(done));
+            else
+                done({false, false, QStringLiteral("No password manager is installed."), {}});
+        };
+    }
+    if (permissionIds.contains(QStringLiteral("repository.read")) ||
+        permissionIds.contains(QStringLiteral("repository.activity.read"))) {
+        host.repositories = [this] { return nativePackageRepositories(); };
+        host.currentRepository = [this] { return currentNativePackageRepository(); };
+        host.openRepositoryFile =
+            [this](const forkmesh::market::NativePackageRepository &repository,
+                   const QString &path, int line) {
+                openNativePackageRepositoryFile(repository, path, line);
+            };
+    }
+    host.flashMessage = [this](const QString &text, bool error) {
+        if (error)
+            flashMessage(text, true, QString(),
+                         forkmesh::kLocalOperationNoticeKind);
+        else
+            flashMessage(text);
+    };
+    host.reportError = [this](const QString &text) { flashMessage(text, true); };
+    host.logActivity = [this](const QString &text) { logSystem(text); };
+    host.openReference = [this](const QString &href) { openReferenceLink(href); };
+    host.showPage = [this, id] { showNativePackage(id); };
+    const bool tasksRead =
+        permissionIds.contains(QStringLiteral("organization.tasks.read"));
+    const bool tasksWrite =
+        permissionIds.contains(QStringLiteral("organization.tasks.write"));
+    host.windowCommand = [this, tasksWrite](const QString &command,
+                                            const QJsonObject &args) {
+        if (command.startsWith(QLatin1String("task.")) &&
+            command != QLatin1String("task.composeFromText") && !tasksWrite)
+            return false;
+        return runWindowCommand(command, args);
+    };
+    host.notify = [this](const QString &title, const QString &body,
+                         bool fileLocally) {
+        postNotification(title, body, false, QString(), QString(), false,
+                         fileLocally);
+    };
+    host.recordQuietNotification = [this](const QString &title,
+                                          const QString &body) {
+        AppNotification item;
+        item.title = title;
+        item.body = body;
+        item.kind = QStringLiteral("desktop");
+        item.quiet = true;
+        recordNotification(item);
+    };
+    host.setting = [this, id](const QString &key, const QVariant &fallback) {
+        return m_packageRegistry
+                   ? m_packageRegistry->packageSetting(id, key, fallback)
+                   : fallback;
+    };
+    host.setSetting = [this, id](const QString &key, const QVariant &value) {
+        if (m_packageRegistry)
+            m_packageRegistry->setPackageSetting(id, key, value);
+    };
+    host.attachPackageMenu = [this, entrypoint = contributionCopy.entrypoint](
+                                 QWidget *widget) {
+        attachPackageRailMenu(qobject_cast<QPushButton *>(widget), entrypoint);
+    };
+    if (!contributionCopy.apiPrefix.isEmpty()) {
+        host.accountApiUrl = [this, id, contributionCopy](const QString &path) {
+            return nativePackageAccountUrl(id, contributionCopy, path);
+        };
+        host.accountSessionToken = [this](const QUrl &url) {
+            const QUrl base = catalogApiUrl();
+            if (url.scheme() != base.scheme() || url.host() != base.host() ||
+                url.port() != base.port())
+                return QString();
+            return accountSessionTokenForUrl(url);
+        };
+        host.signProof = [this, contributionCopy](
+                             const QString &proof, const QString &resource,
+                             QString *signer, QString *ts, QString *sig) {
+            if (proof.isEmpty() ||
+                (proof != contributionCopy.requestProof &&
+                 !contributionCopy.resourceProofs.contains(proof)))
+                return false;
+            if (!m_profileIdentity.isValid())
+                m_profileIdentity.load();
+            return signOrgTaskProof(proof, resource, signer, ts, sig);
+        };
+    }
+    host.askAgentWith = [this](const QString &provider, const QString &prompt,
+                               int timeoutMs,
+                               forkmesh::market::NativePackageAgentReplyHandler done) {
+        return askNativePackageAgentWith(provider, prompt, timeoutMs,
+                                         std::move(done));
+    };
+    host.chromeSlotChanged = [this, id] { placeNativePackageChrome(id); };
+    host.chromeSlotAt = [this](const QPoint &globalPos) {
+        return nativePackageChromeSlotAt(globalPos);
+    };
+    host.windowQuery = [this, tasksRead](const QString &command,
+                                         const QJsonObject &args) {
+        if (command.startsWith(QLatin1String("task.")) && !tasksRead)
+            return QJsonValue();
+        return runWindowQuery(command, args);
+    };
+    host.windowRequest = [this, tasksWrite](
+                             const QString &command, const QJsonObject &args,
+                             forkmesh::market::NativePackageReplyHandler done) {
+        if (command.startsWith(QLatin1String("task.")) && !tasksWrite) {
+            done(false, {}, QStringLiteral("This package may not change tasks."));
+            return;
+        }
+        if (!runWindowRequest(command, args, done))
+            done(false, {}, QStringLiteral("This window does not offer %1.")
+                                .arg(command));
+    };
+    host.accountPicture = [this](const QString &account) {
+        return chatSenderAvatarSource(QString(), account);
+    };
+    return host;
+}
+
 void MainWindow::syncNativePackagePages()
 {
-    if (!m_packageRegistry || !m_packageRegistry->isReady() ||
+    if (m_nativePackagePagesDeferred || !m_packageRegistry || !m_packageRegistry->isReady() ||
         !m_sectionStack || !m_appNavigationRailLayout || !m_navGroup)
         return;
 
     QList<QPair<QString, QString>> desired;
     for (const PackageManifest &manifest : m_packageRegistry->packages()) {
-        if (!m_packageRegistry->isInstalledHere(manifest.id) ||
-            !forkmesh::market::nativePackageContribution(
-                manifest.desktopEntrypoint, manifest.type))
+        if (!m_packageRegistry->isInstalledHere(manifest.id))
+            continue;
+        const forkmesh::market::NativePackageContribution *contribution =
+            forkmesh::market::nativePackageContribution(
+                manifest.desktopEntrypoint, manifest.type);
+        if (!contribution ||
+            (!contribution->factory && contribution->browserPath.isEmpty()))
             continue;
         desired.append({manifest.id, manifest.desktopEntrypoint});
     }
-    bool unchanged = desired.size() == m_nativePackagePages.size();
-    for (int index = 0; unchanged && index < desired.size(); ++index) {
-        unchanged = m_nativePackagePages.at(index).id == desired.at(index).first &&
-                    m_nativePackagePages.at(index).entrypoint ==
-                        desired.at(index).second;
-    }
-    if (unchanged)
+    if (desired == m_nativePackagePagesWanted)
         return;
 
     bool removingCurrent = false;
@@ -4560,16 +4818,57 @@ void MainWindow::syncNativePackagePages()
         }
     }
     m_nativePackagePages.clear();
+    m_nativePackagePagesWanted = desired;
+    const quint64 generation = ++m_nativePackagePagesGeneration;
+    if (m_staggerNativePackagePages) {
+        buildNextNativePackagePage(generation, 0);
+        return;
+    }
+    for (const auto &[id, entrypoint] : desired)
+        addNativePackagePage(id, entrypoint);
+    finishNativePackagePages();
+}
 
-    for (const auto &[id, entrypoint] : desired) {
+void MainWindow::buildDeferredNativePackagePages()
+{
+    if (!m_nativePackagePagesDeferred)
+        return;
+    m_nativePackagePagesDeferred = false;
+    m_staggerNativePackagePages = true;
+    syncNativePackagePages();
+    m_staggerNativePackagePages = false;
+}
+
+void MainWindow::buildNextNativePackagePage(quint64 generation, int index)
+{
+    if (generation != m_nativePackagePagesGeneration)
+        return;
+    if (index >= m_nativePackagePagesWanted.size()) {
+        forkmesh::logStartupTrace(
+            QStringLiteral("post-paint: %1 installed package pages built")
+                .arg(m_nativePackagePages.size()));
+        return;
+    }
+    const auto [id, entrypoint] = m_nativePackagePagesWanted.at(index);
+    addNativePackagePage(id, entrypoint);
+    finishNativePackagePages();
+    QTimer::singleShot(0, this, [this, generation, index] {
+        buildNextNativePackagePage(generation, index + 1);
+    });
+}
+
+void MainWindow::addNativePackagePage(const QString &id,
+                                      const QString &entrypoint)
+{
+    {
         const PackageManifest *manifest = m_packageRegistry->package(id);
         if (!manifest)
-            continue;
+            return;
         const forkmesh::market::NativePackageContribution *contribution =
             forkmesh::market::nativePackageContribution(
                 entrypoint, manifest->type);
         if (!contribution)
-            continue;
+            return;
         const forkmesh::market::NativePackageContribution contributionCopy =
             *contribution;
         if (!contribution->browserPath.isEmpty()) {
@@ -4587,169 +4886,14 @@ void MainWindow::syncNativePackagePages()
                     [this, id] { openNativePackageLink(id); });
             attachPackageRailMenu(link, entrypoint);
             m_nativePackagePages.append({id, entrypoint, link, nullptr});
-            continue;
+            return;
         }
-        QStringList permissionIds;
-        for (const forkmesh::market::PackagePermission &permission :
-             manifest->permissions)
-            permissionIds.append(permission.id);
-        forkmesh::market::NativePackageHost host{
-            manifest->id,
-            manifest->name,
-            manifest->type,
-            manifest->version,
-            permissionIds,
-            [this, id, contributionCopy](
-                const QByteArray &method, const QString &path,
-                const QJsonObject &body,
-                forkmesh::market::NativePackageReplyHandler handler) {
-                requestNativePackage(id, contributionCopy, method, path, body,
-                                     std::move(handler));
-            },
-            m_networkAccess,
-            [this] { nativePackageSearchIndexChanged(); },
-            [this] {
-                refreshChatUserDirectory();
-                return ledgerRecipientCandidates();
-            },
-            [this] { updateQuickAddEnterTarget(); },
-            [this, id] { syncNativePackageBadge(id); },
-            [this] { return m_isAdmin; },
-            [this](forkmesh::market::NativePackageUserRecordsHandler done) {
-                fetchNativePackageUserRecords(std::move(done));
-            },
-            [this] { return nativePackageAgentName(); },
-            [this](const QString &prompt,
-                   forkmesh::market::NativePackageAgentReplyHandler done) {
-                askNativePackageAgent(prompt, std::move(done));
-            },
-            [this] { schedulePackageRailRefresh(); },
-            [this] { return nativePackageSpecialAgents(); },
-            [this](const QString &agentId, const QString &action,
-                   const QString &text,
-                   forkmesh::market::NativePackageSpecialAgentActionHandler done) {
-                runNativePackageSpecialAgentAction(agentId, action, text,
-                                                   std::move(done));
-            },
-        };
-        if (!permissionIds.contains(QStringLiteral("desktop.agents.run"))) {
-            host.specialAgents = nullptr;
-            host.specialAgentAction = nullptr;
-        }
-        if (permissionIds.contains(QStringLiteral("desktop.workflows.run"))) {
-            host.repositoryWorkflows = [this] { return nativePackageRepositoryWorkflows(); };
-            host.repositoryWorkflowAction =
-                [this](const QString &repo, const QString &workflowId, const QString &action,
-                       const QJsonObject &payload, forkmesh::market::NativePackageReplyHandler done) {
-                    runNativePackageRepositoryWorkflowAction(repo, workflowId, action, payload,
-                                                             std::move(done));
-                };
-        }
-        host.accountName = [this] {
-            return AccountCapability::normalizedAccount(m_accountName);
-        };
-        host.openDirectMessage = [this](const QString &account) {
-            const QString name = account.trimmed().toLower();
-            if (forkmesh::ui::isValidNodeName(name))
-                startDirectMessageWith(name, QString(), QString());
-        };
-        host.openUserProfile = [this](const QString &account) {
-            const QString name = account.trimmed().toLower();
-            if (!forkmesh::ui::isValidNodeName(name))
-                return;
-            MemberInfo member;
-            member.id = QStringLiteral("user:") + name;
-            member.name = name;
-            member.nodeName = name;
-            member.ownerUser = name;
-            member.accountKind = QStringLiteral("user");
-            showChatUserProfile(member, {});
-        };
-        if (permissionIds.contains(QStringLiteral("chat.messages.share"))) {
-            host.chatTargets = [this] {
-                QList<forkmesh::market::NativePackageChatTarget> targets;
-                if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
-                    return targets;
-                QStringList seen;
-                const QStringList channels = m_officeChannelMirror->conversations();
-                const QStringList direct = m_officeChannelMirror->directConversations();
-                for (const QStringList &group : {channels, direct}) {
-                    for (const QString &conversation : group) {
-                        if (seen.contains(conversation) ||
-                            !m_officeChannelMirror->canSend(conversation))
-                            continue;
-                        seen.append(conversation);
-                        targets.append({conversation, chatConversationLabel(conversation),
-                                        forkmesh::office::isDirectOfficeConversation(conversation)});
-                    }
-                }
-                return targets;
-            };
-            host.sendChatMessage = [this](const QString &conversation, const QString &text) {
-                return m_officeChannelMirror && m_officeChannelMirror->isActive() &&
-                       m_officeChannelMirror->sendMessage(conversation, text);
-            };
-        }
-        host.openNetworkShare = [this](const QString &url, bool guest) {
-            openNetworkShareLocation(url, guest);
-        };
-        host.openWebPage = [this](const QString &path) {
-            const QUrl url = forkmesh::market::nativePackageWebPageUrl(
-                catalogApiUrl(), path);
-            if (!url.isValid()) {
-                flashMessage(QStringLiteral(
-                    "That page cannot be opened from here."));
-                return;
-            }
-            QDesktopServices::openUrl(url);
-        };
-        host.publicPageUrl = [this](const QString &path) {
-            return forkmesh::market::nativePackagePublicPageUrl(catalogApiUrl(), path)
-                .toString(QUrl::FullyEncoded);
-        };
-        if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
-            host.agentUsagePage = [this](QWidget *parent) {
-                return buildAgentUsagePage(parent);
-            };
-        if (permissionIds.contains(QStringLiteral("desktop.logins.use"))) {
-            const QString requester = manifest->name;
-            host.loginStoreName = [this] {
-                QString name;
-                return nativeLoginStore(&name) ? name : QString();
-            };
-            host.saveLogin = [this, requester](
-                                 const forkmesh::market::NativePackageLogin &login,
-                                 QWidget *asker,
-                                 forkmesh::market::NativePackageLoginHandler done) {
-                QString name;
-                if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
-                    store->saveLogin(login, requester, asker, std::move(done));
-                else
-                    done({false, false, QStringLiteral("No password manager is installed."), {}});
-            };
-            host.findLogins = [this, requester](
-                                  const QString &url, QWidget *asker,
-                                  forkmesh::market::NativePackageLoginHandler done) {
-                QString name;
-                if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
-                    store->findLogins(url, requester, asker, std::move(done));
-                else
-                    done({false, false, QStringLiteral("No password manager is installed."), {}});
-            };
-        }
-        if (permissionIds.contains(QStringLiteral("repository.read"))) {
-            host.repositories = [this] { return nativePackageRepositories(); };
-            host.currentRepository = [this] { return currentNativePackageRepository(); };
-            host.openRepositoryFile =
-                [this](const forkmesh::market::NativePackageRepository &repository,
-                       const QString &path, int line) {
-                    openNativePackageRepositoryFile(repository, path, line);
-                };
-        }
+        const forkmesh::market::NativePackageHost host =
+            nativePackageHost(*manifest, contributionCopy);
         forkmesh::market::NativePackageWidget *widget =
             contribution->factory(host, m_sectionStack);
         if (!widget)
-            continue;
+            return;
         connect(this, &MainWindow::chatUserDirectoryChanged, widget,
                 [widget] { widget->userDirectoryChanged(); });
         widget->setProperty("forkmeshPackageId", id);
@@ -4778,6 +4922,10 @@ void MainWindow::syncNativePackagePages()
                 preparePackagePage(widget);
             });
     }
+}
+
+void MainWindow::finishNativePackagePages()
+{
     applyRailCaptionPreference(); // the new package pages joined the rail
     applyRailOrder();
     schedulePackageRailRefresh();
@@ -4969,8 +5117,7 @@ void MainWindow::askNativePackageAgent(
     const QString &prompt,
     forkmesh::market::NativePackageAgentReplyHandler done)
 {
-    using namespace forkmesh::ui;
-    const QString provider = defaultAgentProvider();
+    const QString provider = forkmesh::ui::defaultAgentProvider();
     if (nativePackageAgentName().isEmpty()) {
         if (done)
             done(QString(), QStringLiteral(
@@ -4979,7 +5126,22 @@ void MainWindow::askNativePackageAgent(
                                 .arg(provider));
         return;
     }
+    askNativePackageAgentWith(provider, prompt, 300000, std::move(done));
+}
+
+std::function<void()> MainWindow::askNativePackageAgentWith(
+    const QString &provider, const QString &prompt, int timeoutMs,
+    forkmesh::market::NativePackageAgentReplyHandler done)
+{
+    using namespace forkmesh::ui;
     const bool claude = agentIsClaudeProvider(provider);
+    if (!claude && !agentIsCodexProvider(provider) && !agentUsesOpenAiKey(provider)) {
+        if (done)
+            done(QString(), QStringLiteral(
+                "%1 cannot write text for a package. Pick Claude Code or Codex.")
+                                .arg(provider));
+        return {};
+    }
     AgentRuntimeSession *session = claude
         ? static_cast<AgentRuntimeSession *>(new ClaudeStreamSession(this))
         : static_cast<AgentRuntimeSession *>(new CodexAppServerSession(this));
@@ -5027,7 +5189,7 @@ void MainWindow::askNativePackageAgent(
         (*finish)(QString(), QStringLiteral(
             "The agent took too long to answer. Try again in a moment."));
     });
-    timeout->start(300000);
+    timeout->start(timeoutMs);
     const QString workdir = workingClientDir();
     if (claude) {
         QString model = QSettings().value(kClaudeCodeModelSetting).toString().trimmed();
@@ -5056,6 +5218,15 @@ void MainWindow::askNativePackageAgent(
             workdir, env, prompt, QString(), model, QStringLiteral("Plan"),
             QStringLiteral("low"));
     }
+    return [guard, handled] {
+        if (*handled)
+            return;
+        *handled = true;
+        if (guard) {
+            guard->stop();
+            guard->deleteLater();
+        }
+    };
 }
 
 QJsonArray MainWindow::nativePackageSpecialAgents()

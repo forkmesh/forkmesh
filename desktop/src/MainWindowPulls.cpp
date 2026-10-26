@@ -5603,7 +5603,8 @@ void MainWindow::renderPullThread(const PullRequest &pr)
                            .arg(ev.id.isEmpty() ? QString::number(ev.ts) : ev.id);
         const bool ownComment =
             !ev.id.isEmpty() && pr.status == QLatin1String("open") &&
-            PullStore::isEditableComment(ev) && commentStore.authoredByThisNode(ev);
+            PullStore::isEditableComment(ev) && commentStore.authoredByThisNode(ev) &&
+            !(PullStore::reviewKeepsVerdict(ev) && ev.body.trimmed().isEmpty());
         std::function<void()> onDelete;
         QList<QPair<QString, std::function<void()>>> commentActions;
         if (ownComment) {
@@ -5615,8 +5616,22 @@ void MainWindow::renderPullThread(const PullRequest &pr)
                  [this, number, target, original] {
                      editPullComment(number, target, original);
                  }});
-            if (ev.type != QLatin1String("review"))
-                onDelete = [this, number, target] { deletePullComment(number, target); };
+            const QString question =
+                PullStore::reviewKeepsVerdict(ev)
+                    ? QStringLiteral("Delete this review's text? Your %1 stays on the "
+                                     "pull request, and its Git history remains "
+                                     "recoverable.")
+                          .arg(ev.state == QLatin1String("approved")
+                                   ? QStringLiteral("approval")
+                                   : QStringLiteral("change request"))
+                    : QStringLiteral("Delete this %1? Its Git history remains "
+                                     "recoverable.")
+                          .arg(ev.type == QLatin1String("review")
+                                   ? QStringLiteral("review")
+                                   : QStringLiteral("comment"));
+            onDelete = [this, number, target, question] {
+                deletePullComment(number, target, question);
+            };
         }
         entries.append(
             {ev.ts, entryOrder++,
@@ -6708,12 +6723,14 @@ void MainWindow::editPullComment(int number, const QString &target,
     showPull(number);
 }
 
-void MainWindow::deletePullComment(int number, const QString &target)
+void MainWindow::deletePullComment(int number, const QString &target,
+                                   const QString &question)
 {
     if (QMessageBox::question(this, QStringLiteral("Delete comment"),
-                              QStringLiteral("Delete this comment? Its Git history "
-                                             "remains recoverable.")) !=
-        QMessageBox::Yes)
+                              question.isEmpty()
+                                  ? QStringLiteral("Delete this comment? Its Git "
+                                                   "history remains recoverable.")
+                                  : question) != QMessageBox::Yes)
         return;
     PullStore store = pullStoreForCurrentRepo();
     QString error;

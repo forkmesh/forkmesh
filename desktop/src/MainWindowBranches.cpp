@@ -6022,7 +6022,9 @@ void MainWindow::refreshBranchLinks()
                 ids.append(id);
         }
     };
-    for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+    const QJsonArray catalog =
+        m_organizationTaskStore ? m_organizationTaskStore->tasks() : QJsonArray();
+    for (const QJsonValue &value : catalog) {
         const QJsonObject task = value.toObject();
         const QString id = task.value(QStringLiteral("id")).toString();
         if (id.isEmpty())

@@ -6,7 +6,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "desktop/src"
 REPO_DETAIL = (SRC / "MainWindowRepoDetail.cpp").read_text(encoding="utf-8")
 SHARED = (SRC / "MainWindowShared.cpp").read_text(encoding="utf-8")
-CALENDAR = (SRC / "MainWindowCalendar.cpp").read_text(encoding="utf-8")
+CALENDAR = (
+    ROOT / "marketplace/packages/calendar/content/desktop/CalendarPage.cpp"
+).read_text(encoding="utf-8")
 PULLS = (SRC / "MainWindowPulls.cpp").read_text(encoding="utf-8")
 SOURCE_CONTROL = (SRC / "MainWindowSourceControl.cpp").read_text(encoding="utf-8")
 HEADER = (SRC / "MainWindow.h").read_text(encoding="utf-8")
@@ -49,11 +51,11 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def _without_workers(body: str) -> str:
+def _without_workers(body: str, marker: str = "runOffThread<") -> str:
     out = []
     rest = body
-    while "runOffThread<" in rest:
-        head, tail = rest.split("runOffThread<", 1)
+    while marker in rest:
+        head, tail = rest.split(marker, 1)
         out.append(head)
         depth = 0
         at = tail.index("{")
@@ -237,10 +239,11 @@ def test_line_jumps_wait_for_the_file_tab():
 
 
 def test_calendar_repository_scan_runs_on_a_worker():
-    scan = _body(CALENDAR, "void MainWindow::scanRepositoryCalendarSlice()")
-    assert "runOffThread<QList<QJsonArray>>(" in scan
+    scan = _body(CALENDAR, "void CalendarPage::scanRepositoryCalendarSlice()")
+    assert "watcher->setFuture(QtConcurrent::run(" in scan
     assert "request != m_repositoryCalendarRequest" in scan
-    _assert_no_gui_git(_without_workers(scan), "scanRepositoryCalendarSlice")
+    _assert_no_gui_git(_without_workers(scan, "QtConcurrent::run("),
+                       "scanRepositoryCalendarSlice")
 
 
 def test_diff_image_previews_never_wait_for_git_on_the_gui_thread():

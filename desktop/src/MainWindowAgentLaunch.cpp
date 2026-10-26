@@ -1726,7 +1726,7 @@ void MainWindow::deleteAgentSessionOrgTask(
                           .arg(force ? QStringLiteral(" (forced past its busy "
                                                       "guard)")
                                      : QString()));
-            if (m_organizationTasksLoaded)
+            if (m_organizationTaskStore && m_organizationTaskStore->loaded())
                 refreshOrganizationTasks();
             if (trace)
                 trace->taskStatus = taskAlreadyAbsent ? QStringLiteral("absent")
@@ -2135,7 +2135,7 @@ void MainWindow::purgeSessionState(int sessionId)
         m_streamRaw.erase(raw);
     }
     m_streamFiles.remove(sessionId);
-    m_streamWorktree.remove(sessionId);
+    retireStreamCwd(m_streamWorktree.take(sessionId));
     m_streamPending.remove(sessionId);
     m_streamSessionInfo.remove(sessionId);
     m_streamAccountId.remove(sessionId);
@@ -2162,6 +2162,7 @@ void MainWindow::purgeSessionState(int sessionId)
     m_sessionInputTokens.remove(sessionId);
     m_sessionTokenFlow.remove(sessionId);
     m_lastAssistantText.remove(sessionId);
+    m_agentTaskTrackers.remove(sessionId);
     m_agentDoneNotified.remove(sessionId);
     m_scannerStates.remove(sessionId);
     m_agentSpinStates.remove(sessionId);
