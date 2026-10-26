@@ -7068,6 +7068,16 @@ void MainWindow::refreshCurrentNetworkTab()
     refreshNetworkTab(tabIndex);
 }
 
+int MainWindow::startupLandingSection() const
+{
+    if (m_repoDetailIndex >= 0 || m_pendingRestoreRepoIndex >= 0)
+        return 0;
+    for (const RepoMenuEntry &entry : std::as_const(m_repoMenuEntries))
+        if (entry.index >= 0)
+            return 0;
+    return kHomeGridSectionIndex;
+}
+
 void MainWindow::clearRepoDetail()
 {
     m_repoDetailIndex = -1;

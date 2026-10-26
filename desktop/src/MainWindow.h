@@ -1752,6 +1752,11 @@ public:
     bool testMemorySampling() const { return m_memoryTimer && m_memoryTimer->isActive(); }
     QString testMemoryReport() const { return m_memoryLastReport; }
     void testShowHomeGridSection() { showSection(kHomeGridSectionIndex); }
+    bool testStartupLandsOnHome()
+    {
+        refreshRepositoryList();
+        return startupLandingSection() == kHomeGridSectionIndex;
+    }
     HomeBoard *testHomeGridBoard() const { return m_homeGridBoard; }
     QPushButton *testHomeGridNavButton() const { return m_homeGridNavButton; }
     QVector<HomeGroup> testHomeGridGroups() const;
@@ -10186,6 +10191,7 @@ private:
     void uninstallForkMesh();
     void rebuildAndRelaunch();
     void showSection(int index);
+    int startupLandingSection() const;
     void updateHomeStats();
     QString selfNodeStats() const; // inline stats line for your own node
     void attachBackend(ChatBackend *backend);

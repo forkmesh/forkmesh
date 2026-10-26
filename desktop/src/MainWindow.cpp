@@ -1327,6 +1327,8 @@ void MainWindow::runDeferredStartup()
         } else {
             logStartup(QStringLiteral(
                 "  repository restore skipped: no saved or available repository"));
+            if (m_sectionStack && m_sectionStack->currentIndex() == 0)
+                showSection(kHomeGridSectionIndex);
         }
     }
     m_pendingRestoreRepoIndex = -1;

@@ -204,6 +204,11 @@ Everything is in `desktop/`.
   (`HomeBoard::setTileMenu`, `MainWindow::addHomeTilePackageActions`): the
   tile's rail button carries the package entrypoint, so Home offers exactly
   the plugins the rail does.
+- **Startup landing.** The app opens on the last repository (or the first one
+  available). With no repository to open it opens on Home
+  (`startupLandingSection`), never on an empty "Select a repository" page.
+  The repository section's placeholder before the detail is built is a blank
+  surface, so the moment before the restore runs shows no prompt.
 - **Packages.** Many features are Market packages hosted in the desktop and
   can be turned off per project; hiding a package hides its rail button, tabs
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).
