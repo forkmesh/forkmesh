@@ -2622,6 +2622,7 @@ async function copyWorldText(value) {
     } catch (_) {}
   }
   const textarea = document.createElement("textarea");
+  textarea.name = "world-copy-text";
   textarea.value = text;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
@@ -5445,7 +5446,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
       ([key, label]) => `
         <label class="world-privacy-option">
           <span>${escapeHTML(label)}</span>
-          <input
+          <input name="world-privacy"
             type="checkbox"
             data-world-privacy="${escapeHTML(key)}"
             ${settings.privacy[key] ? "checked" : ""}
@@ -5774,10 +5775,10 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <div class="world-gym-weight">
             <label>
               <span>Weight</span>
-              <input type="range" min="45" max="1200" step="5" value="135" data-world-gym-weight-range />
+              <input name="world-gym-weight-range" type="range" min="45" max="1200" step="5" value="135" data-world-gym-weight-range />
             </label>
             <label>
-              <input type="number" min="45" max="1200" step="5" value="135" data-world-gym-weight-number />
+              <input name="world-gym-weight-number" type="number" min="45" max="1200" step="5" value="135" data-world-gym-weight-number />
               <span>lb</span>
             </label>
           </div>
@@ -5934,7 +5935,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-hud-agent" data-world-agent-controls hidden>
               <label class="world-hud-chip world-hud-chip--repo" title="Repository the agent works in">
                 <span class="world-visually-hidden">Repository</span>
-                <select data-world-agent-repo aria-label="Repository"></select>
+                <select name="world-agent-repo" data-world-agent-repo aria-label="Repository"></select>
               </label>
               <div class="world-hud-model" data-world-agent-model-picker>
                 <button type="button" class="world-hud-model-button" data-world-agent-model data-value="" aria-haspopup="listbox" aria-expanded="false" aria-controls="world-agent-model-menu" title="Model"><span data-world-agent-model-label>Opus 5.5</span></button>
@@ -5975,7 +5976,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <strong>Swing speed</strong>
             <output data-world-swing-speed-output>${WORLD_SWING_SPEED_DEFAULT}%</output>
           </span>
-          <input
+          <input name="world-swing-speed"
             type="range"
             min="${WORLD_SWING_SPEED_MIN}"
             max="${WORLD_SWING_SPEED_MAX}"
@@ -6101,7 +6102,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <p class="world-eyebrow">PROGRESS CHECK-IN</p>
           <h2 id="world-office-task-checkin-title">How is it going?</h2>
           <p data-world-office-task-checkin-copy>How is your active task going?</p>
-          <textarea
+          <textarea name="world-office-task-checkin-note"
             data-world-office-task-checkin-note
             maxlength="500"
             rows="2"
@@ -6153,14 +6154,14 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-office-composer">
               <label class="world-office-attach" aria-label="Attach image or document">
                 <span aria-hidden="true">＋</span>
-                <input
+                <input name="world-office-attachment-input"
                   type="file"
                   data-world-office-attachment-input
                   aria-label="Attach image or document"
                   accept="image/*,.pdf,.txt,.md,.csv,.json,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                 >
               </label>
-              <textarea
+              <textarea name="world-office-input"
                 data-world-office-input
                 rows="1"
                 maxlength="16000"
@@ -6306,23 +6307,23 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <span class="world-work-quick-icon" aria-hidden="true">＋</span>
               <label class="world-work-quick-title">
                 <span class="world-visually-hidden">Task title</span>
-                <input type="text" maxlength="160" required placeholder="Quick add a task…" aria-label="Task title" data-world-work-task-title />
+                <input name="world-work-task-title" type="text" maxlength="160" required placeholder="Quick add a task…" aria-label="Task title" data-world-work-task-title />
               </label>
               <label>
                 <span class="world-visually-hidden">Assign</span>
-                <select data-world-work-task-assignee aria-label="Task assignee"></select>
+                <select name="world-work-task-assignee" data-world-work-task-assignee aria-label="Task assignee"></select>
               </label>
               <label>
                 <span class="world-visually-hidden">Department</span>
-                <select data-world-work-task-department aria-label="Task department"></select>
+                <select name="world-work-task-department" data-world-work-task-department aria-label="Task department"></select>
               </label>
               <label class="world-work-quick-repository">
                 <span class="world-visually-hidden">Repository</span>
-                <input type="text" maxlength="201" placeholder="owner/repository" aria-label="Repository, required for agent work" data-world-work-task-repository />
+                <input name="world-work-task-repository" type="text" maxlength="201" placeholder="owner/repository" aria-label="Repository, required for agent work" data-world-work-task-repository />
               </label>
               <label data-world-work-task-priority-wrap hidden>
                 <span class="world-visually-hidden">Priority</span>
-                <input type="number" min="1" max="99" value="50"
+                <input name="world-work-task-priority" type="number" min="1" max="99" value="50"
                   data-world-work-task-priority aria-label="Global task priority, 1 highest and 99 lowest" />
               </label>
               <button type="submit" data-world-work-task-submit><span aria-hidden="true">＋</span> Add</button>
@@ -6343,11 +6344,11 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   </div>
                   <label>
                     <span class="world-visually-hidden">Search tasks</span>
-                    <input type="search" placeholder="Search tasks…" aria-label="Search tasks" data-world-task-search />
+                    <input name="world-task-search" type="search" placeholder="Search tasks…" aria-label="Search tasks" data-world-task-search />
                   </label>
                   <label>
                     <span class="world-visually-hidden">Filter tasks</span>
-                    <select aria-label="Filter tasks" data-world-task-filter>
+                    <select name="world-task-filter" aria-label="Filter tasks" data-world-task-filter>
                       <option value="all">All statuses</option>
                       <option value="active">Running</option>
                       <option value="queued">Queued</option>
@@ -6359,7 +6360,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   </label>
                   <label>
                     <span class="world-visually-hidden">Sort tasks</span>
-                    <select aria-label="Sort tasks" data-world-task-sort>
+                    <select name="world-task-sort" aria-label="Sort tasks" data-world-task-sort>
                       <option value="priority">Priority</option>
                       <option value="status">Status</option>
                       <option value="updated">Recently updated</option>
@@ -6375,7 +6376,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   <button type="button" data-world-task-refresh aria-label="Refresh tasks" title="Refresh tasks">↻</button>
                   <label class="world-task-batch-size">
                     <span>Bot batch</span>
-                    <input type="number" min="1" max="50" value="10"
+                    <input name="world-task-batch-size" type="number" min="1" max="50" value="10"
                       data-world-task-batch-size aria-label="Maximum tasks to send to the Bot" />
                   </label>
                   <button type="button" data-world-task-batch-send>Send to Bot</button>
@@ -6437,7 +6438,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               </p>
               <label class="world-privacy-option">
                 <span>Show floating debug pill over the world</span>
-                <input
+                <input name="world-debug-panel"
                   type="checkbox"
                   data-world-debug-panel
                   ${settings.debugPanel ? "checked" : ""}
@@ -6604,7 +6605,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   settings.lightLevel,
                 )}%</output>
               </span>
-              <input
+              <input name="world-light-level"
                 type="range"
                 min="${WORLD_LIGHT_LEVEL_MIN}"
                 max="${WORLD_LIGHT_LEVEL_MAX}"
@@ -6625,7 +6626,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   settings.moveSpeed,
                 )}%</output>
               </span>
-              <input
+              <input name="world-move-speed"
                 type="range"
                 min="${WORLD_MOVE_SPEED_MIN}"
                 max="${WORLD_MOVE_SPEED_MAX}"
@@ -6651,13 +6652,13 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <legend>Public avatar badge</legend>
             <label class="world-field">
               <span>Availability</span>
-              <select data-world-availability>${availabilityOptions}</select>
+              <select name="world-availability" data-world-availability>${availabilityOptions}</select>
             </label>
             <div class="world-status-editor">
               <div class="world-status-fields">
                 <label class="world-field">
                   <span>Emoji status</span>
-                  <input
+                  <input name="world-status-emoji"
                     type="text"
                     inputmode="text"
                     maxlength="48"
@@ -6671,7 +6672,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 </label>
                 <label class="world-field">
                   <span>One-word note <small>optional</small></span>
-                  <input
+                  <input name="world-status-note"
                     type="text"
                     maxlength="${WORLD_STATUS_NOTE_MAX}"
                     autocomplete="off"
@@ -6686,7 +6687,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 <summary>Choose from the Unicode emoji picker</summary>
                 <label class="world-field world-emoji-category">
                   <span>Category</span>
-                  <select data-world-emoji-category>${emojiCategoryOptions}</select>
+                  <select name="world-emoji-category" data-world-emoji-category>${emojiCategoryOptions}</select>
                 </label>
                 ${emojiCategoryPanels}
               </details>
@@ -6713,7 +6714,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             </div>
             <label class="world-field">
               <span>Home / office door</span>
-              <select data-world-public-door>
+              <select name="world-public-door" data-world-public-door>
                 <option value="knock" ${settings.publicDoor === "knock" ? "selected" : ""}>Visitors knock first</option>
                 <option value="open" ${settings.publicDoor === "open" ? "selected" : ""}>Public lobby open</option>
                 <option value="closed" ${settings.publicDoor === "closed" ? "selected" : ""}>Closed</option>
@@ -6735,7 +6736,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-outfit-grid">${outfitSwatches}</div>
             <label class="world-privacy-option">
               <span>Wear my account avatar photo as my face</span>
-              <input
+              <input name="world-face-image"
                 type="checkbox"
                 data-world-face-image
                 ${settings.faceImage ? "checked" : ""}
@@ -6744,7 +6745,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             </label>
             <label class="world-privacy-option">
               <span>Show the Genie spider</span>
-              <input
+              <input name="world-genie-spider"
                 type="checkbox"
                 data-world-genie-spider
                 ${worldGenieSpiderShown() ? "checked" : ""}
@@ -6752,7 +6753,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             </label>
             <label class="world-avatar-upload">
               <span>Change and save avatar</span>
-              <input
+              <input name="world-avatar-upload"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 data-world-avatar-upload
@@ -12873,7 +12874,7 @@ class ForkMeshWorld extends HTMLElement {
             </p>
             <label class="world-field">
               <span>Issue title</span>
-              <input
+              <input name="world-fediverse-title"
                 type="text"
                 maxlength="240"
                 data-world-fediverse-title
@@ -12882,7 +12883,7 @@ class ForkMeshWorld extends HTMLElement {
             </label>
             <label class="world-field">
               <span>Issue body</span>
-              <textarea
+              <textarea name="world-fediverse-body"
                 rows="9"
                 maxlength="8192"
                 data-world-fediverse-body
@@ -12890,11 +12891,11 @@ class ForkMeshWorld extends HTMLElement {
             </label>
             <label class="world-privacy-option">
               <span>I reviewed this public content and authorize a pending issue submission.</span>
-              <input type="checkbox" data-world-fediverse-confirm />
+              <input name="world-fediverse-confirm" type="checkbox" data-world-fediverse-confirm />
             </label>
             <label class="world-privacy-option">
               <span>After owner-node confirmation, publish one public follow-up with the issue backlink.</span>
-              <input type="checkbox" data-world-fediverse-followup />
+              <input name="world-fediverse-followup" type="checkbox" data-world-fediverse-followup />
             </label>
             <div class="world-notice">
               <strong>Pending is not created</strong>
@@ -16720,16 +16721,16 @@ class ForkMeshWorld extends HTMLElement {
             <span>${this.adminErrors.length} recent records · administrator only</span>
           </div>
           <div class="world-activity-tools">
-            <label><span class="world-visually-hidden">Search errors</span><input type="search" value="${escapeHTML(
+            <label><span class="world-visually-hidden">Search errors</span><input name="world-activity-search" type="search" value="${escapeHTML(
               this.adminErrorBoardSearch,
             )}" placeholder="Search errors…" data-world-activity-search="errors" /></label>
-            <label><span class="world-visually-hidden">Filter errors</span><select data-world-activity-filter="errors" aria-label="Filter errors">
+            <label><span class="world-visually-hidden">Filter errors</span><select name="world-activity-filter" data-world-activity-filter="errors" aria-label="Filter errors">
               <option value="all"${filter === "all" ? " selected" : ""}>All errors</option>
               <option value="server"${filter === "server" ? " selected" : ""}>5xx server</option>
               <option value="client"${filter === "client" ? " selected" : ""}>4xx client</option>
               <option value="browser"${filter === "browser" ? " selected" : ""}>Browser</option>
             </select></label>
-            <label><span class="world-visually-hidden">Sort errors</span><select data-world-activity-sort="errors" aria-label="Sort errors">
+            <label><span class="world-visually-hidden">Sort errors</span><select name="world-activity-sort" data-world-activity-sort="errors" aria-label="Sort errors">
               <option value="newest"${this.adminErrorBoardSort === "newest" ? " selected" : ""}>Newest</option>
               <option value="oldest"${this.adminErrorBoardSort === "oldest" ? " selected" : ""}>Oldest</option>
               <option value="status"${this.adminErrorBoardSort === "status" ? " selected" : ""}>Status</option>
@@ -20374,11 +20375,11 @@ class ForkMeshWorld extends HTMLElement {
         <div class="world-reward-form">
           <label>
             <span>Amount (SOL)</span>
-            <input data-world-contribution-amount type="number" min="0.00001" max="100" step="0.00001" value="0.001" inputmode="decimal" />
+            <input name="world-contribution-amount" data-world-contribution-amount type="number" min="0.00001" max="100" step="0.00001" value="0.001" inputmode="decimal" />
           </label>
           <label>
             <span>Distribution choice</span>
-            <select data-world-contribution-mode>
+            <select name="world-contribution-mode" data-world-contribution-mode>
               <option value="trickle">Add to randomized trickle pool</option>
               <option value="instant_all_nodes">Instant intent for all eligible nodes</option>
             </select>
@@ -20408,7 +20409,7 @@ class ForkMeshWorld extends HTMLElement {
                 }
                 <label>
                   <span>Finalized transaction signature</span>
-                  <input data-world-contribution-signature type="text" autocomplete="off" spellcheck="false" placeholder="Paste public Solana signature" />
+                  <input name="world-contribution-signature" data-world-contribution-signature type="text" autocomplete="off" spellcheck="false" placeholder="Paste public Solana signature" />
                 </label>
                 <button type="button" data-world-contribution-confirm>Verify finalized transfer</button>
                 <small>Never paste a private key, seed, or recovery phrase. A reference-bound direct transfer is required; visual particles do not prove payment.</small>
@@ -20441,7 +20442,7 @@ class ForkMeshWorld extends HTMLElement {
                       )} (${remainingHours}h remaining)</span>
                       ${
                         claimable
-                          ? `<label><span>Public self-custodial wallet</span><input data-world-pending-wallet type="text" autocomplete="off" spellcheck="false" placeholder="Solana public address" /></label>
+                          ? `<label><span>Public self-custodial wallet</span><input name="world-pending-wallet" data-world-pending-wallet type="text" autocomplete="off" spellcheck="false" placeholder="Solana public address" /></label>
                              <button type="button" data-world-pending-claim="${escapeHTML(
                                item.rewardId || "",
                              )}">Use this public address</button>`
@@ -21407,16 +21408,16 @@ class ForkMeshWorld extends HTMLElement {
             <span>${session?.sessionToken ? `${unreadCount} unread` : "Sign in for private updates"} · ${globalCount} global</span>
           </div>
           <div class="world-activity-tools">
-            <label><span class="world-visually-hidden">Search pings</span><input type="search" value="${escapeHTML(
+            <label><span class="world-visually-hidden">Search pings</span><input name="world-activity-search" type="search" value="${escapeHTML(
               this.notificationBoardSearch,
             )}" placeholder="Search pings…" data-world-activity-search="notifications" /></label>
-            <label><span class="world-visually-hidden">Filter pings</span><select data-world-activity-filter="notifications" aria-label="Filter pings">
+            <label><span class="world-visually-hidden">Filter pings</span><select name="world-activity-filter" data-world-activity-filter="notifications" aria-label="Filter pings">
               <option value="all"${filter === "all" ? " selected" : ""}>All activity</option>
               <option value="unread"${filter === "unread" ? " selected" : ""}>Unread</option>
               <option value="personal"${filter === "personal" ? " selected" : ""}>Personal</option>
               <option value="global"${filter === "global" ? " selected" : ""}>Global</option>
             </select></label>
-            <label><span class="world-visually-hidden">Sort pings</span><select data-world-activity-sort="notifications" aria-label="Sort pings">
+            <label><span class="world-visually-hidden">Sort pings</span><select name="world-activity-sort" data-world-activity-sort="notifications" aria-label="Sort pings">
               <option value="newest"${this.notificationBoardSort === "newest" ? " selected" : ""}>Newest</option>
               <option value="oldest"${this.notificationBoardSort === "oldest" ? " selected" : ""}>Oldest</option>
               <option value="title"${this.notificationBoardSort === "title" ? " selected" : ""}>Title</option>
@@ -22270,7 +22271,7 @@ class ForkMeshWorld extends HTMLElement {
           ${
             authenticated
               ? `<div class="world-media-form">
-                  <label><span>Shared room</span><select data-world-media-space>
+                  <label><span>Shared room</span><select name="world-media-space" data-world-media-space>
                     ${
                       this.mediaSpaces.length
                         ? this.mediaSpaces
@@ -22286,7 +22287,7 @@ class ForkMeshWorld extends HTMLElement {
                         : `<option value="">No active rooms yet</option>`
                     }
                   </select></label>
-                  <label><span>Create a room</span><input type="text" maxlength="80" placeholder="Community listening room" data-world-media-space-name /></label>
+                  <label><span>Create a room</span><input name="world-media-space-name" type="text" maxlength="80" placeholder="Community listening room" data-world-media-space-name /></label>
                   <button type="button" data-world-media-create>Create room</button>
                 </div>`
               : `<div class="world-notice"><strong>Account required</strong><span>Sign in to load shared rooms, playlists, schedules, and moderation roles. No room state is stored in this browser.</span></div>`
@@ -22330,7 +22331,7 @@ class ForkMeshWorld extends HTMLElement {
             </div>
           </div>
           <div class="world-media-form">
-            <label><span>Session type</span><select data-world-media-session ${
+            <label><span>Session type</span><select name="world-media-session" data-world-media-session ${
               canModerate ? "" : "disabled"
             }>
               ${Object.entries(sessionLabels)
@@ -22342,13 +22343,13 @@ class ForkMeshWorld extends HTMLElement {
                 )
                 .join("")}
             </select></label>
-            <label><span>Schedule in your time zone</span><input type="datetime-local" value="${escapeHTML(
+            <label><span>Schedule in your time zone</span><input name="world-media-schedule" type="datetime-local" value="${escapeHTML(
               scheduleValue,
             )}" data-world-media-schedule ${canModerate ? "" : "disabled"} /></label>
           </div>
           <div class="world-media-add">
-            <input type="text" maxlength="80" placeholder="Playlist item title" data-world-media-title />
-            <input type="url" maxlength="500" placeholder="Official HTTPS provider or media page" data-world-media-url />
+            <input name="world-media-title" type="text" maxlength="80" placeholder="Playlist item title" data-world-media-title />
+            <input name="world-media-url" type="url" maxlength="500" placeholder="Official HTTPS provider or media page" data-world-media-url />
             <button type="button" data-world-media-add ${
               canModerate ? "" : "disabled"
             }>Add provider link</button>
@@ -22427,7 +22428,7 @@ class ForkMeshWorld extends HTMLElement {
           ${
             isOwner
               ? `<div class="world-media-add" aria-label="Room moderators">
-                  <input type="text" maxlength="40" placeholder="Registered username" data-world-media-moderator />
+                  <input name="world-media-moderator" type="text" maxlength="40" placeholder="Registered username" data-world-media-moderator />
                   <button type="button" data-world-media-moderator-add>Add moderator</button>
                 </div>
                 <div class="world-media-queue">
@@ -26207,7 +26208,7 @@ class ForkMeshWorld extends HTMLElement {
         <details class="world-filter-panel">
           <summary>Graph filters</summary>
           <div class="world-filter-grid">
-            <label><span>Language</span><select data-world-repo-filter="language"><option value="">All</option>${languages
+            <label><span>Language</span><select name="world-repo-filter" data-world-repo-filter="language"><option value="">All</option>${languages
               .map(
                 (language) =>
                   `<option value="${escapeHTML(language)}">${escapeHTML(
@@ -26215,19 +26216,19 @@ class ForkMeshWorld extends HTMLElement {
                   )}</option>`,
               )
               .join("")}</select></label>
-            <label><span>File type</span><select data-world-repo-filter="type"><option value="">Files + directories</option><option value="file">Files</option><option value="directory">Directories</option></select></label>
-            <label><span>Contributor</span><select data-world-repo-filter="contributor"><option value="">All public commit authors</option>${contributors
+            <label><span>File type</span><select name="world-repo-filter" data-world-repo-filter="type"><option value="">Files + directories</option><option value="file">Files</option><option value="directory">Directories</option></select></label>
+            <label><span>Contributor</span><select name="world-repo-filter" data-world-repo-filter="contributor"><option value="">All public commit authors</option>${contributors
               .map(
                 (name) =>
                   `<option value="${escapeHTML(name)}">${escapeHTML(name)}</option>`,
               )
               .join("")}</select></label>
-            <label><span>Directory</span><input data-world-repo-filter="directory" type="search" placeholder="Path contains…" /></label>
-            <label><span>Minimum size</span><select data-world-repo-filter="size"><option value="0">Any</option><option value="1024">1 KB</option><option value="10240">10 KB</option><option value="102400">100 KB</option></select></label>
-            <label><span>Modification frequency</span><select data-world-repo-filter="frequency"><option value="">All frequencies</option><option value="high">High (10+ recent changes)</option><option value="medium">Medium (3–9)</option><option value="low">Low (1–2)</option><option value="unknown">Unknown</option></select></label>
-            <label><span>Dependency depth</span><select data-world-repo-filter="dependency"><option value="">Any depth</option><option value="0">0 / not mapped</option><option value="1">1</option><option value="2">2</option><option value="3">3+</option></select></label>
-            <label><span>Security findings</span><select data-world-repo-filter="security"><option value="">All commit-matched states</option><option value="unavailable">Unavailable / commit mismatch</option><option value="no-finding">No reported finding</option><option value="finding">Reported finding</option><option value="reviewed">Dismissed after review</option></select></label>
-            <label><span>Test coverage</span><select data-world-repo-filter="coverage"><option value="">All coverage states</option><option value="covered">Covered (80%+)</option><option value="partial">Partial</option><option value="uncovered">Uncovered</option><option value="unknown">Unknown</option></select></label>
+            <label><span>Directory</span><input name="world-repo-filter" data-world-repo-filter="directory" type="search" placeholder="Path contains…" /></label>
+            <label><span>Minimum size</span><select name="world-repo-filter" data-world-repo-filter="size"><option value="0">Any</option><option value="1024">1 KB</option><option value="10240">10 KB</option><option value="102400">100 KB</option></select></label>
+            <label><span>Modification frequency</span><select name="world-repo-filter" data-world-repo-filter="frequency"><option value="">All frequencies</option><option value="high">High (10+ recent changes)</option><option value="medium">Medium (3–9)</option><option value="low">Low (1–2)</option><option value="unknown">Unknown</option></select></label>
+            <label><span>Dependency depth</span><select name="world-repo-filter" data-world-repo-filter="dependency"><option value="">Any depth</option><option value="0">0 / not mapped</option><option value="1">1</option><option value="2">2</option><option value="3">3+</option></select></label>
+            <label><span>Security findings</span><select name="world-repo-filter" data-world-repo-filter="security"><option value="">All commit-matched states</option><option value="unavailable">Unavailable / commit mismatch</option><option value="no-finding">No reported finding</option><option value="finding">Reported finding</option><option value="reviewed">Dismissed after review</option></select></label>
+            <label><span>Test coverage</span><select name="world-repo-filter" data-world-repo-filter="coverage"><option value="">All coverage states</option><option value="covered">Covered (80%+)</option><option value="partial">Partial</option><option value="uncovered">Uncovered</option><option value="unknown">Unknown</option></select></label>
           </div>
         </details>
         <div class="world-code-map" data-world-code-map>
@@ -27232,7 +27233,7 @@ class ForkMeshWorld extends HTMLElement {
                 .join("")}
               <label class="world-store-param">
                 <span>In the world</span>
-                <input
+                <input name="world-store-enabled"
                   type="checkbox"
                   data-world-store-enabled="${escapeHTML(element.id)}"
                   ${entry.enabled === false ? "" : "checked"}
@@ -27270,7 +27271,7 @@ class ForkMeshWorld extends HTMLElement {
             </p>
             <label class="world-store-param">
               <span>Transaction signature</span>
-              <input type="text" data-world-store-signature spellcheck="false" />
+              <input name="world-store-signature" type="text" data-world-store-signature spellcheck="false" />
             </label>
             <button type="button" data-world-store-confirm="${escapeHTML(element.id)}">Confirm purchase</button>
             <button type="button" data-world-store-cancel>Cancel</button>`
@@ -27309,7 +27310,7 @@ class ForkMeshWorld extends HTMLElement {
   storeParamField(elementId, spec, value) {
     const current = value === undefined ? spec.default : value;
     const attributes =
-      `data-world-store-param="${escapeHTML(spec.key)}" ` +
+      `name="world-store-${escapeHTML(spec.key)}" data-world-store-param="${escapeHTML(spec.key)}" ` +
       `data-world-store-element="${escapeHTML(elementId)}"`;
     let control = "";
     if (spec.type === "number") {
@@ -27437,7 +27438,7 @@ class ForkMeshWorld extends HTMLElement {
           data-expanded="${expanded}"
           ${element.system ? 'title="Per-frame system — no geometry of its own"' : ""}
         >
-          <input
+          <input name="world-element-toggle"
             type="checkbox"
             aria-label="${escapeHTML(`Keep ${element.label} in the world`)}"
             data-world-element-toggle="${escapeHTML(element.id)}"
@@ -29823,7 +29824,7 @@ class ForkMeshWorld extends HTMLElement {
         <div class="world-shot-stage"></div>
         <label class="world-shot-alt">
           <span>Alt text</span>
-          <input
+          <input name="shot-alt"
             type="text"
             data-shot-alt
             maxlength="500"
@@ -29972,6 +29973,7 @@ class ForkMeshWorld extends HTMLElement {
       const bounds = canvas.getBoundingClientRect();
       const stageBounds = stage.getBoundingClientRect();
       const input = document.createElement("textarea");
+      input.name = "world-edit-text";
       const defaultWidth = Math.max(
         160,
         Math.min(320, bounds.width * 0.45),
