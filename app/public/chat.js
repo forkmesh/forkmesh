@@ -50,6 +50,12 @@ import {
 import { createFmmLocal } from "./fmm/fmm-local.js";
 import { moderateChatPlain, moderateChatText } from "./chat-moderation.js";
 import { celebrateNewMember, NEW_MEMBER_GREETING } from "./member-welcome.js";
+import {
+  GENIE_WELCOMES,
+  genieWelcomeIndex,
+  mountGenieWelcome,
+  pickGenieWelcome,
+} from "./chat-genie-welcome.js";
 import { createThreadStore } from "./chat-thread-model.js";
 import {
   CALL_FRAME_TYPES,
@@ -121,6 +127,9 @@ const PUBLIC_WORLD_CHAT_WS_PATH =
 const PRIVATE_CHANNELS_ENDPOINT = "/api/chat/channels";
 const EVERYONE_CHANNEL_ORDER = Object.freeze(["general", "random", "welcome"]);
 const EVERYONE_MEMBERS_REFRESH_MS = 5 * 60 * 1000;
+const WELCOME_CHANNEL_NAME = "welcome";
+const GENIE_WELCOME_COOLDOWN_MS = 5000;
+const GENIE_WELCOME_AUTOPLAY_MS = 10 * 60 * 1000;
 const DIRECT_MESSAGES_ENDPOINT = "/api/chat/direct-messages";
 const CHAT_READS_ENDPOINT = "/api/chat/reads";
 const READ_MARK_KEY_RE =
@@ -310,6 +319,7 @@ const channelVisibilityBadge = document.querySelector("#chat-channel-visibility-
 const directServerCopiesEl = document.querySelector("#chat-direct-server-copies");
 const channelCreateBtn = document.querySelector("#chat-channel-create");
 const channelManageBtn = document.querySelector("#chat-channel-manage");
+const genieWelcomeBtn = document.querySelector("#chat-genie-welcome");
 const chatRetentionSelect = document.querySelector("#chat-retention-select");
 const chatRetention = createChatRetention({
   request: (body) => privateChannelRequest(CHAT_RETENTION_ENDPOINT, {
@@ -568,6 +578,8 @@ const seen = new Set();
 // record's channel is the active one, so an edit or a (regular / admin) delete
 // can find and update or remove the right row.
 const rows = new Map();
+const playedGenieWelcomes = new Set();
+let lastGenieWelcome = null;
 const threads = createThreadStore();
 const threadRenderedRows = new Map();
 const threadDrafts = new Map();
@@ -730,6 +742,11 @@ function channelWireLabel(channel = activeChannel) {
 
 function isEveryoneChannel(record) {
   return record?.kind === "everyone";
+}
+
+function isWelcomeChannel(channel = activeChannel) {
+  const record = privateChannelForKey(channel);
+  return isEveryoneChannel(record) && record.name === WELCOME_CHANNEL_NAME;
 }
 
 function defaultChannelKey() {
@@ -2097,6 +2114,7 @@ function updateChannelHeading() {
       : "";
   }
   renderDirectServerCopies();
+  if (genieWelcomeBtn) genieWelcomeBtn.hidden = !isWelcomeChannel() || !canJoinChannel();
 }
 
 function directServerCopiesText(stored, otherUser) {
@@ -5736,6 +5754,7 @@ function buildRow(record, prev) {
   }
   const attachment = renderAttachment(record);
   if (attachment) main.append(attachment);
+  if (record.genieWelcome !== null && !record.deleted) main.append(renderGenieWelcome(record));
   const viewOnceBubble = renderViewOnceBubble(record, { onOpen: openViewOnceRecord });
   if (viewOnceBubble) main.append(viewOnceBubble);
   const threadSummary = document.createElement("button");
@@ -5819,6 +5838,14 @@ function buildRow(record, prev) {
   row.append(actions);
   bindTouchMessageActions(row);
   return row;
+}
+
+function renderGenieWelcome(record) {
+  return mountGenieWelcome(record.genieWelcome, {
+    autoplay: !playedGenieWelcomes.has(record.id) &&
+      (record.self || Date.now() - Number(record.ts) < GENIE_WELCOME_AUTOPLAY_MS),
+    onPlay: () => playedGenieWelcomes.add(record.id),
+  });
 }
 
 function renderActiveChannel() {
@@ -5944,6 +5971,7 @@ function appendMessage(
   viewOnce = null,
   relayed = false,
   serverVisible = false,
+  genieWelcome = null,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -5961,6 +5989,7 @@ function appendMessage(
     recipientNames: knownRecipientNames(recipientNames),
     relayed: Boolean(relayed),
     serverVisible: Boolean(serverVisible),
+    genieWelcome: genieWelcomeIndex(genieWelcome),
   };
   if (viewOnce) {
     record.viewOnce = viewOnce;
@@ -6197,6 +6226,7 @@ function renderChatEntry(
       viewOnce,
       true,
       isServerPlain(entry) && entry.serverVisible === true,
+      viewOnce ? null : entry.genieWelcome,
     );
   }
 }
@@ -8111,6 +8141,50 @@ async function sendCurrentMessage() {
   void sendAttachmentDraft();
 }
 
+function sendGenieWelcome() {
+  if (!canJoinChannel()) {
+    lockChatForNonUser();
+    return;
+  }
+  if (!isWelcomeChannel() || !genieWelcomeBtn || genieWelcomeBtn.disabled) return;
+  const index = pickGenieWelcome(lastGenieWelcome);
+  lastGenieWelcome = index;
+  genieWelcomeBtn.disabled = true;
+  setTimeout(() => {
+    genieWelcomeBtn.disabled = false;
+  }, GENIE_WELCOME_COOLDOWN_MS);
+  const channel = activeChannel;
+  const text = GENIE_WELCOMES[index].text;
+  runWhenConnected(() => {
+    if (channel !== activeChannel) return;
+    const plain = makePlain("chat", {
+      channel: channelWireLabel(channel),
+      text,
+      genieWelcome: index,
+    });
+    send(plain);
+    seen.add(plain.id);
+    appendMessage(
+      "self",
+      plain.sender,
+      text,
+      plain.id,
+      plain.senderId,
+      plain.ts,
+      channel,
+      null,
+      null,
+      null,
+      null,
+      [],
+      null,
+      false,
+      false,
+      index,
+    );
+  });
+}
+
 function suspendOfficeChat() {
   if (!isOfficeEmbed || chatSuspended) return;
   chatSuspended = true;
@@ -8138,6 +8212,7 @@ function wireChatControls() {
   if (chatControlsWired) return;
   chatControlsWired = true;
   sendBtn.addEventListener("click", sendCurrentMessage);
+  genieWelcomeBtn?.addEventListener("click", sendGenieWelcome);
   directCreateBtn?.addEventListener("click", () => openDirectMessageDialog("new"));
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
   callAudioBtn?.addEventListener("click", () => startCall("audio"));

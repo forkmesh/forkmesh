@@ -54,6 +54,7 @@
 #include <QNetworkRequest>
 #include <QPixmap>
 #include <QImageReader>
+#include <QtConcurrent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -1352,6 +1353,7 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
         paneShot->setText(parts.screenshot->text());
     else
         paneShot->setPixmap(preview);
+    paneShot->setProperty("previewKey", parts.screenshot->property("previewKey"));
     paneShot->setAccessibleName(parts.screenshot->accessibleName());
     paneShot->setToolTip(parts.screenshot->toolTip());
     detailsLayout->addWidget(paneShot);
@@ -2143,36 +2145,78 @@ QWidget *MainWindow::buildPackageSettingsPage(
     return page;
 }
 
-QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box)
+QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
+                                        QString *keyOut)
 {
     const QString key = QStringLiteral("%1|%2x%3|%4")
                             .arg(path)
                             .arg(box.width())
                             .arg(box.height())
                             .arg(QFileInfo(path).lastModified().toMSecsSinceEpoch());
+    if (keyOut)
+        *keyOut = key;
     const auto cached = m_marketPreviewCache.constFind(key);
     if (cached != m_marketPreviewCache.constEnd())
         return *cached;
+    if (m_marketPreviewDecoding.contains(key))
+        return QPixmap();
+    m_marketPreviewDecoding.insert(key);
     ++m_marketPreviewDecodes;
-    QImageReader reader(path);
-    const QSize natural = reader.size();
-    if (natural.isValid() && !natural.isEmpty())
-        reader.setScaledSize(natural.scaled(box, Qt::KeepAspectRatio));
-    QImage image = reader.read();
-    if (image.isNull()) {
-        QFile file(path);
-        if (file.open(QIODevice::ReadOnly)) {
-            const QByteArray bytes = file.read(16 * 1024 * 1024);
-            if (forkmesh::ui::diffBytesAreWebp(bytes))
-                image = forkmesh::ui::diffDecodeWebp(bytes);
+    auto *watcher = new QFutureWatcher<QImage>(this);
+    connect(watcher, &QFutureWatcher<QImage>::finished, this,
+            [this, watcher, key] {
+                watcher->deleteLater();
+                applyMarketPreview(key, watcher->result());
+            });
+    watcher->setFuture(QtConcurrent::run([path, box] {
+        const forkmesh::BackgroundScope action(
+            QStringLiteral("market"),
+            QStringLiteral("decode package preview %1")
+                .arg(QFileInfo(path).fileName()),
+            forkmesh::ActionTelemetry::Execution::Worker);
+        QImageReader reader(path);
+        const QSize natural = reader.size();
+        if (natural.isValid() && !natural.isEmpty())
+            reader.setScaledSize(natural.scaled(box, Qt::KeepAspectRatio));
+        QImage image = reader.read();
+        if (image.isNull()) {
+            QFile file(path);
+            if (file.open(QIODevice::ReadOnly)) {
+                const QByteArray bytes = file.read(16 * 1024 * 1024);
+                if (forkmesh::ui::diffBytesAreWebp(bytes))
+                    image = forkmesh::ui::diffDecodeWebp(bytes);
+            }
+        }
+        if (!image.isNull() &&
+            (image.width() > box.width() || image.height() > box.height()))
+            image = image.scaled(box, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+        return image;
+    }));
+    return QPixmap();
+}
+
+void MainWindow::applyMarketPreview(const QString &key, const QImage &image)
+{
+    m_marketPreviewDecoding.remove(key);
+    const QPixmap pixmap =
+        image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+    m_marketPreviewCache.insert(key, pixmap);
+    QList<QLabel *> labels = findChildren<QLabel *>(
+        QStringLiteral("marketPackageScreenshot"));
+    labels += findChildren<QLabel *>(QStringLiteral("marketNextPaneShot"));
+    for (QLabel *label : std::as_const(labels)) {
+        if (label->property("previewKey").toString() != key)
+            continue;
+        if (pixmap.isNull()) {
+            label->setText(QStringLiteral("Preview unavailable"));
+            label->setProperty("screenshotLoaded", false);
+        } else {
+            label->setText(QString());
+            label->setPixmap(pixmap);
+            label->setProperty("screenshotLoaded", true);
         }
     }
-    if (!image.isNull() &&
-        (image.width() > box.width() || image.height() > box.height()))
-        image = image.scaled(box, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    const QPixmap pixmap = image.isNull() ? QPixmap() : QPixmap::fromImage(image);
-    m_marketPreviewCache.insert(key, pixmap);
-    return pixmap;
 }
 
 void MainWindow::refreshMarketPage()
@@ -2268,10 +2312,15 @@ void MainWindow::refreshMarketPage()
         screenshot->setAlignment(Qt::AlignCenter);
         screenshot->setFrameShape(QFrame::StyledPanel);
         const auto &preview = manifest.screenshots.first();
+        QString previewKey;
         const QPixmap previewPixmap = marketPreviewPixmap(
-            preview.path, Theme::isNext() ? QSize(640, 360) : screenshot->size());
+            preview.path, Theme::isNext() ? QSize(640, 360) : screenshot->size(),
+            &previewKey);
+        screenshot->setProperty("previewKey", previewKey);
         if (previewPixmap.isNull()) {
-            screenshot->setText(QStringLiteral("Preview unavailable"));
+            const bool decoding = m_marketPreviewDecoding.contains(previewKey);
+            screenshot->setText(decoding ? QString()
+                                         : QStringLiteral("Preview unavailable"));
             screenshot->setProperty("screenshotLoaded", false);
         } else {
             screenshot->setPixmap(previewPixmap);
