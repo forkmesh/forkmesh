@@ -1438,6 +1438,19 @@ public:
     void testSetPackageMarketScores(
         const QHash<QString, MarketPackageScore> &scores);
     int testMarketPreviewDecodes() const { return m_marketPreviewDecodes; }
+    void testDeliverAvatar(const QString &peerId, const QByteArray &pngData)
+    {
+        onAvatar(peerId, pngData);
+    }
+    int testAvatarDecodes() const { return m_avatarDecodes; }
+    QString testAvatarCachePath(const QString &peerId) const
+    {
+        return avatarCachePath(peerId);
+    }
+    bool testMarketPreviewsDecoding() const
+    {
+        return !m_marketPreviewDecoding.isEmpty();
+    }
     bool testCapturePackageActionVisible() const;
     void testStartCapturePackage();
     bool testCapturePackageRuntimeActive() const;
@@ -4262,7 +4275,9 @@ private:
     void ensureSectionBuilt(int index);
     QWidget *buildMarketSection();
     void refreshMarketPage();
-    QPixmap marketPreviewPixmap(const QString &path, const QSize &box);
+    QPixmap marketPreviewPixmap(const QString &path, const QSize &box,
+                                QString *key = nullptr);
+    void applyMarketPreview(const QString &key, const QImage &image);
     void applyMarketSearch();
     QList<const forkmesh::market::PackageManifest *> sortedMarketPackages() const;
     void appendMarketPackCards();
@@ -7287,6 +7302,9 @@ private:
                                      const ActionWorkflow &workflow) const;
     bool workflowRunsOnThisNode(const RepositoryRecord &repo,
                                 const ActionWorkflow &workflow) const;
+    bool workflowRunsOnThisNode(const RepositoryRecord &repo,
+                                const ActionWorkflow &workflow,
+                                const QStringList &nodeLabels) const;
     QString workflowDedicationLabel(const RepositoryRecord &repo,
                                     const ActionWorkflow &workflow) const;
     QStringList actionNodeCandidates() const;
@@ -11027,6 +11045,7 @@ private:
     bool m_packageMarketScoresPending = false;
     qint64 m_packageMarketScoresFetchedMs = 0;
     QHash<QString, QPixmap> m_marketPreviewCache;
+    QSet<QString> m_marketPreviewDecoding;
     int m_marketPreviewDecodes = 0;
     std::unique_ptr<forkmesh::market::PackageRegistry> m_packageRegistry;
     std::unique_ptr<forkmesh::capture::CaptureFeature> m_captureFeature;
@@ -15727,6 +15746,8 @@ private:
     QHash<QString, QList<QJsonObject>> m_pendingOfficeMutations;
     QStringList m_pendingOfficeMutationOrder;
     QHash<QString, QPixmap> m_avatars;          // senderId -> avatar
+    QHash<QString, QPair<QByteArray, qint64>> m_avatarSources;
+    int m_avatarDecodes = 0;
     QHash<QString, QString> m_dmNames;          // peerId -> display name
     QHash<QString, QHash<QString, QString>> m_typing; // conversation -> peerId -> name
     QStringList m_networkLog;

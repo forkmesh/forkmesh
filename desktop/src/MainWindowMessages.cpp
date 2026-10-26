@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "BackgroundFileWriter.h"
 #include "AgentActivityFeed.h"
 #include "MainWindowInternal.h"
 #include "DiscordClient.h"
@@ -1666,20 +1667,22 @@ void MainWindow::onAdminDeleteRequested(const QString &conversation,
 
 void MainWindow::onAvatar(const QString &peerId, const QByteArray &pngData)
 {
+    const QByteArray digest =
+        QCryptographicHash::hash(pngData, QCryptographicHash::Sha256);
+    const auto known = m_avatarSources.constFind(peerId);
+    const auto shown = m_avatars.constFind(peerId);
+    if (known != m_avatarSources.constEnd() && shown != m_avatars.constEnd() &&
+        known->first == digest && known->second == shown->cacheKey())
+        return;
     QPixmap pixmap;
+    ++m_avatarDecodes;
     if (!pixmap.loadFromData(pngData))
         return;
     m_avatars.insert(peerId, pixmap);
+    m_avatarSources.insert(peerId, {digest, pixmap.cacheKey()});
     const QString path = avatarCachePath(peerId);
-    if (!path.isEmpty()) {
-        QDir().mkpath(QFileInfo(path).absolutePath());
-        QFile f(path);
-        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            f.write(peerId.toUtf8());
-            f.write("\n");
-            f.write(pngData);
-        }
-    }
+    if (!path.isEmpty())
+        forkmesh::diskwrite::writeLater(path, peerId.toUtf8() + '\n' + pngData);
     refreshVisibleRowAvatars();
     refreshChatMembers();
     refreshIssueAvatars();

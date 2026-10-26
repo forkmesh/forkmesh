@@ -2386,9 +2386,16 @@ MainWindow::workflowRunsOnLabels(const RepositoryRecord &repo,
 bool MainWindow::workflowRunsOnThisNode(const RepositoryRecord &repo,
                                         const ActionWorkflow &workflow) const
 {
-    ActionWorkflow probe; // only runsOn takes part in the match
+    return workflowRunsOnThisNode(repo, workflow, actionNodeLabels());
+}
+
+bool MainWindow::workflowRunsOnThisNode(const RepositoryRecord &repo,
+                                        const ActionWorkflow &workflow,
+                                        const QStringList &nodeLabels) const
+{
+    ActionWorkflow probe;
     probe.runsOn = workflowRunsOnLabels(repo, workflow);
-    return probe.runsOnNode(actionNodeLabels());
+    return probe.runsOnNode(nodeLabels);
 }
 
 QString MainWindow::workflowDedicationLabel(const RepositoryRecord &repo,
@@ -8624,6 +8631,7 @@ void MainWindow::refreshWorkflowProgress()
         return ActionStepStatus::Pending;
     };
 
+    const QStringList nodeLabels = actionNodeLabels();
     for (int row = 0; row < m_actionWorkflowList->count(); ++row) {
         QListWidgetItem *item = m_actionWorkflowList->item(row);
         if (!item)
@@ -8662,7 +8670,8 @@ void MainWindow::refreshWorkflowProgress()
             details << runsOn.join(QStringLiteral(", "));
         area->setData(workflow->name, workflow->path, details, steps,
                       !repo.disabledWorkflows.contains(workflow->path),
-                      item->isSelected(), workflowRunsOnThisNode(repo, *workflow));
+                      item->isSelected(),
+                      workflowRunsOnThisNode(repo, *workflow, nodeLabels));
         item->setSizeHint(area->sizeHint());
     }
 }
