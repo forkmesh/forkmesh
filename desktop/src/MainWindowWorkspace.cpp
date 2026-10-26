@@ -539,6 +539,7 @@ struct Chrome : public QObject {
     QVBoxLayout *detailLayout = nullptr;
     QVBoxLayout *topRow = nullptr;
     QHBoxLayout *statusRow = nullptr;
+    int statusIndex = 0;
     QPointer<QWidget> titleBlock;
     QPointer<QWidget> outputPage;
     QPointer<QScrollArea> transcript;
@@ -915,10 +916,15 @@ void NextAccess::installWorkspace(MainWindow &window)
                        ? qobject_cast<QVBoxLayout *>(
                              detailLayout->itemAt(0)->layout())
                        : nullptr;
-    auto *statusRow = topRow && topRow->count() > 0
-                          ? qobject_cast<QHBoxLayout *>(
-                                topRow->itemAt(0)->layout())
-                          : nullptr;
+    QHBoxLayout *statusRow = nullptr;
+    int statusIndex = -1;
+    for (int index = 0; topRow && index < topRow->count() && !statusRow; ++index) {
+        auto *row = qobject_cast<QHBoxLayout *>(topRow->itemAt(index)->layout());
+        if (row && row->indexOf(window.m_agentStatusPill) >= 0) {
+            statusRow = row;
+            statusIndex = index;
+        }
+    }
     auto *dockLayout =
         qobject_cast<QVBoxLayout *>(window.m_workspaceTerminalDock->layout());
     QWidget *listPane = window.m_agentTable->parentWidget();
@@ -1076,6 +1082,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     chrome->detailLayout = detailLayout;
     chrome->topRow = topRow;
     chrome->statusRow = statusRow;
+    chrome->statusIndex = statusIndex;
     chrome->titleBlock = window.m_agentTitle->parentWidget();
     chrome->outputPage = window.m_agentCodeSplit->parentWidget();
     chrome->transcript = window.m_agentTranscript;
@@ -1455,7 +1462,8 @@ void NextAccess::syncWorkspace(MainWindow &window)
                     widget->move(kParkedAt, kParkedAt);
             }
         } else if (!chrome->statusRow->parent()) {
-            chrome->topRow->insertLayout(0, chrome->statusRow);
+            chrome->topRow->insertLayout(
+                qMin(chrome->statusIndex, chrome->topRow->count()), chrome->statusRow);
         }
         if (chrome->titleBlock)
             chrome->titleBlock->setVisible(!next);

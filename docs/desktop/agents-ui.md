@@ -1050,6 +1050,11 @@ Rules of construction:
   moves into it. Below 700 px the diff is unified.
 - Hooks: `NextAccess::installWorkspace`, `syncWorkspace`,
   `placeWorkspaceComposer`.
+- `installWorkspace` finds the status row as the top row's layout that holds
+  `m_agentStatusPill`, wherever it sits, and puts it back at that index for
+  the classic layout. It used to read the first item; when the workflow link
+  was put above it (2026-10-25) the lookup failed, the workspace returned
+  early, and the new layout silently never installed.
 - Keyboard shortcuts (Ctrl+Tab between sessions, Ctrl+Shift+D / Ctrl+\` /
   Ctrl+Shift+B for the panel tabs, Ctrl+\\ to close it, Ctrl+Shift+M / I / E
   for the composer pickers, Ctrl+/ for the sheet) come from
