@@ -55,7 +55,12 @@ WORLD_TASKS_RUNTIME = (
 ).read_text(encoding="utf-8")
 WORLD = (WORLD_PUBLIC / "world.js").read_text(encoding="utf-8")
 WORLD_CSS = (WORLD_PUBLIC / "world.css").read_text(encoding="utf-8")
-QT_TASKS = (QT_SRC / "MainWindowTasks.cpp").read_text(encoding="utf-8")
+QT_TASKS = (
+    ROOT.parent / "marketplace" / "packages" / "tasks" / "content" / "desktop"
+    / "TasksPage.cpp"
+).read_text(encoding="utf-8")
+QT_TASK_STORE = (QT_SRC / "OrganizationTaskStore.cpp").read_text(encoding="utf-8")
+QT_TASK_BRIDGE = (QT_SRC / "MainWindowTaskBridge.cpp").read_text(encoding="utf-8")
 TASKS_VIEW = (
     ROOT.parent / "marketplace" / "packages" / "tasks" / "content" / "web"
     / "view.html"
@@ -106,16 +111,16 @@ def test_narrowing_the_world_board_returns_to_the_first_page():
 
 def test_qt_table_paints_one_page_and_searches_the_whole_catalog():
     assert "constexpr int kOrganizationTaskPageSize = 100;" in QT_TASKS
-    assert "void MainWindow::renderOrganizationTaskRows(" in QT_TASKS
+    assert "void TasksPage::renderOrganizationTaskRows(" in QT_TASKS
     # The row's Qt::UserRole is the task's absolute index, not its row number,
     # so selecting a row on page 3 still resolves to the right task.
     assert "item->setData(Qt::UserRole, index);" in QT_TASKS
     # The search filters every task, then the page slices the matches.
     assert "matches.append(index);" in QT_TASKS
     assert "m_organizationTaskShownRows" in QT_TASKS
-    assert "void MainWindow::requestOrganizationTaskCatalog(" in QT_TASKS
-    assert 'QStringLiteral("/api/tasks?offset=%1")' in QT_TASKS
-    assert 'payload.value(QStringLiteral("hasMore")).toBool()' in QT_TASKS
+    assert "void OrganizationTaskStore::requestCatalog(" in QT_TASK_STORE
+    assert 'QStringLiteral("/api/tasks?offset=%1")' in QT_TASK_STORE
+    assert 'payload.value(QStringLiteral("hasMore")).toBool()' in QT_TASK_STORE
     # The old hide-rows-in-place search (which could only ever hide rows the
     # table already held) is gone.
     assert "setRowHidden(" not in QT_TASKS
@@ -123,14 +128,14 @@ def test_qt_table_paints_one_page_and_searches_the_whole_catalog():
 
 def test_qt_table_loads_more_rows_when_scrolled_to_the_bottom():
     assert "constexpr int kOrganizationTaskLoadAheadRows = 10;" in QT_TASKS
-    assert "void MainWindow::appendOrganizationTaskRows(int count)" in QT_TASKS
+    assert "void TasksPage::appendOrganizationTaskRows(int count)" in QT_TASKS
     assert "&QScrollBar::valueChanged" in QT_TASKS
     assert "appendOrganizationTaskRows(kOrganizationTaskPageSize);" in QT_TASKS
     assert "scroll for more" in QT_TASKS
     assert "m_organizationTaskPrevPageButton" not in QT_TASKS
     assert "m_organizationTaskNextPageButton" not in QT_TASKS
     render = QT_TASKS[
-        QT_TASKS.index("void MainWindow::renderOrganizationTaskRows("):
+        QT_TASKS.index("void TasksPage::renderOrganizationTaskRows("):
     ]
     render = render[:render.index("\n}\n")]
     assert "verticalScrollBar()->setValue(scrollValue);" in render
@@ -138,15 +143,15 @@ def test_qt_table_loads_more_rows_when_scrolled_to_the_bottom():
 
 
 def test_qt_task_details_render_and_expand_image_attachments():
+    assert "taskImageAttachments(" in QT_TASK_BRIDGE
     for marker in (
-        "organizationTaskImageAttachments(",
         "requestOrganizationTaskAttachment(",
         "forkmesh-task-image:",
         "QScrollArea",
         "taskDetailHtml(task, m_organizationTaskImageData",
     ):
         assert marker in QT_TASKS
-    assert "kOrgTaskAttachmentProof" in QT_TASKS
+    assert "kOrgTaskAttachmentProof" in QT_TASK_STORE
 
 
 def test_dashboard_serves_a_tasks_page_wired_into_the_shell():
@@ -228,10 +233,12 @@ def test_qt_task_detail_can_add_the_task_to_the_prompt_box():
     # selected task's title, id, repository and free-text blocks to the footer
     # prompt box instead of making the operator retype them.
     assert 'QStringLiteral("Add to prompt"), QStringLiteral("plus"));' in QT_TASKS
-    assert "&MainWindow::addOrganizationTaskToPrompt" in QT_TASKS
-    body = QT_TASKS[QT_TASKS.index("void MainWindow::addOrganizationTaskToPrompt("):]
-    body = body[:body.index("\nvoid MainWindow::")]
-    assert "appendTextToActivePrompt(" in body
+    assert "&TasksPage::addOrganizationTaskToPrompt" in QT_TASKS
+    body = QT_TASKS[QT_TASKS.index("void TasksPage::addOrganizationTaskToPrompt("):]
+    body = body[:body.index("\nvoid TasksPage::")]
+    assert 'QStringLiteral("prompt.append")' in body
+    command = QT_TASK_BRIDGE[QT_TASK_BRIDGE.index('command == QLatin1String("prompt.append")'):]
+    assert "appendTextToActivePrompt(text);" in command[:400]
     # The prompt text itself is shared with the one-click launch below, so the
     # hand-edited prompt and the one an agent is handed cannot drift apart.
     assert "organizationTaskPromptText(task)" in body
@@ -255,9 +262,15 @@ def test_qt_task_detail_starts_an_agent_with_the_prompt_box_settings():
         '              QStringLiteral("Start agent"), QStringLiteral("rocket"));'
         in QT_TASKS
     )
-    assert "&MainWindow::startOrganizationTaskAgentFromPrompt" in QT_TASKS
-    body = QT_TASKS[
-        QT_TASKS.index("void MainWindow::startOrganizationTaskAgentFromPrompt("):
+    assert "&TasksPage::startOrganizationTaskAgentFromPrompt" in QT_TASKS
+    page = QT_TASKS[
+        QT_TASKS.index("void TasksPage::startOrganizationTaskAgentFromPrompt("):
+    ]
+    page = page[:page.index("\nvoid TasksPage::")]
+    assert 'QStringLiteral("task.startAgent")' in page
+    assert "organizationTaskPromptText(task)" in page
+    body = QT_TASK_BRIDGE[
+        QT_TASK_BRIDGE.index("void MainWindow::startOrganizationTaskAgent("):
     ]
     body = body[:body.index("\nvoid MainWindow::")]
     # The task goes into the prompt box first, and the box is what gets sent:
@@ -285,6 +298,7 @@ def test_qt_task_detail_starts_an_agent_with_the_prompt_box_settings():
     # The reverse link: the detail names the desktop run carrying this task.
     assert "localAgentRunLabelForTask(" in QT_TASKS
     assert "session.orgTaskId != taskId" in QT_TASKS
+    assert 'command == QLatin1String("task.agentSessions")' in QT_TASK_BRIDGE
 
 
 def test_qt_created_tasks_appear_immediately_and_open():
@@ -293,7 +307,7 @@ def test_qt_created_tasks_appear_immediately_and_open():
     # search/page state that could hide it is reset, and selecting by id opens
     # the existing detail pane before navigation reaches Tasks.
     body = QT_TASKS[
-        QT_TASKS.index("void MainWindow::openCreatedOrganizationTask("):
+        QT_TASKS.index("void TasksPage::openCreatedOrganizationTask("):
     ]
     body = body[:body.index("\n}\n")]
     for marker in (
@@ -301,7 +315,7 @@ def test_qt_created_tasks_appear_immediately_and_open():
         "m_organizationTasksSearchMirror.clear();",
         "m_organizationTaskShownRows = 0;",
         "renderOrganizationTaskRows(taskId);",
-        "showSection(kOrganizationTasksSectionIndex);",
+        "showPage();",
         "m_organizationTasksTable->scrollToItem(item);",
     ):
         assert marker in body, marker
@@ -309,8 +323,9 @@ def test_qt_created_tasks_appear_immediately_and_open():
     # Every Qt create affordance uses the same immediate-open path: the task
     # dialog (also used by note conversion), footer quick-add, and follow-ups.
     assert QT_TASKS.count("openCreatedOrganizationTask(") == 4
-    composer = QT_TASKS[QT_TASKS.index("void MainWindow::composeOrganizationTask("):]
-    composer = composer[:composer.index("\nvoid MainWindow::")]
+    assert "openCreatedOrganizationTask(" in QT_TASK_BRIDGE
+    composer = QT_TASKS[QT_TASKS.index("void TasksPage::composeOrganizationTask("):]
+    composer = composer[:composer.index("\nvoid TasksPage::")]
     assert 'payload.value(QStringLiteral("task")).toObject()' in composer
     assert "openCreatedOrganizationTask(task);" in composer
     assert "refreshOrganizationTasks();" not in composer
@@ -388,5 +403,5 @@ def test_qt_task_rows_paint_attached_image_thumbnails():
     assert "index.data(kTaskThumbnailsRole).toList()" in delegate
     assert "right = tileX - 10;" in delegate
     assert 'QStringLiteral("+%1").arg(hidden)' in delegate
-    loader = QT_TASKS[QT_TASKS.index("void MainWindow::renderOrganizationTaskDetail("):]
-    assert "refreshOrganizationTaskRowThumbnails(taskId);" in loader[:loader.index("\nvoid MainWindow::")]
+    loader = QT_TASKS[QT_TASKS.index("void TasksPage::renderOrganizationTaskDetail("):]
+    assert "refreshOrganizationTaskRowThumbnails(taskId);" in loader[:loader.index("\n}\n")]

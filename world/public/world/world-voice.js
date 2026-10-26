@@ -42,6 +42,17 @@ function button(documentRef, label, onClick, { className = "world-voice-button",
   return node;
 }
 
+export function cameraErrorMessage(error) {
+  const name = String(error?.name || "");
+  if (name === "NotAllowedError" || name === "SecurityError")
+    return "The camera is blocked for this site. Click the icon left of the address, set Camera to Allow, then try again.";
+  if (name === "NotReadableError" || name === "AbortError")
+    return "Another app is using your camera. Close it (or stop ForkMesh Camera / Face Changer), then try again.";
+  if (name === "NotFoundError" || name === "OverconstrainedError")
+    return "No camera was found. Plug one in or check that it is enabled, then try again.";
+  return "Allow the camera to move your avatar with your face and hands.";
+}
+
 export function createWorldVoice(host) {
   const documentRef = host.documentRef || globalThis.document;
   const scope = host.scope || globalThis;
@@ -310,8 +321,9 @@ export function createWorldVoice(host) {
       camStream = await scope.navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24 } },
       });
-    } catch (_) {
-      host.notify("Allow the camera to move your avatar with your face and hands.");
+    } catch (error) {
+      scope.console?.warn?.("World camera: the browser refused the camera", error);
+      host.notify(cameraErrorMessage(error));
       return false;
     }
     const module = await import("/call-avatar-rig.js");
@@ -325,8 +337,19 @@ export function createWorldVoice(host) {
       onGesture: (gesture) => react(gesture, { fromGesture: true }),
     });
     void ensureAnchors(module);
-    const ready = await capture.ready;
+    let ready = false;
+    try {
+      ready = await capture.ready;
+    } catch (error) {
+      scope.console?.warn?.("World camera: face tracking failed to start", error);
+    }
     if (!ready) {
+      capture?.stop();
+      capture = null;
+      if (state.sendVideo && camStream) {
+        host.notify("This browser cannot follow your face, so your camera sends video only.");
+        return true;
+      }
       host.notify("This browser cannot follow your face. Your avatar stays as it is.");
       stopCapture();
       return false;
@@ -935,7 +958,7 @@ export function createWorldVoice(host) {
       if (figure) figure.hidden = true;
       leave();
       closeMic();
-      if (capture) stopCapture();
+      if (capture || camStream) stopCapture();
       stopMeter();
       for (const timer of timers) scope.clearInterval(timer);
       if (rafId) scope.cancelAnimationFrame?.(rafId);

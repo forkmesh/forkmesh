@@ -348,8 +348,7 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
                     .arg(taskId)
                     .arg(id));
         refreshAgentTaskLinkUi(requesterId);
-        if (m_organizationTasksLoaded)
-            refreshOrganizationTaskAgentRows();
+        notifyPackagesAgentSessionsChanged();
     }
     reloadAgents();
     notifyLocalControlAgentsChanged();

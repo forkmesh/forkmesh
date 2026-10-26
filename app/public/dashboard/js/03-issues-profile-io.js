@@ -1680,10 +1680,15 @@
     let result;
     try {
       if (action === "delete") {
-        if (!await confirmAccountAction({
-          title: "Delete this comment?",
+        const verdict = pullReviewKeepsVerdict(original);
+        if (!await confirmAccountAction(verdict ? {
+          title: "Delete this review's text?",
+          body: `Your ${original.state === "approved" ? "approval" : "change request"} stays on the pull request. Its Git history remains recoverable.`,
+          confirmLabel: "Delete text",
+        } : {
+          title: original.type === "review" ? "Delete this review?" : "Delete this comment?",
           body: "Its Git history remains recoverable.",
-          confirmLabel: "Delete comment",
+          confirmLabel: original.type === "review" ? "Delete review" : "Delete comment",
         })) return;
         result = await submitWebPullCommentDelete(repo, number, target);
       } else {
@@ -1702,6 +1707,7 @@
     if (state.repoRecordDetail !== detail) return;
     parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
     refreshPullConversationProjection();
+    refreshRepoPullDiff();
   }
 
   async function handleWebIssueAction(action, target = "") {

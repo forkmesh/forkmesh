@@ -107,7 +107,8 @@ def test_web_fold_applies_only_the_authors_edits_and_deletes():
     constant = re.search(r"\n  const PULL_EDITABLE_COMMENT_TYPES = new Set\(\[.*?\]\);\n",
                          DASHBOARD_JS, re.S).group(0)
     script = constant + "".join(_js_function(name) for name in (
-        "pullTimestamp", "pullCommentChangeApplies", "foldPullCommentChanges")) + """
+        "pullTimestamp", "pullCommentChangeApplies", "pullReviewKeepsVerdict",
+        "foldPullCommentChanges")) + """
 const events = [
   { id: "c1", type: "comment", author: "A", authorName: "ann", ts: 1, body: "first" },
   { id: "c2", type: "comment", author: "B", authorName: "bob", ts: 2, body: "second" },
@@ -116,6 +117,9 @@ const events = [
   { id: "e2", type: "comment-edit", author: "M", authorName: "mallory", ts: 5, target: "c2", body: "hijacked" },
   { id: "d1", type: "comment-delete", author: "X", authorName: "BOB", ts: 6, target: "c2" },
   { id: "d2", type: "comment-delete", author: "B", authorName: "bob", ts: 7, target: "r1" },
+  { id: "r2", type: "review", author: "B", authorName: "bob", ts: 8, state: "commented", body: "hm" },
+  { id: "d3", type: "comment-delete", author: "B", authorName: "bob", ts: 9, target: "r2" },
+  { id: "e3", type: "comment-edit", author: "B", authorName: "bob", ts: 10, target: "r1", body: "back" },
 ];
 process.stdout.write(JSON.stringify(foldPullCommentChanges(events)));
 """
@@ -123,7 +127,26 @@ process.stdout.write(JSON.stringify(foldPullCommentChanges(events)));
     folded = json.loads(result.stdout)
     assert [ev["id"] for ev in folded] == ["c1", "r1"]
     assert folded[0]["body"] == "first, fixed" and folded[0]["_edited"] is True
-    assert folded[1]["body"] == "ok"
+    assert folded[1]["body"] == "" and folded[1]["state"] == "approved"
+
+
+def test_every_reader_deletes_review_text_but_keeps_the_verdict():
+    sys.path.insert(0, str(ROOT / "host"))
+    from forkmesh_host import repo_views
+    folded = repo_views.folded_conversation([
+        {"type": "review", "id": "r1", "authorKey": "kb", "state": "approved", "body": "ok"},
+        {"type": "review", "id": "r2", "authorKey": "kb", "state": "commented", "body": "hm"},
+        {"type": "comment-delete", "target": "r1", "authorKey": "kb"},
+        {"type": "comment-delete", "target": "r2", "authorKey": "kb"},
+        {"type": "comment-edit", "target": "r1", "authorKey": "kb", "body": "back"},
+    ])
+    assert [(ev["id"], ev["body"], ev["state"]) for ev in folded] == [("r1", "", "approved")]
+    fold = PULL_STORE.split("QList<PullEvent> PullStore::foldCommentChanges", 1)[1].split("\n}\n", 1)[0]
+    assert "reviewKeepsVerdict(target)" in fold and "shown.body.clear();" in fold
+    applies = PULL_STORE.split("bool PullStore::commentChangeApplies", 1)[1].split("\n}\n", 1)[0]
+    assert '"review"' not in applies
+    assert "onDelete = [this, number, target, question]" in MAIN_WINDOW_PULLS
+    assert "Delete this review's text?" in MAIN_WINDOW_PULLS
 
 
 def test_web_pr_comments_offer_edit_and_delete_on_own_comments():
@@ -131,5 +154,10 @@ def test_web_pr_comments_offer_edit_and_delete_on_own_comments():
     assert "data-repo-pull-comment-delete=" in DASHBOARD_JS
     assert 'handleWebPullCommentAction("edit"' in DASHBOARD_JS
     assert 'handleWebPullCommentAction("delete"' in DASHBOARD_JS
+    render = _js_function("renderPullConversationEvent")
+    assert '${ev.type === "review" ? "" : `<button type="button" data-repo-pull-comment-delete' not in render
+    card = _js_function("renderPullInlineThreadCard")
+    assert "webSessionAuthored(event)" in card
+    assert "data-repo-pull-comment-edit=" in card and "data-repo-pull-comment-delete=" in card
     assert 'content = [fields.target, cleanBody].join(NUL);' in DASHBOARD_JS
     assert "Boolean(options.canManage) || webSessionAuthored(rawEvent)" in DASHBOARD_JS

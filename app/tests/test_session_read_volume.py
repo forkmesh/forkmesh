@@ -22,7 +22,8 @@ QT_MAIN = (REPO / "desktop" / "src" / "MainWindow.cpp").read_text(
     encoding="utf-8")
 QT_CHAT = (REPO / "desktop" / "src" / "MainWindowChat.cpp").read_text(
     encoding="utf-8")
-QT_NOTES = (REPO / "desktop" / "src" / "MainWindowNotes.cpp").read_text(
+QT_NOTES = (REPO / "marketplace" / "packages" / "notes" / "content" / "desktop"
+            / "NotesPage.cpp").read_text(
     encoding="utf-8")
 DOC = (REPO / "www" / "docs" / "operations" / "polling-elimination.md").read_text(
     encoding="utf-8")

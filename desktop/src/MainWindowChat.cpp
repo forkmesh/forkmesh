@@ -1211,7 +1211,7 @@ void MainWindow::showAgentAccountMenu(const QString &provider,
             const QString usageKey =
                 QStringLiteral("%1_%2").arg(
                     profile.id, usage.label.toLower().replace('-', '_'));
-            if (m_timersFeature) {
+            if (hasNativePackageCommand(QStringLiteral("countdown.add"))) {
                 // A countdown on the top-bar clock to the moment this window
                 // resets. It reads the row's reset at click time, so a menu
                 // left open and refreshed still starts from the live value.
@@ -2459,7 +2459,6 @@ void MainWindow::switchToServer(int index)
     m_networkRepoMirrorsCache.clear();
     m_networkRepoMirrorsFetchedMs.clear();
     m_privateCatalogAccessIds.clear();
-    m_repositoryCalendarMonths.clear();
     m_catalogMirrorsCache = {};
     m_catalogMirrorsSource.clear();
     m_catalogMirrorsFetchedMs = 0;
@@ -2812,13 +2811,11 @@ QWidget *MainWindow::buildChatPage()
           m_filesNavButton, m_statsNavButton, m_componentHealthNavButton,
           m_memoryNavButton})
         m_appNavigationRailLayout->addWidget(button, 0, Qt::AlignLeft);
-    syncNativePackagePages();
     m_repoViewButton->setParent(header);
     m_repoViewButton->hide();
 
     for (QPushButton *button :
          {m_tourNavButton, m_settingsNavButton, m_navScreenshotButton,
-          m_notesNavButton, m_calendarNavButton, m_tasksNavButton,
           m_notificationButton})
         m_appNavigationRailLayout->addWidget(button, 0, Qt::AlignLeft);
     applyRailOrder(); // packs every item against the top, stretch at the end
@@ -3760,8 +3757,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         const bool task = provider == kTaskPromptProvider;
         if (task) {
             refreshQuickAddTaskAssignees();
-            if (organizationTaskMemberNames().isEmpty() &&
-                m_organizationTasksStartupPayload.isEmpty())
+            if (organizationTaskMemberNames().isEmpty())
                 refreshOrganizationTaskBadge();
         }
         m_quickAddTaskAssignee->setVisible(task);

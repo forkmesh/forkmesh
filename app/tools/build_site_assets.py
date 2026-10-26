@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 REPOSITORY = Path(__file__).resolve().parents[2]
 APP = REPOSITORY / "app"
 WWW = REPOSITORY / "www"
+CHANGELOG = REPOSITORY / "changelog" / "changelog.json"
 WORLD = REPOSITORY / "world"
 WORLD_TOOLS = WORLD / "tools"
 OFFICE = REPOSITORY / "office"
@@ -84,6 +85,7 @@ WWW_APP_PAGES = (
 BACKEND_ASSETS = (
     "blog.html",
     "changelog.html",
+    "changelog.js",
     "index.html",
     "install.sh",
     "uninstall.sh",
@@ -362,7 +364,7 @@ def stage_www() -> Path:
     destination = WWW / "dist"
     reset(destination)
     copy_tree(WWW / "public", destination)
-    copy_file(REPOSITORY / "changelog" / "changelog.json", destination / "changelog.json")
+    copy_file(CHANGELOG, destination / "changelog.json")
     for name in WWW_APP_MODULES + WWW_APP_PAGES:
         copy_file(APP / "public" / name, destination / name)
     build_www_feeds(destination)
@@ -382,6 +384,7 @@ def stage_app() -> Path:
     shared_assets(destination, include_video=True)
     for name in BACKEND_ASSETS:
         copy_file(WWW / "public" / name, destination / name)
+    copy_file(CHANGELOG, destination / "changelog.json")
     # The dependency-free QR generator the World already ships. The hackathon
     # share kit loads it on demand from this origin (script-src 'self'), so it
     # is staged here rather than duplicated into app/public.
@@ -460,6 +463,7 @@ def stage_cutover() -> Path:
     shared_assets(destination, include_video=True)
     for name in BACKEND_ASSETS:
         copy_file(WWW / "public" / name, destination / name)
+    copy_file(CHANGELOG, destination / "changelog.json")
     shutil.copytree(WWW / "public", destination, dirs_exist_ok=True)
     shutil.copytree(WORLD / "public", destination, dirs_exist_ok=True)
     stage_market_previews(destination)

@@ -344,15 +344,17 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).
-- **Face and voice:** `face-changer` (web page, a desktop rail link, and a
+- **Face and voice:** `face-changer` (web page, a native desktop page that
+  feeds a "ForkMesh Camera" other apps pick on Linux
+  ([face-changer-desktop.md](face-changer-desktop.md)), and a
   native Face Changer screen in the phone apps whose face, background and voice
   choices video calls use) and
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
-  loop, tempo and crossfader controls on responsive web, mobile and desktop
-  surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
+  loop, tempo and crossfader controls on responsive web and mobile surfaces,
+  and a native four-deck desktop studio with EQ, effects and hot cues; [details](video-mix-dj-studio.md), iOS performance checks in
   [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
@@ -480,9 +482,13 @@ catalog fails the configure with "Marketplace package discovery failed".
 - **Desktop.** `MainWindow::marketPreviewPixmap` reads each preview once with
   `QImageReader::setScaledSize` at the 240×135 card size and caches it in
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
-  Market never re-renders SVGs on the GUI thread. A package whose manifest
-  lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
-  qtimageformats plugin.
+  Market never re-renders SVGs on the GUI thread. WebP needs Qt's optional
+  qtimageformats plugin, which many Linux installs lack, so when Qt cannot
+  read a preview whose bytes are WebP, it is decoded with the libwebp the
+  app already links (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`). Seven packages
+  (RSS Reader, Strata, Synapse, Ember and others) ship only `.webp` previews and
+  showed "Preview unavailable" on such machines until 2026-10-25. PNG and SVG
+  previews still need no plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a
