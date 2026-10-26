@@ -97,6 +97,27 @@ whatever `sandboxDir()` returns. The node deploy agent looks for Deploy nodes ru
 in both sandbox folders ([auto-deploy](../deploy/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
 `safedelete::removeTree` with the folder's own parent.
 
+#### A live run's sandbox is locked, not just claimed
+
+Every ForkMesh process that opens a main window turns the TMP disk on and, when
+it loads the Actions history, sweeps `actions/sandbox` for trees older than
+five minutes. That includes the tray, a desktop an agent starts and each
+`forkmesh-window-tests` run. All of them share the one folder. A run used to be
+protected only by a claim in the memory of the process running it, so any other
+process saw a live run's tree as abandoned and deleted it mid-build.
+Desktop client CI tests runs #8324, #8330, #8340 and #8344 (2026-10-25) died
+this way part-way through compiling `forkmesh-window-tests`. Their logs show
+`Cannot create temporary file in /tmp/: No such file or directory`: gcc falls
+back to `/tmp` once `$TMPDIR` under `/workspace` is gone, and finds that
+deleted too. One run also lost `/workspace/desktop/cmake/forkmesh-compile-gate.sh`.
+
+A run now takes a `flock` on its `forkmesh-run-<id>-<ms>` folder as soon as
+it creates it (`lockSandboxTree` in `ActionRunner.cpp`) and holds it until
+`cleanupWorktree()` or the runner's destructor. `reclaimSandboxes` and
+`removeUnclaimedSandbox` (the Cleanup page) skip a tree whose lock another open
+descriptor holds. The lock belongs to the descriptor, so a node that crashes
+or is killed releases it, and its tree is reclaimed as before.
+
 ### Erasing it
 
 Settings > TMP disk has **Erase TMP disk…**. It re-probes before deleting and

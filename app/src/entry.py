@@ -44696,6 +44696,9 @@ async def repo_org_agent_jobs_handler(env, request, owner, repo):
             # the job queued and look past it, so another node can take it.
             passed_over.append(job_id)
             continue
+        if record.get("toKey") and record.get("toKey") != claimant_key:
+            passed_over.append(job_id)
+            continue
         lease_id = _ap_uuid()
         await d1_run(
             env,

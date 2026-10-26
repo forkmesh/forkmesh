@@ -120,8 +120,11 @@ Android work takes `pending` rows, builds them to look and behave like iOS
 `changelog/changelog.json` is the only changelog: forkmesh.com/changelog and
 the phone apps' What's new both show it. A pull request that changes
 something a user can notice adds one plain sentence with
-`python3 tools/changelog.py add --area <Area> "<sentence>"`, then re-renders
-the site with `python3 app/tools/site_templates.py`. See `docs/changelog.md`.
+`python3 tools/changelog.py add --area <Area> "<sentence>"`; the page reads
+the file itself, so nothing needs re-rendering. Each note is one line and git
+merges the file with `merge=union`, so a conflict there is rare; if one
+happens, keep both sides' lines and run `python3 tools/changelog.py check`.
+See `docs/changelog.md`.
 
 ## Web dashboard styling
 

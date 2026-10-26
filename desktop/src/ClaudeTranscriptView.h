@@ -11,6 +11,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include "AgentTaskList.h"
 #include "ClaudeTranscriptTools.h"
 #include "TranscriptCoverage.h"
 
@@ -26,6 +27,7 @@ class CacheLabel;
 class Collapsible;
 class ScrollJumpButtons;
 class PromptDeckBar;
+class AgentTaskListBar;
 
 class ClaudeTranscriptView : public QScrollArea
 {
@@ -199,6 +201,8 @@ public:
     int pendingLabelRelayoutsForTest() const;
     bool followsBottomForTest() const { return m_stickBottom; }
     void leaveBottomForTest() { m_stickBottom = false; }
+    const forkmesh::agenttasks::Tracker &taskTracker() const { return m_tasks; }
+    AgentTaskListBar *taskListBar() const { return m_taskBar; }
     CommandApproval resolveCommandApprovalForTest(const QString &command,
                                                   const QString &cwd) const
     {
@@ -322,6 +326,8 @@ private:
     bool m_stickBottom = true;
     ScrollJumpButtons *m_jumpButtons = nullptr; // floating ▲/▼ jump corner
     PromptDeckBar *m_promptDeck = nullptr;
+    AgentTaskListBar *m_taskBar = nullptr;
+    forkmesh::agenttasks::Tracker m_tasks;
     QToolButton *m_coverageButton = nullptr;
     forkmesh::transcriptcoverage::Tracker m_coverage;
     bool m_splitDiffs = false;            // side-by-side vs unified diffs

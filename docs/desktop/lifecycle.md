@@ -99,6 +99,13 @@ A run active at quit stays Running on disk and is re-queued on the next start
 (`requeueAfterDesktopInterruption`). The reaper only ensures the step's sandbox
 and its scope are gone.
 
+Stopping or timing out a step sends `systemctl --user kill --kill-whom=all`
+to its `forkmesh-action-<pid>-<run>-<step>.scope` as well as signalling the
+process group. The step has often already left its scope by then, and
+systemctl then prints `Failed to kill unit ... not loaded`. Nothing is wrong
+in that case, so the kill runs through `processreaper::startReleasedQuietly`
+with its output sent to the null device (2026-10-25).
+
 ## Limits
 
 - A second stop signal, `SIGKILL` or a crash skips the sweep; registered scopes

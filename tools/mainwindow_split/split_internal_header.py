@@ -38,7 +38,7 @@ def main():
     subprocess.check_call(["ninja", "-C", a.build, "-t", "compdb"],
                           stdout=open(os.path.join(a.build, "compile_commands.json"), "w"))
     entries = json.load(open(os.path.join(a.build, "compile_commands.json")))
-    tmpl = next(e for e in entries if e["file"].endswith("/desktop/src/MainWindowTimers.cpp")
+    tmpl = next(e for e in entries if e["file"].endswith("/desktop/src/MainWindowPackageChrome.cpp")
                 and "/forkmesh.dir/" in e.get("output", ""))
     args = [x for x in clang_args(tmpl, "/dev/null") if x not in ("-include", "/dev/null")]
     probe = os.path.join(a.build, "inline_defs_probe.cpp")

@@ -320,16 +320,10 @@ void MainWindow::sendOrganizationTaskWorkItemAttach(const QString &taskId)
             const QJsonObject task = data.value(QStringLiteral("task")).toObject();
             rememberOrganizationTaskWorkItems(
                 taskId, task.value(QStringLiteral("workItems")).toArray());
-            for (int index = 0; index < m_organizationTasks.size(); ++index) {
-                if (m_organizationTasks.at(index).toObject().value(QStringLiteral("id")) ==
-                    taskId) {
-                    QJsonObject updated = m_organizationTasks.at(index).toObject();
-                    updated.insert(QStringLiteral("workItems"),
-                                   task.value(QStringLiteral("workItems")));
-                    m_organizationTasks.replace(index, updated);
-                    break;
-                }
-            }
+            if (m_organizationTaskStore)
+                m_organizationTaskStore->updateTaskField(
+                    taskId, QStringLiteral("workItems"),
+                    task.value(QStringLiteral("workItems")));
             logSystem(QStringLiteral("Tasks: attached %1 to task %2.")
                           .arg(names.join(QStringLiteral(", ")), taskId));
             sendOrganizationTaskWorkItemAttach(taskId);

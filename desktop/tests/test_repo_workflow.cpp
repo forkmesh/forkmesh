@@ -117,6 +117,21 @@ int main(int argc, char **argv)
               order.indexOf(QStringLiteral("schedule")) < order.indexOf(QStringLiteral("agent")),
           "steps run after the steps they depend on");
 
+    Workflow twoAgents = extended;
+    twoAgents.nodes.append(node(QStringLiteral("review"), kAgent, QStringLiteral("Reviewer"),
+                                twoAgents.node(QStringLiteral("agent")).value(QStringLiteral("params")).toObject()));
+    twoAgents.connections.append(edge(QStringLiteral("deploy"), QStringLiteral("review")));
+    const QString reviewerId = agentConfig(twoAgents, QStringLiteral("review")).id;
+    check(agentStepId(twoAgents, QStringLiteral("agent")) == twoAgents.id &&
+              agentStepId(twoAgents, QStringLiteral("review")) == reviewerId && reviewerId != twoAgents.id,
+          "the main agent runs under the workflow id and other agent steps under their own");
+    check(runsAgent(twoAgents, twoAgents.id) && runsAgent(twoAgents, reviewerId) &&
+              !runsAgent(twoAgents, QString()) && !runsAgent(twoAgents, QStringLiteral("someone-else")) &&
+              !runsAgent(shortcutWorkflow(QStringLiteral("clean"), QStringLiteral("Clean up"),
+                                          QStringLiteral("clean-forkmesh-temporary-files.sh")),
+                         QStringLiteral("clean")),
+          "an agent session finds the workflow whose step started it");
+
     Workflow plain = shortcutWorkflow(QStringLiteral("clean"), QStringLiteral("Clean up"),
                                       QStringLiteral("clean-forkmesh-temporary-files.sh"));
     check(validate(plain).isEmpty() && !plain.isSpecialAgent() && !toTeammate(plain, nullptr, &error) &&
