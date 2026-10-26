@@ -85,6 +85,12 @@ block leaves at once. `migrateStoredState()` moves existing counters out of
 starts that installation's counters from zero again and peers drop its
 frames as replays until the counter passes what they last saw
 (`testCountersPersist`, `testStoredStateLeavesSettingsFile`).
+The first sealed frame in each room after a start therefore leaves one state
+write later (about 35 ms on an NVMe disk), so a frame sent just before a test
+clears its captured frames can land after the clear: the transport tests call
+`settleSends()` (wait for the state writer, then pump events) before they
+clear and send the frame they check (`testDirectRoomRatchetRecovery` and the
+superseded-DM test failed on disk and passed on tmpfs without it).
 Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
 newest first, and a scope saved before the byte cap is trimmed when it loads:
 on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from
