@@ -118,6 +118,22 @@ it creates it (`lockSandboxTree` in `ActionRunner.cpp`) and holds it until
 descriptor holds. The lock belongs to the descriptor, so a node that crashes
 or is killed releases it, and its tree is reclaimed as before.
 
+The lock only protects a run when both sides have it, and the runner and the
+sweeper are often different builds. Runs #8358, #8362 and #8366 died the same
+way after the lock landed. The node's tray and headless desktop had been built
+at 17:06, before the lock, so their runs took none. Two `forkmesh-window-tests
+--package-only` processes from another agent's worktree had been running since
+17:28, built from a branch without the lock check. A test binary from any
+older branch still sweeps the shared folder, however carefully the current
+code locks. So `fastDiskEnabled()` is always false in a `FORKMESH_WINDOW_TESTS`
+build. A window test never turns the real TMP disk on: its Actions sandboxes,
+caches and scratch stay under the test's own data folder, and its startup sweep
+and hourly scratch clean never reach the shared disk. It also never offers the
+`pkexec` boot-mount prompt. The main window test checks that
+`fastdisk::activeRoot()` stays empty.
+Builds from before this change keep sweeping until they are gone. After
+updating, restart the node's desktop so its runs take the lock.
+
 ### Erasing it
 
 Settings > TMP disk has **Erase TMP disk…**. It re-probes before deleting and
