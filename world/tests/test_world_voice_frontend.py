@@ -180,3 +180,9 @@ def test_camera_stays_on_for_video_when_face_tracking_cannot_start():
     fallback = body.index("if (state.sendVideo && camStream)")
     assert "return true;" in body[fallback:fallback + 200]
     assert "if (capture || camStream) stopCapture();" in VOICE
+
+
+def test_camera_refusal_names_the_reason():
+    assert 'host.notify(cameraErrorMessage(error));' in VOICE
+    for name in ("NotAllowedError", "NotReadableError", "NotFoundError"):
+        assert name in VOICE
