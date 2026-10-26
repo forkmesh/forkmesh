@@ -786,11 +786,36 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
       the role filter already shows, and hides child copy rows with their
       node.
     - The long lede moved into an "About nodes" help button.
+    - Sorting lives here, not in the column headers: a "Sort: <field>"
+      combo (`networkNodesSort`, every column but Actions, in display order)
+      and an ascending/descending button (`networkNodesSortOrder`). Both set
+      the header's sort indicator, so `sortNodesTable` is unchanged; the
+      choice is saved as `network/nodesSort` (the column's caption) and
+      `network/nodesSortOrder` (`asc`/`desc`).
   - **Nodes table.**
-    - It keeps all 44 columns, its sorting, column menu, actions, context
-      menus and double-click behaviour.
-    - Next rows are 44 px. Headers are 12 px text captions without icons.
-    - Latency moves (visually) after Status.
+    - The model keeps all 44 columns, its actions, context menus and
+      double-click behaviour, but the table shows far fewer: the header is
+      hidden (`nodePairs` property) and each shown cell holds two different
+      fields, one per line (`nextNodePairs`):
+      - Status over Activity, Latency over Checked, Health over Integrity,
+        Revision over Message and Author, Route over Reach, Repos over
+        Mirrors, Size over Git DB, Issues over Pulls and Discussions,
+        Commits over Branches, Artifacts over Worktrees, Clones over Web
+        hits, Caps over Scope.
+      - CPU, RAM and Disk share one cell as three small meters.
+      - Each line is its icon, a muted caption (left out where the value
+        says what it is: status, activity, latency, revision, message) and
+        the value. An empty value is a plain dash.
+      - A count's sync-back backlog (`nextNodeBacklogColumn`) follows it in
+        the warning colour as "↑N", instead of taking its own column.
+    - Role, owner, platform (or region), endpoint and version are folded
+      into the Node cell's second line, which absorbs the spare width
+      (`makeColumnsResizable` keeps Node flexible). Node id is only in the
+      details panel.
+    - `nextFitNodeColumns` (run at the end of `applyNodeRoleFilter`) hides a
+      cell whose fields are empty in every row the role and text filters
+      show, so a role tab only lists the columns its nodes report.
+    - Rows are 48 px.
     - `NextNodeCellDelegate` paints:
       - Node: a status dot (green online, grey offline, amber behind, red
         integrity failing), the mono name, and a soft "You" badge or outline
@@ -829,8 +854,8 @@ In Next, the Network page (`buildNetworkDiagnosticsSection` in
     restart. Those stay on saved hosts in the Hosts rail.
   - The Relay traffic delta ("+12%"), and the mockup's mesh invite command
     and dialog: no such data or flow exists.
-  - The mockup hides most columns. They stay visible here, and the column
-    menu still hides them.
+  - The mockup hides most columns. Here they are paired two to a cell or
+    folded into the Node cell instead, so no field is lost.
 - **Hosts.** The Hosts tab is gone: saved hosts, fleet servers, runners and
   directory instances are rows of the node list, and the host controls sit in
   a compact rail beside it ([networking.md](networking.md#network--nodes)).
