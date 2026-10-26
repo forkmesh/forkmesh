@@ -171,3 +171,18 @@ def test_diagnostic_reports_go_to_the_bug_inbox_with_measurements_attached():
     assert '"/api/bug-reports"' in report
     assert 'screen: "world-voice"' in report
     assert 'name: "world-voice-diagnostics.json"' in report
+
+
+def test_camera_stays_on_for_video_when_face_tracking_cannot_start():
+    start = VOICE.index("async function startCapture()")
+    body = VOICE[start:VOICE.index("function stopCapture()", start)]
+    assert "await capture.ready" in body and "catch (error)" in body
+    fallback = body.index("if (state.sendVideo && camStream)")
+    assert "return true;" in body[fallback:fallback + 200]
+    assert "if (capture || camStream) stopCapture();" in VOICE
+
+
+def test_camera_refusal_names_the_reason():
+    assert 'host.notify(cameraErrorMessage(error));' in VOICE
+    for name in ("NotAllowedError", "NotReadableError", "NotFoundError"):
+        assert name in VOICE

@@ -577,6 +577,48 @@ def test_publishing_failure_pings_with_a_fix_and_deduplicates_until_recovery(box
     assert len(requests) == 2
 
 
+def test_a_refused_pull_ledger_waits_for_the_desktop_before_it_pings(box):
+    write_key(box.identity_key)
+    box.settings_file.parent.mkdir(parents=True, exist_ok=True)
+    box.settings_file.write_text("nodeName=forkmesh\n")
+    box.fanout_gateways.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_gateways.write_text("cores https://app.example.invalid/forkmesh/forkmesh.git\n")
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"pings":1}'
+
+    def opener(request, timeout):
+        requests.append(request)
+        return Response()
+
+    now = [1000.0]
+    ledger = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [
+            {"ref": "refs/heads/forkmesh/pulls", "reason": "fetch first"},
+            {"ref": "refs/heads/old-branch", "reason": "non-fast-forward"}]}]}
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    now[0] += sp.LEDGER_GRACE_SECONDS - 1
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert requests == []
+    now[0] += 2
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 1
+    assert "refs/heads/forkmesh/pulls" in json.loads(requests[0].data)["body"]
+    sp.notify_publish_failure(box, {"ok": True}, opener=opener, clock=lambda: now[0])
+    main = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [{"ref": "refs/heads/main", "reason": "fetch first"}]}]}
+    sp.notify_publish_failure(box, main, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 2
+
+
 def test_git_timing_out_on_the_proxy_port_is_reported_as_blocked_loopback(box):
     write_key(box.identity_key)
     calls = []
