@@ -6,6 +6,7 @@
 #include "../src/MainWindowNextAccess.h"
 #include "../src/InstanceTheme.h"
 #include "../src/OverflowActionRow.h"
+#include "../src/GitLayout.h"
 #include "../src/WorkspaceLayout.h"
 #include "../src/OfficeChannelMirror.h"
 #include "../src/WindowFrameControl.h"
@@ -26,13 +27,16 @@
 #include "../src/SettingsSectionsView.h"
 #include "../src/LogTimelineChart.h"
 #include "OnboardingTour.h"
+#include "TimersClock.h"
+#include "TasksPage.h"
 #include "../src/PlatformLogFilter.h"
 #include "../src/PromptFlightOverlay.h"
 #include "../src/ProjectRegistry.h"
 #include "../src/PullStore.h"
 #include "../src/PublicMirrorRuntime.h"
 #include "../src/QtRuntimeDiagnostics.h"
-#include "../src/RepositoryCalendar.h"
+#include "CalendarPage.h"
+#include "RepositoryCalendar.h"
 #include "../src/RewardPoolSigner.h"
 #include "../src/SecretDiffBanner.h"
 #include "../src/ServerNode.h"
@@ -4923,9 +4927,11 @@ void checkCalendarActivityRendering(MainWindow &window)
         });
     }
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("month"));
-    QTableWidget *monthTable = window.testCalendarMonthTable();
-    QLabel *status = window.testCalendarStatus();
+    forkmesh::calendar::CalendarPage calendarPage(
+        window.testNativePackageHost(QStringLiteral("calendar")), nullptr);
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("month"));
+    QTableWidget *monthTable = calendarPage.monthTable();
+    QLabel *status = calendarPage.status();
     check(monthTable != nullptr && status != nullptr,
           QStringLiteral("Calendar month view is built for the activity check"));
     if (!monthTable || !status)
@@ -4951,8 +4957,8 @@ void checkCalendarActivityRendering(MainWindow &window)
                          "(lines = %1, last = %2)")
               .arg(busyLines.size()).arg(busyLines.value(busyLines.size() - 1)));
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("week"));
-    QTableWidget *weekTable = window.testCalendarWeekTable();
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("week"));
+    QTableWidget *weekTable = calendarPage.weekTable();
     QString weekCell;
     if (weekTable) {
         for (int row = 0; row < weekTable->rowCount() && weekCell.isEmpty(); ++row) {
@@ -4972,8 +4978,8 @@ void checkCalendarActivityRendering(MainWindow &window)
                          "(lines = %1, last = %2)")
               .arg(weekLines.size()).arg(weekLines.value(weekLines.size() - 1)));
 
-    window.testRenderCalendarActivity(activity, anchor, QStringLiteral("agenda"));
-    QListWidget *agenda = window.testCalendarAgendaList();
+    calendarPage.renderActivity(activity, anchor, QStringLiteral("agenda"));
+    QListWidget *agenda = calendarPage.agendaList();
     check(agenda != nullptr, QStringLiteral("Calendar agenda view is built"));
     if (!agenda)
         return;
@@ -4983,7 +4989,7 @@ void checkCalendarActivityRendering(MainWindow &window)
           QStringLiteral("the agenda renders a page and offers the rest "
                          "(rows = %1, last = %2)")
               .arg(agenda->count()).arg(agenda->item(agenda->count() - 1)->text()));
-    window.testExtendCalendarAgenda(300);
+    calendarPage.extendAgenda(300);
     check(agenda->count() == 400,
           QStringLiteral("asking for more agenda rows renders the remainder "
                          "(rows = %1)").arg(agenda->count()));
@@ -9550,10 +9556,16 @@ void checkTimerPingCredential(MainWindow &window)
 {
     const qint64 endsAt = 1760000000000;
     window.testWithOwnerSigningAccount(QStringLiteral("jett"), [&] {
+        forkmesh::timers::TimersClock clock(
+            window.testNativePackageHost(QStringLiteral("timers")), nullptr);
         QByteArray body;
-        const QUrl url = window.testTimerPingRequest(
-            QStringLiteral("a1b2c3d4e5f6"), QStringLiteral("countdown"),
-            endsAt, QStringLiteral("tea"), &body);
+        QNetworkRequest request;
+        const QUrl url =
+            clock.pingRequest(QStringLiteral("a1b2c3d4e5f6"),
+                              QStringLiteral("countdown"), endsAt,
+                              QStringLiteral("tea"), &request, &body)
+                ? request.url()
+                : QUrl();
         check(url.isValid() && url.scheme() == QLatin1String("https") &&
                   url.path() == QLatin1String("/api/notifications/timer"),
               QString("a finished countdown pings the account through the "
@@ -11689,8 +11701,14 @@ void checkWorkspaceDesign(MainWindow &window)
             "dark":{"background":"#141414","foreground":"#f4f4f5","card":"#1c1c1e",
                     "muted":"#232326","border":"#2e2e33","muted-foreground":"#a1a1aa",
                     "primary":"#dc2626","primary-foreground":"#ffffff","link":"#f87171"},
-            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}}})")
+            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}},
+            "themes":[{"id":"default","name":"Default"},{"id":"blt","name":"BLT"}]})")
             .object());
+    check(forkmesh::instancetheme::label(colors) == QStringLiteral("BLT") &&
+              forkmesh::instancetheme::label({}) == QStringLiteral("Default"),
+          QStringLiteral("the instance theme is named after the preset the instance "
+                         "sends (%1)")
+              .arg(forkmesh::instancetheme::label(colors)));
     check(colors.dark.value(QStringLiteral("accent")) == QStringLiteral("#dc2626") &&
               colors.dark.value(QStringLiteral("bg")) == QStringLiteral("#141414") &&
               colors.light.value(QStringLiteral("bg")) == QStringLiteral("#ffffff"),
@@ -14030,6 +14048,14 @@ void checkAgentUnreadDot(MainWindow &window)
     window.testRefreshAgentTable();
 }
 
+forkmesh::tasks::TasksPage *showTestTasksPage(MainWindow &window)
+{
+    window.testShowNativePackage(QStringLiteral("tasks"));
+    QApplication::processEvents();
+    return dynamic_cast<forkmesh::tasks::TasksPage *>(
+        window.testNativePackagePage(QStringLiteral("tasks")));
+}
+
 void checkTaskListView(MainWindow &window)
 {
     const auto railPixels = [](const QImage &source) {
@@ -14054,8 +14080,12 @@ void checkTaskListView(MainWindow &window)
                          QStringLiteral("full"));
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
-    window.testReloadOrganizationTaskListView();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
+    tasks->reloadOrganizationTaskListView();
     QApplication::processEvents();
 
     const QString workingTask = QStringLiteral("d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4");
@@ -14126,16 +14156,16 @@ void checkTaskListView(MainWindow &window)
             return;
         window.grab().save(shot + QStringLiteral(".") + mode +
                            QStringLiteral(".page.png"));
-        window.testOrganizationTaskRowImage(personTask)
+        tasks->organizationTaskRowImage(personTask)
             .save(shot + QStringLiteral(".") + mode + QStringLiteral(".row.png"));
     };
 
-    const QImage fullRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage fullRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Full") &&
-              window.testOrganizationTaskListView() ==
+              tasks->organizationTaskListView() ==
                   forkmesh::ui::ListViewMode::Full &&
               fullRow.height() >= 52 && railPixels(fullRow) > 0 &&
-              window.testOrganizationTaskSpinTimerActive(),
+              tasks->organizationTaskSpinTimerActive(),
           QString("the Tasks page's View button starts on Full, the two-line "
                   "rows (height %1, rail %2)")
               .arg(fullRow.height())
@@ -14145,7 +14175,7 @@ void checkTaskListView(MainWindow &window)
     if (viewButton)
         viewButton->click();
     QApplication::processEvents();
-    const QImage compactRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage compactRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Compact") &&
               viewButton->toolTip().startsWith(QStringLiteral("Compact view: ")) &&
               viewButton->toolTip().endsWith(QStringLiteral("Click for Zen view")) &&
@@ -14155,7 +14185,7 @@ void checkTaskListView(MainWindow &window)
                   QStringLiteral("compact") &&
               compactRow.height() < fullRow.height() &&
               compactRow.height() >= 32 && railPixels(compactRow) > 0 &&
-              window.testOrganizationTaskSpinTimerActive(),
+              tasks->organizationTaskSpinTimerActive(),
           QString("a click steps the Tasks list to Compact, one line per task "
                   "kept in tasks/listView (height %1, rail %2)")
               .arg(compactRow.height())
@@ -14165,13 +14195,13 @@ void checkTaskListView(MainWindow &window)
     if (viewButton)
         viewButton->click();
     QApplication::processEvents();
-    const QImage zenRow = window.testOrganizationTaskRowImage(personTask);
+    const QImage zenRow = tasks->organizationTaskRowImage(personTask);
     check(viewButton && viewButton->text() == QStringLiteral("Zen") &&
               viewButton->toolTip().endsWith(QStringLiteral("Click for Full view")) &&
               QSettings().value(QStringLiteral("tasks/listView")).toString() ==
                   QStringLiteral("zen") &&
               zenRow.height() == compactRow.height() && railPixels(zenRow) == 0 &&
-              !window.testOrganizationTaskSpinTimerActive(),
+              !tasks->organizationTaskSpinTimerActive(),
           QString("a second click steps to Zen: no rail, priority or columns, "
                   "and no spinner timer (height %1, rail %2)")
               .arg(zenRow.height())
@@ -14180,10 +14210,10 @@ void checkTaskListView(MainWindow &window)
 
     QSettings().setValue(QStringLiteral("tasks/listView"),
                          QStringLiteral("compact"));
-    window.testReloadOrganizationTaskListView();
+    tasks->reloadOrganizationTaskListView();
     QApplication::processEvents();
     check(viewButton && viewButton->text() == QStringLiteral("Compact") &&
-              window.testOrganizationTaskRowImage(personTask).height() ==
+              tasks->organizationTaskRowImage(personTask).height() ==
                   compactRow.height(),
           QStringLiteral("the stored Tasks view is what the page opens with"));
     check(QSettings().value(QStringLiteral("agents/listView"),
@@ -14198,9 +14228,9 @@ void checkTaskListView(MainWindow &window)
     }
     QApplication::processEvents();
     check(viewButton && viewButton->text() == QStringLiteral("Full") &&
-              window.testOrganizationTaskRowImage(personTask).height() ==
+              tasks->organizationTaskRowImage(personTask).height() ==
                   fullRow.height() &&
-              window.testOrganizationTaskSpinTimerActive() &&
+              tasks->organizationTaskSpinTimerActive() &&
               QSettings().value(QStringLiteral("tasks/listView")).toString() ==
                   QStringLiteral("full"),
           QStringLiteral("stepping on returns the Tasks list to Full"));
@@ -14230,7 +14260,11 @@ void checkTaskAgentAvatar(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
     QApplication::processEvents();
 
     const QString runningTask = QStringLiteral("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1");
@@ -14286,7 +14320,7 @@ void checkTaskAgentAvatar(MainWindow &window)
     QApplication::processEvents();
 
     const QImage localFace =
-        window.testOrganizationTaskAgentFace(runningTask).toImage();
+        tasks->organizationTaskAgentFacePicture(runningTask).toImage();
     const QImage expectedLocal = forkmesh::ui::agentStatusModelIcon(session)
                                      .pixmap(localFace.size())
                                      .toImage();
@@ -14300,7 +14334,7 @@ void checkTaskAgentAvatar(MainWindow &window)
     remoteIdentity.provider = QStringLiteral("codex");
     remoteIdentity.model = QStringLiteral("gpt-5");
     const QImage remoteFace =
-        window.testOrganizationTaskAgentFace(remoteTask).toImage();
+        tasks->organizationTaskAgentFacePicture(remoteTask).toImage();
     const QImage expectedRemote =
         forkmesh::ui::agentStatusModelIcon(remoteIdentity)
             .pixmap(remoteFace.size())
@@ -14308,59 +14342,59 @@ void checkTaskAgentAvatar(MainWindow &window)
     check(!remoteFace.isNull() &&
               remoteFace.convertToFormat(QImage::Format_ARGB32) ==
                   expectedRemote.convertToFormat(QImage::Format_ARGB32) &&
-              !window.testOrganizationTaskAgentWorking(remoteTask),
+              !tasks->organizationTaskAgentWorking(remoteTask),
           QStringLiteral("a bot task run elsewhere shows the avatar of the "
                          "provider and model the relay reports, without a "
                          "spinner once that run has finished"));
-    check(window.testOrganizationTaskAgentFace(personTask).isNull() &&
-              !window.testOrganizationTaskAgentWorking(personTask),
+    check(tasks->organizationTaskAgentFacePicture(personTask).isNull() &&
+              !tasks->organizationTaskAgentWorking(personTask),
           QStringLiteral("a task assigned to a person keeps the person badge"));
 
-    check(window.testOrganizationTaskAgentWorking(runningTask) &&
-              window.testOrganizationTaskSpinTimerActive(),
+    check(tasks->organizationTaskAgentWorking(runningTask) &&
+              tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("a running agent's task row spins while the Tasks "
                          "page is on screen"));
-    const QImage spinningRow = window.testOrganizationTaskRowImage(runningTask);
-    window.testTickOrganizationTaskSpinners();
+    const QImage spinningRow = tasks->organizationTaskRowImage(runningTask);
+    tasks->tickOrganizationTaskSpinners();
     QApplication::processEvents();
-    const QImage nextFrame = window.testOrganizationTaskRowImage(runningTask);
+    const QImage nextFrame = tasks->organizationTaskRowImage(runningTask);
     check(!spinningRow.isNull() && spinningRow != nextFrame,
           QStringLiteral("each spinner tick moves the fireball on the row"));
 
     session.status = AgentStatus::Success;
     window.testAddAgentSession(session);
-    window.testTickOrganizationTaskSpinners();
+    tasks->tickOrganizationTaskSpinners();
     QApplication::processEvents();
-    const QImage idleRow = window.testOrganizationTaskRowImage(runningTask);
-    check(!window.testOrganizationTaskAgentWorking(runningTask) &&
-              !window.testOrganizationTaskSpinTimerActive() &&
+    const QImage idleRow = tasks->organizationTaskRowImage(runningTask);
+    check(!tasks->organizationTaskAgentWorking(runningTask) &&
+              !tasks->organizationTaskSpinTimerActive() &&
               purplePixelCount(spinningRow) > purplePixelCount(idleRow) &&
-              !window.testOrganizationTaskAgentFace(runningTask).isNull(),
+              !tasks->organizationTaskAgentFacePicture(runningTask).isNull(),
           QStringLiteral("the spinner stops, and its timer with it, once the "
                          "agent finishes; the avatar stays"));
 
     session.status = AgentStatus::Running;
     window.testAddAgentSession(session);
-    window.testRefreshOrganizationTaskAgentRows();
-    check(window.testOrganizationTaskAgentWorking(runningTask) &&
-              window.testOrganizationTaskSpinTimerActive(),
+    tasks->refreshOrganizationTaskAgentRows();
+    check(tasks->organizationTaskAgentWorking(runningTask) &&
+              tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the spinner starts again when the agent runs again"));
 
     window.testShowControlNode();
     QApplication::processEvents();
-    window.testTickOrganizationTaskSpinners();
-    check(!window.testOrganizationTaskSpinTimerActive(),
+    tasks->tickOrganizationTaskSpinners();
+    check(!tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the task spinner timer stops while the Tasks page "
                          "is hidden"));
-    window.testShowOrganizationTasks();
+    showTestTasksPage(window);
     QApplication::processEvents();
-    check(window.testOrganizationTaskSpinTimerActive(),
+    check(tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("the task spinner resumes when the Tasks page is "
                          "shown again with an agent still running"));
 
     window.testRemoveAgentSession(session.id);
-    window.testRefreshOrganizationTaskAgentRows();
-    check(!window.testOrganizationTaskSpinTimerActive(),
+    tasks->refreshOrganizationTaskAgentRows();
+    check(!tasks->organizationTaskSpinTimerActive(),
           QStringLiteral("no agent working means no task spinner timer"));
 }
 
@@ -14382,8 +14416,12 @@ void checkTaskPeopleAvatars(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
     window.testSetAccountAvatar(QStringLiteral("jett"), QPixmap());
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), QPixmap());
     QApplication::processEvents();
@@ -14414,7 +14452,7 @@ void checkTaskPeopleAvatars(MainWindow &window)
          }}});
     QApplication::processEvents();
 
-    const QImage standIn = window.testOrganizationTaskRowImage(jettTask);
+    const QImage standIn = tasks->organizationTaskRowImage(jettTask);
     check(exactPixelCount(standIn, jettColor) == 0,
           QStringLiteral("a creator with no known picture wears the generated "
                          "stand-in"));
@@ -14427,37 +14465,37 @@ void checkTaskPeopleAvatars(MainWindow &window)
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), kaifPicture);
     QApplication::processEvents();
 
-    const QImage fullRow = window.testOrganizationTaskRowImage(jettTask);
-    check(window.testOrganizationTaskCreatorPicture(jettTask).cacheKey() ==
+    const QImage fullRow = tasks->organizationTaskRowImage(jettTask);
+    check(tasks->organizationTaskCreatorPicture(jettTask).cacheKey() ==
                   jettPicture.cacheKey() &&
               exactPixelCount(fullRow, jettColor) > 200,
           QStringLiteral("the Full row repaints with jett's real profile "
                          "picture as the creator avatar once it is loaded"));
-    check(window.testOrganizationTaskAssigneePicture(jettTask).cacheKey() ==
+    check(tasks->organizationTaskAssigneePicture(jettTask).cacheKey() ==
                   kaifPicture.cacheKey() &&
               exactPixelCount(fullRow, kaifColor) > 20,
           QStringLiteral("the assignee badge on a Full row shows the "
                          "assignee's real profile picture"));
-    const QImage plainRow = window.testOrganizationTaskRowImage(plainTask);
-    check(window.testOrganizationTaskCreatorPicture(plainTask).isNull() &&
+    const QImage plainRow = tasks->organizationTaskRowImage(plainTask);
+    check(tasks->organizationTaskCreatorPicture(plainTask).isNull() &&
               exactPixelCount(plainRow, jettColor) == 0,
           QStringLiteral("an account with no picture keeps its stand-in"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Compact);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Compact);
     QApplication::processEvents();
-    check(exactPixelCount(window.testOrganizationTaskRowImage(jettTask),
+    check(exactPixelCount(tasks->organizationTaskRowImage(jettTask),
                           kaifColor) > 40,
           QStringLiteral("the Compact assignee column shows the assignee's "
                          "real profile picture"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Zen);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Zen);
     QApplication::processEvents();
-    const QImage zenRow = window.testOrganizationTaskRowImage(jettTask);
+    const QImage zenRow = tasks->organizationTaskRowImage(jettTask);
     check(exactPixelCount(zenRow, jettColor) == 0 &&
               exactPixelCount(zenRow, kaifColor) == 0,
           QStringLiteral("Zen rows show no avatars"));
 
-    window.testSetOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
+    tasks->setOrganizationTaskListView(forkmesh::ui::ListViewMode::Full);
     window.testSetAccountAvatar(QStringLiteral("jett"), QPixmap());
     window.testSetAccountAvatar(QStringLiteral("mdkaifansari04"), QPixmap());
     window.testApplyOrganizationTasks(QJsonObject{
@@ -14686,6 +14724,85 @@ void checkAgentDeleteDropsBranchCount(MainWindow &window)
               .arg(after));
 }
 
+void checkAgentSendToDesktop(MainWindow &window)
+{
+    AgentSession movable;
+    movable.id = 133940;
+    movable.owner = QStringLiteral("me");
+    movable.name = QStringLiteral("r");
+    movable.provider = QStringLiteral("claude-code");
+    movable.prompt = QStringLiteral("Send to desktop fixture");
+    movable.branchName = QStringLiteral("agent/send-to-desktop");
+    movable.status = AgentStatus::Stopped;
+    window.testAddAgentSession(movable);
+    AgentSession apiOnly = movable;
+    apiOnly.id = 133941;
+    apiOnly.provider = QStringLiteral("claude-api");
+    window.testAddAgentSession(apiOnly);
+    const QString apiBlocker = window.testAgentCloudHandoffBlocker(apiOnly.id);
+    window.testSetAgentHandoffDesktops(QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("desktops"),
+         QJsonArray{
+             QJsonObject{{QStringLiteral("key"), QStringLiteral("laptop-key")},
+                         {QStringLiteral("node"), QStringLiteral("laptop")},
+                         {QStringLiteral("lastSeen"), 2000}},
+             QJsonObject{{QStringLiteral("key"), QStringLiteral("studio-key")},
+                         {QStringLiteral("node"), QStringLiteral("studio")},
+                         {QStringLiteral("lastSeen"), 1000}}}}});
+    const auto sendMenu = [](QMenu *menu) -> QMenu * {
+        if (!menu)
+            return nullptr;
+        for (QAction *action : menu->actions())
+            if (action->objectName() ==
+                QStringLiteral("agentListSendToDesktopAction"))
+                return action->menu();
+        return nullptr;
+    };
+    std::unique_ptr<QMenu> apiSendMenu(
+        window.testBuildAgentListContextMenu(apiOnly.id));
+    QMenu *apiSend = sendMenu(apiSendMenu.get());
+    std::unique_ptr<QMenu> movableMenu(
+        window.testBuildAgentListContextMenu(movable.id));
+    QMenu *movableSend = sendMenu(movableMenu.get());
+    QStringList targets;
+    QStringList keys;
+    if (movableSend) {
+        emit movableSend->aboutToShow();
+        for (const QAction *action : movableSend->actions())
+            if (action->objectName() ==
+                QStringLiteral("agentListSendToDesktopTarget")) {
+                targets << action->text();
+                keys << action->data().toString();
+            }
+    }
+    check(apiSend && !apiSend->menuAction()->isEnabled() &&
+              apiSend->menuAction()->toolTip() == apiBlocker &&
+              targets == QStringList{QStringLiteral("laptop"),
+                                     QStringLiteral("studio")} &&
+              keys == QStringList{QStringLiteral("laptop-key"),
+                                  QStringLiteral("studio-key")},
+          QString("the right-click menu offers sending a session to "
+                  "each of the account's other desktops (targets=[%1])")
+              .arg(targets.join(QLatin1Char(','))));
+    window.testSetAgentHandoffDesktops(QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("desktops"), QJsonArray()}});
+    QStringList notes;
+    if (movableSend) {
+        emit movableSend->aboutToShow();
+        for (const QAction *action : movableSend->actions())
+            notes << action->text();
+    }
+    check(notes == QStringList{QStringLiteral(
+                       "No other desktop is signed in to this account")},
+          QString("an account with one desktop says there is nowhere "
+                  "to send the session ([%1])")
+              .arg(notes.join(QLatin1Char(','))));
+    window.testRemoveAgentSession(movable.id);
+    window.testRemoveAgentSession(apiOnly.id);
+}
+
 void checkAgentTaskLink(MainWindow &window)
 {
     const auto menuActions = [&window](int sessionId) {
@@ -14698,7 +14815,11 @@ void checkAgentTaskLink(MainWindow &window)
 
     window.resize(1440, 900);
     window.show();
-    window.testShowOrganizationTasks();
+    forkmesh::tasks::TasksPage *tasks = showTestTasksPage(window);
+    check(tasks != nullptr,
+          QStringLiteral("the Tasks package page is installed and shows"));
+    if (!tasks)
+        return;
     QApplication::processEvents();
 
     const QString personTask = QStringLiteral("d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4");
@@ -14799,7 +14920,7 @@ void checkAgentTaskLink(MainWindow &window)
              {QStringLiteral("createdAt"), double(now)}}}},
     });
     QApplication::processEvents();
-    check(!window.testOrganizationTaskAgentFace(personTask).isNull(),
+    check(!tasks->organizationTaskAgentFacePicture(personTask).isNull(),
           QStringLiteral("a person's task shows the avatar of the agent "
                          "attached to it"));
 
@@ -14967,13 +15088,11 @@ void checkAgentTaskLink(MainWindow &window)
         QApplication::processEvents();
         window.testOpenAgentTranscriptReference(QStringLiteral("forkmesh-task:") + id);
         QApplication::processEvents();
-        check(window.testSectionIndex() ==
-                      window.testOrganizationTasksSectionIndex() &&
-                  selectedTaskTitle() == title,
+        check(tasks->isVisible() && selectedTaskTitle() == title,
               QStringLiteral("clicking a transcript task link opens Tasks with "
-                             "that task selected (%1: section %2, selected \"%3\")")
+                             "that task selected (%1: shown %2, selected \"%3\")")
                   .arg(title)
-                  .arg(window.testSectionIndex())
+                  .arg(tasks->isVisible())
                   .arg(selectedTaskTitle()));
     }
     window.testOpenAgentTranscriptReference(QStringLiteral("forkmesh-task:") +
@@ -15482,7 +15601,7 @@ void checkUiSnapshots(MainWindow &window)
         }
     }
 
-    NextAccess::showSection(window, 16);
+    window.testShowNotesSection();
     QApplication::processEvents();
     if (auto *notes = window.findChild<QWidget *>(QStringLiteral("notesSection"))) {
         const auto button = [notes](const QString &text) -> QPushButton * {
@@ -15524,10 +15643,18 @@ void checkUiSnapshots(MainWindow &window)
     };
     const Page pages[] = {
         {0, "home"},     {1, "settings"}, {2, "chat"},   {4, "log"},
-        {7, "hosts"},    {14, "control"}, {15, "tasks"}, {16, "notes"},
-        {17, "users"},   {18, "files"},   {19, "calendar"}, {20, "market"},
+        {7, "hosts"},    {14, "control"}, {-2, "tasks"}, {-1, "notes"},
+        {17, "users"},   {18, "files"},   {20, "market"},
         {21, "ledger"},  {22, "team"},    {23, "stats"}, {24, "health"},
         {25, "memory"},
+    };
+    const auto calendarPage = [&window] {
+        return dynamic_cast<forkmesh::calendar::CalendarPage *>(
+            window.testNativePackagePage(QStringLiteral("calendar")));
+    };
+    const auto renderCalendarFixture = [&](const QString &mode) {
+        if (forkmesh::calendar::CalendarPage *page = calendarPage())
+            page->renderActivity(calendarFixture, QDate::currentDate(), mode);
     };
     const auto settle = [] {
         for (int pass = 0; pass < 4; ++pass) {
@@ -15608,7 +15735,7 @@ void checkUiSnapshots(MainWindow &window)
                   QStringLiteral("the sidebar toggle shows only in the new design (%1)")
                       .arg(label));
 
-        NextAccess::showSection(window, 16);
+        window.testShowNotesSection();
         settle();
         if (auto *notes = window.findChild<QWidget *>(QStringLiteral("notesSection"))) {
             for (QPushButton *candidate : notes->findChildren<QPushButton *>()) {
@@ -15626,24 +15753,28 @@ void checkUiSnapshots(MainWindow &window)
                 break;
             }
         }
-        window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                          QStringLiteral("month"));
         for (const Page &page : pages) {
             if (page.section >= NextAccess::sectionCount(window))
                 continue;
-            NextAccess::showSection(window, page.section);
+            if (page.section == -2)
+                window.testShowNativePackage(QStringLiteral("tasks"));
+            else if (page.section < 0)
+                window.testShowNotesSection();
+            else
+                NextAccess::showSection(window, page.section);
             if (grab(dir, QString::fromLatin1(page.name)))
                 ++saved;
         }
-        for (const char *mode : {"week", "agenda"}) {
-            window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                              QLatin1String(mode));
-            NextAccess::showSection(window, 19);
-            if (grab(dir, QStringLiteral("calendar-") + QLatin1String(mode)))
-                ++saved;
+        if (calendarPage()) {
+            for (const char *mode : {"month", "week", "agenda"}) {
+                window.testShowNativePackage(QStringLiteral("calendar"));
+                renderCalendarFixture(QLatin1String(mode));
+                if (grab(dir, QLatin1String(mode) == QLatin1String("month")
+                                  ? QStringLiteral("calendar")
+                                  : QStringLiteral("calendar-") + QLatin1String(mode)))
+                    ++saved;
+            }
         }
-        window.testRenderCalendarActivity(calendarFixture, QDate::currentDate(),
-                                          QStringLiteral("month"));
         window.testRenderNetworkRepos(reposFixture);
         settle();
         for (QTableWidget *table : window.findChildren<QTableWidget *>(
@@ -15839,12 +15970,15 @@ void checkUiSnapshots(MainWindow &window)
             const struct {
                 int section;
                 const char *name;
-            } smallPages[] = {{0, "home"}, {2, "chat"}, {16, "notes"},
-                              {19, "calendar"}, {24, "health"}};
+            } smallPages[] = {{0, "home"}, {2, "chat"}, {-1, "notes"},
+                              {24, "health"}};
             for (const auto &page : smallPages) {
                 if (page.section >= NextAccess::sectionCount(window))
                     continue;
-                NextAccess::showSection(window, page.section);
+                if (page.section < 0)
+                    window.testShowNotesSection();
+                else
+                    NextAccess::showSection(window, page.section);
                 settle();
                 check(window.size() == small,
                       QStringLiteral("%1 does not push the window wider (%2, got %3)")
@@ -16184,6 +16318,93 @@ void checkSessionsPage(MainWindow &window)
     QApplication::processEvents();
 }
 
+void checkGitCompactLayout(MainWindow &window)
+{
+    QSettings settings;
+    const QVariant designWas = settings.value(QStringLiteral("app/design"));
+    const auto settle = [] {
+        for (int i = 0; i < 10; ++i)
+            QApplication::processEvents();
+    };
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_GIT_LAYOUT_SHOT");
+    const auto shot = [&](const QString &name) {
+        if (!shotPrefix.isEmpty())
+            window.grab().save(shotPrefix + QLatin1Char('-') + name +
+                               QStringLiteral(".png"));
+    };
+
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    forkmesh::ui::setGitLayoutCompact(false);
+    MainWindow::applyTheme();
+    settle();
+    const QString fresh = window.testGitLayoutState();
+    check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
+              fresh.endsWith(QStringLiteral(" rows=1 commit=1 branch=gitNextHeader")),
+          QStringLiteral("the New Git layout has the page header, the branches "
+                         "column and the branch picker in the header (%1)")
+              .arg(fresh));
+    shot(QStringLiteral("new"));
+
+    forkmesh::ui::setGitLayoutCompact(true);
+    window.testApplyGitLayout();
+    settle();
+    const QString compact = window.testGitLayoutState();
+    check(compact == QStringLiteral("header=0 side=0 files=1 history=1 rows=1 "
+                                    "commit=1 branch=gitHistoryHeader"),
+          QStringLiteral("the Compact Git layout stacks files over history with "
+                         "room for the file list and the commit button, and the "
+                         "branch picker in the history header (%1)")
+              .arg(compact));
+    shot(QStringLiteral("compact"));
+
+    forkmesh::ui::setGitLayoutCompact(false);
+    window.testApplyGitLayout();
+    settle();
+    const QString back = window.testGitLayoutState();
+    check(back == fresh,
+          QStringLiteral("switching back to the New Git layout restores it (%1)")
+              .arg(back));
+
+    if (designWas.isValid())
+        settings.setValue(QStringLiteral("app/design"), designWas);
+    else
+        settings.remove(QStringLiteral("app/design"));
+    settings.remove(QLatin1String(forkmesh::ui::kGitLayoutSetting));
+    forkmesh::ui::gitLayoutState() = -1;
+    MainWindow::applyTheme();
+    settle();
+}
+
+void runGitLayoutOnly(MainWindow &window)
+{
+    window.resize(1400, 900);
+    window.show();
+    QApplication::processEvents();
+    QTemporaryDir repo;
+    if (!initGitRepo(repo))
+        return;
+    QFile file(repo.path() + QStringLiteral("/readme.txt"));
+    file.open(QIODevice::WriteOnly);
+    file.write("tracked\n");
+    file.close();
+    runGitChecked(repo.path(), {"add", "readme.txt"});
+    runGitChecked(repo.path(), {"commit", "-m", "readme"});
+    QFile edited(repo.path() + QStringLiteral("/readme.txt"));
+    edited.open(QIODevice::Append);
+    edited.write("changed\n");
+    edited.close();
+    const int index = window.testAddLocalRepository("me", "gitlayout", repo.path());
+    window.testOpenRepository(index);
+    QApplication::processEvents();
+    window.testClickRailGitButton();
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 5000 &&
+           window.testBrowsedBranch() != QStringLiteral("main"))
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    checkGitCompactLayout(window);
+}
+
 int runWorkspaceSnapshots(MainWindow &window);
 
 int main(int argc, char *argv[])
@@ -16473,6 +16694,8 @@ else:
         app.arguments().contains(QStringLiteral("--users-detail-only"));
     const bool ledgerOnly =
         app.arguments().contains(QStringLiteral("--ledger-only"));
+    const bool gitLayoutOnly =
+        app.arguments().contains(QStringLiteral("--git-layout-only"));
     const bool pageFindOnly =
         app.arguments().contains(QStringLiteral("--page-find-only"));
     const bool savedSearchesOnly =
@@ -16493,6 +16716,8 @@ else:
         app.arguments().contains(QStringLiteral("--task-list-view-only"));
     const bool agentTaskLinkOnly =
         app.arguments().contains(QStringLiteral("--agent-task-link-only"));
+    const bool agentSendToDesktopOnly =
+        app.arguments().contains(QStringLiteral("--agent-send-desktop-only"));
     const bool commandApprovalOnly =
         app.arguments().contains(QStringLiteral("--command-approval-only"));
     const bool highMemoryPanelOnly =
@@ -17593,6 +17818,11 @@ else:
     }
     if (ledgerOnly) {
         checkLedgerSection(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (gitLayoutOnly) {
+        runGitLayoutOnly(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -20697,6 +20927,12 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         return failures == 0 ? 0 : 1;
     }
 
+    if (agentSendToDesktopOnly) {
+        checkAgentSendToDesktop(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (commandApprovalOnly) {
         QTemporaryDir openedRepo;
         window.testOpenRepository(window.testAddLocalRepository(
@@ -20856,59 +21092,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         marketTabs->setCurrentIndex(0);
         QApplication::processEvents();
     }
+    const QSet<QString> splitPackages = installedPackageCards + notInstalledPackageCards;
     check(marketTabs && marketTabs->count() == 5 && marketList &&
               marketInstalledList && marketNotInstalledList && marketPublish &&
-              marketTabs->tabText(0) == QStringLiteral("All (20)") &&
-              marketTabs->tabText(1) == QStringLiteral("Installed (9)") &&
-              marketTabs->tabText(2) == QStringLiteral("Not installed (11)") &&
+              marketTabs->tabText(0) ==
+                  QStringLiteral("All (%1)").arg(marketCards.size()) &&
+              marketTabs->tabText(1) ==
+                  QStringLiteral("Installed (%1)").arg(installedMarketCards.size()) &&
+              marketTabs->tabText(2) ==
+                  QStringLiteral("Not installed (%1)").arg(notInstalledMarketCards.size()) &&
               installedTabSelectable && notInstalledTabSelectable &&
               marketPublish->text() == QStringLiteral("Publish an item") &&
               marketCards.size() == packageCards.size() &&
               packageCards.size() >= 7 &&
-              packageCards.contains(QStringLiteral("capture")) &&
-              packageCards.contains(QStringLiteral("ledger")) &&
-              packageCards.contains(QStringLiteral("x-banner-board")) &&
-              packageCards.contains(QStringLiteral("reddit-banner-board")) &&
-              packageCards.contains(QStringLiteral("crm")) &&
-              packageCards.contains(QStringLiteral("marketing")) &&
-              packageCards.contains(QStringLiteral("competitor")) &&
+              installedMarketCards.size() + notInstalledMarketCards.size() ==
+                  marketCards.size() &&
+              !installedPackageCards.intersects(notInstalledPackageCards) &&
+              splitPackages == packageCards &&
+              !installedPackageCards.isEmpty() && !notInstalledPackageCards.isEmpty() &&
+              installedPackageCards.contains(QStringLiteral("capture")) &&
+              installedPackageCards.contains(QStringLiteral("ledger")) &&
               packageCards.contains(QStringLiteral("tasks")) &&
               packageCards.contains(QStringLiteral("calendar")) &&
               packageCards.contains(QStringLiteral("notes")) &&
-              packageCards.contains(QStringLiteral("discord")) &&
-              packageCards.contains(QStringLiteral("gemma-4")) &&
-              packageCards.contains(QStringLiteral("winamp")) &&
-              packageCards.contains(QStringLiteral("forkmesh-ide")) &&
-              installedMarketCards.size() == 9 &&
-              installedPackageCards.contains(QStringLiteral("capture")) &&
-              installedPackageCards.contains(QStringLiteral("ledger")) &&
-              installedPackageCards.contains(QStringLiteral("x-banner-board")) &&
-              installedPackageCards.contains(
-                  QStringLiteral("reddit-banner-board")) &&
-              installedPackageCards.contains(QStringLiteral("tasks")) &&
-              installedPackageCards.contains(QStringLiteral("calendar")) &&
-              installedPackageCards.contains(QStringLiteral("notes")) &&
-              installedPackageCards.contains(QStringLiteral("discord")) &&
-              packageCards.contains(QStringLiteral("timers")) &&
-              packageCards.contains(QStringLiteral("forkmesh-sky-office")) &&
-              packageCards.contains(QStringLiteral("calories")) &&
-              packageCards.contains(QStringLiteral("vault")) &&
-              packageCards.contains(QStringLiteral("browser-extension")) &&
-              packageCards.contains(QStringLiteral("voice-changer")) &&
-              notInstalledMarketCards.size() == 12 &&
-              notInstalledPackageCards ==
-                  QSet<QString>{QStringLiteral("crm"),
-                                QStringLiteral("marketing"),
-                                QStringLiteral("competitor"),
-                                QStringLiteral("gemma-4"),
-                                QStringLiteral("winamp"),
-                                QStringLiteral("forkmesh-ide"),
-                                QStringLiteral("timers"),
-                                QStringLiteral("forkmesh-sky-office"),
-                                QStringLiteral("calories"),
-                                QStringLiteral("vault"),
-                                QStringLiteral("browser-extension"),
-                                QStringLiteral("voice-changer")} &&
               screenshotPackages == packageCards &&
               everyPackageHasScreenshot,
           QStringLiteral("Market separates all, installed and not-installed packages with "
@@ -21982,10 +22188,42 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // Timers is a package too: its whole contribution is the clock in the
     // window's top bar. It is not installed by default, so the clock appears
     // only once it is, and removing it takes the clock and its entries away.
-    QWidget *timersStrip =
-        window.findChild<QWidget *>(QStringLiteral("timersNavStrip"));
-    QPushButton *timersClock =
-        window.findChild<QPushButton *>(QStringLiteral("timersClockButton"));
+    const auto timersStripNow = [&] {
+        return dynamic_cast<forkmesh::timers::TimersClock *>(
+            window.testNativePackageChrome(QStringLiteral("timers")));
+    };
+    const auto addTimer = [&](const QString &request,
+                              const QString &kind = QString()) {
+        forkmesh::timers::TimerKind parsed = forkmesh::timers::TimerKind::Countdown;
+        if (!kind.isEmpty() &&
+            !forkmesh::timers::TimersFeature::kindFromName(kind, &parsed))
+            return false;
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock && clock->addTimer(request, parsed);
+    };
+    const auto timerChipTexts = [&] {
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock ? clock->chipTexts() : QStringList();
+    };
+    const auto timerCommand = [&](const QString &labelPrefix,
+                                  const QString &command) {
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock && clock->command(labelPrefix, command);
+    };
+    const auto advanceTimers = [&](qint64 milliseconds) {
+        if (forkmesh::timers::TimersClock *clock = timersStripNow())
+            clock->advance(milliseconds);
+    };
+    const auto timersClockSlot = [&] {
+        return window.testNativePackageChromeSlot(QStringLiteral("timers"));
+    };
+    const auto dropTimersClock = [&](qreal fraction) {
+        QWidget *bar = window.testNativePackageChromeBar();
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        if (bar && clock)
+            clock->dropAt(bar->mapToGlobal(QPoint(qRound(bar->width() * fraction),
+                                                  bar->height() / 2)));
+    };
     const auto clickTimersAction = [&](const QString &text) {
         for (QPushButton *action :
              allMarketActions(QStringLiteral("marketPackageAction-timers"))) {
@@ -22015,12 +22253,14 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         return modeless && choice != nullptr;
     };
     const auto timerChipsNamed = [&](const QString &objectName) {
-        return timersStrip ? timersStrip->findChildren<QPushButton *>(objectName)
-                           : QList<QPushButton *>();
+        forkmesh::timers::TimersClock *clock = timersStripNow();
+        return clock ? clock->findChildren<QPushButton *>(objectName)
+                     : QList<QPushButton *>();
     };
     check(!window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && timersStrip->isHidden() &&
-              !window.testAddTimer(QStringLiteral("10m nothing")),
+              !timersStripNow() &&
+              !window.findChild<QWidget *>(QStringLiteral("timersNavStrip")) &&
+              !addTimer(QStringLiteral("10m nothing")),
           QStringLiteral("Timers is not installed by default, so the top bar "
                          "carries no clock"));
 
@@ -22028,26 +22268,32 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         clickTimersAction(QStringLiteral("Install")) &&
         window.findChildren<QMessageBox *>(QStringLiteral("packageInstallImport"))
             .isEmpty();
+    QWidget *timersStrip = timersStripNow();
+    QPushButton *timersClock =
+        timersStrip
+            ? timersStrip->findChild<QPushButton *>(QStringLiteral("timersClockButton"))
+            : nullptr;
     check(timersInstalled &&
               window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && !timersStrip->isHidden() && timersClock &&
+              timersStrip && !timersStrip->isHidden() &&
+              timersStrip->window() == &window && timersClock &&
               !timersClock->icon().isNull() &&
-              window.testTimerChipTexts().isEmpty(),
+              timerChipTexts().isEmpty(),
           QStringLiteral("installing Timers puts a little clock in the window's "
                          "top bar"));
 
-    const QString clockSlotBefore = window.testTimersClockSlot();
-    window.testDropTimersClock(0.9);
+    const QString clockSlotBefore = timersClockSlot();
+    dropTimersClock(0.9);
     QApplication::processEvents();
-    const QString clockSlotRight = window.testTimersClockSlot();
+    const QString clockSlotRight = timersClockSlot();
     const QString storedRight =
         QSettings().value(QStringLiteral("ui/timersClockPlacement")).toString();
-    window.testDropTimersClock(0.5);
+    dropTimersClock(0.5);
     QApplication::processEvents();
-    const QString clockSlotCenter = window.testTimersClockSlot();
-    window.testDropTimersClock(0.1);
+    const QString clockSlotCenter = timersClockSlot();
+    dropTimersClock(0.1);
     QApplication::processEvents();
-    const QString clockSlotLeft = window.testTimersClockSlot();
+    const QString clockSlotLeft = timersClockSlot();
     check(clockSlotBefore == QStringLiteral("left") &&
               clockSlotRight == QStringLiteral("right") &&
               storedRight == QStringLiteral("right") &&
@@ -22062,13 +22308,11 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                    clockSlotLeft, storedRight));
 
     const bool timerEntriesAdded =
-        window.testAddTimer(QStringLiteral("25m standup")) &&
-        window.testAddTimer(QStringLiteral("coffee in 4m"),
-                            QStringLiteral("countdown")) &&
-        window.testAddTimer(QStringLiteral("focus"), QStringLiteral("timer")) &&
-        window.testAddTimer(QStringLiteral("in 2h review"),
-                            QStringLiteral("alarm"));
-    QStringList timerChips = window.testTimerChipTexts();
+        addTimer(QStringLiteral("25m standup")) &&
+        addTimer(QStringLiteral("coffee in 4m"), QStringLiteral("countdown")) &&
+        addTimer(QStringLiteral("focus"), QStringLiteral("timer")) &&
+        addTimer(QStringLiteral("in 2h review"), QStringLiteral("alarm"));
+    QStringList timerChips = timerChipTexts();
     QPushButton *alarmChip = nullptr;
     QPushButton *stopwatchChip = nullptr;
     if (timersStrip) {
@@ -22090,16 +22334,16 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
           QStringLiteral("countdowns, an alarm and a timer each become a "
                          "top-bar chip, soonest first (chips=%1)")
               .arg(timerChips.join(QStringLiteral(", "))));
-    check(!window.testAddTimer(QStringLiteral("do the thing")) &&
-              !window.testAddTimer(QStringLiteral("7"), QStringLiteral("alarm")) &&
-              window.testTimerChipTexts().size() == 4,
+    check(!addTimer(QStringLiteral("do the thing")) &&
+              !addTimer(QStringLiteral("7"), QStringLiteral("alarm")) &&
+              timerChipTexts().size() == 4,
           QStringLiteral("a countdown with no length or an alarm with no time "
                          "adds nothing"));
 
-    window.testTimerCommand(QStringLiteral("coffee"), QStringLiteral("pause"));
-    window.testAdvanceTimers(26 * 60 * 1000);
+    timerCommand(QStringLiteral("coffee"), QStringLiteral("pause"));
+    advanceTimers(26 * 60 * 1000);
     QApplication::processEvents();
-    timerChips = window.testTimerChipTexts();
+    timerChips = timerChipTexts();
     check(timerChips.size() == 4 &&
               timerChips.at(0).startsWith(QStringLiteral("+")) &&
               timerChips.at(0).endsWith(QStringLiteral("standup")) &&
@@ -22114,12 +22358,12 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                          "countdown holds its remainder (chips=%1)")
               .arg(timerChips.join(QStringLiteral(", "))));
 
-    window.testAdvanceTimers(2 * 60 * 60 * 1000);
+    advanceTimers(2 * 60 * 60 * 1000);
     QApplication::processEvents();
     const int doneAfterAlarm =
         int(timerChipsNamed(QStringLiteral("timerChipDone")).size());
     const bool alarmSnoozed =
-        window.testTimerCommand(QStringLiteral("review"), QStringLiteral("snooze"));
+        timerCommand(QStringLiteral("review"), QStringLiteral("snooze"));
     QApplication::processEvents();
     check(doneAfterAlarm == 2 && alarmSnoozed &&
               timerChipsNamed(QStringLiteral("timerChipDone")).size() == 1,
@@ -22201,7 +22445,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               window.testPackageInstalled(QStringLiteral("timers")) &&
               QSettings().value(timersStateKey).toString().contains(
                   QStringLiteral("standup")) &&
-              !window.testTimerChipTexts().isEmpty(),
+              !timerChipTexts().isEmpty(),
           QStringLiteral("importing the saved copy brings the timers back with "
                          "the package"));
 
@@ -22213,19 +22457,19 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         QStringLiteral("packageRemoveConfirmButton"));
     window.testSetPackageDataFilePath(QString());
     check(timersRemoved && !window.testPackageInstalled(QStringLiteral("timers")) &&
-              timersStrip && timersStrip->isHidden() &&
-              window.testTimerChipTexts().isEmpty() &&
+              !timersStripNow() && timerChipTexts().isEmpty() &&
               !QSettings().contains(timersStateKey),
           QStringLiteral("removing Timers takes the clock off the top bar and "
                          "its entries out of settings"));
-    check(!window.testAddTimer(QStringLiteral("10m nothing")),
+    check(!addTimer(QStringLiteral("10m nothing")),
           QStringLiteral("with Timers removed nothing can be added to the clock"));
 
     const bool timersReinstalled = clickTimersAction(QStringLiteral("Install"));
+    timersStrip = timersStripNow();
     check(timersReinstalled &&
               window.testPackageInstalled(QStringLiteral("timers")) &&
               timersStrip && !timersStrip->isHidden() &&
-              window.testTimerChipTexts().isEmpty(),
+              timerChipTexts().isEmpty(),
           QStringLiteral("reinstalling Timers brings back a bare clock without "
                          "an application restart"));
 
@@ -22258,7 +22502,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         if (fiveHourTimer)
             fiveHourTimer->click();
         QApplication::processEvents();
-        const QStringList usageChips = window.testTimerChipTexts();
+        const QStringList usageChips = timerChipTexts();
         check(timerButtonShown && !creditsHasTimer && usageChips.size() == 1 &&
                   (usageChips.first().startsWith(QStringLiteral("2:00:00 ")) ||
                    usageChips.first().startsWith(QStringLiteral("1:59:5"))) &&
@@ -22271,7 +22515,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         if (QMenu *stillOpen = window.findChild<QMenu *>(
                 QStringLiteral("claudeAccountUsageMenu")))
             stillOpen->close();
-        window.testTimerCommand(QStringLiteral("Claude"), QStringLiteral("remove"));
+        timerCommand(QStringLiteral("Claude"), QStringLiteral("remove"));
         QApplication::processEvents();
     }
     // Leave the profile as a default install has it for the checks below.
@@ -30049,6 +30293,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       "move and says why a row cannot go (api=[%1] "
                       "cloud=[%2])")
                   .arg(apiEntryTip, cloudEntryTip));
+        checkAgentSendToDesktop(window);
         // Delete sits on the same menu, enabled whether or not the row can
         // move to the cloud.
         std::unique_ptr<QMenu> apiMenu(
@@ -32610,6 +32855,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         check(window.testGitWorkspaceIsExclusive(),
               QStringLiteral("a branch diff gives the Git rail exclusive ownership: "
                              "no Code chrome and no visible diff outside Git"));
+        checkGitCompactLayout(window);
         // adhoc #269: the divider between the Git file pane and the detail
         // pane has to travel much further than the widths of the two header
         // rows it used to be pinned by. Dragged out, the branch title shares

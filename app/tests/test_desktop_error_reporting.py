@@ -96,7 +96,7 @@ QT_BRANCHES = (
     ROOT.parent / "desktop" / "src" / "MainWindowBranches.cpp"
 ).read_text(encoding="utf-8")
 QT_TASKS = (
-    ROOT.parent / "desktop" / "src" / "MainWindowTasks.cpp"
+    ROOT.parent / "desktop" / "src" / "MainWindowTaskBridge.cpp"
 ).read_text(encoding="utf-8")
 QT_CHAT = "".join(
     (ROOT.parent / "desktop" / "src" / name).read_text(encoding="utf-8")

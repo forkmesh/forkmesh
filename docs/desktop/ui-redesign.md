@@ -91,7 +91,12 @@ Below the themes it has two more entries:
 
 - **Match the instance's theme** (`viewMenuMatchInstanceTheme`) toggles the same
   `ui/matchInstanceTheme` setting as the Settings checkbox (see the instance
-  theme item below). Turning it on from Halloween or a Market skin switches the
+  theme item below). While it is on, the entry names the theme the instance
+  sends, e.g. "Match the instance's theme (BLT)":
+  `forkmesh::instancetheme::label` gives the preset's name from the
+  `themes` catalogue in `GET /api/instance`, "Custom" for colours with no
+  preset and "Default" when the instance sends none.
+  Turning it on from Halloween or a Market skin switches the
   theme to `system` first, because both of those replace the instance colours
   and the toggle would otherwise seem to do nothing.
 - **Reset to default** (`viewMenuThemeReset`,
@@ -214,8 +219,10 @@ descenders.
   position" in the clock's menu or the top bar's right-click menu. A drag
   swallows the release, so it never opens the clock menu. The spot is
   `ui/timersClockPlacement` (`center` or `right`; removed for the default
-  `left`), kept when the package is removed. `installTimersClockSlots` records
-  the three rows; `setTimersClockPlacement` moves the strip between them.
+  `left`), kept when the package is removed. The clock is the Timers plugin's
+  top-bar widget (`TimersClock`, [package modules](package-modules.md#top-bar-widgets));
+  `installNativePackageChromeSlots` records the three rows and
+  `placeNativePackageChrome` moves the widget between them.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.
@@ -1039,8 +1046,8 @@ built with; the chart and table colours still follow the switch.
 
 ### Tasks
 
-In Next, the Tasks page (`MainWindow::buildOrganizationTasksSection`,
-`MainWindowTasks.cpp`, `41-tasks.qss`) is a board with a side panel, after
+In Next, the Tasks page (`TasksPage::buildOrganizationTasksSection`,
+`marketplace/packages/tasks/content/desktop/TasksPage.cpp`, `41-tasks.qss`) is a board with a side panel, after
 the mockup; Classic keeps the old list layout. The Next layout is built once,
 inside the builder, so a live design switch shows it only after restart.
 
@@ -1885,6 +1892,20 @@ re-arranges both ways on a live design switch: Next to Classic puts every
 moved widget back where `buildRepoCommitsTab` placed it, in the same order.
 A window that starts in Classic is never touched.
 
+- **Git layout** (view menu, Next only; `GitLayout.h`, setting
+  `git/layout`). "New" is the page described below. "Compact" brings back
+  the page as it was before this restyle (commit 68b35e6386): changed files
+  on top of the left column and history underneath, no branches column and
+  no page header, with the branch picker, Fetch, Pull and rescan back in the
+  history header and the "▾ CHANGES" caption showing the count again. Only
+  the page arrangement changes (`arrangePage(false)`); the change rows, the
+  commit box and the history rows keep the new design. The commit box now
+  sits in the files pane, so Compact gives the change list a three-row
+  minimum height and raises the files pane's 130 px floor to what the panel
+  needs; without them the files/history splitter squeezed the list to
+  nothing and cut off the Commit button in a short window. Switching back
+  restores the 130 px floor. Switching runs
+  `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).
   - "Git" (`#gitNextTitle`) over a muted summary (`#gitNextSummary`): the
