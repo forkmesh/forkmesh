@@ -24,6 +24,7 @@
 #include "../src/BackgroundActivity.h"
 #include "../src/BackoffNetworkAccessManager.h"
 #include "../src/ClaudeTranscriptView.h"
+#include "../src/FastScratchDisk.h"
 #include "../src/ForkMeshIdentity.h"
 #include "../src/KebabHeaderView.h"
 #include "../src/SettingsSectionsView.h"
@@ -18015,6 +18016,9 @@ else:
               QStringLiteral("Actions history migration and scan run on a worker "
                              "before their GUI-side restore is published, and "
                              "workflow results wait to create runs"));
+        check(forkmesh::fastdisk::activeRoot().isEmpty(),
+              QStringLiteral("window tests never use the real TMP disk, so they "
+                             "cannot sweep a live Action's sandbox"));
     }
 
     if (teammatesOnly) {
