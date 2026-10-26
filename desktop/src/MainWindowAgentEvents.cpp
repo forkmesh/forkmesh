@@ -2145,7 +2145,7 @@ void MainWindow::updateAgentStatusCell(int sessionId)
     noteClaudeDesktopCandidate(*s);
     syncOrgTaskAgentStatus(sessionId);
     if (!s->orgTaskId.isEmpty())
-        refreshOrganizationTaskAgentRows();
+        notifyPackagesAgentSessionsChanged();
     if (auto it = m_streamSessionInfo.find(sessionId); it != m_streamSessionInfo.end())
         it->status = s->status;
     if (!m_agentTable)

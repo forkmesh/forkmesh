@@ -78,12 +78,13 @@ What moved out of the window (2026-10-25):
 | Timers | `MainWindowTimers.cpp`, core-linked | `TimersClock` top-bar widget in `timers.so` |
 | Calendar | `MainWindowCalendar.cpp`, `RepositoryCalendar.cpp`, section 19 | `CalendarPage` and `RepositoryCalendar` in `calendar.so` |
 | Notes | `MainWindowNotes.cpp`, section 16 | `NotesPage` in `notes.so` |
+| Tasks | `MainWindowTasks.cpp` (about 8,000 lines), section 15 | `TasksPage` in `tasks.so`; the catalog stays in core as `OrganizationTaskStore` |
 
 The pages are ordinary native package pages now: they appear on the rail
 when the package is installed here, under their old rail keys (`notes`,
-`calendar`) so a saved rail order or folder still finds them, and their
-search hits come from the page. Section indexes 16 and 19 stay unused rather
-than renumbering every later section. The window keeps the few things other
+`calendar`, `tasks`) so a saved rail order or folder still finds them, and
+their search hits come from the page. Section indexes 15, 16 and 19 stay
+unused rather than renumbering every later section. The window keeps the few things other
 window code calls: the quick-add composer's "take a note" (`note.add`), note
 links in bodies and from the system (`note.openLink`, `note.openSystemLink`),
 and the note-to-task and note-to-issue conversions, which run as window
@@ -112,8 +113,9 @@ plugin API it includes change:
   generated headers. It fails when a plugin object depends on a window header,
   the per-commit headers, the app's precompiled header or its `forkmesh.dir` /
   `forkmesh_autogen` output, or another plugin's files, and when a core object
-  depends on a module plugin's files. On 2026-10-25 it checked 175 plugin
-  objects and 427 core objects with no problems. Other generators print SKIP.
+  depends on a module plugin's files. On 2026-10-25, with Tasks moved out
+  too, it checked 180 plugin objects and 431 core objects with no problems.
+  Other generators print SKIP.
 
 Core-linked plugins (`coreLinked`) are part of the app and exempt until they
 move out.
@@ -130,7 +132,10 @@ from the window. None of them names a package:
 | `logActivity(text)` | a line in the activity log |
 | `openReference(href)` | open an issue, pull request, discussion or other ForkMesh reference link in the window |
 | `showPage()` | show the plugin's own page |
-| `windowCommand(command, args)` | ask the window to do something it owns (`task.composeFromText`, `issue.composeFromText`) |
+| `windowCommand(command, args)` | ask the window to do something it owns (`issue.composeFromText`, `prompt.append`, `agent.show`, `issue.show`, and the Tasks page's `task.*` commands) |
+| `windowQuery(command, args)` | read something the window holds, answered at once as JSON (`task.agentSessions`, `task.repositoryLogos`) |
+| `windowRequest(command, args, done)` | ask the window for work that answers later (`task.startAgent`, `task.fileAsIssue`, `task.workPlan`); `done` gets `ok`, a JSON reply and an error |
+| `accountPicture(account)` | an account's profile picture, as the chat shows it; empty when none is loaded |
 | `notify(title, body, fileLocally)` | the OS notification card and, when `fileLocally`, a Pings row |
 | `recordQuietNotification(title, body)` | a quiet Pings row with no card |
 | `setting` / `setSetting` | the package's own settings (`market/packages/<id>/data/...`), removed with the package |
@@ -144,7 +149,20 @@ The window calls a plugin through `NativePackageWidget` virtuals:
 `refresh`, `searchHits` / `activateSearchHit`, `activate` (open the plugin's
 own surface), and `acceptsHostCommand` / `hostCommand` for the few things the
 core asks of whichever plugin offers them by a generic command name (the agent
-usage rows add a countdown through `countdown.add`, which Timers accepts).
+usage rows add a countdown through `countdown.add`, which Timers accepts; task
+links open through `task.open`). A `windowCommand` the window does not own
+itself, such as `task.composeFromText` from Notes, goes on to the plugin that
+accepts it. Three broadcasts reach every package page: `agentSessionsChanged()`
+when a local agent starts, stops or is linked to a task,
+`accountPicturesChanged()` when profile pictures arrive, and `themeChanged()`
+when the theme changes (for pages that bake colours into rich text).
+
+A plugin may also use core data classes that do not reach the window headers.
+Tasks reads and writes the organization task catalog through
+`OrganizationTaskStore` (`desktop/src/OrganizationTaskStore.h`), which the
+window owns and the page finds with `OrganizationTaskStore::current()`; the
+same store answers the agents, quick add and Stats, so they keep working
+without the page.
 
 ### Top-bar widgets
 

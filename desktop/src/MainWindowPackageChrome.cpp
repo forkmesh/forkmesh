@@ -165,25 +165,26 @@ bool MainWindow::runWindowCommand(const QString &command, const QJsonObject &arg
     const QString markdown = args.value(QStringLiteral("markdown")).toString();
     const QString link = args.value(QStringLiteral("link")).toString();
     if (command == QLatin1String("task.composeFromText")) {
-        ensureSectionBuilt(kOrganizationTasksSectionIndex);
-        if (!m_organizationTasksStatus) {
+        const QJsonObject compose{
+            {QStringLiteral("heading"), args.value(QStringLiteral("heading"))},
+            {QStringLiteral("title"),
+             NoteListEntry::conversionTitle(title, markdown,
+                                            kOrganizationTaskTitleLimit)},
+            {QStringLiteral("details"),
+             NoteListEntry::conversionDetails(title, markdown, link)},
+            {QStringLiteral("done"), args.value(QStringLiteral("done"))},
+        };
+        if (!runNativePackageCommand(command, compose)) {
             flashMessage(QStringLiteral(
-                "The tasks page is not available on this node yet."), true);
+                             "Tasks is not installed. Install it from the Market "
+                             "list to turn notes into tasks."),
+                         true, QString(), forkmesh::kLocalOperationNoticeKind);
             return false;
         }
-        const QString done = args.value(QStringLiteral("done")).toString();
-        composeOrganizationTask(
-            args.value(QStringLiteral("heading")).toString(),
-            NoteListEntry::conversionTitle(title, markdown,
-                                           kOrganizationTaskTitleLimit),
-            NoteListEntry::conversionDetails(title, markdown, link),
-            [this, done] {
-                if (!done.isEmpty())
-                    flashMessage(done);
-                showSection(kOrganizationTasksSectionIndex);
-            });
         return true;
     }
+    if (runTaskWindowCommand(command, args))
+        return true;
     if (command == QLatin1String("issue.composeFromText")) {
         if (m_repositories.isEmpty()) {
             flashMessage(QStringLiteral(

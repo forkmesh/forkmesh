@@ -112,6 +112,14 @@ Timers moved out on 2026-10-25: its clock is a top-bar widget the plugin
 registers (`chromeFactory`), so it is a module now
 ([package-modules](../desktop/package-modules.md#top-bar-widgets)).
 
+Tasks, Notes and Calendar were never `coreLinked`, but their desktop pages
+were window code (`MainWindowTasks.cpp`, `MainWindowNotes.cpp`,
+`MainWindowCalendar.cpp`) that every change to `MainWindow.h` recompiled. They
+are module pages now (`tasks.so`, `notes.so`, `calendar.so`); for Tasks the
+catalog and its signed requests stayed in the core as `OrganizationTaskStore`
+because agents, search, quick add and Stats read it
+([tasks-page](../desktop/tasks-page.md#page-and-window)).
+
 ## App
 
 - `build_app_plugins` uses the list for everything it stages: dashboard and

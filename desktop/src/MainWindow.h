@@ -57,6 +57,7 @@
 #include "AgentStore.h"
 #include "AgentTaskList.h"
 #include "RepoWorkflowRunner.h"
+#include "OrganizationTaskStore.h"
 #include "TaskWorkItems.h"
 #include "ListViewMode.h"
 #include "AgentCloudSessions.h"
@@ -2655,43 +2656,8 @@ public:
     QString testMirrorNodesRepoSource() const;
     int testControlNodeSectionIndex() const { return kControlNodeSectionIndex; }
     void testShowControlNode() { showSection(kControlNodeSectionIndex); }
-    int testOrganizationTasksSectionIndex() const
-    {
-        return kOrganizationTasksSectionIndex;
-    }
-    void testShowOrganizationTasks()
-    {
-        showSection(kOrganizationTasksSectionIndex);
-    }
-    void testApplyOrganizationTasks(const QJsonObject &payload)
-    {
-        applyOrganizationTasks(payload);
-    }
-    QPixmap testOrganizationTaskAgentFace(const QString &taskId) const;
+    void testApplyOrganizationTasks(const QJsonObject &payload);
     void testSetAccountAvatar(const QString &account, const QPixmap &picture);
-    QPixmap testOrganizationTaskCreatorPicture(const QString &taskId) const;
-    QPixmap testOrganizationTaskAssigneePicture(const QString &taskId) const;
-    void testSetOrganizationTaskListView(forkmesh::ui::ListViewMode view)
-    {
-        setOrganizationTaskListView(view);
-    }
-    bool testOrganizationTaskAgentWorking(const QString &taskId) const;
-    bool testOrganizationTaskSpinTimerActive() const;
-    QImage testOrganizationTaskRowImage(const QString &taskId) const;
-    forkmesh::ui::ListViewMode testOrganizationTaskListView() const
-    {
-        return m_organizationTaskListView;
-    }
-    void testReloadOrganizationTaskListView()
-    {
-        setOrganizationTaskListView(forkmesh::ui::loadListViewMode(
-            QStringLiteral("tasks/listView"), forkmesh::ui::ListViewMode::Full));
-    }
-    void testRefreshOrganizationTaskAgentRows()
-    {
-        refreshOrganizationTaskAgentRows();
-    }
-    void testTickOrganizationTaskSpinners() { tickOrganizationTaskSpinners(); }
     bool testReleasesTableHasKeyboardFocus() const;
     bool testMirrorNodesTableHasKeyboardFocus() const;
     Q_INVOKABLE QStringList testMirrorNodeRows() const;
@@ -3781,7 +3747,6 @@ private:
     static constexpr int kNetworkDiagnosticsSectionIndex = 12;
     static constexpr int kNodesSectionIndex = 13;
     static constexpr int kControlNodeSectionIndex = 14;
-    static constexpr int kOrganizationTasksSectionIndex = 15;
     static constexpr int kUsersSectionIndex = 17;
     static constexpr int kFilesSectionIndex = 18;
     static constexpr int kMarketSectionIndex = 20;
@@ -4930,49 +4895,16 @@ private:
     void buildIssueDetailPane(QWidget *center, QWidget *meta);
     void connectIssuesSectionSignals(QButtonGroup *issueTabGroup,
                                      QPushButton *issueBurnupButton);
-    QWidget *buildOrganizationTasksSection();
-    void refreshOrganizationTasks();
-    void updateOrganizationTaskRefreshAge();
     bool openNoteLink(const QString &href);
-    void applyOrganizationTasks(const QJsonObject &payload);
-    // Apply the authoritative task returned by a mutation without depending
-    // on a second catalog read. In particular, an edit may finish while a
-    // prior refresh is still in flight, which would otherwise leave its row
-    // showing the old values until the next manual refresh.
-    bool replaceOrganizationTask(const QJsonObject &task);
-    bool settleOrganizationTaskEdit(const QString &taskId,
-                                    const QJsonObject &previous, bool ok,
-                                    const QJsonObject &payload,
-                                    const QString &error, bool *updated);
-    bool organizationTaskCheckboxToggleable(int index) const;
-    void toggleOrganizationTaskCheckbox(int index);
-    // Re-apply this device's saved or in-flight task edits over a catalog
-    // read that was issued before those writes landed.
-    void overlayOrganizationTaskLocalEdits();
-    void linkExistingAgentsToOrganizationTasks(const QJsonArray &tasks);
-    void renderOrganizationTaskRows(const QString &selectTaskId = QString());
-    void appendOrganizationTaskRows(int count);
-    void refreshOrganizationTaskRowThumbnails(const QString &taskId);
-    void updateOrganizationTaskPageLabel();
+    void initOrganizationTaskStore();
+    void refreshOrganizationTasks();
     void openCreatedOrganizationTask(const QJsonObject &task);
     void openOrganizationTask(const QString &taskId);
-    void revealOrganizationTaskStatus(const QJsonObject &task);
-    void setOrganizationTaskBadge(int openCount);
-    void restoreOrganizationTaskBadge();
     void refreshOrganizationTaskBadge();
     void onOrganizationTaskEvent();
-    void drainPendingOrganizationTaskEvent();
-    void renderOrganizationTaskDetail();
-    void updateOrganizationTaskActions();
-    void createOrganizationTask();
-    // The composer behind "New task" and behind a converted note. A
-    // conversion opens the same dialog with the note's title and body already
-    // typed in, and passes `onCreated` so it can say what happened somewhere
-    // the operator is actually looking — the tasks page is not on screen.
-    void composeOrganizationTask(const QString &windowTitle,
-                                 const QString &prefillTitle,
-                                 const QString &prefillDetails,
-                                 std::function<void()> onCreated);
+    void notifyPackagesAgentSessionsChanged();
+    void notifyPackagesAccountPicturesChanged();
+    void linkExistingAgentsToOrganizationTasks(const QJsonArray &tasks);
     void createQuickAddOrganizationTask();
     void sendQuickAddToChannel();
     void refreshQuickAddSendToChannelButton();
@@ -4982,61 +4914,17 @@ private:
     QString quickAddTaskAssignment() const;
     bool takeQuickAddNote(const QString &text);
     void openComposerModelsPage();
-    void createOrganizationTaskFollowUp();
-    void moveOrganizationTaskToIssue();
-    void addOrganizationTaskToPrompt();
-    // One click from the task detail to a running agent: the task is attached to
-    // the footer prompt box and launched with that box's live settings
-    // (repository, provider, model, permission mode, effort, attachments), and
-    // the run it starts is bound back to this task instead of opening a second
-    // one — so status and completion report against the task the operator was
-    // looking at.
-    void startOrganizationTaskAgentFromPrompt();
-    int localAgentSessionIdForTask(const QString &taskId) const;
-    QString localAgentRunLabelForTask(const QString &taskId) const;
-    bool organizationTaskAgentFace(const QJsonObject &task, QPixmap *face,
-                                   bool *working) const;
-    void applyOrganizationTaskAgentFace(QTableWidgetItem *item,
-                                        const QJsonObject &task);
-    QJsonObject organizationTaskForRow(int row) const;
-    int organizationTaskRowForId(const QString &taskId) const;
-    void refreshOrganizationTaskAgentRows();
-    void applyOrganizationTaskPeopleFaces(QTableWidgetItem *item);
-    void refreshOrganizationTaskPeopleFaces();
-    void rebuildOrganizationTaskPeopleStrip();
-    void updateOrganizationTaskPeopleStrip(
-        const QHash<QString, int> &openByAssignee);
-    void setOrganizationTaskAssigneeFilter(const QString &filter);
-    bool organizationTaskRowsHaveWorkingAgent() const;
-    void updateOrganizationTaskSpinTimer();
-    void setOrganizationTaskListView(forkmesh::ui::ListViewMode view);
-    void tickOrganizationTaskSpinners();
-    void editOrganizationTask();
-    void assignOrganizationTaskToAgent();
-    void queueOrganizationTaskAgent(const QJsonObject &task);
-    void runOrganizationTaskAction(const QString &action);
-    void sendOrganizationTaskAction(const QString &taskId,
-                                    const QString &action,
-                                    const QJsonObject &body);
-    void patchOrganizationTask(const QJsonObject &task,
-                               const QJsonObject &body);
-    void syncOrganizationTaskProperties(const QJsonObject &task);
-    void commitOrganizationTaskProperty(const QString &field);
-    // Comment on the selected task, and check in on it. Both are ordinary
-    // task writes that also ping: a comment pings the task's floor plus every
-    // @name it uses, a check-in tells the same people how the work is going.
-    void commentOnOrganizationTask();
-    void postOrganizationTaskComment(const QString &body);
-    void submitOrganizationTaskQuickComment();
-    void checkInOnOrganizationTask();
-    void remindOrganizationTaskAssignee();
-    // The task's own timeline. Fetched per selected task rather than with the
-    // catalog: one page of the list is 100 rows and no row shows its history.
-    void loadOrganizationTaskHistory(const QString &taskId);
-    void deleteOrganizationTask();
-    void sendOrganizationTaskDelete(const QString &taskId, int cleanupMode,
-                                    bool force = false);
-    void deleteClosedOrganizationTasks();
+    void startOrganizationTaskAgent(const QJsonObject &task,
+                                    const QString &taskPrompt,
+                                    forkmesh::market::NativePackageReplyHandler done);
+    void fileOrganizationTaskAsIssue(const QJsonObject &task, const QString &body,
+                                     forkmesh::market::NativePackageReplyHandler done);
+    void attachExistingWorktreeToOrganizationTask(const QString &taskId,
+                                                  const QString &repository);
+    QJsonValue runWindowQuery(const QString &command, const QJsonObject &args);
+    bool runTaskWindowCommand(const QString &command, const QJsonObject &args);
+    bool runWindowRequest(const QString &command, const QJsonObject &args,
+                              forkmesh::market::NativePackageReplyHandler done);
     QString taskWorkItemNodeName() const;
     forkmesh::taskwork::Guard taskWorkItemGuard() const;
     QStringList taskWorkItemRepositories(const QString &repository,
@@ -5055,7 +4943,6 @@ private:
                                         const QString &worktree);
     void attachOrgTaskWorkItemForSession(int sessionId);
     void sendOrganizationTaskWorkItemAttach(const QString &taskId);
-    void attachExistingWorktreeToOrganizationTask();
     void inspectOrganizationTaskWorkItems(
         const QList<forkmesh::taskwork::WorkItem> &items,
         std::function<void(const QList<forkmesh::taskwork::Inspection> &)>
@@ -5067,24 +4954,12 @@ private:
         const QString &taskId,
         const QList<forkmesh::taskwork::Inspection> &inspections,
         bool discard);
-    void deleteNextClosedOrganizationTask();
-    void finishClosedOrganizationTaskDelete();
-    using OrganizationTaskReplyHandler =
-        std::function<void(bool, const QJsonObject &, const QString &)>;
-    using OrganizationTaskAttachmentHandler =
-        std::function<void(bool, const QByteArray &, const QString &,
-                           const QString &)>;
+    using OrganizationTaskReplyHandler = forkmesh::tasks::TaskReplyHandler;
     void requestOrganizationTasks(
         const QByteArray &method, const QString &path, const QJsonObject &body,
         OrganizationTaskReplyHandler handler,
         const QList<int> &expectedHttpStatuses = {});
-    void requestOrganizationTaskAttachment(
-        const QString &taskId, const QString &attachmentId,
-        OrganizationTaskAttachmentHandler handler);
     void requestOrganizationTaskCatalog(OrganizationTaskReplyHandler handler);
-    void requestOrganizationTaskCatalogPage(
-        int offset, QJsonArray catalog, QJsonObject firstPage,
-        OrganizationTaskReplyHandler handler);
     QWidget *buildChatSection();
     QWidget *buildChatSidebar(QPushButton *&addChannelButton);
     QWidget *buildChatHeader();
@@ -8967,7 +8842,6 @@ private:
     // The chrome search is likewise the filter of whichever installed package
     // page is visible, through NativePackageWidget::setHostSearchQuery.
     void syncNativePackagePageSearch();
-    void syncOrganizationTaskPageSearch();
     // The top search box lists rows from every installed package: pages load
     // on first use, and redraw the dropdown when their records arrive.
     void prepareNativePackageSearch();
@@ -9047,13 +8921,10 @@ private:
         QString label;
         QString hitId; // handed back to activateBuiltinPackageSearchHit
     };
-    bool builtinPackageSearchable(const QString &packageId) const;
     QList<BuiltinPackageSearchHit> builtinPackageSearchHits(const QString &query,
                                                            int limitPerPackage) const;
     void activateBuiltinPackageSearchHit(const QString &packageId,
                                          const QString &hitId);
-    void prepareBuiltinPackageSearch();
-    bool m_builtinPackageSearchPrepared = false;
     QString teammatesDirPath(int repoIndex = -1) const;
     // Which repository the Team section is pointed at. Teammates live in
     // <repo>/.forkmesh/teammates, so every teammate path resolves through
@@ -11271,113 +11142,12 @@ private:
     bool m_webSolanaFetchInFlight = false;
     qint64 m_webSolanaFetchedMs = 0;
     QPushButton *m_chatButton = nullptr; // top-bar chat toggle (next to the bell)
-    QPushButton *m_tasksNavButton = nullptr;
-    int m_organizationTaskBadgeStored = -1;
-    QTableWidget *m_organizationTasksTable = nullptr;
-    QString m_organizationTasksSearchMirror;
-    QTextBrowser *m_organizationTaskDetail = nullptr;
-    QTextBrowser *m_organizationTaskFields = nullptr;
-    QWidget *m_organizationTaskSide = nullptr;
-    QWidget *m_organizationTaskProperties = nullptr;
-    QComboBox *m_organizationTaskStatusEdit = nullptr;
-    QSpinBox *m_organizationTaskPriorityEdit = nullptr;
-    QSpinBox *m_organizationTaskProgressEdit = nullptr;
-    QComboBox *m_organizationTaskAssigneeEdit = nullptr;
-    QComboBox *m_organizationTaskDepartmentEdit = nullptr;
-    QLineEdit *m_organizationTaskTeamEdit = nullptr;
-    QLineEdit *m_organizationTaskRepositoryEdit = nullptr;
-    QLineEdit *m_organizationTaskParentEdit = nullptr;
-    QString m_organizationTaskPropertiesTaskId;
-    QPlainTextEdit *m_organizationTaskQuickComment = nullptr;
-    QPushButton *m_organizationTaskQuickCommentSend = nullptr;
-    QString m_organizationTaskQuickCommentTaskId;
-    QHash<QString, QString> m_organizationTaskCommentDrafts;
-    QPushButton *m_organizationTaskRefreshButton = nullptr;
-    QLabel *m_organizationTasksStatus = nullptr;
-    QLabel *m_organizationTasksSummary = nullptr;
-    QPushButton *m_organizationTaskNewButton = nullptr;
-    QPushButton *m_organizationTaskDeleteClosedButton = nullptr;
-    QPushButton *m_organizationTaskSortButton = nullptr;
-    QPushButton *m_organizationTaskViewButton = nullptr;
-    forkmesh::ui::ListViewMode m_organizationTaskListView =
-        forkmesh::ui::ListViewMode::Full;
-    QPushButton *m_organizationTaskMineFilterButton = nullptr;
-    QWidget *m_organizationTaskPeopleStrip = nullptr;
-    QHBoxLayout *m_organizationTaskPeopleLayout = nullptr;
-    QButtonGroup *m_organizationTaskPeopleGroup = nullptr;
-    QStringList m_organizationTaskPeopleKeys;
-    QPushButton *m_organizationTaskOpenFilterButton = nullptr;
-    QPushButton *m_organizationTaskClosedFilterButton = nullptr;
-    QPushButton *m_organizationTaskAllFilterButton = nullptr;
-    QPushButton *m_organizationTaskFollowUpButton = nullptr;
-    QPushButton *m_organizationTaskEditButton = nullptr;
-    QPushButton *m_organizationTaskAgentButton = nullptr;
-    QPushButton *m_organizationTaskStartButton = nullptr;
-    QPushButton *m_organizationTaskCompleteButton = nullptr;
-    QPushButton *m_organizationTaskUndoButton = nullptr;
-    QPushButton *m_organizationTaskQaButton = nullptr;
-    QPushButton *m_organizationTaskReturnButton = nullptr;
-    QPushButton *m_organizationTaskDeleteButton = nullptr;
-    QPushButton *m_organizationTaskAttachWorktreeButton = nullptr;
+    forkmesh::tasks::OrganizationTaskStore *m_organizationTaskStore = nullptr;
     QHash<QString, QJsonArray> m_taskWorkItemAttachQueue;
     QHash<QString, QJsonArray> m_taskWorkItemAttachSending;
     QSet<int> m_taskWorkItemSessionsAttached;
     QHash<int, QString> m_taskWorkItemSessionWorktree;
     QSet<QString> m_taskWorkItemCleanupInFlight;
-    QPushButton *m_organizationTaskPromptButton = nullptr;
-    QPushButton *m_organizationTaskIssueButton = nullptr;
-    QPushButton *m_organizationTaskStartAgentButton = nullptr;
-    QPushButton *m_organizationTaskCommentButton = nullptr;
-    QPushButton *m_organizationTaskCheckinButton = nullptr;
-    QPushButton *m_organizationTaskRemindButton = nullptr;
-    QLabel *m_organizationTaskPageLabel = nullptr;
-    QList<int> m_organizationTaskMatches;
-    int m_organizationTaskShownRows = 0;
-    QTimer *m_organizationTaskSpinTimer = nullptr;
-    qreal m_organizationTaskSpinAngle = 0.0;
-    QString m_organizationTaskSortKey = QStringLiteral("created-desc");
-    QString m_organizationTaskStatusFilter = QStringLiteral("open");
-    QString m_organizationTaskAssigneeFilter = QStringLiteral("all");
-    QJsonArray m_organizationTasks;
-    // Edits made on this device, by task id: the optimistic row while the
-    // PATCH is in flight, then the relay's answer until a catalog read at
-    // least as new (by updatedAt) replaces it.
-    QHash<QString, QJsonObject> m_organizationTaskLocalEdits;
-    QHash<QString, int> m_organizationTaskEditsInFlight;
-    QString m_pendingOrganizationTaskSelection;
-    QStringList m_organizationTaskMembers;
-    // Timeline per task id, and the id whose read is in flight, so selecting
-    // through the list quickly cannot stack one request per row.
-    QHash<QString, QJsonArray> m_organizationTaskHistory;
-    QHash<QString, qint64> m_organizationTaskHistoryAt;
-    QString m_organizationTaskHistoryInFlight;
-    QStringList m_organizationTaskDepartments;
-    QString m_organizationTaskActor;
-    bool m_organizationTasksCanManage = false;
-    bool m_organizationTaskIssueMoveInFlight = false;
-    bool m_organizationTaskClosedDeleteInFlight = false;
-    QStringList m_organizationTaskClosedDeleteIds;
-    int m_organizationTaskClosedDeleteTotal = 0;
-    int m_organizationTaskClosedDeleteCount = 0;
-    int m_organizationTaskClosedDeleteRetries = 0;
-    int m_organizationTaskClosedDeleteKept = 0;
-    bool m_organizationTaskClosedDeleteForce = false;
-    QStringList m_organizationTaskClosedDeleteBusy;
-    QStringList m_organizationTaskClosedDeleteReasons;
-    bool m_organizationTasksLoading = false;
-    // The task list is pulled once per launch, once when the page first opens,
-    // and whenever the user asks (Refresh, or their own edit) — never on a
-    // timer. The startup pull lands before the page is built, so it parks its
-    // payload here and the first open renders from it instead of pulling again.
-    bool m_organizationTasksLoaded = false;
-    // A "tasks" push that arrived while a board read was already in flight.
-    // That read may predate the write, so it is re-run when this is set.
-    bool m_organizationTaskEventPending = false;
-    QJsonObject m_organizationTasksStartupPayload;
-    qint64 m_organizationTasksLoadedAt = 0;
-    QHash<QString, QByteArray> m_organizationTaskImageData;
-    QHash<QString, QString> m_organizationTaskImageMime;
-    QSet<QString> m_organizationTaskImageLoads;
     // Settings -> Organizations (MainWindowOrganizations.cpp).
     QTableWidget *m_organizationsTable = nullptr;
     QLabel *m_organizationsStatus = nullptr;

@@ -339,8 +339,10 @@ QVector<OnboardingStep> MainWindow::featureTourSteps()
         {"Search, assign, start, complete, reopen, and create follow-ups.",
          "Send work to an agent with the composer’s current model and mode.",
          "Request QA, attach a test plan, or promote a mature task into a repository issue."},
-        m_tasksNavButton,
-        revealSection(kOrganizationTasksSectionIndex, m_tasksNavButton)));
+        nativePackageNavigation(QStringLiteral("tasks")), [this] {
+            showNativePackage(QStringLiteral("tasks"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("tasks")));
+        }));
 
     steps.append(tourStep(
         "calendar", "TIME & ACTIVITY", "See plans and repository activity together",

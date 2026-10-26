@@ -606,6 +606,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
     });
     m_networkAccess = network;
+    initOrganizationTaskStore();
     static bool proxyLookupWarmed = false;
     if (!std::exchange(proxyLookupWarmed, true)) {
         runOffThread<bool>(
@@ -1054,8 +1055,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "  startup job scheduled: first relay latency probe in 2500ms"));
     traceStep(QStringLiteral("start operating-system reachability watch"),
               [this] { initRelayReachabilityWatch(); });
-    traceStep(QStringLiteral("restore cached organization task badge"),
-              [this] { restoreOrganizationTaskBadge(); });
 #ifndef FORKMESH_WINDOW_TESTS
     QTimer::singleShot(25000, this, [this] {
         forkmesh::StartupTraceStep step(
@@ -1510,10 +1509,10 @@ void MainWindow::refreshThemedIcons()
         m_chatMembersSignature.clear();
         refreshChatMembers();
     }
-    // The Tasks detail pane bakes its glyphs into rich text, so it has to be
-    // rebuilt rather than re-tinted in place.
-    if (m_organizationTaskDetail)
-        renderOrganizationTaskDetail();
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.widget)
+            page.widget->themeChanged();
+    }
 }
 
 void MainWindow::flushDeferredSettings()

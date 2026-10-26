@@ -1021,8 +1021,8 @@ built with; the chart and table colours still follow the switch.
 
 ### Tasks
 
-In Next, the Tasks page (`MainWindow::buildOrganizationTasksSection`,
-`MainWindowTasks.cpp`, `41-tasks.qss`) is a board with a side panel, after
+In Next, the Tasks page (`TasksPage::buildOrganizationTasksSection`,
+`marketplace/packages/tasks/content/desktop/TasksPage.cpp`, `41-tasks.qss`) is a board with a side panel, after
 the mockup; Classic keeps the old list layout. The Next layout is built once,
 inside the builder, so a live design switch shows it only after restart.
 

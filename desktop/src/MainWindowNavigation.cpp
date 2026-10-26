@@ -66,7 +66,8 @@ using namespace forkmesh::ui;
 namespace {
 
 const QStringList kRailKeptBuiltinKeys = {QStringLiteral("notes"),
-                                          QStringLiteral("calendar")};
+                                          QStringLiteral("calendar"),
+                                          QStringLiteral("tasks")};
 
 }
 
@@ -277,19 +278,6 @@ QWidget *MainWindow::buildBreadcrumb()
     attachPackageRailMenu(m_ledgerNavButton, QStringLiteral("builtin:ledger"));
     connect(m_ledgerNavButton, &QPushButton::clicked, this,
             &MainWindow::openLedger);
-
-    m_tasksNavButton = new ActivityRailButton(QStringLiteral("list-unordered"),
-                                              QStringLiteral("Tasks"));
-    m_tasksNavButton->setObjectName("organizationTasksNavButton");
-    m_tasksNavButton->setCheckable(true);
-    m_tasksNavButton->setCursor(Qt::PointingHandCursor);
-    m_tasksNavButton->setToolTip(QStringLiteral("Organization tasks"));
-    setOcticon(m_tasksNavButton, "list-unordered", 16);
-    m_navGroup->addButton(
-        m_tasksNavButton, kOrganizationTasksSectionIndex);
-    connect(m_tasksNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kOrganizationTasksSectionIndex);
-    });
 
     m_breadcrumb = new QLabel;
     m_breadcrumb->setObjectName("breadcrumb");
@@ -974,7 +962,6 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
         if (QPushButton *navigation = nativePackageNavigation(key))
             canonical.append({key, navigation});
     }
-    canonical.append({QStringLiteral("tasks"), m_tasksNavButton});
     canonical.append({QStringLiteral("notifications"), m_notificationButton});
     return canonical;
 }
@@ -6908,7 +6895,6 @@ void MainWindow::ensureSectionBuilt(int index)
     case 11: section = buildNetworkReposSection(); break;
     case 12: section = buildNetworkDiagnosticsSection(); break;
     case 14: section = buildControlNodeSection(); break;
-    case 15: section = buildOrganizationTasksSection(); break;
     case 17: section = buildUsersSection(); break;
     case 18: section = buildFilesSection(); break;
     case kMarketSectionIndex: section = buildMarketSection(); break;
@@ -7023,14 +7009,6 @@ void MainWindow::showSection(int index)
             refreshNodesTable();
     } else if (index == kControlNodeSectionIndex) {
         refreshControlNode();
-    } else if (index == kOrganizationTasksSectionIndex) {
-        // Load the list once — on startup, or here if that pull never landed.
-        // Coming back to the page later reuses it; Refresh is the way to ask
-        // the relay again.
-        if (!m_organizationTasksLoaded)
-            refreshOrganizationTasks();
-        refreshOrganizationTaskAgentRows();
-        refreshChatUserDirectory();
     } else if (index == kUsersSectionIndex) {
         refreshUsersPage();
     } else if (index == kFilesSectionIndex) {

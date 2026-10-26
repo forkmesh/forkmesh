@@ -3,7 +3,9 @@
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QList>
+#include <QPixmap>
 #include <QPoint>
 #include <QString>
 #include <QStringList>
@@ -133,6 +135,11 @@ struct NativePackageHost {
         askAgentWith;
     std::function<void()> chromeSlotChanged;
     std::function<QString(const QPoint &)> chromeSlotAt;
+    std::function<QJsonValue(const QString &, const QJsonObject &)> windowQuery;
+    std::function<void(const QString &, const QJsonObject &,
+                       NativePackageReplyHandler)>
+        windowRequest;
+    std::function<QPixmap(const QString &)> accountPicture;
 };
 
 struct NativePackagePromptTarget {
@@ -229,6 +236,9 @@ public:
     virtual void activate() {}
     virtual bool acceptsHostCommand(const QString &) const { return false; }
     virtual bool hostCommand(const QString &, const QJsonObject &) { return false; }
+    virtual void agentSessionsChanged() {}
+    virtual void accountPicturesChanged() {}
+    virtual void themeChanged() {}
 };
 
 using NativePackageFactory =
