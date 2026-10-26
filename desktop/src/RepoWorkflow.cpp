@@ -776,14 +776,29 @@ QJsonObject agentParams(const Config &config)
     return params;
 }
 
+QString agentStepId(const Workflow &workflow, const QString &nodeId)
+{
+    return nodeId == workflow.primaryAgent()
+               ? workflow.id
+               : forkmesh::teammates::Store::safeId(workflow.id + QLatin1Char('-') + nodeId);
+}
+
+bool runsAgent(const Workflow &workflow, const QString &agentId)
+{
+    if (agentId.isEmpty())
+        return false;
+    for (const QString &nodeId : workflow.nodesOfType(kAgent))
+        if (agentStepId(workflow, nodeId) == agentId)
+            return true;
+    return false;
+}
+
 Config agentConfig(const Workflow &workflow, const QString &nodeId, QString *error)
 {
     const QJsonObject node = workflow.node(nodeId);
     QJsonObject object = node.value(QStringLiteral("params")).toObject();
     const bool primary = nodeId == workflow.primaryAgent();
-    object.insert(QStringLiteral("id"), primary ? workflow.id
-                                                : forkmesh::teammates::Store::safeId(workflow.id + QLatin1Char('-') +
-                                                                                     nodeId));
+    object.insert(QStringLiteral("id"), agentStepId(workflow, nodeId));
     object.insert(QStringLiteral("name"), primary && !workflow.name.isEmpty() ? workflow.name : text(node, "name"));
     if (text(object, "avatar").isEmpty())
         object.insert(QStringLiteral("avatar"), workflow.icon.isEmpty() ? QStringLiteral("sol") : workflow.icon);

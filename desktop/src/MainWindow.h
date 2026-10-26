@@ -6842,6 +6842,7 @@ private:
     void refreshAgentDetailMeta(int sessionId,
                                 bool forceProcessRefresh = false);
     void refreshAgentTaskGradeControl(const AgentSession *session);
+    void refreshAgentWorkflowLink(const AgentSession *session);
     void scheduleAgentProcessMetaRefresh(qint64 processId, bool forceRefresh);
     qint64 agentSessionProcessId(int sessionId) const;
     void completeAgentSessionWhenSubprocessesExit(int sessionId);
@@ -14252,6 +14253,8 @@ private:
     QToolButton *m_agentStatusPill = nullptr; // compact model + outcome control
     QLabel *m_agentMeta = nullptr;
     QFrame *m_agentMetaPopup = nullptr;
+    QLabel *m_agentWorkflowLink = nullptr;
+    QString m_agentWorkflowLinkKey;
     QPushButton *m_agentPopOutButton = nullptr;
     QLabel *m_agentNetPanel = nullptr;   // live API-traffic graphic
     QPushButton *m_agentViewPrButton = nullptr;
