@@ -39,7 +39,11 @@ struct FastDiskSnapshot {
 
 bool fastDiskEnabled()
 {
+#ifdef FORKMESH_WINDOW_TESTS
+    return false;
+#else
     return QSettings().value(QLatin1String(kFastDiskSetting), true).toBool();
+#endif
 }
 
 forkmesh::fastdisk::BootMount planFastDiskBootMount(const forkmesh::fastdisk::Volume &volume)
