@@ -70,6 +70,8 @@
 #include <QCheckBox>
 #include <QDebug>
 #include <QDropEvent>
+#include <QMimeData>
+#include <QShortcut>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDateTimeEdit>
@@ -11679,9 +11681,119 @@ void checkWorkspaceDesign(MainWindow &window)
         window.testResetPromptOverlayPlacement();
         settle();
     }
+    {
+        const QList<QShortcut *> keys =
+            window.findChildren<QShortcut *>(QStringLiteral("workspaceShortcut"));
+        int enabled = 0;
+        QShortcut *diffKey = nullptr;
+        for (QShortcut *key : keys) {
+            enabled += key->isEnabled() ? 1 : 0;
+            if (key->key() == QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D))
+                diffKey = key;
+        }
+        check(keys.size() >= 10 && enabled == keys.size(),
+              QStringLiteral("the new layout's keyboard shortcuts are live on the "
+                             "Agents page (%1 of %2)")
+                  .arg(enabled)
+                  .arg(keys.size()));
+        auto *stack = window.findChild<QStackedWidget *>(
+            QStringLiteral("workspacePanelStack"));
+        if (diffKey && stack) {
+            emit diffKey->activated();
+            settle();
+            const bool opened =
+                stack->isVisibleTo(&window) && stack->currentWidget() &&
+                stack->currentWidget()->objectName() ==
+                    QLatin1String("workspaceChangesHost");
+            emit diffKey->activated();
+            settle();
+            check(opened && !stack->isVisibleTo(&window),
+                  QStringLiteral("Ctrl+Shift+D opens the diff beside the "
+                                 "conversation and closes it again"));
+        } else {
+            check(false, QStringLiteral("Ctrl+Shift+D is bound in the workspace"));
+        }
+
+        auto *prompt = window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
+        auto *mode = window.findChild<QComboBox *>(QStringLiteral("quickAddModeSelector"));
+        if (prompt && mode && mode->isVisibleTo(&window) && mode->count() > 1) {
+            const int before = mode->currentIndex();
+            QKeyEvent backtab(QEvent::KeyPress, Qt::Key_Backtab, Qt::ShiftModifier);
+            QApplication::sendEvent(prompt, &backtab);
+            check(mode->currentIndex() == (before + 1) % mode->count(),
+                  QStringLiteral("Shift+Tab in the prompt picks the next permission "
+                                 "mode (%1 -> %2)")
+                      .arg(before)
+                      .arg(mode->currentIndex()));
+            mode->setCurrentIndex(before);
+        }
+
+        if (prompt) {
+            prompt->clear();
+            prompt->setFocus();
+            QKeyEvent slash(QEvent::KeyPress, Qt::Key_Slash, Qt::NoModifier,
+                            QStringLiteral("/"));
+            QApplication::sendEvent(prompt, &slash);
+            settle();
+            auto *popup = window.findChild<QFrame *>(QStringLiteral("slashActionsPopup"));
+            auto *filter =
+                window.findChild<QLineEdit *>(QStringLiteral("slashActionsFilter"));
+            const bool shown = popup && popup->isVisible();
+            if (filter)
+                filter->setText(QStringLiteral("etc/hosts"));
+            if (popup)
+                popup->hide();
+            settle();
+            check(shown && prompt->toPlainText() == QStringLiteral("/etc/hosts"),
+                  QStringLiteral("typing / in an empty prompt opens the command menu, "
+                                 "and closing it keeps what was typed (%1)")
+                      .arg(prompt->toPlainText()));
+            prompt->clear();
+
+            const QString dropped = QDir(tree.path()).filePath(QStringLiteral("dropped.txt"));
+            QFile droppedFile(dropped);
+            if (droppedFile.open(QIODevice::WriteOnly))
+                droppedFile.write("x\n");
+            droppedFile.close();
+            QMimeData mime;
+            mime.setUrls({QUrl::fromLocalFile(dropped)});
+            QDragEnterEvent enter(QPoint(4, 4), Qt::CopyAction, &mime, Qt::LeftButton,
+                                  Qt::NoModifier);
+            QApplication::sendEvent(prompt->viewport(), &enter);
+            QDropEvent drop(QPointF(4, 4), Qt::CopyAction, &mime, Qt::LeftButton,
+                            Qt::NoModifier);
+            QApplication::sendEvent(prompt->viewport(), &drop);
+            check(enter.isAccepted() &&
+                      prompt->toPlainText() == QStringLiteral("@dropped.txt "),
+                  QStringLiteral("a file dropped on the prompt becomes an @ mention "
+                                 "relative to the repository (%1)")
+                      .arg(prompt->toPlainText()));
+            prompt->clear();
+        }
+
+        QMenu sessionMenu;
+        NextAccess::fillWorkspaceMenu(window, &sessionMenu, 1);
+        QStringList entries;
+        for (QAction *action : sessionMenu.actions())
+            entries << action->text();
+        check(entries.contains(QStringLiteral("Open in")) &&
+                  entries.contains(QStringLiteral("Copy folder path")) &&
+                  entries.contains(QStringLiteral("Copy branch name")),
+              QStringLiteral("the session menu offers Open in and copy actions (%1)")
+                  .arg(entries.join(QStringLiteral(", "))));
+    }
     forkmesh::ui::setWorkspaceLayoutClassic(true);
     NextAccess::syncWorkspace(window);
     settle();
+    {
+        int enabled = 0;
+        for (QShortcut *key :
+             window.findChildren<QShortcut *>(QStringLiteral("workspaceShortcut")))
+            enabled += key->isEnabled() ? 1 : 0;
+        check(enabled == 0, QStringLiteral("the classic layout leaves the workspace "
+                                           "shortcuts off (%1 on)")
+                                .arg(enabled));
+    }
 
     QWidget *rail = window.testAppNavigationRail();
     NextAccess::setRailWidth(window, 280, false);

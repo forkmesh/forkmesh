@@ -3423,6 +3423,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     quickAddInputLayout->addWidget(m_issueQuickAdd, 0, 0);
 
     m_issueQuickAdd->installEventFilter(this);
+    m_issueQuickAdd->viewport()->installEventFilter(this);
     m_quickAddHistory = QSettings().value(kQuickAddHistorySetting).toStringList();
     forkmesh::logStartupTrace(QStringLiteral("  logDock: composer built"));
 
@@ -6585,6 +6586,7 @@ void MainWindow::openQuickAddSlashActions()
         m_slashActionsPopup->setObjectName("slashActionsPopup");
         m_slashActionsPopup->setWindowFlags(Qt::Popup);
         m_slashActionsPopup->setFixedWidth(340);
+        m_slashActionsPopup->installEventFilter(this);
 
         auto *popupLayout = new QVBoxLayout(m_slashActionsPopup);
         popupLayout->setContentsMargins(0, 0, 0, 0);
@@ -6843,6 +6845,11 @@ void MainWindow::activateSlashActionRow(QWidget *row)
         return;
     const QString kind = row->property("slashKind").toString();
     const QString value = row->property("slashValue").toString();
+    if (m_slashActionsPopup && m_slashActionsPopup->property("typedSlash").toBool()) {
+        m_slashActionsPopup->setProperty("typedSlash", false);
+        if (m_issueQuickAdd && m_issueQuickAdd->toPlainText() == QLatin1String("/"))
+            m_issueQuickAdd->clear();
+    }
     auto closePopup = [this] { if (m_slashActionsPopup) m_slashActionsPopup->hide(); };
 
     if (kind == QLatin1String("attachFile")) {

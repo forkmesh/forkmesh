@@ -761,6 +761,13 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.
+- Dropping local files on the prompt attaches images and videos and inserts
+  `@` mentions for anything else; typing `/` into an empty prompt opens the
+  "/" menu; Shift+Tab picks the next permission mode
+  ([claude-code-parity.md](claude-code-parity.md#what-was-added-on-2026-10-25)).
+- After a run's worktree is added, a `.worktreeinclude` in the checkout copies
+  the ignored files it lists (`.env` and the like) into it before the agent
+  starts (`copyWorktreeIncludes`, same page).
 - A run's worktree is added by `agentwt::addScript`, retried three times. A
   `git worktree add -b` that fails after making the branch (for example with
   the disk full) leaves `<id>-<slug>` behind, so the script checks the branch
@@ -1043,6 +1050,18 @@ Rules of construction:
   moves into it. Below 700 px the diff is unified.
 - Hooks: `NextAccess::installWorkspace`, `syncWorkspace`,
   `placeWorkspaceComposer`.
+- `installWorkspace` finds the status row as the top row's layout that holds
+  `m_agentStatusPill`, wherever it sits, and puts it back at that index for
+  the classic layout. It used to read the first item; when the workflow link
+  was put above it (2026-10-25) the lookup failed, the workspace returned
+  early, and the new layout silently never installed.
+- Keyboard shortcuts (Ctrl+Tab between sessions, Ctrl+Shift+D / Ctrl+\` /
+  Ctrl+Shift+B for the panel tabs, Ctrl+\\ to close it, Ctrl+Shift+M / I / E
+  for the composer pickers, Ctrl+/ for the sheet) come from
+  `src/WorkspaceShortcuts.h` and are live only while this layout and the
+  Agents page are shown. The session menu's **Open in** opens the worktree
+  in an editor or the file manager. Both, and how they compare with Claude
+  Code desktop, are in [claude-code-parity.md](claude-code-parity.md).
 
 The browser tab (`src/WorkspaceBrowserPane.*`, library
 `forkmesh-browser-pane`) embeds an ungoogled Qt WebEngine view when the build

@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-25", "area": "Agents", "text": "A .worktreeinclude file in your repository now copies the ignored files it lists, such as .env, into each new agent worktree."},
+  {"date": "2026-10-25", "area": "Agents", "text": "Drop files on the desktop prompt to attach images or mention files, type / to open the command menu, and open a session's folder in VS Code, Cursor, Zed or your file manager from its menu."},
+  {"date": "2026-10-25", "area": "Agents", "text": "The desktop Agents workspace picks up Claude Code desktop's keys: Ctrl+Tab between sessions, Ctrl+Shift+D, Ctrl+` and Ctrl+Shift+B for the diff, terminal and browser, Shift+Tab to change the permission mode, and Ctrl+/ to list them all."},
   {"date": "2026-10-25", "area": "Desktop", "text": "Actions runs no longer fail part-way through a build when another ForkMesh window or test opens on the same computer."},
   {"date": "2026-10-25", "area": "Chat", "text": "In #welcome on the web, a Welcome button sends an animated genie spider to greet everyone, picked at random from 10 entrances: a silk drop, a magic lamp, confetti, a magic carpet, sparkles, bouncing, balloons, a WELCOME web, fireworks and peekaboo."},
   {"date": "2026-10-25", "area": "Market", "text": "The desktop Market opens without waiting for package previews, which appear as each one loads."},

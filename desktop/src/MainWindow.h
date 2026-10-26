@@ -14678,6 +14678,8 @@ private:
                                     const QString &branchName, const QString &baseRef,
                                     const QString &resumeId,
                                     std::function<void(const QString &)> launch);
+    void copyWorktreeIncludes(int sid, const QString &repoPath, const QString &wtPath,
+                              const std::function<void(const QString &)> &launch);
     void resolveAutoClaudeModel(int sessionId, const QString &task,
                                 const QString &workdir, ClaudeStreamSession *live,
                                 std::function<void(const QString &)> launch,
