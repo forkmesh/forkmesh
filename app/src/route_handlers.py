@@ -3058,12 +3058,26 @@ async def _agent_handoff_signer(env, request, owner, repo):
     return (signer, key) if key else ("", "")
 
 
+async def _agent_handoff_desktops(env, account, from_key):
+    account_bi, record = await _account_row(env, account)
+    if not account_bi or not record:
+        return []
+    return [
+        item for item in await _account_desktops(env, account_bi, record)
+        if item.get("key") and item.get("key") != from_key
+    ]
+
+
 async def agent_handoff_handler(env, request, owner, repo, agent_id):
     await ensure_schema(env)
-    if method_name(request) != "POST":
+    method = method_name(request)
+    if method not in ("GET", "POST"):
         return _org_agent_error(
             "method_not_allowed",
-            "Use POST to move an agent session into the cloud.",
+            (
+                "Use POST to move an agent session into the cloud, or GET to "
+                "list the desktops it can be sent to."
+            ),
             405,
         )
     # The exact device key that signed, not just "somebody who may sign for
@@ -3088,6 +3102,20 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "The requested repository was not found.",
             404,
         )
+    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
+    if method == "GET":
+        desktops = await _agent_handoff_desktops(env, signer, from_key)
+        return json_response({
+            "ok": True,
+            "desktops": [
+                {
+                    "key": item["key"],
+                    "node": item["node"],
+                    "lastSeen": item["lastSeen"],
+                }
+                for item in desktops
+            ],
+        }, cache_control="no-store")
     try:
         data = await bounded_json_request(request)
     except Exception:
@@ -3161,14 +3189,33 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         data.get("title") or prompt.split("\n", 1)[0],
         _AGENT_HANDOFF_MAX_TITLE).strip()
     create_pr = data.get("createPr") is True
+    to_key = clean_string(data.get("toKey"), 120).strip()
+    to_desktop = None
+    if to_key:
+        to_desktop = next((
+            item for item in await _agent_handoff_desktops(
+                env, signer, from_key)
+            if item["key"] == to_key), None)
+        if not to_desktop:
+            return _org_agent_error(
+                "unknown_desktop",
+                (
+                    "That desktop is no longer linked to this account. "
+                    "Refresh the list of desktops and try again."
+                ),
+                409,
+                required_action="select_desktop",
+            )
+    to_device = to_desktop["node"] if to_desktop else ""
     # Queue for an owned mirror node when there is one, so the session carries
     # on in the cloud; otherwise the account namespace, which the owner's
     # other desktops drain.
-    mirror_node, mirror_online = await _agent_handoff_mirror_target(
-        env, owner, repo, provider, from_device)
+    mirror_node, mirror_online = (
+        ("", False) if to_desktop else
+        await _agent_handoff_mirror_target(
+            env, owner, repo, provider, from_device))
     target_node = mirror_node or owner
     account_bi = str(await blind_index(env, owner))
-    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
     signer_bi = (
         account_bi if signer == owner
         else str(await blind_index(env, signer)))
@@ -3202,6 +3249,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "baseRef": base_ref,
             "fromDevice": from_device,
             "fromKey": from_key,
+            "toDevice": to_device,
+            "toKey": to_key,
             "sourceAgentId": clean_string(agent_id, 40),
         },
         "history": [{
@@ -3232,6 +3281,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         "title": title,
         "fromDevice": from_device,
         "fromKey": from_key,
+        "toDevice": to_device,
+        "toKey": to_key,
         "sourceAgentId": clean_string(agent_id, 40),
     }
     try:
@@ -3280,10 +3331,23 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "model": model or "provider-default",
             "branch": branch,
             "fromDevice": from_device,
+            "toDevice": to_device,
             "targetNode": target_node,
         })
     await notify_repo_host(env, target_node, repo, "org-agents")
     await _ring_cloud_agent_readers(env, record)
+    if to_desktop:
+        return json_response({
+            "ok": True,
+            "sessionId": session_id,
+            "queueState": "ready_for_claim",
+            "branch": branch,
+            "targetDevice": to_device,
+            "message": (
+                "Sent to " + to_device + ". It continues the session on "
+                + branch + " as soon as it is online."
+            ),
+        }, status=202, cache_control="no-store")
     if mirror_node:
         return json_response({
             "ok": True,

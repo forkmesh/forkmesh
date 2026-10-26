@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-25", "area": "Agents", "text": "Right-click an agent on the desktop and choose Send to another desktop to have one of your other computers carry on its work; it stops here and continues there on the same branch."},
   {"date": "2026-10-25", "area": "World", "text": "World forms no longer trigger the browser's missing-name warnings, and the World chat's Discord refresh no longer errors when one channel cannot be read."},
   {"date": "2026-10-25", "area": "World", "text": "When the World cannot use your camera it now says why: blocked for the site, in use by another app, or no camera found."},
   {"date": "2026-10-25", "area": "World", "text": "Turning the camera on in the World no longer flashes and switches off when your browser cannot track your face: with Also send video ticked, your camera keeps sending video."},

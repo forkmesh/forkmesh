@@ -3572,6 +3572,13 @@ public:
     {
         return buildAgentListContextMenu(sessionId, nullptr);
     }
+    void testSetAgentHandoffDesktops(const QJsonObject &payload)
+    {
+        m_agentHandoffDesktops = forkmesh::agents::handoffDesktops(payload);
+        m_agentHandoffDesktopsLoadedMs = QDateTime::currentMSecsSinceEpoch();
+        m_agentHandoffDesktopsLoading = false;
+        m_agentHandoffDesktopsError.clear();
+    }
     void testLinkAgentSessionToOrgTask(int sessionId, const QString &taskId,
                                        bool completeIfFinished)
     {
@@ -14263,6 +14270,12 @@ private:
     // Sessions whose handoff POST is still in flight, so a second click on the
     // button cannot queue the same continuation twice.
     QSet<int> m_agentCloudHandoffsInFlight;
+    QList<forkmesh::agents::HandoffDesktop> m_agentHandoffDesktops;
+    qint64 m_agentHandoffDesktopsLoadedMs = 0;
+    qint64 m_agentHandoffDesktopsTriedMs = 0;
+    bool m_agentHandoffDesktopsLoading = false;
+    QString m_agentHandoffDesktopsError;
+    QList<QPointer<QMenu>> m_agentHandoffDesktopMenus;
     QSet<int> m_claudeDesktopPending;
     QSet<QString> m_claudeDesktopChecked;
     QStringList m_claudeDesktopLinkQueue;
@@ -14825,7 +14838,10 @@ private:
                                         bool resolveWorktree = true);
     bool publishAgentHandoffBranch(const AgentCloudHandoff &plan,
                                    int sessionId, QString *error);
-    void moveAgentSessionToCloud(int sessionId);
+    void moveAgentSessionToCloud(int sessionId, const QString &toKey = QString(),
+                                 const QString &toLabel = QString());
+    void loadAgentHandoffDesktops(int sessionId);
+    void fillAgentHandoffDesktopMenu(QMenu *menu, int sessionId);
     bool claudeDesktopSessionsEnabled() const;
     QString claudeDesktopBlocker(int sessionId);
     void addAgentToClaudeDesktop(int sessionId, bool open);
