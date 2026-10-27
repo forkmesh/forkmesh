@@ -359,12 +359,19 @@ the dot took width and the churn bars were hard to read).
   ring should move with tokens as they are sent and received. With no token
   counts the border is a hairline. Reduce Motion keeps the lanes still, and
   they pause while the tab is hidden.
-- The totals come from the desktop row's `tokensIn` and `tokensOut`: for Claude
-  sessions the desktop adds each assistant message's input (fresh, cache
-  written and cache read) and output once per message id
-  (`transcripttools::InputTokenCounter` / `OutputTokenCounter`); Codex reports
-  running totals. Older desktops without these fields fall back to the
-  session's stored `promptTokens` / `completionTokens`.
+- The totals come from the desktop row's `tokensIn` and `tokensOut`, counted
+  live as the run streams (`transcripttools::LiveTokenMeter`, since
+  2026-10-27). For Claude sessions a `message_start` adds the request's input
+  (fresh, cache written and cache read); each `content_block_delta` adds an
+  output guess of one token per four characters of text, thinking or tool
+  input; the closing `message_delta` usage tops the guess up to the real count,
+  and the finished `assistant` message adds only what is still missing, all
+  once per message id. Codex agent deltas add the same four-character guess.
+  Each `result` resets the totals to the CLI's own counts, so a guess that ran
+  high is corrected at the end of every turn. Before, the totals grew only when
+  a whole assistant message landed, so the ring and the island charts sat
+  still while a long reply streamed. Older desktops without these fields fall
+  back to the session's stored `promptTokens` / `completionTokens`.
 - Inside the tile, top to bottom: the file count in a small semi-transparent
   pill (`AgentTileFiles`) whose outline is the churn, a 0.75 pt stroke green
   for the share of lines added and red for the share removed (it used to be the

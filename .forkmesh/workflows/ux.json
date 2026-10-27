@@ -31,8 +31,9 @@
                 "avatar": "ux",
                 "description": "Owns the quality of every ForkMesh user journey, finding and fixing confusing, inaccessible, slow, or inconsistent interactions across desktop, web, and mobile.",
                 "focus": "Observe, Simplify & Repair",
-                "improvementCycles": 8,
+                "improvementCycles": 9,
                 "improvementNotes": [
+                    "Reproduce focus and visibility bugs in headless Chrome against the extracted real function first, then confirm each new fake-DOM test fails on the old code for the stated reason. The first version of my close-focus test passed on the buggy code only because the editor opened in the hidden tab.",
                     "For dynamically created web dialogs, test focus after the post-close animation frame as well as dialog removal.",
                     "When a keyboard action triggers an asynchronous rerender, assert focus after the final saved state rather than immediately after the control closes.",
                     "For dynamically created native dialogs, test the computed accessible name and real Escape focus return, not just that `showModal()` is called.",
@@ -103,6 +104,6 @@
             "y": 0
         }
     ],
-    "updatedAtMs": 1792678033900,
+    "updatedAtMs": 1793026928484,
     "version": 1
 }

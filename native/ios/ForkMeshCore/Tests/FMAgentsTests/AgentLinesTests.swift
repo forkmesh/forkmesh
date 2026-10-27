@@ -265,6 +265,41 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(AgentTokenPace.travel(perSecond: 1e9, input: false), AgentTokenPace.maxTravel)
     }
 
+    func testTokenSeriesChartsPerSecondGrowthAcrossSources() {
+        var series = AgentTokenSeries()
+        series.tick(["desktop": [1_000, 50]])
+        XCTAssertEqual(series.input, [0])
+        XCTAssertEqual(series.output, [0])
+        series.tick(["desktop": [4_000, 80], "row:r": [500, 5]])
+        XCTAssertEqual(series.input, [0, 3_000])
+        XCTAssertEqual(series.output, [0, 30])
+        series.tick(["desktop": [3_000, 90], "row:r": [600, 9]])
+        XCTAssertEqual(series.input.last, 100)
+        XCTAssertEqual(series.output.last, 14)
+        for _ in 0..<(AgentTokenSeries.seconds + 3) { series.tick(["desktop": [3_000, 90]]) }
+        XCTAssertEqual(series.output.count, AgentTokenSeries.seconds)
+        XCTAssertEqual(series.output.last, 0)
+    }
+
+    func testTokenSeriesTotalsPreferTheDesktopFeedOverItsRows() {
+        var desk = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "t", repoOwner: "o", repoName: "r", node: "studio",
+            status: "running", statusLabel: "Running", isActive: true, localId: 7)
+        desk.tokensIn = 10
+        desk.tokensOut = 2
+        var cloud = UnifiedAgentRow(
+            id: "run:1", badge: .node, title: "c", repoOwner: "o", repoName: "r", node: "runner",
+            status: "running", statusLabel: "Running", isActive: true)
+        cloud.tokensIn = 30
+        cloud.tokensOut = 4
+        XCTAssertEqual(
+            AgentTokenSeries.totals(desktop: [], rows: [desk, cloud]),
+            ["row:desktop:7": [10, 2], "row:run:1": [30, 4]])
+        XCTAssertEqual(
+            AgentTokenSeries.totals(desktop: [900, 60], rows: [desk, cloud]),
+            ["desktop": [900, 60], "row:run:1": [30, 4]])
+    }
+
     func testEagleDialogIsTheLatestFinishedProseTheAgentSaid() {
         let transcript = "Looking at the **list** view.\n\n[Read AgentLineRow.swift]\n\nNow wiring the `ticker`\nacross the card.\n\nhalf a li"
         XCTAssertEqual(AgentLines.dialog(transcript), "Now wiring the ticker across the card.")

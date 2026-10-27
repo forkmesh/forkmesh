@@ -46,13 +46,10 @@ public final class DesktopVitals {
 
     public private(set) var series: [DesktopVital: [Double]] = [:]
     public private(set) var watching = false
-    public private(set) var tokensIn: [Double] = []
-    public private(set) var tokensOut: [Double] = []
-    public private(set) var tokensKnown = false
+    public private(set) var tokenTotals: [Int] = []
     @ObservationIgnored private let family: DesktopControlFamily
     @ObservationIgnored private var tapId: UUID?
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var lastTokens: [Double]?
     @ObservationIgnored private var agents: [Int: DesktopAgentTokens] = [:]
 
     public init(channel: DesktopControlCalling) {
@@ -71,13 +68,6 @@ public final class DesktopVitals {
         let made = DesktopAgentTokens()
         agents[session] = made
         return made
-    }
-
-    public nonisolated static func step(from last: [Double]?, to now: [Double]) -> [Double] {
-        guard let last, last.count == now.count else { return now.map { _ in .nan } }
-        return zip(last, now).map { (before: Double, after: Double) -> Double in
-            before < 0 || after < 0 ? .nan : max(0, after - before)
-        }
     }
 
     public func watch() async {
@@ -117,10 +107,7 @@ public final class DesktopVitals {
     }
 
     private func forgetTokens() {
-        lastTokens = nil
-        tokensIn = []
-        tokensOut = []
-        tokensKnown = false
+        tokenTotals = []
     }
 
     private func append(_ data: JSONObject) {
@@ -135,23 +122,14 @@ public final class DesktopVitals {
     }
 
     private func appendTokens(_ data: JSONObject) {
-        guard let into = data["tokensIn"]?.doubleValue, let out = data["tokensOut"]?.doubleValue else { return }
-        let now = [into, out]
-        let step = DesktopVitals.step(from: lastTokens, to: now)
-        lastTokens = now
-        tokensIn = DesktopVitals.pushed(tokensIn, step[0])
-        tokensOut = DesktopVitals.pushed(tokensOut, step[1])
-        if !tokensKnown { tokensKnown = true }
+        guard let into = data["tokensIn"]?.intValue, let out = data["tokensOut"]?.intValue else { return }
+        if tokenTotals != [into, out] { tokenTotals = [into, out] }
         for (key, value) in data["agentTokens"]?.objectValue ?? [:] {
             let pair = value.arrayValue?.compactMap(\.intValue) ?? []
             guard let session = Int(key), pair.count == 2 else { continue }
             let box = agentTokens(session)
             if box.totals != pair { box.totals = pair }
         }
-    }
-
-    private static func pushed(_ values: [Double], _ value: Double) -> [Double] {
-        Array((values + [value]).suffix(seconds))
     }
 
     private static func reading(_ value: JSONValue?) -> Double {
