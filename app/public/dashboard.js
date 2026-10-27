@@ -4827,6 +4827,7 @@
     parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
     refreshPullConversationProjection();
     refreshRepoPullDiff();
+    if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -4919,6 +4920,7 @@
         return;
       }
       renderCurrentWebIssueDetail();
+      if (action === "edit-comment") restoreCommentEditFocus(target);
     } catch (error) {
       showErrorNotice(webIssueActionError(error, action));
     }
@@ -25681,9 +25683,20 @@
     window.addEventListener("resize", reposition);
   }
 
+  function visibleCommentEditButton(target, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const matches = [...document.querySelectorAll(selector)]
+      .filter((node) => node.dataset[key] === String(target));
+    return matches.find((node) => node.getClientRects().length) || matches[0] || null;
+  }
+
+  function restoreCommentEditFocus(target, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    visibleCommentEditButton(target, selector, key)?.focus();
+  }
+
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
-    const button = [...document.querySelectorAll(selector)]
-      .find((node) => node.dataset[key] === String(target));
+    const button = visibleCommentEditButton(target, selector, key);
     const inline = button?.closest("[data-repo-pull-inline-comment-card]");
     const card = inline || button?.closest("[data-repo-issue-comment]");
     const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
@@ -25703,8 +25716,10 @@
     input.setSelectionRange(input.value.length, input.value.length);
     return new Promise((resolve) => {
       const finish = (value) => {
+        const hadFocus = form.contains(document.activeElement);
         form.remove();
         if (text) text.hidden = false;
+        if (hadFocus && button?.isConnected) button.focus();
         resolve(value);
       };
       form.addEventListener("submit", (event) => {
