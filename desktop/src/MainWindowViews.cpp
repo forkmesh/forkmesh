@@ -2,8 +2,7 @@
 #include "InstanceTheme.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
-#include "GitLayout.h"
-#include "WorkspaceLayout.h"
+#include "LayoutMode.h"
 
 #include <QActionGroup>
 
@@ -182,69 +181,22 @@ void MainWindow::showViewModeMenu()
 
     if (Theme::isNext()) {
         menu.addSeparator();
-        QAction *layoutHeader = menu.addAction(QStringLiteral("Agents layout"));
+        QAction *layoutHeader = menu.addAction(QStringLiteral("Layout"));
         layoutHeader->setEnabled(false);
         auto *layoutGroup = new QActionGroup(&menu);
         layoutGroup->setExclusive(true);
-        const bool classicLayout = workspaceLayoutClassic();
-        for (const bool classic : {false, true}) {
-            QAction *entry = menu.addAction(classic ? QStringLiteral("Classic")
-                                                    : QStringLiteral("New"));
-            entry->setObjectName(classic
-                                     ? QStringLiteral("workspaceLayoutClassic")
-                                     : QStringLiteral("workspaceLayoutNew"));
+        const LayoutMode current = layoutMode();
+        for (const LayoutMode mode : kLayoutModes) {
+            QAction *entry = menu.addAction(layoutModeName(mode));
+            entry->setObjectName(mode == LayoutMode::ControlTower
+                                     ? QStringLiteral("layoutModeControlTower")
+                                     : QStringLiteral("layoutModeFocus"));
             entry->setCheckable(true);
-            entry->setChecked(classic == classicLayout);
+            entry->setChecked(mode == current);
             entry->setActionGroup(layoutGroup);
-            entry->setToolTip(
-                classic
-                    ? QStringLiteral("The earlier Agents page: the action bar, "
-                                     "the list views and the detail buttons.")
-                    : QStringLiteral("Session cards, one conversation header "
-                                     "and a side panel for the diff, the "
-                                     "terminal and the browser."));
-            connect(entry, &QAction::triggered, this, [this, classic] {
-                if (workspaceLayoutClassic() == classic)
-                    return;
-                setWorkspaceLayoutClassic(classic);
-                NextAccess::syncWorkspace(*this);
-                logSystem(QStringLiteral("Agents layout switched to %1")
-                              .arg(classic ? QStringLiteral("Classic")
-                                           : QStringLiteral("New")));
-            });
-        }
-
-        menu.addSeparator();
-        QAction *gitHeader = menu.addAction(QStringLiteral("Git layout"));
-        gitHeader->setEnabled(false);
-        auto *gitGroup = new QActionGroup(&menu);
-        gitGroup->setExclusive(true);
-        const bool compactGit = gitLayoutCompact();
-        for (const bool compact : {false, true}) {
-            QAction *entry = menu.addAction(compact ? QStringLiteral("Compact")
-                                                    : QStringLiteral("New"));
-            entry->setObjectName(compact ? QStringLiteral("gitLayoutCompact")
-                                         : QStringLiteral("gitLayoutNew"));
-            entry->setCheckable(true);
-            entry->setChecked(compact == compactGit);
-            entry->setActionGroup(gitGroup);
-            entry->setToolTip(
-                compact
-                    ? QStringLiteral("The earlier Git page: changed files on top, "
-                                     "history underneath, and the branch picker, "
-                                     "Fetch and Pull in the history header.")
-                    : QStringLiteral("A page header with Changes and History tabs "
-                                     "and a column of branches, remotes, worktrees "
-                                     "and tags."));
-            connect(entry, &QAction::triggered, this, [this, compact] {
-                if (gitLayoutCompact() == compact)
-                    return;
-                setGitLayoutCompact(compact);
-                applyGitLayout();
-                logSystem(QStringLiteral("Git layout switched to %1")
-                              .arg(compact ? QStringLiteral("Compact")
-                                           : QStringLiteral("New")));
-            });
+            entry->setToolTip(layoutModeDescription(mode));
+            connect(entry, &QAction::triggered, this,
+                    [this, mode] { NextAccess::applyLayoutMode(*this, mode); });
         }
     }
 

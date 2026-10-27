@@ -11552,7 +11552,7 @@ void checkWorkspaceDesign(MainWindow &window)
          assistant(QStringLiteral("I moved the rarely used actions into a menu.")),
          QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
                      {QStringLiteral("text"), QStringLiteral("now the composer, please")}}});
-    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     NextAccess::syncWorkspace(window);
     window.testShowAgentSession(session.id);
     settle();
@@ -11720,7 +11720,7 @@ void checkWorkspaceDesign(MainWindow &window)
     }
     shoot(QStringLiteral("agents-narrow-list"));
 
-    forkmesh::ui::setWorkspaceLayoutClassic(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     NextAccess::syncWorkspace(window);
     if (QSplitter *split = window.testAgentWorkspaceSplit())
         split->setSizes({300, 1000, 0});
@@ -11872,7 +11872,7 @@ void checkWorkspaceDesign(MainWindow &window)
               QStringLiteral("the session menu offers Open in and copy actions (%1)")
                   .arg(entries.join(QStringLiteral(", "))));
     }
-    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     NextAccess::syncWorkspace(window);
     settle();
     {
@@ -16567,43 +16567,46 @@ void checkGitCompactLayout(MainWindow &window)
     };
 
     settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
-    forkmesh::ui::setGitLayoutCompact(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     MainWindow::applyTheme();
     settle();
     const QString fresh = window.testGitLayoutState();
     check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
               fresh.endsWith(QStringLiteral(" rows=1 commit=1 branch=gitNextHeader")),
-          QStringLiteral("the New Git layout has the page header, the branches "
-                         "column and the branch picker in the header (%1)")
+          QStringLiteral("the Focus layout's Git page has the page header, the "
+                         "branches column and the branch picker in the header "
+                         "(%1)")
               .arg(fresh));
     shot(QStringLiteral("new"));
 
-    forkmesh::ui::setGitLayoutCompact(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     window.testApplyGitLayout();
     settle();
     const QString compact = window.testGitLayoutState();
     check(compact == QStringLiteral("header=0 side=0 files=1 history=1 rows=1 "
                                     "commit=1 branch=gitHistoryHeader"),
-          QStringLiteral("the Compact Git layout stacks files over history with "
-                         "room for the file list and the commit button, and the "
-                         "branch picker in the history header (%1)")
+          QStringLiteral("the Control Tower layout's Git page stacks files over "
+                         "history with room for the file list and the commit "
+                         "button, and the branch picker in the history header "
+                         "(%1)")
               .arg(compact));
     shot(QStringLiteral("compact"));
 
-    forkmesh::ui::setGitLayoutCompact(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     window.testApplyGitLayout();
     settle();
     const QString back = window.testGitLayoutState();
     check(back == fresh,
-          QStringLiteral("switching back to the New Git layout restores it (%1)")
+          QStringLiteral("switching back to the Focus layout restores the Git "
+                         "page (%1)")
               .arg(back));
 
     if (designWas.isValid())
         settings.setValue(QStringLiteral("app/design"), designWas);
     else
         settings.remove(QStringLiteral("app/design"));
-    settings.remove(QLatin1String(forkmesh::ui::kGitLayoutSetting));
-    forkmesh::ui::gitLayoutState() = -1;
+    settings.remove(QLatin1String(forkmesh::ui::kLayoutModeSetting));
+    forkmesh::ui::layoutModeState() = -1;
     MainWindow::applyTheme();
     settle();
 }

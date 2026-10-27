@@ -126,6 +126,15 @@ merges the file with `merge=union`, so a conflict there is rare; if one
 happens, keep both sides' lines and run `python3 tools/changelog.py check`.
 See `docs/changelog.md`.
 
+## Desktop layout modes: Control Tower and Focus
+
+The new interface has two layout modes (`desktop/src/LayoutMode.h`, setting
+`app/layoutMode`): Control Tower (compact, every control in view) and Focus
+(one thing at a time). When you change a layout, make the change in the mode
+the user is running, then switch to the other mode and check the page still
+builds, works and switches back. See `docs/desktop/ui-redesign.md`, "Two
+layout modes".
+
 ## Web dashboard styling
 
 Before building or restyling any dashboard page, read

@@ -2251,6 +2251,7 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-workspace-parity-tests
         tests/test_workspace_parity.cpp
+        src/LayoutMode.h
         src/PromptDrop.h
         src/WorkspaceOpenIn.h
         src/WorkspaceShortcuts.h
