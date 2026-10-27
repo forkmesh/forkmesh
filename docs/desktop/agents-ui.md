@@ -566,6 +566,10 @@ with a reason here, then updates `TranscriptCoverage.cpp` and
 already handed to an agent that still exists is not sent again; a second click
 opens that agent.
 
+Claude Code `system/vcs_state_changed` draws a muted notice through
+`transcripttools::systemNotice`, including its `kind` (for example, push).
+An absent kind still draws a generic version control state change notice.
+
 These are deliberately not drawn, because another surface shows them or they
 are bookkeeping:
 

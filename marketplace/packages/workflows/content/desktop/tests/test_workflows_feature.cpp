@@ -4,11 +4,13 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
@@ -221,6 +223,26 @@ QAbstractButton *control(WorkflowCard *card, const QString &name)
     return card ? named<QAbstractButton>(card, name) : nullptr;
 }
 
+void pressCard(WorkflowCard *card)
+{
+    if (!card)
+        return;
+    const QPointF at(4, 4);
+    QMouseEvent press(QEvent::MouseButtonPress, at, card->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(card, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, at, card->mapToGlobal(at), Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(card, &release);
+    settle();
+}
+
+QString detailsName(QWidget *page)
+{
+    auto *name = named<QLabel>(page, QStringLiteral("workflowsDetailsName"));
+    return name && name->isVisibleTo(page) ? name->text() : QString();
+}
+
 } // namespace
 
 void workflowsFeatureChecks()
@@ -360,6 +382,42 @@ void workflowsFeatureChecks()
     settle();
     workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 2,
                    QStringLiteral("a rail pin runs an account workflow through the page"));
+
+    auto *details = named<QFrame>(page, QStringLiteral("Workflow details"));
+    auto *runFilter = named<QComboBox>(page, QStringLiteral("Runs of workflow"));
+    workflowsCheck(details && details->isHidden(), QStringLiteral("the details pane stays closed until a workflow is picked"));
+    pressCard(cardNamed(page, QStringLiteral("Lead alert")));
+    workflowsCheck(details && details->isVisible() && detailsName(page) == QLatin1String("Lead alert"),
+                   QStringLiteral("clicking a workflow opens its details pane on the right"));
+    workflowsCheck(runFilter && runFilter->currentData().toString() == QLatin1String("b2") && runs->rowCount() == 0 &&
+                       runOutput->toPlainText().isEmpty(),
+                   QStringLiteral("a workflow that never ran shows no runs and an empty log"));
+    bool neverRanNote = false;
+    for (QLabel *label : page->findChildren<QLabel *>())
+        neverRanNote = neverRanNote || label->text().contains(QLatin1String("Lead alert has not run yet"));
+    workflowsCheck(neverRanNote, QStringLiteral("the run detail says the picked workflow has not run yet"));
+    pressCard(cardNamed(page, QStringLiteral("Morning report")));
+    workflowsCheck(detailsName(page) == QLatin1String("Morning report") &&
+                       runFilter->currentData().toString() == QLatin1String("a1") && runs->rowCount() >= 1 &&
+                       !runs->selectedItems().isEmpty() && runOutput->toPlainText().contains(QLatin1String("Fetch")),
+                   QStringLiteral("clicking a workflow lists its runs and shows its latest log at the bottom right"));
+    workflowsCheck(named<QPushButton>(details, QStringLiteral("Duplicate")) &&
+                       named<QPushButton>(details, QStringLiteral("Edit steps")) &&
+                       named<QPushButton>(details, QStringLiteral("Turn off")) &&
+                       named<QPushButton>(details, QStringLiteral("Delete…")) &&
+                       named<QPushButton>(details, QStringLiteral("Run with an assignment…")),
+                   QStringLiteral("the details pane offers every action on the workflow"));
+    const int runsBefore = server.count("POST", QStringLiteral("/api/workflows/a1/run"));
+    if (auto *paneRun = named<QAbstractButton>(details, QStringLiteral("Run now")))
+        paneRun->click();
+    settle();
+    workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == runsBefore + 1 &&
+                       runFilter->currentData().toString() == QLatin1String("a1"),
+                   QStringLiteral("Run now in the details pane runs it and keeps its runs listed"));
+    named<QAbstractButton>(details, QStringLiteral("Close details"))->click();
+    settle();
+    workflowsCheck(details->isHidden() && runFilter->currentIndex() == 0 && runs->rowCount() >= 2,
+                   QStringLiteral("closing the details pane lists every workflow's runs again"));
 
     for (const QString &view : {QStringLiteral("List view"), QStringLiteral("Compact grid view"),
                                 QStringLiteral("Thumbnails view")}) {
@@ -611,6 +669,23 @@ void workflowsFeatureChecks()
         synced = synced || (call.action == QLatin1String("sync") && call.repo == QLatin1String(kAccountRepo) &&
                             call.payload.value(QStringLiteral("workflows")).toArray().size() == 2);
     workflowsCheck(synced, QStringLiteral("the page tells the desktop the account workflows' names for their rail pins"));
+
+    pressCard(cardNamed(desk, QStringLiteral("Sentinel")));
+    auto *deskDetails = named<QFrame>(desk, QStringLiteral("Workflow details"));
+    auto *deskFilter = named<QComboBox>(desk, QStringLiteral("Runs of workflow"));
+    workflowsCheck(deskDetails && deskDetails->isVisible() && detailsName(desk) == QLatin1String("Sentinel") &&
+                       deskFilter->currentData().toString() == QLatin1String("local:forkmesh/forkmesh|sentinel") &&
+                       deskOutput->toPlainText().contains(QLatin1String("tests failed")),
+                   QStringLiteral("clicking a special agent opens its details and its last log"));
+    workflowsCheck(named<QPushButton>(deskDetails, QStringLiteral("Agent home")) &&
+                       named<QPushButton>(deskDetails, QStringLiteral("Start schedule")) &&
+                       named<QPushButton>(deskDetails, QStringLiteral("Pin to rail…")) &&
+                       named<QPushButton>(deskDetails, QStringLiteral("Open output file")),
+                   QStringLiteral("a special agent's details pane offers its agent, schedule, rail and output"));
+    named<QPushButton>(deskDetails, QStringLiteral("Show file"))->click();
+    settle();
+    workflowsCheck(localCalls.last().action == QLatin1String("openFile") && localCalls.last().id == QLatin1String("sentinel"),
+                   QStringLiteral("Show file in the details pane opens the workflow's file"));
 
     desk->activateSearchHit(QStringLiteral("repo:forkmesh/forkmesh|sentinel"));
     settle();

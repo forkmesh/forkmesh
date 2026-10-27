@@ -154,6 +154,18 @@ static void testEvents()
                {QStringLiteral("pre_tokens"), 1000}})}});
     check(systemNotice(compact).startsWith(QLatin1String("Conversation compacted (auto")),
           "compaction is announced");
+    QJsonObject vcs = obj(
+        {{QStringLiteral("type"), QStringLiteral("system")},
+         {QStringLiteral("subtype"), QStringLiteral("vcs_state_changed")},
+         {QStringLiteral("kind"), QStringLiteral("push")}});
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed: push"),
+          "a VCS state change announces its kind");
+    vcs.insert(QStringLiteral("kind"), QStringLiteral("new_kind"));
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed: new_kind"),
+          "an unfamiliar VCS kind is still announced");
+    vcs.remove(QStringLiteral("kind"));
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed"),
+          "a VCS state change without a kind still draws a notice");
     check(systemNotice(obj({{QStringLiteral("type"), QStringLiteral("system")},
                             {QStringLiteral("subtype"), QStringLiteral("hook_response")}}))
               .isEmpty(),
