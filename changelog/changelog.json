@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-10-27", "area": "Desktop", "text": "Clicking a workflow on the Workflows page opens a details pane on the right with its settings and every action, and shows its latest run's log at the bottom right."},
+  {"date": "2026-10-27", "area": "Desktop", "text": "Running a workflow now sparkles the new run into Recent runs and shows its steps right away, each one animating as it starts and finishes, with the live log underneath."},
   {"date": "2026-10-27", "area": "Desktop", "text": "The workflow editor is more compact: steps show as numbered cards with their last result, chips show the schedule, last and next run and success rate, and the runs sit beside the form."},
   {"date": "2026-10-27", "area": "Projects", "text": "Forking forkmesh/forkmesh on the website now copies its code into your fork, so you can clone it, push branches and open a pull request back to ForkMesh."},
   {"date": "2026-10-27", "area": "iPhone", "text": "The token charts under the Dynamic Island now always show and update every second, and agent tile borders move while a reply is still streaming."},

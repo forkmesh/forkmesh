@@ -3,6 +3,7 @@
 #include "NativePackageExtension.h"
 #include "WorkflowsCards.h"
 #include "WorkflowsModel.h"
+#include "WorkflowsRunFlow.h"
 
 #include <QHash>
 #include <QJsonArray>
@@ -119,7 +120,13 @@ private:
     void toggleActive(const QJsonObject &summary);
     void duplicateWorkflow(const QJsonObject &summary);
     void deleteWorkflow(const QString &id, const QString &name);
-    void runWorkflow(const QString &id, const QJsonObject &body = {});
+    void runWorkflow(const QString &id, const QJsonObject &body = {}, const QJsonArray &steps = {});
+    void startPendingRun(const QString &workflowKey, const QString &name, const QString &where,
+                         const QJsonArray &steps);
+    void landPendingRun(const QJsonObject &run, const QString &workflowKey);
+    void showPendingRun(const QJsonObject &run);
+    void showFlow(const QString &key, const QList<FlowStep> &steps, bool live);
+    void updateDesktopPending(int running);
     void runSummary(const QJsonObject &summary, const QString &assignment = QString());
 
     void renderEditor();
@@ -238,6 +245,8 @@ private:
     QLabel *m_runSummary = nullptr;
     QTableWidget *m_runSteps = nullptr;
     QPlainTextEdit *m_runOutput = nullptr;
+    RunFlow *m_runFlow = nullptr;
+    QScrollArea *m_runFlowArea = nullptr;
     QSplitter *m_dashboardSplitter = nullptr;
     QTimer *m_liveTimer = nullptr;
     QString m_shownRunId;
@@ -246,6 +255,9 @@ private:
     QString m_followRun;
     qint64 m_followSince = 0;
     QJsonObject m_pendingRun;
+    QString m_flowAliasFrom;
+    QString m_flowAliasTo;
+    bool m_sparkled = false;
 
     QLineEdit *m_name = nullptr;
     QCheckBox *m_active = nullptr;

@@ -1,4 +1,5 @@
 #include "WorkflowsFeature.h"
+#include "WorkflowsRunFlow.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -16,6 +17,8 @@
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTimer>
+
+#include <functional>
 
 using namespace forkmesh::workflows;
 
@@ -244,16 +247,46 @@ QString detailsName(QWidget *page)
 
 void workflowsFeatureChecks()
 {
+    {
+        RunFlow lone;
+        lone.resize(420, lone.sizeHint().height());
+        lone.show();
+        lone.setSteps(QStringLiteral("pending"),
+                      {{QStringLiteral("A"), QStringLiteral("queued")},
+                       {QStringLiteral("B"), QStringLiteral("queued")},
+                       {QStringLiteral("C"), QStringLiteral("queued")}},
+                      true);
+        lone.setSteps(QStringLiteral("run"),
+                      {{QStringLiteral("A"), QStringLiteral("success")},
+                       {QStringLiteral("B"), QStringLiteral("success")},
+                       {QStringLiteral("C"), QStringLiteral("error")}},
+                      false, QStringLiteral("pending"));
+        workflowsCheck(lone.shownStatus(0) == QLatin1String("success") &&
+                           lone.shownStatus(2) == QLatin1String("queued") && lone.animating(),
+                       QStringLiteral("finished steps turn one after another, not all at once"));
+        lone.setSteps(QStringLiteral("other"), {{QStringLiteral("A"), QStringLiteral("error")}}, false);
+        workflowsCheck(lone.steps().size() == 1 && lone.shownStatus(0) == QLatin1String("error"),
+                       QStringLiteral("another run's steps replace the old ones without a turn"));
+    }
+
     FakeServer server;
+    bool holdRuns = false;
+    QList<std::function<void()>> heldRuns;
     forkmesh::market::NativePackageHost host;
     host.packageId = QStringLiteral("workflows");
-    host.request = [&server](const QByteArray &method, const QString &path, const QJsonObject &body,
-                             forkmesh::market::NativePackageReplyHandler handler) {
+    host.request = [&server, &holdRuns, &heldRuns](const QByteArray &method, const QString &path,
+                                                   const QJsonObject &body,
+                                                   forkmesh::market::NativePackageReplyHandler handler) {
         bool ok = false;
         const QJsonObject payload = server.reply(method, path, body, &ok);
-        QTimer::singleShot(0, [handler, ok, payload] {
+        const auto deliver = [handler, ok, payload] {
             handler(ok, payload, ok ? QString() : payload.value(QStringLiteral("error")).toString());
-        });
+        };
+        if (holdRuns && path.endsWith(QLatin1String("/run"))) {
+            heldRuns.append(deliver);
+            return;
+        }
+        QTimer::singleShot(0, deliver);
     };
     int badgeChanges = 0;
     host.navigationBadgeChanged = [&badgeChanges] { ++badgeChanges; };
@@ -311,12 +344,35 @@ void workflowsFeatureChecks()
     workflowsCheck(server.workflows.value(QStringLiteral("b2")).value(QStringLiteral("active")).toBool(),
                    QStringLiteral("Turn on saves the whole workflow with Active set"));
 
+    holdRuns = true;
     if (auto *run = control(cardNamed(page, QStringLiteral("Morning report")), QStringLiteral("Run")))
         run->click();
     settle();
     workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 1,
                    QStringLiteral("Run starts the workflow on the server"));
     auto *runOutput = named<QPlainTextEdit>(page, QStringLiteral("workflowsRunOutput"));
+    auto *flow = dynamic_cast<RunFlow *>(named<QWidget>(page, QStringLiteral("workflowsRunFlow")));
+    workflowsCheck(runs->currentRow() == 0 &&
+                       runs->item(0, 0)->data(Qt::UserRole + 1).toString() == QLatin1String("pending:a1") &&
+                       runs->item(0, 0)->text() == QLatin1String("Morning report"),
+                   QStringLiteral("a started run is in Recent runs and selected before the server answers"));
+    workflowsCheck(page->findChild<QWidget *>(QStringLiteral("workflowsRunSparkle")) != nullptr,
+                   QStringLiteral("the new run sparkles into Recent runs"));
+    workflowsCheck(flow && flow->isVisibleTo(page) && flow->live() && flow->animating() &&
+                       flow->steps().size() == 2 && flow->steps().at(1).name == QLatin1String("Fetch") &&
+                       flow->steps().at(1).status == QLatin1String("queued"),
+                   QStringLiteral("the run's steps show at once beside Recent runs, animated while it runs"));
+    workflowsCheck(runOutput && runOutput->toPlainText().contains(QLatin1String("Waiting for ForkMesh")),
+                   QStringLiteral("the log under the steps says the run is under way"));
+    holdRuns = false;
+    for (const auto &deliver : std::as_const(heldRuns))
+        deliver();
+    heldRuns.clear();
+    settle();
+    workflowsCheck(flow && !flow->live() && flow->key() == QLatin1String("r9") && flow->steps().size() == 1 &&
+                       flow->steps().first().status == QLatin1String("success") &&
+                       flow->shownStatus(0) == QLatin1String("success"),
+                   QStringLiteral("each step turns to its result when the run finishes"));
     workflowsCheck(runs->currentRow() >= 0 && !runs->selectedItems().isEmpty() &&
                        runs->item(runs->currentRow(), 0)->data(Qt::UserRole + 1).toString() == QLatin1String("r9"),
                    QStringLiteral("a run started on the page is selected in Recent runs"));
@@ -592,6 +648,13 @@ void workflowsFeatureChecks()
     for (const LocalCall &call : std::as_const(localCalls))
         cleanStarted = cleanStarted || (call.action == QLatin1String("run") && call.id == QLatin1String("clean"));
     workflowsCheck(cleanStarted, QStringLiteral("Run starts the desktop workflow on this desktop"));
+    auto *deskFlow = dynamic_cast<RunFlow *>(named<QWidget>(desk, QStringLiteral("workflowsRunFlow")));
+    workflowsCheck(deskFlow && deskFlow->live() && deskFlow->key() == QLatin1String("lr2") &&
+                       !deskFlow->steps().isEmpty() &&
+                       deskFlow->steps().first().name == QLatin1String("Clean caches") &&
+                       deskFlow->steps().first().status == QLatin1String("running") &&
+                       desk->findChild<QWidget *>(QStringLiteral("workflowsRunSparkle")) != nullptr,
+                   QStringLiteral("a desktop run sparkles in and shows its running step live"));
     workflowsCheck(deskRuns->currentRow() >= 0 &&
                        deskRuns->item(deskRuns->currentRow(), 0)->data(Qt::UserRole + 1).toString() ==
                            QLatin1String("lr2"),

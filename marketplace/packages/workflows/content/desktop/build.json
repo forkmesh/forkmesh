@@ -5,6 +5,8 @@
     "WorkflowsModel.cpp",
     "WorkflowsCards.h",
     "WorkflowsCards.cpp",
+    "WorkflowsRunFlow.h",
+    "WorkflowsRunFlow.cpp",
     "WorkflowsFeature.h",
     "WorkflowsFeature.cpp",
     "WorkflowsDialogs.cpp"
@@ -17,6 +19,8 @@
     "WorkflowsModel.cpp",
     "WorkflowsCards.h",
     "WorkflowsCards.cpp",
+    "WorkflowsRunFlow.h",
+    "WorkflowsRunFlow.cpp",
     "WorkflowsFeature.h",
     "WorkflowsFeature.cpp",
     "WorkflowsDialogs.cpp"
