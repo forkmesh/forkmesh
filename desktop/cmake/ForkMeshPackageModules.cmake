@@ -184,4 +184,8 @@ function(forkmesh_add_package_module_tests)
     add_test(NAME forkmesh-package-modules-resolve
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_package_modules.py"
                 "$<TARGET_FILE_DIR:forkmesh>")
+    add_test(NAME forkmesh-plugin-build-isolation
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_plugin_build_isolation.py"
+                "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../marketplace/packages"
+                "${CMAKE_MAKE_PROGRAM}")
 endfunction()

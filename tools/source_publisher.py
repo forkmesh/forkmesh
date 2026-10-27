@@ -48,6 +48,8 @@ BRANCH_DELETE_RETRYABLE = ("merge_status_pending", "merge_node_unavailable")
 UNDELETABLE_BRANCHES = ("main", "master", "HEAD")
 CORES_MAIN_REF = "refs/remotes/forkmesh-cores/main"
 CORES_MERGE_MESSAGE = "Merge pushes to main from the cores"
+LEDGER_REF = "refs/heads/forkmesh/pulls"
+LEDGER_GRACE_SECONDS = 600
 FLAGSHIP_REPOSITORY = "forkmesh/forkmesh"
 EMPTY_OBJECT = re.compile(r"object file \S*/objects/([0-9a-f]{2})/([0-9a-f]{38,62}) is empty")
 MIN_PASS_SPACING_SECONDS = 2
@@ -1210,12 +1212,30 @@ def gateway_failure_cause(gateway: dict) -> str:
         "; %s" % absorb if absorb else "")
 
 
+def ledger_only_refusal(gateway: dict) -> bool:
+    refused = [item for item in gateway.get("rejected", []) if not stale_branch(item)]
+    return bool(refused) and all(item["ref"] == LEDGER_REF for item in refused) \
+        and not gateway.get("other") and not gateway.get("loopbackBlocked")
+
+
 def notify_publish_failure(paths, status, log=print, opener=None, clock=time.time):
     alert_path = paths.publisher_state / "publish-alert.json"
     if status.get("ok"):
         write_json(alert_path, {})
         return
     failed = [item for item in status.get("gateways", []) if not item.get("ok")]
+    previous = read_json(alert_path, {}) or {}
+    if failed and status.get("fanout", {}).get("ok", True) \
+            and all(ledger_only_refusal(item) for item in failed):
+        since = float(previous.get("ledgerSince") or clock())
+        if clock() - since < LEDGER_GRACE_SECONDS:
+            write_json(alert_path, dict(previous, ledgerSince=since))
+            log("gateway: the cores hold pull ledger records the source lacks; "
+                "waiting for the desktop to merge them (%ds of %ds grace)" % (
+                    int(clock() - since), LEDGER_GRACE_SECONDS))
+            return
+    else:
+        previous.pop("ledgerSince", None)
     cause = "; ".join(gateway_failure_cause(item) for item in failed)
     cause = cause or status.get("sync", {}).get("error") or "mirror fan-out failed"
     fix = ("Allow local TCP to 127.0.0.1, ::1 or 127.0.0.2 in OpenSnitch or "
@@ -1227,7 +1247,6 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             "Check: python3 tools/source_publisher.py status; "
             "journalctl --user -u forkmesh-source-publish.service -n 50" % (cause, fix))
     log("ERROR: " + body)
-    previous = read_json(alert_path, {}) or {}
     stable_body = re.sub(r"last port \d+", "last port <local>", body)
     digest = hashlib.sha256(stable_body.encode()).hexdigest()
     if previous.get("digest") == digest and clock() - previous.get("at", 0) < 3600:
@@ -1252,7 +1271,7 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             headers={"Content-Type": "application/json"}, method="POST")
         with (opener or urllib.request.urlopen)(request, timeout=20) as response:
             reply = json.loads(response.read() or b"{}")
-        write_json(alert_path, {"digest": digest, "at": clock()})
+        write_json(alert_path, dict(previous, digest=digest, at=clock()))
         log("notify: %s operator Ping(s)" % reply.get("pings", 0))
     except (OSError, ValueError, PublishError, IndexError) as error:
         log("notify: publishing failure Ping could not be sent: %s" % error)

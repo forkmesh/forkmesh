@@ -1652,8 +1652,11 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         return data;
     }
     if (id == QLatin1String("tasks")) {
+        const QJsonArray catalog = m_organizationTaskStore
+                                       ? m_organizationTaskStore->tasks()
+                                       : QJsonArray();
         QHash<QString, int> byStatus;
-        for (const QJsonValue &value : m_organizationTasks) {
+        for (const QJsonValue &value : catalog) {
             QString status = value.toObject().value(QStringLiteral("status")).toString();
             if (status.isEmpty())
                 status = QStringLiteral("open");
@@ -1662,7 +1665,7 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         QList<QPair<QString, double>> tally;
         for (auto it = byStatus.cbegin(); it != byStatus.cend(); ++it)
             tally.append({it.key(), double(it.value())});
-        StatsTileData data = number(m_organizationTasks.size(),
+        StatsTileData data = number(catalog.size(),
                                     QStringLiteral("organization board"));
         data.series = tallySeries(tally, 6);
         data.unit = QStringLiteral("tasks");

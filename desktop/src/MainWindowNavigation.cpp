@@ -63,6 +63,14 @@
 
 using namespace forkmesh::ui;
 
+namespace {
+
+const QStringList kRailKeptBuiltinKeys = {QStringLiteral("notes"),
+                                          QStringLiteral("calendar"),
+                                          QStringLiteral("tasks")};
+
+}
+
 QWidget *MainWindow::buildBreadcrumb()
 {
     auto *bar = new QWidget;
@@ -270,44 +278,6 @@ QWidget *MainWindow::buildBreadcrumb()
     attachPackageRailMenu(m_ledgerNavButton, QStringLiteral("builtin:ledger"));
     connect(m_ledgerNavButton, &QPushButton::clicked, this,
             &MainWindow::openLedger);
-
-    m_tasksNavButton = new ActivityRailButton(QStringLiteral("list-unordered"),
-                                              QStringLiteral("Tasks"));
-    m_tasksNavButton->setObjectName("organizationTasksNavButton");
-    m_tasksNavButton->setCheckable(true);
-    m_tasksNavButton->setCursor(Qt::PointingHandCursor);
-    m_tasksNavButton->setToolTip(QStringLiteral("Organization tasks"));
-    setOcticon(m_tasksNavButton, "list-unordered", 16);
-    m_navGroup->addButton(
-        m_tasksNavButton, kOrganizationTasksSectionIndex);
-    connect(m_tasksNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kOrganizationTasksSectionIndex);
-    });
-
-    m_calendarNavButton = new ActivityRailButton(QStringLiteral("calendar"),
-                                                 QStringLiteral("Calendar"));
-    m_calendarNavButton->setObjectName("calendarNavButton");
-    m_calendarNavButton->setCheckable(true);
-    m_calendarNavButton->setCursor(Qt::PointingHandCursor);
-    m_calendarNavButton->setToolTip(QStringLiteral(
-        "Private personal and organization calendars"));
-    setOcticon(m_calendarNavButton, "calendar", 16);
-    m_navGroup->addButton(m_calendarNavButton, kCalendarSectionIndex);
-    connect(m_calendarNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kCalendarSectionIndex);
-    });
-
-    m_notesNavButton = new ActivityRailButton(QStringLiteral("note"),
-                                              QStringLiteral("Notes"));
-    m_notesNavButton->setObjectName("notesNavButton");
-    m_notesNavButton->setCheckable(true);
-    m_notesNavButton->setCursor(Qt::PointingHandCursor);
-    m_notesNavButton->setToolTip(QStringLiteral("Local and cloud Markdown notes"));
-    setOcticon(m_notesNavButton, "note", 16);
-    m_navGroup->addButton(m_notesNavButton, kNotesSectionIndex);
-    connect(m_notesNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kNotesSectionIndex);
-    });
 
     m_breadcrumb = new QLabel;
     m_breadcrumb->setObjectName("breadcrumb");
@@ -672,9 +642,6 @@ QWidget *MainWindow::buildBreadcrumb()
             &MainWindow::captureScreenRegion);
     attachPackageRailMenu(m_navScreenshotButton,
                           QStringLiteral("builtin:capture"));
-    // Built before syncPackageRuntime() so an installed Timers package can
-    // attach its strip on the first pass rather than after the first tick.
-    createTimersNavStrip();
     syncPackageRuntime();
 
     m_navResizeButton = new ActivityRailButton(QStringLiteral("device-desktop"),
@@ -813,8 +780,8 @@ QWidget *MainWindow::buildBreadcrumb()
     chromeRow->addWidget(minimizeButton);
     chromeRow->addWidget(maximizeButton);
     chromeRow->addWidget(closeButton);
-    installTimersClockSlots(chrome, identityBalanceRow, searchClusterRow,
-                            chromeRow, viewModeButton);
+    installNativePackageChromeSlots(chrome, identityBalanceRow, searchClusterRow,
+                                    chromeRow, viewModeButton);
     forkmesh::ui::NextAccess::installTopBar(
         *this, chromeRow, historyButtons, viewModeButton,
         {minimizeButton, maximizeButton, closeButton});
@@ -972,9 +939,11 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
         {QStringLiteral("market"), m_marketNavButton},
         {QStringLiteral("ledger"), m_ledgerNavButton},
     };
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
-        canonical.append({QStringLiteral("package:%1").arg(page.id),
-                          page.navigation.data()});
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (!kRailKeptBuiltinKeys.contains(page.id))
+            canonical.append({QStringLiteral("package:%1").arg(page.id),
+                              page.navigation.data()});
+    }
     canonical += {
         {QStringLiteral("chat"), m_chatButton},
         {QStringLiteral("controlNode"), m_controlNodeNavButton},
@@ -988,11 +957,12 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
         {QStringLiteral("tour"), m_tourNavButton},
         {QStringLiteral("settings"), m_settingsNavButton},
         {QStringLiteral("screenshot"), m_navScreenshotButton},
-        {QStringLiteral("notes"), m_notesNavButton},
-        {QStringLiteral("calendar"), m_calendarNavButton},
-        {QStringLiteral("tasks"), m_tasksNavButton},
-        {QStringLiteral("notifications"), m_notificationButton},
     };
+    for (const QString &key : kRailKeptBuiltinKeys) {
+        if (QPushButton *navigation = nativePackageNavigation(key))
+            canonical.append({key, navigation});
+    }
+    canonical.append({QStringLiteral("notifications"), m_notificationButton});
     return canonical;
 }
 
@@ -4374,7 +4344,7 @@ void MainWindow::showTopBarIndicatorMenu(const QPoint &globalPos)
                     setTopBarIndicatorHidden(key, !shown);
                 });
     }
-    addTimersClockPlacementActions(menu);
+    addNativePackageChromeMenuActions(menu);
     menu->popup(globalPos);
 }
 
@@ -6925,11 +6895,8 @@ void MainWindow::ensureSectionBuilt(int index)
     case 11: section = buildNetworkReposSection(); break;
     case 12: section = buildNetworkDiagnosticsSection(); break;
     case 14: section = buildControlNodeSection(); break;
-    case 15: section = buildOrganizationTasksSection(); break;
-    case 16: section = buildNotesSection(); break;
     case 17: section = buildUsersSection(); break;
     case 18: section = buildFilesSection(); break;
-    case 19: section = buildCalendarSection(); break;
     case kMarketSectionIndex: section = buildMarketSection(); break;
     case kLedgerSectionIndex: section = buildLedgerSection(); break;
     case kTeamSectionIndex: section = buildTeamSection(); break;
@@ -7042,16 +7009,6 @@ void MainWindow::showSection(int index)
             refreshNodesTable();
     } else if (index == kControlNodeSectionIndex) {
         refreshControlNode();
-    } else if (index == kOrganizationTasksSectionIndex) {
-        // Load the list once — on startup, or here if that pull never landed.
-        // Coming back to the page later reuses it; Refresh is the way to ask
-        // the relay again.
-        if (!m_organizationTasksLoaded)
-            refreshOrganizationTasks();
-        refreshOrganizationTaskAgentRows();
-        refreshChatUserDirectory();
-    } else if (index == kNotesSectionIndex) {
-        refreshNotes();
     } else if (index == kUsersSectionIndex) {
         refreshUsersPage();
     } else if (index == kFilesSectionIndex) {
@@ -7070,8 +7027,6 @@ void MainWindow::showSection(int index)
         refreshGovernorPage();
     } else if (index == kSessionsSectionIndex) {
         refreshSessionsPage();
-    } else if (index == kCalendarSectionIndex) {
-        refreshCalendar();
     } else if (index == kMarketSectionIndex) {
         refreshMarketPage();
         refreshAccountPackages(true);
@@ -7111,6 +7066,16 @@ void MainWindow::refreshCurrentNetworkTab()
     if (tabIndex >= 0 && tabIndex <= kNetworkHostsTab)
         refreshNetworkDiagnostics();
     refreshNetworkTab(tabIndex);
+}
+
+int MainWindow::startupLandingSection() const
+{
+    if (m_repoDetailIndex >= 0 || m_pendingRestoreRepoIndex >= 0)
+        return 0;
+    for (const RepoMenuEntry &entry : std::as_const(m_repoMenuEntries))
+        if (entry.index >= 0)
+            return 0;
+    return kHomeGridSectionIndex;
 }
 
 void MainWindow::clearRepoDetail()

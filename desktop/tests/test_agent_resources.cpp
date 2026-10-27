@@ -44,7 +44,7 @@ void testBudget()
           "one agent is throttled at 60% of the slice");
     check(b.agentMaxBytes == b.sliceHighBytes * 4 / 5,
           "one agent is capped at 80% of the slice");
-    check(b.jobsPerAgent == 4, "about 3 GB per build job");
+    check(b.jobsPerAgent == 9, "about 1.5 GB per build job");
 
     const ar::Budget small = ar::computeBudget(4 * kGiB, 4, 20);
     check(small.reserveBytes == 2 * kGiB, "at least 2 GB is kept back");

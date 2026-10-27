@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "RepositoryCalendar.h",
+    "RepositoryCalendar.cpp",
+    "CalendarPage.h",
+    "CalendarPage.cpp"
+  ],
+  "mocHeaders": []
+}

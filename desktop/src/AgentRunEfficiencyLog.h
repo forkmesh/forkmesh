@@ -102,6 +102,7 @@ public:
     QString logPath() const { return m_logPath; }
 
     std::function<void()> changed;
+    std::function<void(const AgentRunRecord &)> runFinished;
 
 private:
     struct ClaudeUsage {

@@ -347,6 +347,33 @@ magic-byte checks.
   for the branch. The desktop signs as its account; the relay accepts the
   node's key or the key of an account that owns the node or the linking
   organization.
+- **Send to another desktop** (2026-10-25, task 2596) is the same move aimed
+  at one of the account's other desktops instead of a mirror. It is a
+  submenu on the Agents list's right-click menu and on the agent pane's menu,
+  offered whenever Continue in cloud is (same `agentCloudHandoff` gates,
+  since the branch travels through the served mirror either way).
+  - Opening the submenu runs `GET .../agents/<id>/handoff`, signed like the
+    POST. The relay answers `{desktops: [{key, node, lastSeen}]}`: the
+    signing account's `desktop_node` keys with `owner_sign` plus its primary
+    key (`_account_desktops`, the list phones read), minus the key that
+    signed. The desktop keeps the list for five minutes, retries a failed
+    read after ten seconds, and refills an open submenu when the answer
+    lands. `handoffDesktops()` sorts by last seen and adds the first six
+    characters of the key to two desktops with one name.
+  - Picking one posts the handoff with `toKey`. The relay refuses a key that
+    is not one of those desktops (`409 unknown_desktop`), skips the mirror
+    search, queues the job in the account namespace with `toKey` and
+    `toDevice`, and answers `targetDevice`. The queue drain
+    (`repo_org_agent_jobs_handler`) passes over a job whose `toKey` is not
+    the claimant's key, the same way it passes over the sender's own
+    `fromKey`, so only the chosen desktop claims it. It starts the run with
+    `startCloudHandoffJob`, as for any handoff to a desktop.
+  - The sending desktop stops its run and logs "Sent to the desktop X on
+    branch". If the chosen desktop never comes back, the job stays queued; any
+    of the account's desktops can still take it with **Continue here**.
+  - Before this a desktop could only hand a session to "the cloud": a mirror
+    if one served the repository, else whichever other desktop drained the
+    queue first.
 - **Continue here** on a queued owner row posts
   `.../agent-sessions/<id>/claim` and reports on
   `.../org-agent-jobs/<id>/result`, signed as the account. Organization-scope

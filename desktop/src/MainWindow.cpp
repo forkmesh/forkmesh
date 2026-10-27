@@ -166,6 +166,11 @@ MainWindow::~MainWindow()
             QFile::exists(m_agentToolLedger->persistPath()))
             m_agentToolLedger->saveLater();
     }
+    if (m_agentPerformance) {
+        m_agentPerformance->changed = {};
+        if (!m_agentPerformance->isEmpty())
+            m_agentPerformance->saveLater();
+    }
     forkmesh::diskwrite::flush();
     ActionStore::flushWrites();
     flushRepositorySyncTimes();
@@ -606,6 +611,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
     });
     m_networkAccess = network;
+    initOrganizationTaskStore();
     static bool proxyLookupWarmed = false;
     if (!std::exchange(proxyLookupWarmed, true)) {
         runOffThread<bool>(
@@ -1054,8 +1060,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "  startup job scheduled: first relay latency probe in 2500ms"));
     traceStep(QStringLiteral("start operating-system reachability watch"),
               [this] { initRelayReachabilityWatch(); });
-    traceStep(QStringLiteral("restore cached organization task badge"),
-              [this] { restoreOrganizationTaskBadge(); });
 #ifndef FORKMESH_WINDOW_TESTS
     QTimer::singleShot(25000, this, [this] {
         forkmesh::StartupTraceStep step(
@@ -1323,6 +1327,8 @@ void MainWindow::runDeferredStartup()
         } else {
             logStartup(QStringLiteral(
                 "  repository restore skipped: no saved or available repository"));
+            if (m_sectionStack && m_sectionStack->currentIndex() == 0)
+                showSection(kHomeGridSectionIndex);
         }
     }
     m_pendingRestoreRepoIndex = -1;
@@ -1510,10 +1516,10 @@ void MainWindow::refreshThemedIcons()
         m_chatMembersSignature.clear();
         refreshChatMembers();
     }
-    // The Tasks detail pane bakes its glyphs into rich text, so it has to be
-    // rebuilt rather than re-tinted in place.
-    if (m_organizationTaskDetail)
-        renderOrganizationTaskDetail();
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.widget)
+            page.widget->themeChanged();
+    }
 }
 
 void MainWindow::flushDeferredSettings()

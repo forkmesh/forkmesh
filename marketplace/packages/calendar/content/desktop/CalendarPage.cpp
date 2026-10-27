@@ -1,8 +1,9 @@
-#include "MainWindow.h"
-#include "MainWindowInternal.h"
+#include "CalendarPage.h"
+
+#include "DesignTokens.h"
+#include "OcticonIcons.h"
 #include "RepositoryCalendar.h"
-#include "ClaudeStreamSession.h"
-#include "CodexAppServerSession.h"
+#include "Theme.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -38,6 +39,15 @@
 #include <QTimeZone>
 #include <QToolButton>
 #include <QButtonGroup>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFileInfo>
+#include <QFutureWatcher>
+#include <QRegularExpression>
+#include <QSet>
+#include <QSettings>
+#include <QStackedWidget>
+#include <QtConcurrent>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QUrlQuery>
@@ -48,19 +58,24 @@
 
 using namespace forkmesh::ui;
 
+namespace forkmesh::calendar {
+
 namespace {
+const QString kCalendarListProof = QStringLiteral("forkmesh-calendar-list-v1");
+const QString kCalendarCreateProof = QStringLiteral("forkmesh-calendar-create-v1");
+const QString kCalendarReadProof = QStringLiteral("forkmesh-calendar-read-v1");
+const QString kCalendarUpdateProof = QStringLiteral("forkmesh-calendar-update-v1");
+const QString kCalendarDeleteProof = QStringLiteral("forkmesh-calendar-delete-v1");
+const QString kCalendarRsvpProof = QStringLiteral("forkmesh-calendar-rsvp-v1");
+const QString kDefaultAgentProviderSetting = QStringLiteral("agents/defaultProvider");
 constexpr int kCalendarIdRole = Qt::UserRole + 1;
 constexpr int kCalendarScopeRole = Qt::UserRole + 2;
 constexpr int kCalendarMoreRole = Qt::UserRole + 3;
 constexpr int kCalendarOutsideMonthRole = Qt::UserRole + 4;
 constexpr int kCalendarAgendaPartsRole = Qt::UserRole + 5;
-// Every commit and merge in every configured repository lands on this page, so
-// each view shows a bounded slice and points at the fuller one behind it.
 constexpr int kCalendarMonthCellEvents = 4;
 constexpr int kCalendarWeekCellEvents = 6;
 constexpr int kCalendarAgendaPage = 300;
-// A slice of repository reads per event-loop turn, so the window keeps
-// painting while the rest of the months are walked.
 constexpr int kRepositoryCalendarSliceMs = 60;
 constexpr int kRepositoryCalendarCacheEntries = 240;
 
@@ -211,9 +226,6 @@ CalendarOccurrence calendarOccurrence(const QJsonObject &event, qint64 startAtMs
     return occurrence;
 }
 
-// An occurrence keeps a shared handle on its source event rather than a copy
-// with two fields inserted; inserting detaches, and with every commit on the
-// calendar that deep-copied thousands of objects on every redraw.
 void collectOccurrences(const QJsonArray &events,
                         const QDateTime &rangeStart,
                         const QDateTime &rangeEnd,
@@ -250,8 +262,6 @@ void collectOccurrences(const QJsonArray &events,
                              recurrence == QLatin1String("weekly") ||
                              recurrence == QLatin1String("monthly") ||
                              recurrence == QLatin1String("yearly");
-        // Repository activity never recurs, so it skips the calendar
-        // arithmetic entirely and never builds a QDateTime it does not use.
         if (!repeats) {
             if (first < endMs && first + duration > startMs &&
                 (until <= 0 || first <= until))
@@ -753,6 +763,8 @@ protected:
     }
 };
 
+}
+
 class CalendarMiniMonth : public QWidget
 {
 public:
@@ -921,8 +933,7 @@ private:
     int m_hover = -1;
 };
 
-QPointer<CalendarMiniMonth> g_calendarMiniMonth;
-QPointer<QLabel> g_calendarTodayLine;
+namespace {
 
 QString calendarNextRangeLabel(const QDate &anchor, const QString &mode, const QDate &first)
 {
@@ -1084,12 +1095,90 @@ private:
     QList<QEvent::Type> m_types;
     std::function<void()> m_action;
 };
-} // namespace
+}
 
-QWidget *MainWindow::buildCalendarSection()
+CalendarPage::CalendarPage(const forkmesh::market::NativePackageHost &host,
+                           QWidget *parent)
+    : forkmesh::market::NativePackageWidget(parent), m_host(host),
+      m_searchIndexChanged(host.searchIndexChanged)
+{
+    buildCalendarSection();
+}
+
+void CalendarPage::refresh()
+{
+    refreshCalendar();
+}
+
+QList<forkmesh::market::NativePackageSearchHit>
+CalendarPage::searchHits(const QString &rawQuery, int limit) const
+{
+    QList<forkmesh::market::NativePackageSearchHit> hits;
+    const QString query = rawQuery.trimmed();
+    if (query.isEmpty())
+        return hits;
+    const QString dot = QString::fromUtf8("  \xC2\xB7  ");
+    for (const QJsonValue &value : m_calendarEvents) {
+        if (hits.size() >= limit)
+            break;
+        const QJsonObject event = value.toObject();
+        const QString id = event.value(QStringLiteral("id")).toString().trimmed();
+        if (id.isEmpty())
+            continue;
+        bool match = false;
+        for (const char *field : {"title", "location", "description"})
+            match = match || event.value(QLatin1String(field))
+                                 .toString()
+                                 .contains(query, Qt::CaseInsensitive);
+        if (!match)
+            continue;
+        QString title = event.value(QStringLiteral("title")).toString().trimmed();
+        if (title.isEmpty())
+            title = QStringLiteral("Untitled event");
+        QStringList detail;
+        const qint64 startAt = qint64(event.value(QStringLiteral("startAt")).toDouble());
+        if (startAt > 0)
+            detail << QLocale().toString(
+                QDateTime::fromMSecsSinceEpoch(startAt).toLocalTime(),
+                QLocale::ShortFormat);
+        const QString location =
+            event.value(QStringLiteral("location")).toString().trimmed();
+        if (!location.isEmpty())
+            detail << location;
+        hits.append({id, title, detail.join(dot)});
+    }
+    return hits;
+}
+
+void CalendarPage::activateSearchHit(const QString &id)
+{
+    if (!id.isEmpty())
+        openCalendarEventDialog(id, QDate());
+}
+
+void CalendarPage::renderActivity(const QJsonArray &activity, const QDate &anchor,
+                                  const QString &mode)
+{
+    m_repositoryCalendarEvents = activity;
+    m_repositoryCalendarScans.clear();
+    m_repositoryCalendarQueue.clear();
+    m_repositoryCalendarRequest = QStringLiteral("window-tests");
+    m_calendarAnchor = anchor;
+    m_calendarMode = mode;
+    m_calendarAgendaLimit = 0;
+    renderCalendar();
+}
+
+void CalendarPage::extendAgenda(int by)
+{
+    m_calendarAgendaLimit += by;
+    renderCalendar();
+}
+
+void CalendarPage::buildCalendarSection()
 {
     m_calendarAnchor = QDate::currentDate();
-    auto *page = new QWidget;
+    QWidget *page = this;
     page->setObjectName(QStringLiteral("calendarSection"));
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(20, 16, 20, 20);
@@ -1162,7 +1251,7 @@ QWidget *MainWindow::buildCalendarSection()
         todayLine->setProperty("calendarHeader", QStringLiteral("subtitle"));
         todayLine->setText(QStringLiteral("Today is %1").arg(
             QLocale().toString(QDate::currentDate(), QStringLiteral("dddd, MMMM d"))));
-        g_calendarTodayLine = todayLine;
+        m_calendarTodayLine = todayLine;
         m_calendarStatus->setProperty("calendarHeader", QStringLiteral("subtitle"));
         auto *dot = new QLabel(QStringLiteral("\u00B7"));
         dot->setObjectName(QStringLiteral("mutedLabel"));
@@ -1237,7 +1326,7 @@ QWidget *MainWindow::buildCalendarSection()
             renderCalendar();
         });
         miniMonth->setRange(m_calendarAnchor, m_calendarMode);
-        g_calendarMiniMonth = miniMonth;
+        m_calendarMiniMonth = miniMonth;
         sideLayout->setContentsMargins(0, 0, 16, 0);
         sideLayout->setSpacing(8);
         sideLayout->insertWidget(0, miniMonth);
@@ -1348,7 +1437,7 @@ QWidget *MainWindow::buildCalendarSection()
         page, {QEvent::Polish, QEvent::StyleChange, QEvent::Show},
         [sideLayout, searchField, calendarList, monthTable, weekTable, dayList,
          agendaList, classicGrid, classicHighlight, classicListWidth,
-         fitMonthRows, miniMonth] {
+         fitMonthRows, miniMonth, this] {
             const bool nextDesign = Theme::isNext();
             const int listWidth =
                 nextDesign ? QWIDGETSIZE_MAX : classicListWidth;
@@ -1377,8 +1466,8 @@ QWidget *MainWindow::buildCalendarSection()
             }
             if (!nextDesign)
                 return;
-            if (g_calendarTodayLine)
-                g_calendarTodayLine->setText(QStringLiteral("Today is %1").arg(QLocale().toString(
+            if (m_calendarTodayLine)
+                m_calendarTodayLine->setText(QStringLiteral("Today is %1").arg(QLocale().toString(
                     QDate::currentDate(), QStringLiteral("dddd, MMMM d"))));
             for (QAbstractItemView *view :
                  std::initializer_list<QAbstractItemView *>{
@@ -1416,8 +1505,6 @@ QWidget *MainWindow::buildCalendarSection()
         refreshRepositoryCalendarEvents();
         renderCalendar();
     });
-    // Each keystroke re-filters every commit in the window, so let the typist
-    // finish the word first.
     m_calendarSearchTimer = new QTimer(this);
     m_calendarSearchTimer->setSingleShot(true);
     m_calendarSearchTimer->setInterval(200);
@@ -1461,22 +1548,20 @@ QWidget *MainWindow::buildCalendarSection()
                         item->data(kCalendarIdRole).toString());
             });
     rebuildCalendarList();
-    return page;
 }
 
-void MainWindow::requestCalendar(const QByteArray &method, const QString &path,
-                                 const QJsonObject &body,
-                                 CalendarReplyHandler handler)
+void CalendarPage::requestCalendar(const QByteArray &method, const QString &path,
+                                   const QJsonObject &body,
+                                   CalendarReplyHandler handler)
 {
-    if (!m_networkAccess) {
+    QUrl url = m_host.accountApiUrl ? m_host.accountApiUrl(path) : QUrl();
+    if (!m_host.network || !url.isValid()) {
         handler(false, {}, QStringLiteral("Calendar network access is unavailable."));
         return;
     }
     const QUrl relative(path);
-    QUrl url = catalogApiUrl();
-    url.setPath(relative.path());
-    url.setQuery(relative.query());
-    const QString token = accountSessionTokenForUrl(url);
+    const QString token =
+        m_host.accountSessionToken ? m_host.accountSessionToken(url) : QString();
     const QByteArray encoded = body.isEmpty()
         ? QByteArray()
         : QJsonDocument(body).toJson(QJsonDocument::Compact);
@@ -1502,8 +1587,8 @@ void MainWindow::requestCalendar(const QByteArray &method, const QString &path,
             resource += digest;
         }
         QString node, ts, sig;
-        if (proof.isEmpty() ||
-            !signOrgTaskProof(proof, resource, &node, &ts, &sig)) {
+        if (proof.isEmpty() || !m_host.signProof ||
+            !m_host.signProof(proof, resource, &node, &ts, &sig)) {
             handler(false, {}, QStringLiteral(
                 "Sign in to your ForkMesh account on this device to use calendars."));
             return;
@@ -1519,10 +1604,10 @@ void MainWindow::requestCalendar(const QByteArray &method, const QString &path,
         request.setHeader(QNetworkRequest::ContentTypeHeader,
                           QStringLiteral("application/json"));
     QNetworkReply *reply = method == QByteArrayLiteral("GET")
-        ? m_networkAccess->get(request)
+        ? m_host.network->get(request)
         : method == QByteArrayLiteral("POST")
-        ? m_networkAccess->post(request, encoded)
-        : m_networkAccess->sendCustomRequest(request, method, encoded);
+        ? m_host.network->post(request, encoded)
+        : m_host.network->sendCustomRequest(request, method, encoded);
     connect(reply, &QNetworkReply::finished, this,
             [reply, handler = std::move(handler)]() mutable {
         const QJsonObject payload =
@@ -1540,13 +1625,10 @@ void MainWindow::requestCalendar(const QByteArray &method, const QString &path,
     });
 }
 
-void MainWindow::refreshCalendar()
+void CalendarPage::refreshCalendar()
 {
     if (!m_calendarStatus)
         return;
-    // Opening the page re-reads Git; navigation between views does not. What
-    // is already cached stays on screen while that happens, so activity does
-    // not blink out and back on every visit.
     m_repositoryCalendarStale = true;
     m_repositoryCalendarRequest.clear();
     refreshRepositoryCalendarEvents();
@@ -1580,16 +1662,12 @@ void MainWindow::refreshCalendar()
         m_calendarActor = payload.value(QStringLiteral("actor")).toString();
         rebuildCalendarList();
         renderCalendar();
-        nativePackageSearchIndexChanged();
+        if (m_searchIndexChanged)
+            m_searchIndexChanged();
     });
 }
 
-// Work out which repository-months the current view needs, publish the ones
-// already cached, and queue the rest. This used to walk every repository's Git
-// history before the page could paint, on every navigation and every view
-// change - which is what made the Calendar unusable once it showed every
-// commit and merge.
-void MainWindow::refreshRepositoryCalendarEvents()
+void CalendarPage::refreshRepositoryCalendarEvents()
 {
     if (!m_calendarAnchor.isValid())
         return;
@@ -1598,10 +1676,11 @@ void MainWindow::refreshRepositoryCalendarEvents()
 
     QList<RepositoryCalendarScan> scans;
     QSet<QString> seenPaths;
-    for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
-        QString gitPath = repo.localPath.trimmed();
-        if (gitPath.isEmpty() || !QDir(gitPath).exists())
-            gitPath = repo.mirrorPath.trimmed();
+    const QList<forkmesh::market::NativePackageRepository> repositories =
+        m_host.repositories ? m_host.repositories()
+                            : QList<forkmesh::market::NativePackageRepository>();
+    for (const forkmesh::market::NativePackageRepository &repo : repositories) {
+        const QString gitPath = repo.path.trimmed();
         if (gitPath.isEmpty() || !QDir(gitPath).exists())
             continue;
         QString pathKey = QFileInfo(gitPath).canonicalFilePath();
@@ -1610,10 +1689,7 @@ void MainWindow::refreshRepositoryCalendarEvents()
         if (seenPaths.contains(pathKey))
             continue;
         seenPaths.insert(pathKey);
-        QString label = repo.owner.trimmed();
-        if (!label.isEmpty())
-            label += QLatin1Char('/');
-        label += repo.name.trimmed();
+        const QString label = repo.title.trimmed();
         for (const auto &month : months) {
             RepositoryCalendarScan scan;
             scan.gitPath = gitPath;
@@ -1649,7 +1725,7 @@ void MainWindow::refreshRepositoryCalendarEvents()
         QTimer::singleShot(0, this, [this] { scanRepositoryCalendarSlice(); });
 }
 
-void MainWindow::scanRepositoryCalendarSlice()
+void CalendarPage::scanRepositoryCalendarSlice()
 {
     if (m_repositoryCalendarScanning ||
         m_repositoryCalendarCursor >= m_repositoryCalendarQueue.size())
@@ -1658,21 +1734,11 @@ void MainWindow::scanRepositoryCalendarSlice()
     const QString request = m_repositoryCalendarRequest;
     const QList<RepositoryCalendarScan> pending =
         m_repositoryCalendarQueue.mid(m_repositoryCalendarCursor);
-    runOffThread<QList<QJsonArray>>(
-        [pending] {
-            QList<QJsonArray> read;
-            QElapsedTimer slice;
-            slice.start();
-            for (const RepositoryCalendarScan &scan : pending) {
-                read.append(repositoryCalendarEvents(scan.gitPath, scan.label,
-                                                     scan.startAtMs,
-                                                     scan.endAtMs));
-                if (slice.elapsed() >= kRepositoryCalendarSliceMs)
-                    break;
-            }
-            return read;
-        },
-        [this, request, pending](QList<QJsonArray> read) {
+    auto *watcher = new QFutureWatcher<QList<QJsonArray>>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher, request, pending] {
+            const QList<QJsonArray> read = watcher->result();
+            watcher->deleteLater();
             m_repositoryCalendarScanning = false;
             for (qsizetype i = 0; i < read.size() && i < pending.size(); ++i) {
                 const QString &key = pending.at(i).key;
@@ -1700,9 +1766,21 @@ void MainWindow::scanRepositoryCalendarSlice()
                 QTimer::singleShot(0, this,
                                    [this] { scanRepositoryCalendarSlice(); });
         });
+    watcher->setFuture(QtConcurrent::run([pending] {
+        QList<QJsonArray> read;
+        QElapsedTimer slice;
+        slice.start();
+        for (const RepositoryCalendarScan &scan : pending) {
+            read.append(repositoryCalendarEvents(scan.gitPath, scan.label,
+                                                 scan.startAtMs, scan.endAtMs));
+            if (slice.elapsed() >= kRepositoryCalendarSliceMs)
+                break;
+        }
+        return read;
+    }));
 }
 
-void MainWindow::publishRepositoryCalendarEvents()
+void CalendarPage::publishRepositoryCalendarEvents()
 {
     QJsonArray events;
     for (const RepositoryCalendarScan &scan :
@@ -1716,7 +1794,7 @@ void MainWindow::publishRepositoryCalendarEvents()
     m_repositoryCalendarEvents = events;
 }
 
-void MainWindow::rebuildCalendarList()
+void CalendarPage::rebuildCalendarList()
 {
     if (!m_calendarList)
         return;
@@ -1756,7 +1834,7 @@ void MainWindow::rebuildCalendarList()
     m_calendarList->blockSignals(false);
 }
 
-void MainWindow::renderCalendar()
+void CalendarPage::renderCalendar()
 {
     if (!m_calendarViews || !m_calendarMonthTable)
         return;
@@ -1789,21 +1867,17 @@ void MainWindow::renderCalendar()
     if (Theme::isNext()) {
         m_calendarHeading->setText(
             calendarNextRangeLabel(m_calendarAnchor, m_calendarMode, rangeFirst));
-        if (g_calendarMiniMonth)
-            g_calendarMiniMonth->setRange(m_calendarAnchor, m_calendarMode);
+        if (m_calendarMiniMonth)
+            m_calendarMiniMonth->setRange(m_calendarAnchor, m_calendarMode);
     }
     const QDateTime start(rangeFirst, QTime(0, 0));
     const QDateTime end(rangeLast, QTime(0, 0));
-    // Read both lists in place. Concatenating them into one array first
-    // copied every commit in the window on every redraw.
     const QString query = m_calendarSearch ? m_calendarSearch->text() : QString();
     QList<CalendarOccurrence> events;
     collectOccurrences(m_calendarEvents, start, end, selected, query, &events);
     collectOccurrences(m_repositoryCalendarEvents, start, end, selected, query,
                        &events);
     sortOccurrences(&events);
-    // One pass into day buckets. Month and week used to re-scan the whole list
-    // per rendered cell, converting a UTC stamp to local time each time.
     QHash<QDate, QList<const CalendarOccurrence *>> byDay;
     byDay.reserve(events.isEmpty() ? 1 : qMin<qsizetype>(events.size(), 128));
     for (const CalendarOccurrence &occurrence : events)
@@ -1823,8 +1897,6 @@ void MainWindow::renderCalendar()
             const QList<const CalendarOccurrence *> daily = byDay.value(date);
             QStringList lines{date.toString(QStringLiteral("d"))};
             QString firstId;
-            // A day of repository activity can run to hundreds of commits; the
-            // cell shows a readable preview and defers the rest to Day view.
             const int shown = int(qMin<qsizetype>(daily.size(), kCalendarMonthCellEvents));
             for (int index = 0; index < shown; ++index) {
                 const CalendarOccurrence *occurrence = daily.at(index);
@@ -1865,9 +1937,6 @@ void MainWindow::renderCalendar()
                                                              weekTable->verticalScrollBar()->value());
             });
         }
-        // Build each cell's text once. Appending to a QTableWidgetItem per
-        // event re-copied the whole cell string for every commit in that hour,
-        // and an hour of repository activity is not a handful of entries.
         struct WeekCell {
             QStringList lines;
             QString firstId;
@@ -1912,8 +1981,6 @@ void MainWindow::renderCalendar()
         list->setUpdatesEnabled(false);
         for (int index = 0; index < shown; ++index)
             list->addItem(agendaItem(events.at(index), stackIndex == 3));
-        // The agenda spans 90 days, so with every commit on it the full list is
-        // tens of thousands of rows. Offer the rest rather than build them all.
         if (events.size() > shown) {
             auto *more = new QListWidgetItem(QStringLiteral(
                 "Show %1 more · %2 remaining")
@@ -1937,7 +2004,7 @@ void MainWindow::renderCalendar()
     }
 }
 
-void MainWindow::openCalendarEventDialog(const QString &eventId,
+void CalendarPage::openCalendarEventDialog(const QString &eventId,
                                          const QDate &date)
 {
     QJsonObject event = calendarEvent(m_calendarEvents, eventId);
@@ -2028,9 +2095,6 @@ void MainWindow::openCalendarEventDialog(const QString &eventId,
     allDay->setChecked(event.value(QStringLiteral("allDay")).toBool());
     form->addRow(QString(), allDay);
     auto *calendar = new QComboBox;
-    // Calendar loading is asynchronous, so New event can be clicked before
-    // m_calendars arrives. Personal is an API invariant and gives the dialog a
-    // valid, private destination instead of submitting an empty calendar id.
     calendar->addItem(QStringLiteral("My calendar · private"),
                       QStringLiteral("personal"));
     for (const QJsonValue &value : m_calendars) {
@@ -2232,6 +2296,7 @@ void MainWindow::openCalendarEventDialog(const QString &eventId,
     agentStatus->setWordWrap(true);
     agentLayout->addWidget(agentStatus);
     layout->addWidget(agentHost);
+    auto agentCancel = QSharedPointer<std::function<void()>>::create();
     connect(agentSuggest, &QPushButton::clicked, &dialog,
             [&, this] {
         const QString requestText = agentPrompt->toPlainText().trimmed();
@@ -2319,27 +2384,14 @@ void MainWindow::openCalendarEventDialog(const QString &eventId,
         QPointer<QCheckBox> allDayGuard(allDay);
         QPointer<QComboBox> recurrenceGuard(recurrence);
         auto handled = QSharedPointer<bool>::create(false);
-        auto errorText = QSharedPointer<QString>::create();
-        auto session = QSharedPointer<QPointer<QObject>>::create();
-        auto *requestTimeout = new QTimer(&dialog);
-        requestTimeout->setSingleShot(true);
         auto finishRequest = [buttonGuard, statusGuard, titleGuard, startGuard,
                               endGuard, timezoneGuard, attendeesGuard,
                               locationGuard, meetingGuard, descriptionGuard,
-                              allDayGuard, recurrenceGuard, handled,
-                              session, requestTimeout](const QJsonObject &result) {
+                              allDayGuard, recurrenceGuard,
+                              handled](const QJsonObject &result) {
             if (*handled)
                 return;
             *handled = true;
-            requestTimeout->stop();
-            QTimer::singleShot(0, [session] {
-                if (auto *codexSession = qobject_cast<CodexAppServerSession *>(
-                        session->data()))
-                    codexSession->stop();
-                else if (auto *claudeSession =
-                             qobject_cast<ClaudeStreamSession *>(session->data()))
-                    claudeSession->stop();
-            });
             if (buttonGuard) {
                 buttonGuard->setEnabled(true);
                 buttonGuard->setText(QStringLiteral("Fill event"));
@@ -2429,91 +2481,22 @@ void MainWindow::openCalendarEventDialog(const QString &eventId,
                 ? QStringLiteral("Event draft filled. Review it before saving.")
                 : explanation + QStringLiteral(" Review before saving."));
         };
-        auto onEvent = [finishRequest](const QJsonObject &agentEvent) {
-            if (agentEvent.value(QStringLiteral("type")).toString() ==
-                QLatin1String("result"))
-                finishRequest(agentEvent);
-        };
-        auto onError = [errorText](const QString &text) {
-            if (errorText->size() < 1200)
-                errorText->append(text);
-        };
-        auto onFinished = [buttonGuard, statusGuard, handled, errorText,
-                           requestTimeout](int) {
-            requestTimeout->stop();
-            if (*handled)
-                return;
-            *handled = true;
-            if (buttonGuard) {
-                buttonGuard->setEnabled(true);
-                buttonGuard->setText(QStringLiteral("Fill event"));
-            }
-            if (!statusGuard)
-                return;
-            QString failure = errorText->trimmed();
-            if (failure.isEmpty())
-                failure = QStringLiteral(
-                    "The local agent did not return an event. Make sure its CLI is installed and signed in.");
-            statusGuard->setText(failure);
-        };
-        connect(requestTimeout, &QTimer::timeout, &dialog,
-                [session, errorText, handled, buttonGuard, statusGuard] {
-            if (*handled)
-                return;
-            *handled = true;
-            *errorText = QStringLiteral(
-                "The local agent took too long to respond. Try again in a moment.");
-            if (buttonGuard) {
-                buttonGuard->setEnabled(true);
-                buttonGuard->setText(QStringLiteral("Fill event"));
-            }
-            if (statusGuard)
-                statusGuard->setText(*errorText);
-            if (auto *codexSession = qobject_cast<CodexAppServerSession *>(
-                    session->data()))
-                codexSession->stop();
-            else if (auto *claudeSession =
-                         qobject_cast<ClaudeStreamSession *>(session->data()))
-                claudeSession->stop();
-        });
-        requestTimeout->start(120000);
-        const QString workdir = workingClientDir();
-        if (claude) {
-            auto *transport = new ClaudeStreamSession(&dialog);
-            *session = transport;
-            connect(transport, &ClaudeStreamSession::event, &dialog, onEvent);
-            connect(transport, &ClaudeStreamSession::stderrText, &dialog, onError);
-            connect(transport, &ClaudeStreamSession::finished, &dialog, onFinished);
-            QString model = QSettings().value(kClaudeCodeModelSetting)
-                                .toString().trimmed();
-            if (model == kClaudeAutoModelId ||
-                !agentModelMatchesProvider(QStringLiteral("claude-code"), model))
-                model.clear();
-            QStringList env{QStringLiteral("ANTHROPIC_API_KEY"),
-                            QStringLiteral("ANTHROPIC_AUTH_TOKEN"),
-                            QStringLiteral("ANTHROPIC_ADMIN_KEY"),
-                            QStringLiteral("CLAUDE_CODE_OAUTH_TOKEN")};
-            env << activeAgentAccountEnv(QStringLiteral("claude-code"));
-            transport->start(workdir, env, task, QStringLiteral("plan"),
-                             QString(), model, QStringLiteral("low"));
-        } else {
-            auto *transport = new CodexAppServerSession(&dialog);
-            *session = transport;
-            connect(transport, &CodexAppServerSession::event, &dialog, onEvent);
-            connect(transport, &CodexAppServerSession::stderrText, &dialog, onError);
-            connect(transport, &CodexAppServerSession::finished, &dialog, onFinished);
-            QString model = codexChatGptModelId(
-                QSettings().value(kCodexModelSetting).toString().trimmed());
-            if (!agentModelMatchesProvider(QStringLiteral("codex"), model))
-                model.clear();
-            QStringList env{QStringLiteral("OPENAI_API_KEY"),
-                            QStringLiteral("CODEX_API_KEY"),
-                            QStringLiteral("OPENAI_ACCESS_TOKEN"),
-                            QStringLiteral("OPENAI_ADMIN_KEY")};
-            env << activeAgentAccountEnv(QStringLiteral("codex"));
-            transport->start(workdir, env, task, QString(), model,
-                             QStringLiteral("Plan"), QStringLiteral("low"));
-        }
+        *agentCancel = m_host.askAgentWith
+            ? m_host.askAgentWith(
+                  claude ? QStringLiteral("claude-code") : QStringLiteral("codex"),
+                  task, 120000,
+                  [finishRequest](const QString &reply, const QString &error) {
+                      finishRequest(error.isEmpty()
+                                        ? QJsonObject{{QStringLiteral("result"), reply}}
+                                        : QJsonObject{{QStringLiteral("is_error"), true},
+                                                      {QStringLiteral("result"), error}});
+                  })
+            : std::function<void()>();
+        if (!m_host.askAgentWith)
+            finishRequest(QJsonObject{
+                {QStringLiteral("is_error"), true},
+                {QStringLiteral("result"),
+                 QStringLiteral("The local agent could not plan this event.")}});
     });
     connect(agentPrompt, &QTextEdit::textChanged, &dialog,
             [agentPrompt, agentSuggest] {
@@ -2712,4 +2695,29 @@ void MainWindow::openCalendarEventDialog(const QString &eventId,
     else
         agentPrompt->setFocus();
     dialog.exec();
+    if (*agentCancel)
+        (*agentCancel)();
+}
+
+namespace {
+
+const forkmesh::market::NativePackageRegistration calendarRegistration({
+    QStringLiteral("builtin:calendar"),
+    {QStringLiteral("extension.native")},
+    QStringLiteral("Calendar"),
+    QStringLiteral("calendar"),
+    QStringLiteral("/api/calendar"),
+    kCalendarListProof,
+    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+        return new CalendarPage(host, parent);
+    },
+    QString(),
+    nullptr,
+    {kCalendarCreateProof, kCalendarReadProof, kCalendarUpdateProof,
+     kCalendarDeleteProof, kCalendarRsvpProof},
+    {QStringLiteral("/api/accounts/users")},
+});
+
+}
+
 }

@@ -24,6 +24,7 @@ namespace forkmesh::agentresources {
 namespace {
 
 constexpr qint64 kGiB = qint64(1) << 30;
+constexpr qint64 kBuildJobBytes = 3 * kGiB / 2;
 constexpr int kProbeTimeoutMs = 8000;
 constexpr char kGradleIdleTimeoutMs[] = "600000";
 
@@ -171,7 +172,7 @@ Budget computeBudget(qint64 totalBytes, int cpuCount, int reservePercent,
     budget.agentHighBytes = budget.sliceHighBytes * 3 / 5;
     budget.agentMaxBytes = budget.sliceHighBytes * 4 / 5;
     const int cpus = qMax(1, cpuCount);
-    const int jobs = int(budget.agentHighBytes / (3 * kGiB));
+    const int jobs = int(budget.agentHighBytes / kBuildJobBytes);
     budget.jobsPerAgent = qBound(qMin(2, cpus), jobs, cpus);
     const int cpuPercent =
         qBound(kMinReservePercent, cpuReservePercent, kMaxReservePercent);

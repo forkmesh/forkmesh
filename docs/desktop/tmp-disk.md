@@ -97,6 +97,43 @@ whatever `sandboxDir()` returns. The node deploy agent looks for Deploy nodes ru
 in both sandbox folders ([auto-deploy](../deploy/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
 `safedelete::removeTree` with the folder's own parent.
 
+#### A live run's sandbox is locked, not just claimed
+
+Every ForkMesh process that opens a main window turns the TMP disk on and, when
+it loads the Actions history, sweeps `actions/sandbox` for trees older than
+five minutes. That includes the tray, a desktop an agent starts and each
+`forkmesh-window-tests` run. All of them share the one folder. A run used to be
+protected only by a claim in the memory of the process running it, so any other
+process saw a live run's tree as abandoned and deleted it mid-build.
+Desktop client CI tests runs #8324, #8330, #8340 and #8344 (2026-10-25) died
+this way part-way through compiling `forkmesh-window-tests`. Their logs show
+`Cannot create temporary file in /tmp/: No such file or directory`: gcc falls
+back to `/tmp` once `$TMPDIR` under `/workspace` is gone, and finds that
+deleted too. One run also lost `/workspace/desktop/cmake/forkmesh-compile-gate.sh`.
+
+A run now takes a `flock` on its `forkmesh-run-<id>-<ms>` folder as soon as
+it creates it (`lockSandboxTree` in `ActionRunner.cpp`) and holds it until
+`cleanupWorktree()` or the runner's destructor. `reclaimSandboxes` and
+`removeUnclaimedSandbox` (the Cleanup page) skip a tree whose lock another open
+descriptor holds. The lock belongs to the descriptor, so a node that crashes
+or is killed releases it, and its tree is reclaimed as before.
+
+The lock only protects a run when both sides have it, and the runner and the
+sweeper are often different builds. Runs #8358, #8362 and #8366 died the same
+way after the lock landed. The node's tray and headless desktop had been built
+at 17:06, before the lock, so their runs took none. Two `forkmesh-window-tests
+--package-only` processes from another agent's worktree had been running since
+17:28, built from a branch without the lock check. A test binary from any
+older branch still sweeps the shared folder, however carefully the current
+code locks. So `fastDiskEnabled()` is always false in a `FORKMESH_WINDOW_TESTS`
+build. A window test never turns the real TMP disk on: its Actions sandboxes,
+caches and scratch stay under the test's own data folder, and its startup sweep
+and hourly scratch clean never reach the shared disk. It also never offers the
+`pkexec` boot-mount prompt. The main window test checks that
+`fastdisk::activeRoot()` stays empty.
+Builds from before this change keep sweeping until they are gone. After
+updating, restart the node's desktop so its runs take the lock.
+
 ### Erasing it
 
 Settings > TMP disk has **Erase TMP disk…**. It re-probes before deleting and

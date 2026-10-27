@@ -1,24 +1,28 @@
-#include "MainWindow.h"
-#include "MainWindowInternal.h"
+#include "TasksPage.h"
+
+#include "DesignTokens.h"
+#include "DesktopUi.h"
 #include "FlowLayout.h"
-#include "NetworkReplyError.h"
-#include "SettingsWrite.h"
+#include "OcticonIcons.h"
 #include "TaskMarkdown.h"
+#include "TaskWorkItems.h"
+#include "Theme.h"
+#include "VerticalIconButton.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QActionGroup>
 #include <QBuffer>
 #include <QButtonGroup>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDrag>
-#include <QFileDialog>
 #include <QFileInfo>
-#include <QFutureWatcher>
 #include <QFormLayout>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QImageReader>
 #include <QImageWriter>
@@ -30,12 +34,16 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QMimeData>
-#include <QNetworkReply>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScopeGuard>
+#include <QScreen>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QScrollArea>
@@ -43,12 +51,14 @@
 #include <QShortcut>
 #include <QStandardItemModel>
 #include <QStyledItemDelegate>
+#include <QTableWidget>
 #include <QTextBrowser>
 #include <QTextLayout>
 #include <QTextOption>
 #include <QTimer>
 #include <QToolButton>
 #include <QToolTip>
+#include <QVBoxLayout>
 #include <QtMath>
 
 #include <algorithm>
@@ -59,205 +69,18 @@
 
 using namespace forkmesh::ui;
 
+namespace forkmesh::tasks {
 namespace {
-
 constexpr int kOrganizationTaskPageSize = 100;
-const QString kOrganizationTaskBackoffKey = QStringLiteral("_backoffMs");
 constexpr int kOrganizationTaskDeleteMaxRetries = 5;
-QHash<QString, int> g_organizationTaskDeleteRetries;
 constexpr int kOrganizationTaskLoadAheadRows = 10;
 constexpr qint64 kOrganizationTaskHistoryStaleMs = 30 * 1000;
-
-QString taskText(const QJsonObject &task, const QString &field)
-{
-    return task.value(field).toString().trimmed();
-}
-
-QString taskBlockedText(const QJsonObject &payload)
-{
-    QStringList reasons;
-    for (const QJsonValue &value :
-         payload.value(QStringLiteral("blockedBy")).toArray()) {
-        const QString code = value.toString();
-        if (code == QLatin1String("agent_running"))
-            reasons.append(QStringLiteral("an agent job is running on it"));
-        else if (code == QLatin1String("qa_in_progress"))
-            reasons.append(QStringLiteral("it is waiting for QA review"));
-        else if (!code.isEmpty())
-            reasons.append(code);
-    }
-    return reasons.join(QStringLiteral(" and "));
-}
-
-QString taskErrorText(const QJsonObject &payload, const QString &fallback)
-{
-    QString error = payload.value(QStringLiteral("error")).toString().trimmed();
-    if (error.isEmpty())
-        return fallback;
-    error.replace(QLatin1Char('_'), QLatin1Char(' '));
-    const QString blocked = taskBlockedText(payload);
-    if (!blocked.isEmpty())
-        error += QStringLiteral(" (%1)").arg(blocked);
-    return error;
-}
-
-QString taskRequestContextText(const QJsonObject &payload)
-{
-    const QJsonObject context =
-        payload.value(QStringLiteral("request")).toObject();
-    static const QList<QPair<QString, QString>> fields = {
-        {QStringLiteral("user"), QStringLiteral("user")},
-        {QStringLiteral("via"), QStringLiteral("via")},
-        {QStringLiteral("node"), QStringLiteral("node")},
-        {QStringLiteral("bot"), QStringLiteral("bot")},
-        {QStringLiteral("agent"), QStringLiteral("agent")},
-        {QStringLiteral("ip"), QStringLiteral("ip")},
-        {QStringLiteral("userAgent"), QStringLiteral("user agent")},
-    };
-    QStringList shown;
-    for (const auto &[key, label] : fields) {
-        const QString value = context.value(key).toString().trimmed();
-        if (!value.isEmpty())
-            shown.append(label + QLatin1Char(' ') + value);
-    }
-    return shown.join(QStringLiteral(", "));
-}
-
-// The canonical prefix this desktop signs with its account key for one task
-// request when it holds no account session token. Empty when the relay accepts
-// no key-signed form of the request: timers and QA verdicts deliberately
-// still require a real session. `resource` receives the task id
-// for a proof that names one. Must stay in lockstep with
-// _org_task_signed_session in the worker's entry.py.
-QString organizationTaskProof(const QByteArray &method, const QString &path,
-                              const QJsonObject &body, QString *resource)
-{
-    static const QRegularExpression completeRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/complete/?$"));
-    static const QRegularExpression undoRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/undo/?$"));
-    static const QRegularExpression attachmentRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/attachments/"
-                       "([a-f0-9]{32})/?$"));
-    static const QRegularExpression itemRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/?$"));
-    static const QRegularExpression agentStatusRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/agent-status/?$"));
-    static const QRegularExpression pingRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/(remind|checkin)/?$"));
-    static const QRegularExpression replyRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/replies/?$"));
-    static const QRegularExpression historyRe(
-        QStringLiteral("^/api/tasks/([a-f0-9]{32})/history/?$"));
-    const bool collection = path == QLatin1String("/api/tasks") ||
-                            path == QLatin1String("/api/tasks/");
-    if (method == QByteArrayLiteral("GET"))
-    {
-        if (collection)
-            return kOrgTaskListProof;
-        const QRegularExpressionMatch attachment = attachmentRe.match(path);
-        if (attachment.hasMatch()) {
-            *resource = attachment.captured(1) + QLatin1Char('\n') +
-                        attachment.captured(2);
-            return kOrgTaskAttachmentProof;
-        }
-        const QRegularExpressionMatch history = historyRe.match(path);
-        if (history.hasMatch()) {
-            *resource = history.captured(1);
-            return kOrgTaskHistoryProof;
-        }
-        return QString();
-    }
-    if (method == QByteArrayLiteral("DELETE")) {
-        const QRegularExpressionMatch item = itemRe.match(path);
-        if (!item.hasMatch())
-            return QString();
-        const QString digest = body.isEmpty()
-                                   ? QString()
-                                   : forkmesh::taskwork::updateDigest(body);
-        if (!body.isEmpty() && digest.isEmpty())
-            return QString();
-        *resource = digest.isEmpty()
-                        ? item.captured(1)
-                        : item.captured(1) + QLatin1Char('\n') + digest;
-        return kOrgTaskDeleteProof;
-    }
-    if (method == QByteArrayLiteral("PATCH")) {
-        const QRegularExpressionMatch item = itemRe.match(path);
-        QStringList fields = body.keys();
-        fields.removeAll(QStringLiteral("sessionToken"));
-        const QString digest = forkmesh::taskwork::updateDigest(body);
-        if (!item.hasMatch() || digest.isEmpty() ||
-            fields == QStringList{QStringLiteral("priority")} ||
-            fields == QStringList{QStringLiteral("progress")})
-            return QString();
-        *resource = item.captured(1) + QLatin1Char('\n') + digest;
-        return kOrgTaskUpdateProof;
-    }
-    if (method != QByteArrayLiteral("POST"))
-        return QString();
-    if (collection)
-        return kOrgTaskOpenProof;
-    const QRegularExpressionMatch complete = completeRe.match(path);
-    if (complete.hasMatch()) {
-        *resource = complete.captured(1);
-        return kOrgTaskCompleteProof;
-    }
-    const QRegularExpressionMatch agentStatus = agentStatusRe.match(path);
-    if (agentStatus.hasMatch()) {
-        *resource = agentStatus.captured(1);
-        return kOrgTaskAgentStatusProof;
-    }
-    const QRegularExpressionMatch reply = replyRe.match(path);
-    if (reply.hasMatch()) {
-        const QString digest = forkmesh::taskwork::updateDigest(body);
-        if (digest.isEmpty())
-            return QString();
-        *resource = reply.captured(1) + QLatin1Char('\n') + digest;
-        return kOrgTaskReplyProof;
-    }
-    const QRegularExpressionMatch ping = pingRe.match(path);
-    if (ping.hasMatch()) {
-        const QString digest = body.isEmpty()
-                                   ? QString()
-                                   : forkmesh::taskwork::updateDigest(body);
-        if (!body.isEmpty() && digest.isEmpty())
-            return QString();
-        *resource = digest.isEmpty()
-                        ? ping.captured(1)
-                        : ping.captured(1) + QLatin1Char('\n') + digest;
-        return ping.captured(2) == QLatin1String("remind")
-                   ? kOrgTaskRemindProof
-                   : kOrgTaskCheckinProof;
-    }
-    const QRegularExpressionMatch undo = undoRe.match(path);
-    if (!undo.hasMatch())
-        return QString();
-    *resource = undo.captured(1);
-    return kOrgTaskUndoProof;
-}
-
-bool organizationTaskIsClosed(const QJsonObject &task)
-{
-    return task.value(QStringLiteral("completedAt")).toDouble() > 0 ||
-           taskText(task, QStringLiteral("status")) == QLatin1String("done");
-}
 
 bool organizationTaskAwaitsQa(const QJsonObject &task)
 {
     const QJsonObject qa = task.value(QStringLiteral("qa")).toObject();
     return qa.value(QStringLiteral("requestedAt")).toDouble() > 0 &&
            qa.value(QStringLiteral("reviewedAt")).toDouble() <= 0;
-}
-
-int openOrganizationTaskCount(const QJsonArray &tasks)
-{
-    int open = 0;
-    for (const QJsonValue &value : tasks) {
-        if (!organizationTaskIsClosed(value.toObject()))
-            ++open;
-    }
-    return open;
 }
 
 QString taskTimestamp(qint64 milliseconds)
@@ -380,9 +203,6 @@ QString taskStatusIcon(const QString &key)
     return QStringLiteral("issue-opened");
 }
 
-// The catalog endpoint does not promise an order. Keep all ordering here so
-// paging always happens after the user's chosen sort and the first page is
-// predictably the newest work rather than whichever slice the relay returned.
 qint64 taskSortTimestamp(const QJsonObject &task, const QString &field)
 {
     const qint64 timestamp = qint64(task.value(field).toDouble());
@@ -395,7 +215,7 @@ int compareTaskText(const QString &left, const QString &right,
                     bool descending = false)
 {
     if (left.isEmpty() != right.isEmpty())
-        return left.isEmpty() ? 1 : -1; // missing values always belong last
+        return left.isEmpty() ? 1 : -1;
     const int compared = left.compare(right, Qt::CaseInsensitive);
     return descending ? -compared : compared;
 }
@@ -404,7 +224,7 @@ int compareTaskNumber(qint64 left, qint64 right, bool descending,
                       bool missingIsZero = true)
 {
     if (missingIsZero && (left <= 0) != (right <= 0))
-        return left <= 0 ? 1 : -1; // undated/unprioritized tasks stay last
+        return left <= 0 ? 1 : -1;
     if (left == right)
         return 0;
     const int compared = left < right ? -1 : 1;
@@ -420,7 +240,7 @@ int taskStatusSortRank(const QJsonObject &task)
         return 1;
     if (status == QLatin1String("ready"))
         return 2;
-    return 3; // done
+    return 3;
 }
 
 bool organizationTaskComesBefore(const QJsonObject &left,
@@ -464,8 +284,6 @@ bool organizationTaskComesBefore(const QJsonObject &left,
             taskText(left, QStringLiteral("repository")),
             taskText(right, QStringLiteral("repository")));
     } else {
-        // Newest-created is deliberately the default, including for an unknown
-        // key left behind by a future/older build.
         compared = compareTaskNumber(
             taskSortTimestamp(left, QStringLiteral("createdAt")),
             taskSortTimestamp(right, QStringLiteral("createdAt")), true);
@@ -473,8 +291,6 @@ bool organizationTaskComesBefore(const QJsonObject &left,
     if (compared != 0)
         return compared < 0;
 
-    // Stable, useful tie-breaks: recently created work first, then title and
-    // id. This keeps every sort deterministic without depending on relay order.
     compared = compareTaskNumber(
         taskSortTimestamp(left, QStringLiteral("createdAt")),
         taskSortTimestamp(right, QStringLiteral("createdAt")), true);
@@ -570,33 +386,11 @@ QPixmap taskPersonFace(const QVariant &picture, const QString &seed, int side,
     return pixmap;
 }
 
-// A repository that keeps a conventional logo at its root is recognisable at a
-// glance, so the task surfaces show that file instead of the generated
-// identicon. The names, and their order, are the ones the website reads for a
-// native repository logo (_committed_repository_logo_url in the worker).
 struct TaskRepositoryLogo {
     QString path;
     qint64 modifiedMs = 0;
 };
 
-QString repositoryRootLogoPath(const QString &workTree)
-{
-    if (workTree.isEmpty())
-        return QString();
-    static const QString names[] = {
-        QStringLiteral("logo.png"), QStringLiteral("logo.webp"),
-        QStringLiteral("logo.jpg"), QStringLiteral("logo.jpeg")};
-    const QDir dir(workTree);
-    for (const QString &name : names) {
-        const QString path = dir.filePath(name);
-        if (QFileInfo(path).isFile())
-            return path;
-    }
-    return QString();
-}
-
-// Resolved once per render by publishTaskRepositoryLogos(), never from the
-// paint path: a delegate must not touch the filesystem per row.
 QHash<QString, TaskRepositoryLogo> &taskRepositoryLogos()
 {
     static QHash<QString, TaskRepositoryLogo> logos;
@@ -615,8 +409,6 @@ QPixmap taskRepositoryLogoPixmap(const TaskRepositoryLogo &logo, int side,
         return QPixmap();
     static QHash<QString, QPixmap> cache;
     const qreal dpr = iconDevicePixelRatio();
-    // The stamp is part of the key, so a replaced logo redraws instead of
-    // serving the old mark for the rest of the session.
     const QString key = logo.path + QLatin1Char('|') +
                         QString::number(logo.modifiedMs) + QLatin1Char('|') +
                         QString::number(side) + QLatin1Char('|') +
@@ -631,13 +423,9 @@ QPixmap taskRepositoryLogoPixmap(const TaskRepositoryLogo &logo, int side,
     const QSize native = reader.size();
     if (native.isValid() && !native.isEmpty() &&
         (native.width() > px || native.height() > px)) {
-        // Decode straight to the size we draw: project logos are routinely
-        // more than a thousand pixels square.
         reader.setScaledSize(native.scaled(px, px, Qt::KeepAspectRatio));
     }
     const QImage image = reader.read();
-    // Stays null when the file is missing or unreadable, and the identicon
-    // takes the slot back.
     QPixmap mark;
     if (!image.isNull()) {
         QPixmap scaled = QPixmap::fromImage(image);
@@ -645,8 +433,6 @@ QPixmap taskRepositoryLogoPixmap(const TaskRepositoryLogo &logo, int side,
             scaled = scaled.scaled(px, px, Qt::KeepAspectRatio,
                                    Qt::SmoothTransformation);
         scaled.setDevicePixelRatio(dpr);
-        // Contained, not cropped: a wordmark keeps its shape where the
-        // expanding fit an identicon uses would cut its ends off.
         mark = crispIconPixmap(side, dpr);
         QPainter painter(&mark);
         painter.setRenderHint(QPainter::Antialiasing);
@@ -663,24 +449,22 @@ QPixmap taskRepositoryLogoPixmap(const TaskRepositoryLogo &logo, int side,
     return mark;
 }
 
-// Republished whenever the task list renders, so a repository cloned - or a
-// logo committed - during the session needs no restart.
-void publishTaskRepositoryLogos(const QList<RepositoryRecord> &repositories)
+void publishTaskRepositoryLogos(const QJsonArray &repositories)
 {
     QHash<QString, TaskRepositoryLogo> logos;
     QSet<QString> ambiguous;
-    for (const RepositoryRecord &repo : repositories) {
-        const QString path = repositoryRootLogoPath(repo.localPath);
+    for (const QJsonValue &value : repositories) {
+        const QJsonObject repo = value.toObject();
+        const QString path = repo.value(QStringLiteral("logo")).toString();
+        const QString owner = repo.value(QStringLiteral("owner")).toString();
+        const QString name = repo.value(QStringLiteral("name")).toString();
         if (path.isEmpty())
             continue;
         TaskRepositoryLogo logo;
         logo.path = path;
         logo.modifiedMs = QFileInfo(path).lastModified().toMSecsSinceEpoch();
-        logos.insert((repo.owner + QLatin1Char('/') + repo.name).toLower(),
-                     logo);
-        // Tasks that name a repository without its owner still resolve, as
-        // long as exactly one repository with a logo answers to that name.
-        const QString bare = repo.name.toLower();
+        logos.insert((owner + QLatin1Char('/') + name).toLower(), logo);
+        const QString bare = name.toLower();
         if (bare.isEmpty() || ambiguous.contains(bare))
             continue;
         if (logos.contains(bare) && logos.value(bare).path != path) {
@@ -693,15 +477,12 @@ void publishTaskRepositoryLogos(const QList<RepositoryRecord> &repositories)
     taskRepositoryLogos() = logos;
 }
 
-// One description of the mark that stands for a task field. The list rows, the
-// hover card and the detail pane all read their icons from here, so the three
-// surfaces can never drift into three different vocabularies.
 struct TaskGlyph {
-    QString icon;        // octicon name, drawn when no identicon renders
-    QColor color;        // tint for the octicon
-    QString avatarSeed;  // identicon seed; preferred over the octicon
+    QString icon;
+    QColor color;
+    QString avatarSeed;
     qreal avatarRadius = 0.5;
-    TaskRepositoryLogo logo;  // the project's own logo; preferred over both
+    TaskRepositoryLogo logo;
 };
 
 QColor taskMutedColor(bool dark)
@@ -733,8 +514,6 @@ TaskGlyph taskRepositoryGlyph(const QString &repository)
             0.28, taskRepositoryLogo(repository)};
 }
 
-// People are drawn as their identicon wherever one renders, with the plain
-// person octicon as the fallback — the same rule the list rows follow.
 TaskGlyph taskPersonGlyph(const QString &person, bool dark)
 {
     const QString seed = person.trimmed();
@@ -764,9 +543,6 @@ TaskGlyph taskDestinationGlyph(const QString &destination, bool dark)
     return {QStringLiteral("paper-airplane"), taskMutedColor(dark), {}, 0.5};
 }
 
-// `decided` reports whether QA has actually said anything yet: the list rows
-// leave their slot empty until it has, while the text surfaces always print a
-// glyph so their label columns stay aligned.
 TaskGlyph taskQaGlyph(const QString &status, bool requested, bool dark,
                       bool *decided)
 {
@@ -803,9 +579,6 @@ QString taskPixmapMarkup(const QPixmap &pixmap, int size)
         .arg(size);
 }
 
-// Rich text can only carry a glyph as an inline image, so every octicon and
-// identicon the two text surfaces show is encoded once and cached: a full page
-// of rows asks for the same handful of marks over and over.
 QString taskGlyphMarkup(const TaskGlyph &glyph, int size)
 {
     static QHash<QString, QString> cache;
@@ -859,8 +632,6 @@ QString taskRowTooltipHtml(const QJsonObject &task, const QString &statusKey,
                            const QString &repository,
                            const QString &qaStatus, bool qaRequested)
 {
-    // The card paints its own light background, so its glyphs are always
-    // tinted for a light surface whatever the app theme is.
     constexpr bool dark = false;
     const QString title = taskText(task, QStringLiteral("title"));
     const qint64 createdAt =
@@ -1475,140 +1246,6 @@ QString organizationTaskIssueBody(const QJsonObject &task)
 
 constexpr int kTaskInlineImageMaxSide = 1200;
 
-QString taskImageMimeForPath(const QString &path)
-{
-    const QString lower = path.toLower();
-    if (lower.endsWith(QStringLiteral(".png")))
-        return QStringLiteral("image/png");
-    if (lower.endsWith(QStringLiteral(".jpg")) ||
-        lower.endsWith(QStringLiteral(".jpeg")))
-        return QStringLiteral("image/jpeg");
-    if (lower.endsWith(QStringLiteral(".gif")))
-        return QStringLiteral("image/gif");
-    if (lower.endsWith(QStringLiteral(".webp")))
-        return QStringLiteral("image/webp");
-    return {};
-}
-
-bool taskImageMimeAllowed(const QString &mime)
-{
-    return mime == QLatin1String("image/png") ||
-           mime == QLatin1String("image/jpeg") ||
-           mime == QLatin1String("image/gif") ||
-           mime == QLatin1String("image/webp");
-}
-
-QByteArray taskImagePreviewBytes(const QString &path, QString *mime)
-{
-    QImageReader reader(path);
-    reader.setAutoTransform(true);
-    QImage image = reader.read();
-    if (image.isNull())
-        return {};
-    QByteArray encoded;
-    for (const int side : {1200, 960, 720, 540}) {
-        QImage shown = image;
-        if (shown.width() > side || shown.height() > side)
-            shown = shown.scaled(side, side, Qt::KeepAspectRatio,
-                                 Qt::SmoothTransformation);
-        for (const int quality : {82, 72, 62, 52}) {
-            encoded.clear();
-            QBuffer buffer(&encoded);
-            if (!buffer.open(QIODevice::WriteOnly))
-                return {};
-            QImageWriter writer(&buffer, QByteArrayLiteral("jpg"));
-            writer.setQuality(quality);
-            if (!writer.write(shown.convertToFormat(QImage::Format_RGB32)))
-                return {};
-            if (encoded.size() <= 256 * 1024)
-                break;
-        }
-        if (encoded.size() <= 256 * 1024)
-            break;
-    }
-    if (encoded.size() > 256 * 1024)
-        return {};
-    if (mime)
-        *mime = QStringLiteral("image/jpeg");
-    return encoded;
-}
-
-QJsonArray organizationTaskImageAttachments(const QStringList &paths,
-                                            QString *error)
-{
-    constexpr qsizetype maxEach = 256 * 1024;
-    constexpr qsizetype maxTotal = 1024 * 1024;
-    if (paths.size() > 4) {
-        if (error)
-            *error = QStringLiteral(
-                "A task can include up to four images.");
-        return {};
-    }
-    QJsonArray attachments;
-    qsizetype total = 0;
-    for (const QString &path : paths) {
-        if (isVideoAttachmentPath(path)) {
-            if (error)
-                *error = QStringLiteral(
-                    "Organization tasks accept image attachments only.");
-            return {};
-        }
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            if (error)
-                *error = QStringLiteral("Could not read task image %1.")
-                             .arg(QFileInfo(path).fileName());
-            return {};
-        }
-        QByteArray bytes = file.readAll();
-        QString mime = taskImageMimeForPath(path);
-        if (bytes.isEmpty() || QImage::fromData(bytes).isNull()) {
-            if (error)
-                *error = QStringLiteral("Could not decode task image %1.")
-                             .arg(QFileInfo(path).fileName());
-            return {};
-        }
-        if (bytes.size() > maxEach || !taskImageMimeAllowed(mime)) {
-            QString previewMime;
-            bytes = taskImagePreviewBytes(path, &previewMime);
-            mime = previewMime;
-        }
-        if (bytes.isEmpty() || bytes.size() > maxEach) {
-            if (error)
-                *error = QStringLiteral(
-                    "Task image %1 is larger than 256 KiB after resizing.")
-                             .arg(QFileInfo(path).fileName());
-            return {};
-        }
-        total += bytes.size();
-        if (total > maxTotal) {
-            if (error)
-                *error = QStringLiteral(
-                    "Task images must total 1 MiB or less.");
-            return {};
-        }
-        QImage thumbnailImage = QImage::fromData(bytes);
-        thumbnailImage = thumbnailImage.scaled(48, 48, Qt::KeepAspectRatio,
-                                               Qt::SmoothTransformation);
-        QByteArray thumbnailBytes;
-        QBuffer thumbnailBuffer(&thumbnailBytes);
-        thumbnailBuffer.open(QIODevice::WriteOnly);
-        QImageWriter thumbnailWriter(&thumbnailBuffer, QByteArrayLiteral("jpg"));
-        thumbnailWriter.setQuality(72);
-        thumbnailWriter.write(thumbnailImage.convertToFormat(QImage::Format_RGB32));
-        attachments.append(QJsonObject{
-            {QStringLiteral("name"), QFileInfo(path).fileName()},
-            {QStringLiteral("mime"), mime},
-            {QStringLiteral("size"), bytes.size()},
-            {QStringLiteral("file"), QString::fromLatin1(bytes.toBase64())},
-            {QStringLiteral("thumbnail"),
-             QStringLiteral("data:image/jpeg;base64,") +
-                 QString::fromLatin1(thumbnailBytes.toBase64())},
-        });
-    }
-    return attachments;
-}
-
 QByteArray taskImageDataUriBytes(const QString &value, QString *mime)
 {
     const QRegularExpressionMatch match = QRegularExpression(
@@ -1709,10 +1346,6 @@ QString taskImageHref(const QString &cacheKey)
            QString::fromLatin1(QUrl::toPercentEncoding(cacheKey));
 }
 
-// The @names in a comment or check-in note, in the same shape the relay pings
-// on (its MENTION_RE), so the status line can only ever claim a ping the relay
-// will actually send. The author's own name is dropped: a self-ping is
-// discarded server-side too.
 QStringList taskMentionedNames(const QString &copy, const QString &self)
 {
     static const QRegularExpression pattern(
@@ -1729,9 +1362,6 @@ QStringList taskMentionedNames(const QString &copy, const QString &self)
     return found;
 }
 
-// The timeline vocabulary the relay records, in the desktop's own words. An
-// unknown kind from a newer relay falls back to the raw kind rather than being
-// dropped, so a task never appears to have a gap in its history.
 QString taskEventLabel(const QString &kind)
 {
     static const QHash<QString, QString> labels = {
@@ -1937,8 +1567,6 @@ QString taskFieldsHtml(const QJsonObject &task, const QString &localAgentRun,
         return QString();
     const bool dark = currentThemeIsDark();
     const QJsonObject qa = task.value(QStringLiteral("qa")).toObject();
-    // Every field carries the same mark the list row and the hover card give
-    // it, so a task reads identically wherever it is shown.
     auto row = [](const TaskGlyph &glyph, const QString &label,
                   const QString &value, bool valueIsHtml = false) {
         const QString shown =
@@ -2280,7 +1908,7 @@ const char kTasksBoardMime[] = "application/x-forkmesh-task-id";
 
 QString tasksBoardColumn(const QJsonObject &task)
 {
-    if (organizationTaskIsClosed(task))
+    if (taskIsClosed(task))
         return QStringLiteral("done");
     if (organizationTaskAwaitsQa(task))
         return QStringLiteral("qa");
@@ -3112,9 +2740,9 @@ void runTasksNextHook(const QObject *table, bool rows)
         hook();
 }
 
-} // namespace
+}
 
-QWidget *MainWindow::buildOrganizationTasksSection()
+QWidget *TasksPage::buildOrganizationTasksSection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("organizationTasksSection"));
@@ -3139,7 +2767,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
         ->setAccentColor(
             QColor(currentThemeIsDark() ? "#f85149" : "#cf222e"));
     connect(m_organizationTaskDeleteClosedButton, &QPushButton::clicked, this,
-            &MainWindow::deleteClosedOrganizationTasks);
+            &TasksPage::deleteClosedOrganizationTasks);
 
     m_organizationTaskNewButton =
         new VerticalIconButton(QStringLiteral("New task"),
@@ -3148,7 +2776,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
         QStringLiteral("organizationTaskNewAction"));
     setOcticon(m_organizationTaskNewButton, "plus", 16);
     connect(m_organizationTaskNewButton, &QPushButton::clicked, this,
-            &MainWindow::createOrganizationTask);
+            &TasksPage::createOrganizationTask);
     headingRow->addWidget(m_organizationTaskNewButton);
 
     auto *refresh = new VerticalIconButton(QStringLiteral("Refresh"),
@@ -3157,7 +2785,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     setOcticon(refresh, "sync", 16);
     refresh->setToolTip(QStringLiteral("Refresh the private task catalog"));
     connect(refresh, &QPushButton::clicked, this,
-            &MainWindow::refreshOrganizationTasks);
+            &TasksPage::refreshOrganizationTasks);
     headingRow->addWidget(refresh);
     m_organizationTaskRefreshButton = refresh;
 
@@ -3254,7 +2882,6 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                 renderOrganizationTaskRows();
             });
     headingRow->addWidget(m_organizationTaskMineFilterButton);
-
 
     auto *statusGroup = new QButtonGroup(page);
     statusGroup->setExclusive(true);
@@ -3426,10 +3053,11 @@ QWidget *MainWindow::buildOrganizationTasksSection()
         if (forkmesh::taskmarkdown::isSafeLink(href))
             QDesktopServices::openUrl(url);
         else if (href.startsWith(kAgentLinkScheme))
-            switchToAgentsTab(
-                href.mid(kAgentLinkScheme.size()).toInt());
-        else if (href.startsWith(kUserLinkScheme))
-            openUserProfile(href.mid(kUserLinkScheme.size()));
+            windowCommand(QStringLiteral("agent.show"),
+                          {{QStringLiteral("id"),
+                            href.mid(kAgentLinkScheme.size()).toInt()}});
+        else if (href.startsWith(kUserLinkScheme) && m_host.openUserProfile)
+            m_host.openUserProfile(href.mid(kUserLinkScheme.size()));
         else if (href.startsWith(QStringLiteral("forkmesh-task-image:"))) {
             const QString key = QUrl::fromPercentEncoding(
                 href.mid(QStringLiteral("forkmesh-task-image:").size())
@@ -3556,7 +3184,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     static_cast<VerticalIconButton *>(m_organizationTaskDeleteButton)
         ->setAccentColor(QColor(currentThemeIsDark() ? "#f85149" : "#cf222e"));
     connect(m_organizationTaskEditButton, &QPushButton::clicked, this,
-            &MainWindow::editOrganizationTask);
+            &TasksPage::editOrganizationTask);
     connect(m_organizationTaskAgentButton, &QPushButton::clicked, this,
             [this] {
                 const QJsonObject task = selectedOrganizationTask(
@@ -3564,7 +3192,8 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                 const int sessionId = localAgentSessionIdForTask(
                     taskText(task, QStringLiteral("id")));
                 if (sessionId > 0)
-                    switchToAgentsTab(sessionId);
+                    windowCommand(QStringLiteral("agent.show"),
+                                  {{QStringLiteral("id"), sessionId}});
                 else
                     assignOrganizationTaskToAgent();
             });
@@ -3587,23 +3216,23 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     connect(m_organizationTaskUndoButton, &QPushButton::clicked, this,
             [this] { runOrganizationTaskAction(QStringLiteral("undo")); });
     connect(m_organizationTaskDeleteButton, &QPushButton::clicked, this,
-            &MainWindow::deleteOrganizationTask);
+            &TasksPage::deleteOrganizationTask);
     connect(m_organizationTaskAttachWorktreeButton, &QPushButton::clicked,
-            this, &MainWindow::attachExistingWorktreeToOrganizationTask);
+            this, &TasksPage::attachExistingWorktreeToOrganizationTask);
     connect(m_organizationTaskFollowUpButton, &QPushButton::clicked, this,
-            &MainWindow::createOrganizationTaskFollowUp);
+            &TasksPage::createOrganizationTaskFollowUp);
     connect(m_organizationTaskIssueButton, &QPushButton::clicked, this,
-            &MainWindow::moveOrganizationTaskToIssue);
+            &TasksPage::moveOrganizationTaskToIssue);
     connect(m_organizationTaskPromptButton, &QPushButton::clicked, this,
-            &MainWindow::addOrganizationTaskToPrompt);
+            &TasksPage::addOrganizationTaskToPrompt);
     connect(m_organizationTaskCommentButton, &QPushButton::clicked, this,
-            &MainWindow::commentOnOrganizationTask);
+            &TasksPage::commentOnOrganizationTask);
     connect(m_organizationTaskCheckinButton, &QPushButton::clicked, this,
-            &MainWindow::checkInOnOrganizationTask);
+            &TasksPage::checkInOnOrganizationTask);
     connect(m_organizationTaskRemindButton, &QPushButton::clicked, this,
-            &MainWindow::remindOrganizationTaskAssignee);
+            &TasksPage::remindOrganizationTaskAssignee);
     connect(m_organizationTaskStartAgentButton, &QPushButton::clicked, this,
-            &MainWindow::startOrganizationTaskAgentFromPrompt);
+            &TasksPage::startOrganizationTaskAgentFromPrompt);
     detailLayout->addWidget(actionHost);
     auto *detailBody = new QHBoxLayout;
     detailBody->setContentsMargins(0, 0, 0, 0);
@@ -3640,14 +3269,14 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                           Qt::AlignBottom);
     mainColumn->addLayout(commentRow);
     connect(m_organizationTaskQuickCommentSend, &QPushButton::clicked, this,
-            &MainWindow::submitOrganizationTaskQuickComment);
+            &TasksPage::submitOrganizationTaskQuickComment);
     for (const QKeySequence &keys :
          {QKeySequence(Qt::CTRL | Qt::Key_Return),
           QKeySequence(Qt::CTRL | Qt::Key_Enter)}) {
         auto *shortcut = new QShortcut(keys, m_organizationTaskQuickComment);
         shortcut->setContext(Qt::WidgetShortcut);
         connect(shortcut, &QShortcut::activated, this,
-                &MainWindow::submitOrganizationTaskQuickComment);
+                &TasksPage::submitOrganizationTaskQuickComment);
     }
     detailBody->addLayout(mainColumn, 1);
 
@@ -4374,7 +4003,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
             int inProgress = 0;
             for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
                 const QJsonObject task = value.toObject();
-                if (organizationTaskIsClosed(task))
+                if (taskIsClosed(task))
                     continue;
                 ++open;
                 if (taskText(task, QStringLiteral("assigneeKind")) ==
@@ -4463,7 +4092,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                             kBoardPriorityRole,
                             QStringLiteral("P%1").arg(
                                 task.value(QStringLiteral("priority")).toInt()));
-                    item->setData(kBoardDoneRole, organizationTaskIsClosed(task));
+                    item->setData(kBoardDoneRole, taskIsClosed(task));
                     const QString kind =
                         taskText(task, QStringLiteral("assigneeKind"));
                     const QString assignee =
@@ -4477,7 +4106,7 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                     } else if (kind == QLatin1String("user") && !assignee.isEmpty()) {
                         avatarKind = QStringLiteral("user");
                         face = taskPersonFace(
-                            QVariant(chatSenderAvatarSource(QString(), assignee)),
+                            QVariant(accountPicture(assignee)),
                             assignee, kBoardAvatar, 0.5);
                     }
                     item->setData(kBoardAvatarKindRole, avatarKind);
@@ -4497,16 +4126,8 @@ QWidget *MainWindow::buildOrganizationTasksSection()
                                          : workItems.constFirst().branch;
                     if (workItems.size() > 1)
                         branch += QStringLiteral(" +%1").arg(workItems.size() - 1);
-                    if (branch.isEmpty()) {
-                        const int sessionId = localAgentSessionIdForTask(id);
-                        for (const AgentSession &session :
-                             std::as_const(m_agentSessions)) {
-                            if (sessionId > 0 && session.id == sessionId) {
-                                branch = session.branchName;
-                                break;
-                            }
-                        }
-                    }
+                    if (branch.isEmpty())
+                        branch = localAgentBranchForTask(id);
                     item->setData(kBoardBranchRole, branch);
                     item->setData(
                         kBoardAttachmentsRole,
@@ -4540,13 +4161,9 @@ QWidget *MainWindow::buildOrganizationTasksSection()
         };
     }
 
-    // The startup pull answered before this page existed: render its answer
-    // rather than asking the relay for the same list a second time.
-    if (!m_organizationTasksStartupPayload.isEmpty()) {
-        const QJsonObject startup = m_organizationTasksStartupPayload;
-        const qint64 fetchedAt = m_organizationTasksLoadedAt;
-        m_organizationTasksStartupPayload = QJsonObject();
-        applyOrganizationTasks(startup);
+    if (m_store && m_store->loaded()) {
+        const qint64 fetchedAt = m_store->loadedAt();
+        applyOrganizationTasks(m_store->payload());
         m_organizationTasksLoadedAt = fetchedAt;
     }
     updateOrganizationTaskRefreshAge();
@@ -4556,265 +4173,83 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     return page;
 }
 
-void MainWindow::requestOrganizationTasks(
+void TasksPage::requestOrganizationTasks(
     const QByteArray &method, const QString &path, const QJsonObject &body,
-    OrganizationTaskReplyHandler handler, const QList<int> &expectedHttpStatuses)
+    TaskReplyHandler handler, const QList<int> &expectedHttpStatuses)
 {
-    if (!m_networkAccess) {
+    if (!m_store) {
         handler(false, {}, QStringLiteral(
             "Sign in to an organization account to use private tasks."));
         return;
     }
-    QUrl url = catalogApiUrl();
-    const QUrl relative(path);
-    url.setPath(relative.path());
-    url.setQuery(relative.query());
-    QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
-                         QNetworkRequest::AlwaysNetwork);
-    for (const int expected : expectedHttpStatuses)
-        forkmesh::markExpectedHttpStatus(request, expected);
-    request.setTransferTimeout(15000);
-    request.setRawHeader(QByteArrayLiteral("Accept"),
-                         QByteArrayLiteral("application/json"));
-    if (const auto *network =
-            qobject_cast<BackoffNetworkAccessManager *>(m_networkAccess))
-        request.setHeader(
-            QNetworkRequest::UserAgentHeader,
-            QStringLiteral("ForkMeshDesktop/%1")
-                .arg(network->clientVersion().isEmpty()
-                         ? QStringLiteral("0")
-                         : network->clientVersion()));
-    bool keySigned = false;
-    const QString sessionToken = accountSessionTokenForUrl(url);
-    if (!sessionToken.isEmpty()) {
-        request.setRawHeader(
-            QByteArrayLiteral("Authorization"),
-            QByteArrayLiteral("Bearer ") + sessionToken.toUtf8());
-    } else {
-        // Key-only sessions allow the signed subset; other writes need a token.
-        QString resource;
-        const QString proof = organizationTaskProof(
-            method, relative.path(), body, &resource);
-        if (proof.isEmpty() ||
-            !authenticateOrgTaskRequest(url, request, proof, resource)) {
-            handler(false, {},
-                    m_accountAuthenticated
-                        ? QString::fromUtf8(
-                              "This change needs a password sign-in on this "
-                              "device, not just its saved account key \xE2"
-                              "\x80\x94 use Settings \xE2\x86\x92 \"Log in to "
-                              "a user account\", then try again.")
-                        : QStringLiteral(
-                              "Sign in to an organization account to use "
-                              "private tasks."));
-            return;
-        }
-        keySigned = true;
-    }
-    const QByteArray payload =
-        body.isEmpty() ? QByteArray() : QJsonDocument(body).toJson(
-                                             QJsonDocument::Compact);
-    if (!payload.isEmpty())
-        request.setHeader(QNetworkRequest::ContentTypeHeader,
-                          QStringLiteral("application/json"));
-
-    QNetworkReply *reply = nullptr;
-    if (method == QByteArrayLiteral("GET"))
-        reply = m_networkAccess->get(request);
-    else if (method == QByteArrayLiteral("POST"))
-        reply = m_networkAccess->post(request, payload);
-    else
-        reply = m_networkAccess->sendCustomRequest(request, method, payload);
-    connect(reply, &QNetworkReply::finished, this,
-            [this, reply, method, path, keySigned, expectedHttpStatuses,
-             handler = std::move(handler)]() mutable {
-                const QByteArray raw = reply->readAll();
-                const QJsonDocument document = QJsonDocument::fromJson(raw);
-                QJsonObject data = document.object();
-                const int status = reply->attribute(
-                    QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                const bool ok = reply->error() == QNetworkReply::NoError &&
-                                status >= 200 && status < 300 &&
-                                data.value(QStringLiteral("ok")).toBool(true);
-                if (!ok && (BackoffNetworkAccessManager::isBackoffSuppressed(reply)
-                            || status == 429)) {
-                    const auto *network =
-                        qobject_cast<BackoffNetworkAccessManager *>(m_networkAccess);
-                    data.insert(kOrganizationTaskBackoffKey,
-                                double(network ? network->hostCooldownRemainingMs(
-                                                     reply->url().host())
-                                               : 0));
-                }
-                QString error = ok
-                    ? QString()
-                    : taskErrorText(
-                          data,
-                          status > 0
-                              ? QStringLiteral("HTTP %1").arg(status)
-                              : reply->errorString());
-                if (keySigned && status == 401)
-                    error += QString::fromUtf8(
-                        " \xE2\x80\x94 this machine's key is not authorized "
-                        "for the account. Use Settings \xE2\x86\x92 \"Log in "
-                        "to a user account\" to register it.");
-                if (!ok && !expectedHttpStatuses.contains(status)) {
-                    const QString context = taskRequestContextText(data);
-                    logSystem(
-                        QStringLiteral("Organization tasks: %1 %2 failed: %3%4.")
-                            .arg(QString::fromLatin1(method), path, error,
-                                 context.isEmpty()
-                                     ? QString()
-                                     : QStringLiteral(" [%1]").arg(context)));
-                }
-                reply->deleteLater();
+    const QPointer<TasksPage> page(this);
+    m_store->request(
+        method, path, body,
+        [page, handler = std::move(handler)](bool ok, const QJsonObject &data,
+                                             const QString &error) {
+            if (page)
                 handler(ok, data, error);
-            });
+        },
+        expectedHttpStatuses);
 }
 
-void MainWindow::requestOrganizationTaskAttachment(
+void TasksPage::requestOrganizationTaskAttachment(
     const QString &taskId, const QString &attachmentId,
-    OrganizationTaskAttachmentHandler handler)
+    TaskAttachmentHandler handler)
 {
-    if (!m_networkAccess || taskId.isEmpty() || attachmentId.isEmpty()) {
+    if (!m_store) {
         handler(false, {}, {}, QStringLiteral("Task image unavailable"));
         return;
     }
-    const QString path = QStringLiteral("/api/tasks/%1/attachments/%2")
-                             .arg(taskId, attachmentId);
-    QUrl url = catalogApiUrl();
-    const QUrl relative(path);
-    url.setPath(relative.path());
-    url.setQuery(relative.query());
-    QNetworkRequest request;
-    if (!authenticateOrgTaskRequest(
-            url, request, kOrgTaskAttachmentProof,
-            taskId + QLatin1Char('\n') + attachmentId)) {
-        handler(false, {}, {}, QStringLiteral("Task image authentication failed"));
-        return;
-    }
-    request.setRawHeader(QByteArrayLiteral("Accept"),
-                         QByteArrayLiteral("image/*"));
-    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
-                         QNetworkRequest::AlwaysNetwork);
-    request.setTransferTimeout(15000);
-    QNetworkReply *reply = m_networkAccess->get(request);
-    if (!reply) {
-        handler(false, {}, {}, QStringLiteral("Task image request failed"));
-        return;
-    }
-    connect(reply, &QNetworkReply::finished, this,
-            [reply, handler = std::move(handler)]() mutable {
-                const QByteArray bytes = reply->readAll();
-                const int status = reply->attribute(
-                    QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                const bool ok = reply->error() == QNetworkReply::NoError &&
-                                status >= 200 && status < 300 &&
-                                !bytes.isEmpty();
-                const QString mime = QString::fromLatin1(
-                    reply->header(QNetworkRequest::ContentTypeHeader)
-                        .toByteArray())
-                    .section(QLatin1Char(';'), 0, 0)
-                    .trimmed()
-                    .toLower();
-                const QString error = ok
-                    ? QString()
-                    : QStringLiteral("Task image request failed (%1)")
-                          .arg(status > 0 ? QString::number(status)
-                                          : reply->errorString());
-                reply->deleteLater();
+    const QPointer<TasksPage> page(this);
+    m_store->requestAttachment(
+        taskId, attachmentId,
+        [page, handler = std::move(handler)](bool ok, const QByteArray &bytes,
+                                             const QString &mime,
+                                             const QString &error) {
+            if (page)
                 handler(ok, bytes, mime, error);
-            });
-}
-
-void MainWindow::requestOrganizationTaskCatalog(
-    OrganizationTaskReplyHandler handler)
-{
-    requestOrganizationTaskCatalogPage(
-        0, QJsonArray(), QJsonObject(), std::move(handler));
-}
-
-void MainWindow::requestOrganizationTaskCatalogPage(
-    int offset, QJsonArray catalog, QJsonObject firstPage,
-    OrganizationTaskReplyHandler handler)
-{
-    constexpr int kTaskCatalogLimit = 2000;
-    const QString path = offset > 0
-        ? QStringLiteral("/api/tasks?offset=%1").arg(offset)
-        : QStringLiteral("/api/tasks");
-    requestOrganizationTasks(
-        QByteArrayLiteral("GET"), path, {},
-        [this, offset, catalog = std::move(catalog),
-         firstPage = std::move(firstPage),
-         handler = std::move(handler)](
-            bool ok, const QJsonObject &payload,
-            const QString &error) mutable {
-            if (!ok) {
-                handler(false, {}, error);
-                return;
-            }
-            if (offset == 0)
-                firstPage = payload;
-            const QJsonArray page =
-                payload.value(QStringLiteral("tasks")).toArray();
-            for (const QJsonValue &task : page) {
-                if (catalog.size() >= kTaskCatalogLimit)
-                    break;
-                catalog.append(task);
-            }
-            const int next =
-                payload.value(QStringLiteral("nextOffset")).toInt(-1);
-            if (payload.value(QStringLiteral("hasMore")).toBool() &&
-                next > offset && catalog.size() < kTaskCatalogLimit) {
-                requestOrganizationTaskCatalogPage(
-                    next, std::move(catalog), std::move(firstPage),
-                    std::move(handler));
-                return;
-            }
-            const bool complete =
-                !payload.value(QStringLiteral("hasMore")).toBool();
-            firstPage.insert(QStringLiteral("tasks"), catalog);
-            reconcileOrganizationTaskWorkItems(catalog, complete);
-            handler(true, firstPage, QString());
         });
 }
 
-void MainWindow::refreshOrganizationTasks()
+void TasksPage::refreshOrganizationTasks()
 {
-    if (m_organizationTasksLoading || !m_organizationTasksStatus)
+    if (!m_store || m_store->loading() || !m_organizationTasksStatus)
         return;
-    m_organizationTasksLoading = true;
-    // A refresh is the one moment the operator has asked for current truth, so
-    // cached timelines are dropped with it. A comment by someone else never
-    // moves the task row's updatedAt, so no field on the catalog could stand
-    // in for this.
     m_organizationTaskHistory.clear();
     m_organizationTaskHistoryAt.clear();
-    updateOrganizationTaskActions();
-    updateOrganizationTaskRefreshAge();
-    requestOrganizationTaskCatalog(
-        [this](bool ok, const QJsonObject &payload, const QString &error) {
-            m_organizationTasksLoading = false;
-            const auto pushed = qScopeGuard(
-                [this] { drainPendingOrganizationTaskEvent(); });
-            if (!ok) {
-                m_organizationTasksStatus->setText(
-                    QStringLiteral("Tasks unavailable: %1").arg(error));
-                updateOrganizationTaskRefreshAge();
-                updateOrganizationTaskActions();
-                return;
-            }
-            m_organizationTasksStatus->clear();
-            applyOrganizationTasks(payload);
-            nativePackageSearchIndexChanged();
-        });
+    m_store->refresh();
 }
 
-void MainWindow::updateOrganizationTaskRefreshAge()
+void TasksPage::onCatalogLoaded(const QJsonObject &payload)
+{
+    m_organizationTaskHistory.clear();
+    m_organizationTaskHistoryAt.clear();
+    if (m_organizationTasksStatus) {
+        m_organizationTasksStatus->clear();
+        applyOrganizationTasks(payload);
+    }
+    if (m_host.navigationBadgeChanged)
+        m_host.navigationBadgeChanged();
+    if (m_host.searchIndexChanged)
+        m_host.searchIndexChanged();
+}
+
+void TasksPage::onCatalogFailed(const QString &error)
+{
+    if (!m_organizationTasksStatus)
+        return;
+    m_organizationTasksStatus->setText(
+        QStringLiteral("Tasks unavailable: %1").arg(error));
+    updateOrganizationTaskRefreshAge();
+    updateOrganizationTaskActions();
+}
+
+void TasksPage::updateOrganizationTaskRefreshAge()
 {
     if (!m_organizationTaskRefreshButton)
         return;
-    if (m_organizationTasksLoading) {
+    if (m_store && m_store->loading()) {
         m_organizationTaskRefreshButton->setText(
             QString::fromUtf8("Loading\xE2\x80\xA6"));
         return;
@@ -4840,114 +4275,15 @@ void MainWindow::updateOrganizationTaskRefreshAge()
                      .toString(QStringLiteral("HH:mm:ss"))));
 }
 
-void MainWindow::syncOrganizationTaskPageSearch()
+void TasksPage::setOrganizationTaskBadge(int openCount)
 {
-    const bool onTasks =
-        m_sectionStack &&
-        m_sectionStack->currentIndex() == kOrganizationTasksSectionIndex;
-    const QString query = onTasks && m_globalSearch
-                              ? m_globalSearch->text().trimmed()
-                              : QString();
-    if (onTasks)
-        updateOrganizationTaskRefreshAge();
-    if (m_organizationTasksSearchMirror == query)
-        return;
-    m_organizationTasksSearchMirror = query;
-    m_organizationTaskShownRows = 0;
-    renderOrganizationTaskRows();
+    if (m_store)
+        m_store->setBadgeCount(openCount);
+    if (m_host.navigationBadgeChanged)
+        m_host.navigationBadgeChanged();
 }
 
-void MainWindow::setOrganizationTaskBadge(int openCount)
-{
-    if (m_organizationTaskBadgeStored != openCount) {
-        forkmesh::settings::put(QSettings(), kOrganizationTaskOpenCountSetting,
-                                openCount);
-        m_organizationTaskBadgeStored = openCount;
-    }
-    if (auto *button = dynamic_cast<ActivityRailButton *>(m_tasksNavButton))
-        button->setBadgeCount(openCount);
-}
-
-void MainWindow::restoreOrganizationTaskBadge()
-{
-    if (auto *button = dynamic_cast<ActivityRailButton *>(m_tasksNavButton)) {
-        m_organizationTaskBadgeStored =
-            QSettings().value(kOrganizationTaskOpenCountSetting, 0).toInt();
-        button->setBadgeCount(m_organizationTaskBadgeStored);
-    }
-}
-
-// The one catalog refresh a launch makes on its own. Large catalogs continue
-// through bounded pages, but everything after that refresh is explicitly
-// asked for: opening the page, Refresh, or the user's own edit.
-void MainWindow::refreshOrganizationTaskBadge()
-{
-    if (m_organizationTasksLoading || m_organizationTasksLoaded)
-        return; // the page already pulled the catalog this launch
-    if (m_organizationTasksStatus && m_organizationTasksTable) {
-        refreshOrganizationTasks(); // page exists: keep table and badge in step
-        return;
-    }
-    m_organizationTasksLoading = true;
-    requestOrganizationTaskCatalog(
-        [this](bool ok, const QJsonObject &payload, const QString &) {
-            m_organizationTasksLoading = false;
-            const auto pushed = qScopeGuard(
-                [this] { drainPendingOrganizationTaskEvent(); });
-            if (!ok)
-                return;
-            linkExistingAgentsToOrganizationTasks(
-                payload.value(QStringLiteral("tasks")).toArray());
-            // Keep the whole payload, not just the open count: the Tasks page
-            // is built on first open and renders this instead of pulling
-            // again. Opening the page while this read was in flight builds it
-            // early, so hand the answer straight to the table in that case.
-            if (m_organizationTasksTable) {
-                applyOrganizationTasks(payload);
-                return;
-            }
-            m_organizationTasksStartupPayload = payload;
-            m_organizationTasksLoadedAt = QDateTime::currentMSecsSinceEpoch();
-            refreshQuickAddTaskAssignees();
-            setOrganizationTaskBadge(openOrganizationTaskCount(
-                payload.value(QStringLiteral("tasks")).toArray()));
-        });
-}
-
-// The relay pushed the payload-free "tasks" topic: a member of this
-// organization created, started, closed or deleted a task - possibly this
-// account on another device. The launch pull is deliberately the only
-// unprompted read, so this event, not a timer, is what keeps the table and
-// the rail badge current for the rest of the session.
-void MainWindow::onOrganizationTaskEvent()
-{
-    if (m_organizationTasksLoading) {
-        // A read issued before the write landed can answer without the row
-        // this event is about, so remember the wake-up and re-read when that
-        // one returns rather than dropping it and going stale until Refresh.
-        m_organizationTaskEventPending = true;
-        return;
-    }
-    m_organizationTaskEventPending = false;
-    if (m_organizationTasksStatus && m_organizationTasksTable) {
-        refreshOrganizationTasks(); // page is built: table and badge together
-        return;
-    }
-    // The page has not been built yet. Clear the launch-pull latch so the
-    // badge read runs again and replaces the payload that page will render
-    // from when it is first opened.
-    m_organizationTasksLoaded = false;
-    refreshOrganizationTaskBadge();
-}
-
-void MainWindow::drainPendingOrganizationTaskEvent()
-{
-    if (!m_organizationTaskEventPending || m_organizationTasksLoading)
-        return;
-    onOrganizationTaskEvent();
-}
-
-void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
+void TasksPage::applyOrganizationTasks(const QJsonObject &payload)
 {
     if (!m_organizationTasksTable)
         return;
@@ -4959,8 +4295,6 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
     m_organizationTasks =
         payload.value(QStringLiteral("tasks")).toArray();
     overlayOrganizationTaskLocalEdits();
-    linkExistingAgentsToOrganizationTasks(m_organizationTasks);
-    refreshBranchLinks();
     m_organizationTaskActor =
         payload.value(QStringLiteral("actor")).toString().toLower();
     m_organizationTasksCanManage =
@@ -4980,7 +4314,6 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
         !m_organizationTaskMembers.contains(selectedMember))
         m_organizationTaskAssigneeFilter = QStringLiteral("all");
     rebuildOrganizationTaskPeopleStrip();
-    refreshQuickAddTaskAssignees();
     m_organizationTaskDepartments.clear();
     for (const QJsonValue &value :
          payload.value(QStringLiteral("departments")).toArray()) {
@@ -5015,7 +4348,7 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
         }
     }
     renderOrganizationTaskRows(requestedId);
-    const int openCount = openOrganizationTaskCount(m_organizationTasks);
+    const int openCount = openTaskCount(m_organizationTasks);
     if (m_organizationTasksSummary) {
         m_organizationTasksSummary->setText(
             QString::fromUtf8("%1 open \xC2\xB7 %2 closed%3")
@@ -5028,19 +4361,12 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
     setOrganizationTaskBadge(openCount);
     updateOrganizationTaskRefreshAge();
 
-    // The list is intentionally capped. A linked historical task may sit past
-    // that cap, so resolve it by id instead of leaving the Tasks page open with
-    // no selected row.
     if (!missingLinkedTaskId.isEmpty()) {
-        m_organizationTasksLoading = true;
         requestOrganizationTasks(
             QByteArrayLiteral("GET"),
             QStringLiteral("/api/tasks/") + missingLinkedTaskId, {},
             [this, missingLinkedTaskId](bool ok, const QJsonObject &payload,
                                         const QString &error) {
-                m_organizationTasksLoading = false;
-                const auto pushed = qScopeGuard(
-                    [this] { drainPendingOrganizationTaskEvent(); });
                 const QJsonObject task =
                     payload.value(QStringLiteral("task")).toObject();
                 if (!ok || task.isEmpty()) {
@@ -5060,7 +4386,7 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
     }
 }
 
-bool MainWindow::replaceOrganizationTask(const QJsonObject &task)
+bool TasksPage::replaceOrganizationTask(const QJsonObject &task)
 {
     const QString id = taskText(task, QStringLiteral("id"));
     if (id.isEmpty())
@@ -5077,7 +4403,7 @@ bool MainWindow::replaceOrganizationTask(const QJsonObject &task)
     return false;
 }
 
-void MainWindow::overlayOrganizationTaskLocalEdits()
+void TasksPage::overlayOrganizationTaskLocalEdits()
 {
     for (int index = 0; index < m_organizationTasks.size() &&
                         !m_organizationTaskLocalEdits.isEmpty();
@@ -5087,8 +4413,6 @@ void MainWindow::overlayOrganizationTaskLocalEdits()
         auto local = m_organizationTaskLocalEdits.find(id);
         if (local == m_organizationTaskLocalEdits.end())
             continue;
-        // Every task write bumps updatedAt, so once the catalog row is at
-        // least as new as the saved edit this read already carries it.
         if (!m_organizationTaskEditsInFlight.contains(id) &&
             qint64(listed.value(QStringLiteral("updatedAt")).toDouble()) >=
                 qint64(local->value(QStringLiteral("updatedAt")).toDouble())) {
@@ -5099,11 +4423,12 @@ void MainWindow::overlayOrganizationTaskLocalEdits()
     }
 }
 
-void MainWindow::renderOrganizationTaskRows(const QString &selectTaskId)
+void TasksPage::renderOrganizationTaskRows(const QString &selectTaskId)
 {
     if (!m_organizationTasksTable)
         return;
-    publishTaskRepositoryLogos(m_repositories);
+    m_localAgentsStale = true;
+    publishRepositoryLogos();
     const QString selectedId =
         selectTaskId.isEmpty()
             ? taskText(selectedOrganizationTask(m_organizationTasksTable,
@@ -5149,7 +4474,7 @@ void MainWindow::renderOrganizationTaskRows(const QString &selectTaskId)
     matches.reserve(m_organizationTasks.size());
     for (int index = 0; index < m_organizationTasks.size(); ++index) {
         const QJsonObject task = m_organizationTasks.at(index).toObject();
-        const bool closed = organizationTaskIsClosed(task);
+        const bool closed = taskIsClosed(task);
         const QString key = assigneeKey(task);
         if (!closed) {
             ++openByAssignee[key];
@@ -5247,7 +4572,7 @@ void MainWindow::renderOrganizationTaskRows(const QString &selectTaskId)
     runTasksNextHook(m_organizationTasksTable, true);
 }
 
-void MainWindow::appendOrganizationTaskRows(int count)
+void TasksPage::appendOrganizationTaskRows(int count)
 {
     if (!m_organizationTasksTable)
         return;
@@ -5298,16 +4623,8 @@ void MainWindow::appendOrganizationTaskRows(int count)
                                              : workItems.constFirst().branch;
         if (workItems.size() > 1)
             branch += QStringLiteral(" +%1").arg(workItems.size() - 1);
-        if (branch.isEmpty()) {
-            const int sessionId =
-                localAgentSessionIdForTask(taskText(task, QStringLiteral("id")));
-            for (const AgentSession &session : std::as_const(m_agentSessions)) {
-                if (sessionId > 0 && session.id == sessionId) {
-                    branch = session.branchName;
-                    break;
-                }
-            }
-        }
+        if (branch.isEmpty())
+            branch = localAgentBranchForTask(taskText(task, QStringLiteral("id")));
         item->setData(kTaskBranchRole, branch);
         item->setData(kTaskThumbnailsRole,
                       taskRowThumbnails(task, m_organizationTaskImageData));
@@ -5325,7 +4642,7 @@ void MainWindow::appendOrganizationTaskRows(int count)
     updateOrganizationTaskSpinTimer();
 }
 
-void MainWindow::refreshOrganizationTaskRowThumbnails(const QString &taskId)
+void TasksPage::refreshOrganizationTaskRowThumbnails(const QString &taskId)
 {
     if (!m_organizationTasksTable || taskId.isEmpty())
         return;
@@ -5345,19 +4662,16 @@ void MainWindow::refreshOrganizationTaskRowThumbnails(const QString &taskId)
     }
 }
 
-bool MainWindow::organizationTaskAgentFace(const QJsonObject &task,
-                                           QPixmap *face, bool *working) const
+bool TasksPage::organizationTaskAgentFace(const QJsonObject &task,
+                                          QPixmap *face, bool *working) const
 {
-    const int sessionId =
-        localAgentSessionIdForTask(taskText(task, QStringLiteral("id")));
-    AgentSession identity;
+    const LocalAgent *session =
+        localAgentForTask(taskText(task, QStringLiteral("id")));
+    LocalAgent identity;
     bool known = false;
-    for (const AgentSession &session : m_agentSessions) {
-        if (sessionId > 0 && session.id == sessionId) {
-            identity = session;
-            known = true;
-            break;
-        }
+    if (session) {
+        identity = *session;
+        known = true;
     }
     const QJsonObject agent = task.value(QStringLiteral("agent")).toObject();
     if (!known &&
@@ -5371,17 +4685,17 @@ bool MainWindow::organizationTaskAgentFace(const QJsonObject &task,
         known = true;
     }
     if (face)
-        *face = known ? agentStatusModelIcon(identity).pixmap(
-                            kTaskAgentFaceSource, kTaskAgentFaceSource)
+        *face = known ? agentFaceIcon(identity.provider, identity.model)
+                            .pixmap(kTaskAgentFaceSource, kTaskAgentFaceSource)
                       : QPixmap();
     if (working)
         *working = known && !identity.merged &&
-                   identity.status == AgentStatus::Running &&
-                   !organizationTaskIsClosed(task);
+                   identity.status == QLatin1String("running") &&
+                   !taskIsClosed(task);
     return known;
 }
 
-void MainWindow::applyOrganizationTaskAgentFace(QTableWidgetItem *item,
+void TasksPage::applyOrganizationTaskAgentFace(QTableWidgetItem *item,
                                                 const QJsonObject &task)
 {
     if (!item)
@@ -5395,7 +4709,7 @@ void MainWindow::applyOrganizationTaskAgentFace(QTableWidgetItem *item,
     item->setData(kTaskAgentAngleRole, m_organizationTaskSpinAngle);
 }
 
-void MainWindow::applyOrganizationTaskPeopleFaces(QTableWidgetItem *item)
+void TasksPage::applyOrganizationTaskPeopleFaces(QTableWidgetItem *item)
 {
     if (!item)
         return;
@@ -5403,7 +4717,7 @@ void MainWindow::applyOrganizationTaskPeopleFaces(QTableWidgetItem *item)
         const QString name = item->data(nameRole).toString().trimmed();
         const QPixmap picture =
             name.isEmpty() ? QPixmap()
-                           : chatSenderAvatarSource(QString(), name);
+                           : accountPicture(name);
         const QPixmap current = item->data(pictureRole).value<QPixmap>();
         if (current.cacheKey() == picture.cacheKey())
             return;
@@ -5414,7 +4728,7 @@ void MainWindow::applyOrganizationTaskPeopleFaces(QTableWidgetItem *item)
     apply(kTaskAssigneeRole, kTaskAssigneePictureRole);
 }
 
-void MainWindow::refreshOrganizationTaskPeopleFaces()
+void TasksPage::refreshOrganizationTaskPeopleFaces()
 {
     if (!m_organizationTasksTable)
         return;
@@ -5429,7 +4743,7 @@ void MainWindow::refreshOrganizationTaskPeopleFaces()
     updateOrganizationTaskPeopleStrip(openByAssignee);
 }
 
-void MainWindow::rebuildOrganizationTaskPeopleStrip()
+void TasksPage::rebuildOrganizationTaskPeopleStrip()
 {
     if (!m_organizationTaskPeopleLayout || !m_organizationTaskPeopleGroup)
         return;
@@ -5480,7 +4794,7 @@ void MainWindow::rebuildOrganizationTaskPeopleStrip()
     updateOrganizationTaskPeopleStrip(openByAssignee);
 }
 
-void MainWindow::updateOrganizationTaskPeopleStrip(
+void TasksPage::updateOrganizationTaskPeopleStrip(
     const QHash<QString, int> &openByAssignee)
 {
     if (!m_organizationTaskPeopleGroup)
@@ -5526,7 +4840,7 @@ void MainWindow::updateOrganizationTaskPeopleStrip(
             label = name == actor ? QStringLiteral("@%1 (you)").arg(name)
                                   : QStringLiteral("@%1").arg(name);
             face = taskPersonFace(
-                QVariant(chatSenderAvatarSource(QString(), name)), name, 24,
+                QVariant(accountPicture(name)), name, 24,
                 0.5);
         }
         button->setIcon(QIcon(face));
@@ -5537,7 +4851,7 @@ void MainWindow::updateOrganizationTaskPeopleStrip(
     }
 }
 
-void MainWindow::setOrganizationTaskAssigneeFilter(const QString &filter)
+void TasksPage::setOrganizationTaskAssigneeFilter(const QString &filter)
 {
     m_organizationTaskAssigneeFilter =
         filter.isEmpty() ? QStringLiteral("all") : filter;
@@ -5548,7 +4862,7 @@ void MainWindow::setOrganizationTaskAssigneeFilter(const QString &filter)
                            m_organizationTaskAssigneeFilter);
 }
 
-QJsonObject MainWindow::organizationTaskForRow(int row) const
+QJsonObject TasksPage::organizationTaskForRow(int row) const
 {
     const QTableWidgetItem *item =
         m_organizationTasksTable ? m_organizationTasksTable->item(row, 0)
@@ -5561,7 +4875,7 @@ QJsonObject MainWindow::organizationTaskForRow(int row) const
                : QJsonObject();
 }
 
-int MainWindow::organizationTaskRowForId(const QString &taskId) const
+int TasksPage::organizationTaskRowForId(const QString &taskId) const
 {
     if (!m_organizationTasksTable || taskId.isEmpty())
         return -1;
@@ -5573,8 +4887,9 @@ int MainWindow::organizationTaskRowForId(const QString &taskId) const
     return -1;
 }
 
-void MainWindow::refreshOrganizationTaskAgentRows()
+void TasksPage::refreshOrganizationTaskAgentRows()
 {
+    m_localAgentsStale = true;
     if (!m_organizationTasksTable)
         return;
     for (int row = 0; row < m_organizationTasksTable->rowCount(); ++row)
@@ -5583,7 +4898,7 @@ void MainWindow::refreshOrganizationTaskAgentRows()
     updateOrganizationTaskSpinTimer();
 }
 
-bool MainWindow::organizationTaskRowsHaveWorkingAgent() const
+bool TasksPage::organizationTaskRowsHaveWorkingAgent() const
 {
     if (!m_organizationTasksTable)
         return false;
@@ -5595,7 +4910,7 @@ bool MainWindow::organizationTaskRowsHaveWorkingAgent() const
     return false;
 }
 
-void MainWindow::updateOrganizationTaskSpinTimer()
+void TasksPage::updateOrganizationTaskSpinTimer()
 {
     const bool wanted = m_organizationTasksTable &&
                         m_organizationTasksTable->isVisible() &&
@@ -5611,13 +4926,13 @@ void MainWindow::updateOrganizationTaskSpinTimer()
         m_organizationTaskSpinTimer = new QTimer(this);
         m_organizationTaskSpinTimer->setInterval(kTaskAgentSpinTickMs);
         connect(m_organizationTaskSpinTimer, &QTimer::timeout, this,
-                &MainWindow::tickOrganizationTaskSpinners);
+                [this] { tickOrganizationTaskSpinners(); });
     }
     if (!m_organizationTaskSpinTimer->isActive())
         m_organizationTaskSpinTimer->start();
 }
 
-void MainWindow::setOrganizationTaskListView(forkmesh::ui::ListViewMode view)
+void TasksPage::setOrganizationTaskListView(forkmesh::ui::ListViewMode view)
 {
     m_organizationTaskListView = view;
     QString description;
@@ -5662,7 +4977,7 @@ void MainWindow::setOrganizationTaskListView(forkmesh::ui::ListViewMode view)
     updateOrganizationTaskSpinTimer();
 }
 
-void MainWindow::tickOrganizationTaskSpinners()
+void TasksPage::tickOrganizationTaskSpinners()
 {
     if (!m_organizationTasksTable || !m_organizationTasksTable->isVisible()) {
         if (m_organizationTaskSpinTimer)
@@ -5671,6 +4986,7 @@ void MainWindow::tickOrganizationTaskSpinners()
     }
     m_organizationTaskSpinAngle = std::fmod(
         m_organizationTaskSpinAngle + kTaskAgentSpinStepDegrees, 360.0);
+    m_localAgentsStale = true;
     bool anyWorking = false;
     for (int row = 0; row < m_organizationTasksTable->rowCount(); ++row) {
         QTableWidgetItem *item = m_organizationTasksTable->item(row, 0);
@@ -5690,20 +5006,7 @@ void MainWindow::tickOrganizationTaskSpinners()
         m_organizationTaskSpinTimer->stop();
 }
 
-#ifdef FORKMESH_WINDOW_TESTS
-void MainWindow::testSetAccountAvatar(const QString &account,
-                                      const QPixmap &picture)
-{
-    const QString key = QStringLiteral("user:") + account.trimmed().toLower();
-    if (picture.isNull())
-        m_avatars.remove(key);
-    else
-        m_avatars.insert(key, picture);
-    refreshOrganizationTaskPeopleFaces();
-    refreshDmList();
-}
-
-QPixmap MainWindow::testOrganizationTaskCreatorPicture(
+QPixmap TasksPage::organizationTaskCreatorPicture(
     const QString &taskId) const
 {
     const int row = organizationTaskRowForId(taskId);
@@ -5713,7 +5016,7 @@ QPixmap MainWindow::testOrganizationTaskCreatorPicture(
                          .value<QPixmap>();
 }
 
-QPixmap MainWindow::testOrganizationTaskAssigneePicture(
+QPixmap TasksPage::organizationTaskAssigneePicture(
     const QString &taskId) const
 {
     const int row = organizationTaskRowForId(taskId);
@@ -5723,7 +5026,7 @@ QPixmap MainWindow::testOrganizationTaskAssigneePicture(
                          .value<QPixmap>();
 }
 
-QPixmap MainWindow::testOrganizationTaskAgentFace(const QString &taskId) const
+QPixmap TasksPage::organizationTaskAgentFacePicture(const QString &taskId) const
 {
     const int row = organizationTaskRowForId(taskId);
     return row < 0 ? QPixmap()
@@ -5732,7 +5035,7 @@ QPixmap MainWindow::testOrganizationTaskAgentFace(const QString &taskId) const
                          .value<QPixmap>();
 }
 
-bool MainWindow::testOrganizationTaskAgentWorking(const QString &taskId) const
+bool TasksPage::organizationTaskAgentWorking(const QString &taskId) const
 {
     const int row = organizationTaskRowForId(taskId);
     return row >= 0 && m_organizationTasksTable->item(row, 0)
@@ -5740,13 +5043,13 @@ bool MainWindow::testOrganizationTaskAgentWorking(const QString &taskId) const
                            .toBool();
 }
 
-bool MainWindow::testOrganizationTaskSpinTimerActive() const
+bool TasksPage::organizationTaskSpinTimerActive() const
 {
     return m_organizationTaskSpinTimer &&
            m_organizationTaskSpinTimer->isActive();
 }
 
-QImage MainWindow::testOrganizationTaskRowImage(const QString &taskId) const
+QImage TasksPage::organizationTaskRowImage(const QString &taskId) const
 {
     const int row = organizationTaskRowForId(taskId);
     if (row < 0)
@@ -5755,9 +5058,8 @@ QImage MainWindow::testOrganizationTaskRowImage(const QString &taskId) const
         m_organizationTasksTable->item(row, 0));
     return m_organizationTasksTable->viewport()->grab(rect).toImage();
 }
-#endif
 
-void MainWindow::updateOrganizationTaskPageLabel()
+void TasksPage::updateOrganizationTaskPageLabel()
 {
     if (!m_organizationTaskPageLabel)
         return;
@@ -5778,21 +5080,17 @@ void MainWindow::updateOrganizationTaskPageLabel()
                           : QStringLiteral("%1 tasks").arg(total)));
 }
 
-void MainWindow::openCreatedOrganizationTask(const QJsonObject &task)
+void TasksPage::openCreatedOrganizationTask(const QJsonObject &task)
 {
     const QString taskId = taskText(task, QStringLiteral("id"));
-    ensureSectionBuilt(kOrganizationTasksSectionIndex);
+    ensureBuilt();
     if (!m_organizationTasksTable || taskId.isEmpty()) {
-        showSection(kOrganizationTasksSectionIndex);
+        showPage();
         if (m_organizationTasksLoaded)
             refreshOrganizationTasks();
         return;
     }
 
-    // The create response already carries the relay's canonical task. Put that
-    // answer on screen immediately instead of hiding it behind another catalog
-    // round trip. A later refresh may restore the catalog's normal sort order,
-    // but preserves this selection by id.
     int existingIndex = -1;
     for (int index = 0; index < m_organizationTasks.size(); ++index) {
         if (taskText(m_organizationTasks.at(index).toObject(),
@@ -5806,9 +5104,6 @@ void MainWindow::openCreatedOrganizationTask(const QJsonObject &task)
     else
         m_organizationTasks.insert(0, task);
 
-    // A filter or another page must not make a successful create look as if it
-    // vanished. The first row is the newly-created task, and selecting it opens
-    // its detail pane.
     m_organizationTasksSearchMirror.clear();
     if (m_organizationTaskMineFilterButton) {
         const QSignalBlocker blocker(m_organizationTaskMineFilterButton);
@@ -5819,7 +5114,7 @@ void MainWindow::openCreatedOrganizationTask(const QJsonObject &task)
     m_organizationTaskShownRows = 0;
     renderOrganizationTaskRows(taskId);
 
-    const int openCount = openOrganizationTaskCount(m_organizationTasks);
+    const int openCount = openTaskCount(m_organizationTasks);
     if (m_organizationTasksSummary) {
         m_organizationTasksSummary->setText(
             QString::fromUtf8("%1 open \xC2\xB7 %2 closed%3")
@@ -5830,12 +5125,12 @@ void MainWindow::openCreatedOrganizationTask(const QJsonObject &task)
                          : QString()));
     }
     setOrganizationTaskBadge(openCount);
-    showSection(kOrganizationTasksSectionIndex);
+    showPage();
     if (QTableWidgetItem *item = m_organizationTasksTable->currentItem())
         m_organizationTasksTable->scrollToItem(item);
 }
 
-void MainWindow::renderOrganizationTaskDetail()
+void TasksPage::renderOrganizationTaskDetail()
 {
     if (!m_organizationTaskDetail)
         return;
@@ -5943,21 +5238,60 @@ void MainWindow::renderOrganizationTaskDetail()
     runTasksNextHook(m_organizationTasksTable, false);
 }
 
-int MainWindow::localAgentSessionIdForTask(const QString &taskId) const
+QList<TasksPage::LocalAgent> TasksPage::localAgents() const
+{
+    if (!m_localAgentsStale)
+        return m_localAgents;
+    m_localAgentsStale = false;
+    m_localAgents.clear();
+    for (const QJsonValue &value :
+         windowQuery(QStringLiteral("task.agentSessions"), {}).toArray()) {
+        const QJsonObject row = value.toObject();
+        LocalAgent agent;
+        agent.id = row.value(QStringLiteral("id")).toInt();
+        agent.orgTaskId = row.value(QStringLiteral("orgTaskId")).toString();
+        agent.createdAtMs =
+            qint64(row.value(QStringLiteral("createdAtMs")).toDouble());
+        agent.provider = row.value(QStringLiteral("provider")).toString();
+        agent.providerName = row.value(QStringLiteral("providerName")).toString();
+        agent.model = row.value(QStringLiteral("model")).toString();
+        agent.status = row.value(QStringLiteral("status")).toString();
+        agent.branch = row.value(QStringLiteral("branch")).toString();
+        agent.merged = row.value(QStringLiteral("merged")).toBool();
+        m_localAgents.append(agent);
+    }
+    return m_localAgents;
+}
+
+const TasksPage::LocalAgent *TasksPage::localAgentForTask(
+    const QString &taskId) const
 {
     if (taskId.isEmpty())
-        return 0;
-    const AgentSession *newest = nullptr;
-    for (const AgentSession &session : m_agentSessions) {
+        return nullptr;
+    localAgents();
+    const LocalAgent *newest = nullptr;
+    for (const LocalAgent &session : std::as_const(m_localAgents)) {
         if (session.orgTaskId != taskId || session.id <= 0)
             continue;
         if (!newest || session.createdAtMs > newest->createdAtMs)
             newest = &session;
     }
-    return newest ? newest->id : 0;
+    return newest;
 }
 
-void MainWindow::loadOrganizationTaskHistory(const QString &taskId)
+int TasksPage::localAgentSessionIdForTask(const QString &taskId) const
+{
+    const LocalAgent *session = localAgentForTask(taskId);
+    return session ? session->id : 0;
+}
+
+QString TasksPage::localAgentBranchForTask(const QString &taskId) const
+{
+    const LocalAgent *session = localAgentForTask(taskId);
+    return session ? session->branch : QString();
+}
+
+void TasksPage::loadOrganizationTaskHistory(const QString &taskId)
 {
     if (taskId.isEmpty() || m_organizationTaskHistoryInFlight == taskId)
         return;
@@ -5990,35 +5324,28 @@ void MainWindow::loadOrganizationTaskHistory(const QString &taskId)
         });
 }
 
-QString MainWindow::localAgentRunLabelForTask(const QString &taskId) const
+QString TasksPage::localAgentRunLabelForTask(const QString &taskId) const
 {
-    const int sessionId = localAgentSessionIdForTask(taskId);
-    const AgentSession *session = nullptr;
-    for (const AgentSession &candidate : m_agentSessions) {
-        if (candidate.id == sessionId) {
-            session = &candidate;
-            break;
-        }
-    }
+    const LocalAgent *session = localAgentForTask(taskId);
     if (!session)
         return QString();
     QStringList parts;
     parts << QStringLiteral("#%1").arg(session->id);
-    const QString provider = agentProviderName(session->provider);
-    if (!provider.isEmpty())
-        parts << provider;
+    if (!session->providerName.isEmpty())
+        parts << session->providerName;
     if (!session->status.isEmpty())
         parts << session->status;
     return parts.join(QStringLiteral(", ")) +
            QStringLiteral(" (this desktop)");
 }
 
-void MainWindow::openOrganizationTask(const QString &taskId)
+void TasksPage::openOrganizationTask(const QString &taskId)
 {
     if (taskId.isEmpty())
         return;
     m_pendingOrganizationTaskSelection = taskId;
-    showSection(kOrganizationTasksSectionIndex);
+    ensureBuilt();
+    showPage();
     if (!m_organizationTasksTable)
         return;
     if (!m_organizationTasksLoaded) {
@@ -6044,9 +5371,9 @@ void MainWindow::openOrganizationTask(const QString &taskId)
     refreshOrganizationTasks();
 }
 
-void MainWindow::revealOrganizationTaskStatus(const QJsonObject &task)
+void TasksPage::revealOrganizationTaskStatus(const QJsonObject &task)
 {
-    const bool closed = organizationTaskIsClosed(task);
+    const bool closed = taskIsClosed(task);
     if (m_organizationTaskStatusFilter == QLatin1String("all") ||
         (m_organizationTaskStatusFilter == QLatin1String("closed")) == closed)
         return;
@@ -6055,74 +5382,12 @@ void MainWindow::revealOrganizationTaskStatus(const QJsonObject &task)
         m_organizationTaskAllFilterButton->setChecked(true);
 }
 
-void MainWindow::linkExistingAgentsToOrganizationTasks(const QJsonArray &tasks)
-{
-    if (!m_agentStore)
-        return;
-
-    bool changed = false;
-    for (const QJsonValue &value : tasks) {
-        const QJsonObject task = value.toObject();
-        QString agentId = task.value(QStringLiteral("agent"))
-                              .toObject()
-                              .value(QStringLiteral("sessionId"))
-                              .toString()
-                              .trimmed();
-        if (agentId.isEmpty())
-            agentId = taskText(task, QStringLiteral("agentSessionId"));
-        bool numeric = false;
-        const int sessionId = agentId.toInt(&numeric);
-        if (!numeric || sessionId <= 0)
-            continue; // an opaque remote bot id cannot name a local session
-        AgentSession *session = findAgentSession(sessionId);
-        if (!session || !session->orgTaskId.isEmpty())
-            continue;
-        const QString repository =
-            session->owner + QLatin1Char('/') + session->name;
-        if (taskText(task, QStringLiteral("repository"))
-                .compare(repository, Qt::CaseInsensitive) != 0)
-            continue;
-        const QJsonObject agent = task.value(QStringLiteral("agent")).toObject();
-        const QString taskProvider =
-            taskText(agent, QStringLiteral("provider"));
-        if (!taskProvider.isEmpty() && !session->provider.isEmpty() &&
-            taskProvider != session->provider)
-            continue;
-        // Session numbers are local to a desktop. Repository and provider
-        // narrow the candidate; matching either persisted title or prompt
-        // prevents another member's coincidental session #12 from being linked
-        // to this machine's #12.
-        bool comparableContent = false;
-        bool matchingContent = false;
-        const QString title = taskText(task, QStringLiteral("title"));
-        if (!title.isEmpty() && !session->issueTitle.isEmpty()) {
-            comparableContent = true;
-            matchingContent |= title == session->issueTitle;
-        }
-        const QString details = taskText(task, QStringLiteral("details"));
-        if (!details.isEmpty() && !session->prompt.isEmpty()) {
-            comparableContent = true;
-            matchingContent |= details == session->prompt.trimmed();
-        }
-        if (comparableContent && !matchingContent)
-            continue;
-        session->orgTask = true;
-        session->orgTaskId = taskText(task, QStringLiteral("id"));
-        changed |= m_agentStore->saveSession(*session);
-        syncOrgTaskAgentStatus(sessionId);
-        refreshAgentTaskLinkUi(sessionId);
-    }
-
-    if (changed)
-        refreshAgentTable();
-}
-
-void MainWindow::updateOrganizationTaskActions()
+void TasksPage::updateOrganizationTaskActions()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     const bool selected = !task.isEmpty();
-    const bool done = organizationTaskIsClosed(task);
+    const bool done = taskIsClosed(task);
     const bool active =
         taskText(task, QStringLiteral("status")) == QLatin1String("active");
     const bool agent =
@@ -6144,7 +5409,7 @@ void MainWindow::updateOrganizationTaskActions()
     if (m_organizationTaskDeleteClosedButton) {
         int closedCount = 0;
         for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
-            if (organizationTaskIsClosed(value.toObject()))
+            if (taskIsClosed(value.toObject()))
                 ++closedCount;
         }
         m_organizationTaskDeleteClosedButton->setVisible(
@@ -6152,7 +5417,7 @@ void MainWindow::updateOrganizationTaskActions()
         m_organizationTaskDeleteClosedButton->setEnabled(
             m_organizationTasksCanManage && closedCount > 0 &&
             !m_organizationTaskClosedDeleteInFlight &&
-            !m_organizationTasksLoading);
+            !(m_store && m_store->loading()));
     }
     if (m_organizationTaskEditButton)
         m_organizationTaskEditButton->setEnabled(
@@ -6226,16 +5491,12 @@ void MainWindow::updateOrganizationTaskActions()
             !m_organizationTaskIssueMoveInFlight && hasRepository);
     if (m_organizationTaskStartAgentButton)
         m_organizationTaskStartAgentButton->setEnabled(selected && !done);
-    // Any member who can see the task can comment on it, including on a task
-    // that is already done — that is where the QA conversation happens.
     if (m_organizationTaskCommentButton)
         m_organizationTaskCommentButton->setEnabled(selected);
     if (m_organizationTaskQuickComment)
         m_organizationTaskQuickComment->setEnabled(selected);
     if (m_organizationTaskQuickCommentSend)
         m_organizationTaskQuickCommentSend->setEnabled(selected);
-    // Checking in is the assignee saying how their running work is going, so
-    // it is offered exactly when the relay would accept one.
     if (m_organizationTaskCheckinButton)
         m_organizationTaskCheckinButton->setEnabled(
             selected && mine && active && !done);
@@ -6247,133 +5508,68 @@ void MainWindow::updateOrganizationTaskActions()
             !taskText(task, QStringLiteral("assignee")).isEmpty());
 }
 
-void MainWindow::addOrganizationTaskToPrompt()
+void TasksPage::addOrganizationTaskToPrompt()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     if (task.isEmpty())
         return;
-    appendTextToActivePrompt(organizationTaskPromptText(task));
+    if (!windowCommand(QStringLiteral("prompt.append"),
+                       {{QStringLiteral("text"), organizationTaskPromptText(task)}}))
+        return;
     if (m_organizationTasksStatus)
         m_organizationTasksStatus->setText(
             QStringLiteral("Task added to the prompt box."));
 }
 
-void MainWindow::startOrganizationTaskAgentFromPrompt()
+void TasksPage::startOrganizationTaskAgentFromPrompt()
 {
-    const auto notify = [this](const QString &text, bool error) {
-        if (m_organizationTasksStatus)
-            m_organizationTasksStatus->setText(text);
-        flashMessage(text, error, QString(), forkmesh::kLocalOperationNoticeKind);
-    };
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     if (task.isEmpty()) {
-        notify(QStringLiteral("Select a task to start an agent."), true);
+        showStatus(QStringLiteral("Select a task to start an agent."));
+        flashMessage(QStringLiteral("Select a task to start an agent."), true);
         return;
     }
-    const QString id = taskText(task, QStringLiteral("id"));
-    const QString title = taskText(task, QStringLiteral("title"));
-    if (id.isEmpty()) {
-        notify(QStringLiteral("This task has no ID. Refresh Tasks and try again."), true);
+    if (!m_host.windowRequest)
         return;
-    }
-    if (!m_agentStore) {
-        notify(QStringLiteral("Agent storage is not ready. Try again after startup."), true);
-        return;
-    }
-
-    auto choice = promptAreaAgentChoice();
-    if (!agentProviderIsKnown(choice.provider) ||
-        agentIsCloudflareAiProvider(choice.provider))
-        choice = {defaultAgentProvider(), QString()};
-    if (agentIsCloudflareAiProvider(choice.provider))
-        choice = {kFallbackAgentProvider, QString()};
-    const QString provider = choice.provider;
-    const QString model = choice.model;
-
-    const QString repositoryName = taskText(task, QStringLiteral("repository"));
-    const QStringList repository = repositoryName.split(QLatin1Char('/'));
-    int repoIndex = -1;
-    if (repositoryName.isEmpty()) {
-        repoIndex = resolveAgentRepositoryIndex(-1);
-    } else if (repository.size() == 2) {
-        const int namedIndex = repoIndexFor(repository.at(0), repository.at(1));
-        if (namedIndex >= 0)
-            repoIndex = resolveAgentRepositoryIndex(namedIndex);
-    }
-    if (repoIndex < 0) {
-        notify(repositoryName.isEmpty()
-                   ? QStringLiteral("Open a repository with a local checkout to run this task's agent.")
-                   : QStringLiteral("Clone or open a local checkout of %1 to run this task's agent.")
-                         .arg(repositoryName),
-               true);
-        return;
-    }
-
-    QString prompt = m_issueQuickAdd ? m_issueQuickAdd->toPlainText().trimmed()
-                                     : QString();
-    const QString taskPrompt = organizationTaskPromptText(task);
-    if (!prompt.contains(taskPrompt)) {
-        if (!prompt.isEmpty())
-            prompt += QStringLiteral("\n\n");
-        prompt += taskPrompt;
-    }
-    const QStringList images = m_quickAddImages;
-    for (const QString &attachment : images) {
-        if (!prompt.endsWith(QLatin1Char('\n')))
-            prompt += QLatin1Char('\n');
-        prompt += promptAttachmentLine(attachment);
-    }
-
-    const bool createPr =
-        m_quickAddCreatePr && m_quickAddCreatePr->isChecked();
-    notify(QStringLiteral("Starting %1 on this task...").arg(agentProviderName(provider)), false);
-    const int sessionId = startAdHocAgentForRepo(
-        repoIndex, prompt, provider, createPr, model,
-        /*titleOverride=*/title, /*genie=*/false, /*switchToTab=*/true,
-        /*orgTaskId=*/id, /*modeOverride=*/QString(),
-        /*baseBranch=*/QString(),
-        /*priority=*/task.value(QStringLiteral("priority")).toInt(50));
-    if (sessionId <= 0) {
-        notify(QStringLiteral("Could not start an agent on this task. Check the Log for details."), true);
-        return;
-    }
-    const AgentSession *session = findAgentSession(sessionId);
-    if (session && session->status == AgentStatus::Failed) {
-        notify(QStringLiteral("Agent session #%1 could not start: %2")
-                   .arg(sessionId)
-                   .arg(session->lastError), true);
-        return;
-    }
-    if (m_issueQuickAdd)
-        m_issueQuickAdd->clear();
-    clearQuickAddImages();
-    QStringList details;
-    const QString modelLabel = agentModelLabel(model);
-    if (!modelLabel.isEmpty())
-        details << modelLabel;
-    if (m_quickAddModeSelector)
-        details << m_quickAddModeSelector->currentText();
-    const QString started =
-        QStringLiteral("Opened %1 agent session #%2 on this task%3. Follow its progress in Agents.")
-            .arg(agentProviderName(provider))
-            .arg(sessionId)
-            .arg(details.isEmpty()
-                     ? QString()
-                     : QStringLiteral(" (%1)")
-                           .arg(details.join(QStringLiteral(", "))));
-    notify(started, false);
-    renderOrganizationTaskDetail();
+    const QPointer<TasksPage> page(this);
+    m_host.windowRequest(
+        QStringLiteral("task.startAgent"),
+        {{QStringLiteral("task"), task},
+         {QStringLiteral("prompt"), organizationTaskPromptText(task)}},
+        [page](bool ok, const QJsonObject &reply, const QString &error) {
+            if (!page)
+                return;
+            const QString message =
+                ok ? reply.value(QStringLiteral("message")).toString() : error;
+            if (!message.isEmpty())
+                page->showStatus(message);
+            if (ok)
+                page->renderOrganizationTaskDetail();
+        });
 }
 
-void MainWindow::createOrganizationTask()
+void TasksPage::attachExistingWorktreeToOrganizationTask()
+{
+    const QJsonObject task = selectedOrganizationTask(
+        m_organizationTasksTable, m_organizationTasks);
+    const QString taskId = taskText(task, QStringLiteral("id"));
+    if (taskId.isEmpty())
+        return;
+    windowCommand(QStringLiteral("task.attachWorktree"),
+                  {{QStringLiteral("taskId"), taskId},
+                   {QStringLiteral("repository"),
+                    taskText(task, QStringLiteral("repository"))}});
+}
+
+void TasksPage::createOrganizationTask()
 {
     composeOrganizationTask(QStringLiteral("New organization task"), QString(),
                             QString(), nullptr);
 }
 
-void MainWindow::composeOrganizationTask(const QString &windowTitle,
+void TasksPage::composeOrganizationTask(const QString &windowTitle,
                                          const QString &prefillTitle,
                                          const QString &prefillDetails,
                                          std::function<void()> onCreated)
@@ -6382,7 +5578,7 @@ void MainWindow::composeOrganizationTask(const QString &windowTitle,
     dialog.setWindowTitle(windowTitle);
     auto *layout = new QFormLayout(&dialog);
     auto *title = new QLineEdit(prefillTitle);
-    title->setMaxLength(kOrganizationTaskTitleLimit);
+    title->setMaxLength(kTaskTitleLimit);
     auto *details = new QPlainTextEdit(prefillDetails);
     details->setMaximumHeight(120);
     auto *department = new QComboBox;
@@ -6442,10 +5638,8 @@ void MainWindow::composeOrganizationTask(const QString &windowTitle,
                 const QString failure =
                     QStringLiteral("Task creation failed: %1").arg(error);
                 m_organizationTasksStatus->setText(failure);
-                // A conversion is started from another page, where that status
-                // label is off screen — say it where the operator is standing.
                 if (onCreated)
-                    flashMessage(failure, true);
+                    reportError(failure);
                 return;
             }
             const QJsonObject task =
@@ -6459,174 +5653,7 @@ void MainWindow::composeOrganizationTask(const QString &windowTitle,
         });
 }
 
-void MainWindow::createQuickAddOrganizationTask()
-{
-    if (!m_issueQuickAdd)
-        return;
-    const QString prompt = m_issueQuickAdd->toPlainText().trimmed();
-    if (prompt.isEmpty()) {
-        flashMessage(QStringLiteral("Type a task first."), true, QString(),
-                     forkmesh::kLocalOperationNoticeKind);
-        m_issueQuickAdd->setFocus();
-        return;
-    }
-
-    QString title = prompt.section(QLatin1Char('\n'), 0, 0).simplified();
-    if (title.size() > 160)
-        title = title.left(159).trimmed() + QString::fromUtf8("\xE2\x80\xA6");
-    QString repository;
-    const int repoIndex = issuesRepoIndex();
-    if (repoIndex >= 0 && repoIndex < m_repositories.size()) {
-        const RepositoryRecord &repo = m_repositories.at(repoIndex);
-        repository = repo.owner + QLatin1Char('/') + repo.name;
-    }
-    QString attachmentError;
-    const QJsonArray attachments = organizationTaskImageAttachments(
-        m_quickAddImages, &attachmentError);
-    if (!attachmentError.isEmpty()) {
-        flashMessage(attachmentError, true);
-        return;
-    }
-    const QString assignment = quickAddTaskAssignment();
-    const QString assignee = assignment.startsWith(QLatin1String("user:"))
-                                 ? assignment.mid(5)
-                                 : QString();
-    QJsonObject body{
-        {QStringLiteral("title"), title},
-        {QStringLiteral("details"), promptTextWithoutAttachments(prompt)},
-        {QStringLiteral("department"), QStringLiteral("general")},
-        {QStringLiteral("destination"), QStringLiteral("department")},
-        {QStringLiteral("assigneeKind"),
-         assignee.isEmpty() ? QStringLiteral("unassigned")
-                            : QStringLiteral("user")},
-        {QStringLiteral("repository"), repository},
-        {QStringLiteral("priority"), 50},
-    };
-    if (!assignee.isEmpty())
-        body.insert(QStringLiteral("assignee"), assignee);
-    if (!attachments.isEmpty())
-        body.insert(QStringLiteral("attachments"), attachments);
-    requestOrganizationTasks(
-        QByteArrayLiteral("POST"), QStringLiteral("/api/tasks"), body,
-        [this, prompt, assignee](bool ok, const QJsonObject &payload,
-                                 const QString &error) {
-            if (!ok) {
-                flashMessage(QStringLiteral("Task creation failed: %1").arg(error),
-                             true);
-                return;
-            }
-            recordQuickAddHistory(prompt);
-            m_issueQuickAdd->clear();
-            clearQuickAddImages();
-            openCreatedOrganizationTask(
-                payload.value(QStringLiteral("task")).toObject());
-            flashMessage(assignee.isEmpty()
-                             ? QStringLiteral("Task added to General.")
-                             : QStringLiteral("Task assigned to %1.")
-                                   .arg(assignee));
-        });
-}
-
-QStringList MainWindow::organizationTaskMemberNames() const
-{
-    if (!m_organizationTaskMembers.isEmpty())
-        return m_organizationTaskMembers;
-    QStringList members;
-    for (const QJsonValue &value :
-         m_organizationTasksStartupPayload.value(QStringLiteral("members"))
-             .toArray()) {
-        const QString member = value.toString().trimmed().toLower();
-        if (!member.isEmpty() && !members.contains(member))
-            members.append(member);
-    }
-    return members;
-}
-
-QString MainWindow::organizationTaskActorName() const
-{
-    if (!m_organizationTaskActor.trimmed().isEmpty())
-        return m_organizationTaskActor.trimmed().toLower();
-    return m_organizationTasksStartupPayload.value(QStringLiteral("actor"))
-        .toString()
-        .trimmed()
-        .toLower();
-}
-
-void MainWindow::refreshQuickAddTaskAssignees()
-{
-    if (!m_quickAddTaskAssignee)
-        return;
-    const QString actor = organizationTaskActorName();
-    QStringList members = organizationTaskMemberNames();
-    std::sort(members.begin(), members.end(),
-              [&actor](const QString &left, const QString &right) {
-                  if ((left == actor) != (right == actor))
-                      return left == actor;
-                  return left < right;
-              });
-    const QString current =
-        m_quickAddTaskAssignee->currentIndex() >= 0
-            ? m_quickAddTaskAssignee->currentData().toString()
-            : QSettings().value(kQuickAddTaskAssigneeSetting).toString();
-    const QIcon nobody =
-        themedOcticon(QStringLiteral("person"), QColor("#8b949e"), 18);
-    bool unchanged = m_quickAddTaskAssignee->currentIndex() >= 0 &&
-                     m_quickAddTaskAssignee->count() == members.size() + 1 &&
-                     m_quickAddTaskAssignee->itemData(0).toString() ==
-                         QLatin1String("unassigned");
-    for (int i = 0; unchanged && i < members.size(); ++i) {
-        const QString &member = members.at(i);
-        unchanged =
-            m_quickAddTaskAssignee->itemData(i + 1).toString() ==
-                QStringLiteral("user:") + member &&
-            m_quickAddTaskAssignee->itemText(i + 1) ==
-                (member == actor ? QStringLiteral("%1 (you)").arg(member) : member);
-    }
-    if (unchanged) {
-        for (int i = 0; i < members.size(); ++i) {
-            const QPixmap face = chatSenderAvatarSource(QString(), members.at(i));
-            m_quickAddTaskAssignee->setItemIcon(i + 1,
-                                                face.isNull() ? nobody : QIcon(face));
-        }
-        return;
-    }
-    {
-        const QSignalBlocker blocker(m_quickAddTaskAssignee);
-        m_quickAddTaskAssignee->clear();
-        m_quickAddTaskAssignee->addItem(nobody, QStringLiteral("Unassigned"),
-                                        QStringLiteral("unassigned"));
-        m_quickAddTaskAssignee->setItemData(
-            0, QStringLiteral("Add the task to General with nobody assigned"),
-            Qt::ToolTipRole);
-        for (const QString &member : std::as_const(members)) {
-            const QPixmap face = chatSenderAvatarSource(QString(), member);
-            const QString label = member == actor
-                                      ? QStringLiteral("%1 (you)").arg(member)
-                                      : member;
-            m_quickAddTaskAssignee->addItem(face.isNull() ? nobody : QIcon(face),
-                                            label,
-                                            QStringLiteral("user:") + member);
-            m_quickAddTaskAssignee->setItemData(
-                m_quickAddTaskAssignee->count() - 1,
-                QStringLiteral("Assign the task to %1").arg(member),
-                Qt::ToolTipRole);
-        }
-    }
-    const int index = m_quickAddTaskAssignee->findData(current);
-    m_quickAddTaskAssignee->setCurrentIndex(-1);
-    m_quickAddTaskAssignee->setCurrentIndex(index >= 0 ? index : 0);
-}
-
-QString MainWindow::quickAddTaskAssignment() const
-{
-    if (!m_quickAddTaskAssignee || !m_quickAddAgentProvider ||
-        m_quickAddAgentProvider->currentData().toString() != kTaskPromptProvider ||
-        m_quickAddTaskAssignee->currentIndex() < 0)
-        return QStringLiteral("unassigned");
-    return m_quickAddTaskAssignee->currentData().toString();
-}
-
-void MainWindow::createOrganizationTaskFollowUp()
+void TasksPage::createOrganizationTaskFollowUp()
 {
     const QJsonObject parent = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -6656,74 +5683,24 @@ void MainWindow::createOrganizationTaskFollowUp()
         });
 }
 
-void MainWindow::moveOrganizationTaskToIssue()
+void TasksPage::moveOrganizationTaskToIssue()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     const QString taskId = taskText(task, QStringLiteral("id"));
     if (taskId.isEmpty() || !m_organizationTasksCanManage ||
-        m_organizationTaskIssueMoveInFlight)
+        m_organizationTaskIssueMoveInFlight || !m_host.windowRequest)
         return;
 
     const QString status = taskText(task, QStringLiteral("status"));
     if (status == QLatin1String("active") ||
         task.value(QStringLiteral("completedAt")).toDouble() > 0 ||
         status == QLatin1String("done")) {
-        flashMessage(QStringLiteral(
-                         "Stop or reopen the task before moving it into an issue."),
-                     true);
+        reportError(QStringLiteral(
+            "Stop or reopen the task before moving it into an issue."));
         return;
     }
 
-    const QString repository = taskText(task, QStringLiteral("repository"));
-    const QStringList repositoryParts =
-        repository.split(QLatin1Char('/'), Qt::SkipEmptyParts);
-    if (repositoryParts.size() != 2) {
-        QMessageBox::warning(
-            this, QStringLiteral("Move task to issue"),
-            QStringLiteral("This task needs an owner/repository before it can "
-                           "be moved into an issue."));
-        return;
-    }
-
-    int repoIndex = -1;
-    for (int index = 0; index < m_repositories.size(); ++index) {
-        const RepositoryRecord &repo = m_repositories.at(index);
-        if (repo.owner.compare(repositoryParts.at(0), Qt::CaseInsensitive) == 0 &&
-            repo.name.compare(repositoryParts.at(1), Qt::CaseInsensitive) == 0) {
-            repoIndex = index;
-            break;
-        }
-    }
-    if (repoIndex < 0) {
-        QMessageBox::warning(
-            this, QStringLiteral("Move task to issue"),
-            QStringLiteral("Open the task's repository (%1) on this desktop "
-                           "before moving the task into an issue.")
-                .arg(repository));
-        return;
-    }
-
-    const QString title = taskText(task, QStringLiteral("title"));
-    if (title.isEmpty())
-        return;
-    const QString repoLabel = repositoryParts.join(QLatin1Char('/'));
-    const QString question =
-        QStringLiteral("Move \"%1\" into an issue in %2?\n\n"
-                       "The task will be removed after the issue is filed.")
-            .arg(title, repoLabel);
-    if (QMessageBox::question(this, QStringLiteral("Move task to issue"),
-                              question,
-                              QMessageBox::Yes | QMessageBox::No,
-                              QMessageBox::No) != QMessageBox::Yes)
-        return;
-
-    m_organizationTaskIssueMoveInFlight = true;
-    updateOrganizationTaskActions();
-
-    // File first and delete second. If the catalog delete is rejected, the
-    // issue remains safely filed and the original task remains visible for a
-    // retry instead of losing either record.
     auto removeTask = [this, taskId](int issueNumber,
                                      const QString &issueNotice) {
         requestOrganizationTasks(
@@ -6733,19 +5710,16 @@ void MainWindow::moveOrganizationTaskToIssue()
                 bool ok, const QJsonObject &data, const QString &error) {
                 m_organizationTaskIssueMoveInFlight = false;
                 if (ok)
-                    cleanupOrganizationTaskWorkItems(
+                    cleanupOrganizationTaskWork(
                         taskId,
-                        localTaskWorkItems(
-                            taskId,
-                            data.value(QStringLiteral("workItems")).toArray()),
-                        0);
+                        data.value(QStringLiteral("workItems")).toArray(), 0);
                 if (!ok) {
                     const QString failure =
                         QStringLiteral("%1 The task could not be removed: %2")
                             .arg(issueNotice, error);
                     if (m_organizationTasksStatus)
                         m_organizationTasksStatus->setText(failure);
-                    flashMessage(failure, true);
+                    reportError(failure);
                     updateOrganizationTaskActions();
                     return;
                 }
@@ -6757,102 +5731,39 @@ void MainWindow::moveOrganizationTaskToIssue()
                 if (m_organizationTasksStatus)
                     m_organizationTasksStatus->setText(moved);
                 refreshOrganizationTasks();
-                if (issueNumber > 0) {
-                    showSection(0);
-                    if (m_repoDetailTabs && m_repoDetailTabs->button(2))
-                        m_repoDetailTabs->button(2)->click();
-                    showIssue(issueNumber);
-                }
+                if (issueNumber > 0)
+                    windowCommand(QStringLiteral("issue.show"),
+                                  {{QStringLiteral("number"), issueNumber}});
             });
     };
 
-    if (repoIndex != m_repoDetailIndex)
-        openRepoDetail(repoIndex);
-    showSection(0);
-    if (m_repoDetailTabs && m_repoDetailTabs->button(2))
-        m_repoDetailTabs->button(2)->click();
-    if (m_issuesRepoCombo) {
-        const int combo = m_issuesRepoCombo->findData(repoIndex);
-        if (combo >= 0)
-            m_issuesRepoCombo->setCurrentIndex(combo);
-    }
-    if (issuesRepoIndex() != repoIndex) {
-        m_organizationTaskIssueMoveInFlight = false;
-        const QString failure = QStringLiteral(
-            "Could not select the issue repository for this task.");
-        if (m_organizationTasksStatus)
-            m_organizationTasksStatus->setText(failure);
-        flashMessage(failure, true);
-        updateOrganizationTaskActions();
-        return;
-    }
-
-    const QString body = organizationTaskIssueBody(task);
-    const int priority = task.value(QStringLiteral("priority")).toInt();
-    IssueStore store = issueStoreForCurrentRepo();
-    if (!store.canWrite()) {
-        if (m_organizationTasksStatus)
-            m_organizationTasksStatus->setText(
-                QStringLiteral("Sending the task to the repository issue inbox…"));
-        const bool started = submitNewIssueToInbox(
-            title, body, {}, QString(), priority, {}, {}, {},
-            [this, removeTask, repoLabel](bool ok, const QString &error) {
-                if (!ok) {
-                    m_organizationTaskIssueMoveInFlight = false;
-                    const QString failure =
-                        QStringLiteral("Could not file the task as an issue: %1")
-                            .arg(error);
-                    if (m_organizationTasksStatus)
-                        m_organizationTasksStatus->setText(failure);
-                    flashMessage(failure, true);
-                    updateOrganizationTaskActions();
-                    return;
+    m_organizationTaskIssueMoveInFlight = true;
+    updateOrganizationTaskActions();
+    const QPointer<TasksPage> page(this);
+    m_host.windowRequest(
+        QStringLiteral("task.fileAsIssue"),
+        {{QStringLiteral("task"), task},
+         {QStringLiteral("body"), organizationTaskIssueBody(task)}},
+        [page, removeTask](bool ok, const QJsonObject &reply,
+                           const QString &error) {
+            if (!page)
+                return;
+            if (!ok) {
+                page->m_organizationTaskIssueMoveInFlight = false;
+                if (!reply.value(QStringLiteral("cancelled")).toBool()) {
+                    if (page->m_organizationTasksStatus)
+                        page->m_organizationTasksStatus->setText(error);
+                    page->reportError(error);
                 }
-                removeTask(
-                    -1,
-                    QStringLiteral("Issue sent to %1's repository inbox.")
-                        .arg(repoLabel));
-            });
-        if (!started) {
-            m_organizationTaskIssueMoveInFlight = false;
-            const QString failure =
-                QStringLiteral("Could not reach the repository issue inbox.");
-            if (m_organizationTasksStatus)
-                m_organizationTasksStatus->setText(failure);
-            flashMessage(failure, true);
-            updateOrganizationTaskActions();
-        }
-        return;
-    }
-
-    QString error;
-    Issue created;
-    const int number = store.createIssue(title, body, {}, QString(), priority,
-                                         {}, {}, &error, &created);
-    if (number < 0) {
-        m_organizationTaskIssueMoveInFlight = false;
-        const QString failure =
-            QStringLiteral("Could not create the issue: %1").arg(error);
-        if (m_organizationTasksStatus)
-            m_organizationTasksStatus->setText(failure);
-        flashMessage(failure, true);
-        updateOrganizationTaskActions();
-        return;
-    }
-
-    appendCreatedIssue(store, created);
-    propagateRepoUpdate(repoIndex);
-    if (repoIndex == m_repoDetailIndex)
-        triggerTeammatesForEvent(
-            QStringLiteral("new-issues"),
-            QStringLiteral("Issue #%1 · %2").arg(number).arg(title));
-    removeTask(number,
-               QStringLiteral("Issue #%1 created in %2.")
-                   .arg(number)
-                   .arg(repoLabel));
+                page->updateOrganizationTaskActions();
+                return;
+            }
+            removeTask(reply.value(QStringLiteral("issueNumber")).toInt(),
+                       reply.value(QStringLiteral("notice")).toString());
+        });
 }
 
-void MainWindow::editOrganizationTask()
+void TasksPage::editOrganizationTask()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -6913,7 +5824,7 @@ void MainWindow::editOrganizationTask()
     patchOrganizationTask(task, body);
 }
 
-void MainWindow::patchOrganizationTask(const QJsonObject &task,
+void TasksPage::patchOrganizationTask(const QJsonObject &task,
                                        const QJsonObject &body)
 {
     const QString taskId = taskText(task, QStringLiteral("id"));
@@ -6924,9 +5835,6 @@ void MainWindow::patchOrganizationTask(const QJsonObject &task,
         QLatin1String("agent");
     const QString path = QStringLiteral("/api/tasks/") + taskId;
 
-    // Show the edit the moment Save is pressed. The PATCH shares a serialized
-    // ingress with catalog reads, so its answer can take seconds; until then
-    // the row used to keep its old values and the edit looked unsaved.
     QJsonObject optimistic = task;
     for (auto it = body.constBegin(); it != body.constEnd(); ++it)
         optimistic.insert(it.key(), it.value());
@@ -6957,7 +5865,7 @@ void MainWindow::patchOrganizationTask(const QJsonObject &task,
         });
 }
 
-void MainWindow::syncOrganizationTaskProperties(const QJsonObject &task)
+void TasksPage::syncOrganizationTaskProperties(const QJsonObject &task)
 {
     if (!m_organizationTaskProperties)
         return;
@@ -7096,7 +6004,7 @@ void MainWindow::syncOrganizationTaskProperties(const QJsonObject &task)
     }
 }
 
-void MainWindow::commitOrganizationTaskProperty(const QString &field)
+void TasksPage::commitOrganizationTaskProperty(const QString &field)
 {
     if (field.isEmpty() || m_organizationTaskPropertiesTaskId.isEmpty() ||
         !m_organizationTaskProperties)
@@ -7143,7 +6051,7 @@ void MainWindow::commitOrganizationTaskProperty(const QString &field)
             body.insert(QStringLiteral("priority"), value);
     } else if (field == QLatin1String("progress")) {
         const int value = m_organizationTaskProgressEdit->value();
-        if (!organizationTaskIsClosed(task) &&
+        if (!taskIsClosed(task) &&
             value != task.value(QStringLiteral("progress")).toInt())
             body.insert(QStringLiteral("progress"), value);
     } else if (field == QLatin1String("assignee")) {
@@ -7181,7 +6089,7 @@ void MainWindow::commitOrganizationTaskProperty(const QString &field)
     patchOrganizationTask(task, body);
 }
 
-bool MainWindow::settleOrganizationTaskEdit(const QString &taskId,
+bool TasksPage::settleOrganizationTaskEdit(const QString &taskId,
                                             const QJsonObject &previous,
                                             bool ok,
                                             const QJsonObject &payload,
@@ -7203,9 +6111,6 @@ bool MainWindow::settleOrganizationTaskEdit(const QString &taskId,
     const QJsonObject changed =
         payload.value(QStringLiteral("task")).toObject();
     m_organizationTasksStatus->setText(QStringLiteral("Task updated."));
-    // PATCH returns the fully projected, persisted task. Keep it as
-    // the local edit too: a catalog read issued before this write can
-    // still land afterwards, and must not put the old values back.
     *updated = !lastEdit;
     if (lastEdit && !changed.isEmpty()) {
         m_organizationTaskLocalEdits.insert(taskId, changed);
@@ -7216,18 +6121,18 @@ bool MainWindow::settleOrganizationTaskEdit(const QString &taskId,
     return true;
 }
 
-bool MainWindow::organizationTaskCheckboxToggleable(int index) const
+bool TasksPage::organizationTaskCheckboxToggleable(int index) const
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     return !task.isEmpty() && m_organizationTasksCanManage &&
-           !organizationTaskIsClosed(task) &&
+           !taskIsClosed(task) &&
            taskText(task, QStringLiteral("status")) !=
                QLatin1String("active") &&
            !taskCheckboxToggle(task, index).text.isNull();
 }
 
-void MainWindow::toggleOrganizationTaskCheckbox(int index)
+void TasksPage::toggleOrganizationTaskCheckbox(int index)
 {
     if (!organizationTaskCheckboxToggleable(index))
         return;
@@ -7261,7 +6166,7 @@ void MainWindow::toggleOrganizationTaskCheckbox(int index)
         });
 }
 
-void MainWindow::assignOrganizationTaskToAgent()
+void TasksPage::assignOrganizationTaskToAgent()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -7290,7 +6195,7 @@ void MainWindow::assignOrganizationTaskToAgent()
         });
 }
 
-void MainWindow::queueOrganizationTaskAgent(const QJsonObject &task)
+void TasksPage::queueOrganizationTaskAgent(const QJsonObject &task)
 {
     const QStringList repository =
         taskText(task, QStringLiteral("repository"))
@@ -7360,7 +6265,7 @@ void MainWindow::queueOrganizationTaskAgent(const QJsonObject &task)
         });
 }
 
-void MainWindow::runOrganizationTaskAction(const QString &action)
+void TasksPage::runOrganizationTaskAction(const QString &action)
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -7391,7 +6296,7 @@ void MainWindow::runOrganizationTaskAction(const QString &action)
     sendOrganizationTaskAction(id, action, body);
 }
 
-void MainWindow::sendOrganizationTaskAction(const QString &id,
+void TasksPage::sendOrganizationTaskAction(const QString &id,
                                             const QString &action,
                                             const QJsonObject &body)
 {
@@ -7411,13 +6316,13 @@ void MainWindow::sendOrganizationTaskAction(const QString &id,
         });
 }
 
-void MainWindow::commentOnOrganizationTask()
+void TasksPage::commentOnOrganizationTask()
 {
     if (m_organizationTaskQuickComment)
         m_organizationTaskQuickComment->setFocus();
 }
 
-void MainWindow::submitOrganizationTaskQuickComment()
+void TasksPage::submitOrganizationTaskQuickComment()
 {
     if (!m_organizationTaskQuickComment)
         return;
@@ -7431,7 +6336,7 @@ void MainWindow::submitOrganizationTaskQuickComment()
     postOrganizationTaskComment(body);
 }
 
-void MainWindow::postOrganizationTaskComment(const QString &body)
+void TasksPage::postOrganizationTaskComment(const QString &body)
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -7508,15 +6413,13 @@ void MainWindow::postOrganizationTaskComment(const QString &body)
         });
 }
 
-void MainWindow::checkInOnOrganizationTask()
+void TasksPage::checkInOnOrganizationTask()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     const QString id = taskText(task, QStringLiteral("id"));
     if (id.isEmpty())
         return;
-    // Label order matches the relay's CHECKIN_STATES so the index maps
-    // straight onto the value it accepts.
     const QStringList labels{QStringLiteral("Going well"),
                              QStringLiteral("Blocked"),
                              QStringLiteral("Needs help")};
@@ -7568,7 +6471,7 @@ void MainWindow::checkInOnOrganizationTask()
         });
 }
 
-void MainWindow::remindOrganizationTaskAssignee()
+void TasksPage::remindOrganizationTaskAssignee()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
@@ -7620,82 +6523,87 @@ void MainWindow::remindOrganizationTaskAssignee()
         });
 }
 
-void MainWindow::deleteOrganizationTask()
+void TasksPage::deleteOrganizationTask()
 {
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     const QString id = taskText(task, QStringLiteral("id"));
     if (id.isEmpty())
         return;
-    const QList<forkmesh::taskwork::WorkItem> items = localTaskWorkItems(
-        id, task.value(QStringLiteral("workItems")).toArray());
-    if (items.isEmpty()) {
+    if (!m_host.windowRequest) {
         sendOrganizationTaskDelete(id, 0);
         return;
     }
+    const QString title = taskText(task, QStringLiteral("title"));
     if (m_organizationTasksStatus)
         m_organizationTasksStatus->setText(QString::fromUtf8(
             "Checking this task's worktrees\xE2\x80\xA6"));
-    const QString title = taskText(task, QStringLiteral("title"));
-    inspectOrganizationTaskWorkItems(
-        items,
-        [this, id, title](
-            const QList<forkmesh::taskwork::Inspection> &inspections) {
-            if (m_organizationTasksStatus)
-                m_organizationTasksStatus->clear();
-            QStringList losses;
-            QStringList removable;
-            for (const forkmesh::taskwork::Inspection &inspection :
-                 inspections) {
-                const QString where =
-                    inspection.worktreePath.isEmpty()
-                        ? inspection.item.branch
-                        : QStringLiteral("%1 (%2)").arg(
-                              inspection.item.branch, inspection.worktreePath);
-                if (inspection.plan == forkmesh::taskwork::Plan::Confirm)
-                    losses.append(where + QLatin1Char('\n') +
-                                  forkmesh::taskwork::lossSummary(inspection));
-                else if (inspection.plan == forkmesh::taskwork::Plan::Remove)
-                    removable.append(where);
-            }
-            if (losses.isEmpty()) {
-                sendOrganizationTaskDelete(id, 1);
+    const QPointer<TasksPage> page(this);
+    m_host.windowRequest(
+        QStringLiteral("task.workPlan"),
+        {{QStringLiteral("taskId"), id},
+         {QStringLiteral("workItems"),
+          task.value(QStringLiteral("workItems")).toArray()}},
+        [page, id, title](bool, const QJsonObject &plan, const QString &) {
+            if (!page)
                 return;
-            }
-            QMessageBox box(QMessageBox::Warning, QStringLiteral("Delete task"),
-                            QStringLiteral("Delete \"%1\" and its work on this "
-                                           "desktop?")
-                                .arg(title),
-                            QMessageBox::NoButton, this);
-            QString detail =
-                QStringLiteral("These worktrees and branches hold work that "
-                               "is not merged into the default branch:\n\n") +
-                losses.join(QStringLiteral("\n\n")) +
-                QStringLiteral("\n\nDeleting them first saves a backup at "
-                               "refs/forkmesh/trash/tasks/%1/<branch>.")
-                    .arg(id);
-            if (!removable.isEmpty())
-                detail += QStringLiteral("\n\nClean, merged work that is "
-                                         "removed either way:\n  ") +
-                          removable.join(QStringLiteral("\n  "));
-            box.setInformativeText(detail);
-            QPushButton *discard = box.addButton(
-                QStringLiteral("Delete task and work"),
-                QMessageBox::DestructiveRole);
-            QPushButton *keep = box.addButton(
-                QStringLiteral("Delete task, keep work"),
-                QMessageBox::AcceptRole);
-            box.addButton(QMessageBox::Cancel);
-            box.setDefaultButton(QMessageBox::Cancel);
-            box.exec();
-            if (box.clickedButton() == discard)
-                sendOrganizationTaskDelete(id, 1);
-            else if (box.clickedButton() == keep)
-                sendOrganizationTaskDelete(id, 2);
+            page->showWorkPlanForDelete(id, title, plan);
         });
 }
 
-void MainWindow::sendOrganizationTaskDelete(const QString &taskId,
+void TasksPage::showWorkPlanForDelete(const QString &id, const QString &title,
+                                      const QJsonObject &plan)
+{
+    if (m_organizationTasksStatus)
+        m_organizationTasksStatus->clear();
+    if (plan.value(QStringLiteral("items")).toInt() <= 0) {
+        sendOrganizationTaskDelete(id, 0);
+        return;
+    }
+    QStringList losses;
+    QStringList removable;
+    for (const QJsonValue &value : plan.value(QStringLiteral("losses")).toArray())
+        losses.append(value.toString());
+    for (const QJsonValue &value :
+         plan.value(QStringLiteral("removable")).toArray())
+        removable.append(value.toString());
+    if (losses.isEmpty()) {
+        sendOrganizationTaskDelete(id, 1);
+        return;
+    }
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("Delete task"),
+                    QStringLiteral("Delete \"%1\" and its work on this "
+                                   "desktop?")
+                        .arg(title),
+                    QMessageBox::NoButton, this);
+    QString detail =
+        QStringLiteral("These worktrees and branches hold work that "
+                       "is not merged into the default branch:\n\n") +
+        losses.join(QStringLiteral("\n\n")) +
+        QStringLiteral("\n\nDeleting them first saves a backup at "
+                       "refs/forkmesh/trash/tasks/%1/<branch>.")
+            .arg(id);
+    if (!removable.isEmpty())
+        detail += QStringLiteral("\n\nClean, merged work that is "
+                                 "removed either way:\n  ") +
+                  removable.join(QStringLiteral("\n  "));
+    box.setInformativeText(detail);
+    QPushButton *discard = box.addButton(
+        QStringLiteral("Delete task and work"),
+        QMessageBox::DestructiveRole);
+    QPushButton *keep = box.addButton(
+        QStringLiteral("Delete task, keep work"),
+        QMessageBox::AcceptRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    if (box.clickedButton() == discard)
+        sendOrganizationTaskDelete(id, 1);
+    else if (box.clickedButton() == keep)
+        sendOrganizationTaskDelete(id, 2);
+}
+
+void TasksPage::sendOrganizationTaskDelete(const QString &taskId,
                                             int cleanupMode, bool force)
 {
     const QJsonObject task = [this, &taskId] {
@@ -7714,13 +6622,13 @@ void MainWindow::sendOrganizationTaskDelete(const QString &taskId,
                 !ok && data.value(QStringLiteral("error")).toString()
                            == QLatin1String("task_not_found");
             if (!ok && !alreadyGone
-                && data.contains(kOrganizationTaskBackoffKey)
-                && g_organizationTaskDeleteRetries.value(taskId)
+                && data.contains(kTaskBackoffKey)
+                && m_deleteRetries.value(taskId)
                        < kOrganizationTaskDeleteMaxRetries) {
-                g_organizationTaskDeleteRetries[taskId] += 1;
+                m_deleteRetries[taskId] += 1;
                 const qint64 waitMs = qBound(
                     qint64(1000),
-                    qint64(data.value(kOrganizationTaskBackoffKey).toDouble()) + 500,
+                    qint64(data.value(kTaskBackoffKey).toDouble()) + 500,
                     qint64(10 * 60 * 1000));
                 m_organizationTasksStatus->setText(
                     QStringLiteral("The relay is backing off; deleting the task "
@@ -7732,7 +6640,7 @@ void MainWindow::sendOrganizationTaskDelete(const QString &taskId,
                     });
                 return;
             }
-            g_organizationTaskDeleteRetries.remove(taskId);
+            m_deleteRetries.remove(taskId);
             m_organizationTasksStatus->setText(
                 ok || alreadyGone
                     ? QStringLiteral("Task moved to the trash; restore it "
@@ -7743,8 +6651,7 @@ void MainWindow::sendOrganizationTaskDelete(const QString &taskId,
                 for (const QJsonValue &value :
                      data.value(QStringLiteral("workItems")).toArray())
                     items.append(value);
-                cleanupOrganizationTaskWorkItems(
-                    taskId, localTaskWorkItems(taskId, items), cleanupMode);
+                cleanupOrganizationTaskWork(taskId, items, cleanupMode);
                 refreshOrganizationTasks();
                 return;
             }
@@ -7777,68 +6684,7 @@ void MainWindow::sendOrganizationTaskDelete(const QString &taskId,
         {404});
 }
 
-// code-health: allow(git-in-loop) the repository scan is inside the QtConcurrent::run worker
-void MainWindow::attachExistingWorktreeToOrganizationTask()
-{
-    const QJsonObject task = selectedOrganizationTask(
-        m_organizationTasksTable, m_organizationTasks);
-    const QString taskId = taskText(task, QStringLiteral("id"));
-    if (taskId.isEmpty())
-        return;
-    int preferred = 0;
-    const QStringList repositories = taskWorkItemRepositories(
-        taskText(task, QStringLiteral("repository")), &preferred);
-    QString start = QDir::homePath();
-    if (!repositories.isEmpty()) {
-        const QString nested =
-            QDir(repositories.first()).filePath(QStringLiteral(".worktrees"));
-        start = QDir(nested).exists() ? nested : repositories.first();
-    }
-    const QString picked = QFileDialog::getExistingDirectory(
-        this, QStringLiteral("Attach a worktree to this task"), start);
-    if (picked.isEmpty())
-        return;
-    auto *watcher = new QFutureWatcher<QPair<QString, forkmesh::taskwork::WorktreeEntry>>(this);
-    connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, taskId, picked] {
-                watcher->deleteLater();
-                const auto [repoPath, entry] = watcher->result();
-                const QString branch = entry.branch.startsWith(QLatin1String("refs/heads/"))
-                                           ? entry.branch.mid(11)
-                                           : QString();
-                if (repoPath.isEmpty() || branch.isEmpty()) {
-                    flashMessage(
-                        repoPath.isEmpty()
-                            ? QStringLiteral("%1 is not a linked worktree of a "
-                                             "repository on this desktop.")
-                                  .arg(picked)
-                            : QStringLiteral("%1 has no branch checked out.").arg(picked),
-                        true, QString(), forkmesh::kLocalOperationNoticeKind);
-                    return;
-                }
-                QString repository;
-                for (const RepositoryRecord &repo : std::as_const(m_repositories))
-                    if (forkmesh::taskwork::samePath(repo.localPath, repoPath))
-                        repository = repo.owner + QLatin1Char('/') + repo.name;
-                attachOrganizationTaskWorkItem(
-                    taskId,
-                    forkmesh::taskwork::validRepository(repository) ? repository
-                                                                    : QString(),
-                    branch, entry.path);
-                flashMessage(QStringLiteral("Attaching %1 to the task.").arg(branch),
-                             false, QString(), forkmesh::kLocalOperationNoticeKind);
-            });
-    watcher->setFuture(QtConcurrent::run([repositories, picked] {
-        for (const QString &repo : repositories) {
-            forkmesh::taskwork::WorktreeEntry entry;
-            if (forkmesh::taskwork::findLinkedWorktree(repo, picked, &entry))
-                return qMakePair(repo, entry);
-        }
-        return qMakePair(QString(), forkmesh::taskwork::WorktreeEntry());
-    }));
-}
-
-void MainWindow::deleteClosedOrganizationTasks()
+void TasksPage::deleteClosedOrganizationTasks()
 {
     if (!m_organizationTasksCanManage ||
         m_organizationTaskClosedDeleteInFlight)
@@ -7848,7 +6694,7 @@ void MainWindow::deleteClosedOrganizationTasks()
     QStringList awaitingQaIds;
     for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
         const QJsonObject task = value.toObject();
-        if (!organizationTaskIsClosed(task))
+        if (!taskIsClosed(task))
             continue;
         const QString id = taskText(task, QStringLiteral("id"));
         if (id.isEmpty())
@@ -7898,7 +6744,7 @@ void MainWindow::deleteClosedOrganizationTasks()
     deleteNextClosedOrganizationTask();
 }
 
-void MainWindow::deleteNextClosedOrganizationTask()
+void TasksPage::deleteNextClosedOrganizationTask()
 {
     if (m_organizationTaskClosedDeleteIds.isEmpty()) {
         finishClosedOrganizationTaskDelete();
@@ -7921,12 +6767,8 @@ void MainWindow::deleteNextClosedOrganizationTask()
             const QString code = data.value(QStringLiteral("error")).toString();
             if (ok || code == QLatin1String("task_not_found")) {
                 if (ok)
-                    cleanupOrganizationTaskWorkItems(
-                        id,
-                        localTaskWorkItems(
-                            id,
-                            data.value(QStringLiteral("workItems")).toArray()),
-                        0);
+                    cleanupOrganizationTaskWork(
+                        id, data.value(QStringLiteral("workItems")).toArray(), 0);
                 for (int index = 0; index < m_organizationTasks.size(); ++index) {
                     if (taskText(m_organizationTasks.at(index).toObject(),
                                  QStringLiteral("id")) == id) {
@@ -7939,14 +6781,14 @@ void MainWindow::deleteNextClosedOrganizationTask()
                 deleteNextClosedOrganizationTask();
                 return;
             }
-            if (data.contains(kOrganizationTaskBackoffKey) &&
+            if (data.contains(kTaskBackoffKey) &&
                 m_organizationTaskClosedDeleteRetries <
                     kOrganizationTaskDeleteMaxRetries) {
                 ++m_organizationTaskClosedDeleteRetries;
                 m_organizationTaskClosedDeleteIds.prepend(id);
                 const qint64 waitMs = qBound(
                     qint64(1000),
-                    qint64(data.value(kOrganizationTaskBackoffKey).toDouble()) +
+                    qint64(data.value(kTaskBackoffKey).toDouble()) +
                         500,
                     qint64(10 * 60 * 1000));
                 if (m_organizationTasksStatus)
@@ -7998,7 +6840,7 @@ void MainWindow::deleteNextClosedOrganizationTask()
         {404, 409});
 }
 
-void MainWindow::finishClosedOrganizationTaskDelete()
+void TasksPage::finishClosedOrganizationTaskDelete()
 {
     const QStringList busy = m_organizationTaskClosedDeleteBusy;
     const QString reasons =
@@ -8057,16 +6899,299 @@ void MainWindow::finishClosedOrganizationTaskDelete()
     m_organizationTaskClosedDeleteReasons.clear();
     if (m_organizationTasksStatus)
         m_organizationTasksStatus->setText(summary);
-    if (m_organizationTasksStatus && m_organizationTasksStatus->isVisible())
-        fileMessage(summary, moved == 0 && kept > 0,
-                    forkmesh::kLocalOperationNoticeKind);
-    else
-        flashMessage(summary, moved == 0 && kept > 0, QString(),
-                     forkmesh::kLocalOperationNoticeKind);
+    if (m_organizationTasksStatus && m_organizationTasksStatus->isVisible()) {
+        if (m_host.logActivity)
+            m_host.logActivity(summary);
+    } else {
+        flashMessage(summary, moved == 0 && kept > 0);
+    }
     renderOrganizationTaskRows();
-    if (m_organizationTasksLoading)
-        m_organizationTaskEventPending = true;
-    else
-        refreshOrganizationTasks();
+    if (m_store)
+        m_store->handleEvent();
     updateOrganizationTaskActions();
+}
+
+TasksPage::TasksPage(const forkmesh::market::NativePackageHost &host,
+                     QWidget *parent)
+    : forkmesh::market::NativePackageWidget(parent), m_host(host),
+      m_store(OrganizationTaskStore::current())
+{
+    m_layout = new QVBoxLayout(this);
+    m_layout->setContentsMargins(0, 0, 0, 0);
+    m_layout->setSpacing(0);
+    if (!m_store)
+        return;
+    connect(m_store, &OrganizationTaskStore::catalogLoaded, this,
+            [this](const QJsonObject &payload) { onCatalogLoaded(payload); });
+    connect(m_store, &OrganizationTaskStore::catalogFailed, this,
+            [this](const QString &error) { onCatalogFailed(error); });
+    connect(m_store, &OrganizationTaskStore::loadingChanged, this, [this] {
+        updateOrganizationTaskActions();
+        updateOrganizationTaskRefreshAge();
+    });
+    connect(m_store, &OrganizationTaskStore::taskChanged, this,
+            [this](const QJsonObject &task) {
+                const QString id = taskText(task, QStringLiteral("id"));
+                for (int index = 0; index < m_organizationTasks.size(); ++index) {
+                    if (taskText(m_organizationTasks.at(index).toObject(),
+                                 QStringLiteral("id")) != id)
+                        continue;
+                    QJsonObject updated = m_organizationTasks.at(index).toObject();
+                    updated.insert(QStringLiteral("workItems"),
+                                   task.value(QStringLiteral("workItems")));
+                    m_organizationTasks.replace(index, updated);
+                    return;
+                }
+            });
+}
+
+void TasksPage::ensureBuilt()
+{
+    if (m_section)
+        return;
+    m_section = buildOrganizationTasksSection();
+    m_layout->addWidget(m_section);
+}
+
+void TasksPage::refresh()
+{
+    ensureBuilt();
+    if (!m_organizationTasksLoaded)
+        refreshOrganizationTasks();
+    refreshOrganizationTaskAgentRows();
+    if (m_host.userDirectory)
+        m_host.userDirectory();
+}
+
+void TasksPage::setHostSearchQuery(const QString &query)
+{
+    const QString trimmed = query.trimmed();
+    updateOrganizationTaskRefreshAge();
+    if (m_organizationTasksSearchMirror == trimmed)
+        return;
+    m_organizationTasksSearchMirror = trimmed;
+    m_organizationTaskShownRows = 0;
+    renderOrganizationTaskRows();
+}
+
+QList<forkmesh::market::NativePackageSearchHit>
+TasksPage::searchHits(const QString &rawQuery, int limit) const
+{
+    QList<forkmesh::market::NativePackageSearchHit> hits;
+    const QString query = rawQuery.trimmed();
+    if (query.isEmpty())
+        return hits;
+    const auto contains = [&query](const QString &text) {
+        return !text.isEmpty() && text.contains(query, Qt::CaseInsensitive);
+    };
+    const auto snippet = [&query](const QString &text) {
+        QString flat = text;
+        flat.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        flat = flat.simplified();
+        const int at = int(flat.indexOf(query, 0, Qt::CaseInsensitive));
+        if (at < 0)
+            return flat.left(120);
+        const int start = qMax(0, at - 40);
+        QString out = flat.mid(start, 140);
+        if (start > 0)
+            out.prepend(QString::fromUtf8("\xE2\x80\xA6"));
+        if (start + 140 < flat.size())
+            out.append(QString::fromUtf8("\xE2\x80\xA6"));
+        return out;
+    };
+    static const char *const fields[] = {
+        "title", "details", "assignee", "repository", "completionNote",
+        "department", "status", "id"};
+    const QJsonArray tasks =
+        m_section ? m_organizationTasks : (m_store ? m_store->tasks() : QJsonArray());
+    const QString dot = QString::fromUtf8("  \xC2\xB7  ");
+    for (const QJsonValue &value : tasks) {
+        if (hits.size() >= limit)
+            break;
+        const QJsonObject task = value.toObject();
+        const QString id = taskText(task, QStringLiteral("id"));
+        if (id.isEmpty())
+            continue;
+        int field = -1;
+        for (int index = 0; index < int(std::size(fields)); ++index) {
+            if (contains(task.value(QLatin1String(fields[index])).toString())) {
+                field = index;
+                break;
+            }
+        }
+        if (field < 0 &&
+            contains(task.value(QStringLiteral("qa"))
+                         .toObject()
+                         .value(QStringLiteral("howToTest"))
+                         .toString()))
+            field = 8;
+        if (field < 0)
+            continue;
+        QString title = taskText(task, QStringLiteral("title"));
+        if (title.isEmpty())
+            title = id;
+        QStringList detail;
+        if (field == 1 || field == 4)
+            detail << snippet(task.value(QLatin1String(
+                                             field == 1 ? "details"
+                                                        : "completionNote"))
+                                  .toString());
+        const QString status = taskText(task, QStringLiteral("status"));
+        if (!status.isEmpty())
+            detail << status;
+        hits.append({id, title, detail.join(dot)});
+    }
+    return hits;
+}
+
+void TasksPage::activateSearchHit(const QString &id)
+{
+    if (id.isEmpty())
+        showPage();
+    else
+        openOrganizationTask(id);
+}
+
+void TasksPage::prepareSearch()
+{
+    if (m_store)
+        m_store->refreshOnce();
+}
+
+int TasksPage::navigationBadge() const
+{
+    return m_store ? m_store->badgeCount() : 0;
+}
+
+bool TasksPage::acceptsHostCommand(const QString &command) const
+{
+    return command == QLatin1String("task.open") ||
+           command == QLatin1String("task.created") ||
+           command == QLatin1String("task.composeFromText");
+}
+
+bool TasksPage::hostCommand(const QString &command, const QJsonObject &args)
+{
+    if (command == QLatin1String("task.open")) {
+        openOrganizationTask(args.value(QStringLiteral("id")).toString());
+        return true;
+    }
+    if (command == QLatin1String("task.created")) {
+        openCreatedOrganizationTask(args.value(QStringLiteral("task")).toObject());
+        return true;
+    }
+    if (command == QLatin1String("task.composeFromText")) {
+        ensureBuilt();
+        const QString done = args.value(QStringLiteral("done")).toString();
+        composeOrganizationTask(
+            args.value(QStringLiteral("heading")).toString(),
+            args.value(QStringLiteral("title")).toString(),
+            args.value(QStringLiteral("details")).toString(),
+            [this, done] {
+                if (!done.isEmpty())
+                    flashMessage(done);
+                showPage();
+            });
+        return true;
+    }
+    return false;
+}
+
+void TasksPage::agentSessionsChanged()
+{
+    refreshOrganizationTaskAgentRows();
+}
+
+void TasksPage::accountPicturesChanged()
+{
+    refreshOrganizationTaskPeopleFaces();
+}
+
+void TasksPage::themeChanged()
+{
+    renderOrganizationTaskDetail();
+}
+
+void TasksPage::reloadOrganizationTaskListView()
+{
+    setOrganizationTaskListView(forkmesh::ui::loadListViewMode(
+        QStringLiteral("tasks/listView"), forkmesh::ui::ListViewMode::Full));
+}
+
+QPixmap TasksPage::accountPicture(const QString &account) const
+{
+    return m_host.accountPicture ? m_host.accountPicture(account) : QPixmap();
+}
+
+void TasksPage::flashMessage(const QString &text, bool error)
+{
+    if (m_host.flashMessage)
+        m_host.flashMessage(text, error);
+}
+
+void TasksPage::reportError(const QString &text)
+{
+    if (m_host.reportError)
+        m_host.reportError(text);
+}
+
+void TasksPage::showStatus(const QString &text)
+{
+    if (m_organizationTasksStatus)
+        m_organizationTasksStatus->setText(text);
+}
+
+void TasksPage::showPage()
+{
+    if (m_host.showPage)
+        m_host.showPage();
+}
+
+bool TasksPage::windowCommand(const QString &command, const QJsonObject &args)
+{
+    return m_host.windowCommand && m_host.windowCommand(command, args);
+}
+
+QJsonValue TasksPage::windowQuery(const QString &command,
+                                  const QJsonObject &args) const
+{
+    return m_host.windowQuery ? m_host.windowQuery(command, args) : QJsonValue();
+}
+
+void TasksPage::publishRepositoryLogos()
+{
+    publishTaskRepositoryLogos(
+        windowQuery(QStringLiteral("task.repositoryLogos"), {}).toArray());
+}
+
+void TasksPage::cleanupOrganizationTaskWork(const QString &taskId,
+                                            const QJsonArray &workItems,
+                                            int mode)
+{
+    windowCommand(QStringLiteral("task.cleanupWork"),
+                  {{QStringLiteral("taskId"), taskId},
+                   {QStringLiteral("workItems"), workItems},
+                   {QStringLiteral("mode"), mode}});
+}
+
+namespace {
+
+const forkmesh::market::NativePackageRegistration tasksRegistration({
+    QStringLiteral("builtin:tasks"),
+    {QStringLiteral("extension.native")},
+    QStringLiteral("Tasks"),
+    QStringLiteral("list-unordered"),
+    QString(),
+    QString(),
+    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+        return new TasksPage(host, parent);
+    },
+    QString(),
+    nullptr,
+    {},
+    {},
+});
+
+}
+
 }

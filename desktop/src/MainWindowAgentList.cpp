@@ -5,6 +5,7 @@
 #include "AccountCapability.h"
 #include "ForkMeshPackageRegistry.h"
 #include "RepoStatsStore.h"
+#include "SystemStats.h"
 #include "AgentCliLocator.h"
 #include "AgentJail.h"
 #include "AgentCapabilityBroker.h"
@@ -12,6 +13,7 @@
 #include "AgentPermissionController.h"
 #include "AgentPromptImages.h"
 #include "AgentToolCatalog.h"
+#include "AgentPerformanceCharts.h"
 #include "AgentToolEfficiencyBoard.h"
 #include "AgentGuardrailBoard.h"
 #include "AgentToolPolicy.h"
@@ -405,16 +407,42 @@ void MainWindow::initAgents()
     if (QString runError; !m_agentRunLog->load(&runError))
         qWarning() << "agent run log:" << runError;
     m_agentRunLog->changed = [this] { scheduleAgentEfficiencyRefresh(); };
+    m_agentPerformance = std::make_unique<AgentPerformanceHistory>(
+        QDir(root).filePath(QStringLiteral("performance-history.json")));
+    if (QString historyError; !m_agentPerformance->load(&historyError))
+        qWarning() << "agent performance history:" << historyError;
+    if (!m_agentPerformance->loadedFromDisk() &&
+        m_agentPerformance->seedFromRuns(m_agentRunLog->runs()))
+        m_agentPerformance->saveLater();
+    m_agentPerformance->changed = [this] { scheduleAgentPerformanceSave(); };
+    m_agentRunLog->runFinished = [this](const AgentRunRecord &run) {
+        if (m_agentPerformance)
+            m_agentPerformance->recordRun(run);
+    };
     m_agentToolImprovements->occurred = [this](int sessionId, const QString &, qint64 tokens) {
         if (m_agentRunLog)
             m_agentRunLog->noteSignal(sessionId, tokens);
+        if (m_agentPerformance)
+            m_agentPerformance->recordSignal(tokens);
     };
     m_agentToolLedger->callObserved = [this](const AgentToolCallObservation &call) {
         if (m_agentRunLog)
             m_agentRunLog->observeCall(call);
+        if (m_agentPerformance)
+            m_agentPerformance->recordCall(call);
         if (m_agentToolImprovements)
             m_agentToolImprovements->observe(call);
     };
+    if (m_agentPerformanceCharts)
+        m_agentPerformanceCharts->setHistory(m_agentPerformance.get());
+    if (!m_agentPerformanceTimer) {
+        m_agentPerformanceTimer = new QTimer(this);
+        m_agentPerformanceTimer->setInterval(60 * 1000);
+        connect(m_agentPerformanceTimer, &QTimer::timeout, this,
+                [this] { sampleAgentPerformance(); });
+        m_agentPerformanceTimer->start();
+        SystemStats::hostCpuPercent();
+    }
     {
         const QStringList disabled = disabledAgentToolFamilies();
         m_agentToolLedger->setDisabledFamilies(
@@ -540,7 +568,7 @@ void MainWindow::reloadAgents(AgentReloadScan scan)
     refreshBranchAgentButton();
     for (const AgentSession &session : std::as_const(m_agentSessions))
         syncOrgTaskAgentStatus(session.id);
-    refreshOrganizationTaskAgentRows();
+    notifyPackagesAgentSessionsChanged();
     updateAgentsNavBadge();
     maybeStartQueuedRebuild();
     updateAgentActionState();
@@ -2042,7 +2070,10 @@ void MainWindow::applyAgentRowCells(int row, const AgentSession &session,
                      .arg(hit.count);
         tip << hit.snippet;
     }
-    issueCell->setText(title);
+    const QString progress = session.merged ? QString() : agentTaskProgress(session.id);
+    issueCell->setData(kAgentTitleBaseRole, title);
+    issueCell->setData(kAgentTaskProgressRole, progress);
+    issueCell->setText(agentTitleWithProgress(title, progress));
     const bool ticking = m_agentListView == AgentListView::Compact &&
                          !session.merged && session.status == AgentStatus::Running;
     issueCell->setData(kAgentTickerRole,

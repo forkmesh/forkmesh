@@ -115,4 +115,26 @@ private:
     QHash<QString, qint64> m_seen;
 };
 
+struct TokenStep {
+    qint64 in = 0;
+    qint64 out = 0;
+};
+
+class LiveTokenMeter
+{
+public:
+    static constexpr qint64 kCharsPerToken = 4;
+
+    TokenStep add(const QJsonObject &event);
+
+private:
+    TokenStep addMessage(const QJsonObject &message);
+
+    InputTokenCounter m_in;
+    OutputTokenCounter m_out;
+    QString m_message;
+    qint64 m_messageChars = 0;
+    qint64 m_codexChars = 0;
+};
+
 }

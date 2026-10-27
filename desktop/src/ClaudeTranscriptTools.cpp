@@ -979,6 +979,50 @@ qint64 InputTokenCounter::add(const QJsonObject &message)
     return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), in);
 }
 
+TokenStep LiveTokenMeter::addMessage(const QJsonObject &message)
+{
+    return {m_in.add(message), m_out.add(message)};
+}
+
+TokenStep LiveTokenMeter::add(const QJsonObject &event)
+{
+    const QString type = event.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("assistant"))
+        return addMessage(event.value(QStringLiteral("message")).toObject());
+    if (type == QLatin1String("_codex_agent_delta")) {
+        const qint64 before = m_codexChars / kCharsPerToken;
+        m_codexChars += event.value(QStringLiteral("delta")).toString().size();
+        return {0, m_codexChars / kCharsPerToken - before};
+    }
+    if (type != QLatin1String("stream_event"))
+        return {};
+    const QJsonObject inner = event.value(QStringLiteral("event")).toObject();
+    const QString innerType = inner.value(QStringLiteral("type")).toString();
+    if (innerType == QLatin1String("message_start")) {
+        const QJsonObject message = inner.value(QStringLiteral("message")).toObject();
+        m_message = message.value(QStringLiteral("id")).toString();
+        m_messageChars = 0;
+        return m_message.isEmpty() ? TokenStep{} : addMessage(message);
+    }
+    if (m_message.isEmpty())
+        return {};
+    if (innerType == QLatin1String("content_block_delta")) {
+        const QJsonObject delta = inner.value(QStringLiteral("delta")).toObject();
+        m_messageChars += delta.value(QStringLiteral("text")).toString().size() +
+                          delta.value(QStringLiteral("thinking")).toString().size() +
+                          delta.value(QStringLiteral("partial_json")).toString().size();
+        const qint64 guess = (m_messageChars + kCharsPerToken - 1) / kCharsPerToken;
+        return {0, m_out.add(QJsonObject{
+                       {QStringLiteral("id"), m_message},
+                       {QStringLiteral("usage"),
+                        QJsonObject{{QStringLiteral("output_tokens"), double(guess)}}}})};
+    }
+    if (innerType == QLatin1String("message_delta"))
+        return addMessage(QJsonObject{{QStringLiteral("id"), m_message},
+                                      {QStringLiteral("usage"), inner.value(QStringLiteral("usage"))}});
+    return {};
+}
+
 namespace {
 
 struct ShellWord {
