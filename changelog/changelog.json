@@ -12,6 +12,8 @@
  ],
  "notes": [
   {"date": "2026-10-27", "area": "Desktop", "text": "When the desktop was built without the embedded browser, the Browser tab now has an Install embedded browser button that installs it and rebuilds the app."},
+  {"date": "2026-10-27", "area": "Agents", "text": "Sessions now open with side panels for progress, outputs, sources, background tasks, changes, context and tools, which you can drag into any order; the Agents page has them too in a new Details tab."},
+  {"date": "2026-10-27", "area": "iPhone", "text": "With more than one desktop, Agents now lists every desktop's agents together, each labelled with its desktop."},
   {"date": "2026-10-27", "area": "Agents", "text": "Agent transcripts now show Claude Code version control state changes such as pushes."},
   {"date": "2026-10-27", "area": "Desktop", "text": "Clicking a workflow on the Workflows page opens a details pane on the right with its settings and every action, and shows its latest run's log at the bottom right."},
   {"date": "2026-10-27", "area": "Market", "text": "The web CRM now has the desktop's layout, with every list and pipeline in a column on the left and all its pages there, and each member can connect their own Zoho Mail to send and sync from their own mailbox."},

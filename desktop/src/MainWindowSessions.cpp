@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
+#include "MainWindowNextAccess.h"
 #include "AgentCloudSessions.h"
 #include "AgentHub.h"
 #include "AgentLogText.h"
@@ -9,6 +10,7 @@
 #include "ClaudeSessionScan.h"
 #include "ClaudeTranscriptView.h"
 #include "DesignTokens.h"
+#include "SessionSidePanels.h"
 #include "UiKit.h"
 
 #include <QAbstractItemView>
@@ -107,19 +109,6 @@ struct SessionsPageUi : public QObject {
     QPointer<QPushButton> send;
     QPointer<QLabel> composerNote;
 
-    struct DetailRow {
-        QPointer<QWidget> row;
-        QPointer<QLabel> icon;
-        QPointer<QLabel> text;
-        QPointer<QLabel> trailing;
-    };
-    struct DetailCard {
-        QPointer<QFrame> frame;
-        QPointer<QWidget> body;
-        QPointer<QLabel> chevron;
-        QPointer<QLabel> meta;
-        QList<DetailRow> rows;
-    };
     QPointer<QPushButton> filterButton;
     QPointer<QAction> searchIcon;
     QPointer<QWidget> header;
@@ -135,12 +124,7 @@ struct SessionsPageUi : public QObject {
     QHBoxLayout *composerHostLayout = nullptr;
     QPointer<QWidget> starters;
     QPointer<QLabel> composerModel;
-    QPointer<QScrollArea> details;
-    DetailCard envCard;
-    DetailCard contextCard;
-    DetailCard changesCard;
-    QPointer<QWidget> contextBarRow;
-    QPointer<QProgressBar> contextBar;
+    QPointer<forkmesh::ui::SessionSidePanels> details;
     bool next = false;
     bool panelOpen = true;
     bool groupByRepo = true;
@@ -458,23 +442,6 @@ QString sessionsGroupKey(const AgentSession &session, bool byRepo)
                                    : session.owner + QLatin1Char('/') + session.name;
 }
 
-QString sessionsCompactCount(qint64 value)
-{
-    if (value < 1000)
-        return QString::number(value);
-    if (value < 1000000)
-        return QString::number(value / 1000.0, 'f', 1) + QLatin1Char('k');
-    return QString::number(value / 1000000.0, 'f', 1) + QLatin1Char('M');
-}
-
-QString sessionsHomePath(const QString &path)
-{
-    const QString home = QDir::homePath();
-    if (!home.isEmpty() && (path == home || path.startsWith(home + QLatin1Char('/'))))
-        return QLatin1Char('~') + path.mid(home.size());
-    return path;
-}
-
 qreal sessionsIconRatio()
 {
     return qMax<qreal>(2.0, qApp ? qApp->devicePixelRatio() : 1.0);
@@ -713,247 +680,13 @@ protected:
     }
 };
 
-SessionsPageUi::DetailCard makeSessionsCard(QWidget *parent, QVBoxLayout *into,
-                                            const QString &title)
+void openSessionsPanels(SessionsPageUi *ui)
 {
-    SessionsPageUi::DetailCard card;
-    card.frame = new QFrame(parent);
-    card.frame->setObjectName(QStringLiteral("sessionsDetailCard"));
-    card.frame->setAttribute(Qt::WA_StyledBackground, true);
-    auto *layout = new QVBoxLayout(card.frame);
-    layout->setContentsMargins(0, 0, 0, 6);
-    layout->setSpacing(0);
-    auto *head = new QPushButton(card.frame);
-    head->setObjectName(QStringLiteral("sessionsDetailHeader"));
-    head->setCursor(Qt::PointingHandCursor);
-    head->setFixedHeight(40);
-    auto *headLayout = new QHBoxLayout(head);
-    headLayout->setContentsMargins(14, 0, 14, 0);
-    headLayout->setSpacing(6);
-    auto *titleLabel = new QLabel(title, head);
-    titleLabel->setObjectName(QStringLiteral("sessionsDetailTitle"));
-    titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    card.chevron = new QLabel(head);
-    card.chevron->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    setLabelOcticon(card.chevron, QStringLiteral("chevron-down"), 12);
-    card.meta = new QLabel(head);
-    card.meta->setObjectName(QStringLiteral("sessionsDetailMeta"));
-    card.meta->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    headLayout->addWidget(titleLabel);
-    headLayout->addWidget(card.chevron);
-    headLayout->addStretch(1);
-    headLayout->addWidget(card.meta);
-    card.body = new QWidget(card.frame);
-    card.body->setObjectName(QStringLiteral("sessionsDetailBody"));
-    auto *bodyLayout = new QVBoxLayout(card.body);
-    bodyLayout->setContentsMargins(6, 0, 6, 0);
-    bodyLayout->setSpacing(0);
-    layout->addWidget(head);
-    layout->addWidget(card.body);
-    into->addWidget(card.frame);
-    QPointer<QWidget> body = card.body;
-    QPointer<QLabel> chevron = card.chevron;
-    QObject::connect(head, &QPushButton::clicked, card.frame, [body, chevron] {
-        if (!body)
-            return;
-        const bool open = body->isHidden();
-        body->setVisible(open);
-        if (chevron)
-            setLabelOcticon(chevron, open ? QStringLiteral("chevron-down")
-                                          : QStringLiteral("chevron-right"),
-                            12);
-    });
-    return card;
-}
-
-void addSessionsDetailRow(SessionsPageUi::DetailCard &card, const QString &icon)
-{
-    SessionsPageUi::DetailRow row;
-    row.row = new QWidget(card.body);
-    row.row->setObjectName(QStringLiteral("sessionsDetailRow"));
-    row.row->setFixedHeight(30);
-    auto *layout = new QHBoxLayout(row.row);
-    layout->setContentsMargins(8, 0, 8, 0);
-    layout->setSpacing(10);
-    if (!icon.isEmpty()) {
-        row.icon = new QLabel(row.row);
-        setLabelOcticon(row.icon, icon, 14);
-        layout->addWidget(row.icon);
-    }
-    row.text = new SessionsElidedLabel(row.row);
-    row.text->setObjectName(QStringLiteral("sessionsDetailText"));
-    row.text->setTextFormat(Qt::PlainText);
-    layout->addWidget(row.text, 1);
-    row.trailing = new QLabel(row.row);
-    row.trailing->setObjectName(QStringLiteral("sessionsDetailTrailing"));
-    row.trailing->setTextFormat(Qt::PlainText);
-    layout->addWidget(row.trailing);
-    card.body->layout()->addWidget(row.row);
-    card.rows.append(row);
-}
-
-QScrollArea *buildSessionsDetails(SessionsPageUi *ui, QWidget *parent)
-{
-    auto *scroll = new QScrollArea(parent);
-    scroll->setObjectName(QStringLiteral("sessionsDetails"));
-    scroll->setFixedWidth(288);
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto *inner = new QWidget;
-    inner->setObjectName(QStringLiteral("sessionsDetailsInner"));
-    inner->setAttribute(Qt::WA_StyledBackground, true);
-    auto *layout = new QVBoxLayout(inner);
-    layout->setContentsMargins(10, 10, 10, 10);
-    layout->setSpacing(8);
-
-    ui->envCard = makeSessionsCard(inner, layout, QStringLiteral("Environment"));
-    for (const QString &icon :
-         {QStringLiteral("device-desktop"), QStringLiteral("file-directory"),
-          QStringLiteral("git-branch"), QStringLiteral("smart-toy"),
-          QStringLiteral("shield-check")})
-        addSessionsDetailRow(ui->envCard, icon);
-
-    ui->contextCard = makeSessionsCard(inner, layout, QStringLiteral("Context"));
-    ui->contextBarRow = new QWidget(ui->contextCard.body);
-    auto *barLayout = new QVBoxLayout(ui->contextBarRow);
-    barLayout->setContentsMargins(8, 2, 8, 6);
-    ui->contextBar = new QProgressBar(ui->contextBarRow);
-    ui->contextBar->setObjectName(QStringLiteral("sessionsContextBar"));
-    ui->contextBar->setTextVisible(false);
-    ui->contextBar->setRange(0, 1000);
-    ui->contextBar->setFixedHeight(6);
-    barLayout->addWidget(ui->contextBar);
-    ui->contextCard.body->layout()->addWidget(ui->contextBarRow);
-    for (int row = 0; row < 5; ++row)
-        addSessionsDetailRow(ui->contextCard, QString());
-
-    ui->changesCard = makeSessionsCard(inner, layout, QStringLiteral("Changes"));
-    ui->changesCard.meta->setTextFormat(Qt::RichText);
-    for (const QString &icon :
-         {QStringLiteral("file-diff"), QStringLiteral("pencil"),
-          QStringLiteral("git-pull-request"), QStringLiteral("alert")})
-        addSessionsDetailRow(ui->changesCard, icon);
-
-    layout->addStretch(1);
-    scroll->setWidget(inner);
-    return scroll;
-}
-
-struct SessionsDetails {
-    QString machine;
-    QString machineNote;
-    QString machineIcon;
-    QString path;
-    QString pathFull;
-    QString branch;
-    QString branchNote;
-    QString agent;
-    QString mode;
-    qint64 contextUsed = 0;
-    qint64 contextWindow = 0;
-    qint64 totalTokens = 0;
-    double costUsd = 0.0;
-    int files = -1;
-    int added = -1;
-    int removed = -1;
-    int dirty = -1;
-    int prNumber = 0;
-    bool conflicted = false;
-};
-
-void setSessionsDetailRow(const SessionsPageUi::DetailRow &row, const QString &text,
-                          const QString &trailing, const QString &tip = QString())
-{
-    if (!row.row || !row.text || !row.trailing)
+    if (!ui || !ui->next)
         return;
-    row.row->setVisible(!text.isEmpty());
-    row.text->setText(text);
-    row.trailing->setText(trailing);
-    row.trailing->setVisible(!trailing.isEmpty());
-    row.row->setToolTip(tip);
-}
-
-void fillSessionsDetails(SessionsPageUi *ui, const SessionsDetails &d)
-{
-    SessionsPageUi::DetailCard &env = ui->envCard;
-    if (env.rows.size() >= 5) {
-        if (QLabel *icon = env.rows.at(0).icon;
-            icon && icon->property("forkmeshOcticon").toString() != d.machineIcon)
-            setLabelOcticon(icon, d.machineIcon, 14);
-        setSessionsDetailRow(env.rows.at(0), d.machine, d.machineNote);
-        setSessionsDetailRow(env.rows.at(1), d.path, QString(), d.pathFull);
-        setSessionsDetailRow(env.rows.at(2), d.branch, d.branchNote, d.branch);
-        setSessionsDetailRow(env.rows.at(3), d.agent, QString());
-        setSessionsDetailRow(env.rows.at(4),
-                             d.mode.isEmpty() ? QString()
-                                              : QStringLiteral("%1 mode").arg(d.mode),
-                             QString());
-    }
-
-    SessionsPageUi::DetailCard &context = ui->contextCard;
-    const bool hasWindow = d.contextWindow > 0;
-    if (context.frame)
-        context.frame->setVisible(hasWindow || d.totalTokens > 0 || d.costUsd > 0.0);
-    if (ui->contextBarRow)
-        ui->contextBarRow->setVisible(hasWindow);
-    const qint64 used = qBound<qint64>(0, d.contextUsed, qMax<qint64>(0, d.contextWindow));
-    if (ui->contextBar && hasWindow)
-        ui->contextBar->setValue(int(used * 1000 / d.contextWindow));
-    if (context.meta)
-        context.meta->setText(
-            hasWindow ? QStringLiteral("%1%").arg(qRound(used * 100.0 / d.contextWindow))
-                      : QString());
-    if (context.rows.size() >= 5) {
-        setSessionsDetailRow(context.rows.at(0), hasWindow ? QStringLiteral("Used") : QString(),
-                             sessionsCompactCount(used));
-        setSessionsDetailRow(context.rows.at(1), hasWindow ? QStringLiteral("Free") : QString(),
-                             sessionsCompactCount(d.contextWindow - used));
-        setSessionsDetailRow(context.rows.at(2),
-                             hasWindow ? QStringLiteral("Window") : QString(),
-                             sessionsCompactCount(d.contextWindow));
-        setSessionsDetailRow(context.rows.at(3),
-                             d.totalTokens > 0 ? QStringLiteral("Tokens used") : QString(),
-                             sessionsCompactCount(d.totalTokens));
-        setSessionsDetailRow(context.rows.at(4),
-                             d.costUsd > 0.0 ? QStringLiteral("Cost") : QString(),
-                             QStringLiteral("$%1").arg(d.costUsd, 0, 'f', 2));
-    }
-
-    SessionsPageUi::DetailCard &changes = ui->changesCard;
-    const bool hasStat = d.files >= 0;
-    if (changes.frame)
-        changes.frame->setVisible(hasStat || d.prNumber > 0);
-    if (changes.meta)
-        changes.meta->setText(
-            hasStat && d.added >= 0 && d.removed >= 0
-                ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
-                                 "<span style=\"color:%3\">−%4</span>")
-                      .arg(Theme::hex(Theme::Role::Success))
-                      .arg(d.added)
-                      .arg(Theme::hex(Theme::Role::Danger))
-                      .arg(d.removed)
-                : QString());
-    if (changes.rows.size() >= 4) {
-        setSessionsDetailRow(changes.rows.at(0),
-                             !hasStat        ? QString()
-                             : d.files == 0  ? QStringLiteral("No files changed")
-                             : d.files == 1  ? QStringLiteral("1 file changed")
-                                             : QStringLiteral("%1 files changed").arg(d.files),
-                             QString());
-        setSessionsDetailRow(changes.rows.at(1),
-                             d.dirty > 0 ? QStringLiteral("%1 uncommitted").arg(d.dirty)
-                                         : QString(),
-                             QString());
-        setSessionsDetailRow(changes.rows.at(2),
-                             d.prNumber > 0
-                                 ? QStringLiteral("Pull request #%1").arg(d.prNumber)
-                                 : QString(),
-                             QString());
-        setSessionsDetailRow(changes.rows.at(3),
-                             d.conflicted ? QStringLiteral("Conflicts with the base branch")
-                                          : QString(),
-                             QString());
-    }
+    ui->panelOpen = true;
+    if (ui->panelToggle && !ui->panelToggle->isChecked())
+        ui->panelToggle->setChecked(true);
 }
 
 void retintSessionsIcons(SessionsPageUi *ui)
@@ -1255,7 +988,8 @@ QWidget *MainWindow::buildSessionsSection()
         ui->columnLayout->setContentsMargins(0, 0, 0, 0);
         ui->columnLayout->setSpacing(0);
         bodyLayout->addWidget(ui->column, 1);
-        ui->details = buildSessionsDetails(ui, body);
+        ui->details = new forkmesh::ui::SessionSidePanels(body);
+        ui->details->setFixedWidth(300);
         ui->details->hide();
         bodyLayout->addWidget(ui->details);
         centerLayout->addWidget(body, 1);
@@ -2092,59 +1826,12 @@ void MainWindow::refreshSessionsHeader()
             ui->branchBadge->setVisible(!branch.isEmpty());
             ui->branchBadge->setToolTip(branch);
         }
-        const bool showDetails = session && ui->panelOpen && ui->details;
-        if (ui->details)
+        const bool showDetails = (session || ui->newMode) && ui->panelOpen && ui->details;
+        if (ui->details) {
             ui->details->setVisible(showDetails);
-        if (showDetails) {
-            const bool cloud = isCloudSession(session->id);
-            const bool outside = isExternalSession(session->id) && !cloud;
-            const AgentDiffStat stat = m_agentDiffStats.value(session->id);
-            SessionsDetails details;
-            if (cloud) {
-                details.machine = session->cloudNode.isEmpty() ? QStringLiteral("Cloud runner")
-                                                               : session->cloudNode;
-                details.machineNote = session->cloudHere ? QStringLiteral("this computer")
-                                                         : QStringLiteral("cloud");
-                details.machineIcon = QStringLiteral("cloud");
-            } else {
-                details.machine = QSysInfo::machineHostName();
-                details.machineNote = outside ? QStringLiteral("outside ForkMesh")
-                                              : QStringLiteral("this computer");
-                details.machineIcon = QStringLiteral("device-desktop");
-            }
-            QString path = stat.worktree;
-            if (path.isEmpty() && outside)
-                path = m_externalSurfaced.value(session->id).cwd;
-            if (path.isEmpty())
-                path = session->claudeImportCwd;
-            details.pathFull = path;
-            details.path = sessionsHomePath(path);
-            details.branch = branch;
-            if (stat.ahead >= 0 && stat.behind >= 0)
-                details.branchNote = QString::fromUtf8("\xE2\x86\x91%1 \xE2\x86\x93%2")
-                                         .arg(stat.ahead)
-                                         .arg(stat.behind);
-            QString agent = cliProviderLabel(session->provider);
-            const QString model = agentModelLabel(session->model);
-            if (!model.isEmpty())
-                agent = agent.isEmpty() ? model
-                                        : agent + QString::fromUtf8(" \xC2\xB7 ") + model;
-            if (outside)
-                agent = model.isEmpty() ? QStringLiteral("Claude Code")
-                                        : QStringLiteral("Claude Code \u00B7 ") + model;
-            details.agent = agent.trimmed();
-            details.mode = sessionsModeLabel(*session);
-            details.contextUsed = session->contextTokens;
-            details.contextWindow = session->contextWindow;
-            details.totalTokens = session->totalTokens;
-            details.costUsd = session->costUsd;
-            details.files = stat.files;
-            details.added = stat.added;
-            details.removed = stat.removed;
-            details.dirty = stat.dirty;
-            details.conflicted = stat.conflicted;
-            details.prNumber = session->prNumber;
-            fillSessionsDetails(ui, details);
+            if (showDetails)
+                forkmesh::ui::NextAccess::fillSessionSidePanels(*this, ui->details,
+                                                                session ? session->id : 0);
         }
     }
     if (!session) {
@@ -2185,6 +1872,78 @@ void MainWindow::refreshSessionsHeader()
         ui->status->style()->polish(ui->status);
     }
     ui->status->show();
+}
+
+void forkmesh::ui::NextAccess::sessionStarted(MainWindow &window, int sessionId)
+{
+    SessionsPageUi *ui = window.m_sessionsUi;
+    if (ui && (ui->newMode || ui->openId == 0 || ui->openId == sessionId))
+        openSessionsPanels(ui);
+    workspaceSessionStarted(window, sessionId);
+}
+
+void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
+                                                     SessionSidePanels *panels, int sessionId)
+{
+    if (!panels)
+        return;
+    SessionSidePanels::Details details;
+    const AgentSession *session = sessionId != 0 ? window.findAgentSession(sessionId) : nullptr;
+    if (!session) {
+        panels->setDetails(details);
+        return;
+    }
+    details.session = true;
+    const bool cloud = window.isCloudSession(session->id);
+    const bool outside = window.isExternalSession(session->id) && !cloud;
+    const AgentDiffStat stat = window.m_agentDiffStats.value(session->id);
+    if (cloud) {
+        details.machine = session->cloudNode.isEmpty() ? QStringLiteral("Cloud runner")
+                                                       : session->cloudNode;
+        details.machineNote = session->cloudHere ? QStringLiteral("this computer")
+                                                 : QStringLiteral("cloud");
+        details.machineIcon = QStringLiteral("cloud");
+    } else {
+        details.machine = QSysInfo::machineHostName();
+        details.machineNote = outside ? QStringLiteral("outside ForkMesh")
+                                      : QStringLiteral("this computer");
+        details.machineIcon = QStringLiteral("device-desktop");
+    }
+    QString branch = session->branchName;
+    if (branch.isEmpty() && outside)
+        branch = window.m_externalSurfaced.value(session->id).gitBranch;
+    QString path = stat.worktree;
+    if (path.isEmpty() && outside)
+        path = window.m_externalSurfaced.value(session->id).cwd;
+    if (path.isEmpty())
+        path = session->claudeImportCwd;
+    details.pathFull = path;
+    details.path = path;
+    details.branch = branch;
+    if (stat.ahead >= 0 && stat.behind >= 0)
+        details.branchNote = QString::fromUtf8("\xE2\x86\x91%1 \xE2\x86\x93%2")
+                                 .arg(stat.ahead)
+                                 .arg(stat.behind);
+    QString agent = cliProviderLabel(session->provider);
+    const QString model = agentModelLabel(session->model);
+    if (!model.isEmpty())
+        agent = agent.isEmpty() ? model : agent + QString::fromUtf8(" \xC2\xB7 ") + model;
+    if (outside)
+        agent = model.isEmpty() ? QStringLiteral("Claude Code")
+                                : QStringLiteral("Claude Code \u00B7 ") + model;
+    details.agent = agent.trimmed();
+    details.mode = window.sessionsModeLabel(*session);
+    details.contextUsed = session->contextTokens;
+    details.contextWindow = session->contextWindow;
+    details.totalTokens = session->totalTokens;
+    details.costUsd = session->costUsd;
+    details.files = stat.files;
+    details.added = stat.added;
+    details.removed = stat.removed;
+    details.dirty = stat.dirty;
+    details.conflicted = stat.conflicted;
+    details.prNumber = session->prNumber;
+    panels->setDetails(details);
 }
 
 void MainWindow::fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
@@ -2492,6 +2251,9 @@ void MainWindow::startNewSessionInSessionsPage()
         return;
     ui->newMode = true;
     ui->openId = 0;
+    openSessionsPanels(ui);
+    if (ui->details)
+        ui->details->clearActivity();
     ++ui->generation;
     ui->queue.clear();
     ui->cursor = 0;
@@ -2536,6 +2298,8 @@ void MainWindow::prepareSessionsTranscript(int sessionId)
     ui->cloudTurns = -1;
     ui->cloudTail = -1;
     ui->renderLimit = 300;
+    if (ui->details)
+        ui->details->clearActivity();
     ui->source = isCloudSession(sessionId)      ? SessionsSource::Cloud
                  : isExternalSession(sessionId) ? SessionsSource::External
                                                 : SessionsSource::Local;
@@ -2599,6 +2363,8 @@ void MainWindow::syncSessionsTranscript()
         ui->sliceQueued = false;
         ui->transcript->clear();
         ui->transcript->setBulkPopulate(true);
+        if (ui->details)
+            ui->details->clearActivity();
         ui->bulk = true;
         ui->cloudTurns = turns;
         ui->cloudTail = tail;
@@ -2778,6 +2544,8 @@ void MainWindow::renderSessionsTranscriptSlice(quint64 generation)
     while (ui->cursor < ui->queue.size() && (!handled || budget.elapsed() < 8)) {
         const SessionsQueued item = ui->queue.at(ui->cursor++);
         handled = true;
+        if (ui->details)
+            ui->details->append(item.event);
         if (item.statsOnly) {
             view->accumulateStatsOnly(item.event);
             continue;
@@ -2824,6 +2592,7 @@ void MainWindow::sendSessionsComposer()
         if (id == 0)
             return;
         ui->composer->clear();
+        openSessionsPanels(ui);
         refreshSessionsList();
         openSessionInSessionsPage(id);
         return;

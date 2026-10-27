@@ -507,6 +507,14 @@ int runWorkspaceSnapshots(MainWindow &window)
         if (grab(dir, QStringLiteral("workspace-conversation")))
             ++saved;
 
+        check(press("workspaceToggleDetails") && shown(dock) &&
+                  shown(named("workspaceDetailsHost")),
+              QStringLiteral("Details shows the session panels in the side "
+                             "panel (%1)")
+                  .arg(label));
+        if (grab(dir, QStringLiteral("workspace-details")))
+            ++saved;
+
         check(press("workspaceToggleTerminal") && shown(dock) &&
                   shown(window.testWorkspaceTerminal()),
               QStringLiteral("Terminal brings the side panel back (%1)").arg(label));

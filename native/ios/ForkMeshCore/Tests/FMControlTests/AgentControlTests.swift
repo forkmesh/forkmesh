@@ -1306,4 +1306,107 @@ final class AgentControlTests: XCTestCase {
         XCTAssertTrue(question.fields.first?.isSecret == true)
         XCTAssertEqual(question.fields.first?.options.first?.detail, "Use the phone build")
     }
+
+    @MainActor func testEveryDesktopOfTheAccountListsItsAgentsAndActionsReachTheRightOne() async throws {
+        let desk = try FakeRelayDesktop(node: "desk")
+        let laptop = try FakeRelayDesktop(node: "laptop")
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        desk.handler = { method, _ in
+            method == "agents.list" ? ["sessions": [], "running": 0] : nil
+        }
+        laptop.handler = { method, _ in
+            guard method == "agents.list" else { return nil }
+            return [
+                "sessions": [
+                    ["id": 7, "repositoryName": "app", "status": "running", "prompt": "Fix the build", "stoppable": true,
+                     "startedAtMs": 900],
+                    ["id": 4, "repositoryName": "app", "status": "done", "prompt": "Docs", "startedAtMs": 100],
+                ],
+                "running": 1,
+            ]
+        }
+        let fakes = [desk.publicKey: desk, laptop.publicKey: laptop]
+        var dialled: [String] = []
+        let store = InMemoryKeyValueStore()
+        let hub = DesktopControlHub(
+            local: nil,
+            openRelay: { target in
+                dialled.append(target.name)
+                guard let fake = fakes[target.key] else { throw LocalControlException("timeout") }
+                return try await RelayControlConnection.open(
+                    channel: fake, identity: identity, desktopKey: target.key, node: target.name)
+            },
+            paired: {
+                [
+                    PairedDesktop(key: desk.publicKey, name: "desk", pairedAtMs: 2),
+                    PairedDesktop(key: laptop.publicKey, name: "laptop", pairedAtMs: 1),
+                ]
+            },
+            store: store)
+        hub.choose(key: desk.publicKey)
+        let center = AgentControlCenter(hub: hub, cloud: nil)
+
+        await center.refresh()
+        XCTAssertEqual(center.otherDesktops.map(\.name), ["laptop"])
+        XCTAssertEqual(center.otherDesktops.first?.summary, "2 agents · 1 running")
+        XCTAssertEqual(
+            center.rows.map(\.id), ["\(laptop.publicKey):desktop:7", "\(laptop.publicKey):desktop:4"],
+            "the other desktop's agents are in the one list, running first")
+        XCTAssertEqual(center.rows.map(\.desktopKey), [laptop.publicKey, laptop.publicKey])
+        XCTAssertEqual(center.rows.map(\.elsewhere), [true, true])
+        XCTAssertEqual(center.rows.map(\.node), ["laptop", "laptop"])
+        XCTAssertNil(center.queuePosition(center.rows[0]), "the queue shown is the chosen desktop's")
+
+        try await center.stop(center.rows[0])
+        XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agents.stop" && $0.obj("params").int("id") == 7 })
+        XCTAssertFalse(desk.requests.contains { $0.str("method") == "agents.stop" }, "the other desktop's id never reaches this one")
+        _ = try await center.transcript(center.rows[1], since: 0)
+        XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agents.transcript" })
+        XCTAssertFalse(desk.requests.contains { $0.str("method") == "agents.transcript" })
+
+        var heard: [String] = []
+        let ops = hub.channel(for: laptop.publicKey)
+        ops.addEventTap { name, _ in heard.append(name) }
+        _ = try await ops.request("agentops.diff", ["sessionId": 7], timeout: 5)
+        XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agentops.diff" })
+        laptop.event("agents.output", ["id": 7])
+        let got = await waitFor { heard.contains("agents.output") }
+        XCTAssertTrue(got, "a channel scoped to the other desktop hears its events")
+
+        hub.choose(key: laptop.publicKey)
+        await center.refresh()
+        XCTAssertEqual(hub.activeKey, laptop.publicKey)
+        XCTAssertEqual(center.rows.map(\.id), ["desktop:7", "desktop:4"])
+        XCTAssertEqual(center.rows.map(\.elsewhere), [false, false])
+        XCTAssertEqual(center.otherDesktops.map(\.name), ["desk"])
+        XCTAssertEqual(center.otherDesktops.first?.summary, "No agents")
+        XCTAssertEqual(dialled, ["desk", "laptop"], "each desktop's channel is opened once and kept")
+    }
+
+    @MainActor func testAnUnreachableOtherDesktopIsListedAsSuch() async throws {
+        let desk = try FakeRelayDesktop(node: "desk")
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        desk.handler = { method, _ in
+            method == "agents.list" ? ["sessions": [["id": 1, "status": "done", "prompt": "Fix"]], "running": 0] : nil
+        }
+        let hub = DesktopControlHub(
+            local: nil,
+            openRelay: { target in
+                guard target.key == desk.publicKey else { throw LocalControlException("timeout") }
+                return try await RelayControlConnection.open(
+                    channel: desk, identity: identity, desktopKey: target.key, node: target.name)
+            },
+            paired: {
+                [
+                    PairedDesktop(key: desk.publicKey, name: "desk", pairedAtMs: 2),
+                    PairedDesktop(key: "A" + String(repeating: "B", count: 42), name: "old-laptop", pairedAtMs: 1),
+                ]
+            })
+        let center = AgentControlCenter(hub: hub, cloud: nil)
+        await center.refresh()
+        XCTAssertEqual(center.rows.map(\.id), ["desktop:1"])
+        XCTAssertEqual(center.otherDesktops.map(\.summary), ["Not reachable"])
+        XCTAssertEqual(center.otherDesktopNotes, ["old-laptop: Not reachable"])
+        XCTAssertEqual(hub.presenceOf("A" + String(repeating: "B", count: 42)), .offline)
+    }
 }
