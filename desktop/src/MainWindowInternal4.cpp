@@ -463,8 +463,51 @@ bool runGitCapture(const QString &dir, const QStringList &args,
     return result.ok;
 }
 
+QString jsonBrokenByMergeResolution(const QString &dir)
+{
+    QByteArray unmerged;
+    if (!runGitCapture(dir, {"diff", "--name-only", "-z", "--diff-filter=U"},
+                       &unmerged, nullptr))
+        return QString();
+    for (const QByteArray &raw : unmerged.split('\0')) {
+        const QString rel = QString::fromUtf8(raw);
+        if (!rel.endsWith(QLatin1String(".json"), Qt::CaseInsensitive))
+            continue;
+        QByteArray ours;
+        if (!runGitCapture(dir, {"show", QStringLiteral("HEAD:") + rel}, &ours,
+                           nullptr))
+            continue;
+        QJsonParseError oursError;
+        QJsonDocument::fromJson(ours, &oursError);
+        if (oursError.error != QJsonParseError::NoError)
+            continue;
+        QFile file(QDir(dir).filePath(rel));
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        const QByteArray merged = file.readAll();
+        QJsonParseError parse;
+        QJsonDocument::fromJson(merged, &parse);
+        if (parse.error == QJsonParseError::NoError)
+            continue;
+        const int line = int(merged.left(parse.offset).count('\n')) + 1;
+        return QStringLiteral("%1 is not valid JSON after resolving its conflicts "
+                              "(%2 on line %3), so the merge was not committed. "
+                              "\"Accept both\" keeps both sides' lines but not "
+                              "the commas and brackets between them: fix that "
+                              "line, then commit again.")
+            .arg(rel, parse.errorString(), QString::number(line));
+    }
+    return QString();
+}
+
 bool commitResolvedMerge(const QString &dir, QString *error)
 {
+    const QString brokenJson = jsonBrokenByMergeResolution(dir);
+    if (!brokenJson.isEmpty()) {
+        if (error)
+            *error = brokenJson;
+        return false;
+    }
     const GitCaptureResult add = runGitCaptureBackgrounded(dir, {"add", "-A"});
     if (!add.ok) {
         if (error)

@@ -87,6 +87,12 @@ tool that ignores `.gitattributes` (a forge's web merge button) still stops
 on a conflict; keeping both sides' lines is then the right resolution. Run
 `python3 tools/changelog.py check` after any merge that touched the file.
 
+The 2026-10-25 breakage came from the desktop merge editor's **Accept both**,
+which put one side's lines straight after the other's. The editor's commit
+(`commitResolvedMerge`) now refuses a conflicted `.json` file that parsed on
+our side but does not parse after the resolution, naming the file and line
+(`jsonBrokenByMergeResolution`).
+
 ## Adding a note
 
 A change a user can notice adds a line:
@@ -99,12 +105,6 @@ python3 tools/changelog.py add --area Chat "Stick stickers on messages."
 `notes`, and skips one that is already there on that date. Nothing needs
 re-rendering: the website reads the file. Give a busy day's entry a `title`
 and `pitch` by adding a line at the top of `releases`.
-
-`python3 tools/changelog.py draft [--since DATE|COMMIT]` prints suggested
-lines from the merged commits since the newest entry (`tools/changelog_draft.py`:
-it drops merges, docs, tests, chores and code-name subjects, groups by area
-and caps lines at 140 characters). Rewrite them in plain English before
-adding them; the drafts are not shipped anywhere on their own.
 
 ## In the apps
 
