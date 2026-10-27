@@ -1,5 +1,0 @@
-[
-  "tests/test_desktop_package_rail_startup.py::test_a_restored_account_has_no_other_path_that_prepares_the_pages",
-  "tests/test_desktop_package_rail_startup.py::test_deferred_startup_prepares_package_pages_whatever_sign_in_decided",
-  "tests/test_desktop_package_rail_startup.py::test_rebuilding_the_package_pages_cannot_be_relied_on_to_prepare_them"
-]

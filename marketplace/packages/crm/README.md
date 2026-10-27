@@ -345,6 +345,56 @@ still pointed there. Now:
 Tests: the two `forbidden_send` tests in `tests/test_auto_email.py` and the
 desktop bar test in `tests/test_note_drafts_and_zoho_guide.py`.
 
+**Every member connects their own Zoho Mail** (1.44.0). Before 1.44.0 Zoho
+Mail was one connection per organization, made by an owner or admin, so every
+member's automated email went out from that one mailbox and only that mailbox
+was synced. Now each member can connect their own mailbox, and the
+organization connection stays as the shared fallback:
+
+- **Stored**: `crm_zoho_members` (`org_bi`, `member_bi`, `member_name`,
+  `updated_at`, sealed `data`), one row per member, with the same fields as
+  the organization's `zoho` record (`region`, `accountId`, `clientId`,
+  `clientSecret` for a Self Client, `refreshToken`, `managed`, `scope`,
+  `connectedAt`, `lastSyncAt`, `lastSentAt`, `sendRefusedAt`,
+  `tokenRejectedAt`, `lastSyncError`). Uninstalling purges it with the rest
+  and drops the table with the schema; the uninstall export leaves it out.
+- **Connecting**: `POST /zoho/connect`, `POST /zoho/exchange` and the new
+  `POST /zoho/disconnect` take `{"mine": true}` for the caller's own mailbox.
+  With `mine` any member may call them; without it they act on the
+  organization connection and stay for owners and admins (disconnect then
+  equals `PUT /settings {"zohoDisconnect": true}`). The one-click `state`
+  carries `mine`; the callback re-checks membership and install (not the
+  role) and redirects with `zoho=connected_mine`. A member's own connection
+  files no team ping.
+- **Projected**: `settings.zohoMine` (`_zoho_mine`) is `_zoho_project` of the
+  caller's own record plus `own: true`, on the summary, `GET /settings`, a
+  settings save, a sync and a connect. `settings.zoho` is still the
+  organization's.
+- **Sending**: automated email (`POST /outreach/auto`) uses the sender's own
+  connection first, then the organization's, then Mailtrap
+  (`_zoho_for`). The send grant (`lastSentAt`, `sendRefusedAt`, ...) is
+  recorded on the connection that was used. A one-off **Compose**
+  (`POST /emails/send`) from a member with their own connection goes out
+  from that mailbox (`_send_own_zoho`; plain text becomes escaped HTML, the
+  answer carries `via: "zoho"` and `fromEmail`) unless the request names a
+  Mailtrap key; members without one keep the Mailtrap path. The organization
+  connection alone does not change Compose.
+- **Syncing**: `POST /mail/import` takes `mailbox: "mine" | "organization"`;
+  without it the caller's own mailbox wins when connected. Each record keeps
+  its own `lastSyncAt`, so the 15-minute auto-sync throttle is per mailbox.
+  The web page auto-syncs both the viewer's mailbox and the organization's.
+- **Privacy**: messages synced from a member's own mailbox carry `ownerBi`
+  and `owner` in their sealed envelope and are listed only for that member
+  (`_mail_visible`): other members, the export and `GET`/`PATCH`/`DELETE
+  /mail/<id>` see them as missing. The listing returns `mine: true` instead of
+  the blind index. Sent mail that matches a contact is still linked to that
+  contact through `_link_message`, so the team sees the email history and the
+  stage moves as before.
+- `email_channel_report` adds `zoho.members`, the number of member
+  connections.
+
+Tests: `tests/test_zoho_per_member.py`.
+
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
 cells open a compose window in the organization's Zoho data center
@@ -871,8 +921,25 @@ raising, so the caller can keep the lead.
 
 ## Surfaces
 
-- **Web**: lists and pipelines, the contacts table, board, detail card,
-  activity, Zoho boxes, import, settings, team, outreach and drafts.
+- **Web** (1.44.0 layout, matching the desktop): a left column lists every
+  list and pipeline (icon, name, share count, contact count, `⋯` menu;
+  right-click, double-click to rename and drag to reorder as before), then
+  **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
+  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
+  CSV list and CRM settings. The open page fills the right; `?section=` is one
+  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  switches back to its contacts. Arrow keys move along the More pages. The
+  column stacks above the page on phones. Controls use the compact sizes, the
+  header's **Add contact** is the page's one `cta` button, and **Hide
+  suggestions** folds the Reach out / Follow up cards into one line
+  (remembered per browser under `forkmesh-crm-next-collapsed`). **My Zoho
+  Mail** shows your own connection's state and steps, Connect with Zoho
+  (one-click), a Self Client code form, Sync now and Disconnect, and the
+  organization mailbox line. The Zoho bar above the page follows your own
+  connection when you have one, else the organization's, and hides when it has
+  no step to show or while My Zoho Mail is open. Compose says which mailbox it
+  sends from. Inbox groups that hold mail from your own mailbox carry **Only
+  you**.
 - **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
   panel), spreadsheet-style editing, a People grid of contacts with pictures,
   imports, and a rail count of never-contacted contacts. Data is read when the
