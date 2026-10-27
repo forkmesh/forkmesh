@@ -5046,6 +5046,7 @@ private:
     void refreshSuggestedApps();
     void testSuggestedApp(const QString &id);
     void installSuggestedApp(const QString &id);
+    void installEmbeddedBrowser();
     bool suggestedAppInstalling(const QString &id) const;
     QString suggestedAppInstallManager(const QString &id, QString *blocker) const;
     // Settings -> Organizations tab: the desktop twin of the website's
@@ -12621,6 +12622,7 @@ private:
     QHash<QString, QPushButton *> m_suggestedAppInstallButtons;
     QHash<QString, QPointer<QProcess>> m_suggestedAppTestProcesses;
     QProcess *m_suggestedAppInstallProcess = nullptr;
+    QPointer<QProcess> m_embeddedBrowserInstallProcess;
     QString m_suggestedAppInstallingId;
     QHash<QString, QString> m_suggestedAppInstallProblems;
     QWidget *m_settingsProfileHost = nullptr;

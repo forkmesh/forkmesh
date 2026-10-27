@@ -2206,6 +2206,18 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-browser-pane-tests
+        tests/test_browser_pane.cpp
+    )
+    target_include_directories(forkmesh-browser-pane-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-browser-pane-tests PRIVATE
+        forkmesh-browser-pane Qt6::Widgets)
+    if(APPLE)
+        set_target_properties(forkmesh-browser-pane-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-git-index-queue-tests
         tests/test_git_index_queue.cpp
         src/GitIndexQueue.h
@@ -4157,6 +4169,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
         forkmesh-browser-privacy-tests
+        forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests
@@ -4524,6 +4537,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-upstream-sync-tests)
     add_test(NAME forkmesh-browser-privacy-tests
              COMMAND forkmesh-browser-privacy-tests)
+    add_test(NAME forkmesh-browser-pane-tests
+             COMMAND forkmesh-browser-pane-tests)
+    set_tests_properties(forkmesh-browser-pane-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-git-index-queue-tests
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
@@ -4739,6 +4756,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
         forkmesh-browser-privacy-tests
+        forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests

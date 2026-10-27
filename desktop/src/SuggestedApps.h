@@ -35,6 +35,7 @@ struct SuggestedAppInstallPlan {
 // implementation of the same task.
 const QVector<SuggestedApp> &suggestedApps();
 const SuggestedApp *suggestedAppById(const QString &id);
+const SuggestedApp &embeddedBrowserComponent();
 
 // Builds an installation command from package-manager executables currently
 // available on PATH. This module never executes a command itself.

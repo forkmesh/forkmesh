@@ -1768,6 +1768,8 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
             window.setAgentCodeMode(false);
         if (tab == TabBrowser && !chrome->browser) {
             chrome->browser = new WorkspaceBrowserPane;
+            chrome->browser->setInstallHandler(
+                [w = &window] { w->installEmbeddedBrowser(); });
             chrome->hosts[TabBrowser]->layout()->addWidget(chrome->browser);
             chrome->iconsReady = false;
         }
