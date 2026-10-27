@@ -281,7 +281,8 @@ def test_lockdown_waits_for_its_steps_then_pings_everything():
     body = entry.pings[0][3]["body"]
     assert len(body) > 900
     assert "key24: v24" in body
-    assert json.dumps(processes, sort_keys=True) in body
+    assert "processes:\n" + "\n".join(
+        "  - " + json.dumps(p, sort_keys=True) for p in processes) in body
     assert "  seal: ok (sealed)" in body
     assert "  firewall: FAILED (nft: exit 1)" in body
     assert "  rqlite: ok (kept: no quorum without it)" in body
@@ -300,3 +301,24 @@ def test_lockdown_without_steps_pings_once_the_settle_time_passes():
     clock.value += ids_alerts.LOCKDOWN_SETTLE_MS
     assert run(d.round()) == 1
     assert "Lockdown steps" not in entry.pings[0][3]["body"]
+
+
+def test_message_leads_with_the_verdict_and_lists_context_line_by_line():
+    detail = {"pid": 7, "verdict": "Likely benign. ForkMesh's own hook.",
+              "parents": ["pid 6 /usr/lib/git-core/git as forkmesh-node: "
+                          "git receive-pack /srv/a.git", "pid 5 x"],
+              "environment": {"SSH_CONNECTION": "203.0.113.9 51000 "
+                                                "198.51.100.1 22"}}
+    title, body = ids_alerts.message({
+        "id": "s1", "node_id": "n5", "severity": "alert", "created_ms": T0,
+        "detector": "service_user_shell", "detail": json.dumps(detail),
+        "summary": "forkmesh-node runs dash (pid 7); likely benign"})
+    assert title.endswith("likely benign")
+    assert body.startswith("forkmesh-node runs dash (pid 7); likely benign\n\n"
+                           "Verdict: Likely benign. ForkMesh's own hook.\n\n"
+                           "Node: n5\n")
+    assert body.count("Verdict:") == 1 and "verdict:" not in body
+    assert ("parents:\n  - pid 6 /usr/lib/git-core/git as forkmesh-node: "
+            "git receive-pack /srv/a.git\n  - pid 5 x\n") in body
+    assert ("environment:\n  SSH_CONNECTION: 203.0.113.9 51000 "
+            "198.51.100.1 22\n") in body
