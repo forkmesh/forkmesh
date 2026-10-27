@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-27", "area": "Desktop", "text": "When the desktop was built without the embedded browser, the Browser tab now has an Install embedded browser button that installs it and rebuilds the app."},
   {"date": "2026-10-27", "area": "Agents", "text": "Sessions now open with side panels for progress, outputs, sources, background tasks, changes, context and tools, which you can drag into any order; the Agents page has them too in a new Details tab."},
   {"date": "2026-10-27", "area": "iPhone", "text": "With more than one desktop, Agents now lists every desktop's agents together, each labelled with its desktop."},
   {"date": "2026-10-27", "area": "Agents", "text": "Agent transcripts now show Claude Code version control state changes such as pushes."},

@@ -12,6 +12,8 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
+#include <utility>
+
 #ifdef FORKMESH_HAVE_WEBENGINE
 #include <QCoreApplication>
 #include <QDir>
@@ -190,10 +192,23 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
     m_placeholderOpen = new QPushButton(QStringLiteral("Open in your browser"));
     m_placeholderOpen->setObjectName(QStringLiteral("workspaceGhostButton"));
     m_placeholderOpen->setCursor(Qt::PointingHandCursor);
+    m_placeholderInstall = new QPushButton(QStringLiteral("Install embedded browser"));
+    m_placeholderInstall->setObjectName(QStringLiteral("workspaceGhostButton"));
+    m_placeholderInstall->setCursor(Qt::PointingHandCursor);
+    m_placeholderInstall->setToolTip(
+        QStringLiteral("Install Qt WebEngine with your package manager, then "
+                       "rebuild and restart ForkMesh so pages load here"));
+    m_placeholderInstall->hide();
+    auto *actions = new QHBoxLayout;
+    actions->setSpacing(8);
+    actions->addStretch(1);
+    actions->addWidget(m_placeholderInstall);
+    actions->addWidget(m_placeholderOpen);
+    actions->addStretch(1);
     holder->addWidget(m_placeholderTitle);
     holder->addWidget(m_placeholderBody);
     holder->addSpacing(4);
-    holder->addWidget(m_placeholderOpen, 0, Qt::AlignHCenter);
+    holder->addLayout(actions);
     holder->addStretch(1);
     m_stack->addWidget(m_placeholder);
 
@@ -205,6 +220,10 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
             [this] { openExternally(); });
     connect(m_placeholderOpen, &QPushButton::clicked, this,
             [this] { openExternally(); });
+    connect(m_placeholderInstall, &QPushButton::clicked, this, [this] {
+        if (m_installHandler)
+            m_installHandler();
+    });
 #ifdef FORKMESH_HAVE_WEBENGINE
     connect(m_back, &QPushButton::clicked, this, [this] {
         if (auto *view = qobject_cast<QWebEngineView *>(m_view))
@@ -236,7 +255,7 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
                              "services are switched off.")
             : QStringLiteral("This build has no embedded browser. Type an "
                              "address above and it opens in your own browser."),
-        false);
+        false, embeddedInstallable());
     syncNavigation();
 }
 
@@ -246,6 +265,15 @@ bool WorkspaceBrowserPane::embeddedAvailable()
     return !headlessPlatform();
 #else
     return false;
+#endif
+}
+
+bool WorkspaceBrowserPane::embeddedInstallable()
+{
+#ifdef FORKMESH_HAVE_WEBENGINE
+    return false;
+#else
+    return true;
 #endif
 }
 
@@ -279,7 +307,7 @@ void WorkspaceBrowserPane::navigate(const QString &text)
     showPlaceholder(url.host().isEmpty() ? url.toString() : url.host(),
                     QStringLiteral("This build has no embedded browser, so the "
                                    "page opens in your own browser."),
-                    true);
+                    true, embeddedInstallable());
     syncNavigation();
 }
 
@@ -305,6 +333,12 @@ void WorkspaceBrowserPane::setIcons(const Icons &icons)
     m_forward->setIcon(icons.forward);
     m_reload->setIcon(icons.reload);
     m_external->setIcon(icons.external);
+}
+
+void WorkspaceBrowserPane::setInstallHandler(std::function<void()> handler)
+{
+    m_installHandler = std::move(handler);
+    syncInstallButton();
 }
 
 void WorkspaceBrowserPane::ensureView()
@@ -341,12 +375,21 @@ void WorkspaceBrowserPane::openExternally()
 
 void WorkspaceBrowserPane::showPlaceholder(const QString &title,
                                            const QString &body,
-                                           bool offerExternal)
+                                           bool offerExternal,
+                                           bool offerInstall)
 {
     m_placeholderTitle->setText(title);
     m_placeholderBody->setText(body);
     m_placeholderOpen->setVisible(offerExternal);
+    m_placeholderOffersInstall = offerInstall;
+    syncInstallButton();
     m_stack->setCurrentWidget(m_placeholder);
+}
+
+void WorkspaceBrowserPane::syncInstallButton()
+{
+    m_placeholderInstall->setVisible(m_placeholderOffersInstall &&
+                                     static_cast<bool>(m_installHandler));
 }
 
 void WorkspaceBrowserPane::syncNavigation()

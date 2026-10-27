@@ -6057,6 +6057,116 @@ void MainWindow::installSuggestedApp(const QString &id)
     process->start(program, arguments);
 }
 
+void MainWindow::installEmbeddedBrowser()
+{
+    if (m_embeddedBrowserInstallProcess &&
+        m_embeddedBrowserInstallProcess->state() != QProcess::NotRunning) {
+        flashMessage(QStringLiteral("The embedded browser is already being installed."));
+        return;
+    }
+    const auto &component = forkmesh::environment::embeddedBrowserComponent();
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        component, availableSuggestedAppInstallers());
+    const QString title = QStringLiteral("Install the embedded browser");
+    if (!plan.isAvailable()) {
+        QMessageBox::information(
+            this, title,
+            QStringLiteral("ForkMesh cannot install Qt WebEngine here: %1\n\n"
+                           "Install your system's Qt 6 WebEngine development "
+                           "package, then use Rebuild & restart.")
+                .arg(plan.unavailableReason));
+        return;
+    }
+
+    QString program = plan.program;
+    QStringList arguments = plan.arguments;
+#ifndef Q_OS_WIN
+    if (plan.requiresAdministrator && geteuid() != 0) {
+        const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
+        if (pkexec.isEmpty()) {
+            QMessageBox::information(
+                this, title,
+                QStringLiteral("Installing Qt WebEngine needs administrator rights "
+                               "and pkexec is not installed. Run this in a "
+                               "terminal, then use Rebuild & restart:\n\nsudo %1")
+                    .arg(suggestedAppCommandText(plan.program, plan.arguments)));
+            return;
+        }
+        arguments.prepend(plan.program);
+        program = pkexec;
+    }
+#endif
+
+    const QString command = suggestedAppCommandText(program, arguments);
+    const auto answer = QMessageBox::question(
+        this, title,
+        QStringLiteral("ForkMesh will install Qt WebEngine with %1, then rebuild "
+                       "and restart so web pages open inside the app.\n\n"
+                       "Command:\n%2\n\nThe package manager may download software "
+                       "from its configured repositories.%3")
+            .arg(plan.managerName, command,
+                 plan.requiresAdministrator
+                     ? QStringLiteral(" Administrator approval may be requested.")
+                     : QString()),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    m_embeddedBrowserInstallProcess = process;
+    auto output = std::make_shared<QString>();
+    logSystem(QStringLiteral("Installing Qt WebEngine with %1.").arg(plan.managerName));
+    flashMessage(QStringLiteral("Installing the embedded browser with %1…")
+                     .arg(plan.managerName));
+
+    connect(process, &QProcess::readyReadStandardOutput, this, [process, output] {
+        output->append(QString::fromUtf8(process->readAllStandardOutput()));
+        if (output->size() > 8000)
+            *output = output->right(8000);
+    });
+    connect(process, &QProcess::finished, this,
+            [this, process, output, title](int exitCode, QProcess::ExitStatus exitStatus) {
+                output->append(QString::fromUtf8(process->readAllStandardOutput()));
+                process->deleteLater();
+                if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                    const QString tail = compactSuggestedAppOutput(*output);
+                    logSystem(QStringLiteral("Qt WebEngine install failed (exit %1): %2")
+                                  .arg(exitCode)
+                                  .arg(tail));
+                    QMessageBox::warning(
+                        this, title,
+                        QStringLiteral("The install did not finish (exit %1).%2")
+                            .arg(exitCode)
+                            .arg(tail.isEmpty() ? QString()
+                                                : QStringLiteral("\n\n%1").arg(tail)));
+                    return;
+                }
+                logSystem(QStringLiteral("Qt WebEngine installed; rebuilding to embed it."));
+                if (restartInProgress()) {
+                    flashMessage(QStringLiteral("Qt WebEngine installed. The running "
+                                                "restart picks it up on the next build."));
+                    return;
+                }
+                if (m_navRebuildButton)
+                    startRestartSpin(m_navRebuildButton);
+                quickRebuildRestart();
+            });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process, title](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                const QString detail = compactSuggestedAppOutput(process->errorString());
+                process->deleteLater();
+                logSystem(QStringLiteral("Could not start the Qt WebEngine installer: %1")
+                              .arg(detail));
+                QMessageBox::warning(this, title,
+                                     QStringLiteral("The installer did not start: %1")
+                                         .arg(detail));
+            });
+    process->start(program, arguments);
+}
+
 void MainWindow::refreshComposerModelVisibilityList()
 {
     if (!m_composerModelVisibilityList)

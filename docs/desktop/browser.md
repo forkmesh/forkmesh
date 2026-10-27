@@ -35,6 +35,24 @@ folder (the parent of `Qt6_DIR`) to `CMAKE_CONFIGURE_DEPENDS`. Installing any Qt
 module adds a folder there, Ninja sees the new modification time and re-runs
 CMake, and the lookup finds WebEngine on the next build.
 
+### Install embedded browser button
+
+A build without WebEngine says "This build has no embedded browser" in the
+pane, and next to it shows an **Install embedded browser** button
+(`WorkspaceBrowserPane::setInstallHandler`, shown only when the pane was
+compiled without `FORKMESH_HAVE_WEBENGINE`; an offscreen run that has WebEngine
+does not offer it). The button calls `MainWindow::installEmbeddedBrowser`
+(`MainWindowSettings.cpp`), which reuses the Settings → Apps install path: the
+package names live in `SuggestedApps.cpp` under the `webengine` id, the same
+list as `ensure_webengine` plus Homebrew's `qt`, and
+`embeddedBrowserComponent()` describes it without adding a row to the Apps
+list (there is no executable to find on `PATH`). It asks before running the
+package manager, goes through `pkexec` when it needs root (or shows the
+`sudo` command when `pkexec` is missing), and on success starts Rebuild &
+restart; the configure-depends folder above makes that build find WebEngine.
+Windows has no package for it, so the button there only explains what to
+install.
+
 The option used to default to `OFF` even though the app already linked
 WebEngine for agent windows, so most builds had a Browser tab that could not
 show a page.
