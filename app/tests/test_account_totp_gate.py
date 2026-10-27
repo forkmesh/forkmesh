@@ -16,6 +16,7 @@ FUNCS = {
     "_login_record_fail",
     "_login_clear",
     "_login_failure_response",
+    "_resolve_user_by_password",
 }
 ASSIGNS = {"UNVERIFIED_PROFILE_FIELDS"}
 
@@ -89,6 +90,9 @@ def _load(account, session_name=""):
     async def _login_attempt_keys(_env, _request, identifier):
         return ["source", "pair:" + identifier]
 
+    async def _login_source_key(_env, _request):
+        return "source"
+
     def json_response(body, status=200, **_kwargs):
         return {"status": status, "body": body}
 
@@ -111,6 +115,7 @@ def _load(account, session_name=""):
         "verify_password": verify_password,
         "totp_verify": totp_verify,
         "_login_attempt_keys": _login_attempt_keys,
+        "_login_source_key": _login_source_key,
         "_account_email_unverified": lambda _rec: False,
         "_email_not_verified_response": lambda: json_response({}, 403),
         "_delete_account_namespace": _delete_account_namespace,
@@ -204,3 +209,35 @@ def test_every_totp_check_goes_through_the_budgeted_helper():
     ]
     assert sorted(callers) == ["_account_admin_totp_enrollment",
                                "_account_totp_ok"]
+
+
+def _claim_password(ns, body):
+    return asyncio.run(ns["_resolve_user_by_password"](
+        object(), body, _Request(body)))
+
+
+def test_claim_password_alone_cannot_act_on_a_totp_account():
+    ns = _load(_enrolled())
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password"})
+    assert rec is None
+    assert refusal["body"] == {"error": "bad_totp"}
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password",
+             "totp": "123456"})
+    assert rec["name"] == "alice" and refusal is None
+
+
+def test_claim_password_guesses_lock_the_source_even_for_the_right_password():
+    ns = _load({**_enrolled(), "totp_enrolled": False})
+    statuses = [
+        _claim_password(ns, {"identifier": "alice", "password": "wrong"})[2][
+            "status"]
+        for _ in range(10)
+    ]
+    assert statuses[:2] == [401, 401] and statuses[-1] == 429
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password"})
+    assert rec is None
+    assert refusal["status"] == 429
+    assert refusal["body"]["error"] == "too_many_attempts"

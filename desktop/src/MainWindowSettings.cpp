@@ -11860,6 +11860,11 @@ MainWindow::noticeDestination(const QString &href, int actionRunId,
         destination.label = QStringLiteral("Log");
         destination.icon = QStringLiteral("list-unordered");
         destination.tooltip = QStringLiteral("Open the log filtered to errors");
+    } else if (href == QLatin1String("fm:workflows:approve")) {
+        destination.href = href;
+        destination.label = QStringLiteral("Review");
+        destination.icon = QStringLiteral("workflow");
+        destination.tooltip = QStringLiteral("Review the repository workflows waiting for approval");
     } else if (href == QLatin1String("fm:offline:off")) {
         destination.href = href;
         destination.label = QStringLiteral("Go online");
@@ -11910,6 +11915,10 @@ bool MainWindow::openNoticeHref(const QString &href)
     }
     if (href == QLatin1String("fm:offline:off")) {
         setOfflineMode(false);
+        return true;
+    }
+    if (href == QLatin1String("fm:workflows:approve")) {
+        reviewPendingRepoWorkflowApprovals();
         return true;
     }
     if (href == QLatin1String("fm:chat:general")) {

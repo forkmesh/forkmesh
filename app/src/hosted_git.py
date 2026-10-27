@@ -1428,13 +1428,17 @@ async def _change_visibility(env, request):
     previous = "private" if record.get("visibility") == "private" else "public"
     if previous != visibility:
         now = int(Date.now())
+        prior = record
         record = safe_catalog_record({
             **record, "visibility": visibility, "updatedAt": str(now)})
         owner_bi = await blind_index(env, owner)
         _unused, owner_rec = await _account_row(env, owner)
+        if visibility == "private":
+            await invalidate_public_catalog_snapshots(env, owner, name)
         await _contribution_write_catalog_state(
             env, record, owner_bi, owner_rec or {}, key_bi,
             await encrypt_row(env, record))
+        await _index_repo_fork_edge(env, record, prior, owner_bi, key_bi)
         await _hosted_repos.set_visibility(runtime, row["id"], visibility)
         forget_closed = globals().get("_forget_repo_closed")
         if callable(forget_closed):

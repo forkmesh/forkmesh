@@ -1,5 +1,6 @@
 #include "RepoWorkflow.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -1030,6 +1031,62 @@ QList<Listing> listRepositoryWorkflows(const QString &checkout)
         listings.append(listing);
     }
     return listings;
+}
+
+QString approvalDigest(const QString &checkout, const QString &path)
+{
+    QFile file(path);
+    if (checkout.isEmpty() || !file.open(QIODevice::ReadOnly))
+        return {};
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return {};
+    const QJsonObject object = withoutBookkeeping(document.object());
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    const QDir shortcuts(QDir(checkout).filePath(QStringLiteral(".forkmesh/shortcuts")));
+    for (const QJsonValue &value : object.value(QStringLiteral("nodes")).toArray()) {
+        const QJsonObject node = value.toObject();
+        if (node.value(QStringLiteral("type")).toString() != kShortcut)
+            continue;
+        const QString name =
+            QFileInfo(node.value(QStringLiteral("params")).toObject().value(QStringLiteral("file")).toString())
+                .fileName();
+        hash.addData(QByteArray(1, '\0'));
+        hash.addData(name.toUtf8());
+        hash.addData(QByteArray(1, '\0'));
+        QFile script(shortcuts.filePath(name));
+        if (!name.isEmpty() && script.open(QIODevice::ReadOnly))
+            hash.addData(script.readAll());
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QString approvalSettingsKey(const QString &repository, const QString &checkout, const QString &path)
+{
+    const QString relative = QDir(checkout).relativeFilePath(QFileInfo(path).absoluteFilePath());
+    const QByteArray identity = (repository.trimmed().toLower() + QLatin1Char('\n') + relative).toUtf8();
+    return QStringLiteral("repoWorkflows/approved/%1")
+        .arg(QString::fromLatin1(QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(32)));
+}
+
+bool isApproved(const QSettings &settings, const QString &repository, const QString &checkout,
+                const QString &path)
+{
+    const QString digest = approvalDigest(checkout, path);
+    return !digest.isEmpty() &&
+           settings.value(approvalSettingsKey(repository, checkout, path)).toString() == digest;
+}
+
+bool approve(QSettings &settings, const QString &repository, const QString &checkout, const QString &path,
+             const QString &expectedDigest)
+{
+    const QString digest = approvalDigest(checkout, path);
+    if (digest.isEmpty() || (!expectedDigest.isEmpty() && digest != expectedDigest))
+        return false;
+    settings.setValue(approvalSettingsKey(repository, checkout, path), digest);
+    return true;
 }
 
 QString writeWorkflow(const QString &checkout, Workflow workflow, qint64 nowMs, QString *path)

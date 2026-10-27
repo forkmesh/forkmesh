@@ -837,6 +837,57 @@ async def test_queued_bot_tasks_return_to_the_task_list():
 
 
 @run_async_test
+async def test_guests_get_no_tasks_and_auditors_cannot_write():
+    runtime = FakeRuntime()
+    runtime.memberships["eve"] = ("guest", "")
+    runtime.memberships["carol"] = ("auditor", "read")
+    created = await tasks_api.handle(
+        runtime.use("POST", "alice", {
+            "title": "Private security report",
+            "assignee": "bob",
+            "department": "security",
+        }),
+        tasks_api.UNIVERSAL_PREFIX,
+    )
+    assert created["status"] == 201
+    task_id = created["data"]["task"]["id"]
+
+    for path in (
+        tasks_api.UNIVERSAL_PREFIX,
+        f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}",
+        f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/history",
+        f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/replies",
+    ):
+        guest = await tasks_api.handle(
+            runtime.use("GET", "eve", query={"department": "security"}),
+            path)
+        assert guest["status"] == 403
+        assert guest["data"]["error"] == "org_member_required"
+    guest_write = await tasks_api.handle(
+        runtime.use("POST", "eve", {"title": "Guest task", "assignee": "eve"}),
+        tasks_api.UNIVERSAL_PREFIX)
+    assert guest_write["status"] == 403
+
+    auditor_list = await tasks_api.handle(
+        runtime.use("GET", "carol"), tasks_api.UNIVERSAL_PREFIX)
+    assert auditor_list["status"] == 200
+    for method, path, data in (
+        ("POST", tasks_api.UNIVERSAL_PREFIX,
+         {"title": "Auditor task", "assignee": "carol"}),
+        ("POST", f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/replies",
+         {"text": "Auditor reply"}),
+        ("POST", f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/complete", {}),
+        ("PATCH", f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}",
+         {"title": "Renamed"}),
+        ("DELETE", f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}", {}),
+    ):
+        refused = await tasks_api.handle(
+            runtime.use(method, "carol", data), path)
+        assert refused["status"] == 403
+        assert refused["data"]["error"] == "read_only_role"
+
+
+@run_async_test
 async def test_org_authorization_manager_roles_and_filtered_reads():
     runtime = FakeRuntime()
 

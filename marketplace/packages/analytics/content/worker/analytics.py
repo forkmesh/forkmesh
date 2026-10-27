@@ -69,6 +69,8 @@ DAY_MS = 86400000
 DECIDE_CACHE_MS = 30000
 
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 OBJECT_KINDS = ("insight", "dashboard", "cohort", "action", "annotation",
                 "flag", "experiment", "survey", "goal")
 QUERY_KINDS = ("overview", "trends", "funnel", "retention", "paths",
@@ -3691,6 +3693,8 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
     if not row:
         return _response(runtime, {"error": "recording_not_found"}, 404)
     if method == "DELETE":
+        if role not in MANAGER_ROLES:
+            return _response(runtime, {"error": "organization_admin_required"}, 403)
         await _run_batch(runtime, [
             ("DELETE FROM analytics_recording_chunks WHERE project_id=? "
              "AND session_id=?", (project_id, item)),
@@ -4092,8 +4096,11 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if (role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD")
+            and resource != "query"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {"error": "plugin_not_installed",
                                    "organization": org_name,

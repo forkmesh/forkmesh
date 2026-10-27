@@ -385,6 +385,8 @@ SOCIAL_METRICS = ("following", "posts", "replies", "reposts", "likes",
                   "mentions", "media", "reviews")
 STATUSES = ("draft", "review", "queued", "scheduled", "published", "archived")
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HTTPS_RE = re.compile(r"^https://[^\s]{1,990}$", re.IGNORECASE)
@@ -8288,8 +8290,10 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {"error": "plugin_not_installed",
             "organization": org_name, "canInstall": role in MANAGER_ROLES}, 409)

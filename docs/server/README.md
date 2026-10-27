@@ -176,6 +176,18 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `refs/pr/*`, `refs/remotes/origin/*`, `HEAD` and commit ids, so hidden
   namespaces such as `refs/forkmesh/trash/` are never served
   (`test_reads_resolve_only_visible_refs`).
+- A commit id must have at least 7 hex digits, and is served only when one of
+  those visible refs, or a force-push backup under `refs/forkmesh/history/`
+  (kept resolvable for reviews, [CORE_PUSH.md](../CORE_PUSH.md)), contains
+  it (`git for-each-ref --contains`, cached per cache generation). Until
+  2026-10-27 any id of 4+ digits resolved any object in the store, so the
+  public read API served deleted branches in `refs/forkmesh/trash/`, merge
+  staging, and objects a hosted fork borrows from its pool
+  (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
+- The runner daemon reads a Codex job's `last-message.txt`, in a folder the
+  job user owns, with `readOwnedFile` (no symlink, no FIFO, owned by the job
+  user, at most 4 MiB), like every other job-owned file it reads
+  (`TestCodexLastMessageReadRefusesJobPlantedLinksAndFifos`).
 - See [RUNNERS.md](../RUNNERS.md) and [IDS.md](../IDS.md).
 
 ## Traps

@@ -1465,6 +1465,18 @@ int main(int argc, char *argv[])
         check(ChatLinkText::sanitizedHref(QStringLiteral("java\tscript:alert(1)"))
                   .isEmpty(),
               "a scheme smuggled past with control characters is rejected");
+        for (const char *refused :
+             {"file://attacker.example/share/setup.exe", "FILE:///etc/passwd",
+              "smb://attacker.example/share", "search-ms:query=x",
+              "vscode://file/etc/passwd", "javascript:alert(1)", "/etc/passwd",
+              "https:///no-host"})
+            check(!ChatLinkText::externalLinkUrl(QString::fromLatin1(refused)).isValid(),
+                  "an issue body link outside http(s) and mailto is never handed to the OS");
+        check(ChatLinkText::externalLinkUrl(QStringLiteral("https://example.com/a?b=1"))
+                      == QUrl(QStringLiteral("https://example.com/a?b=1")) &&
+                  ChatLinkText::externalLinkUrl(QStringLiteral("mailto:hi@forkmesh.com"))
+                      .isValid(),
+              "http(s) with a host and mailto links still open");
 
         // The web composer sends a rich source plus a flattened "text" that
         // drops [label](url) down to "label" — so the address behind a linked

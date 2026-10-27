@@ -137,6 +137,7 @@ ADMIN_HIDDEN_TABLES = (
     "org_succession_policies",
     "org_succession_cases",
     "org_succession_approvals",
+    "org_succession_case_approvers",
     "org_succession_events",
     "chain_intents",
     "pending_rewards",

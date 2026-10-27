@@ -276,6 +276,24 @@ def normalize_public_url(value):
         return "", ""
 
 
+def referral_subject_url(url):
+    try:
+        parsed = urlsplit(str(url or ""))
+    except ValueError:
+        return ""
+    host = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return ""
+    return str(parsed.scheme or "https").lower() + "://" + host + (
+        parsed.path or "").rstrip("/")
+
+
+def merged_pull_subject(marker):
+    return "microjob:merged_pull:mcp:" + mcp_pull_canonical(
+        marker["number"], marker["base"], marker["head"], marker["author"],
+        marker["ts"])
+
+
 def referral_link_variants(origin, account):
     """Every spelling of one account's referral link a post might carry."""
     account = str(account or "").strip().lower()
@@ -922,8 +940,9 @@ async def _submit_merged_pull(runtime, context, data):
         "job": "merged_pull",
         "status": "approved",
         "subject": "%s/%s pull #%d" % (owner, repo, number),
-        "subjectBi": await runtime.blind(
-            "microjob:merged_pull:%s/%s:%d" % (owner, repo, number)),
+        "subjectBi": await runtime.blind(merged_pull_subject(marker)),
+        "legacySubjectBis": [await runtime.blind(
+            "microjob:merged_pull:%s/%s:%d" % (owner, repo, number))],
         "detail": "Merged pull request opened with the MCP agent tool.",
         "record": {
             "owner": owner,
@@ -944,7 +963,9 @@ async def _submit_referral_post(runtime, context, data):
              "detail": "Give the public https:// page your link is posted on."},
             status=400,
         )
-    subject_bi = await runtime.blind("microjob:referral_post:" + url)
+    subject_bi = await runtime.blind(
+        "microjob:referral_post:" + referral_subject_url(url))
+    legacy_bis = [await runtime.blind("microjob:referral_post:" + url)]
     account = context["account"]
     origin = runtime.public_origin()
 
@@ -995,6 +1016,7 @@ async def _submit_referral_post(runtime, context, data):
         "status": status,
         "subject": url,
         "subjectBi": subject_bi,
+        "legacySubjectBis": legacy_bis,
         "detail": detail,
         "record": {
             "url": url,
@@ -1010,7 +1032,18 @@ async def _record_claim(runtime, context, claim):
     job = claim["job"]
     lamports = JOBS[job]["lamports"]
     now = int(runtime.now())
-    quota = await _quota_error(runtime, context["accountBi"], lamports, now)
+    account_bi = str(context["accountBi"])
+    taken = {"error": "already_claimed",
+             "detail": "This exact work has already been claimed."}
+    subjects = [claim["subjectBi"]] + [
+        item for item in claim.get("legacySubjectBis") or ()
+        if item and item != claim["subjectBi"]]
+    marks = ",".join("?" * len(subjects))
+    if await runtime.d1_first(
+            "SELECT claim_id FROM microjob_claims WHERE subject_bi IN (%s) "
+            "LIMIT 1" % marks, *subjects):
+        return _response(runtime, taken, status=409)
+    quota = await _quota_error(runtime, account_bi, lamports, now)
     if quota:
         return _response(runtime, {"error": quota, "policy": public_policy()},
                          status=429)
@@ -1026,17 +1059,36 @@ async def _record_claim(runtime, context, claim):
         await runtime.d1_run(
             "INSERT INTO microjob_claims "
             "(claim_id,account_bi,job,subject_bi,status,amount_lamports,"
-            "data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            claim_id, context["accountBi"], job, claim["subjectBi"],
+            "data,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,? "
+            "WHERE NOT EXISTS (SELECT 1 FROM microjob_claims "
+            "WHERE subject_bi IN (%s)) "
+            "AND (SELECT COUNT(*) FROM microjob_claims WHERE account_bi=? "
+            "AND status IN ('pending_review','approved','queued'))<? "
+            "AND (SELECT COUNT(*) FROM microjob_claims WHERE account_bi=? "
+            "AND created_at>=? AND status<>'rejected')<? "
+            "AND (SELECT COALESCE(SUM(amount_lamports),0) FROM "
+            "microjob_claims WHERE account_bi=? AND created_at>=? "
+            "AND status<>'rejected')+?<=?" % marks,
+            claim_id, account_bi, job, claim["subjectBi"],
             claim["status"], lamports, sealed, now, now,
+            *subjects,
+            account_bi, MAX_OPEN_CLAIMS_PER_ACCOUNT,
+            account_bi, now - DAY_MS, MAX_CLAIMS_PER_ACCOUNT_PER_DAY,
+            account_bi, now - DAY_MS, lamports,
+            MAX_DAILY_LAMPORTS_PER_ACCOUNT,
         )
     except Exception:
-        return _response(
-            runtime,
-            {"error": "already_claimed",
-             "detail": "This exact work has already been claimed."},
-            status=409,
-        )
+        return _response(runtime, taken, status=409)
+    if not await runtime.d1_first(
+            "SELECT claim_id FROM microjob_claims WHERE claim_id=?", claim_id):
+        if await runtime.d1_first(
+                "SELECT claim_id FROM microjob_claims WHERE subject_bi IN (%s) "
+                "LIMIT 1" % marks, *subjects):
+            return _response(runtime, taken, status=409)
+        quota = await _quota_error(
+            runtime, account_bi, lamports, now) or "daily_claim_limit"
+        return _response(runtime, {"error": quota, "policy": public_policy()},
+                         status=429)
     await runtime.audit(
         context["account"], "microjob.claim", "microjob_claim", claim_id,
         {"job": job, "status": claim["status"], "lamports": lamports},

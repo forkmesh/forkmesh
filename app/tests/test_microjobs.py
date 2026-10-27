@@ -464,6 +464,30 @@ def test_a_signed_marker_cannot_be_copied_to_a_different_pull():
     assert runtime.prompts == []
 
 
+def test_a_fork_copy_of_a_paid_pull_is_the_same_claim():
+    runtime = Runtime(pull_record=MCP_PULL)
+    assert _claim(runtime, _pull_body()).status == 201
+    for owner, repo in (("alice", "forkmesh"), ("bob", "forkmesh-copy")):
+        response = _claim(runtime, _pull_body(owner=owner, repo=repo))
+        assert response.status == 409, (owner, repo)
+        assert response.data["error"] == "already_claimed"
+    assert runtime.db.execute(
+        "SELECT COUNT(*) FROM microjob_claims").fetchone()[0] == 1
+
+
+def test_a_pull_claimed_under_the_old_repository_key_stays_claimed():
+    runtime = Runtime(pull_record=MCP_PULL)
+    runtime.db.execute(
+        "INSERT INTO microjob_claims (claim_id,account_bi,job,subject_bi,"
+        "status,amount_lamports,data,created_at,updated_at) "
+        "VALUES ('old','acct-bi','merged_pull',"
+        "'bi:microjob:merged_pull:forkmesh/forkmesh:128','paid',1,'{}',0,0)")
+    runtime.db.commit()
+    response = _claim(runtime, _pull_body())
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+
+
 def test_somebody_elses_mcp_pull_cannot_be_claimed():
     runtime = Runtime(pull_record=MCP_PULL, owns_key=False)
     response = _claim(runtime, _pull_body())
@@ -622,6 +646,60 @@ def test_the_same_page_cannot_be_claimed_twice():
     _seed_referral(runtime, 25, 9)
     assert _claim(runtime, _referral_body()).status == 201
     assert _claim(runtime, _referral_body()).status == 409
+
+
+def test_query_slash_and_case_variants_of_one_page_are_the_same_claim():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    assert _claim(runtime, _referral_body()).status == 201
+    for variant in (
+        "https://example.com/post?x=1",
+        "https://example.com/post?x=2&y=3",
+        "https://example.com/post/",
+        "https://EXAMPLE.com/post#again",
+        "HTTPS://example.com./post/?ref=1",
+    ):
+        response = _claim(runtime, _referral_body(variant))
+        assert response.status == 409, variant
+        assert response.data["error"] == "already_claimed"
+    assert runtime.db.execute(
+        "SELECT COUNT(*) FROM microjob_claims").fetchone()[0] == 1
+
+
+def test_a_referral_claimed_under_the_old_full_url_key_stays_claimed():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    url, _host = microjobs.normalize_public_url("https://example.com/post?x=1")
+    runtime.db.execute(
+        "INSERT INTO microjob_claims (claim_id,account_bi,job,subject_bi,"
+        "status,amount_lamports,data,created_at,updated_at) "
+        "VALUES ('old','other-bi','referral_post',?,'paid',1,'{}',0,0)",
+        ("bi:microjob:referral_post:" + url,))
+    runtime.db.commit()
+    response = _claim(runtime, _referral_body("https://example.com/post?x=1"))
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+
+
+def test_the_daily_caps_hold_even_when_the_precheck_is_raced(monkeypatch):
+    async def raced(*_args):
+        return ""
+
+    monkeypatch.setattr(microjobs, "_quota_error", raced)
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    statuses = [
+        _claim(runtime, _referral_body(
+            "https://example.com/post-%d" % index)).status
+        for index in range(microjobs.MAX_CLAIMS_PER_ACCOUNT_PER_DAY + 3)
+    ]
+    stored = runtime.db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount_lamports),0) "
+        "FROM microjob_claims").fetchone()
+    assert stored[0] <= microjobs.MAX_CLAIMS_PER_ACCOUNT_PER_DAY
+    assert stored[1] <= microjobs.MAX_DAILY_LAMPORTS_PER_ACCOUNT
+    assert statuses.count(201) == stored[0]
+    assert set(statuses) == {201, 429}
 
 
 # --- anti-farming ------------------------------------------------------------

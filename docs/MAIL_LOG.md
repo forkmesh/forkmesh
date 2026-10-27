@@ -97,6 +97,16 @@ sets a provider hold until the retry time. With core SMTP the budget does not
 apply; Postfix's per-client rate limit, the IDS email cap and the marketing
 limit still do.
 
+Package mail over core SMTP (`_PluginApiRuntime._send_package_smtp`) has its
+own cap: `PACKAGE_SMTP_ORG_DAILY_LIMIT` sends per package, per organization,
+per UTC day, counted in the `mail_budget` bucket
+`mail-package-smtp:<package>:<organization>:<day>`. A package names the
+organization with an `organization` field in the payload it hands to
+`send_mailtrap` (the CRM passes its `org_bi`); a send without one shares the
+package's `-` bucket. Why: Postfix sees one client (the app), so without a
+cap one account could create an organization, install a package and use the
+shared sender as a relay, starving verification and reset mail.
+
 ## Admin test email
 
 Settings, Admin access, **Send test email** (`POST /api/accounts/test-email`)

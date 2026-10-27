@@ -245,6 +245,8 @@ SEND_STATUSES = frozenset({
     "suspension", "unsubscribe", "spam",
 })
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 PLUGIN_ID = "crm"
 
 # Founders outreach. Organization owners and admins, plus the members they put
@@ -5524,7 +5526,16 @@ async def _record_external_send(runtime, org_bi, org_name, account_bi, actor, da
     }, 201)
 
 
-async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
+async def _one_off_sent_today(runtime, org_bi, sender_bi):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM crm_email_sends "
+        "WHERE org_bi=? AND sender_bi=? AND transport='mailtrap' AND created_at>=?",
+        org_bi, sender_bi, runtime.now() - 24 * 60 * 60 * 1000)
+    return _integer((row or {}).get("n"))
+
+
+async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
+                         manager=False):
     contact_id = _clean(data.get("contactId"), 64).lower()
     if contact_id and not CONTACT_ID_RE.fullmatch(contact_id):
         return _response(runtime, {"error": "invalid_contact_id"}, 400)
@@ -5550,10 +5561,15 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         if refusal:
             return refusal
     settings = await _settings(runtime, org_bi)
-    from_email = _email(data.get("fromEmail") or settings.get("fromEmail"))
-    from_name = _clean(data.get("fromName") or settings.get("fromName"), 120)
+    chosen = data if manager else {}
+    from_email = _email(chosen.get("fromEmail") or settings.get("fromEmail"))
+    from_name = _clean(chosen.get("fromName") or settings.get("fromName"), 120)
     if not from_email:
         return _response(runtime, {"error": "invalid_sender"}, 400)
+    if await _one_off_sent_today(runtime, org_bi, account_bi) >= OUTREACH_DAILY_LIMIT:
+        return _response(runtime, {
+            "error": "daily_limit_reached", "dailyLimit": OUTREACH_DAILY_LIMIT,
+        }, 429)
     token = _clean(data.get("mailtrapKey"), 2048)
     now = runtime.now()
     send_id = runtime.new_id()
@@ -5576,6 +5592,7 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         "text": text,
         "html": html,
         "category": "CRM one-off",
+        "organization": org_bi,
         "custom_variables": {
             "forkmesh_crm_send_id": send_id,
             "forkmesh_crm_org_bi": org_bi,
@@ -5757,6 +5774,7 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         "subject": subject,
         "text": body,
         "category": "CRM outreach",
+        "organization": org_bi,
         "custom_variables": {
             "forkmesh_crm_org_bi": org_bi,
             "forkmesh_crm_outreach_template": template,
@@ -7010,6 +7028,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
             "html": html,
             "tracked": True,
             "category": "CRM automated outreach",
+            "organization": org_bi,
             "custom_variables": {
                 "forkmesh_crm_send_id": send_id,
                 "forkmesh_crm_org_bi": org_bi,
@@ -8074,8 +8093,10 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {
             "error": "plugin_not_installed",
@@ -8269,7 +8290,10 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
             return _response(runtime, {"ok": True, "emails": await _emails(runtime, org_bi)})
         return await _record_external_send(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "send":
-        return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data)
+        if not await _outreach_allowed(runtime, org_bi, account_bi, role):
+            return _response(runtime, {"error": "outreach_forbidden"}, 403)
+        return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
+                                    manager=role in MANAGER_ROLES)
     if item == "link":
         return await _link_email(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "toot":

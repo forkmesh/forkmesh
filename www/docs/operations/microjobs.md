@@ -83,6 +83,19 @@ unsigned plan; `paid` records the matching finalized transaction signature;
 (`microjob_claims.subject_bi`) over the exact work item makes each issue, pull,
 or page claimable once.
 
+- A merged pull's key is its signed MCP marker (number, base, head, author,
+  ts), not the repository it was read from. Forks copy the pull ledger branch,
+  so a key that named the repository let one merged pull be paid again from
+  every fork.
+- A referral page's key is its lowercase scheme and host plus the path without
+  a trailing slash; query and fragment are dropped. Otherwise `?x=1`, `?x=2`
+  and so on claimed one page again and again.
+- Keys written before this rule (repository plus pull number, or the full
+  normalized URL) still count as claimed.
+- The claim insert is one conditional `INSERT ... SELECT` that re-checks the
+  subject and the open, daily-count and daily-amount caps. Requests running at
+  the same time on different cores cannot pass the caps together.
+
 ### Verification
 
 - **Issue reports.** Existing issues are read over the public mirror gateway, a

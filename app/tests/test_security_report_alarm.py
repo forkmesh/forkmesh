@@ -2,6 +2,8 @@
 import ast
 import asyncio
 import hashlib
+import ipaddress
+import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,12 +17,21 @@ _WANTED = {
     "_enqueue_security_report_pings",
     "_file_security_report_task",
     "security_report_handler",
+    "_security_report_source_budget",
+    "_client_source_bucket",
+    "_transient_client_address",
+    "signup_rate_check",
 }
 _CONSTS = {
     "SECURITY_REPORT_COMPONENTS",
     "SECURITY_REPORT_TASKS_PER_HOUR",
     "SECURITY_REPORT_TASK_AUTHOR",
     "MAX_SECURITY_REPORTS",
+    "SECURITY_REPORT_RETAIN_MS",
+    "SECURITY_REPORTS_PER_SOURCE_PER_HOUR",
+    "SECURITY_REPORT_SOURCE_RATE_KEY",
+    "SIGNUP_MAX_PER_IP",
+    "SIGNUP_RATE_WINDOW_MS",
 }
 
 
@@ -40,6 +51,7 @@ def _load(overrides):
         "MAX_NODE_NAME": 64,
         "FLAGSHIP_MONITOR_ID": "forkmesh/forkmesh",
         "hashlib": hashlib,
+        "ipaddress": ipaddress,
         "clean_string": lambda value, n: str(value or "")[:n],
         "valid_node_name": lambda name: bool(name),
         "method_name": lambda request: request.method,
@@ -54,8 +66,9 @@ def _load(overrides):
 class _Request:
     method = "POST"
 
-    def __init__(self, payload):
+    def __init__(self, payload, address=""):
         self.payload = payload
+        self.headers = {"cf-connecting-ip": address} if address else {}
 
 
 def _harness(recent_tasks=0, org_exists=True):
@@ -213,3 +226,114 @@ def test_agent_instructions_point_at_the_webhook():
         assert url in text
     assert agents.index(url) < agents.index("## Never erase ForkMesh user data")
     assert "Skip the webhook when you are already working a task filed" in agents
+
+
+def _stored_harness(now):
+    database = sqlite3.connect(":memory:")
+    database.execute(
+        "CREATE TABLE security_reports (id INTEGER PRIMARY KEY "
+        "AUTOINCREMENT, ts INTEGER NOT NULL, data TEXT NOT NULL)")
+    database.execute(
+        "CREATE TABLE signup_rate (ip_bi TEXT PRIMARY KEY, count INTEGER, "
+        "window_start_ts INTEGER)")
+    database.execute("CREATE TABLE users (data TEXT, is_admin INTEGER)")
+    sent = []
+
+    def _rows(cursor):
+        names = [col[0] for col in cursor.description or []]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+    async def d1_first(_env, sql, *args):
+        rows = _rows(database.execute(sql, args))
+        database.commit()
+        return rows[0] if rows else None
+
+    async def d1_run(_env, sql, *args):
+        database.execute(sql, args)
+        database.commit()
+
+    async def d1_all(_env, sql, *args):
+        return _rows(database.execute(sql, args))
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    async def bounded_json_request(request):
+        return request.payload
+
+    async def encrypt_row(_env, data):
+        return data["title"]
+
+    async def blind_index(_env, value):
+        return "bi:" + value
+
+    async def _org_row(_env, _org):
+        return "", None
+
+    async def _send_email(_env, dest, subject, text, email_kind=""):
+        sent.append(subject)
+
+    def json_response(body, status=200, cache_control="", extra_headers=None):
+        return status, body
+
+    ns = _load({
+        "Date": type("Date", (), {"now": staticmethod(lambda: now[0])}),
+        "bounded_json_request": bounded_json_request,
+        "ensure_schema": noop,
+        "encrypt_row": encrypt_row,
+        "blind_index": blind_index,
+        "d1_run": d1_run,
+        "d1_first": d1_first,
+        "d1_all": d1_all,
+        "decrypt_row": noop,
+        "_org_row": _org_row,
+        "_send_email": _send_email,
+        "enqueue_notification": noop,
+        "json_response": json_response,
+    })
+    return ns, database, sent
+
+
+def _post(ns, payload, address):
+    return asyncio.run(ns["security_report_handler"](
+        None, _Request(payload, address)))
+
+
+def test_one_source_gets_a_bounded_number_of_reports_per_hour():
+    now = [400 * 24 * 60 * 60 * 1000]
+    ns, database, sent = _stored_harness(now)
+    limit = ns["SECURITY_REPORTS_PER_SOURCE_PER_HOUR"]
+    statuses = [
+        _post(ns, _report(title="report %d" % index),
+              "2001:db8:7:7::%x" % (index + 1))[0]
+        for index in range(limit + 1)
+    ]
+    assert statuses == [200] * limit + [429]
+    assert len(sent) == limit
+    assert database.execute(
+        "SELECT COUNT(*) FROM security_reports").fetchone() == (limit,)
+    assert _post(ns, _report(title="other"), "198.51.100.4")[0] == 200
+    now[0] += 60 * 60 * 1000
+    assert _post(ns, _report(title="later"), "2001:db8:7:7::1")[0] == 200
+
+
+def test_a_flood_cannot_evict_stored_reports():
+    now = [400 * 24 * 60 * 60 * 1000]
+    ns, database, _sent = _stored_harness(now)
+    cap = ns["MAX_SECURITY_REPORTS"]
+    database.execute(
+        "INSERT INTO security_reports (ts, data) VALUES (?, ?)",
+        (now[0] - ns["SECURITY_REPORT_RETAIN_MS"] - 1, "expired"))
+    database.executemany(
+        "INSERT INTO security_reports (ts, data) VALUES (?, ?)",
+        [(now[0] - 1000, "kept %d" % index) for index in range(cap - 1)])
+    database.commit()
+    for index in range(3):
+        assert _post(ns, _report(title="flood %d" % index),
+                     "198.51.100.%d" % (index + 1))[0] == 200
+    titles = [row[0] for row in database.execute(
+        "SELECT data FROM security_reports ORDER BY id")]
+    assert len(titles) == cap
+    assert "expired" not in titles
+    assert titles[0] == "kept 0"
+    assert titles[-1] == "flood 0"

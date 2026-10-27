@@ -15,6 +15,17 @@ and the World.
   `ACCOUNT_SESSION_TOUCH_MS` (5 minutes).
 - A session from a key-bound login (desktop or phone) is tied to an
   `account_devices` row; revoking the device revokes the session.
+- The account's primary key (`rec["pubkey"]`, set by the first desktop login)
+  is also a device row. Revoking that row, alone or through `revoke-all`,
+  takes the key off the account (`_account_drop_revoked_primary`): it moves to
+  `prev_pubkeys`, which nothing trusts for signing, and the next desktop login
+  sets a new primary key. A primary key whose device row is revoked or
+  disabled is also refused on every path that checks it
+  (`_account_key_revoked`: owner signing keys, signed admin requests,
+  heartbeat, finalize, rotate as the old or the new key), and a later desktop
+  login replaces it. Before this, revoking a stolen first desktop left its key
+  trusted, and rotate let it bind a successor the owner could not see or
+  revoke.
 - Routes: `GET /api/accounts/sessions`, `DELETE /api/accounts/sessions/<id>`,
   `GET /api/accounts/devices`, `POST /api/accounts/devices/check`,
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
@@ -80,6 +91,16 @@ digits, 30 seconds); other accounts may enroll optionally.
   `_is_admin_flag` reads only the column (for moderation protection and
   enrollment decisions).
 - Sudo re-auth (`_account_sudo_reauth`) asks for the code when enrolled.
+- The claim endpoints (`claim-node`, `claim-confirm`, `link-self`) check the
+  password through `_resolve_user_by_password`. It refuses with 429 while the
+  caller's source budget is locked, counts every wrong password or code
+  against the login budgets, and asks an enrolled account for its code unless
+  the request also carries that account's own session (the S-3 rule of
+  `/api/accounts/profile`). They used to be an uncounted password oracle with
+  no TOTP.
+- Login budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
+  the smallest block one customer is routed, so rotating addresses inside it
+  no longer buys new guesses.
 - The login page draws `otpauthUri` as a QR code with the built-in `/qr.js`.
 - Recovery: another administrator resets 2FA in the console user editor
   (audited as `totp`); an administrator cannot reset their own.

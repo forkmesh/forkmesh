@@ -69,6 +69,14 @@ added to the desktop's saved hosts.
 - `x-forkmesh-edge-client`: an HMAC-signed visitor address from the homepage
   Worker, verified before the app sees the request; direct requests have
   client-address headers replaced by the TCP peer.
+- ActivityPub inbox (`ap_inbox_handler`): after the HTTP signature verifies,
+  the key's actor (the document fetched from `keyId` without its fragment)
+  must be the activity's `actor`, or a path under it (GoToSocial publishes
+  `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`.
+  A key from the same server is not enough: on a shared instance one account
+  could otherwise send Undo(Follow) or a self-Delete naming another account
+  and erase that account's follows. Lemmy moderators sign their own Remove,
+  so Remove needs no exception.
 - **Repository-bound event signatures.** The v1 strings
   `forkmesh-issue-event-v1`, `forkmesh-discussion-event-v1`,
   `forkmesh-pull-event-v1` and `forkmesh-pull-comment-v1` bind no
@@ -144,6 +152,17 @@ mostly one identical row per desktop status heartbeat.
   shows safety numbers. The server still knows which two accounts a DM joins.
 - The content security policy still allows inline scripts; a strict policy
   needs nonces.
+- The organization Discord OAuth callback must come from the browser that
+  started the connection: its transaction cookie (SameSite=Lax, scoped to
+  the callback path) must equal the state, or the callback request's session
+  must be the one that started it (`_oauth_callback_browser_bound` in
+  `app/src/organization_discord.py`). The one-time state, PKCE and the
+  starter's session alone did not stop an organization owner from sending the
+  authorize link to another server's admin and binding that server to their
+  organization. The account session cookie is SameSite=Strict, so on the
+  cross-site redirect back from Discord the transaction cookie is what
+  normally matches; a browser that drops it, or a second Connect click that
+  replaced it, gets `invalid_context` and connects again.
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
   such branches on `main`. Since 2026-10-19 it also bans the owner's personal

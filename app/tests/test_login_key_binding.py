@@ -58,6 +58,7 @@ def _load_account_login(extra_globals):
             "_device_bind_canonical",
             "_device_proven_user_bis",
             "_device_retire_unproven_claims",
+            "_account_key_revoked",
         }
     ]
     assert selected, "missing _account_login"
@@ -1280,3 +1281,115 @@ def test_non_admin_without_totp_is_not_asked_to_enroll():
 
     assert response["status"] == 200
     assert saved == []
+
+
+def test_desktop_login_replaces_a_primary_key_whose_device_was_revoked():
+    revoked = {
+        "device_bi": "revoked-primary-device",
+        "account_bi": "bi:alice-node",
+        "pubkey": DEVICE_KEY,
+        "kind": "desktop_node",
+        "label": "stolen laptop",
+        "capabilities": (
+            "browse,host_repo,publish_repo,owner_sign,"
+            "contribution_key_proof"
+        ),
+        "enabled": 0,
+        "last_seen": 1,
+        "revoked_at": 5,
+    }
+    handler, saved, _devices, _clears, _fails = _login_harness(
+        _active_account(pubkey=DEVICE_KEY), initial_devices=[revoked])
+
+    response = asyncio.run(handler(object(), _Request({
+        "email": "alice@example.com",
+        "password": "correct horse battery staple",
+        "pubkey": SECOND_DEVICE_KEY,
+        "deviceTs": DEVICE_TS,
+        "deviceSig": DEVICE_SIG,
+    })))
+
+    assert response["status"] == 200
+    assert response["data"]["pubkey"] == SECOND_DEVICE_KEY
+    assert saved == [("bi:alice-node", {
+        **_active_account(pubkey=SECOND_DEVICE_KEY),
+        "prev_pubkeys": [DEVICE_KEY],
+    })]
+
+
+def test_desktop_login_with_the_revoked_key_never_restores_it_as_primary():
+    revoked = {
+        "device_bi": "revoked-primary-device",
+        "account_bi": "bi:alice-node",
+        "pubkey": DEVICE_KEY,
+        "kind": "desktop_node",
+        "label": "stolen laptop",
+        "capabilities": (
+            "browse,host_repo,publish_repo,owner_sign,"
+            "contribution_key_proof"
+        ),
+        "enabled": 0,
+        "last_seen": 1,
+        "revoked_at": 5,
+    }
+    handler, saved, _devices, _clears, _fails = _login_harness(
+        _active_account(pubkey=""), initial_devices=[revoked])
+
+    asyncio.run(handler(object(), _Request({
+        "email": "alice@example.com",
+        "password": "correct horse battery staple",
+        "pubkey": DEVICE_KEY,
+        "deviceTs": DEVICE_TS,
+        "deviceSig": DEVICE_SIG,
+    })))
+
+    assert all(rec.get("pubkey") != DEVICE_KEY for _bi, rec in saved)
+
+
+class _AddressRequest:
+    def __init__(self, address):
+        self.headers = {"cf-connecting-ip": address}
+
+
+def _load_login_source_keys():
+    import ipaddress
+    tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
+    names = {"_client_source_bucket", "_login_source_key",
+             "_login_attempt_keys", "_transient_client_address"}
+    selected = [
+        node for node in tree.body
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+        and node.name in names
+    ]
+    assert {node.name for node in selected} == names
+
+    async def blind_index(_env, value):
+        return "bi(" + str(value) + ")"
+
+    namespace = {"ipaddress": ipaddress, "blind_index": blind_index}
+    module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
+    exec(compile(module, str(ENTRY), "exec"), namespace)
+    return namespace
+
+
+def test_login_budgets_charge_an_ipv6_slash_64_as_one_source():
+    ns = _load_login_source_keys()
+    keys = ns["_login_attempt_keys"]
+    first = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:2:aaaa::1"), "alice"))
+    second = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:2:ffff:1:2:3"), "alice"))
+    other = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:3::1"), "alice"))
+    assert first == second
+    assert first != other
+    assert first[0] == asyncio.run(ns["_login_source_key"](
+        None, _AddressRequest("2001:db8:1:2::9")))
+    assert ns["_client_source_bucket"]("2001:db8:1:2:aaaa::1") == (
+        "2001:db8:1:2::/64")
+    assert ns["_client_source_bucket"]("203.0.113.7") == "203.0.113.7"
+    assert ns["_client_source_bucket"]("::ffff:203.0.113.7") == "203.0.113.7"
+    v4 = asyncio.run(keys(None, _AddressRequest("203.0.113.7"), "alice"))
+    assert v4[0] == "bi(login-source:bi(203.0.113.7))"
+    assert asyncio.run(ns["_login_source_key"](
+        None, _AddressRequest(""))) == ""

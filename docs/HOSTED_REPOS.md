@@ -218,6 +218,13 @@ same session-bound credential an owner uses.
 
 ## Forks
 
+A hosted repository made private from the website
+(`POST /api/hosted-repositories/visibility`) first writes the public catalog
+snapshot tombstone, as a node's own catalog publish does, and then drops its
+`repo_forks` row, so its name leaves the parent's fork list. The fork list
+(`GET /api/repo/<owner>/<repo>/forks`) also leaves out any fork that is
+private now, and its count with it.
+
 **Forks → Fork this repository** on a public hosted repository (or one
 published from a node, below) creates
 `<you>/<name>`, a hosted repository you own, marked `forkedFrom` the parent

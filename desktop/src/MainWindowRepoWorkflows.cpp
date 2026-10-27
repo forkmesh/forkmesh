@@ -19,7 +19,9 @@
 #include <QJsonDocument>
 #include <QMimeData>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMouseEvent>
+#include <QPushButton>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPointer>
@@ -418,20 +420,10 @@ rw::StepStart MainWindow::startRepoWorkflowStep(const rw::StepRequest &request)
     }
 
     if (rw::isDesktopStepType(type)) {
-        QString script = checkout;
-        if (!QFileInfo(QDir(script).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile()) {
-            script.clear();
-            for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
-                if (!repo.previewOnly && !repo.localPath.isEmpty() &&
-                    QFileInfo(QDir(repo.localPath).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile()) {
-                    script = repo.localPath;
-                    break;
-                }
-            }
-        }
-        if (script.isEmpty())
-            return finished(false, QStringLiteral("Add a checkout of forkmesh/forkmesh: this step runs its "
-                                                  "tools/free_disk_space.py."));
+        const QString script = QDir::cleanPath(QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral("..")));
+        if (!QFileInfo(QDir(script).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile())
+            return finished(false, QStringLiteral("This desktop's own source folder has no "
+                                                  "tools/free_disk_space.py to run this step."));
         const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
         if (python.isEmpty())
             return finished(false, QStringLiteral("python3 is not installed on this desktop."));
@@ -675,7 +667,8 @@ void MainWindow::checkRepoWorkflowSchedules()
             const qint64 last = runs.isEmpty() ? 0 : runs.first().startedAtMs;
             const Config schedule = rw::scheduleConfig(workflow, last);
             if (schedule.schedule.mode == forkmesh::teammates::kScheduleContinuous ||
-                !forkmesh::teammates::scheduleIsDue(schedule, now))
+                !forkmesh::teammates::scheduleIsDue(schedule, now) ||
+                !repoWorkflowApproved(index, listing.path, workflow.name))
                 continue;
             QString error;
             startRepoWorkflow(index, workflow,
@@ -698,13 +691,122 @@ void MainWindow::triggerRepoWorkflowsForEvent(const QString &eventName, int repo
         if (!listing.error.isEmpty() || workflow.isSpecialAgent() || repoWorkflowRunner()->isRunning(key, workflow.id))
             continue;
         const Config schedule = rw::scheduleConfig(workflow, 0);
-        if (!forkmesh::teammates::scheduleMatchesEvent(schedule, eventName) || !schedule.schedule.active)
+        if (!forkmesh::teammates::scheduleMatchesEvent(schedule, eventName) || !schedule.schedule.active ||
+            !repoWorkflowApproved(repoIndex, listing.path, workflow.name))
             continue;
         QString error;
         startRepoWorkflow(repoIndex, workflow,
                           QStringLiteral("Repository event · %1").arg(forkmesh::teammates::taskTypeLabel(eventName)),
                           eventName, QString(), &error);
     }
+}
+
+QString MainWindow::repoWorkflowPath(int repoIndex, const QString &workflowId) const
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return {};
+    for (const rw::Listing &listing : rw::listRepositoryWorkflows(m_repositories.at(repoIndex).localPath))
+        if (listing.workflow.id == workflowId)
+            return listing.path;
+    return {};
+}
+
+bool MainWindow::repoWorkflowApproved(int repoIndex, const QString &path, const QString &name)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return false;
+    const QString repository = shortcutRepoKey(repoIndex);
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    if (rw::isApproved(QSettings(), repository, checkout, path))
+        return true;
+    const QString digest = rw::approvalDigest(checkout, path);
+    if (digest.isEmpty())
+        return false;
+    const QString key = rw::approvalSettingsKey(repository, checkout, path);
+    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
+    if (m_repoWorkflowApprovalNoticed.contains(key + QLatin1Char(':') + digest))
+        return false;
+    m_repoWorkflowApprovalNoticed.insert(key + QLatin1Char(':') + digest);
+    flashMessage(QStringLiteral("%1 in %2 is set to run on its own, but this desktop has not approved that "
+                                "workflow file. Review it to let it run.")
+                     .arg(name.isEmpty() ? QFileInfo(path).fileName() : name, repository),
+                 false, QStringLiteral("fm:workflows:approve"));
+    return false;
+}
+
+void MainWindow::approveRepoWorkflowFile(int repoIndex, const QString &path)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return;
+    const QString repository = shortcutRepoKey(repoIndex);
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    QSettings settings;
+    if (rw::approve(settings, repository, checkout, path))
+        m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(repository, checkout, path));
+}
+
+void MainWindow::reviewPendingRepoWorkflowApprovals()
+{
+    if (m_repoWorkflowApprovalPrompt) {
+        m_repoWorkflowApprovalPrompt->raise();
+        m_repoWorkflowApprovalPrompt->activateWindow();
+        return;
+    }
+    QList<PendingRepoWorkflowApproval> pending;
+    {
+        const QSettings settings;
+        for (auto it = m_pendingRepoWorkflowApprovals.begin(); it != m_pendingRepoWorkflowApprovals.end();) {
+            it->digest = rw::approvalDigest(it->checkout, it->path);
+            if (it->digest.isEmpty() || rw::isApproved(settings, it->repository, it->checkout, it->path)) {
+                it = m_pendingRepoWorkflowApprovals.erase(it);
+                continue;
+            }
+            pending.append(it.value());
+            ++it;
+        }
+    }
+    if (pending.isEmpty()) {
+        flashMessage(QStringLiteral("No repository workflows are waiting for approval."));
+        return;
+    }
+    QStringList rows;
+    for (const PendingRepoWorkflowApproval &item : std::as_const(pending))
+        rows.append(QStringLiteral("<li><b>%1</b> in %2 (%3)</li>")
+                        .arg(item.name.toHtmlEscaped(), item.repository.toHtmlEscaped(),
+                             QDir(item.checkout).relativeFilePath(item.path).toHtmlEscaped()));
+    auto *box = new QMessageBox(this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setIcon(QMessageBox::Question);
+    box->setWindowTitle(QStringLiteral("Allow repository workflows?"));
+    box->setTextFormat(Qt::RichText);
+    box->setText(QStringLiteral("These workflows are committed in repositories on this desktop and are set to run "
+                                "on a schedule or on repository events:<ul>%1</ul>")
+                     .arg(rows.join(QString())));
+    box->setInformativeText(QStringLiteral("Allow only if you trust everyone who can change these files. A workflow "
+                                           "runs its scripts and agents as you. Any change to a file, or to a "
+                                           "script it runs, asks again."));
+    QPushButton *allow = box->addButton(QStringLiteral("Allow"), QMessageBox::AcceptRole);
+    QPushButton *later = box->addButton(QStringLiteral("Not now"), QMessageBox::RejectRole);
+    box->setDefaultButton(later);
+    box->setEscapeButton(later);
+    box->setModal(false);
+    m_repoWorkflowApprovalPrompt = box;
+    connect(box, &QMessageBox::finished, this, [this, box, allow, pending] {
+        if (box->clickedButton() != allow)
+            return;
+        QSettings settings;
+        int approved = 0;
+        for (const PendingRepoWorkflowApproval &item : pending) {
+            if (!rw::approve(settings, item.repository, item.checkout, item.path, item.digest))
+                continue;
+            m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(item.repository, item.checkout, item.path));
+            ++approved;
+        }
+        flashMessage(QStringLiteral("Approved %1 repository workflow%2.")
+                         .arg(approved)
+                         .arg(approved == 1 ? QString() : QStringLiteral("s")));
+    });
+    box->show();
 }
 
 QList<rw::Pin> MainWindow::workflowPins() const
@@ -1506,7 +1608,8 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
         for (const rw::Listing &entry : listings)
             if (entry.workflow.id == workflowId)
                 listing = &entry;
-        const auto saved = [this, &reply, &repo](const rw::Workflow &workflow, const QString &path) {
+        const auto saved = [this, &reply, &repo, repoIndex](const rw::Workflow &workflow, const QString &path) {
+            approveRepoWorkflowFile(repoIndex, path);
             scheduleTeammateRailRefresh();
             if (m_sectionStack && m_sectionStack->currentIndex() == kTeamSectionIndex)
                 loadTeammatesPanel();

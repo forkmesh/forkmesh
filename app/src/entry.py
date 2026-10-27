@@ -590,6 +590,9 @@ MAX_PACKAGE_INSTALL_ROWS = 20000
 MAX_PACKAGE_INSTALL_EVENTS = 64
 # Private vulnerability reports: bounded so the open endpoint can't grow D1.
 MAX_SECURITY_REPORTS = 1000
+SECURITY_REPORT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
+SECURITY_REPORTS_PER_SOURCE_PER_HOUR = 10
+SECURITY_REPORT_SOURCE_RATE_KEY = "security-report-source-v1"
 SECURITY_REPORT_TASKS_PER_HOUR = 6
 SECURITY_REPORT_TASK_AUTHOR = "security-report"
 SECURITY_AUDIT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
@@ -12119,6 +12122,7 @@ PLUGIN_AI_VISION_MODELS = (
 PLUGIN_AI_MAX_IMAGE_DATA_URL = 1_600_000
 PLUGIN_AI_MAX_TOKENS = 1200
 PLUGIN_AI_RATE_SUFFIX = ":plugin-ai"
+PACKAGE_SMTP_ORG_DAILY_LIMIT = 200
 PLUGIN_AI_ABSENT_ERRORS = frozenset({"missing_binding", "ai_unavailable"})
 
 
@@ -12307,7 +12311,8 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             self.env,
             "SELECT role FROM org_members WHERE org_bi=? AND member_bi=?",
             org_bi, account_bi)
-        return str(org_bi), str((member or {}).get("role") or "")
+        role = str((member or {}).get("role") or "")
+        return str(org_bi), role if _org_rbac.org_role_is_insider(role) else ""
 
     async def plugin_installed(self, org_bi, plugin):
         row = await d1_first(
@@ -12439,7 +12444,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             self.env,
             "SELECT role FROM org_members WHERE org_bi=? AND member_bi=?",
             org_bi, account_bi)
-        if not member:
+        if not member or not _org_rbac.org_role_is_insider(member.get("role")):
             return []
         rows = await d1_all(
             self.env,
@@ -12487,8 +12492,10 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         token = str(supplied_token or "").strip()
         payload = dict(payload if isinstance(payload, dict) else {})
         tracked = bool(payload.pop("tracked", False))
+        organization = clean_string(payload.pop("organization", ""), 128)
         if not token and smtp_mail.enabled(self.env):
-            return await self._send_package_smtp(payload, footer=not tracked)
+            return await self._send_package_smtp(
+                payload, footer=not tracked, organization=organization)
         if not token:
             token = str(getattr(self.env, "MAILTRAP_API_TOKEN", "") or "").strip()
             if token and not await _mail_budget_spend(self.env, "package"):
@@ -12551,7 +12558,19 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
                 outbound, "failed", 0, type(error).__name__, "", via=via)
             return {"accepted": False, "error": "mailtrap_unavailable"}
 
-    async def _send_package_smtp(self, outbound, footer=True):
+    async def _package_smtp_reserve(self, organization):
+        now = int(Date.now())
+        bucket = "mail-package-smtp:%s:%s:%s" % (
+            str(self._plugin or "-"), str(organization or "-"),
+            mail_budget.day_key(now))
+        try:
+            return await mail_budget.reserve(
+                lambda sql, *args: _mail_budget_execute(self.env, sql, *args),
+                bucket, PACKAGE_SMTP_ORG_DAILY_LIMIT, now)
+        except Exception:
+            return False
+
+    async def _send_package_smtp(self, outbound, footer=True, organization=""):
         via = {"via": "postfix", "node": smtp_mail.node(),
                "sender": smtp_mail.SENDER}
         sender = outbound.get("from") if isinstance(
@@ -12563,6 +12582,10 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             await self._mail_log(outbound, "rejected", 0, "one deliverable "
                                  "recipient required", "", **via)
             return {"accepted": False, "error": "recipient_invalid"}
+        if not await self._package_smtp_reserve(organization):
+            await self._mail_log(outbound, "suppressed", 0,
+                                 "package daily mail cap reached", "", **via)
+            return {"accepted": False, "error": "mail_budget_spent"}
         send_id = _ap_uuid()
         html = outbound.get("html") or mail_activity.text_html(
             outbound.get("text"))
@@ -13925,7 +13948,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "f98c955c26168b8c22df7e6675d0984c66b0fce8a506edcbd698e8c0f48ccc1a"
+    "6bcd259d635645255ef1b2b9f8e281fd1e6e80d1537cf8371f533c436651ca90"
 )
 
 
@@ -23404,17 +23427,30 @@ def _transfer_pending(rec, now):
     return pending
 
 
-async def _resolve_user_by_password(env, data):
+async def _resolve_user_by_password(env, data, request=None):
     # Web-auth gate for the claim endpoints, matching _account_profile: a
     # state-changing dashboard action re-proves the password on each request
-    # (the static site keeps no server-side session). Returns (name_bi, rec)
-    # for an active credentialed account, else (None, None).
+    # (the static site keeps no server-side session).
     identifier = clean_string(
         data.get("identifier", "") or data.get("email", "") or
         data.get("user", ""), 254).strip().lower()
     password = (data.get("password", "") or "")[:256]
     if not identifier or not password:
-        return None, None
+        return None, None, json_response(
+            {"error": "invalid_credentials"}, status=401)
+    source_key = await _login_source_key(env, request)
+    locked_until = (
+        await _login_locked_until(env, source_key) if source_key else 0)
+    if locked_until:
+        retry_ms = max(1000, locked_until - int(Date.now()))
+        return None, None, json_response(
+            {"error": "too_many_attempts", "retryAfterMs": retry_ms},
+            status=429,
+            extra_headers={
+                "Retry-After": str(max(1, (retry_ms + 999) // 1000))
+            },
+        )
+    attempt_keys = await _login_attempt_keys(env, request, identifier)
     name_bi, rec = "", None
     if "@" in identifier:
         email_bi = await blind_index(env, identifier)
@@ -23426,14 +23462,26 @@ async def _resolve_user_by_password(env, data):
             rec = await decrypt_row(env, row.get("data"))
     elif valid_node_name(identifier):
         name_bi, rec = await _account_row(env, identifier)
-    if not rec or rec.get("status") != "active" or not rec.get("pass_hash"):
-        return None, None
-    if not await verify_password(password, rec.get("pass_salt", ""),
-                                 rec.get("pass_hash", "")):
-        return None, None
+    if (not rec or rec.get("status") != "active" or not rec.get("pass_hash")
+            or not await verify_password(password, rec.get("pass_salt", ""),
+                                         rec.get("pass_hash", ""))):
+        return None, None, await _login_failure_response(
+            env, attempt_keys, "invalid_credentials")
     if not name_bi:
         name_bi = await blind_index(env, rec.get("name", ""))
-    return name_bi, rec
+    if rec.get("totp_enrolled"):
+        session_bi = ""
+        if request is not None:
+            session_bi, _session_rec = await _account_session_record(
+                env, request, data)
+        if session_bi != name_bi and not await _account_totp_ok(
+                env, rec, clean_string(data.get("totp", ""), 10)):
+            return None, None, await _login_failure_response(
+                env, attempt_keys, "bad_totp")
+    for attempt_key in attempt_keys:
+        if attempt_key != source_key:
+            await _login_clear(env, attempt_key)
+    return name_bi, rec, None
 
 
 async def _link_node_to_user(env, node_name, node_bi, node_rec, user_name):
@@ -23472,9 +23520,10 @@ async def _account_claim_node(env, request):
         data = await bounded_json_request(request)
     except Exception:
         return json_response({"error": "invalid_json"}, status=400)
-    _, user_rec = await _resolve_user_by_password(env, data)
+    _, user_rec, refusal = await _resolve_user_by_password(
+        env, data, request)
     if not user_rec:
-        return json_response({"error": "invalid_credentials"}, status=401)
+        return refusal
     user_name = user_rec.get("name", "")
     raw_id = clean_string(data.get("nodeId", "") or data.get("nodeName", ""),
                           MAX_NODE_NAME)
@@ -23512,9 +23561,10 @@ async def _account_claim_confirm(env, request):
         data = await bounded_json_request(request)
     except Exception:
         return json_response({"error": "invalid_json"}, status=400)
-    _, user_rec = await _resolve_user_by_password(env, data)
+    _, user_rec, refusal = await _resolve_user_by_password(
+        env, data, request)
     if not user_rec:
-        return json_response({"error": "invalid_credentials"}, status=401)
+        return refusal
     user_name = user_rec.get("name", "")
     raw_id = clean_string(data.get("nodeId", "") or data.get("nodeName", ""),
                           MAX_NODE_NAME)
@@ -23789,9 +23839,10 @@ async def _account_link_self(env, request):
     if not await ed25519_verify(pubkey, signature, canonical):
         return json_response({"error": "bad_signature"}, status=401)
     # Only now spend a password verification (the node signature gates it).
-    _, user_rec = await _resolve_user_by_password(env, data)
+    _, user_rec, refusal = await _resolve_user_by_password(
+        env, data, request)
     if not user_rec:
-        return json_response({"error": "invalid_credentials"}, status=401)
+        return refusal
     user_name = user_rec.get("name", "")
     if node_name == user_name:
         return json_response({"error": "cannot_link_self"}, status=400)
@@ -23976,8 +24027,30 @@ async def _login_record_fail(env, id_bi):
     }
 
 
+def _client_source_bucket(value):
+    text = str(value or "").strip()
+    try:
+        address = ipaddress.ip_address(text.strip("[]").split("%")[0])
+    except ValueError:
+        return text
+    mapped = address.ipv4_mapped if address.version == 6 else None
+    if mapped:
+        return str(mapped)
+    if address.version == 6:
+        return str(ipaddress.ip_network(str(address) + "/64", strict=False))
+    return str(address)
+
+
+async def _login_source_key(env, request):
+    source = _client_source_bucket(_transient_client_address(request))
+    if not source:
+        return ""
+    return await blind_index(
+        env, "login-source:" + await blind_index(env, source))
+
+
 async def _login_attempt_keys(env, request, identifier):
-    source = _transient_client_address(request)
+    source = _client_source_bucket(_transient_client_address(request))
     source_bi = await blind_index(env, source) if source else ""
     keys = []
     if source_bi:
@@ -24191,6 +24264,43 @@ async def _account_device_for_pubkey(env, account_bi, pubkey):
         account_bi, pubkey,
     )
     return row
+
+
+async def _account_key_revoked(env, account_bi, pubkey):
+    if not account_bi or not pubkey:
+        return False
+    row = await d1_first(
+        env,
+        "SELECT enabled, revoked_at FROM account_devices "
+        "WHERE account_bi=? AND pubkey=? LIMIT 1",
+        account_bi, pubkey,
+    )
+    if not row:
+        return False
+    try:
+        return (int(row.get("revoked_at") or 0) > 0
+                or not int(row.get("enabled") or 0))
+    except (TypeError, ValueError):
+        return True
+
+
+async def _account_drop_revoked_primary(env, name, pubkeys):
+    pubkeys = {key for key in pubkeys or () if key}
+    if not name or not pubkeys:
+        return False
+    account_bi, rec = await _account_row(env, name)
+    primary = clean_string((rec or {}).get("pubkey", ""), 120)
+    if not account_bi or not rec or not primary or primary not in pubkeys:
+        return False
+    prev_pubkeys = rec.get("prev_pubkeys")
+    prev_pubkeys = list(prev_pubkeys) if isinstance(prev_pubkeys, list) else []
+    if primary not in prev_pubkeys:
+        prev_pubkeys.append(primary)
+    rec["prev_pubkeys"] = prev_pubkeys
+    rec["pubkey"] = ""
+    rec["pubkey_revoked_at"] = int(Date.now())
+    await _save_account(env, account_bi, rec)
+    return True
 
 
 async def _account_devices_list(env, account_bi):
@@ -24531,7 +24641,18 @@ async def _account_login(env, request):
             return await _account_login_mobile_node_response(
                 env, request, rec, device, device_bi, device_label,
                 device_is_new)
-        if not rec.get("pubkey"):
+        primary = clean_string(rec.get("pubkey", ""), 120)
+        if primary != pubkey and (
+                not primary
+                or await _account_key_revoked(env, name_bi, primary)) and \
+                not await _account_key_revoked(env, name_bi, pubkey):
+            if primary:
+                prev_pubkeys = rec.get("prev_pubkeys")
+                prev_pubkeys = (list(prev_pubkeys)
+                                if isinstance(prev_pubkeys, list) else [])
+                if primary not in prev_pubkeys:
+                    prev_pubkeys.append(primary)
+                rec["prev_pubkeys"] = prev_pubkeys
             rec["pubkey"] = pubkey
             await _save_account(env, name_bi, rec)
         try:
@@ -24755,6 +24876,7 @@ async def _account_devices(env, request, target_device_id="", action=""):
                 if clean_string(kind, 40) in ACCOUNT_DEVICE_KINDS
             ]
         targets = []
+        target_pubkeys = []
         for device in await _account_devices_list(env, account_bi):
             device_bi = str(device.get("deviceBi") or "")
             if not device_bi or device_bi == current_device_bi:
@@ -24764,6 +24886,7 @@ async def _account_devices(env, request, target_device_id="", action=""):
             if kinds and device.get("kind") not in kinds:
                 continue
             targets.append(device_bi)
+            target_pubkeys.append(device.get("pubkey") or "")
         for device_bi in targets:
             await d1_run(
                 env,
@@ -24771,6 +24894,7 @@ async def _account_devices(env, request, target_device_id="", action=""):
                 "WHERE account_bi=? AND device_bi=? AND revoked_at=0",
                 now, account_bi, device_bi,
             )
+        await _account_drop_revoked_primary(env, actor, target_pubkeys)
         if kinds:
             # A filtered sign-out closes only the sessions those node keys
             # opened; browser sessions stay up.
@@ -24802,7 +24926,7 @@ async def _account_devices(env, request, target_device_id="", action=""):
             cache_control="no-store, max-age=0, must-revalidate")
     row = await d1_first(
         env,
-        "SELECT device_bi, kind, label, enabled, revoked_at "
+        "SELECT device_bi, pubkey, kind, label, enabled, revoked_at "
         "FROM account_devices "
         "WHERE account_bi=? AND substr(device_bi, 1, ?)=? LIMIT 1",
         account_bi, len(target_device_id), target_device_id,
@@ -24818,6 +24942,8 @@ async def _account_devices(env, request, target_device_id="", action=""):
         "WHERE account_bi=? AND device_bi=? AND revoked_at=0",
         now, account_bi, device_bi,
     )
+    await _account_drop_revoked_primary(
+        env, actor, [clean_string(row.get("pubkey", ""), 120)])
     await _account_revoke_device_sessions(env, account_bi, device_bi)
     revoke_current = bool(current_device_bi) and device_bi == current_device_bi
     await _audit_sensitive_action(
@@ -25259,6 +25385,9 @@ async def _account_rotate(env, request):
 
     if not await ed25519_verify(old_pubkey, signature, canonical):
         return json_response({"error": "bad_signature"}, status=401)
+    if (await _account_key_revoked(env, name_bi, old_pubkey)
+            or await _account_key_revoked(env, name_bi, new_pubkey)):
+        return json_response({"error": "device_revoked"}, status=401)
 
     existing_bi, _ = await _account_row_by_pubkey(env, new_pubkey)
     if existing_bi and existing_bi != name_bi:
@@ -25572,6 +25701,8 @@ async def _account_heartbeat(env, request):
     ).encode()
     if not await ed25519_verify(pubkey, signature, canonical):
         return json_response({"error": "bad_signature"}, status=401)
+    if await _account_key_revoked(env, name_bi, pubkey):
+        return json_response({"error": "device_revoked"}, status=401)
 
     # Issue #346: the node itself is the only thing that knows when its local
     # Claude Code usage window refilled after running out, so it rides this
@@ -30129,6 +30260,7 @@ async def org_handler(env, request, org):
             # purge rows, remove install receipts, and reverse the package
             # schema after its final organization disappears.
             await plugin_data.purge_org(_PluginPurgeRuntime(env), org_bi)
+            await org_office_chat.dissolve(env, org_bi)
             await d1_run(env, "DELETE FROM org_members WHERE org_bi=?", org_bi)
             await d1_run(
                 env, "DELETE FROM ap_org_digest_settings WHERE org_bi=?", org_bi)
@@ -32319,12 +32451,14 @@ async def _admin_authorized(env, node, ts, sig, canonical):
     node = (node or "").strip().lower()
     if not await _is_admin_flag(env, node) or not _ts_ok(ts):
         return None
-    _, rec = await _account_row(env, node)
+    account_bi, rec = await _account_row(env, node)
     if (not rec or rec.get("status") != "active"
             or not rec.get("totp_enrolled")):
         return None
     pubkey = rec.get("pubkey", "")
     if not pubkey or not await ed25519_verify(pubkey, sig, canonical):
+        return None
+    if await _account_key_revoked(env, account_bi, pubkey):
         return None
     return rec
 
@@ -36783,11 +36917,15 @@ async def repo_forks_handler(env, request, owner, repo):
         "WHERE parent_bi=? ORDER BY created_at DESC LIMIT ?",
         repo_bi, REPO_FORKS_LIST_LIMIT)
     forks = []
+    hidden_forks = 0
     profile_origin = _ap_origin(env, request)
     for row in rows or []:
         fork_owner = safe_segment(row.get("fork_owner") or "")
         fork_name = safe_segment(row.get("fork_name") or "")
         if not fork_owner or not fork_name:
+            continue
+        if await _repo_is_private(env, fork_owner, fork_name):
+            hidden_forks += 1
             continue
         entry = {
             "owner": fork_owner,
@@ -36811,7 +36949,8 @@ async def repo_forks_handler(env, request, owner, repo):
         env, "SELECT COUNT(*) AS n FROM repo_forks WHERE parent_bi=?", repo_bi)
     return json_response({
         "ok": True,
-        "count": int((count_row or {}).get("n", 0) or 0),
+        "count": max(
+            0, int((count_row or {}).get("n", 0) or 0) - hidden_forks),
         "forks": forks,
     })
 
@@ -37468,10 +37607,15 @@ async def _account_signing_pubkeys(env, account_bi, record):
     users row in production is 435 KB of ciphertext).
     """
     keys = []
+    devices = await _account_devices_list(env, account_bi)
+    refused = {
+        device.get("pubkey") for device in devices
+        if device.get("pubkey") and not device.get("enabled")
+    }
     owner_pub = (record or {}).get("pubkey", "")
-    if owner_pub:
+    if owner_pub and owner_pub not in refused:
         keys.append(owner_pub)
-    for device in await _account_devices_list(env, account_bi):
+    for device in devices:
         pub = device.get("pubkey") or ""
         # enabled == active and not revoked (see _account_devices_list); revoking
         # a device in settings closes it out of the drain gate immediately.
@@ -47194,13 +47338,25 @@ async def _file_security_report_task(env, report, now, digest):
     return task_id
 
 
+async def _security_report_source_budget(env, request):
+    source = _client_source_bucket(_transient_client_address(request))
+    if not source:
+        return None
+    await ensure_schema(env)
+    key = await blind_index(
+        env, SECURITY_REPORT_SOURCE_RATE_KEY + "\n" + source)
+    return await signup_rate_check(
+        env, key, SECURITY_REPORTS_PER_SOURCE_PER_HOUR)
+
+
 async def security_report_handler(env, request):
     """Accept a private vulnerability report via POST /api/security/report.
 
     Unauthenticated: anyone can submit a report. The payload is AES-GCM
     encrypted before storage so only the operator (with DATA_KEY) can read it.
     An email is sent to SECURITY_EMAIL (or security@forkmesh.com) if configured.
-    Always returns 200 {"ok": true} to avoid leaking internal state to probers.
+    Returns 200 {"ok": true} to avoid leaking internal state to probers, or
+    429 once a source has spent its hourly report budget.
     """
     if method_name(request) != "POST":
         return json_response({"error": "method_not_allowed"}, status=405)
@@ -47211,6 +47367,9 @@ async def security_report_handler(env, request):
     report = _validate_security_report(payload)
     if not report:
         return json_response({"error": "invalid_report"}, status=400)
+    throttled = await _security_report_source_budget(env, request)
+    if throttled is not None:
+        return throttled
     try:
         await ensure_schema(env)
         encrypted = await encrypt_row(env, {
@@ -47222,14 +47381,14 @@ async def security_report_handler(env, request):
         })
         await d1_run(
             env,
-            "INSERT INTO security_reports (ts, data) VALUES (?, ?)",
-            int(Date.now()), encrypted,
+            "DELETE FROM security_reports WHERE ts<?",
+            int(Date.now()) - SECURITY_REPORT_RETAIN_MS,
         )
         await d1_run(
             env,
-            """DELETE FROM security_reports WHERE id NOT IN
-               (SELECT id FROM security_reports ORDER BY id DESC LIMIT ?)""",
-            MAX_SECURITY_REPORTS,
+            "INSERT INTO security_reports (ts, data) SELECT ?, ? "
+            "WHERE (SELECT COUNT(*) FROM security_reports) < ?",
+            int(Date.now()), encrypted, MAX_SECURITY_REPORTS,
         )
     except Exception:
         pass

@@ -550,12 +550,9 @@ async def test_oauth_callback_accepts_browser_that_omits_transaction_cookie():
         "forkmesh", "oauth/start")
     state = parse_qs(
         urlparse(started["data"]["authorizationUrl"]).query)["state"][0]
-    # The one-time OAuth state, PKCE verifier, live ForkMesh session, owner
-    # role, exact redirect and requested guild remain bound in encrypted D1.
-    # A browser privacy policy may independently omit the strengthening cookie.
     runtime.oauth_transaction = ""
     completed = await discord_api.handle_oauth_callback(
-        runtime.use("GET", query={
+        runtime.use("GET", "alice", query={
             "state": state, "code": "oauth-authorization-code-123456",
         }))
     assert completed["data"]["outcome"] == "connected"
@@ -597,13 +594,37 @@ async def test_oauth_callback_tolerates_replaced_transaction_cookie():
         urlparse(started["data"]["authorizationUrl"]).query)["state"][0]
     runtime.oauth_transaction = "f" * 64
     completed = await discord_api.handle_oauth_callback(
-        runtime.use("GET", query={
+        runtime.use("GET", "alice", query={
             "state": state, "code": "oauth-authorization-code-123456",
         }))
     assert completed["data"]["outcome"] == "connected"
     assert runtime.db.execute(
         "SELECT COUNT(*) AS n FROM organization_discord_oauth_grants"
     ).fetchone()["n"] == 1
+
+
+@run_async_test
+async def test_oauth_callback_from_another_browser_is_refused():
+    runtime = FakeRuntime()
+    runtime.oauth_configured = True
+    runtime.memberships["victim"] = "member"
+    runtime.active_sessions["account-victim"] = "session-victim"
+    for transaction in ("", "f" * 64):
+        for actor in ("", "victim"):
+            started = await discord_api.handle(
+                runtime.use("POST", "alice", {"guildId": GUILD}),
+                "forkmesh", "oauth/start")
+            state = parse_qs(urlparse(
+                started["data"]["authorizationUrl"]).query)["state"][0]
+            runtime.oauth_transaction = transaction
+            refused = await discord_api.handle_oauth_callback(
+                runtime.use("GET", actor, query={
+                    "state": state, "code": "oauth-authorization-code-123456",
+                }))
+            assert refused["data"]["outcome"] == "invalid_context"
+    assert runtime.db.execute(
+        "SELECT COUNT(*) AS n FROM organization_discord_oauth_grants"
+    ).fetchone()["n"] == 0
 
 
 @run_async_test
@@ -1220,6 +1241,7 @@ def _organization_delete_handler(db):
         "_audit_sensitive_action": audit,
         "bounded_json_request": bounded_json,
         "plugin_data": SimpleNamespace(purge_org=purge_org),
+        "org_office_chat": SimpleNamespace(dissolve=purge_org),
         "_PluginPurgeRuntime": lambda env: env,
         "json_response": response,
         "_org_rbac": organization_rbac,

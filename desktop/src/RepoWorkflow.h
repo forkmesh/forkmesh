@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 
@@ -103,6 +104,12 @@ struct Listing {
 };
 
 QList<Listing> listRepositoryWorkflows(const QString &checkout);
+QString approvalDigest(const QString &checkout, const QString &path);
+QString approvalSettingsKey(const QString &repository, const QString &checkout, const QString &path);
+bool isApproved(const QSettings &settings, const QString &repository, const QString &checkout,
+                const QString &path);
+bool approve(QSettings &settings, const QString &repository, const QString &checkout, const QString &path,
+             const QString &expectedDigest = QString());
 QString writeWorkflow(const QString &checkout, Workflow workflow, qint64 nowMs, QString *path = nullptr);
 bool removeWorkflowFiles(const QString &checkout, const QString &workflowId, QString *error = nullptr);
 QList<QPair<QString, QString>> avatarChoices();

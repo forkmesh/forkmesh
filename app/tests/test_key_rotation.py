@@ -41,7 +41,8 @@ def _json_response(data, status=200, **_kwargs):
     return {"status": status, "data": data}
 
 
-def _harness(rec, pubkey_lookup=None, expected_canonical=None):
+def _harness(rec, pubkey_lookup=None, expected_canonical=None,
+             revoked_keys=()):
     saved = []
     verified = []
     revoked = []
@@ -65,6 +66,9 @@ def _harness(rec, pubkey_lookup=None, expected_canonical=None):
 
     async def d1_run(_env, sql, *args):
         device_writes.append((sql, args))
+
+    async def _account_key_revoked(_env, account_bi, pubkey):
+        return (account_bi, pubkey) in set(revoked_keys)
 
     async def ed25519_verify(pubkey, sig, canonical):
         # Only the currently-bound old key with the sentinel signature verifies.
@@ -92,6 +96,7 @@ def _harness(rec, pubkey_lookup=None, expected_canonical=None):
             "_save_account": _save_account,
             "_account_revoke_sessions": _account_revoke_sessions,
             "d1_run": d1_run,
+            "_account_key_revoked": _account_key_revoked,
             "ed25519_verify": ed25519_verify,
             "json_response": _json_response,
             "Date": _Date,
@@ -299,4 +304,35 @@ def test_rotate_requires_an_existing_account():
     })
     assert resp["status"] == 404
     assert resp["data"]["error"] == "no_account"
+    assert saved == []
+
+
+def test_rotate_refuses_a_bound_key_that_was_revoked_as_a_device():
+    handler, saved, _verified = _harness(
+        _bound_account(), revoked_keys=[("bi:alice-node", "old-pubkey")])
+    resp = _run(handler, {
+        "nodeName": "alice-node",
+        "oldPubkey": "old-pubkey",
+        "newPubkey": "new-pubkey",
+        "ts": "1783000000000",
+        "sig": "goodsig",
+    })
+    assert resp["status"] == 401
+    assert resp["data"]["error"] == "device_revoked"
+    assert saved == []
+    assert handler.revoked_sessions == []
+
+
+def test_rotate_refuses_to_bind_a_revoked_successor_key():
+    handler, saved, _verified = _harness(
+        _bound_account(), revoked_keys=[("bi:alice-node", "new-pubkey")])
+    resp = _run(handler, {
+        "nodeName": "alice-node",
+        "oldPubkey": "old-pubkey",
+        "newPubkey": "new-pubkey",
+        "ts": "1783000000000",
+        "sig": "goodsig",
+    })
+    assert resp["status"] == 401
+    assert resp["data"]["error"] == "device_revoked"
     assert saved == []

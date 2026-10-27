@@ -134,6 +134,28 @@ def test_every_platform_send_spends_the_shared_budget():
     assert "mail_budget.is_account_kind(email_kind)" in spend_fn
 
 
+def test_package_smtp_mail_is_capped_per_package_and_organization():
+    package = _between("async def send_mailtrap", "async def _send_package_smtp")
+    assert 'payload.pop("organization", "")' in package
+    assert "organization=organization" in package
+    reserve = _between("async def _package_smtp_reserve",
+                       "async def _send_package_smtp")
+    assert "self._plugin" in reserve and "organization" in reserve
+    assert "PACKAGE_SMTP_ORG_DAILY_LIMIT" in reserve
+    assert "return False" in reserve
+    local = _between("async def _send_package_smtp", "async def _mail_log(")
+    assert local.index("self._package_smtp_reserve(organization)") < local.index(
+        "smtp_mail.send(")
+    limit = int(ENTRY.split("PACKAGE_SMTP_ORG_DAILY_LIMIT = ", 1)[1].split("\n", 1)[0])
+    db = Db()
+    bucket = "mail-package-smtp:crm:org-a:" + mb.day_key(T0)
+    results = [asyncio.run(mb.reserve(db.execute, bucket, limit, T0))
+               for _ in range(limit + 1)]
+    assert results.count(True) == limit and results[-1] is False
+    other = "mail-package-smtp:crm:org-b:" + mb.day_key(T0)
+    assert asyncio.run(mb.reserve(db.execute, other, limit, T0)) is True
+
+
 def test_admin_alert_recipients_skip_service_and_undeliverable_accounts():
     admins = _between("async def _repository_monitor_admin_emails",
                       "def _sanitize_attention_log_text")

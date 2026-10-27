@@ -19,6 +19,12 @@ Code: `server/actions.go`, `server/actions_workflow.go`,
 - Mirrors hold no Actions variables: `${{ vars.X }}` expands to nothing.
 - `on: push` follows the default branch unless `on.push.branches` says
   otherwise; the node's own `forkmesh/*` ledger branches never trigger runs.
+- Contributor branches (`refs/heads/pr/<account>/...`, pushable by any
+  verified account when contributor pushes are on) never trigger runs either:
+  their workflow comes from the pushed commit itself, and the sandbox has no
+  process, memory or disk cap, so one push could fork-bomb or fill the node.
+  The app's instance runner treats them as untrusted (`untrusted_branch`)
+  (`TestActionsContributorBranchPushRunsNothing`).
 - One run at a time; `needs:`, `runs-on:`, `on.push.paths`, supersede, and a
   restart cancels what was in flight.
 - A run's scratch tree (`<run>/work`) is removed before the run is marked

@@ -60,6 +60,7 @@ MAX_BUNDLES = 64
 BUNDLE_FRESH_SECONDS = 5.0
 BUNDLE_STALE_SECONDS = 300.0
 PUBLIC_CHECK_SECONDS = 5.0
+GONE_STATUSES = frozenset({403, 404, 410})
 MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
@@ -746,7 +747,14 @@ async def still_public(fastpath, owner, repo):
     if len(_public) > 1024:
         _public.clear()
     _public[(owner, repo)] = (now, status == 200)
+    forget = getattr(fastpath, "forget_repository", None)
+    if status in GONE_STATUSES and forget is not None:
+        forget(owner, repo)
     return status == 200
+
+
+def recheck_public(owner, repo):
+    _public.pop((owner, repo), None)
 
 
 def _remember(bundle):

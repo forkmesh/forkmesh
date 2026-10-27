@@ -4401,6 +4401,14 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_system_link_vultr_confirm.py")
         add_test(
+            NAME forkmesh-repo-workflow-approval-contract
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_repo_workflow_approval.py")
+        add_test(
+            NAME forkmesh-body-link-schemes-contract
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_body_link_schemes.py")
+        add_test(
             NAME forkmesh-org-task-mine-filter-contract
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_org_task_mine_filter.py")

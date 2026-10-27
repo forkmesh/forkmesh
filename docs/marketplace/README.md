@@ -195,6 +195,16 @@ mail sending. Desktop callers sign with a per-package `REQUEST_PROOF` string.
 files a ping; `push=False` updates the inbox row without a phone banner, which
 the CRM and Marketing activity pings use to fold a burst into one ring.
 
+**Organization roles.** `organization(name, account_bi)` returns the
+caller's role only for organization insiders (owner, admin, maintainer,
+member, auditor); a guest gets the same empty role as an outsider, so every
+package that checks `if not role` fails closed. `organization_member_emails`
+answers insiders only. The CRM, Marketing, Analytics and Competitor packages
+also refuse guests themselves and answer auditors' writes with 403
+`read_only_role` (Analytics still lets them run read-only `query` requests).
+Why: guests are outside collaborators added for a few repositories and must
+not read an organization's customer, marketing or analytics records.
+
 **Data lifecycle.** `dataLifecycle.scope` is `organization` (installs go
 through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,
 `DATA_SCHEMA_DOWN`, `org_has_data`, `export_org_data`, `purge_org_data`),
