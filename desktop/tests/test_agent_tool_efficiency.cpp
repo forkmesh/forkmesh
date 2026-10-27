@@ -1,5 +1,6 @@
 // Tool catalog coverage and owner-device efficiency ledger tests. Core-only:
 // no QApplication, no widgets, so the suite stays fast and headless.
+#include "../src/AgentPerformanceHistory.h"
 #include "../src/AgentRunEfficiencyLog.h"
 #include "../src/AgentToolCatalog.h"
 #include "../src/AgentToolEfficiencyLedger.h"
@@ -8,6 +9,7 @@
 #include "../src/AgentToolPolicy.h"
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -17,6 +19,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include <cmath>
 #include <cstdio>
 #include <optional>
 #include <utility>
@@ -1501,6 +1504,153 @@ void testRunEfficiencyLog()
           QStringLiteral("clear forgets runs and deletes the log"));
 }
 
+void testPerformanceHistory()
+{
+    const qint64 hourMs = 60 * 60 * 1000LL;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    AgentPerformanceHistory history;
+    int changes = 0;
+    history.changed = [&changes] { ++changes; };
+
+    auto call = [](qint64 completedMs, qint64 latencyMs, bool isError, qint64 tokens) {
+        AgentToolCallObservation observation;
+        observation.family = QStringLiteral("bash");
+        observation.startedMs = completedMs - latencyMs;
+        observation.completedMs = completedMs;
+        observation.isError = isError;
+        observation.inputTokens = tokens / 4;
+        observation.resultTokens = tokens - tokens / 4;
+        return observation;
+    };
+    history.recordCall(call(now - 5 * 60 * 1000, 400, false, 1000));
+    history.recordCall(call(now - 4 * 60 * 1000, 800, true, 3000));
+    AgentToolCallObservation held = call(now - 3 * 60 * 1000, 9000, false, 0);
+    held.heldBehindSibling = true;
+    history.recordCall(held);
+    history.recordCall(call(now - 90 * 60 * 1000, 1000, false, 2000));
+    history.recordSignal(1000, now - 4 * 60 * 1000);
+
+    const AgentPerformanceSeries calls =
+        history.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Hour, now);
+    check(calls.values.size() == 60 && calls.hasSummary && calls.summary == 3.0 &&
+              calls.hasPreviousSummary && calls.previousSummary == 1.0 &&
+              qAbs(calls.change() - 2.0) < 1e-9,
+          QStringLiteral("tool calls sum per hour against the hour before"));
+    const AgentPerformanceSeries errors =
+        history.series(QStringLiteral("toolErrors"), AgentPerformanceHistory::Hour, now);
+    check(qAbs(errors.summary - 100.0 / 3.0) < 1e-6 &&
+              errors.previousSummary == 0.0 && std::isnan(errors.change()),
+          QStringLiteral("the error rate is errors over calls, with no change against zero"));
+    const AgentPerformanceSeries latency =
+        history.series(QStringLiteral("toolLatency"), AgentPerformanceHistory::Hour, now);
+    check(latency.summary == 600.0,
+          QStringLiteral("a call held behind its sibling does not count toward call time"));
+    const AgentPerformanceSeries efficiency =
+        history.series(QStringLiteral("efficiency"), AgentPerformanceHistory::Hour, now);
+    check(efficiency.summary == 75.0 && efficiency.previousSummary == 100.0,
+          QStringLiteral("efficiency is one minus tokens at stake over tool tokens"));
+    const AgentPerformanceSeries gauge =
+        history.series(QStringLiteral("agents"), AgentPerformanceHistory::Hour, now);
+    check(!gauge.hasSummary && std::isnan(gauge.values.last()),
+          QStringLiteral("a gauge never sampled stays empty rather than zero"));
+    const AgentPerformanceSeries weekCalls =
+        history.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Week, now);
+    check(weekCalls.values.size() == 168 && weekCalls.summary == 4.0 &&
+              history.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Month, now)
+                      .summary == 4.0,
+          QStringLiteral("every call lands in each period's buckets"));
+
+    AgentRunRecord run;
+    run.outcome = QStringLiteral("error");
+    run.endedMs = now - 2 * 60 * 1000;
+    run.durationMs = 120000;
+    run.estimatedUsd = 0.5;
+    history.recordRun(run);
+    run.outcome = QStringLiteral("success");
+    run.durationMs = 60000;
+    history.recordRun(run);
+    const AgentPerformanceSeries runs =
+        history.series(QStringLiteral("runs"), AgentPerformanceHistory::Day, now);
+    check(runs.summary == 2.0 && runs.summaryNote == QLatin1String("2 runs, 1 failed") &&
+              history.series(QStringLiteral("runTime"), AgentPerformanceHistory::Day, now)
+                      .summary == 90000.0 &&
+              history.series(QStringLiteral("cost"), AgentPerformanceHistory::Day, now)
+                      .summary == 1.0,
+          QStringLiteral("runs count with their failures, average time and cost"));
+
+    AgentPerformanceHistory::SystemSample sample;
+    sample.runningAgents = 2;
+    sample.agentLimit = 4;
+    sample.memoryPercent = 50.0;
+    sample.cpuPercent = 20.0;
+    sample.memoryTotalBytes = 16LL * 1024 * 1024 * 1024;
+    sample.cpuCount = 8;
+    sample.build = QStringLiteral("1.0");
+    history.recordSample(sample, now - 2 * 60 * 1000);
+    sample.runningAgents = 6;
+    sample.agentLimit = 8;
+    sample.memoryPercent = 30.0;
+    sample.memoryTotalBytes = 32LL * 1024 * 1024 * 1024;
+    sample.build = QStringLiteral("1.1");
+    history.recordSample(sample, now - 60 * 1000);
+    const AgentPerformanceSeries agents =
+        history.series(QStringLiteral("agents"), AgentPerformanceHistory::Day, now);
+    check(agents.summary == 4.0 && agents.summaryNote == QLatin1String("peak 6"),
+          QStringLiteral("agents running averages samples and keeps the peak"));
+    QStringList labels;
+    for (const AgentPerformanceMarker &marker :
+         history.markers(AgentPerformanceHistory::Hour, now))
+        labels << marker.label;
+    check(labels == QStringList{QStringLiteral("Memory 16 → 32 GB"),
+                                QStringLiteral("Agent limit 4 → 8"),
+                                QStringLiteral("Build 1.1")},
+          QStringLiteral("memory, agent-limit and build changes become chart markers: %1")
+              .arg(labels.join(QStringLiteral(", "))));
+    check(history.summaryMarkdown(AgentPerformanceHistory::Hour, now)
+                  .contains(QStringLiteral("| Tool calls | 3 | 1 | +200% |")),
+          QStringLiteral("the summary renders as a markdown table"));
+    check(changes > 0, QStringLiteral("every record notifies the owner"));
+
+    QTemporaryDir dir;
+    const QString path = QDir(dir.path()).filePath(QStringLiteral("performance-history.json"));
+    AgentPerformanceHistory saved(path);
+    QString error;
+    check(saved.fromJson(history.toJson(), &error) && saved.saveNow(&error),
+          QStringLiteral("history saves: %1").arg(error));
+    AgentPerformanceHistory reloaded(path);
+    check(reloaded.load(&error) && reloaded.loadedFromDisk() &&
+              reloaded.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Hour, now)
+                      .summary == 3.0 &&
+              reloaded.markers(AgentPerformanceHistory::Hour, now).size() == 3,
+          QStringLiteral("history reloads its buckets and markers: %1").arg(error));
+    sample.memoryTotalBytes = 32LL * 1024 * 1024 * 1024;
+    reloaded.recordSample(sample, now);
+    check(reloaded.markers(AgentPerformanceHistory::Hour, now).size() == 3,
+          QStringLiteral("an unchanged environment after a reload adds no marker"));
+
+    AgentPerformanceHistory seeded;
+    AgentRunRecord old;
+    old.outcome = QStringLiteral("success");
+    old.endedMs = now - 3 * 24 * hourMs;
+    old.durationMs = 1000;
+    old.toolCalls = 10;
+    old.toolErrors = 1;
+    old.toolInputTokens = 500;
+    old.toolResultTokens = 1500;
+    old.tokensAtStake = 200;
+    AgentRunRecord ancient = old;
+    ancient.endedMs = now - 90 * 24 * hourMs;
+    check(seeded.seedFromRuns({old, ancient}) &&
+              seeded.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Week, now)
+                      .summary == 10.0 &&
+              seeded.series(QStringLiteral("efficiency"), AgentPerformanceHistory::Week, now)
+                      .summary == 90.0 &&
+              seeded.series(QStringLiteral("toolCalls"), AgentPerformanceHistory::Month, now)
+                      .summary == 10.0 &&
+              !seeded.seedFromRuns({old}),
+          QStringLiteral("a new history backfills once from the run log, inside 60 days"));
+}
+
 int main()
 {
     testToolPolicy();
@@ -1517,6 +1667,7 @@ int main()
     testToolUsageRows();
     testBackgroundSave();
     testRunEfficiencyLog();
+    testPerformanceHistory();
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -482,10 +482,10 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowUsers.cpp
     src/MainWindowVultrMirrors.cpp
     src/MainWindowHostInstall.cpp
-    src/MainWindowTasks.cpp
-    src/RepositoryCalendar.cpp
-    src/MainWindowCalendar.cpp
-    src/MainWindowNotes.cpp
+    src/MainWindowTaskBridge.cpp
+    src/OrganizationTaskStore.h
+    src/OrganizationTaskStore.cpp
+    src/GitCapture.cpp
     src/MainWindowFiles.cpp
     src/MainWindowNetworkFiles.cpp
     src/MainWindowStats.cpp
@@ -542,7 +542,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowMarket.cpp
     src/MainWindowPackageExtensions.cpp
     src/MainWindowLedger.cpp
-    src/MainWindowTimers.cpp
+    src/MainWindowPackageChrome.cpp
     src/MainWindowMcp.cpp
     src/MainWindowLocalControl.cpp
     src/MainWindowLocalControlHosts.cpp
@@ -1050,6 +1050,10 @@ set(FORKMESH_APP_SOURCES
     src/FastScratchDisk.h
     src/UsbLinkCheck.h
     src/AgentWorktree.h
+    src/WorktreeInclude.h
+    src/PromptDrop.h
+    src/WorkspaceOpenIn.h
+    src/WorkspaceShortcuts.h
     src/AgentWorkspaceNameGate.h
     src/VirtualMachineRuntime.h
     src/VirtualMachineRuntime.cpp
@@ -1168,6 +1172,10 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/AgentTaskList.h
+    src/AgentTaskList.cpp
+    src/AgentTaskListBar.h
+    src/AgentTaskListBar.cpp
     src/ClaudeElicitationDialog.h
     src/ClaudeElicitationDialog.cpp
     src/PromptDeckBar.h
@@ -1263,6 +1271,10 @@ set(FORKMESH_APP_SOURCES
     src/AgentRunEfficiencyLog.cpp
     src/AgentRunTable.h
     src/AgentRunTable.cpp
+    src/AgentPerformanceHistory.h
+    src/AgentPerformanceHistory.cpp
+    src/AgentPerformanceCharts.h
+    src/AgentPerformanceCharts.cpp
     src/AgentModelStats.h
     src/AgentModelStats.cpp
     src/AgentModelTable.h
@@ -1356,6 +1368,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeStreamSession.h
     src/ClaudeElicitationDialog.h
     src/ClaudeTranscriptView.h
+    src/AgentTaskListBar.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
@@ -1366,6 +1379,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/MessageRow.h
     src/NodeEventSocket.h
     src/OfficeChannelMirror.h
+    src/OrganizationTaskStore.h
     src/RemoveCoreNodeDialog.h
     src/ScrollJumpButtons.h
     src/ServerNode.h
@@ -1467,6 +1481,7 @@ set_source_files_properties(
     src/ClaudeElicitationDialog.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/AgentTaskListBar.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
@@ -1478,6 +1493,7 @@ set_source_files_properties(
     src/MessageRow.h
     src/NodeEventSocket.h
     src/OfficeChannelMirror.h
+    src/OrganizationTaskStore.h
     src/RemoveCoreNodeDialog.h
     src/ScrollJumpButtons.h
     src/ServerNode.h
@@ -2217,6 +2233,21 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-workspace-parity-tests
+        tests/test_workspace_parity.cpp
+        src/PromptDrop.h
+        src/WorkspaceOpenIn.h
+        src/WorkspaceShortcuts.h
+        src/WorktreeInclude.h
+    )
+    target_include_directories(forkmesh-workspace-parity-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-workspace-parity-tests PRIVATE Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-workspace-parity-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-chat-transcript-window-tests
         tests/test_chat_transcript_window.cpp
         src/ChatTranscriptWindow.h
@@ -2754,6 +2785,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentToolImprovementLog.cpp
         src/AgentRunEfficiencyLog.h
         src/AgentRunEfficiencyLog.cpp
+        src/AgentPerformanceHistory.h
+        src/AgentPerformanceHistory.cpp
     )
     target_link_libraries(forkmesh-agent-tool-efficiency-tests PRIVATE Qt6::Core)
     if(APPLE)
@@ -3248,6 +3281,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
     if(UNIX AND NOT APPLE)
         target_link_libraries(forkmesh-window-tests PRIVATE util Qt6::DBus)
         target_compile_definitions(forkmesh-window-tests PRIVATE FORKMESH_HAVE_PORTAL)
+    endif()
+
+    qt_add_executable(forkmesh-agent-task-list-tests
+        tests/test_agent_task_list.cpp
+        src/AgentTaskList.h
+        src/AgentTaskList.cpp
+        src/AgentTaskListBar.h
+        src/AgentTaskListBar.cpp
+        src/ClaudeTranscriptTools.h
+        src/ClaudeTranscriptTools.cpp
+    )
+    target_link_libraries(forkmesh-agent-task-list-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-agent-task-list-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-task-list-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
     endif()
 
     qt_add_executable(forkmesh-sonifier-tests
@@ -4126,6 +4175,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-settings-write-tests
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
+        forkmesh-agent-task-list-tests
         forkmesh-sonifier-tests
         forkmesh-ui-sounds-tests
         forkmesh-user-activity-tests
@@ -4198,6 +4248,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-repo-stats-tests COMMAND forkmesh-repo-stats-tests)
     add_test(NAME forkmesh-agent-folders-tests
              COMMAND forkmesh-agent-folders-tests)
+    add_test(NAME forkmesh-agent-task-list-tests COMMAND forkmesh-agent-task-list-tests)
     add_test(NAME forkmesh-sonifier-tests COMMAND forkmesh-sonifier-tests)
     add_test(NAME forkmesh-ui-sounds-tests COMMAND forkmesh-ui-sounds-tests)
     add_test(NAME forkmesh-user-activity-tests
@@ -4477,6 +4528,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
              COMMAND forkmesh-agent-prompt-title-tests)
+    add_test(NAME forkmesh-workspace-parity-tests
+             COMMAND forkmesh-workspace-parity-tests)
     add_test(NAME forkmesh-diff-intra-line-tests
              COMMAND forkmesh-diff-intra-line-tests)
     add_test(NAME forkmesh-ssh-mirror-push-tests
@@ -4545,6 +4598,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-window-tests --diff-stream-only)
     add_test(NAME forkmesh-saved-searches-window-tests
              COMMAND forkmesh-window-tests --saved-searches-only)
+    add_test(NAME forkmesh-git-layout-window-tests
+             COMMAND forkmesh-window-tests --git-layout-only)
     add_test(NAME forkmesh-inline-diff-comments-window-tests
              COMMAND forkmesh-window-tests --inline-diff-comments-only)
     add_test(NAME forkmesh-diff-health-window-tests
@@ -4590,6 +4645,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-teammates-window-tests
         forkmesh-mirror-fleet-window-tests forkmesh-diff-stream-window-tests
         forkmesh-saved-searches-window-tests
+        forkmesh-git-layout-window-tests
         forkmesh-inline-diff-comments-window-tests
         forkmesh-diff-health-window-tests
         forkmesh-package-window-tests forkmesh-tip-notice-window-tests

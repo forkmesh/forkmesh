@@ -134,7 +134,7 @@ void MainWindow::loadCachedAvatars()
         refreshVisibleRowAvatars();
         refreshChatMembers();
         refreshIssueAvatars();
-        refreshOrganizationTaskPeopleFaces();
+        notifyPackagesAccountPicturesChanged();
     });
     watcher->setFuture(QtConcurrent::run([dir] {
         const forkmesh::BackgroundScope activity(
@@ -2433,7 +2433,7 @@ void MainWindow::startSession()
                   m_profileIdentity.shortPublicKey() + " (" +
                   QString::number(profileBytes.toUtf8().size()) + " bytes).");
         m_stack->setCurrentIndex(1);
-        showSection(0); // land on the Home overview after connecting
+        showSection(startupLandingSection());
         updateBreadcrumb();
         updateSolanaNotice();
         loadCachedAvatars();

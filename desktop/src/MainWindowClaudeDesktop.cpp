@@ -2,6 +2,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
 #include "ClaudeDesktopSessions.h"
+#include "ProcessReaper.h"
 
 #include <QDesktopServices>
 #include <QProcess>
@@ -15,10 +16,10 @@ constexpr int kClaudeDesktopLinkSpacingMs = 2000;
 bool openClaudeUrl(const QUrl &url)
 {
 #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
-    if (QProcess::startDetached(QStringLiteral("xdg-open"), {url.toString()}))
+    if (forkmesh::processreaper::startReleasedQuietly(QStringLiteral("xdg-open"), {url.toString()}))
         return true;
 #elif defined(Q_OS_MACOS)
-    if (QProcess::startDetached(QStringLiteral("/usr/bin/open"), {url.toString()}))
+    if (forkmesh::processreaper::startReleasedQuietly(QStringLiteral("/usr/bin/open"), {url.toString()}))
         return true;
 #endif
     return QDesktopServices::openUrl(url);

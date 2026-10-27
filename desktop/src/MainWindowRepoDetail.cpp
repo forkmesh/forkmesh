@@ -7590,7 +7590,6 @@ QWidget *MainWindow::createGlobalSearchBox()
             m_globalSearchClear->setVisible(false);
         syncAgentPageSearch();
         syncTeammatePageSearch();
-        syncOrganizationTaskPageSearch();
         syncNativePackagePageSearch();
         openSearchResultsPage(query);
     });
@@ -7648,7 +7647,6 @@ QWidget *MainWindow::createGlobalSearchBox()
             m_issueSearch->setText(t);
         syncAgentPageSearch();
         syncTeammatePageSearch();
-        syncOrganizationTaskPageSearch();
         syncNativePackagePageSearch();
         if (t.trimmed().isEmpty()) {
             m_globalSearchTimer->stop();
@@ -7828,7 +7826,6 @@ void MainWindow::rebuildGlobalSearchResults()
     // not been opened this session starts loading now and redraws this list
     // when its records arrive.
     prepareNativePackageSearch();
-    prepareBuiltinPackageSearch();
     for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
         if (!page.widget || total >= kMaxTotal)
             continue;
@@ -8328,7 +8325,6 @@ void MainWindow::activateGlobalSearchItem(QListWidgetItem *item)
         }
         syncAgentPageSearch();
         syncTeammatePageSearch();
-        syncOrganizationTaskPageSearch();
         syncNativePackagePageSearch();
     }
 
@@ -9020,12 +9016,6 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
         case kUsersSectionIndex:
             destination = QStringLiteral("Users");
             break;
-        case kOrganizationTasksSectionIndex:
-            destination = QStringLiteral("Tasks");
-            break;
-        case kNotesSectionIndex:
-            destination = QStringLiteral("Notes");
-            break;
         case kFilesSectionIndex:
             destination = QStringLiteral("Files");
             break;
@@ -9054,9 +9044,6 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
             destination = place.itemId.isEmpty()
                               ? QStringLiteral("Project settings")
                               : QStringLiteral("Project settings · %1").arg(place.itemId);
-            break;
-        case kCalendarSectionIndex:
-            destination = QStringLiteral("Calendar");
             break;
         case kMarketSectionIndex:
             destination = QStringLiteral("Market");
@@ -14824,9 +14811,6 @@ void MainWindow::updateRepoActivityRail()
                           m_repoDetailStack->currentIndex() == 2;
     const bool onTeam = m_sectionStack &&
                         m_sectionStack->currentIndex() == kTeamSectionIndex;
-    const bool onTasks =
-        m_sectionStack &&
-        m_sectionStack->currentIndex() == kOrganizationTasksSectionIndex;
     if (m_repoDetailChrome)
         m_repoDetailChrome->setVisible(!onChanges && !onAgents);
     if (m_repoFilesModeBar)
@@ -14848,8 +14832,6 @@ void MainWindow::updateRepoActivityRail()
             onTeam
                 ? QString::fromUtf8(
                       "Search special agents, specialties or skills\xE2\x80\xA6")
-            : onTasks
-                ? QString::fromUtf8("Search tasks\xE2\x80\xA6")
             : onChanges ? QString::fromUtf8("Search commits\xE2\x80\xA6")
             : onAgents
                 ? QString::fromUtf8("Search agents & transcripts\xE2\x80\xA6")
@@ -14861,11 +14843,6 @@ void MainWindow::updateRepoActivityRail()
         m_globalSearch->setToolTip(
             QStringLiteral("Filter these special agents by name, specialty, focus, skill, "
                            "shortcut or latest output."));
-    } else if (m_globalSearch && onTasks) {
-        m_globalSearch->setToolTip(
-            QStringLiteral("Filter the task list by title, details, assignee, "
-                           "repository, department, status, how to test or "
-                           "task ID."));
     } else if (m_globalSearch && onIssues) {
         m_globalSearch->setToolTip(
             "Search issues with GitHub-style operators: is:open, is:closed, "
@@ -14883,7 +14860,6 @@ void MainWindow::updateRepoActivityRail()
     syncGitCommitFilter();
     syncAgentPageSearch();
     syncTeammatePageSearch();
-    syncOrganizationTaskPageSearch();
     syncNativePackagePageSearch();
     // The rail stays visible while the nested Git view is hidden. Coalesce the
     // stack signals from one navigation, then refresh its count for whichever

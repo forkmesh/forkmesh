@@ -48,5 +48,8 @@ QStringList teammateAllowedHosts(const QStringList &granted);
 inline const QString kReadAppLogsGrant = QStringLiteral("read-app-logs");
 QStringList appLogReadRules(const QString &logPath, const QString &archiveDir);
 QString claudeSettingsWithAllowRules(const QString &settings, const QStringList &allowRules);
+inline constexpr qint64 kReadGuardBytes = 32 * 1024;
+QString readGuardHookScript();
+QString claudeSettingsWithReadGuard(const QString &settings);
 
 } // namespace forkmesh::agentrules

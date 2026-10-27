@@ -25,7 +25,10 @@ a content-hash `?v=`; an App page picks up a change only when the App is
 deployed too.
 
 Left out on purpose: the full-screen chat (its composer is part of the
-layout), the OAuth consent screen and the pitch deck. A page opts out with
+layout), the OAuth consent screen and the pitch deck. The full-screen chat
+still loads the script, with `data-genie="off"`, when it draws a `#welcome`
+genie spider greeting: only `paint` is used
+([../app/chat-genie-welcome.md](../app/chat-genie-welcome.md)). A page opts out with
 an empty `{% block genie %}` or `data-genie="off"` on `<html>`.
 
 **White-label instances.** The spider is the `genie` instance plugin and is

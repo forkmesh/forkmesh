@@ -166,6 +166,11 @@ MainWindow::~MainWindow()
             QFile::exists(m_agentToolLedger->persistPath()))
             m_agentToolLedger->saveLater();
     }
+    if (m_agentPerformance) {
+        m_agentPerformance->changed = {};
+        if (!m_agentPerformance->isEmpty())
+            m_agentPerformance->saveLater();
+    }
     forkmesh::diskwrite::flush();
     ActionStore::flushWrites();
     flushRepositorySyncTimes();
@@ -606,6 +611,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
     });
     m_networkAccess = network;
+    initOrganizationTaskStore();
     static bool proxyLookupWarmed = false;
     if (!std::exchange(proxyLookupWarmed, true)) {
         runOffThread<bool>(
@@ -819,6 +825,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (!applicationPage || !m_stack)
         return;
     m_stack->addWidget(applicationPage);
+#ifdef FORKMESH_WINDOW_TESTS
+    syncNativePackagePages();
+#else
+    m_nativePackagePagesDeferred = true;
+    logStartup(QStringLiteral(
+        "installed package pages deferred until after first paint"));
+#endif
     m_stack->setCurrentWidget(applicationPage);
     restoreAppViewMode();
     logStartup(QStringLiteral("chat/app page built"));
@@ -1047,8 +1060,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "  startup job scheduled: first relay latency probe in 2500ms"));
     traceStep(QStringLiteral("start operating-system reachability watch"),
               [this] { initRelayReachabilityWatch(); });
-    traceStep(QStringLiteral("restore cached organization task badge"),
-              [this] { restoreOrganizationTaskBadge(); });
 #ifndef FORKMESH_WINDOW_TESTS
     QTimer::singleShot(25000, this, [this] {
         forkmesh::StartupTraceStep step(
@@ -1183,6 +1194,8 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // attach the real composer without showing an intermediate loader.
     QTimer::singleShot(100, this,
                        &MainWindow::initializeDeferredGlobalLogDock);
+    QTimer::singleShot(150, this,
+                       &MainWindow::buildDeferredNativePackagePages);
 }
 
 // Background state needed for automatic work after the interactive runway.
@@ -1205,6 +1218,7 @@ void MainWindow::runDeferredStartup()
     // Restore durable Actions state before resuming queued work. Repository
     // panels remain on-demand and are built by the exact restore/navigation.
     warmDeferredStartupSurfaces();
+    buildDeferredNativePackagePages();
     if (m_deferredStartupRun) {
         logStartup(QStringLiteral(
             "deferred startup requested again; ignored because it already ran"));
@@ -1313,6 +1327,8 @@ void MainWindow::runDeferredStartup()
         } else {
             logStartup(QStringLiteral(
                 "  repository restore skipped: no saved or available repository"));
+            if (m_sectionStack && m_sectionStack->currentIndex() == 0)
+                showSection(kHomeGridSectionIndex);
         }
     }
     m_pendingRestoreRepoIndex = -1;
@@ -1500,10 +1516,10 @@ void MainWindow::refreshThemedIcons()
         m_chatMembersSignature.clear();
         refreshChatMembers();
     }
-    // The Tasks detail pane bakes its glyphs into rich text, so it has to be
-    // rebuilt rather than re-tinted in place.
-    if (m_organizationTaskDetail)
-        renderOrganizationTaskDetail();
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.widget)
+            page.widget->themeChanged();
+    }
 }
 
 void MainWindow::flushDeferredSettings()

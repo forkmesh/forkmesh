@@ -1071,8 +1071,8 @@ def test_top_search_box_reaches_every_installed_package():
     assert "activateBuiltinPackageSearchHit(s1, s2);" in popup
     builtin = (REPO / "desktop" / "src" / "MainWindowSearch.cpp").read_text(encoding="utf-8")
     hits = builtin.split("MainWindow::builtinPackageSearchHits(", 1)[1].split("\n}\n", 1)[0]
-    for records in ("m_localNotes", "m_cloudNotes", "m_organizationTasks",
-                    "m_calendarEvents", "m_timersFeature->ordered(now)",
+    for records in ("m_organizationTasks",
+                    "chrome.widget->searchHits(query, limitPerPackage)",
                     "m_packageRegistry->isInstalled(manifest.id)"):
         assert records in hits, records
 
@@ -1232,8 +1232,10 @@ def test_desktop_detail_card_writes_an_investor_email_with_the_current_agent():
     assert "askNativePackageAgent(prompt, std::move(done));" in HOST
     ask = HOST.split("void MainWindow::askNativePackageAgent(", 1)[1].split("\n}\n", 1)[0]
     assert "defaultAgentProvider()" in ask
-    assert "new ClaudeStreamSession(this)" in ask and "new CodexAppServerSession(this)" in ask
-    assert "activeAgentAccountEnv(" in ask
+    assert "askNativePackageAgentWith(provider, prompt, 300000, std::move(done));" in ask
+    run = HOST.split("MainWindow::askNativePackageAgentWith(", 1)[1].split("\n}\n", 1)[0]
+    assert "new ClaudeStreamSession(this)" in run and "new CodexAppServerSession(this)" in run
+    assert "activeAgentAccountEnv(" in run
     assert "m_askAgent(host.askAgent)" in FEATURE
     detail = FEATURE.split("void CrmFeature::showContactDetail(", 1)[1].split("\n}\n", 1)[0]
     assert "draftInvestorEmail(contactById(contactId))" in detail

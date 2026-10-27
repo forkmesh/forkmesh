@@ -1,12 +1,74 @@
 # Desktop: the Tasks page
 
-Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
-(`buildOrganizationTasksSection()`, `OrganizationTaskRowDelegate`,
-`taskDetailHtml()`, `taskFieldsHtml()`); work items in
+Part of [the desktop docs](README.md). Code: the page is the Tasks package's
+own module, `marketplace/packages/tasks/content/desktop/TasksPage.{h,cpp}`
+(`TasksPage`, `buildOrganizationTasksSection()`, `OrganizationTaskRowDelegate`,
+`taskDetailHtml()`, `taskFieldsHtml()`), built as `build/packages/tasks.so`; the
+catalog and the signed relay requests in
+`desktop/src/OrganizationTaskStore.{h,cpp}`; the window's side of the page
+(quick add, agent launch, move to issue, attach worktree, the window commands)
+in `desktop/src/MainWindowTaskBridge.cpp`; work items in
 `desktop/src/MainWindowTaskWorkItems.cpp` with testable rules in
 `desktop/src/TaskWorkItems.{h,cpp}`; agent links in
 `desktop/src/MainWindowAgentTaskLink.cpp`; Markdown in
 `desktop/src/TaskMarkdown.{h,cpp}`.
+
+## Page and window
+
+The page is an ordinary native package page for `builtin:tasks`: it is on the
+rail under the key `tasks` while the package is installed, and it never
+includes `MainWindow.h` or `MainWindowInternal.h`
+([package modules](package-modules.md#plugins-built-apart-from-the-window)).
+What the rest of the app needs from tasks stays in the core:
+
+- **`OrganizationTaskStore`** holds the catalog (tasks, actor, members,
+  departments, manager flag), makes every `/api/tasks` request (session token,
+  else the key-signed proof from `organizationTaskProof()`), pages the catalog
+  and remembers the open count behind the rail badge (`tasks/openCount`). The
+  window creates it at startup (`initOrganizationTaskStore()`); the page finds
+  it with `OrganizationTaskStore::current()`. Agents, the agent task picker,
+  Stats, Cleanup, Branches and quick add read the store, so they work whether
+  or not the page has been built, or the package installed.
+- **Catalog reads.** The window's one unprompted read is 25 s after launch
+  (`refreshOrganizationTaskBadge()` → `refreshOnce()`); a `tasks` push calls
+  `handleEvent()`, which re-reads or, while a read is in flight, remembers to
+  re-read when it lands. Every answer is `catalogLoaded`: the window links
+  local agent sessions to tasks, refreshes branch links and the quick-add
+  assignees; the page renders it. The page renders the store's last answer
+  when it is first built instead of asking again.
+- **The page's own state**: its working copy of the list with this device's
+  optimistic edits laid over catalog reads (an edit wins until a read at least
+  as new by `updatedAt` arrives), per-task timelines and comment drafts,
+  images, filters and the view.
+
+The page reaches the window through `NativePackageHost`:
+
+| Call | Command | What the window does |
+| --- | --- | --- |
+| `windowQuery` | `task.agentSessions` | the local agent sessions linked to a task (id, provider, model, status, branch) for badges, spinners and the branch column |
+| `windowQuery` | `task.repositoryLogos` | the `logo.*` file at the root of each local checkout |
+| `windowCommand` | `prompt.append` | adds the task's text to the prompt box |
+| `windowCommand` | `agent.show` | opens an agent session |
+| `windowCommand` | `issue.show` | opens an issue in the repository view |
+| `windowCommand` | `task.cleanupWork` | cleans this desktop's work items of a deleted task |
+| `windowCommand` | `task.attachWorktree` | picks a linked worktree and attaches it |
+| `windowRequest` | `task.workPlan` | inspects this desktop's work items before a delete |
+| `windowRequest` | `task.startAgent` | starts an agent on the task with the prompt box's settings |
+| `windowRequest` | `task.fileAsIssue` | confirms, then files the task as an issue |
+| `accountPicture` | | a member's profile picture |
+
+The `task.*` queries answer only a package whose manifest grants
+`organization.tasks.read`, and the `task.*` commands and requests only one
+granted `organization.tasks.write` (`nativePackageHost()` in
+`MainWindowMarket.cpp`); `task.composeFromText` stays open because Notes
+asks for it.
+
+The window asks the page through host commands: `task.open` (task links in
+transcripts, agents and teammates), `task.created` (quick add and the
+issue-to-task move show the created task), and `task.composeFromText` (a note
+turned into a task; the window computes the title and details). Agent changes,
+avatar arrivals and theme changes reach every package page as
+`agentSessionsChanged()`, `accountPicturesChanged()` and `themeChanged()`.
 
 ## Layout
 
@@ -20,8 +82,10 @@ Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
   member (you first), Bot and Unassigned, each with an open-task count. Clicking
   a face filters to that person.
 - **Search.** The top search box filters the list while the page is visible
-  (`syncOrganizationTaskPageSearch()`), matching title, details, assignee,
-  repository, department, status, how-to-test and id.
+  (`setHostSearchQuery()`), matching title, details, assignee, repository,
+  department, status, how-to-test and id, and lists matching tasks in its
+  dropdown from any page (`searchHits()`, from the store when the page has not
+  been built).
 - **Rows** (`OrganizationTaskRowDelegate`). Full view: a progress rail, the
   creator's 40 px picture with an assignee or agent badge, priority and title,
   a line of field columns (status icon, department, repository, branch, QA,
@@ -40,14 +104,15 @@ Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
   time (`kOrganizationTaskPageSize`) when the view nears the end
   (`appendOrganizationTaskRows()`). Filters reset to the top; refreshes keep
   the scroll position.
-- **People pictures** come from `chatSenderAvatarSource()` through
-  `taskPersonFace()` (real picture, else a seeded stand-in), refreshed by
-  `refreshOrganizationTaskPeopleFaces()` when avatars arrive. No network call
-  while painting.
+- **People pictures** come from the window's avatars (`accountPicture`)
+  through `taskPersonFace()` (real picture, else a seeded stand-in), refreshed
+  by `accountPicturesChanged()` when avatars arrive. No network call while
+  painting.
 - **Agent badge and spinner.** `organizationTaskAgentFace()` picks the newest
-  local session linked to the task, else the relay's `agent` object on a Bot
-  task, and draws its model avatar. While that agent runs, a fireball orbits
-  the badge.
+  local session linked to the task (`task.agentSessions`, re-read on each
+  render and spinner tick), else the relay's `agent` object on a Bot task, and
+  draws its model avatar (`agentFaceIcon()`). While that agent runs, a fireball
+  orbits the badge.
 - **Detail pane.** Icon action buttons (Edit, Start/Stop, Complete or Mark
   undone, Assign Bot, Start agent, Add to prompt, Send to QA, Follow up, Move
   to issue, Comment, Check in, Delete) above the text, a quick comment box

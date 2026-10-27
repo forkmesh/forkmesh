@@ -631,7 +631,7 @@ bool MainWindow::postOrgTaskForSession(const AgentSession &session,
             flashMessage(QStringLiteral("Created an organization task for agent "
                                         "session #%1.")
                              .arg(sessionId));
-            if (m_organizationTasksLoaded)
+            if (m_organizationTaskStore && m_organizationTaskStore->loaded())
                 refreshOrganizationTasks();
         }
     });

@@ -25,6 +25,9 @@
 #include <cstdio>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #endif
@@ -209,11 +212,34 @@ RunResult runWorkflow(const QString &repository, const QString &commit,
     return result;
 }
 
+#ifndef Q_OS_WIN
+int holdTreeLock(const QString &path)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+bool treeLockedByAnother(const QString &path)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+    const bool held = ::flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK;
+    ::close(fd);
+    return held;
+}
+#endif
+
 bool destroyWorkflowDuringCheckout(const QString &repository,
                                    const QString &commit,
                                    const QString &content,
                                    ActionStore *store, int runId,
-                                   const ActionSandboxLimits &limits)
+                                   const ActionSandboxLimits &limits,
+                                   bool *lockedWhileRunning = nullptr)
 {
     ActionRun run;
     run.id = runId;
@@ -238,6 +264,18 @@ bool destroyWorkflowDuringCheckout(const QString &repository,
     runner.setSandboxLimitsForTesting(limits);
     runner.start(run, workflow, repository, QString(),
                  QMap<QString, QString>{});
+    if (lockedWhileRunning) {
+        const QDir base(store->sandboxDir());
+        const QStringList trees =
+            base.entryList({QStringLiteral("forkmesh-run-%1-*").arg(runId)},
+                           QDir::Dirs | QDir::NoDotAndDotDot);
+#ifndef Q_OS_WIN
+        *lockedWhileRunning =
+            trees.size() == 1 && treeLockedByAnother(base.absoluteFilePath(trees.first()));
+#else
+        *lockedWhileRunning = trees.size() == 1;
+#endif
+    }
     // Returning destroys the runner immediately while its asynchronous checkout
     // QProcess is still Starting/Running. The destructor must disconnect, stop,
     // reap, and delete that child without dispatching an output callback.
@@ -1438,10 +1476,14 @@ int main(int argc, char **argv)
                   reentrant.terminalRefreshCompleted &&
                   reentrant.log.contains(QStringLiteral("final process output")),
               "terminal pull-check refresh cannot outlive the finished process");
+        bool lockedWhileRunning = false;
         check(destroyWorkflowDuringCheckout(
                   repository, reentrantCommit, reentrantWorkflow,
-                  &store, 110, limits),
+                  &store, 110, limits, &lockedWhileRunning),
               "destroying a runner safely reaps an in-flight checkout process");
+        check(lockedWhileRunning,
+              "a running Action holds a lock on its sandbox tree that other "
+              "ForkMesh processes can see");
         // A node restarted or killed mid-run destroys its runners without ever
         // reaching cleanupWorktree(), so the tree survives the process. The
         // destructor drops the claim, which is what lets the next sweep take
@@ -1461,6 +1503,26 @@ int main(int argc, char **argv)
                       .isEmpty(),
               "the tree a destroyed runner abandoned is reclaimed, and the "
               "sweep reports the room left on the node");
+#ifndef Q_OS_WIN
+        const QString otherProcessTree = sandboxBase.absoluteFilePath(
+            QStringLiteral("forkmesh-run-904-%1").arg(nowMs - 60 * 60 * 1000LL));
+        check(QDir().mkpath(otherProcessTree + QStringLiteral("/tmp")),
+              "a sandbox tree another node process is running in is staged");
+        const int otherProcessLock = holdTreeLock(otherProcessTree);
+        check(otherProcessLock >= 0, "the staged tree is locked like a live run's");
+        ActionRunner::reclaimSandboxes(store.sandboxDir(), 0);
+        check(QDir(otherProcessTree + QStringLiteral("/tmp")).exists(),
+              "the sweep leaves a tree a run in another process still holds");
+        check(!ActionRunner::removeUnclaimedSandbox(store.sandboxDir(), otherProcessTree)
+                   .isEmpty() &&
+                  QDir(otherProcessTree).exists(),
+              "Cleanup refuses to remove a tree a run in another process holds");
+        if (otherProcessLock >= 0)
+            ::close(otherProcessLock);
+        ActionRunner::reclaimSandboxes(store.sandboxDir(), 0);
+        check(!QDir(otherProcessTree).exists(),
+              "the tree is reclaimed once that run lets go of it");
+#endif
         QDir(liveTree).removeRecursively();
 
         const QString interruptWorkflow = QStringLiteral(
