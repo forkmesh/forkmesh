@@ -268,7 +268,8 @@ maps every server error code).
   error, first item or last log line, with the log in the tooltip.
 - **Run goes to Recent runs.** Run, Run with an assignment, a rail pin and the
   editor's Run workflow all follow the new run (`followRun`): the run filters
-  reset, the runs pane grows to at least 40% of the page and the new run is
+  reset (the workflow filter stays when it already names that workflow), the
+  runs pane grows to at least 40% of the page and the new run is
   selected. A desktop run is matched by the `runId` the `run` action returns
   (special agents return it too), else by the first run of that workflow
   started within two minutes of the click. An account run has no id until
@@ -413,6 +414,30 @@ desktop** (repository workflows and special agents) and **Your workflows**
   workflow without an agent step gets **Add a special agent step**, which opens
   it with an `agent.run` step after its last step (read-only permission) to
   fill in and save.
+- **Details pane and its log.** The user asked (2026-10-27) that clicking a
+  workflow show its log at the bottom right and open a right-hand pane to see
+  and manage all of it. Clicking a card (`selectEntry`) now does three things:
+  it highlights the card, opens the details pane (`workflowsDetails`, a
+  splitter beside the cards under the toolbar; 360 to 440 px at first, then
+  the width you drag it to), and sets Recent runs' workflow filter to that
+  workflow. If the selected run is not one of the workflow's runs, its newest
+  run is selected, so its steps and log fill the bottom right. A workflow that
+  has never run gets an empty log and "<name> has not run yet". The pane
+  (`renderDetails`) shows the portrait, name, kind and place, a state chip,
+  the rail, description, file problem, Run now / Stop and Run with an
+  assignment. It also has a button for every action from the More menu: Edit
+  steps, Turn on/off, Start or Pause schedule, Pin to rail, Open output file,
+  Agent home or Add an agent step, and Show file for desktop workflows;
+  Duplicate and Open in browser for account ones; and Delete. Below those are
+  the facts (trigger, schedule, next and last run, running step, runs and
+  failures, steps, where, rail, file) and the latest output. Buttons look up
+  the entry by key when clicked, so a refresh between drawing and clicking
+  acts on current data. The pane redraws only when its entry, the busy flag
+  or the theme changes (`m_detailsShown`), and keeps its scroll position for
+  the same workflow. It closes on × or when its workflow is gone; × also sets
+  the run filter back to All workflows. Running from the pane keeps the
+  workflow filter: `followRun` resets it only when it names another workflow,
+  and Last output does the same.
 
 **Account workflow pins.** The host keeps them with the desktop's pins
 (`ui/workflowPins`) under the repository key `@account/workflows`
