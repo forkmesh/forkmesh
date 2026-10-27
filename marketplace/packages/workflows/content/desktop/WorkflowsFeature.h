@@ -18,6 +18,7 @@ class QIcon;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
@@ -118,6 +119,9 @@ private:
 
     void renderEditor();
     void renderStepList();
+    void fillStepItem(QListWidgetItem *item, const QString &id, const QHash<QString, QString> &statuses);
+    QHash<QString, QString> latestStepStatuses() const;
+    void renderEditorFacts();
     void renderStepForm();
     void renderEditorRuns();
     void loadEditorRuns();
@@ -240,6 +244,8 @@ private:
     QPushButton *m_exportButton = nullptr;
     QPushButton *m_deleteDraftButton = nullptr;
     QLabel *m_editorNote = nullptr;
+    QWidget *m_editorFacts = nullptr;
+    QLabel *m_subtitle = nullptr;
     QListWidget *m_steps = nullptr;
     QPushButton *m_addStepButton = nullptr;
     QPushButton *m_removeStepButton = nullptr;
