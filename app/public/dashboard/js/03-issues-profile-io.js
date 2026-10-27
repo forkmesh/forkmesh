@@ -1708,6 +1708,7 @@
     parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
     refreshPullConversationProjection();
     refreshRepoPullDiff();
+    if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -1800,6 +1801,7 @@
         return;
       }
       renderCurrentWebIssueDetail();
+      if (action === "edit-comment") restoreCommentEditFocus(target);
     } catch (error) {
       showErrorNotice(webIssueActionError(error, action));
     }
