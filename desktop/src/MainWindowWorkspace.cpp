@@ -2,6 +2,8 @@
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
 #include "MainWindowNextAccess.h"
+#include "AgentCloudSessions.h"
+#include "SessionSidePanels.h"
 #include "WorkspaceBrowserPane.h"
 #include "WorkspaceLayout.h"
 #include "WorkspaceOpenIn.h"
@@ -70,7 +72,7 @@ constexpr int kComposerHeight = 118;
 constexpr int kParkedAt = -20000;
 constexpr char kListViewSetting[] = "agents/listView";
 
-enum PanelTab { TabChanges, TabTerminal, TabBrowser, TabCount };
+enum PanelTab { TabChanges, TabTerminal, TabBrowser, TabDetails, TabCount };
 
 enum Command {
     CmdNewSession,
@@ -91,6 +93,8 @@ enum Command {
     CmdModelMenu,
     CmdEffortMenu,
     CmdShortcuts,
+    CmdToggleDetails,
+    CmdShowDetails,
 };
 
 enum MenuKind { MenuSidebar, MenuSession, MenuComposer };
@@ -514,7 +518,7 @@ struct Chrome : public QObject {
     bool applied = false;
     bool syncing = false;
     bool panelOpen = false;
-    int tab = TabTerminal;
+    int tab = TabDetails;
     AppViewMode lastMode = AppViewMode::Standard;
     bool lastDark = false;
     bool iconsReady = false;
@@ -578,6 +582,11 @@ struct Chrome : public QObject {
     QStackedWidget *panelStack = nullptr;
     QWidget *hosts[TabCount] = {nullptr, nullptr, nullptr};
     WorkspaceBrowserPane *browser = nullptr;
+    SessionSidePanels *details = nullptr;
+    int detailsSession = 0;
+    int detailsConsumed = 0;
+    int detailsCloudTurns = -1;
+    qint64 detailsCloudTail = -1;
     QPointer<QSplitter> filesSplit;
 
     bool composerReady = false;
@@ -633,6 +642,7 @@ void refreshIcons(Chrome *chrome)
     chrome->resume->setIcon(glyph(QStringLiteral("play"), Theme::Role::Fg));
     chrome->toggles[TabTerminal]->setIcon(toggleGlyph(QStringLiteral("terminal")));
     chrome->toggles[TabBrowser]->setIcon(toggleGlyph(QStringLiteral("globe")));
+    chrome->toggles[TabDetails]->setIcon(toggleGlyph(QStringLiteral("checklist")));
     chrome->panelNewShell->setIcon(glyph(QStringLiteral("plus"), muted));
     chrome->panelClose->setIcon(glyph(QStringLiteral("x"), muted));
     if (chrome->composerSend) {
@@ -1130,6 +1140,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     chrome->toggles[TabBrowser] = iconButton(
         QStringLiteral("workspaceToggleBrowser"),
         QStringLiteral("Browser: preview a page beside the conversation"), true);
+    chrome->toggles[TabDetails] = iconButton(
+        QStringLiteral("workspaceToggleDetails"),
+        QStringLiteral("Details: progress, outputs, sources, background tasks and more"),
+        true);
     chrome->more = iconButton(QStringLiteral("workspaceSessionMore"),
                               QStringLiteral("Session actions"));
     headerRow->addWidget(chrome->title, 1);
@@ -1138,6 +1152,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     headerRow->addWidget(chrome->resume);
     headerRow->addWidget(chrome->toggles[TabChanges]);
     headerRow->addSpacing(2);
+    headerRow->addWidget(chrome->toggles[TabDetails]);
     headerRow->addWidget(chrome->toggles[TabTerminal]);
     headerRow->addWidget(chrome->toggles[TabBrowser]);
     headerRow->addWidget(chrome->more);
@@ -1211,6 +1226,8 @@ void NextAccess::installWorkspace(MainWindow &window)
                      chrome, command(CmdToggleTerminal));
     QObject::connect(chrome->toggles[TabBrowser], &QPushButton::clicked, chrome,
                      command(CmdToggleBrowser));
+    QObject::connect(chrome->toggles[TabDetails], &QPushButton::clicked, chrome,
+                     command(CmdToggleDetails));
     QObject::connect(chrome->changesOpen, &QPushButton::clicked, chrome,
                      command(CmdToggleChanges));
     QObject::connect(chrome->more, &QPushButton::clicked, chrome,
@@ -1235,9 +1252,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     panelRow->setSpacing(6);
     const QString tabLabels[TabCount] = {QStringLiteral("Diff"),
                                          QStringLiteral("Terminal"),
-                                         QStringLiteral("Browser")};
+                                         QStringLiteral("Browser"),
+                                         QStringLiteral("Details")};
     const int tabCommands[TabCount] = {CmdShowChanges, CmdShowTerminal,
-                                       CmdShowBrowser};
+                                       CmdShowBrowser, CmdShowDetails};
     for (int index = 0; index < TabCount; ++index) {
         auto *tab = textButton(QStringLiteral("workspacePanelTab"),
                                tabLabels[index], QString(), 30);
@@ -1281,6 +1299,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     stack->addWidget(chrome->hosts[TabTerminal]);
     stack->addWidget(chrome->hosts[TabChanges]);
     stack->addWidget(chrome->hosts[TabBrowser]);
+    chrome->hosts[TabDetails] = paneHost(QStringLiteral("workspaceDetailsHost"));
+    chrome->details = new SessionSidePanels;
+    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
+    stack->addWidget(chrome->hosts[TabDetails]);
     dockLayout->removeWidget(window.m_workspaceTerminal);
     window.m_workspaceTerminal->setParent(chrome->hosts[TabTerminal]);
     chrome->hosts[TabTerminal]->layout()->addWidget(window.m_workspaceTerminal);
@@ -1583,7 +1605,8 @@ void NextAccess::syncWorkspace(MainWindow &window)
         chrome->lastMode = window.m_viewMode;
         if (workspace) {
             chrome->panelOpen = true;
-            if (chrome->tab == TabChanges && !window.m_agentCodeMode)
+            if ((chrome->tab == TabChanges && !window.m_agentCodeMode) ||
+                chrome->tab == TabDetails)
                 chrome->tab = TabTerminal;
         } else if (leaving) {
             chrome->panelOpen = window.m_agentCodeMode;
@@ -1707,6 +1730,47 @@ void NextAccess::syncWorkspace(MainWindow &window)
                       .arg(repository));
     }
 
+    if (chrome->details && chrome->panelOpen && chrome->tab == TabDetails) {
+        const int id = session ? session->id : 0;
+        if (chrome->detailsSession != id) {
+            chrome->detailsSession = id;
+            chrome->detailsConsumed = 0;
+            chrome->detailsCloudTurns = -1;
+            chrome->detailsCloudTail = -1;
+            chrome->details->clearActivity();
+        }
+        fillSessionSidePanels(window, chrome->details, id);
+        if (id != 0 && window.isCloudSession(id)) {
+            const auto cloud = window.m_cloudAgentSessions.constFind(id);
+            if (cloud != window.m_cloudAgentSessions.constEnd()) {
+                const int turns = int(cloud->history.size());
+                const qint64 tail =
+                    cloud->history.isEmpty() ? 0 : cloud->history.last().text.size();
+                if (turns != chrome->detailsCloudTurns ||
+                    tail != chrome->detailsCloudTail) {
+                    chrome->detailsCloudTurns = turns;
+                    chrome->detailsCloudTail = tail;
+                    chrome->details->replaceActivity(
+                        forkmesh::agents::cloudAgentTranscriptEvents(
+                            cloud.value(), window.cloudAgentImageDirectory()));
+                }
+            }
+        } else if (id != 0) {
+            const auto events = window.m_streamEvents.constFind(id);
+            if (events == window.m_streamEvents.constEnd()) {
+                window.ensureStreamEventsLoadedAsync(id);
+            } else {
+                if (events->size() < chrome->detailsConsumed) {
+                    chrome->details->clearActivity();
+                    chrome->detailsConsumed = 0;
+                }
+                for (int index = chrome->detailsConsumed; index < events->size(); ++index)
+                    chrome->details->append(events->at(index));
+                chrome->detailsConsumed = int(events->size());
+            }
+        }
+    }
+
     const bool showCard = session && stats.any() && !diffOpen;
     chrome->changesBar->setVisible(showCard);
     if (showCard) {
@@ -1746,6 +1810,23 @@ void NextAccess::syncWorkspace(MainWindow &window)
     if (chrome->sidebarQueue->text() != running)
         chrome->sidebarQueue->setText(running);
     fitColumn(chrome);
+}
+
+void NextAccess::workspaceSessionStarted(MainWindow &window, int sessionId)
+{
+    Chrome *chrome = chromeOf(window);
+    if (!chrome || !chrome->applied)
+        return;
+    MainWindow *self = &window;
+    QTimer::singleShot(0, chrome, [self, chrome, sessionId] {
+        if (!chrome->applied || self->m_agentCodeMode ||
+            (self->m_selectedAgentSessionId > 0 &&
+             self->m_selectedAgentSessionId != sessionId))
+            return;
+        chrome->panelOpen = true;
+        chrome->tab = TabDetails;
+        chrome->refresh.start();
+    });
 }
 
 void NextAccess::workspaceCommand(MainWindow &window, int command)
@@ -1813,6 +1894,12 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
         break;
     case CmdToggleBrowser:
         openTab(TabBrowser, true);
+        break;
+    case CmdToggleDetails:
+        openTab(TabDetails, true);
+        break;
+    case CmdShowDetails:
+        openTab(TabDetails, false);
         break;
     case CmdShowChanges:
         openTab(TabChanges, false);

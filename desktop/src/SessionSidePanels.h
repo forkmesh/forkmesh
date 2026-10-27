@@ -1,0 +1,133 @@
+#pragma once
+
+#include "SessionInsights.h"
+
+#include <QHash>
+#include <QJsonObject>
+#include <QList>
+#include <QPoint>
+#include <QPointer>
+#include <QScrollArea>
+#include <QSet>
+#include <QString>
+#include <QStringList>
+
+class QFrame;
+class QLabel;
+class QProgressBar;
+class QPushButton;
+class QVBoxLayout;
+
+namespace forkmesh::ui {
+
+class SessionSidePanels : public QScrollArea
+{
+public:
+    struct Details {
+        bool session = false;
+        QString machine;
+        QString machineNote;
+        QString machineIcon;
+        QString path;
+        QString pathFull;
+        QString branch;
+        QString branchNote;
+        QString agent;
+        QString mode;
+        qint64 contextUsed = 0;
+        qint64 contextWindow = 0;
+        qint64 totalTokens = 0;
+        double costUsd = 0.0;
+        int files = -1;
+        int added = -1;
+        int removed = -1;
+        int dirty = -1;
+        int prNumber = 0;
+        bool conflicted = false;
+    };
+
+    explicit SessionSidePanels(QWidget *parent = nullptr);
+
+    void clearActivity();
+    void append(const QJsonObject &event);
+    void replaceActivity(const QList<QJsonObject> &events);
+    void setDetails(const Details &details);
+    void reloadLayout();
+
+    QStringList cardOrder() const { return m_order; }
+    QStringList visibleCards() const;
+    void moveCard(const QString &key, int toIndex);
+    void setCardHidden(const QString &key, bool hidden);
+    void resetCards();
+    bool cardCollapsed(const QString &key) const { return m_collapsed.contains(key); }
+    void setCardCollapsed(const QString &key, bool collapsed);
+    const sessioninsights::Collector &collector() const { return m_collector; }
+    QFrame *cardFrame(const QString &key) const;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+
+private:
+    struct Row {
+        QPointer<QWidget> row;
+        QPointer<QLabel> icon;
+        QPointer<QLabel> text;
+        QPointer<QLabel> trailing;
+    };
+    struct Item {
+        QString icon;
+        QString text;
+        QString trailing;
+        QString tip;
+        QString open;
+    };
+    struct Card {
+        QString key;
+        QPointer<QFrame> frame;
+        QPointer<QPushButton> head;
+        QPointer<QWidget> body;
+        QPointer<QLabel> chevron;
+        QPointer<QLabel> meta;
+        QPointer<QLabel> hint;
+        QPointer<QPushButton> more;
+        QList<Row> rows;
+        bool expanded = false;
+    };
+
+    Card &makeCard(const QString &key, const QString &title, const QString &hint);
+    Row &addRow(Card &card);
+    void setRow(const Row &row, const Item &item);
+    void fillList(Card &card, const QList<Item> &items, const QString &meta);
+    void fillFixed(Card &card, const QList<Item> &items, const QString &meta);
+    void refreshActivity();
+    void refreshDetails();
+    void applyOrder();
+    void applyCollapsed(Card &card);
+    void saveLayout() const;
+    void scheduleSlice();
+    void runSlice();
+    void cardMenu(const QString &key, const QPoint &globalPos);
+    void startDrag(const QString &key);
+    int dropIndex(int y, const QString &dragging) const;
+
+    QWidget *m_inner = nullptr;
+    QVBoxLayout *m_layout = nullptr;
+    QHash<QString, Card> m_cards;
+    QStringList m_order;
+    QSet<QString> m_hidden;
+    QSet<QString> m_collapsed;
+    QPointer<QWidget> m_contextBarRow;
+    QPointer<QProgressBar> m_contextBar;
+    Details m_details;
+    sessioninsights::Collector m_collector;
+    QList<QJsonObject> m_queue;
+    int m_cursor = 0;
+    bool m_sliceQueued = false;
+    quint64 m_generation = 0;
+    QString m_pressKey;
+    QPoint m_pressPos;
+    QString m_dragKey;
+};
+
+}

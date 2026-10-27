@@ -985,6 +985,36 @@ Files and Stats).
   and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
   the new session.
 
+**Side panels (2026-10-27).** The right column of the new interface is
+`SessionSidePanels` (`src/SessionSidePanels.*`), a stack of cards:
+**Progress** (the to-do list from `TodoWrite`/`TaskCreate` and Codex plans,
+through `agenttasks::Tracker`), **Outputs** (files the agent wrote or edited,
+newest first, with line counts; a failed edit is taken back), **Sources**
+(files read, pages fetched, web searches, skills and connectors), **Background**
+(subagents and background shells with running/done/failed/stopped),
+**Changes**, **Context**, **Environment** and **Tools** (calls per tool and
+failures). Outputs, Sources and Background come from
+`sessioninsights::Collector` (`src/SessionInsights.*`, no widgets, tested by
+`forkmesh-session-insights-tests`), which reads the same events the transcript
+gets: `renderSessionsTranscriptSlice` hands every queued event to the panel,
+and the panel folds them in 8 ms slices only while it is visible.
+
+- Every card is always shown, with a one-line hint while it is empty, so a new
+  session shows the full set from the first prompt.
+- Drag a card's header to move it; the others make room as it passes and the
+  list scrolls at the edges. Click the header to fold it. Right-click for Move
+  up, Move down, Fold, Hide, Show panel and Reset panels.
+- Order, hidden and folded cards are kept in `sessions/panelOrder`,
+  `sessions/panelHidden` and `sessions/panelCollapsed`, shared by the Sessions
+  page and the Agents page's **Details** tab. `normalizedCardOrder` keeps a
+  saved order valid when a card is added: a new card goes after its default
+  neighbour.
+- Clicking an output or a read file opens it; a page opens in the browser.
+- The column opens whenever a session starts: **New session**, sending the
+  first prompt, and every local launch (`startAgentRunner` calls
+  `NextAccess::sessionStarted`) set `panelOpen` again even if it was hidden.
+  The new-session screen shows the column too.
+
 **Sources.** Local sessions render `m_streamEvents` (loaded with
 `ensureStreamEventsLoadedAsync`; a session with no events shows its prompt and
 last reply). External Claude Code sessions read their `.jsonl` off the GUI
@@ -1040,7 +1070,7 @@ It is Qt Widgets, not QML (see [ui-redesign.md](ui-redesign.md)).
 | Conversation header (`workspaceHeader`) | Title, status chip, Stop/Continue, diff, Terminal and Browser toggles, action menu |
 | Changed-files card (`workspaceChangesBar`) | Files, totals, branch, **Open diff** |
 | Composer | Rounded box with one send button (`enterTarget`) and an options menu |
-| Side panel (`workspacePanelStack`) | **Diff**, **Terminal**, **Browser** |
+| Side panel (`workspacePanelStack`) | **Diff**, **Terminal**, **Browser**, **Details** |
 
 Rules of construction:
 
@@ -1066,6 +1096,17 @@ Rules of construction:
   Agents page are shown. The session menu's **Open in** opens the worktree
   in an editor or the file manager. Both, and how they compare with Claude
   Code desktop, are in [claude-code-parity.md](claude-code-parity.md).
+
+The **Details** tab (header toggle `workspaceToggleDetails`) holds the same
+`SessionSidePanels` as the Sessions page: Progress, Outputs, Sources,
+Background, Changes, Context, Environment and Tools, draggable in the same
+order. `syncWorkspace` feeds it the selected session's `m_streamEvents` from
+the last count it read (a cloud run's events are rebuilt when its history
+changes) and fills the session facts through `NextAccess::fillSessionSidePanels`.
+When a local agent starts and it is the selected session (or none is
+selected), `NextAccess::workspaceSessionStarted` opens the panel on Details.
+Switching into the Workspace view still opens on Terminal, the point of that
+view.
 
 The browser tab (`src/WorkspaceBrowserPane.*`, library
 `forkmesh-browser-pane`) embeds an ungoogled Qt WebEngine view when the build
