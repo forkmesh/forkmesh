@@ -139,6 +139,7 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
     public var backgroundTasks = 0
     public var tokensIn = 0
     public var tokensOut = 0
+    public var desktopKey = ""
 
     public init(
         id: String, badge: AgentTransportBadge, title: String, repoOwner: String, repoName: String, node: String,
@@ -411,6 +412,49 @@ public func mergeAgentRows(desktop: [UnifiedAgentRow], cloud: [UnifiedAgentRow],
     }
 }
 
+public struct OtherDesktopAgents: Equatable, Sendable, Identifiable {
+    public let key: String
+    public let name: String
+    public let rows: [UnifiedAgentRow]
+    public let note: String
+
+    public init(key: String, name: String, rows: [UnifiedAgentRow], note: String = "") {
+        self.key = key
+        self.name = name
+        self.rows = rows
+        self.note = note
+    }
+
+    public var id: String { key }
+    public var running: Int { rows.filter(\.isActive).count }
+
+    public var summary: String {
+        if !note.isEmpty { return note }
+        if rows.isEmpty { return "No agents" }
+        let total = rows.count == 1 ? "1 agent" : "\(rows.count) agents"
+        return running > 0 ? "\(total) · \(running) running" : total
+    }
+
+    public nonisolated static func listed(
+        _ snapshot: LocalAgentsSnapshot, key: String, name: String, transport: ControlTransport
+    ) -> OtherDesktopAgents {
+        let rows = (snapshot.sessions.map { UnifiedAgentRow.fromDesktop($0, transport: transport, desktop: name) }
+            + snapshot.outside.map { UnifiedAgentRow.fromOutside($0, transport: transport, desktop: name) })
+            .map { (row: UnifiedAgentRow) -> UnifiedAgentRow in
+                var tagged = row
+                tagged.id = "\(key):\(row.id)"
+                tagged.desktopKey = key
+                return tagged
+            }
+            .sorted { a, b in
+                if a.isActive != b.isActive { return a.isActive }
+                if a.updatedAtMs != b.updatedAtMs { return a.updatedAtMs > b.updatedAtMs }
+                return a.id < b.id
+            }
+        return OtherDesktopAgents(key: key, name: name, rows: rows)
+    }
+}
+
 public struct DesktopListCover: Equatable, Sendable {
     public nonisolated static let listCap = 200
 
@@ -584,6 +628,9 @@ public final class AgentControlCenter: AgentControlling {
     public private(set) var desktopNote = ""
     public private(set) var cloudNote = ""
     public private(set) var promptNotice = ""
+    public private(set) var otherDesktops: [OtherDesktopAgents] = []
+
+    public nonisolated static let otherDesktopLimit = 4
 
     @ObservationIgnored private var tapId: UUID?
     @ObservationIgnored private var refreshing = false
@@ -640,6 +687,7 @@ public final class AgentControlCenter: AgentControlling {
         desktopNote = ""
         cloudNote = ""
         promptNotice = ""
+        otherDesktops = []
         cloudSessions = []
         cloudReads = [:]
         cloudFull = [:]
@@ -684,7 +732,52 @@ public final class AgentControlCenter: AgentControlling {
             }
             if started != epoch { return }
             publish(desk, nodes)
+            if withCloud { await loadOtherDesktops(started) }
         }
+    }
+
+    private func loadOtherDesktops(_ started: Int) async {
+        let targets = Array(hub.otherDesktops.prefix(Self.otherDesktopLimit))
+        let hub = self.hub
+        let loads = targets.map { (target: PairedDesktop) in
+            Task { @MainActor () -> OtherDesktopAgents? in
+                do {
+                    let link = try await hub.link(to: target.key)
+                    let listed = try await link.request("agents.list", [:], timeout: 15)
+                    let name = link.desktopName.isEmpty ? target.name : link.desktopName
+                    return OtherDesktopAgents.listed(
+                        LocalAgentsSnapshot.fromJSON(listed), key: target.key, name: name, transport: link.transport)
+                } catch {
+                    if ControlErrorText.isCancellation(error) { return nil }
+                    return OtherDesktopAgents(key: target.key, name: target.name, rows: [], note: "Not reachable")
+                }
+            }
+        }
+        var out: [OtherDesktopAgents] = []
+        for (target, load) in zip(targets, loads) {
+            if let loaded = await load.value {
+                out.append(loaded)
+            } else if let kept = otherDesktops.first(where: { $0.key == target.key }) {
+                out.append(kept)
+            }
+        }
+        if started != epoch { return }
+        let active = hub.activeKey
+        out.removeAll { $0.key == active }
+        if out != otherDesktops { otherDesktops = out }
+    }
+
+    public func useDesktop(_ key: String) async {
+        if key.isEmpty || key == hub.activeKey { return }
+        epoch &+= 1
+        refreshing = false
+        loading = false
+        hub.choose(key: key)
+        rows = rows.filter { !$0.isDesktop }
+        desktopSnapshot = nil
+        desktopNote = ""
+        otherDesktops.removeAll { $0.key == key }
+        await refresh()
     }
 
     private func publish(_ desk: [UnifiedAgentRow], _ nodes: [UnifiedAgentRow]) {
@@ -698,7 +791,9 @@ public final class AgentControlCenter: AgentControlling {
         _ row: UnifiedAgentRow, since: Int, onEnded: @escaping @MainActor (String) -> Void = { _ in },
         onDelta: @escaping @MainActor (AgentTranscriptDelta) -> Void
     ) -> DesktopTranscriptStream? {
-        guard row.isDesktop, row.localId != 0 else { return nil }
+        guard row.isDesktop, row.localId != 0, row.desktopKey.isEmpty || row.desktopKey == hub.activeKey else {
+            return nil
+        }
         return DesktopTranscriptStream(hub: hub, sessionId: row.localId, since: since, onEnded: onEnded, onDelta: onDelta)
     }
 
@@ -714,14 +809,19 @@ public final class AgentControlCenter: AgentControlling {
             let link = try await hub.link()
             let listed = try await link.request("agents.list", [:])
             if started != epoch { return [] }
+            let key = hub.activeKey
             return PerformanceMonitorService.section("agents.desktopList") {
                 let snapshot = LocalAgentsSnapshot.fromJSON(listed)
                 if snapshot != desktopSnapshot { desktopSnapshot = snapshot }
                 if !desktopNote.isEmpty { desktopNote = "" }
-                return snapshot.sessions.map {
+                return (snapshot.sessions.map {
                     UnifiedAgentRow.fromDesktop($0, transport: link.transport, desktop: link.desktopName)
                 } + snapshot.outside.map {
                     UnifiedAgentRow.fromOutside($0, transport: link.transport, desktop: link.desktopName)
+                }).map { (row: UnifiedAgentRow) -> UnifiedAgentRow in
+                    var tagged = row
+                    tagged.desktopKey = key
+                    return tagged
                 }
             }
         } catch {
@@ -756,12 +856,12 @@ public final class AgentControlCenter: AgentControlling {
     public func stop(_ row: UnifiedAgentRow) async throws {
         if row.outside {
             guard row.canStop else { throw LocalControlException("outside_stop_unsupported") }
-            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))])
+            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))], to: row.desktopKey)
             await refresh()
             return
         }
         if row.isDesktop {
-            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))])
+            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         } else {
             guard let cloud else { throw LocalControlException("not_connected") }
             _ = try await cloud.stopAgentSession(row.repoOwner, row.repoName, row.cloudSessionId, orgScope: row.orgScope)
@@ -784,7 +884,8 @@ public final class AgentControlCenter: AgentControlling {
             let trimmed = text.dartTrimmed
             if trimmed.isEmpty { return }
             let answer = try await hub.request(
-                "agents.prompt", ["id": .int(Int64(row.localId)), "text": .string(trimmed)], timeout: 30)
+                "agents.prompt", ["id": .int(Int64(row.localId)), "text": .string(trimmed)], timeout: 30,
+                to: row.desktopKey)
             if answer.str("status") == "held_for_approval" {
                 promptNotice = ControlErrorText.describe(code: "held_for_approval")
             }
@@ -794,7 +895,7 @@ public final class AgentControlCenter: AgentControlling {
         let trimmed = promptOrPhotoNote(text.dartTrimmed, images)
         if trimmed.isEmpty { return }
         if row.isDesktop {
-            let link = try await hub.link()
+            let link = try await hub.link(to: row.desktopKey)
             var asked: JSONObject = ["id": .int(Int64(row.localId)), "text": .string(trimmed)]
             if row.offersModelChoice, !model.isEmpty { asked["model"] = .string(model) }
             if row.offersModelChoice, !provider.isEmpty, provider != row.provider {
@@ -826,7 +927,8 @@ public final class AgentControlCenter: AgentControlling {
 
     public func questions(_ row: UnifiedAgentRow) async throws -> [AgentQuestion] {
         guard row.isDesktop, !row.outside, row.localId > 0 else { return [] }
-        let answer = try await hub.request("agents.questions", ["id": .int(Int64(row.localId))])
+        let answer = try await hub.request(
+            "agents.questions", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         return answer.maps("questions").compactMap(AgentQuestion.init)
     }
 
@@ -837,7 +939,7 @@ public final class AgentControlCenter: AgentControlling {
         _ = try await hub.request(
             "agents.answer",
             ["id": .int(Int64(row.localId)), "question": .string(question.id), "answer": .string(answer)],
-            timeout: 30)
+            timeout: 30, to: row.desktopKey)
         await refresh()
     }
 
@@ -851,7 +953,7 @@ public final class AgentControlCenter: AgentControlling {
             return
         }
         guard row.isDesktop, !row.outside else { throw LocalControlException("unsupported") }
-        _ = try await hub.request("agents.continue", ["id": .int(Int64(row.localId))])
+        _ = try await hub.request("agents.continue", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         await refresh()
     }
 
@@ -936,7 +1038,8 @@ public final class AgentControlCenter: AgentControlling {
             if since > 0 { params["since"] = .int(Int64(since)) }
             do {
                 return AgentTranscriptDelta.fromDesktop(
-                    try await hub.request("agents.transcript", params), since: since, sessionId: row.localId)
+                    try await hub.request("agents.transcript", params, to: row.desktopKey), since: since,
+                    sessionId: row.localId)
             } catch let refusal as LocalControlException where outsideTranscriptMissing.contains(refusal.code) {
                 if since > 0 && refusal.code == "unknown_session" {
                     return AgentTranscriptDelta(text: "", next: since, reset: false, active: false, status: "done")
@@ -950,7 +1053,8 @@ public final class AgentControlCenter: AgentControlling {
             var params: JSONObject = ["id": .int(Int64(row.localId))]
             if since > 0 { params["since"] = .int(Int64(since)) }
             return AgentTranscriptDelta.fromDesktop(
-                try await hub.request("agents.transcript", params), since: since, sessionId: row.localId)
+                try await hub.request("agents.transcript", params, to: row.desktopKey), since: since,
+                sessionId: row.localId)
         }
         guard let cloud else { throw LocalControlException("not_connected") }
         let session = try await cloud.agentLaunchSession(

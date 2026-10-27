@@ -37,6 +37,26 @@ ten minutes.
   draws the desktop in use, with the other desktops stacked behind it, each
   with its own dot. The core nodes are stacked the same way. Before this the
   phone took whichever desktop answered first and showed only that one.
+- **Agents from every desktop (iOS, 2026-10-27).** A phone paired with two
+  desktops showed "No agent sessions yet" because its chosen desktop had none,
+  while the desktop it was connected to on the LAN had dozens. The Agents list
+  now lists the other desktops' agents too, in an "Other desktops" section
+  under the list (`AgentControlCenter.otherDesktops`, up to four desktops, each
+  `OtherDesktopAgents` with its rows or "Not reachable"). They load on a full
+  `refresh()`, after the desktop in use. The hub reaches a desktop that is not
+  the one in use with `link(to:)` / `request(_:_:to:)`: the LAN channel when
+  it is to that desktop, else a relay channel kept per desktop (`sideLinks`).
+  `choose(key:)` keeps the old desktop's relay channel as a side link and
+  takes over the chosen desktop's side link, so switching back and forth
+  dials nothing new. Every desktop row carries `desktopKey`, and the center
+  sends stop, prompt, questions, answer, continue and transcript to the row's
+  own desktop. Rows from other desktops stay out of `rows` and have ids
+  prefixed with the desktop key. Agent ops, terminals, bulk stop, voice
+  intents and the transcript stream act by local session id on the desktop
+  in use, and the same id means a different agent on another desktop.
+  Tapping a desktop or one of its agents therefore calls `useDesktop(key)`:
+  it switches the desktop in use, clears the old desktop's rows at once,
+  reloads, and then opens the agent.
 - The desktop approves the phone without a code because its key is an enabled
   `owner_sign` device of the same account (`checkLocalControlAccountDevice`),
   records it in `data/local_control/paired-devices.json` as
