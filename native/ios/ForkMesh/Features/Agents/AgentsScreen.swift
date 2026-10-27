@@ -67,7 +67,7 @@ struct AgentsScreen: View {
         return PerformanceMonitorService.section("agents.lines") {
             reads.lines(listSort.sorted(AgentLines.merge(
                 entries: model.entries, rows: center?.rows ?? [], cover: center?.desktopCover)))
-                .filter { !pending.isHidden(AgentLines.deletion($0)?.key ?? "") }
+                .filter { !pending.isHidden(AgentLines.deletionKey($0) ?? "") }
         }
     }
 
@@ -644,7 +644,7 @@ struct AgentsScreen: View {
 
     @ViewBuilder private var controlNotes: some View {
         if let center = HostsFeature.agents {
-            ForEach([center.desktopNote, center.cloudNote].filter { !$0.isEmpty }, id: \.self) { (note: String) in
+            ForEach(([center.desktopNote, center.cloudNote] + center.otherDesktopNotes).filter { !$0.isEmpty }, id: \.self) { (note: String) in
                 Label(note, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10))
                     .foregroundStyle(fm.warning)

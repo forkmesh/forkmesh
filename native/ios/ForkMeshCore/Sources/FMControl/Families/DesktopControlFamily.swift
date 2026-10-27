@@ -21,6 +21,34 @@ public protocol DesktopControlCalling: AnyObject {
 
 extension DesktopControlHub: DesktopControlCalling {}
 
+@MainActor
+public final class DesktopScopedChannel: DesktopControlCalling {
+    public let hub: DesktopControlHub
+    public let desktopKey: String
+
+    public init(hub: DesktopControlHub, desktopKey: String) {
+        self.hub = hub
+        self.desktopKey = desktopKey
+    }
+
+    public func request(_ method: String, _ params: JSONObject, timeout: TimeInterval) async throws -> JSONObject {
+        try await hub.request(method, params, timeout: timeout, to: desktopKey)
+    }
+
+    @discardableResult
+    public func addEventTap(_ tap: @escaping @MainActor (String, JSONObject) -> Void) -> UUID {
+        hub.addEventTap(tap, for: desktopKey)
+    }
+
+    public func removeEventTap(_ id: UUID) { hub.removeEventTap(id) }
+}
+
+extension DesktopControlHub {
+    public func channel(for desktopKey: String) -> DesktopControlCalling {
+        desktopKey.isEmpty ? self : DesktopScopedChannel(hub: self, desktopKey: desktopKey)
+    }
+}
+
 /// The method prefixes Gate 2 reserves. The desktop answers `unsupported` for a family it does not
 /// have yet (an older desktop), which `DesktopControlFamily.isUnsupported` recognises.
 public enum DesktopControlFamilyName: String, CaseIterable, Sendable {

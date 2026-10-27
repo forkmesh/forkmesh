@@ -38,6 +38,7 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
     public var attachments: [AgentAttachmentRef]
     public var provider: String
     public var runner: String = ""
+    public var desktop: String = ""
     public var priority = 50
     public var readKey = ""
     public var finishedAtMs = 0
@@ -382,7 +383,10 @@ public enum AgentLines {
         let provider = providerWord(line.provider)
         if !provider.isEmpty { chips.append(AgentLineChip(slot: .provider, word: provider)) }
         chips.append(AgentLineChip(
-            slot: .host, word: !line.runner.isEmpty ? runnerWord(line.runner) : line.cloud ? "Cloud" : line.outside ? "Outside" : "Desktop"))
+            slot: .host,
+            word: !line.runner.isEmpty ? runnerWord(line.runner)
+                : !line.desktop.isEmpty ? runnerWord(line.desktop)
+                : line.cloud ? "Cloud" : line.outside ? "Outside" : "Desktop"))
         let age = shortAge(ms: line.updatedAtMs, nowMs: nowMs)
         if !age.isEmpty { chips.append(AgentLineChip(slot: .age, word: age)) }
         if line.conflicted {
@@ -486,13 +490,14 @@ public enum AgentLines {
             prNumber: row.prNumber, cloud: !row.isDesktop, outside: row.outside, attachments: row.attachments,
             provider: row.provider)
         built.runner = row.runner
+        if row.elsewhere { built.desktop = row.node }
         built.priority = row.priority
         built.readKey = readKey(row)
         built.finishedAtMs = row.finishedAtMs
         built.backgroundTasks = row.backgroundTasks
         built.tokensIn = row.tokensIn
         built.tokensOut = row.tokensOut
-        if row.isDesktop && !row.outside && row.localId > 0 {
+        if row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0 {
             built.desktopSessionId = row.localId
             built.desktopUnread = row.unread
         }
@@ -500,8 +505,9 @@ public enum AgentLines {
     }
 
     public static func readKey(_ row: UnifiedAgentRow) -> String {
-        if row.outside { return "outside:\(row.localId)" }
-        if row.isDesktop { return "desktop:\(row.repoName.lowercased())#\(row.localId)" }
+        let place = row.elsewhere ? "\(row.desktopKey):" : ""
+        if row.outside { return "outside:\(place)\(row.localId)" }
+        if row.isDesktop { return "desktop:\(place)\(row.repoName.lowercased())#\(row.localId)" }
         return row.cloudSessionId.isEmpty ? "control:\(row.id)" : "run:\(row.cloudSessionId)"
     }
 
@@ -564,7 +570,7 @@ public enum AgentLines {
     public static func merge(entries: [AgentEntry], rows: [UnifiedAgentRow], cover: DesktopListCover? = nil) -> [AgentLine] {
         var desktop: [String: UnifiedAgentRow] = [:]
         var cloud: [String: UnifiedAgentRow] = [:]
-        for row in rows where !row.outside {
+        for row in rows where !row.outside && !row.elsewhere {
             if row.isDesktop {
                 desktop["\(row.repoName.lowercased())#\(row.localId)"] = row
             } else if !row.cloudSessionId.isEmpty {
@@ -610,7 +616,7 @@ public enum AgentLines {
         case .entry(.launched(let repo, let session, _, _)):
             return session.sessionId.isEmpty ? nil : "\(repo.name.lowercased())#cloud:\(session.sessionId)"
         case .control(let row):
-            if row.outside { return nil }
+            if row.outside || row.elsewhere { return nil }
             if row.isDesktop { return row.localId > 0 ? "\(row.repoName.lowercased())#\(row.localId)" : nil }
             return row.cloudSessionId.isEmpty ? nil : "\(row.repoName.lowercased())#cloud:\(row.cloudSessionId)"
         }
@@ -676,11 +682,19 @@ public enum AgentLines {
             return ["control:\(row.id)"]
         case .entry(.desktop(let repo, let session)):
             let name = repo.name.lowercased()
-            let live = rows.filter { $0.isDesktop && !$0.outside && $0.repoName.lowercased() == name && $0.localId == session.id }
+            let live = rows.filter {
+                $0.isDesktop && !$0.outside && !$0.elsewhere && $0.repoName.lowercased() == name && $0.localId == session.id
+            }
             return live.map { "control:\($0.id)" } + ["relay:\(repo.fullName)#\(session.id)"]
         case .entry(.launched(_, let session, _, _)):
             return rows.filter { !$0.isDesktop && $0.cloudSessionId == session.sessionId }.map { "control:\($0.id)" }
         }
+    }
+
+    public static func deletionKey(_ line: AgentLine) -> String? {
+        guard let key = deletion(line)?.key else { return nil }
+        if case .control(let row) = line.source, row.elsewhere { return "\(row.desktopKey):\(key)" }
+        return key
     }
 
     public static func deletion(_ line: AgentLine) -> AgentLineDeletion? {

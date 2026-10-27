@@ -66,10 +66,14 @@ public final class DesktopControlHub {
     public private(set) var revision = 0
 
     @ObservationIgnored private var relay: RelayControlConnection?
+    @ObservationIgnored private var sideLinks: [String: RelayControlConnection] = [:]
+    @ObservationIgnored private var sideOpening: [String: Task<RelayControlConnection, Error>] = [:]
     @ObservationIgnored private var lanLink: LanControlLink?
     @ObservationIgnored private var opening = false
     @ObservationIgnored private var openingWaiters: [CheckedContinuation<DesktopControlLink, Error>] = []
     @ObservationIgnored private var taps: [UUID: @MainActor (String, JSONObject) -> Void] = [:]
+    @ObservationIgnored private var keyedTaps: [String: [UUID: @MainActor (String, JSONObject) -> Void]] = [:]
+    @ObservationIgnored private var forwarded: [WeakLink] = []
     @ObservationIgnored private var attached: (link: AnyObject, token: UUID)?
     @ObservationIgnored private var localToken: ListenerToken?
     @ObservationIgnored private var linkListeners: [UUID: @MainActor () -> Void] = [:]
@@ -93,7 +97,9 @@ public final class DesktopControlHub {
         self.store = store
         self.preferredKey = store?.string(forKey: DesktopControlHub.preferredKeyStoreKey) ?? ""
         if let local {
-            lanLink = LanControlLink(service: local)
+            let lan = LanControlLink(service: local)
+            lanLink = lan
+            forwardKeyed(lan) { [weak lan] in lan?.desktopKey ?? "" }
             localToken = local.addListener { [weak self] in
                 MainActor.assumeIsolated { self?.localChanged() }
             }
@@ -142,6 +148,7 @@ public final class DesktopControlHub {
         if key.isEmpty { return .unknown }
         if let lanLink, lanLink.isOpen, lanLink.desktopKey == key { return .online }
         if let relay, relay.isOpen, relay.desktopKey == key { return .online }
+        if let side = sideLinks[key], side.isOpen { return .online }
         return presence[key] ?? .unknown
     }
 
@@ -155,8 +162,17 @@ public final class DesktopControlHub {
         }
         if let current = relay, !wanted(current.desktopKey) {
             relay = nil
-            current.onClosed = nil
-            Task { await current.close() }
+            keepAside(current)
+        }
+        if let side = sideLinks.removeValue(forKey: key) {
+            side.onClosed = nil
+            if relay == nil, side.isOpen, !(lanLink?.isOpen == true && lanLink?.desktopKey == key) {
+                lastReachedKey = key
+                adoptRelay(side)
+                attachTaps(to: side)
+            } else {
+                Task { await side.close() }
+            }
         }
         refreshReach()
         revision &+= 1
@@ -285,6 +301,25 @@ public final class DesktopControlHub {
             for waiter in waiting { waiter.resume(throwing: error) }
             throw error
         }
+        if started == epoch, let target = targets.first(where: { sideLinks[$0.key]?.isOpen == true }),
+            let side = sideLinks.removeValue(forKey: target.key)
+        {
+            side.onClosed = nil
+            lastReachedKey = target.key
+            if let previous = relay, previous !== side {
+                previous.onClosed = nil
+                Task { await previous.close() }
+            }
+            adoptRelay(side)
+            attachTaps(to: side)
+            refreshReach()
+            revision &+= 1
+            announceLink()
+            let waiting = openingWaiters
+            openingWaiters.removeAll()
+            for waiter in waiting { waiter.resume(returning: side) }
+            return side
+        }
         reach = .connecting(first.name)
         for target in targets where presenceOf(target.key) != .online { presence[target.key] = .checking }
         do {
@@ -301,16 +336,7 @@ public final class DesktopControlHub {
                 previous.onClosed = nil
                 Task { await previous.close() }
             }
-            relay = connection
-            connection.onClosed = { [weak self] reason in
-                guard let self else { return }
-                if self.relay === connection { self.relay = nil }
-                self.presence[connection.desktopKey] = .unknown
-                self.reach = .offline(ControlErrorText.describe(code: reason))
-                self.revision &+= 1
-                self.announceLink()
-                if self.keepWarm { self.scheduleWarm() }
-            }
+            adoptRelay(connection)
             attachTaps(to: connection)
             refreshReach()
             revision &+= 1
@@ -336,6 +362,130 @@ public final class DesktopControlHub {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
         return lanLink.isOpen
+    }
+
+    private struct WeakLink {
+        weak var link: AnyObject?
+    }
+
+    private func forwardKeyed(_ link: DesktopControlLink, key: @escaping @MainActor () -> String) {
+        forwarded.removeAll { $0.link == nil }
+        if forwarded.contains(where: { $0.link === link }) { return }
+        forwarded.append(WeakLink(link: link))
+        link.addEventTap { [weak self] name, data in
+            guard let self else { return }
+            let desk = key()
+            guard !desk.isEmpty, let listeners = self.keyedTaps[desk] else { return }
+            for tap in listeners.values { tap(name, data) }
+        }
+    }
+
+    @discardableResult
+    public func addEventTap(_ tap: @escaping @MainActor (String, JSONObject) -> Void, for key: String) -> UUID {
+        if key.isEmpty { return addEventTap(tap) }
+        let id = UUID()
+        keyedTaps[key, default: [:]][id] = tap
+        return id
+    }
+
+    public func openLink(for key: String) -> DesktopControlLink? {
+        if key.isEmpty || key == activeKey { return currentLink }
+        if let lanLink, lanLink.isOpen, lanLink.desktopKey == key { return lanLink }
+        if let relay, relay.isOpen, relay.desktopKey == key { return relay }
+        if let side = sideLinks[key], side.isOpen { return side }
+        return nil
+    }
+
+    private func adoptRelay(_ connection: RelayControlConnection) {
+        let key = connection.desktopKey
+        forwardKeyed(connection) { key }
+        relay = connection
+        connection.onClosed = { [weak self] reason in
+            guard let self else { return }
+            if self.relay === connection { self.relay = nil }
+            self.presence[connection.desktopKey] = .unknown
+            self.reach = .offline(ControlErrorText.describe(code: reason))
+            self.revision &+= 1
+            self.announceLink()
+            if self.keepWarm { self.scheduleWarm() }
+        }
+    }
+
+    private func keepAside(_ connection: RelayControlConnection) {
+        let key = connection.desktopKey
+        if !connection.isOpen || key.isEmpty {
+            connection.onClosed = nil
+            Task { await connection.close() }
+            return
+        }
+        if let previous = sideLinks[key], previous !== connection {
+            previous.onClosed = nil
+            Task { await previous.close() }
+        }
+        forwardKeyed(connection) { key }
+        sideLinks[key] = connection
+        connection.onClosed = { [weak self] _ in
+            guard let self else { return }
+            if self.sideLinks[key] === connection { self.sideLinks[key] = nil }
+            if self.presenceOf(key) != .online { self.presence[key] = .unknown }
+            for listener in self.linkListeners.values { listener() }
+        }
+    }
+
+    public var activeKey: String {
+        if let current = currentLink { return linkKey(current) }
+        return candidates.first(where: { wanted($0.key) })?.key ?? ""
+    }
+
+    public var otherDesktops: [PairedDesktop] {
+        let active = activeKey
+        return candidates.filter { !$0.name.isEmpty && $0.key != active }
+    }
+
+    public func link(to key: String) async throws -> DesktopControlLink {
+        if key.isEmpty || key == activeKey { return try await link() }
+        if let lanLink, lanLink.isOpen, lanLink.desktopKey == key { return lanLink }
+        if let relay, relay.isOpen, relay.desktopKey == key { return relay }
+        if let side = sideLinks[key] {
+            if side.isOpen {
+                if side.idleSeconds < relayIdleProbe { return side }
+                if await side.confirmAlive() { return side }
+            }
+            if sideLinks[key] === side {
+                sideLinks[key] = nil
+                side.onClosed = nil
+                Task { await side.close() }
+            }
+        }
+        if let pending = sideOpening[key] { return try await pending.value }
+        guard let openRelay, let target = candidates.first(where: { $0.key == key && !$0.name.isEmpty }) else {
+            throw LocalControlException("not_paired")
+        }
+        let started = epoch
+        let task = Task { @MainActor in try await openRelay(target) }
+        sideOpening[key] = task
+        defer { if sideOpening[key] == task { sideOpening[key] = nil } }
+        let connection: RelayControlConnection
+        do {
+            connection = try await task.value
+        } catch {
+            if started == epoch, !ControlErrorText.isCancellation(error) { presence[key] = .offline }
+            throw error
+        }
+        if started != epoch {
+            await connection.close()
+            throw CancellationError()
+        }
+        presence[key] = .online
+        keepAside(connection)
+        return connection
+    }
+
+    public func request(
+        _ method: String, _ params: JSONObject = [:], timeout: TimeInterval = 20, to key: String
+    ) async throws -> JSONObject {
+        let link = try await link(to: key)
+        return try await link.request(method, params, timeout: timeout)
     }
 
     private func relink() async throws -> DesktopControlLink {
@@ -463,7 +613,12 @@ public final class DesktopControlHub {
         return id
     }
 
-    public func removeEventTap(_ id: UUID) { taps.removeValue(forKey: id) }
+    public func removeEventTap(_ id: UUID) {
+        if taps.removeValue(forKey: id) != nil { return }
+        guard let key = keyedTaps.first(where: { $0.value[id] != nil })?.key else { return }
+        keyedTaps[key]?[id] = nil
+        if keyedTaps[key]?.isEmpty == true { keyedTaps[key] = nil }
+    }
 
     public func resetForProjectSwitch() {
         epoch &+= 1
@@ -479,6 +634,13 @@ public final class DesktopControlHub {
             relay = nil
             current.onClosed = nil
             Task { await current.close() }
+        }
+        let aside = Array(sideLinks.values)
+        sideLinks = [:]
+        sideOpening = [:]
+        for side in aside {
+            side.onClosed = nil
+            Task { await side.close() }
         }
         reach = .notPaired
         refreshReach()
