@@ -522,6 +522,10 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentIntake.cpp
     src/MainWindowAgentHub.cpp
     src/MainWindowSessions.cpp
+    src/SessionInsights.h
+    src/SessionInsights.cpp
+    src/SessionSidePanels.h
+    src/SessionSidePanels.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -3283,6 +3287,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
         target_compile_definitions(forkmesh-window-tests PRIVATE FORKMESH_HAVE_PORTAL)
     endif()
 
+    qt_add_executable(forkmesh-session-insights-tests
+        tests/test_session_insights.cpp
+        src/SessionInsights.h
+        src/SessionInsights.cpp
+        src/AgentTaskList.h
+        src/AgentTaskList.cpp
+        src/ClaudeTranscriptTools.h
+        src/ClaudeTranscriptTools.cpp
+    )
+    target_link_libraries(forkmesh-session-insights-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-session-insights-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-session-insights-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-agent-task-list-tests
         tests/test_agent_task_list.cpp
         src/AgentTaskList.h
@@ -4176,6 +4196,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
         forkmesh-agent-task-list-tests
+        forkmesh-session-insights-tests
         forkmesh-sonifier-tests
         forkmesh-ui-sounds-tests
         forkmesh-user-activity-tests
@@ -4249,6 +4270,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-agent-folders-tests
              COMMAND forkmesh-agent-folders-tests)
     add_test(NAME forkmesh-agent-task-list-tests COMMAND forkmesh-agent-task-list-tests)
+    add_test(NAME forkmesh-session-insights-tests COMMAND forkmesh-session-insights-tests)
     add_test(NAME forkmesh-sonifier-tests COMMAND forkmesh-sonifier-tests)
     add_test(NAME forkmesh-ui-sounds-tests COMMAND forkmesh-ui-sounds-tests)
     add_test(NAME forkmesh-user-activity-tests

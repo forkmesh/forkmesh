@@ -23,11 +23,11 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 | Rename by clicking the title | Rename from the context menu | Partly |
 | Archive, Archived tab, unarchive, auto-archive after a PR merges | Delete with a recycle bin, "Delete merged" | Partly |
 | Split view of two sessions, open a session in a new window | Only the composer can be torn off into its own window | No |
-| Panes that can be dragged, popped out and docked back | One side panel with Diff, Terminal and Browser tabs | Partly |
+| Panes that can be dragged, popped out and docked back | One side panel with Diff, Terminal, Browser and Details tabs; the Details cards can be dragged into any order *(2026-10-27)* | Partly |
 | OS notification when a session finishes in the background | `notifyAgentDone` through `notifyIfInactive` | Yes |
 | Side chat (`/btw`, Ctrl+;): a question with the session's context that is kept out of the thread | | No |
 | Background tasks pane (subagents, background shells, Stop) | A strip for subagents and background shells with Stop | Partly |
-| Plan pane and tasks pane | The plan arrives as an approval card and TodoWrite is drawn in the transcript, with no separate pane | Partly |
+| Plan pane and tasks pane | The plan arrives as an approval card; the Progress card in the side panels lists the to-do steps *(2026-10-27)* | Partly |
 | View modes Normal / Thinking / Verbose (Ctrl+O) | Transcript and Raw views; thinking is a model switch | Partly |
 | Context usage card, `/compact` | Context bar in the Sessions details panel; `/compact` passes through to the CLI | Partly |
 | Keyboard shortcut sheet (Ctrl+/) | Ctrl+/ and "Keyboard shortcuts…" in the session list menu *(2026-10-25)* | Yes |
