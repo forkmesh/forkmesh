@@ -78,6 +78,9 @@ const createRepoPullMergeRequestId = () => `dashboard_${String(++requestCounter)
 const pullDetailIsCurrent = () => true;
 const refreshed = [];
 const refreshRepoPullActivity = (repo, number) => refreshed.push(number);
+const confettiAt = [];
+const commentReactionMotionOk = () => true;
+const commentReactionConfetti = (rect) => confettiAt.push(rect);
 const orgAgentRequest = async () => ({ ok: true });
 globalThis.CSS = { escape: (value) => value };
 globalThis.location = { origin: "https://forkmesh.test", search: "" };
@@ -867,3 +870,35 @@ def test_the_server_rendered_pull_stays_until_the_dashboard_paints_it():
     assert 'kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;' in CONTENT
     takeover = NETWORK[NETWORK.index("keepRepoFirstViewIssue(detail);"):]
     assert takeover.index("keepRepoFirstViewPull(detail);") < takeover.index("detail.innerHTML = `")
+
+
+@needs_node
+def test_a_finished_merge_reads_merged_at_once_and_celebrates():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const parsed = detail();
+      world.record = pullMd();
+      world.readiness = readiness();
+      world.conversation = [approval];
+      world.tips = ["%s"];
+      await handleRepoPullMerge(repo);
+      console.log(JSON.stringify({ status: parsed.values.status, merge: parsed.pullMerge.state, refreshed,
+        model: repoPullMergeModel(repo, 7, parsed).merged }));
+    """ % TIP_A)
+    assert out == {"status": "merged", "merge": "merged", "refreshed": [7], "model": True}
+    celebrate = _function("celebrateRepoPullMerge")
+    assert 'parsed.values = { ...(parsed.values || {}), status: "merged" };' in celebrate
+    assert "[data-repo-record-state], [data-repo-record-sticky-state]" in celebrate
+    assert "if (!commentReactionMotionOk()) return;" in celebrate
+    assert "commentReactionConfetti(origin.getBoundingClientRect());" in celebrate
+    assert 'if (parsed.pullMerge?.state === "merged") freshValues.status = "merged";' in CONTENT
+
+
+def test_the_pull_header_stays_on_screen_with_its_section_tabs():
+    assert "data-repo-record-sticky-bar" in CONTENT
+    assert 'data-repo-record-sticky-tab="${name}"' in CONTENT
+    sticky = _function("mountRecordStickyHeader")
+    assert '[data-repo-record-detail="pulls"] [data-repo-record-hero]' in sticky
+    assert 'if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);' in CONTENT
+    assert '"[data-repo-record-tab], [data-repo-record-sticky-tab]"' in NETWORK
+    assert 'button.dataset.repoRecordStickyTab === tab' in NETWORK
