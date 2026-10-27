@@ -6248,6 +6248,72 @@ bool initGitRepo(QTemporaryDir &repo)
            runGitChecked(repo.path(), {"commit", "--allow-empty", "-m", "initial"});
 }
 
+void checkMergeResolutionKeepsJsonValid()
+{
+    QTemporaryDir repo;
+    const auto write = [&repo](const QString &name, const QByteArray &contents) {
+        QFile file(repo.path() + QLatin1Char('/') + name);
+        return file.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+               file.write(contents) == contents.size();
+    };
+    const auto commitBoth = [&](const QByteArray &json, const QByteArray &notes,
+                                const QString &message) {
+        return write(QStringLiteral("changelog.json"), json) &&
+               write(QStringLiteral("notes.json"), notes) &&
+               runGitChecked(repo.path(), {"add", "-A"}) &&
+               runGitChecked(repo.path(), {"commit", "-m", message});
+    };
+    const bool fixtureReady =
+        initGitRepo(repo) &&
+        commitBoth("{\"items\": [\n  \"base\"\n]}\n", "// notes\n{base}\n",
+                   QStringLiteral("base")) &&
+        runGitChecked(repo.path(), {"checkout", "-b", "side"}) &&
+        commitBoth("{\"items\": [\n  \"base\",\n  \"side\"\n]}\n",
+                   "// notes\n{side}\n", QStringLiteral("side")) &&
+        runGitChecked(repo.path(), {"checkout", "main"}) &&
+        commitBoth("{\"items\": [\n  \"base\",\n  \"main\"\n]}\n",
+                   "// notes\n{main}\n", QStringLiteral("main"));
+    QProcess merge;
+    merge.setWorkingDirectory(repo.path());
+    merge.start(QStringLiteral("git"), {"merge", "--no-edit", "side"});
+    merge.waitForFinished(10000);
+    const bool conflicted = fixtureReady && merge.exitCode() != 0;
+
+    const bool acceptedBoth =
+        write(QStringLiteral("changelog.json"),
+              "{\"items\": [\n  \"base\",\n  \"main\"\n  \"side\"\n]}\n") &&
+        write(QStringLiteral("notes.json"), "// notes\n{main}\n{side}\n");
+    QString error;
+    const bool brokenCommitted =
+        forkmesh::ui::commitResolvedMerge(repo.path(), &error);
+    const bool stillMerging =
+        !gitOutput(repo.path(), {"rev-parse", "-q", "--verify", "MERGE_HEAD"})
+             .isEmpty();
+    check(conflicted && acceptedBoth && !brokenCommitted && stillMerging &&
+              error.contains(QStringLiteral("changelog.json")) &&
+              error.contains(QStringLiteral("line 4")) &&
+              !error.contains(QStringLiteral("notes.json")),
+          QStringLiteral("a merge resolution that leaves a conflicted JSON file "
+                         "unparseable is not committed and names the file and "
+                         "line (conflicted=%1 committed=%2 merging=%3 error=%4)")
+              .arg(conflicted)
+              .arg(brokenCommitted)
+              .arg(stillMerging)
+              .arg(error));
+
+    error.clear();
+    const bool fixed = write(QStringLiteral("changelog.json"),
+                             "{\"items\": [\n  \"base\",\n  \"main\",\n  \"side\"\n]}\n");
+    const bool committed = fixed && forkmesh::ui::commitResolvedMerge(repo.path(), &error);
+    const QString parents = gitOutput(repo.path(), {"rev-list", "--parents", "-n", "1", "HEAD"});
+    check(committed && parents.split(QLatin1Char(' ')).size() == 3,
+          QStringLiteral("a valid JSON resolution commits the merge, even beside a "
+                         ".json file that was never valid JSON (committed=%1 "
+                         "parents=%2 error=%3)")
+              .arg(committed)
+              .arg(parents, error));
+}
+
 void checkErrorLogTriage(MainWindow &window)
 {
     QSettings().setValue(forkmesh::kReportUserVisibleErrorsSetting, true);
@@ -16688,6 +16754,9 @@ else:
             QStringLiteral("--inline-diff-comments-only")))
         return failures == 0 ? 0 : 1;
     if (app.arguments().contains(QStringLiteral("--diff-health-only")))
+        return failures == 0 ? 0 : 1;
+    checkMergeResolutionKeepsJsonValid();
+    if (app.arguments().contains(QStringLiteral("--merge-json-guard-only")))
         return failures == 0 ? 0 : 1;
     // The focused Agents efficiency suite starts at the window, like the
     // other single-feature subsets, so the shared widget probes stay out of
