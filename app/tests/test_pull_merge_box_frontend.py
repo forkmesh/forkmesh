@@ -81,7 +81,7 @@ const refreshRepoPullActivity = (repo, number) => refreshed.push(number);
 const orgAgentRequest = async () => ({ ok: true });
 globalThis.CSS = { escape: (value) => value };
 globalThis.location = { origin: "https://forkmesh.test", search: "" };
-globalThis.document = { querySelector: () => null };
+globalThis.document = { querySelector: () => null, querySelectorAll: () => [] };
 let confirmAnswer = true;
 globalThis.window = {
   setTimeout: (resolve) => resolve(),
@@ -653,7 +653,7 @@ def test_a_failed_merge_marks_the_refused_step_and_keeps_merge_again():
 @needs_node
 def test_polling_slows_while_the_tab_is_hidden_and_stops_on_a_terminal_answer():
     out = _run(r"""
-      globalThis.document = { visibilityState: "hidden", querySelector: () => null };
+      globalThis.document = { visibilityState: "hidden", querySelector: () => null, querySelectorAll: () => [] };
       const waits = [];
       window.setTimeout = (fn, ms) => { waits.push(ms); fn(); return 1; };
       let calls = 0;
@@ -728,8 +728,10 @@ def test_progress_respects_reduced_motion_and_reads_as_one_live_line():
     reduced = SHELL[SHELL.index(".fm-merge-spinner {"):]
     reduced = reduced[reduced.index("@media (prefers-reduced-motion: reduce)"):]
     assert ".fm-merge-spinner { animation: none;" in reduced[:400]
-    render = _function("renderRepoPullMergeBox")
+    render = _function("renderRepoPullMergeFooter")
     assert '${footer.progress ? "" : \'role="status" aria-live="polite" aria-atomic="true" \'}' in render
+    assert "${renderRepoPullMergeFooter(model)}" in _function("renderRepoPullMergeBox")
+    assert "${renderRepoPullMergeFooter(model)}" in _function("renderRepoPullFilesMergeBar")
     patch = _function("patchRepoPullMutationProgress")
     assert "if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;" in patch
     poll = _function("postRepoPullMutation")
@@ -805,3 +807,63 @@ def test_a_finished_pull_offers_comments_but_not_reviews():
     assert 'data-repo-pull-review-action="comment"' in form
     render = _function("renderPullConversationEvent")
     assert 'if (ev.type === "merged") {' in render
+
+
+@needs_node
+def test_a_pending_page_cannot_merge_until_the_live_state_lands():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const pending = repoPullMergeModel(repo, 7, detail({ pullPending: true, pullReadiness: undefined, pullMergeAuthorized: true }));
+      const rows = Object.fromEntries(pending.rows.map((row) => [row.id, row]));
+      const ready = repoPullMergeModel(repo, 7, detail());
+      console.log(JSON.stringify({
+        pending: { canMerge: pending.canMerge, canOverride: pending.canOverride, footer: pending.footer, branch: rows.branch, checks: rows.checks,
+          status: repoPullMergeStatus(pending), files: renderRepoPullFilesMergeBar(repo, 7, detail({ pullPending: true, pullMergeAuthorized: false })) },
+        ready: { canMerge: ready.canMerge },
+      }));
+    """)
+    pending = out["pending"]
+    assert pending["canMerge"] is False and pending["canOverride"] is False
+    assert pending["footer"]["tone"] == "pending"
+    assert pending["branch"]["tone"] == "pending" and pending["branch"]["title"] == "Checking mergeability…"
+    assert pending["checks"]["tone"] == "pending"
+    assert pending["status"]["label"] == "Checking…"
+    assert "Loading merge readiness" in pending["files"]
+    assert "data-repo-pull-merge " not in pending["files"]
+    assert out["ready"]["canMerge"] is True
+
+
+@needs_node
+def test_the_files_tab_merges_with_the_same_rules_and_buttons():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const bar = (overrides) => renderRepoPullFilesMergeBar(repo, 7, detail(overrides));
+      console.log(JSON.stringify({
+        ready: bar({}),
+        unreviewed: bar({ pullConversation: [] }),
+        changes: bar({ pullConversation: [{ type: "review", author: "carol-key", state: "changes_requested" }] }),
+        visitor: bar({ pullMergeAuthorized: false }),
+        merged: bar({ pullMerge: { state: "merged" } }),
+      }));
+    """)
+    assert '<button type="button" data-repo-pull-merge  class="fm-btn fm-btn-cta">' in out["ready"]
+    assert "data-repo-pull-files-merge" in out["ready"]
+    assert "data-repo-pull-merge-override" in out["unreviewed"]
+    assert "Independent review required" in out["unreviewed"]
+    assert 'data-repo-pull-merge disabled' in out["unreviewed"]
+    assert "Changes requested by 1 reviewer" in out["changes"]
+    assert "data-repo-pull-merge-override" in out["changes"]
+    assert 'data-repo-pull-merge disabled' in out["changes"]
+    assert out["visitor"] == ""
+    assert "Merged" in out["merged"]
+
+
+def test_the_server_rendered_pull_stays_until_the_dashboard_paints_it():
+    keep = _function("keepRepoFirstViewPull")
+    assert '[data-repo-ssr] h2.fm-ssr-h1' in keep
+    assert "view.dataset.repoSsrPull = match[1];" in keep
+    take = _function("takeRepoFirstViewPull")
+    assert "kept.number !== String(number) || kept.path !== location.pathname" in take
+    assert 'kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;' in CONTENT
+    takeover = NETWORK[NETWORK.index("keepRepoFirstViewIssue(detail);"):]
+    assert takeover.index("keepRepoFirstViewPull(detail);") < takeover.index("detail.innerHTML = `")

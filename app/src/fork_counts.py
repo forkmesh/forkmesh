@@ -1,15 +1,19 @@
 import json
 import re
+import time
 from collections import OrderedDict
 from urllib.parse import quote, urlencode
 
 MAX_FORKS = 24
 CACHE_ENTRIES = 1024
+FRESH_SECONDS = 30
 INTERNAL_ORIGIN = "https://forkmesh.internal"
 OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 
 _counts_cache = OrderedDict()
+_fresh_cache = OrderedDict()
+_clock = time.time
 
 
 def _bind_runtime(runtime):
@@ -112,7 +116,30 @@ async def _public_record(env, owner, repo):
     return node, record
 
 
+def _fresh_get(key):
+    entry = _fresh_cache.get(key)
+    if entry is None or _clock() - entry[0] >= FRESH_SECONDS:
+        return False, None
+    return True, entry[1]
+
+
+def _fresh_put(key, value):
+    _fresh_cache[key] = (_clock(), value)
+    _fresh_cache.move_to_end(key)
+    while len(_fresh_cache) > CACHE_ENTRIES:
+        _fresh_cache.popitem(last=False)
+
+
 async def fork_count(env, key, tips):
+    hit, value = _fresh_get(key)
+    if hit:
+        return value
+    value = await _fork_count(env, key, tips)
+    _fresh_put(key, value)
+    return value
+
+
+async def _fork_count(env, key, tips):
     owner, repo = key.split("/")
     _node, record = await _public_record(env, owner, repo)
     parent = repo_key((record or {}).get("forkedFrom"))

@@ -89,7 +89,7 @@ async def _ref_commit(env, owner, repo, ref):
     return commit if OID_RE.fullmatch(commit) else ""
 
 
-async def open_pulls(env, owner, repo):
+async def open_pulls(env, owner, repo, only=None):
     tree = await _read(env, owner, repo, "tree",
                        {"path": ".forkmesh/pulls", "ref": PULLS_REF})
     if not tree:
@@ -102,6 +102,8 @@ async def open_pulls(env, owner, repo):
                and str(entry.get("name") or "").isdigit()}
     numbers.update(int(name) for name in refs if str(name).isdigit()
                    and OID_RE.fullmatch(str(refs[name] or "").lower()))
+    if only is not None:
+        numbers &= {int(only)}
     numbers = sorted(n for n in numbers if 0 < n < 10 ** 9)[::-1][:SYNC_PULLS]
     path = ".forkmesh/pulls/%d/pull.md"
     blobs = {}
@@ -183,11 +185,13 @@ async def trusted_authors(env, storage, repo):
              "addedAt": int(row.get("added_at") or 0)} for row in rows or []]
 
 
-async def sync_repo(env, owner, repo, force=False):
+async def sync_repo(env, owner, repo, force=False, number=None):
     import runner_actions
     runtime = _runtime(env)
     storage, public = await runner_actions.identity(runtime, owner, repo)
     key = storage + "/" + str(repo).lower()
+    if number is not None:
+        key += "#%d" % int(number)
     now = int(runtime.now())
     if not force and now - _SYNC_MEMO.get(key, 0) < SYNC_MEMO_MS:
         return 0
@@ -198,7 +202,7 @@ async def sync_repo(env, owner, repo, force=False):
         return 0
     queued = 0
     bases = {}
-    for pull in await open_pulls(env, public, repo):
+    for pull in await open_pulls(env, public, repo, number):
         head, head_ref = await _pull_head(env, public, repo, pull)
         base = str(pull.get("base") or "")
         if not head or not runner_actions.valid_branch(base):
@@ -321,7 +325,7 @@ async def repo_pull_checks_handler(env, request, owner, repo, number):
         return _error("not_found", 404)
     if method == "GET":
         try:
-            await sync_repo(env, owner, repo)
+            await sync_repo(env, owner, repo, number=number)
         except Exception:
             pass
         return json_response(

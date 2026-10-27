@@ -365,6 +365,7 @@
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">

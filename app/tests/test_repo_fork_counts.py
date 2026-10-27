@@ -99,6 +99,9 @@ def runtime(monkeypatch):
     for name, value in shared.items():
         monkeypatch.setattr(fork_counts, name, value, raising=False)
     fork_counts._counts_cache.clear()
+    fork_counts._fresh_cache.clear()
+    state.now = 1000.0
+    monkeypatch.setattr(fork_counts, "_clock", lambda: state.now)
     return state
 
 
@@ -145,9 +148,20 @@ def test_counts_are_cached_until_a_tip_moves(runtime):
     call({"forks": ["bob/widget"]})
     assert not [read for read in runtime.reads if read[2] == "compare"]
     runtime.tips[("alice", "widget")] = OTHER_TIP
+    runtime.now += fork_counts.FRESH_SECONDS
     call({"forks": ["bob/widget"]})
     assert [read[3]["base"] for read in runtime.reads
             if read[2] == "compare"] == [OTHER_TIP]
+
+
+def test_a_repeat_request_inside_the_fresh_window_reads_nothing(runtime):
+    first = call({"forks": ["bob/widget", "erin/widget"]})
+    runtime.reads.clear()
+    runtime.tips[("alice", "widget")] = OTHER_TIP
+    runtime.now += fork_counts.FRESH_SECONDS - 1
+    again = call({"forks": ["bob/widget", "erin/widget"]})
+    assert again.data == first.data
+    assert runtime.reads == []
 
 
 def test_private_unknown_and_unforked_repositories_get_no_counts(runtime):
