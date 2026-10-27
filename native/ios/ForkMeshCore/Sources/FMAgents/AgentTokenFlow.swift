@@ -1,3 +1,4 @@
+import FMControl
 import Foundation
 
 public enum AgentTokenPace: Int, Comparable, CaseIterable, Sendable {
@@ -83,5 +84,41 @@ public struct AgentTokenSampler: Equatable, Sendable {
         }
         let new = Double(grown) / seconds
         return old == 0 ? new : (old + new) / 2
+    }
+}
+
+public struct AgentTokenSeries: Equatable, Sendable {
+    public static let seconds = 60
+
+    public private(set) var input: [Double] = []
+    public private(set) var output: [Double] = []
+    private var last: [String: [Int]] = [:]
+
+    public init() {}
+
+    public mutating func tick(_ totals: [String: [Int]]) {
+        var grownIn = 0
+        var grownOut = 0
+        for (key, now) in totals where now.count == 2 {
+            guard let before = last[key], before.count == 2 else { continue }
+            grownIn += max(0, now[0] - before[0])
+            grownOut += max(0, now[1] - before[1])
+        }
+        last = totals
+        input = Self.pushed(input, Double(grownIn))
+        output = Self.pushed(output, Double(grownOut))
+    }
+
+    public static func totals(desktop: [Int], rows: [UnifiedAgentRow]) -> [String: [Int]] {
+        let fed = desktop.count == 2
+        var totals: [String: [Int]] = fed ? ["desktop": desktop] : [:]
+        for row in rows where !(fed && row.isDesktop) {
+            totals["row:\(row.id)"] = [row.tokensIn, row.tokensOut]
+        }
+        return totals
+    }
+
+    private static func pushed(_ values: [Double], _ value: Double) -> [Double] {
+        Array((values + [value]).suffix(seconds))
     }
 }

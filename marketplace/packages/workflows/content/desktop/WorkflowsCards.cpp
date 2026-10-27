@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QDrag>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonDocument>
@@ -277,12 +278,31 @@ QString Tones::sheet() const
         "QToolButton#workflowsViewButton:hover { background: @hover; }"
         "QToolButton#workflowsViewButton:checked { background: @surface; }"
         "QScrollArea#workflowsCollection, QWidget#workflowsCollectionBody { background: transparent; border: none; }"
-        "QLabel#workflowsCollectionEmpty { color: @muted; font-size: 13px; padding: 36px; }");
+        "QLabel#workflowsCollectionEmpty { color: @muted; font-size: 13px; padding: 36px; }"
+        "QListWidget#workflowsSteps { background: @surface; border: 1px solid @border; border-radius: 10px;"
+        " padding: 4px; outline: 0; }"
+        "QListWidget#workflowsSteps::item { background: transparent; border: none; }"
+        "QLabel#workflowsPaneTitle { color: @muted; font-size: 11px; font-weight: 600; }"
+        "QLabel#workflowsFact { background: @sunken; color: @secondary; border: 1px solid @border;"
+        " border-radius: 10px; padding: 1px 8px; font-size: 11px; }"
+        "QLabel#workflowsFact[tone=\"accent\"] { background: @accentSoft; color: @accent; border-color: @accentEdge; }"
+        "QLabel#workflowsFact[tone=\"success\"] { background: @successSoft; color: @success; border-color: @successEdge; }"
+        "QLabel#workflowsFact[tone=\"danger\"] { background: @dangerSoft; color: @danger; border-color: @dangerEdge; }"
+        "QLabel#workflowsFact[tone=\"attention\"] { background: @attentionSoft; color: @attention;"
+        " border-color: @attentionEdge; }"
+        "QLabel#workflowsFactFace { background: transparent; border: none; }");
     const QList<QPair<QString, QColor>> roles{
         {QStringLiteral("@accentSoft"), withAlpha(accent, dark ? 0.2 : 0.1)},
         {QStringLiteral("@accentHover"), withAlpha(accent, dark ? 0.3 : 0.17)},
         {QStringLiteral("@accentEdge"), withAlpha(accent, 0.45)},
         {QStringLiteral("@dangerSoft"), withAlpha(danger, dark ? 0.2 : 0.1)},
+        {QStringLiteral("@dangerEdge"), withAlpha(danger, 0.4)},
+        {QStringLiteral("@successSoft"), withAlpha(success, dark ? 0.2 : 0.08)},
+        {QStringLiteral("@successEdge"), withAlpha(success, 0.4)},
+        {QStringLiteral("@attentionSoft"), withAlpha(attention, dark ? 0.2 : 0.08)},
+        {QStringLiteral("@attentionEdge"), withAlpha(attention, 0.4)},
+        {QStringLiteral("@success"), success},
+        {QStringLiteral("@attention"), attention},
         {QStringLiteral("@surface"), surface},
         {QStringLiteral("@sunken"), sunken},
         {QStringLiteral("@border"), border},
@@ -1085,6 +1105,124 @@ void CardGrid::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     relayout(false);
+}
+
+namespace {
+
+constexpr int kStepPad = 8;
+constexpr int kStepBadge = 22;
+
+QFont stepSmallFont(QFont font)
+{
+    font.setPointSizeF(std::max(7.0, font.pointSizeF() - 1.0));
+    return font;
+}
+
+QFont stepNameFont(QFont font)
+{
+    font.setWeight(QFont::DemiBold);
+    return font;
+}
+
+} // namespace
+
+StepDelegate::StepDelegate(const Tones *tones, QObject *parent) : QStyledItemDelegate(parent), m_tones(tones) {}
+
+QSize StepDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
+{
+    const QFontMetrics name(stepNameFont(option.font));
+    const QFontMetrics small(stepSmallFont(option.font));
+    int height = kStepPad * 2 + name.height() + 1 + small.height();
+    if (!index.data(StepDetailRole).toString().isEmpty())
+        height += small.height();
+    return {200, std::max(height, kStepBadge + kStepPad * 2)};
+}
+
+void StepDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
+{
+    const Tones &tones = *m_tones;
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    const QRect rect = option.rect;
+    const QRectF card = QRectF(rect).adjusted(1.5, 1.5, -1.5, -1.5);
+    const bool selected = option.state.testFlag(QStyle::State_Selected);
+    const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+    if (selected) {
+        painter->setPen(QPen(withAlpha(tones.accent, 0.45), 1));
+        painter->setBrush(withAlpha(tones.accent, tones.dark ? 0.2 : 0.09));
+        painter->drawRoundedRect(card, 8, 8);
+    } else if (hovered) {
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(tones.hover);
+        painter->drawRoundedRect(card, 8, 8);
+    }
+
+    const QString kind = index.data(StepKindRole).toString();
+    const bool off = index.data(StepOffRole).toBool();
+    QColor tone = kind == QLatin1String("trigger") ? tones.accent
+                  : kind == QLatin1String("agent") ? tones.agent
+                  : kind == QLatin1String("desktop") ? tones.account
+                                                     : tones.secondary;
+    if (off)
+        tone = tones.muted;
+    const QRectF badge(rect.left() + kStepPad + 2, rect.top() + kStepPad, kStepBadge, kStepBadge);
+    const qreal spine = badge.center().x();
+    painter->setPen(QPen(tones.border, 1.5));
+    if (index.row() > 0)
+        painter->drawLine(QPointF(spine, rect.top()), QPointF(spine, badge.top() - 3));
+    if (index.row() + 1 < index.model()->rowCount(index.parent()))
+        painter->drawLine(QPointF(spine, badge.bottom() + 3), QPointF(spine, rect.bottom() + 1));
+    painter->setPen(off ? QPen(tones.border, 1, Qt::DashLine) : QPen(withAlpha(tone, 0.5), 1));
+    painter->setBrush(withAlpha(tone, tones.dark ? 0.22 : 0.12));
+    painter->drawEllipse(badge);
+    QFont badgeFont = stepSmallFont(option.font);
+    badgeFont.setWeight(QFont::Bold);
+    painter->setFont(badgeFont);
+    painter->setPen(tone);
+    painter->drawText(badge, Qt::AlignCenter, QString::number(index.row() + 1));
+
+    const QString status = index.data(StepStatusRole).toString();
+    const int textLeft = int(badge.right()) + 10;
+    const int textRight = rect.right() - kStepPad - (status.isEmpty() ? 0 : 14);
+    const int width = std::max(10, textRight - textLeft);
+    const QFont nameFont = stepNameFont(option.font);
+    const QFont smallFont = stepSmallFont(option.font);
+    const QFontMetrics nameMetrics(nameFont);
+    const QFontMetrics smallMetrics(smallFont);
+    int y = rect.top() + kStepPad;
+
+    painter->setFont(nameFont);
+    painter->setPen(off ? tones.muted : tones.ink);
+    const QString name = index.data(StepNameRole).toString();
+    painter->drawText(QRect(textLeft, y, width, nameMetrics.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                      nameMetrics.elidedText(name, Qt::ElideRight, width));
+    if (!status.isEmpty()) {
+        const QColor dot = status == QLatin1String("success")   ? tones.success
+                           : status == QLatin1String("error")   ? tones.danger
+                           : status == QLatin1String("running") ? tones.accent
+                                                                : tones.strong;
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(dot);
+        painter->drawEllipse(QPointF(rect.right() - kStepPad - 4, y + nameMetrics.height() / 2.0), 3.5, 3.5);
+    }
+    y += nameMetrics.height() + 1;
+
+    painter->setFont(smallFont);
+    painter->setPen(off ? tones.muted : tones.secondary);
+    QString type = index.data(StepTypeRole).toString();
+    if (off)
+        type = QStringLiteral("Off · ") + type;
+    painter->drawText(QRect(textLeft, y, width, smallMetrics.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                      smallMetrics.elidedText(type, Qt::ElideRight, width));
+    y += smallMetrics.height();
+
+    const QString detail = index.data(StepDetailRole).toString();
+    if (!detail.isEmpty()) {
+        painter->setPen(index.data(StepWarnRole).toBool() ? tones.attention : tones.muted);
+        painter->drawText(QRect(textLeft, y, width, smallMetrics.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                          smallMetrics.elidedText(detail, Qt::ElideRight, width));
+    }
+    painter->restore();
 }
 
 } // namespace forkmesh::workflows

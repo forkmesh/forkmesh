@@ -295,6 +295,27 @@ maps every server error code).
   URL with Copy and New URL (`rotateHook`). Save posts the whole graph; Run
   workflow saves first; Download writes the `/export` n8n file; leaving with
   unsaved changes asks to Save, Discard or Cancel.
+- **Editor layout.** The user asked (2026-10-27) for a more compact editor
+  that shows more. It is three columns: the steps, the selected step's form,
+  and the runs (the runs table above the selected run's steps). Before, the
+  runs sat under the form at full width, the steps list took 40% of the
+  width, and most of the page was empty. Each step is a card painted by
+  `StepDelegate` (`WorkflowsCards`): a numbered badge on a line joining the
+  steps, coloured by kind (trigger accent, special agent purple, desktop
+  step teal, else grey, dashed when turned off), its name, its type and
+  summary, and what it runs after. "Not connected" shows in the attention
+  colour. A dot on the right gives that step's status in the latest run.
+  The item text keeps all three lines for accessibility. Under the name bar,
+  chips (`workflowsFact`, `renderEditorFacts`) show the state (off,
+  running, last run succeeded or failed), the trigger, the next and last
+  run, runs with the share that succeeded, the step count, and where the
+  workflow lives: its repository and file, or ForkMesh. Hovering the file
+  chip shows the desktop note that used to be a line of prose. Checkbox
+  groups with more than four options use four columns, so Days and Run on
+  events each take two rows. The runs table reads Started, Result,
+  Duration, Trigger, Output. A desktop run's step table names its fourth
+  column Session rather than Items. A special agent's icon slot shows its
+  portrait. The page subtitle is hidden while the editor is open.
 - **New workflow.** Blank (Manual trigger), any example from
   `/templates`, **Import file...** (`/convert`, files up to 2 MB) or
   **Import from link...** (`/import-url`). All open unsaved and off, and

@@ -2159,7 +2159,7 @@ void MainWindow::purgeSessionState(int sessionId)
     m_lastRelayedTeammateText.remove(sessionId);
     m_sessionTokens.remove(sessionId);
     m_sessionOutputTokens.remove(sessionId);
-    m_sessionInputTokens.remove(sessionId);
+    m_sessionTokenMeter.remove(sessionId);
     m_sessionTokenFlow.remove(sessionId);
     m_lastAssistantText.remove(sessionId);
     m_agentTaskTrackers.remove(sessionId);
