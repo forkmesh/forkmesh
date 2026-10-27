@@ -75,6 +75,55 @@ a name like `(caddy)`. Only that path, a parenthesised name and the user's own
 unit are skipped (n3, 2026-10-16, a Caddy restart); the executor anywhere
 else, or under another name, still alerts.
 
+### Process context and verdict
+
+Every process incident (`ptrace`, `exe_suspicious_path`,
+`job_user_outside_scope`, `service_user_outside_unit`, `service_user_shell`,
+`service_user_exe`) records, as soon as it is detected:
+
+| Key | What |
+|---|---|
+| `cmdline`, `cwd`, `ppid`, `started` | the process's own command line, working directory, parent and start time |
+| `parents` | up to six ancestors, nearest first: pid, exe, user, command line |
+| `children` | up to five child processes |
+| `environment` | only `SSH_CONNECTION`, `SSH_CLIENT`, `SSH_ORIGINAL_COMMAND`, `REMOTE_ADDR`, `REMOTE_PORT`, `HTTP_X_FORWARDED_FOR`, `HTTP_X_REAL_IP`, `HTTP_USER_AGENT`, `GIT_PROTOCOL`, `GIT_DIR`, `GIT_QUARANTINE_PATH`, `SUDO_USER`, `LOGNAME`, from the process or its nearest ancestor; never any other variable, so no secret leaves the node |
+| `connections` | inet sockets held by the process and its ancestors (read in each one's own network namespace), public peers first: this is where a remote IP shows |
+| `verdict` | what the IDS concluded, also appended to the summary (and so to the Ping title) |
+
+Command lines and environment values pass through `redact`: a URL's password, an `Authorization:` value, `token=`/`password=`/`secret=`/`key=` values and `--token`/`--password`/`--secret`/`--api-key` arguments become `***`.
+
+Verdicts:
+
+- **likely benign: ForkMesh's own `<hook>` hook during a git push**: the
+  shell runs a git receive hook, an ancestor is `git receive-pack`, and the
+  hook file carries `# Managed-By: ForkMesh` (the mirror-node `post-receive`
+  hook, `server/pushhook.go`; the operator-policy hook) or is the gateway's
+  push-rewrite `pre-receive` hook (`tools/mirror_gateway.py`).
+- **needs a look: a `<hook>` hook ForkMesh did not write**: the same, but the
+  file has no marker or is not a small regular file (never opened then, so a
+  FIFO cannot stall the IDS).
+- **likely benign: the Actions sandbox self-test**: `/bin/sh -c 'exit 0'` under
+  `bwrap` (`server/actions.go`, `probeBubblewrap`).
+- **probably an Actions job step**: any other process under `bwrap`.
+- **needs a look: git ran a shell command**: `sh -c` directly under git (an
+  ssh command, credential helper, alias or hook from config).
+- **unexplained**: the process exited before it could be read, or nothing
+  above matches.
+
+The verdict never changes the severity: a process can fake its command line,
+so benign verdicts say what matched and still ask for a cross-check in the
+unit's journal. The added context is trimmed (children, connections,
+environment, then the farthest parents) so the stored detail stays valid JSON
+under the 4000-character column cap. The Ping and email show the verdict
+under the summary and list each parent, child and connection on its own line.
+
+Why: the n5 alert of 2026-10-27 16:36:22 UTC (`elOxTOhzoyw9CziQ`, dash under
+`forkmesh-mirror-node.service`) recorded only pid, exe, name, unit and user.
+The process was gone before anyone looked, so its origin could not be
+established. The two pushes in that window landed at 16:36:45 and 16:37:01,
+after the alert, so the `post-receive` hook did not start it. A deploy of
+`b15f7e1c3b3e` was restarting `forkmesh-app` on n5 at the time.
+
 ## Lockdown on a core
 
 1. **Seal**: the app drops `DATA_KEY` and every vault value and exits.

