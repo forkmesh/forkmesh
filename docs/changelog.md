@@ -72,7 +72,8 @@ commit (`commitResolvedMerge`) refuses a conflicted `.json` file that parsed
 on our side but does not parse after the resolution, naming the file and
 line (`jsonBrokenByMergeResolution`). Until that reached `main`, the same
 resolution struck again the same afternoon: `2604-usb-c-port-speed` and two
-later merges left out the comma after a Desktop item.
+later merges left out the comma after a Desktop item, and that evening
+`2608-camera-not-working` left a Projects section open in front of Calls.
 
 ## Adding a note
 
