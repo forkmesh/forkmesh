@@ -703,9 +703,17 @@ DATA_SCHEMA_UP = [
         name TEXT NOT NULL,
         done_at INTEGER NOT NULL CHECK (done_at >= 0),
         PRIMARY KEY (org_bi, name))""",
+    """CREATE TABLE IF NOT EXISTS crm_zoho_members (
+        org_bi TEXT NOT NULL,
+        member_bi TEXT NOT NULL,
+        member_name TEXT NOT NULL,
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY (org_bi, member_bi))""",
 ]
 # Indexes and triggers drop with their tables; children drop before contacts.
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS crm_zoho_members",
     "DROP TABLE IF EXISTS crm_backfills",
     "DROP TABLE IF EXISTS crm_list_activity",
     "DROP TABLE IF EXISTS crm_deck_page_views",
@@ -1136,7 +1144,62 @@ def _zoho_project(runtime, zoho):
     }
 
 
-async def _record_zoho(runtime, org_bi, **changes):
+async def _member_zoho(runtime, org_bi, member_bi):
+    if not member_bi:
+        return {}
+    row = await runtime.d1_first(
+        "SELECT data FROM crm_zoho_members WHERE org_bi=? AND member_bi=?",
+        org_bi, member_bi)
+    data = await runtime.open(row.get("data")) if row else None
+    return data if isinstance(data, dict) else {}
+
+
+async def _zoho_for(runtime, org_bi, member_bi, settings=None):
+    mine = await _member_zoho(runtime, org_bi, member_bi)
+    if _zoho_connected(mine):
+        return mine, member_bi
+    settings = settings if settings is not None else await _opened_settings(runtime, org_bi)
+    zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
+    return zoho, ""
+
+
+async def _save_member_zoho(runtime, org_bi, member_bi, member_name, zoho, scope=""):
+    before = await _member_zoho(runtime, org_bi, member_bi)
+    region = zoho.get("region") if zoho.get("region") in ZOHO_REGIONS else "com"
+    record = {key: before[key] for key in ("lastSyncAt",) if key in before}
+    record.update({key: zoho[key] for key in (
+        "accountId", "clientId", "clientSecret", "refreshToken", "managed") if zoho.get(key)})
+    record["region"] = region
+    record["accountsServer"], record["mailServer"] = ZOHO_REGIONS[region]
+    record["connectedAt"] = runtime.now()
+    if scope:
+        record["scope"] = _zoho_scope(scope)
+    await runtime.d1_run(
+        "INSERT INTO crm_zoho_members(org_bi,member_bi,member_name,updated_at,data) "
+        "VALUES(?,?,?,?,?) ON CONFLICT(org_bi,member_bi) DO UPDATE SET "
+        "member_name=excluded.member_name,updated_at=excluded.updated_at,data=excluded.data",
+        org_bi, member_bi, member_name, runtime.now(), await runtime.seal(record))
+
+
+async def _zoho_mine(runtime, org_bi, member_bi):
+    mine = await _member_zoho(runtime, org_bi, member_bi)
+    return dict(_zoho_project(runtime, mine), own=True)
+
+
+async def _record_zoho(runtime, org_bi, member_bi="", **changes):
+    if member_bi:
+        zoho = await _member_zoho(runtime, org_bi, member_bi)
+        if not zoho:
+            return
+        for key, value in changes.items():
+            if value is None:
+                zoho.pop(key, None)
+            else:
+                zoho[key] = value
+        await runtime.d1_run(
+            "UPDATE crm_zoho_members SET updated_at=?,data=? WHERE org_bi=? AND member_bi=?",
+            runtime.now(), await runtime.seal(zoho), org_bi, member_bi)
+        return
     row = await runtime.d1_first("SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
     settings = await runtime.open(row.get("data")) if row else None
     if not isinstance(settings, dict) or not isinstance(settings.get("zoho"), dict):
@@ -1516,17 +1579,31 @@ async def _mail_message_project(runtime, row):
         "providerUrl": str(data.get("providerUrl") or ""),
         "receivedAt": _integer(row.get("received_at")),
         "importedAt": _integer(row.get("imported_at")),
+        "ownerBi": str(data.get("ownerBi") or ""),
+        "owner": str(data.get("owner") or ""),
     }
 
 
-async def _mail_messages(runtime, org_bi):
+def _mail_visible(message, viewer_bi):
+    return not message.get("ownerBi") or message["ownerBi"] == viewer_bi
+
+
+def _mail_public(message):
+    projected = dict(message, mine=bool(message.get("ownerBi")))
+    projected.pop("ownerBi", None)
+    return projected
+
+
+async def _mail_messages(runtime, org_bi, viewer_bi=""):
     rows = await runtime.d1_all(
         "SELECT message_id,provider,provider_message_id,box,group_key,"
         "received_at,imported_at,data FROM crm_mail_messages WHERE org_bi=? "
         "ORDER BY received_at DESC,message_id LIMIT ?",
         org_bi, MAX_MAIL_MESSAGES,
     )
-    return [await _mail_message_project(runtime, row) for row in rows or []]
+    messages = [await _mail_message_project(runtime, row) for row in rows or []]
+    return [_mail_public(message) for message in messages
+            if _mail_visible(message, viewer_bi)]
 
 
 async def _mail_message_row(runtime, org_bi, message_id):
@@ -1549,8 +1626,8 @@ async def _move_mail(runtime, row, org_bi, actor, data):
     await runtime.audit(actor, "crm.mail.move", "crm_mail_message", row["message_id"])
     return _response(runtime, {
         "ok": True,
-        "message": await _mail_message_project(
-            runtime, await _mail_message_row(runtime, org_bi, row["message_id"])),
+        "message": _mail_public(await _mail_message_project(
+            runtime, await _mail_message_row(runtime, org_bi, row["message_id"]))),
     })
 
 
@@ -1792,20 +1869,27 @@ async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
 
 async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _opened_settings(runtime, org_bi)
-    zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
-    connection, refused = _zoho_connection(runtime, settings)
+    if data.get("mailbox") == "organization":
+        zoho, owner_bi = (settings.get("zoho") if isinstance(settings.get("zoho"), dict)
+                          else {}), ""
+    elif data.get("mailbox") == "mine":
+        zoho, owner_bi = await _member_zoho(runtime, org_bi, account_bi), account_bi
+    else:
+        zoho, owner_bi = await _zoho_for(runtime, org_bi, account_bi, settings)
+    connection, refused = _zoho_connection(runtime, {"zoho": zoho})
     if not connection:
         return _response(runtime, {"error": refused}, 409)
     tried = max(_integer(zoho.get("lastSyncAt")), _integer(zoho.get("lastSyncErrorAt")))
     if data.get("auto") and runtime.now() - tried < ZOHO_AUTO_SYNC_MS:
         return _response(runtime, {"ok": True, "skipped": True, "created": 0, "updated": 0,
-                                   "outboundRecorded": 0, "contactsAdvanced": 0})
+                                   "outboundRecorded": 0, "contactsAdvanced": 0,
+                                   "mailbox": "mine" if owner_bi else "organization"})
     limit = max(1, min(MAX_ZOHO_IMPORT, _integer(data.get("limit"), 100)))
     result = await _zoho_mail_import(runtime, connection, limit)
     if not (result or {}).get("ok"):
         error = _clean((result or {}).get("error"), 120) or "zoho_unavailable"
         await _record_zoho(
-            runtime, org_bi, lastSyncError=error, lastSyncErrorAt=runtime.now(),
+            runtime, org_bi, owner_bi, lastSyncError=error, lastSyncErrorAt=runtime.now(),
             tokenRejectedAt=runtime.now() if error == "zoho_token_rejected" else None)
         return _response(runtime, {"error": error}, 502)
     created = 0
@@ -1841,6 +1925,8 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
             "hasAttachment": bool(source.get("hasAttachment")),
             "providerUrl": _https(source.get("providerUrl")),
         }
+        if owner_bi:
+            envelope.update(ownerBi=owner_bi, owner=actor)
         received_at = max(0, _integer(source.get("receivedAt")))
         await runtime.d1_run(
             "INSERT INTO crm_mail_messages(message_id,org_bi,org_name,provider,"
@@ -1918,34 +2004,44 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         zoho.pop(key, None)
     if result.get("scope"):
         zoho["scope"] = _zoho_scope(result.get("scope"))
-    settings["zoho"] = zoho
-    await runtime.d1_run(
-        "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
-        "data=? WHERE org_bi=?",
-        account_bi, actor, now, await runtime.seal(settings), org_bi,
-    )
+    if owner_bi:
+        await runtime.d1_run(
+            "UPDATE crm_zoho_members SET updated_at=?,data=? WHERE org_bi=? AND member_bi=?",
+            now, await runtime.seal(zoho), org_bi, owner_bi)
+    else:
+        settings["zoho"] = zoho
+        await runtime.d1_run(
+            "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+            "data=? WHERE org_bi=?",
+            account_bi, actor, now, await runtime.seal(settings), org_bi,
+        )
     await runtime.audit(
         actor, "crm.zoho.import", "organization", org_name,
         details={"created": created, "updated": updated,
                  "outboundRecorded": outbound_recorded,
-                 "contactsAdvanced": contacts_advanced},
+                 "contactsAdvanced": contacts_advanced,
+                 "mailbox": "mine" if owner_bi else "organization"},
     )
     if created:
         await _activity_notify(
-            runtime, org_bi, org_name, actor, "New email in the CRM mailbox", "team", True,
+            runtime, org_bi, org_name, actor,
+            "New email in your CRM mailbox" if owner_bi else "New email in the CRM mailbox",
+            "self" if owner_bi else "team", True,
             "%d new message%s" % (created, "" if created == 1 else "s"))
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
         "outboundRecorded": outbound_recorded,
         "contactsAdvanced": contacts_advanced,
-        "mail": await _mail_messages(runtime, org_bi),
-        "settings": await _settings(runtime, org_bi),
+        "mailbox": "mine" if owner_bi else "organization",
+        "mail": await _mail_messages(runtime, org_bi, account_bi),
+        "settings": await _settings(runtime, org_bi, account_bi),
     })
 
 
 async def email_channel_report(runtime, org_bi, since):
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return {"status": "not_installed"}
+    await _ensure_data_schema(runtime, org_bi)
     since = max(0, _integer(since))
     zoho = (await _opened_settings(runtime, org_bi)).get("zoho")
     zoho = zoho if isinstance(zoho, dict) else {}
@@ -2005,6 +2101,8 @@ async def email_channel_report(runtime, org_bi, since):
             "canSend": _zoho_connected(zoho) and _zoho_can_send(zoho),
             "lastSyncAt": _integer(zoho.get("lastSyncAt")),
             "mailServer": _https(zoho.get("mailServer")),
+            "members": _integer((await runtime.d1_first(
+                "SELECT COUNT(*) AS n FROM crm_zoho_members WHERE org_bi=?", org_bi) or {}).get("n")),
         },
     }
 
@@ -2132,7 +2230,7 @@ def _redirect(runtime, location):
                        "referrer-policy": "no-referrer"})
 
 
-async def _zoho_connect(runtime, org_name, account_bi, actor):
+async def _zoho_connect(runtime, org_name, account_bi, actor, mine=False):
     client = _zoho_client(runtime)
     if not client:
         return _response(runtime, {"error": "zoho_one_click_unavailable"}, 409)
@@ -2144,10 +2242,11 @@ async def _zoho_connect(runtime, org_name, account_bi, actor):
     sealed = await runtime.seal({
         "org": org_name, "account": account_bi, "actor": actor,
         "redirect": redirect_uri, "nonce": runtime.new_id(),
-        "expires": runtime.now() + ZOHO_STATE_TTL_MS,
+        "expires": runtime.now() + ZOHO_STATE_TTL_MS, "mine": bool(mine),
     })
     state = base64.urlsafe_b64encode(str(sealed).encode("utf-8")).decode("ascii").rstrip("=")
-    await runtime.audit(actor, "crm.zoho.connect_start", "organization", org_name)
+    await runtime.audit(actor, "crm.zoho.connect_start", "organization", org_name,
+                        details={"mine": bool(mine)})
     return _response(runtime, {
         "ok": True,
         "authorizationUrl": ZOHO_REGIONS["com"][0] + "/oauth/v2/auth?" + urlencode({
@@ -2209,10 +2308,14 @@ async def _zoho_mail_account(runtime, mail_server, access_token):
 
 
 async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
-    current = await runtime.d1_first(
-        "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
-    opened = await runtime.open(current.get("data")) if current else {}
-    stored = opened.get("zoho") if isinstance(opened, dict) else None
+    mine = bool(data.get("mine"))
+    if mine:
+        stored = await _member_zoho(runtime, org_bi, account_bi)
+    else:
+        current = await runtime.d1_first(
+            "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+        opened = await runtime.open(current.get("data")) if current else {}
+        stored = opened.get("zoho") if isinstance(opened, dict) else None
     stored = stored if isinstance(stored, dict) and not stored.get("managed") else {}
     client_id = _clean(data.get("clientId"), 200) or _clean(stored.get("clientId"), 200)
     client_secret = _clean(data.get("clientSecret"), 500)
@@ -2240,6 +2343,14 @@ async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
     account_id = await _zoho_mail_account(runtime, ZOHO_REGIONS[region][1], tokens[0])
     if not account_id:
         return _response(runtime, {"error": "zoho_account_missing", "region": region}, 400)
+    if mine:
+        await _save_member_zoho(runtime, org_bi, account_bi, actor, {
+            "region": region, "accountId": account_id, "clientId": client_id,
+            "clientSecret": client_secret, "refreshToken": tokens[1]}, tokens[2])
+        await runtime.audit(actor, "crm.zoho.connect", "organization", org_name,
+                            details={"region": region, "selfClient": True, "mine": True})
+        return _response(runtime, {
+            "ok": True, "settings": await _settings(runtime, org_bi, account_bi)})
     saved = await _save_settings(runtime, org_bi, account_bi, actor, {
         "zoho": {"region": region, "accountId": account_id, "clientId": client_id,
                  "clientSecret": client_secret, "refreshToken": tokens[1]}},
@@ -2247,6 +2358,17 @@ async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
     await runtime.audit(actor, "crm.zoho.connect", "organization", org_name,
                         details={"region": region, "selfClient": True})
     return saved
+
+
+async def _zoho_disconnect(runtime, org_bi, org_name, account_bi, actor, data):
+    if not data.get("mine"):
+        return await _save_settings(runtime, org_bi, account_bi, actor, {"zohoDisconnect": True})
+    await runtime.d1_run(
+        "DELETE FROM crm_zoho_members WHERE org_bi=? AND member_bi=?", org_bi, account_bi)
+    await runtime.audit(actor, "crm.zoho.disconnect", "organization", org_name,
+                        details={"mine": True})
+    return _response(runtime, {
+        "ok": True, "settings": await _settings(runtime, org_bi, account_bi)})
 
 
 async def _zoho_callback(runtime):
@@ -2260,7 +2382,8 @@ async def _zoho_callback(runtime):
     if params.get("error") or not code:
         return _redirect(runtime, page + "&zoho=denied")
     org_bi, role = await runtime.organization(org_name, state["account"])
-    if (not org_bi or role not in MANAGER_ROLES
+    mine = bool(state.get("mine"))
+    if (not org_bi or not (mine or role in MANAGER_ROLES)
             or not await runtime.plugin_installed(org_bi, PLUGIN_ID)):
         return _redirect(runtime, page + "&zoho=forbidden")
     region = _zoho_region_of(params.get("accounts-server"))
@@ -2279,6 +2402,13 @@ async def _zoho_callback(runtime):
     account_id = await _zoho_mail_account(runtime, mail_server, tokens[0])
     if not account_id:
         return _redirect(runtime, page + "&zoho=account_missing")
+    if mine:
+        await _save_member_zoho(runtime, org_bi, state["account"], str(state.get("actor") or ""), {
+            "region": region, "accountId": account_id, "clientId": client["clientId"],
+            "refreshToken": tokens[1], "managed": True}, tokens[2] or ZOHO_SCOPES)
+        await runtime.audit(str(state.get("actor") or ""), "crm.zoho.connect",
+                            "organization", org_name, details={"region": region, "mine": True})
+        return _redirect(runtime, page + "&zoho=connected_mine")
     await _save_settings(runtime, org_bi, state["account"], str(state.get("actor") or ""), {
         "zoho": {"region": region, "accountId": account_id,
                  "clientId": client["clientId"], "refreshToken": tokens[1],
@@ -2288,7 +2418,14 @@ async def _zoho_callback(runtime):
     return _redirect(runtime, page + "&zoho=connected")
 
 
-async def _settings(runtime, org_bi):
+async def _settings(runtime, org_bi, account_bi=""):
+    data = await _org_settings(runtime, org_bi)
+    if account_bi:
+        data["zohoMine"] = await _zoho_mine(runtime, org_bi, account_bi)
+    return data
+
+
+async def _org_settings(runtime, org_bi):
     row = await runtime.d1_first(
         "SELECT updated_by_name,updated_at,data FROM crm_settings WHERE org_bi=?",
         org_bi,
@@ -2390,8 +2527,8 @@ async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
     await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
     contacts = await _contacts(runtime, org_bi)
     emails = await _emails(runtime, org_bi)
-    mail = await _mail_messages(runtime, org_bi)
-    settings = await _settings(runtime, org_bi)
+    mail = await _mail_messages(runtime, org_bi, account_bi)
+    settings = await _settings(runtime, org_bi, account_bi)
     members = await _org_member_names(runtime, org_bi)
     payload = {
         "ok": True,
@@ -5552,9 +5689,16 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _settings(runtime, org_bi)
     from_email = _email(data.get("fromEmail") or settings.get("fromEmail"))
     from_name = _clean(data.get("fromName") or settings.get("fromName"), 120)
+    token = _clean(data.get("mailtrapKey"), 2048)
+    mine = await _member_zoho(runtime, org_bi, account_bi) if not token else {}
+    zoho, _ = _zoho_connection(runtime, {"zoho": mine}) if _zoho_connected(mine) else (None, "")
+    if zoho:
+        return await _send_own_zoho(runtime, org_bi, org_name, account_bi, actor, zoho, {
+            "contact": contact, "contactId": contact_id, "contactData": contact_data,
+            "to": recipient, "fromEmail": from_email, "fromName": from_name,
+            "subject": subject, "text": text, "html": html, "flows": settings["flows"]})
     if not from_email:
         return _response(runtime, {"error": "invalid_sender"}, 400)
-    token = _clean(data.get("mailtrapKey"), 2048)
     now = runtime.now()
     send_id = runtime.new_id()
     envelope = {
@@ -5626,6 +5770,81 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         runtime,
         {"ok": accepted, "email": projected,
          "error": "mailtrap_send_failed" if not accepted else ""},
+        201 if accepted else 502,
+    )
+
+
+async def _send_own_zoho(runtime, org_bi, org_name, account_bi, actor, zoho, message):
+    contact, contact_id = message["contact"], message["contactId"]
+    contact_data = message["contactData"]
+    recipient, subject, text = message["to"], message["subject"], message["text"]
+    html = message["html"] or "<div>" + escape(text).replace("\n", "<br>") + "</div>"
+    now = runtime.now()
+    send_id = runtime.new_id()
+    envelope = {
+        "to": recipient, "fromEmail": message["fromEmail"], "fromName": message["fromName"],
+        "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
+        "provider": "zoho", "direction": "outbound", "sentVia": "zoho",
+    }
+    await runtime.d1_run(
+        "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+        "sender_bi,sender_name,transport,status,external_id,created_at,sent_at,"
+        "status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        send_id, org_bi, org_name, contact_id, account_bi, actor, "external",
+        "sending", "", now, 0, now, await runtime.seal(envelope),
+    )
+    result = await _zoho_send(runtime, zoho, message["fromEmail"], recipient, subject, html)
+    accepted = bool(result.get("ok"))
+    envelope["fromEmail"] = _email(result.get("fromAddress")) or message["fromEmail"]
+    envelope["mailbox"] = envelope["fromEmail"]
+    envelope["error"] = "" if accepted else _clean(result.get("error"), 500)
+    grant = {"scope": result["scope"]} if result.get("scope") else {}
+    if accepted:
+        grant.update(lastSentAt=runtime.now(), sendRefusedAt=None, tokenRejectedAt=None)
+    elif result.get("error") == "zoho_send_not_allowed":
+        grant.update(sendRefusedAt=runtime.now())
+    elif result.get("error") == "zoho_token_rejected":
+        grant.update(tokenRejectedAt=runtime.now())
+    if grant:
+        await _record_zoho(runtime, org_bi, account_bi, **grant)
+    sent_at = runtime.now()
+    await runtime.d1_run(
+        "UPDATE crm_email_sends SET status=?,external_id=?,sent_at=?,status_at=?,"
+        "data=? WHERE org_bi=? AND send_id=?",
+        "accepted" if accepted else "failed", _clean(result.get("messageId"), 200),
+        sent_at if accepted else 0, sent_at, await runtime.seal(envelope), org_bi, send_id,
+    )
+    advanced, before = "", dict(contact_data)
+    if contact and accepted:
+        advanced = _stamp_contacted(contact_data, sent_at, message["flows"])
+        await runtime.d1_run(
+            "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+            "data=? WHERE org_bi=? AND contact_id=?",
+            account_bi, actor, sent_at, await runtime.seal(contact_data), org_bi,
+            contact_id,
+        )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
+    await runtime.audit(
+        actor, "crm.email.send", "crm_email_send", send_id,
+        outcome="success" if accepted else "failed",
+        details={"transport": "zoho", "accepted": accepted},
+    )
+    if contact and accepted:
+        await _record_contact_event(runtime, org_bi, account_bi, actor,
+                                    contact_data, "contact.emailed",
+                                    {"subject": subject})
+    if accepted:
+        await _celebrate_tracked_email(runtime, actor, send_id, subject,
+                                       contact_data or {"email": recipient})
+    projected = await _email_project(
+        runtime, await _email_row(runtime, org_bi, send_id))
+    return _response(
+        runtime,
+        {"ok": accepted, "email": projected, "via": "zoho",
+         "fromEmail": envelope["fromEmail"],
+         "error": "" if accepted else _clean(result.get("error"), 120) or "send_failed"},
         201 if accepted else 502,
     )
 
@@ -6960,7 +7179,8 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, dict(
             fallback, ok=True, preview=True, subject=subject, text=text, to=recipient,
             fromEmail=from_email, fromName=from_name, model=model))
-    zoho, refused = _zoho_connection(runtime, await _opened_settings(runtime, org_bi))
+    record, zoho_owner = await _zoho_for(runtime, org_bi, account_bi)
+    zoho, refused = _zoho_connection(runtime, {"zoho": record})
     if refused == "zoho_one_click_unavailable":
         return _response(runtime, dict(
             fallback, error="send_failed", via="zoho",
@@ -7000,7 +7220,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         elif result.get("error") == "zoho_token_rejected":
             grant.update(tokenRejectedAt=runtime.now())
         if grant:
-            await _record_zoho(runtime, org_bi, **grant)
+            await _record_zoho(runtime, org_bi, zoho_owner, **grant)
     else:
         result = await runtime.send_mailtrap("", {
             "from": {"email": from_email, "name": from_name},
@@ -7688,7 +7908,7 @@ async def _save_settings(runtime, org_bi, actor_bi, actor, data, zoho_scope=""):
         org_bi, actor_bi, actor, now, await runtime.seal(settings),
     )
     await runtime.audit(actor, "crm.settings.update", "organization", org_bi)
-    return _response(runtime, {"ok": True, "settings": await _settings(runtime, org_bi)})
+    return _response(runtime, {"ok": True, "settings": await _settings(runtime, org_bi, actor_bi)})
 
 
 LEAD_FIELDS = ("name", "email", "company", "title", "phone", "website", "source",
@@ -7795,6 +8015,7 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_contacts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_settings WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_backfills WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_zoho_members WHERE org_bi=?", org_bi)
 
 
 async def mailtrap_webhook_event(runtime, event, status, now):
@@ -7883,6 +8104,8 @@ def _activity_rule(resource, item, method, data):
     if (resource, shape) == ("emails", "link") and data.get("provider") == "mastodon":
         rule = ACTIVITY_MASTODON_LINK
     if data.get("preview") or resource == "settings" and set(data) <= {"tableViews"}:
+        return None
+    if resource == "zoho" and data.get("mine"):
         return None
     detail = ""
     if resource != "zoho":
@@ -7990,7 +8213,7 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "zoho":
         allowed = (("GET",) if route[0] == "zoho-callback"
-                   else ("POST",) if item in ("connect", "exchange") else ())
+                   else ("POST",) if item in ("connect", "exchange", "disconnect") else ())
     elif resource == "views" and item in ("copy", "order"):
         allowed = ("POST",)
     elif resource == "views" and item == "activity":
@@ -8174,15 +8397,17 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 "ok": True, "deck": await _deck_detail(runtime, link)})
         return await _revoke_deck_link(runtime, link, org_bi, actor)
     if resource == "zoho":
-        if role not in MANAGER_ROLES:
+        if not data.get("mine") and role not in MANAGER_ROLES:
             return _response(runtime, {"error": "organization_admin_required"}, 403)
         if item == "exchange":
             return await _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data)
-        return await _zoho_connect(runtime, org_name, account_bi, actor)
+        if item == "disconnect":
+            return await _zoho_disconnect(runtime, org_bi, org_name, account_bi, actor, data)
+        return await _zoho_connect(runtime, org_name, account_bi, actor, bool(data.get("mine")))
     if resource == "settings":
         if method == "GET":
             return _response(runtime, {
-                "ok": True, "settings": await _settings(runtime, org_bi),
+                "ok": True, "settings": await _settings(runtime, org_bi, account_bi),
                 "canManageSettings": role in MANAGER_ROLES,
             })
         if role not in MANAGER_ROLES:
@@ -8250,13 +8475,14 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, org_name, account_bi, actor, data)
         if not item:
             return _response(runtime, {
-                "ok": True, "mail": await _mail_messages(runtime, org_bi)})
+                "ok": True, "mail": await _mail_messages(runtime, org_bi, account_bi)})
         row = await _mail_message_row(runtime, org_bi, item)
-        if not row:
+        message = await _mail_message_project(runtime, row) if row else None
+        if not message or not _mail_visible(message, account_bi):
             return _response(runtime, {"error": "mail_message_not_found"}, 404)
         if method == "GET":
             return _response(runtime, {
-                "ok": True, "message": await _mail_message_project(runtime, row)})
+                "ok": True, "message": _mail_public(message)})
         if method == "DELETE":
             await runtime.d1_run(
                 "DELETE FROM crm_mail_messages WHERE org_bi=? AND message_id=?",
