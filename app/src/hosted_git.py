@@ -1117,6 +1117,9 @@ class _ReplicaRuntime:
     async def fork_parent(self, owner, name):
         return await _public_node_parent(self.env, owner, name)
 
+    async def fork_parent_alias(self, owner, name):
+        return await _node_repo_alias(self.env, owner, name)
+
     async def seal(self, record):
         return await encrypt_row(self.env, record)
 
@@ -1723,6 +1726,29 @@ async def _public_node_parent(env, owner, repo):
     except Exception:
         return None
     return record
+
+
+async def _node_repo_alias(env, owner, repo):
+    owner = safe_segment(str(owner or "").lower())
+    repo = safe_segment(str(repo or "").lower())
+    if not owner or not repo:
+        return ""
+    try:
+        rows = await d1_all(
+            env,
+            "SELECT r.org_bi AS org_bi,o.name AS name FROM org_repos r "
+            "JOIN orgs o ON o.org_bi=r.org_bi "
+            "WHERE r.node_owner=? AND r.repo=? ORDER BY r.created_at,o.name",
+            owner, repo)
+        for row in rows or []:
+            name = str(row.get("name") or "").strip().lower()
+            if (valid_node_name(name) and name != owner
+                    and str(row.get("org_bi") or "")
+                    == await blind_index(env, "org:" + name)):
+                return name
+    except Exception:
+        return ""
+    return ""
 
 
 async def hosted_fork_create(env, request, node, public_owner, repo):

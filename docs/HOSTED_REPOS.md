@@ -283,6 +283,19 @@ path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
     catalog record is still public and node-published (re-read once per
     exchange, `_ReplicaRuntime.fork_parent`), with that record's current
     `cloneUrl`.
+  - The stored `upstream.owner` is the publishing node, the catalog key
+    (`fmnext-n1` for `forkmesh/forkmesh`). The cores serve such a repository
+    under its organization name, so the exchange sends the organization in
+    `forkUpstream.owner` when the node's repository is linked into one
+    (`org_repos` joined to `orgs`, the name checked against the link's blind
+    index; `_ReplicaRuntime.fork_parent_alias`). Before 2026-10-27 it sent the
+    node name, no core found its local copy of `forkmesh/forkmesh`, and the
+    primary's fallback fetch of `https://app.forkmesh.com/forkmesh/forkmesh`
+    failed on the app's 307 to a core (redirects are refused), so every fork
+    of it stayed empty and could not be cloned or used for a pull request.
+    Forks created before the fix fill on the next exchange: a core retries an
+    empty fork each cycle
+    (`test_cores_are_told_the_organization_name_they_serve_the_parent_under`).
   - On each core (`forkFromUpstream`), the local copy is the gateway
     repository served as `<owner>/<name>` (the upstream mirrors the cores
     already serve), only when it is enabled, public, not a hosted copy and
