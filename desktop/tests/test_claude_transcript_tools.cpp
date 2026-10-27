@@ -204,6 +204,35 @@ static void testTokens()
     check(input.add(sent(QStringLiteral("m2"), 3, 0, 1005)) == 1008, "each new request counts");
     check(input.add(obj({{QStringLiteral("id"), QStringLiteral("m3")}})) == 0,
           "a message without usage counts nothing");
+
+    LiveTokenMeter meter;
+    const auto stream = [](const QJsonObject &inner) {
+        return obj({{QStringLiteral("type"), QStringLiteral("stream_event")},
+                    {QStringLiteral("event"), inner}});
+    };
+    const auto textDelta = [&](const QString &text) {
+        return stream(obj({{QStringLiteral("type"), QStringLiteral("content_block_delta")},
+                           {QStringLiteral("delta"), obj({{QStringLiteral("type"), QStringLiteral("text_delta")},
+                                                          {QStringLiteral("text"), text}})}}));
+    };
+    TokenStep step = meter.add(textDelta(QStringLiteral("before any message")));
+    check(step.in == 0 && step.out == 0, "a delta before a message starts counts nothing");
+    step = meter.add(stream(obj({{QStringLiteral("type"), QStringLiteral("message_start")},
+                                 {QStringLiteral("message"), sent(QStringLiteral("s1"), 5, 0, 995)}})));
+    check(step.in == 1000 && step.out == 0, "a message start counts the request's input");
+    step = meter.add(textDelta(QStringLiteral("abcdefgh")));
+    check(step.in == 0 && step.out == 2, "streamed text counts about four characters a token");
+    step = meter.add(textDelta(QStringLiteral("ij")));
+    check(step.out == 1, "the guess rounds up as text arrives");
+    step = meter.add(stream(obj({{QStringLiteral("type"), QStringLiteral("message_delta")},
+                                 {QStringLiteral("usage"), obj({{QStringLiteral("output_tokens"), 9}})}})));
+    check(step.in == 0 && step.out == 6, "the closing usage tops the guess up to the real count");
+    step = meter.add(obj({{QStringLiteral("type"), QStringLiteral("assistant")},
+                          {QStringLiteral("message"), message(QStringLiteral("s1"), 9)}}));
+    check(step.in == 0 && step.out == 0, "the finished message is not counted again");
+    step = meter.add(obj({{QStringLiteral("type"), QStringLiteral("_codex_agent_delta")},
+                          {QStringLiteral("delta"), QStringLiteral("12345678")}}));
+    check(step.in == 0 && step.out == 2, "Codex deltas count their text as it streams");
 }
 
 static void testWindowResults()

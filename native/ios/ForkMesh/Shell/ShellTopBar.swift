@@ -492,9 +492,10 @@ struct ShellIslandStatusDots: View {
                         .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
                         .frame(width: frame.width, alignment: .topTrailing)
                     if agentTokens {
-                        ShellIslandTokenCharts(height: ShellIslandStatusDots.earHeight)
-                            .frame(width: frame.width)
+                        ShellIslandTokenCharts(
+                            width: ShellIslandStatusDots.islandWidth, height: ShellIslandStatusDots.earHeight)
                             .padding(.top, gap + ShellIslandStatusDots.islandHeight)
+                            .frame(width: frame.width)
                     }
                 }
                 .frame(width: frame.width, alignment: .topLeading)
