@@ -290,7 +290,24 @@ QString Tones::sheet() const
         "QLabel#workflowsFact[tone=\"danger\"] { background: @dangerSoft; color: @danger; border-color: @dangerEdge; }"
         "QLabel#workflowsFact[tone=\"attention\"] { background: @attentionSoft; color: @attention;"
         " border-color: @attentionEdge; }"
-        "QLabel#workflowsFactFace { background: transparent; border: none; }");
+        "QLabel#workflowsFactFace { background: transparent; border: none; }"
+        "QFrame#workflowsDetails { background: @surface; border: 1px solid @border; border-radius: 12px; }"
+        "QScrollArea#workflowsDetailsScroll, QWidget#workflowsDetailsBody { background: transparent; border: none; }"
+        "QFrame#workflowsDetails QLabel { background: transparent; border: none; }"
+        "QLabel#workflowsDetailsName { color: @text; font-size: 15px; font-weight: 650; }"
+        "QLabel#workflowsDetailsMeta, QLabel#workflowsDetailsKey { color: @muted; font-size: 11px; }"
+        "QLabel#workflowsDetailsValue, QLabel#workflowsDetailsText { color: @secondary; font-size: 12px; }"
+        "QLabel#workflowsDetailsError { color: @danger; font-size: 12px; }"
+        "QFrame#workflowsDetails QLabel#workflowsDetailsOutput { background: @sunken; color: @secondary;"
+        " border-radius: 6px; padding: 8px; font-size: 12px; }"
+        "QFrame#workflowsDetails QLabel#workflowsFact { background: @sunken; border: 1px solid @border; border-radius: 10px;"
+        " padding: 1px 8px; }"
+        "QFrame#workflowsDetails QLabel#workflowsFact[tone=\"accent\"] { background: @accentSoft; border-color: @accentEdge; }"
+        "QFrame#workflowsDetails QLabel#workflowsFact[tone=\"success\"] { background: @successSoft;"
+        " border-color: @successEdge; }"
+        "QFrame#workflowsDetails QLabel#workflowsFact[tone=\"danger\"] { background: @dangerSoft; border-color: @dangerEdge; }"
+        "QFrame#workflowsDetails QLabel#workflowsFact[tone=\"attention\"] { background: @attentionSoft;"
+        " border-color: @attentionEdge; }");
     const QList<QPair<QString, QColor>> roles{
         {QStringLiteral("@accentSoft"), withAlpha(accent, dark ? 0.2 : 0.1)},
         {QStringLiteral("@accentHover"), withAlpha(accent, dark ? 0.3 : 0.17)},
@@ -412,6 +429,9 @@ QPixmap glyphPixmap(const QString &name, const QColor &color, int size, qreal ra
     } else if (name == QLatin1String("plus")) {
         painter.drawLine(at(0.5, 0.22), at(0.5, 0.78));
         painter.drawLine(at(0.22, 0.5), at(0.78, 0.5));
+    } else if (name == QLatin1String("close")) {
+        painter.drawLine(at(0.28, 0.28), at(0.72, 0.72));
+        painter.drawLine(at(0.72, 0.28), at(0.28, 0.72));
     }
     painter.end();
     return pixmap;

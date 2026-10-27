@@ -15,6 +15,7 @@
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
+class QFrame;
 class QIcon;
 class QLabel;
 class QLineEdit;
@@ -78,6 +79,10 @@ private:
     QString failureText(const QJsonObject &payload, const QString &error) const;
     QWidget *buildDashboard();
     QWidget *buildCollection();
+    QWidget *buildDetails();
+    void selectEntry(const QString &key);
+    void closeDetails();
+    void renderDetails();
     void rebuildEntries();
     void renderCollection();
     QJsonObject entryFor(const QString &key) const;
@@ -186,6 +191,11 @@ private:
     QComboBox *m_iconCombo = nullptr;
     QLabel *m_iconLabel = nullptr;
     QLineEdit *m_description = nullptr;
+    QSplitter *m_collectionSplitter = nullptr;
+    QFrame *m_details = nullptr;
+    QScrollArea *m_detailsScroll = nullptr;
+    QJsonObject m_detailsShown;
+    int m_detailsWidth = 0;
 
     Catalog m_catalog;
     bool m_catalogLoaded = false;
