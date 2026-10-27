@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-27", "area": "Agents", "text": "Agent transcripts now show Claude Code version control state changes such as pushes."},
   {"date": "2026-10-27", "area": "Desktop", "text": "Clicking a workflow on the Workflows page opens a details pane on the right with its settings and every action, and shows its latest run's log at the bottom right."},
   {"date": "2026-10-27", "area": "Market", "text": "The web CRM now has the desktop's layout, with every list and pipeline in a column on the left and all its pages there, and each member can connect their own Zoho Mail to send and sync from their own mailbox."},
   {"date": "2026-10-27", "area": "Desktop", "text": "Running a workflow now sparkles the new run into Recent runs and shows its steps right away, each one animating as it starts and finishes, with the live log underneath."},
