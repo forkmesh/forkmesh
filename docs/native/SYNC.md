@@ -219,4 +219,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S143 | 2026-10-25 | Agents | feature | Two tiny charts under the Dynamic Island show agent tokens in and out each second, and each agent tile's border moves with its live token flow. | fc60c9ebc4 | pending |  |
 | S144 | 2026-10-25 | Code | fix | Send to agent on a failed Actions run's log sends the failing step and the end of the log instead of the log's first lines. | d196230867 | pending |  |
 | S145 | 2026-10-27 | Agents | fix | The token charts under the Dynamic Island always show, span the island and update every second, and agent tile borders move while a reply streams. | f87600c607 | pending |  |
+| S146 | 2026-10-27 | Agents | feature | With more than one desktop, Agents lists the other desktops' agents under the list, and tapping one switches to that desktop. | ce55a298a1 | pending |  |
 <!-- ledger:end -->
