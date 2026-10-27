@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-27", "area": "iPhone", "text": "The token charts under the Dynamic Island now always show and update every second, and agent tile borders move while a reply is still streaming."},
   {"date": "2026-10-25", "area": "Desktop", "text": "The desktop no longer opens on an empty Select a repository page: it reopens your last repository, or opens Home when there is none."},
   {"date": "2026-10-25", "area": "Agents", "text": "Claude Code agents are stopped from reading a large file whole and are told to search it and read the part they need, which keeps their context smaller."},
   {"date": "2026-10-25", "area": "Agents", "text": "Tool efficiency has a Trends view: twelve charts for the last hour, 24 hours, 7 days or 30 days, from agents running, memory and CPU to tool errors, efficiency, run time and cost, each against the period before and marked where the build, memory or agent limit changed."},

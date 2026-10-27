@@ -453,22 +453,29 @@ tall, 1 pt apart. The in-bar strip still leads with the desktop group, 2 pt
 apart with 4 pt before the phone's charts. Elsewhere (notched
 iPhones, landscape, iPad) the strip stays in the bar.
 
-**Agent token charts under the island.** While Diagnostics is on, the Agents
-package is installed and the phone watches a desktop that reports token
-totals, two charts (`ShellIslandTokenCharts`, 40 pt wide, 8 pt apart, 12 pt
-tall like the ear charts) hang from the Dynamic Island's bottom edge, centred
-under its flat part: tokens in on the left (accent), tokens out on the right
-(green). Each point is how much the desktop's summed agent totals grew in
-that second, over the last 30 s, so the charts move once a second. The
-desktop adds `tokensIn`, `tokensOut` (the sum of every session's totals, the
-same numbers as the agents list's row fields) and `agentTokens` (running
-sessions only, `{"<id>": [in, out]}`) to each `diag.vitals` event;
-`DesktopVitals` turns the sums into per-second steps (a shrinking total counts
-as 0; the first second after watching is empty) and keeps each session's
-latest pair for the agent tile's token ring. The island's bottom edge is the
-strip height plus the island's 37 pt (48 pt on a 59 pt inset, 51 pt on 62 pt).
-A desktop without these fields shows no charts. Asked for from a phone
-screenshot on 2026-10-25.
+**Agent token charts under the island.** While Diagnostics is on and the
+Agents package is installed, two charts (`ShellIslandTokenCharts`) hang from
+the Dynamic Island's bottom edge, touching it: tokens in on the left (accent),
+tokens out on the right (green). Together they span the island's 126 pt, 6 pt
+apart, 12 pt tall like the ear charts above the battery. Each point is how much
+the summed agent totals grew in that second, over the last 60 s
+(`AgentTokenSeries`); the charts tick on their own one-second clock, so they
+move every second and show a flat line while nothing flows. The totals come
+from `AgentTokenSeries.totals`: the desktop's `tokensIn` / `tokensOut` from
+each `diag.vitals` event while the phone watches a desktop (`DesktopVitals`
+keeps the latest pair), else every desktop row's own totals, plus every cloud
+and runner row's. Each total is keyed by its source, so a row that appears,
+leaves or switches source adds nothing that second, and a shrinking total
+counts as 0. The desktop also sends `agentTokens` (running sessions only,
+`{"<id>": [in, out]}`) for the agent tile's token ring. The island's bottom
+edge is the strip height plus the island's 37 pt (48 pt on a 59 pt inset, 51 pt
+on 62 pt).
+
+Asked for from a phone screenshot on 2026-10-25. The first version showed only
+while a desktop with the new fields was being watched, and its totals grew only
+when a whole assistant message landed, so on 2026-10-27 the user saw nothing
+move and asked again. The desktop now counts tokens as they stream (see
+DESKTOP_AGENTS.md, token totals).
 
 These rows ignore touches, since a tap that high belongs to the status bar's
 scroll-to-top, and a troubled light blinks like the footer's. With the charts

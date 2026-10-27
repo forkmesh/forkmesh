@@ -686,12 +686,15 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     if (forkmesh::agentclitasks::isTaskEvent(ev) && !isExternalSession(sessionId))
         trackAgentCliTask(sessionId, ev);
 
+    if (const forkmesh::transcripttools::TokenStep step = m_sessionTokenMeter[sessionId].add(ev);
+        step.in > 0 || step.out > 0) {
+        QPair<qint64, qint64> &flow = m_sessionTokenFlow[sessionId];
+        flow.first += step.in;
+        flow.second += step.out;
+    }
     if (ev.value(QStringLiteral("type")).toString() == QLatin1String("assistant")) {
         const QJsonObject message = ev.value(QStringLiteral("message")).toObject();
         const qint64 out = m_sessionOutputTokens[sessionId].add(message);
-        QPair<qint64, qint64> &flow = m_sessionTokenFlow[sessionId];
-        flow.first += m_sessionInputTokens[sessionId].add(message);
-        flow.second += qMax<qint64>(out, 0);
         if (out > 0) {
             m_sessionTokens[sessionId] += out;
             if (AgentSession *as = findAgentSession(sessionId))
