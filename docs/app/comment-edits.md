@@ -80,6 +80,25 @@ The issue `edit` signature covers body and attachments but not `target`; the
 relay check above is what stops an edit being pointed at someone else's
 comment.
 
+## The web editor and keyboard focus
+
+Issue and pull request comments share one in-place editor,
+`openIssueCommentEditor` (`app/public/dashboard/js/06-repo-content.js`).
+A line comment is drawn twice on a pull request page, once in the Conversation
+tab and once in the Files changed tab, and both copies stay in the page with
+the inactive tab hidden, so both carry the same `data-repo-pull-comment-edit`
+id. Until 2026-10-26 the editor opened beside the first copy in the page, the
+hidden Conversation one, so **Edit** in the Files changed tab did nothing you
+could see. `visibleCommentEditButton` now picks the copy that is on screen.
+
+Closing the editor removes the textarea that had focus, which dropped keyboard
+and screen reader users back to the top of the page. Escape, **Cancel** and
+saving now return focus to the comment's **Edit** button. A save re-renders the
+timeline and replaces that button, so `handleWebPullCommentAction` and
+`handleWebIssueAction` call `restoreCommentEditFocus` after the re-render. It
+leaves focus alone if the person has already moved somewhere else while the
+save was in flight. Tests: `app/tests/test_comment_editor_focus_frontend.py`.
+
 ## Not done yet
 
 - The phone apps do not offer comment edit or delete, and their issue
