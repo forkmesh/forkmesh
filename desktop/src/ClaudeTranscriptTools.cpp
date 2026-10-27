@@ -612,6 +612,11 @@ QString systemNotice(const QJsonObject &event)
             return QStringLiteral("Compacting conversation…");
         return QString();
     }
+    if (sub == QLatin1String("vcs_state_changed")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        return kind.isEmpty() ? QStringLiteral("Version control state changed")
+                              : QStringLiteral("Version control state changed: %1").arg(kind);
+    }
     if (sub == QLatin1String("api_retry")) {
         const int attempt = event.value(QStringLiteral("attempt")).toInt();
         const int max = event.value(QStringLiteral("max_retries")).toInt();
