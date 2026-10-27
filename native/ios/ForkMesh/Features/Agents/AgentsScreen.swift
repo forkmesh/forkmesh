@@ -67,7 +67,7 @@ struct AgentsScreen: View {
         return PerformanceMonitorService.section("agents.lines") {
             reads.lines(listSort.sorted(AgentLines.merge(
                 entries: model.entries, rows: center?.rows ?? [], cover: center?.desktopCover)))
-                .filter { !pending.isHidden(AgentLines.deletion($0)?.key ?? "") }
+                .filter { !pending.isHidden(AgentLines.deletionKey($0) ?? "") }
         }
     }
 
@@ -445,38 +445,6 @@ struct AgentsScreen: View {
             }
             controlNotes
             bulkActions
-            otherDesktops
-        }
-    }
-
-    @ViewBuilder private var otherDesktops: some View {
-        if let center = HostsFeature.agents, !center.otherDesktops.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Other desktops")
-                    .fmText(.labelSmall, color: fm.textSecondary)
-                    .padding(.horizontal, FmSpace.x2)
-                    .padding(.top, FmSpace.x3)
-                ForEach(center.otherDesktops) { (desktop: OtherDesktopAgents) in
-                    OtherDesktopAgentsSection(
-                        desktop: desktop,
-                        onSwitch: { switchDesktop(desktop.key, opening: nil) },
-                        onOpen: { (row: UnifiedAgentRow) in switchDesktop(desktop.key, opening: row) })
-                }
-            }
-        }
-    }
-
-    private func switchDesktop(_ key: String, opening row: UnifiedAgentRow?) {
-        guard let center = HostsFeature.agents else { return }
-        Task {
-            await center.useDesktop(key)
-            await model.refresh()
-            guard let row else { return }
-            let match: AgentLine? = lines.first { (line: AgentLine) -> Bool in
-                guard case .control(let listed) = line.source else { return false }
-                return listed.localId == row.localId && listed.outside == row.outside
-            }
-            if let match { opened = AgentOpenedLine(line: match, run: nil) }
         }
     }
 
@@ -676,7 +644,7 @@ struct AgentsScreen: View {
 
     @ViewBuilder private var controlNotes: some View {
         if let center = HostsFeature.agents {
-            ForEach([center.desktopNote, center.cloudNote].filter { !$0.isEmpty }, id: \.self) { (note: String) in
+            ForEach(([center.desktopNote, center.cloudNote] + center.otherDesktopNotes).filter { !$0.isEmpty }, id: \.self) { (note: String) in
                 Label(note, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10))
                     .foregroundStyle(fm.warning)
@@ -704,24 +672,7 @@ struct AgentsScreen: View {
         }
     }
 
-    @ViewBuilder private var emptyList: some View {
-        if let center = HostsFeature.agents, center.otherDesktops.contains(where: { !$0.rows.isEmpty }) {
-            FmEmptyState(
-                icon: "smart_toy_outlined",
-                title: "No agents on \(Self.desktopName(center.hub))",
-                message: "Agents on your other desktops are listed below. Tap one to switch to it."
-            )
-        } else {
-            plainEmptyList
-        }
-    }
-
-    private static func desktopName(_ hub: DesktopControlHub) -> String {
-        let names: [String] = [hub.currentLink?.desktopName ?? "", hub.desktop?.name ?? ""]
-        return names.first(where: { !$0.isEmpty }) ?? "this desktop"
-    }
-
-    private var plainEmptyList: some View {
+    private var emptyList: some View {
         VStack(alignment: .leading, spacing: FmSpace.x3) {
             FmEmptyState(
                 icon: "smart_toy_outlined",
@@ -804,67 +755,5 @@ struct AgentToolChip: ViewModifier {
             .frame(height: 30)
             .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
-    }
-}
-
-struct OtherDesktopAgentsSection: View {
-    @Environment(\.fmPalette) private var fm
-    let desktop: OtherDesktopAgents
-    let onSwitch: () -> Void
-    let onOpen: (UnifiedAgentRow) -> Void
-
-    static let shownRows = 5
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Button(action: onSwitch) {
-                HStack(spacing: 6) {
-                    Image(systemName: "desktopcomputer")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(fm.accent)
-                    Text(desktop.name)
-                        .fmText(.labelMedium)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(desktop.summary)
-                        .fmText(.bodySmall, color: desktop.running > 0 ? fm.accent : fm.textSecondary)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(fm.textTertiary)
-                }
-                .padding(.horizontal, FmSpace.x2)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(desktop.name), \(desktop.summary)"))
-            .accessibilityHint(Text("Shows this desktop's agents"))
-            .accessibilityIdentifier("agents-other-desktop-\(desktop.key.prefix(8))")
-            ForEach(Array(desktop.rows.prefix(Self.shownRows))) { (row: UnifiedAgentRow) in
-                Button {
-                    onOpen(row)
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(row.isActive ? fm.accent : fm.textTertiary)
-                            .frame(width: 6, height: 6)
-                        Text(row.title)
-                            .fmText(.bodyMedium)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(row.statusLabel)
-                            .fmText(.bodySmall, color: fm.textSecondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.leading, FmSpace.x4)
-                    .padding(.trailing, FmSpace.x2)
-                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint(Text("Switches to \(desktop.name) and opens this agent"))
-            }
-        }
     }
 }

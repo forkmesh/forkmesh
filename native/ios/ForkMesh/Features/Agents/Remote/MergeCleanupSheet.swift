@@ -106,7 +106,9 @@ extension MergeCleanupSheet {
     static func desktopFix(sessionId: Int, base: String = "") -> (() async throws -> Void)? {
         guard let center = HostsFeature.agents else { return nil }
         return {
-            let known = center.rows.first { $0.isDesktop && !$0.outside && $0.localId == sessionId }?.baseBranch ?? ""
+            let known = center.rows.first {
+                $0.isDesktop && !$0.outside && !$0.elsewhere && $0.localId == sessionId
+            }?.baseBranch ?? ""
             try await center.promptDesktop(sessionId, ConflictResolution.sessionPrompt(base: base.isEmpty ? known : base))
         }
     }

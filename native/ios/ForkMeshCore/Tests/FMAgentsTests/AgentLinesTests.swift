@@ -736,4 +736,30 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertFalse(AgentFolderFolds.load(store).isCollapsed(open))
         XCTAssertEqual(store.stringList(forKey: AgentFolderFolds.collapsedKey), [])
     }
+
+    func testAnAgentOnAnotherDesktopKeepsItsOwnKeysAndNeverMatchesThisDesktopsSessions() {
+        let repo = Repository(owner: "forkmesh", name: "app")
+        let here = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "here", repoOwner: "forkmesh", repoName: "app", node: "studio",
+            status: "done", statusLabel: "Done", isActive: false, localId: 7)
+        var there = here
+        there.id = "KEY:desktop:7"
+        there.title = "there"
+        there.node = "laptop"
+        there.desktopKey = "KEY"
+        there.elsewhere = true
+
+        let lines = AgentLines.merge(entries: [.desktop(repo, AgentSession(id: 7, status: "done"))], rows: [here, there])
+        XCTAssertEqual(lines.count, 2, "the pushed session matches this desktop's row only; the other desktop's is its own line")
+        let other = lines.first { if case .control(let row) = $0.source { return row.elsewhere } else { return false } }
+        XCTAssertEqual(other?.title, "there")
+        XCTAssertEqual(other.flatMap(AgentLines.deletionKey), "KEY:desktop:7")
+        XCTAssertEqual(AgentLines.deletionKey(AgentLines.line(here)), "desktop:7")
+        XCTAssertEqual(other?.desktop, "laptop")
+        XCTAssertEqual(other?.desktopSessionId, 0, "read marks are not sent to the wrong desktop")
+        XCTAssertNotEqual(AgentLines.readKey(there), AgentLines.readKey(here))
+        XCTAssertNil(other.flatMap(AgentLines.folderKey))
+        let host = other.flatMap { line in AgentLines.chips(line, nowMs: 0).first { $0.slot == .host }?.word }
+        XCTAssertEqual(host, "laptop")
+    }
 }

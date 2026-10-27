@@ -72,6 +72,8 @@ public final class DesktopControlHub {
     @ObservationIgnored private var opening = false
     @ObservationIgnored private var openingWaiters: [CheckedContinuation<DesktopControlLink, Error>] = []
     @ObservationIgnored private var taps: [UUID: @MainActor (String, JSONObject) -> Void] = [:]
+    @ObservationIgnored private var keyedTaps: [String: [UUID: @MainActor (String, JSONObject) -> Void]] = [:]
+    @ObservationIgnored private var forwarded: [WeakLink] = []
     @ObservationIgnored private var attached: (link: AnyObject, token: UUID)?
     @ObservationIgnored private var localToken: ListenerToken?
     @ObservationIgnored private var linkListeners: [UUID: @MainActor () -> Void] = [:]
@@ -95,7 +97,9 @@ public final class DesktopControlHub {
         self.store = store
         self.preferredKey = store?.string(forKey: DesktopControlHub.preferredKeyStoreKey) ?? ""
         if let local {
-            lanLink = LanControlLink(service: local)
+            let lan = LanControlLink(service: local)
+            lanLink = lan
+            forwardKeyed(lan) { [weak lan] in lan?.desktopKey ?? "" }
             localToken = local.addListener { [weak self] in
                 MainActor.assumeIsolated { self?.localChanged() }
             }
@@ -360,7 +364,41 @@ public final class DesktopControlHub {
         return lanLink.isOpen
     }
 
+    private struct WeakLink {
+        weak var link: AnyObject?
+    }
+
+    private func forwardKeyed(_ link: DesktopControlLink, key: @escaping @MainActor () -> String) {
+        forwarded.removeAll { $0.link == nil }
+        if forwarded.contains(where: { $0.link === link }) { return }
+        forwarded.append(WeakLink(link: link))
+        link.addEventTap { [weak self] name, data in
+            guard let self else { return }
+            let desk = key()
+            guard !desk.isEmpty, let listeners = self.keyedTaps[desk] else { return }
+            for tap in listeners.values { tap(name, data) }
+        }
+    }
+
+    @discardableResult
+    public func addEventTap(_ tap: @escaping @MainActor (String, JSONObject) -> Void, for key: String) -> UUID {
+        if key.isEmpty { return addEventTap(tap) }
+        let id = UUID()
+        keyedTaps[key, default: [:]][id] = tap
+        return id
+    }
+
+    public func openLink(for key: String) -> DesktopControlLink? {
+        if key.isEmpty || key == activeKey { return currentLink }
+        if let lanLink, lanLink.isOpen, lanLink.desktopKey == key { return lanLink }
+        if let relay, relay.isOpen, relay.desktopKey == key { return relay }
+        if let side = sideLinks[key], side.isOpen { return side }
+        return nil
+    }
+
     private func adoptRelay(_ connection: RelayControlConnection) {
+        let key = connection.desktopKey
+        forwardKeyed(connection) { key }
         relay = connection
         connection.onClosed = { [weak self] reason in
             guard let self else { return }
@@ -384,11 +422,13 @@ public final class DesktopControlHub {
             previous.onClosed = nil
             Task { await previous.close() }
         }
+        forwardKeyed(connection) { key }
         sideLinks[key] = connection
         connection.onClosed = { [weak self] _ in
             guard let self else { return }
             if self.sideLinks[key] === connection { self.sideLinks[key] = nil }
             if self.presenceOf(key) != .online { self.presence[key] = .unknown }
+            for listener in self.linkListeners.values { listener() }
         }
     }
 
@@ -573,7 +613,12 @@ public final class DesktopControlHub {
         return id
     }
 
-    public func removeEventTap(_ id: UUID) { taps.removeValue(forKey: id) }
+    public func removeEventTap(_ id: UUID) {
+        if taps.removeValue(forKey: id) != nil { return }
+        guard let key = keyedTaps.first(where: { $0.value[id] != nil })?.key else { return }
+        keyedTaps[key]?[id] = nil
+        if keyedTaps[key]?.isEmpty == true { keyedTaps[key] = nil }
+    }
 
     public func resetForProjectSwitch() {
         epoch &+= 1

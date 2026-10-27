@@ -1347,23 +1347,37 @@ final class AgentControlTests: XCTestCase {
         let center = AgentControlCenter(hub: hub, cloud: nil)
 
         await center.refresh()
-        XCTAssertTrue(center.rows.isEmpty, "the chosen desktop has no agents")
         XCTAssertEqual(center.otherDesktops.map(\.name), ["laptop"])
-        let other = try XCTUnwrap(center.otherDesktops.first)
-        XCTAssertEqual(other.summary, "2 agents · 1 running")
-        XCTAssertEqual(other.rows.map(\.localId), [7, 4], "running first")
-        XCTAssertEqual(other.rows.map(\.desktopKey), [laptop.publicKey, laptop.publicKey])
-        XCTAssertEqual(other.rows.first?.id, "\(laptop.publicKey):desktop:7")
+        XCTAssertEqual(center.otherDesktops.first?.summary, "2 agents · 1 running")
+        XCTAssertEqual(
+            center.rows.map(\.id), ["\(laptop.publicKey):desktop:7", "\(laptop.publicKey):desktop:4"],
+            "the other desktop's agents are in the one list, running first")
+        XCTAssertEqual(center.rows.map(\.desktopKey), [laptop.publicKey, laptop.publicKey])
+        XCTAssertEqual(center.rows.map(\.elsewhere), [true, true])
+        XCTAssertEqual(center.rows.map(\.node), ["laptop", "laptop"])
+        XCTAssertNil(center.queuePosition(center.rows[0]), "the queue shown is the chosen desktop's")
 
-        try await center.stop(other.rows[0])
+        try await center.stop(center.rows[0])
         XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agents.stop" && $0.obj("params").int("id") == 7 })
         XCTAssertFalse(desk.requests.contains { $0.str("method") == "agents.stop" }, "the other desktop's id never reaches this one")
+        _ = try await center.transcript(center.rows[1], since: 0)
+        XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agents.transcript" })
+        XCTAssertFalse(desk.requests.contains { $0.str("method") == "agents.transcript" })
 
-        await center.useDesktop(laptop.publicKey)
-        XCTAssertEqual(hub.preferredKey, laptop.publicKey)
+        var heard: [String] = []
+        let ops = hub.channel(for: laptop.publicKey)
+        ops.addEventTap { name, _ in heard.append(name) }
+        _ = try await ops.request("agentops.diff", ["sessionId": 7], timeout: 5)
+        XCTAssertTrue(laptop.requests.contains { $0.str("method") == "agentops.diff" })
+        laptop.event("agents.output", ["id": 7])
+        let got = await waitFor { heard.contains("agents.output") }
+        XCTAssertTrue(got, "a channel scoped to the other desktop hears its events")
+
+        hub.choose(key: laptop.publicKey)
+        await center.refresh()
         XCTAssertEqual(hub.activeKey, laptop.publicKey)
         XCTAssertEqual(center.rows.map(\.id), ["desktop:7", "desktop:4"])
-        XCTAssertEqual(center.rows.map(\.desktopKey), [laptop.publicKey, laptop.publicKey])
+        XCTAssertEqual(center.rows.map(\.elsewhere), [false, false])
         XCTAssertEqual(center.otherDesktops.map(\.name), ["desk"])
         XCTAssertEqual(center.otherDesktops.first?.summary, "No agents")
         XCTAssertEqual(dialled, ["desk", "laptop"], "each desktop's channel is opened once and kept")
@@ -1392,6 +1406,7 @@ final class AgentControlTests: XCTestCase {
         await center.refresh()
         XCTAssertEqual(center.rows.map(\.id), ["desktop:1"])
         XCTAssertEqual(center.otherDesktops.map(\.summary), ["Not reachable"])
+        XCTAssertEqual(center.otherDesktopNotes, ["old-laptop: Not reachable"])
         XCTAssertEqual(hub.presenceOf("A" + String(repeating: "B", count: 42)), .offline)
     }
 }
