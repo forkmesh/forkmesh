@@ -9,6 +9,7 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QString>
+#include <QStyledItemDelegate>
 #include <QWidget>
 
 #include <functional>
@@ -140,6 +141,27 @@ private:
     Action m_action;
     QPoint m_pressAt;
     bool m_pressed = false;
+};
+
+enum StepRole {
+    StepNameRole = Qt::UserRole + 1,
+    StepTypeRole,
+    StepDetailRole,
+    StepKindRole,
+    StepWarnRole,
+    StepOffRole,
+    StepStatusRole,
+};
+
+class StepDelegate final : public QStyledItemDelegate
+{
+public:
+    StepDelegate(const Tones *tones, QObject *parent = nullptr);
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
+
+private:
+    const Tones *m_tones;
 };
 
 class CardGrid final : public QWidget
