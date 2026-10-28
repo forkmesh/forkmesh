@@ -1195,6 +1195,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
                       .arg(wtPath));
         return;
     }
+    endOutsideAgentsIn(wtPath);
     QThread *worker = QThread::create([wtPath, repoPath, agentRoot]() {
         if (!repoPath.isEmpty()) {
             QProcess::execute(QStringLiteral("git"),

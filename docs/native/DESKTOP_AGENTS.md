@@ -159,6 +159,24 @@ like `Claude Code (<login>)`, and no `steer`, `typeable` or `stoppable`;
 `agents.prompt`, `agents.stop` and deletes answer `outside_other_user`. Phones
 explain that ForkMesh cannot read or steer another login's agents.
 
+## Agents left in a deleted worktree
+
+An `outside` row is titled by its process's working folder, and an agent
+worktree is named after its branch. When a worktree was removed under a
+process that kept running, Linux reports `/proc/<pid>/cwd` as
+`<path> (deleted)`, so phones showed a leftover row like
+`2641-some-branch (deleted)` after the agent was deleted (2026-10-28).
+
+- `MachineAgentScan::scan` skips a process whose cwd `cwdRemoved` (ends in
+  ` (deleted)` and no longer exists): its folder is gone and it can do no work
+  there.
+- Deleting an agent ends what still runs in its worktree before the folder is
+  removed: `endOutsideAgentsIn` (called from `cleanupStreamWorktree` and
+  `deleteWorktreeBranchAndAgentInBackground`) stops each same-user outside
+  agent and surfaced Claude Code session whose cwd is `within` the worktree,
+  drops its row and tells phones the list changed. Another login's agents are
+  left alone.
+
 ## Following and watching an agent started outside ForkMesh
 
 - `agents.transcript` with a negative id is answered by

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Agents", "text": "Deleting an agent now also ends anything still running in its worktree, so the phone no longer shows a leftover row named after the branch with \"(deleted)\"."},
   {"date": "2026-10-28", "area": "iPhone", "text": "The CRM on iPhone has a new compact layout with Home, Contacts, Pipeline, Activity and More, and a Control Tower or Focus layout plus the theme switch right under its settings."},
   {"date": "2026-10-28", "area": "Market", "text": "Adding a CRM contact no longer fails with a false \"already uses that email\" after a double tap or a dropped connection, and an address already in the CRM now says who has it and lets you open them."},
   {"date": "2026-10-28", "area": "Projects", "text": "A shared pull request link now previews the pull request itself: its state, reviews and approvals, comment counts, files and lines changed, the six code health scores and the faces of everyone taking part."},

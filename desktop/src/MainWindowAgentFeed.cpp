@@ -277,6 +277,50 @@ void MainWindow::applyMachineAgents(const QList<MachineAgent> &agents,
         notifyLocalControlAgentsChanged();
 }
 
+void MainWindow::endOutsideAgentsIn(const QString &folder)
+{
+    if (folder.trimmed().isEmpty())
+        return;
+    QList<qint64> pids;
+    QStringList ended;
+    for (auto it = m_machineAgents.begin(); it != m_machineAgents.end();) {
+        if (!it->otherUser.isEmpty() || it->pid <= 0 || !MachineAgentScan::within(it->cwd, folder)) {
+            ++it;
+            continue;
+        }
+        pids.append(it->pid);
+        ended.append(MachineAgentScan::label(it->kind));
+        m_externalTempId.remove(QStringLiteral("pid:%1").arg(it->pid));
+        m_agentActivityExternalOffset.remove(it.key());
+        if (m_agentSonifier && m_agentSonifier->isListening(it.key()))
+            m_agentSonifier->stopListening(it.key());
+        it = m_machineAgents.erase(it);
+    }
+    for (auto it = m_externalSurfaced.cbegin(); it != m_externalSurfaced.cend(); ++it) {
+        const ExternalClaudeSession &ext = it.value();
+        if (m_externalStopped.contains(ext.uuid) || !MachineAgentScan::within(ext.cwd, folder))
+            continue;
+        QList<qint64> found = m_externalSurfacedPids.value(ext.uuid);
+        if (found.isEmpty())
+            found = ClaudeSessionScan::findSessionPids(ext.uuid, ext.cwd);
+        for (const qint64 pid : std::as_const(found))
+            if (pid > 0 && !pids.contains(pid))
+                pids.append(pid);
+        m_externalStopped.insert(ext.uuid);
+        ended.append(MachineAgentScan::label(QStringLiteral("claude")));
+    }
+    if (ended.isEmpty())
+        return;
+    if (!pids.isEmpty())
+        killExternalSessionPids(pids);
+    m_externalSig.clear();
+    logSystem(QStringLiteral("Agents: ended %1 left running in deleted worktree %2 (%3).")
+                  .arg(ended.size() == 1 ? QStringLiteral("1 outside agent")
+                                         : QStringLiteral("%1 outside agents").arg(ended.size()),
+                       folder, ended.join(QStringLiteral(", "))));
+    notifyLocalControlAgentsChanged();
+}
+
 void MainWindow::noteAgentActivityTask(const forkmesh::BackgroundTicket &ticket, bool started)
 {
     forkmesh::agentfeed::TaskEvent task;
