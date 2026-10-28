@@ -1009,6 +1009,61 @@ void CodexAppServerSession::handleNotification(const QString &method,
         flushQueuedUserText();
         return;
     }
+    if (method == QStringLiteral("remoteControl/status/changed")) {
+        const QString server = params.value(QStringLiteral("serverName")).toString();
+        const QString status = params.value(QStringLiteral("status")).toString();
+        emitLocalNotice(QStringLiteral("info"),
+                        QStringLiteral("Remote control%1: %2")
+                            .arg(server.isEmpty() ? QString()
+                                                  : QStringLiteral(" (%1)").arg(server),
+                                 status.isEmpty() ? QStringLiteral("unknown") : status));
+        return;
+    }
+    if (method == QStringLiteral("mcpServer/startupStatus/updated")) {
+        const QString name = params.value(QStringLiteral("name")).toString();
+        const QString status = params.value(QStringLiteral("status")).toString();
+        QString text = QStringLiteral("MCP server%1: %2")
+                           .arg(name.isEmpty() ? QString()
+                                              : QStringLiteral(" %1").arg(name),
+                                status.isEmpty() ? QStringLiteral("unknown") : status);
+        QStringList details;
+        for (const QString &key : {QStringLiteral("error"), QStringLiteral("failureReason")}) {
+            const QJsonValue value = params.value(key);
+            if (value.isNull() || value.isUndefined())
+                continue;
+            const QString detail = messageText(value).trimmed();
+            if (!detail.isEmpty() && !details.contains(detail))
+                details.append(detail);
+        }
+        if (!details.isEmpty())
+            text += QStringLiteral(" — ") + details.join(QStringLiteral("; "));
+        emitLocalNotice(status == QStringLiteral("failed") || !details.isEmpty()
+                            ? QStringLiteral("error") : QStringLiteral("info"),
+                        text);
+        return;
+    }
+    if (method == QStringLiteral("thread/settings/updated")) {
+        const QJsonObject settings = params.value(QStringLiteral("threadSettings")).toObject();
+        QStringList details;
+        const auto append = [&](const QString &label, const QJsonValue &setting) {
+            const QString value = setting.toString();
+            if (!value.isEmpty())
+                details.append(QStringLiteral("%1: %2").arg(label, value));
+        };
+        append(QStringLiteral("model"), settings.value(QStringLiteral("model")));
+        append(QStringLiteral("effort"), settings.value(QStringLiteral("effort")));
+        append(QStringLiteral("approvals"), settings.value(QStringLiteral("approvalPolicy")));
+        append(QStringLiteral("directory"), settings.value(QStringLiteral("cwd")));
+        append(QStringLiteral("sandbox"), settings.value(QStringLiteral("sandboxPolicy"))
+                                              .toObject().value(QStringLiteral("type")));
+        append(QStringLiteral("mode"), settings.value(QStringLiteral("collaborationMode"))
+                                           .toObject().value(QStringLiteral("mode")));
+        emitLocalNotice(QStringLiteral("info"),
+                        details.isEmpty() ? QStringLiteral("Thread settings updated.")
+                                          : QStringLiteral("Thread settings updated — %1")
+                                                .arg(details.join(QStringLiteral(", "))));
+        return;
+    }
     if (method == QStringLiteral("turn/completed")) {
         const bool replayQueuedText = !m_queuedUserTexts.isEmpty();
         finishSyntheticTools(params.value(QStringLiteral("turn"))
