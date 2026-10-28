@@ -152,6 +152,8 @@ version, so an old signed release could be replayed to roll a machine back.
   gets the release version as `FORKMESH_VERSION` and stamps it with
   `-DFORKMESH_VERSION_OVERRIDE`, as Linux and Windows do; before, a rebuild
   from `main` took `main`'s `project()` version (that image said 1.2.8).
+  The Windows check that `forkmesh.exe` carries its commit reads the UTF-16
+  form too; v1.5.0's first Windows build failed it at the very end.
 - **iOS:** an App Store app with its own version
   (`native/ios/Config/Version.xcconfig`); each desktop release submits the
   newest build once (recorded in `<work>/ios-vX.Y.Z.json`), with the annotated
