@@ -163,6 +163,7 @@ object RouteCatalog {
         Route.Kind.Usage -> "Usage"
         Route.Kind.RssReader -> "RSS Reader"
         Route.Kind.VideoMixDjStudio -> "Video Mix DJ Studio"
+        Route.Kind.Poker -> "Poker"
         Route.Kind.InstanceFeed -> "Feed"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
@@ -248,6 +249,7 @@ object RouteCatalog {
         Route.Kind.Usage -> "speed"
         Route.Kind.RssReader -> "feed"
         Route.Kind.VideoMixDjStudio -> "album"
+        Route.Kind.Poker -> "casino"
         Route.Kind.InstanceFeed -> "comment"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
@@ -363,6 +365,7 @@ object HubCatalog {
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
         HubItem.destination(Route.VideoMixDjStudio),
+        HubItem.destination(Route.Poker(null), needsRegistration = true, guestAction = "play poker"),
         HubItem.destination(Route.InstanceFeed(null), needsRegistration = true),
         HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.Files),

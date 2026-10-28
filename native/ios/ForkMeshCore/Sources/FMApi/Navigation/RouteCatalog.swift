@@ -184,6 +184,7 @@ public enum RouteCatalog {
         case .nexus: return "NEXUS"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
+        case .poker: return "Poker"
         case .appStoreStatus: return "App Store Status"
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
@@ -274,6 +275,7 @@ public enum RouteCatalog {
         case .nexus: return "network"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
+        case .poker: return "suit.spade.fill"
         case .appStoreStatus: return "app.badge"
         case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
@@ -417,6 +419,7 @@ public enum HubCatalog {
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
+        .destination(.poker(table: nil)),
         .destination(.rssReader),
         .destination(.instanceFeed(post: nil)),
         .destination(.secureDrive),

@@ -163,6 +163,7 @@ Planned extractions are described in
 | [`speech`](packages/speech/README.md) | On-device text to speech in the iPhone app. |
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
 | [`invoices`](packages/invoices/README.md) | Organization invoices linked to CRM contacts, emailed with a private view-and-pay link, with open, view, pay-click and overdue tracking. |
+| [`poker`](packages/poker/README.md) | No-limit Texas Hold'em between ForkMesh users for virtual chips, with a dealer, bots, side pots, turn clocks and synthesized sounds on the web, desktop and phones. |
 | [`competitor`](packages/competitor/manifest.json), [`notes`](packages/notes/README.md), [`tasks`](packages/tasks/README.md), [`calendar`](packages/calendar/README.md) | Organization competitor list; dashboard pages for host notes, tasks and calendar services. |
 
 Most optional packages ship with `install.default: false` and appear only once

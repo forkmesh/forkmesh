@@ -1101,6 +1101,9 @@
                 "forkmesh:mirror-signal", { detail: { catchUp: true } },
               ));
               window.dispatchEvent(new CustomEvent("forkmesh:cloud-agents"));
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: "", catchUp: true } },
+              ));
               void checkForDashboardUpdate(true);
             }
             connectedOnce = true;
@@ -1128,6 +1131,11 @@
             }
             if (topic === "direct-messages") {
               window.dispatchEvent(new CustomEvent("forkmesh:direct-messages"));
+            }
+            if (String(topic || "").startsWith("package:")) {
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: String(topic).slice(8) } },
+              ));
             }
           },
         });

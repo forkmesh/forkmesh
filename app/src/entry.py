@@ -3334,7 +3334,8 @@ async def notify_account_event(env, owner, topic, push_alert=None):
     last = _ACCOUNT_EVENT_PUSH_MEMO.get(memo_key, 0)
     coalesced = bool(
         last and now - last < ACCOUNT_EVENT_PUSH_COALESCE_MS
-        and topic not in ACCOUNT_EVENT_SOCKET_EVERY_TOPICS)
+        and topic not in ACCOUNT_EVENT_SOCKET_EVERY_TOPICS
+        and not topic.startswith("package:"))
     if coalesced and topic not in ACCOUNT_EVENT_PUSH_EVERY_TOPICS:
         return
     if not coalesced:
