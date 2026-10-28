@@ -12,10 +12,13 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QFrame;
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class QToolButton;
 class QVBoxLayout;
 
 namespace forkmesh::ui {
@@ -46,12 +49,31 @@ public:
         bool conflicted = false;
     };
 
+    struct SubSession {
+        QString id;
+        QString icon;
+        QString text;
+        QString trailing;
+        QString tip;
+        int depth = 0;
+    };
+
+    struct Feed {
+        int session = 0;
+        int consumed = 0;
+        int cloudTurns = -1;
+        qint64 cloudTail = -1;
+    };
+
     explicit SessionSidePanels(QWidget *parent = nullptr);
 
     void clearActivity();
     void append(const QJsonObject &event);
     void replaceActivity(const QList<QJsonObject> &events);
     void setDetails(const Details &details);
+    void setSubSessions(const QList<SubSession> &subSessions, bool canStop,
+                        std::function<void(const QString &)> stop);
+    Feed &feed() { return m_feed; }
     void reloadLayout();
 
     QStringList cardOrder() const { return m_order; }
@@ -74,6 +96,7 @@ private:
         QPointer<QLabel> icon;
         QPointer<QLabel> text;
         QPointer<QLabel> trailing;
+        QPointer<QToolButton> stop;
     };
     struct Item {
         QString icon;
@@ -120,6 +143,8 @@ private:
     QPointer<QWidget> m_contextBarRow;
     QPointer<QProgressBar> m_contextBar;
     Details m_details;
+    Feed m_feed;
+    std::function<void(const QString &)> m_stopSubSession;
     sessioninsights::Collector m_collector;
     QList<QJsonObject> m_queue;
     int m_cursor = 0;
