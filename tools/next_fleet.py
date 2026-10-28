@@ -1710,9 +1710,8 @@ def required_secret_names(fleet):
 
 
 def ids_payloads(fleet, name, values):
-    """The IDS credentials of one node or runner: its own expected-change
-    key (derived from the desktop-only master) and, with [ids] direct_mail,
-    the direct alert mail token and recipient."""
+    """The IDS credential of one node or runner: its own expected-change
+    key (derived from the desktop-only master)."""
     import render
     import next_ids
     if not render.ids_enabled(fleet):
@@ -1721,15 +1720,8 @@ def ids_payloads(fleet, name, values):
     if not master:
         raise ToolError("%s is missing from secrets.env (run init-secrets "
                         "--execute)" % IDS_MASTER)
-    payloads = {render.IDS_KEY_CREDENTIAL: next_ids.node_key(
+    return {render.IDS_KEY_CREDENTIAL: next_ids.node_key(
         master, name).encode()}
-    if render.ids_settings(fleet).get("direct_mail"):
-        for credential in render.IDS_MAIL_CREDENTIALS:
-            if not values.get(credential):
-                raise ToolError("%s is missing from secrets.env ([ids] "
-                                "direct_mail = true)" % credential)
-            payloads[credential] = values[credential].encode()
-    return payloads
 
 
 def router_keypair():

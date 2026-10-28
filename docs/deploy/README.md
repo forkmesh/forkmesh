@@ -48,6 +48,13 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 - **Rolling restart gate.** Each node must report `/readyz` and the new
   `BUILD_REV`; a failing node goes back to its previous release and the rollout
   stops. Migrations run once, through any healthy rqlite node.
+- **A core down does not block a release.** `upload`, `restart` and `all`
+  leave out a core that is held or out of DNS (`dns-health.json`, the
+  `next_dns.py` health loop) or that SSH cannot reach, as long as a majority
+  of the cores and at least two still get it (`deploy_quorum`); otherwise
+  they refuse. `--skip nN` names the cores to leave out instead. The deploy
+  manifest records `skipped`, and `restart nN` of that release later clears
+  it (`caughtUp`). See [auto-deploy.md](auto-deploy.md), "Skipped cores".
 - **Speed.** One multiplexed SSH connection per node
   (`FMNEXT_SSH_MULTIPLEX=0` disables it), parallel uploads with the migration
   alongside, venv reuse when requirements are unchanged, a wheelhouse cache,
