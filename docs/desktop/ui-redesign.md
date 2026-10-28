@@ -115,6 +115,11 @@ layout" choices on 2026-10-27. Code: `src/LayoutMode.h` (`layoutMode()`,
 switched live by `NextAccess::applyLayoutMode`, which re-syncs the Agents
 workspace and re-applies the Git page.
 
+The iPhone app has the same two names under Settings > Appearance > Layout
+(`appearance/layoutMode`, a phone setting, not synced with the desktop's).
+The CRM uses it first: see "iPhone layout" in
+`marketplace/packages/crm/README.md`.
+
 | Page | Control Tower | Focus |
 | --- | --- | --- |
 | Agents | The earlier page: action bar, list views, detail buttons, terminal dock | Session cards, one conversation header, side panel for diff, terminal, browser and details |
