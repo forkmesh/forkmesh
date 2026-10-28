@@ -11,10 +11,12 @@ import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFeature
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.SettingsService
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.tools.vault.VaultDeviceAuth
 import com.forkmesh.nativeapp.feature.tools.vault.VaultPlatform
 import com.forkmesh.nativeapp.feature.tools.vault.VaultScreen
 import com.forkmesh.nativeapp.feature.tools.vault.VaultService
+import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.security.SecretStore
@@ -39,6 +41,9 @@ object ToolsFeature {
     fun install(app: App) {
         DiagnosticsRuntime.install(app)
         installVault(app)
+        NavigationFeature.register(Route.Kind.Speech, Route.Kind.Speech.owner) { SpeechScreen() }
+        NavigationFeature.register(Route.Kind.Logs, Route.Kind.Logs.owner) { Services.get<AppTelemetry>()?.let { TelemetryScreen(it, showLogs = true) } }
+        NavigationFeature.register(Route.Kind.Diagnostics, Route.Kind.Diagnostics.owner) { Services.get<AppTelemetry>()?.let { TelemetryScreen(it) } }
     }
 
     private fun installVault(app: App) {

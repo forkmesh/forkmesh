@@ -151,6 +151,7 @@ object RouteCatalog {
         Route.Kind.SugarBreak -> "Sugar Break"
         Route.Kind.Stretch -> "Stretch Break"
         Route.Kind.FoodGuide -> "Food Guide"
+        Route.Kind.Speech -> "Speech"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
         Route.Kind.Ember -> "Ember"
@@ -170,6 +171,8 @@ object RouteCatalog {
         Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
+        Route.Kind.Logs -> "Logs"
+        Route.Kind.Diagnostics -> "Diagnostics"
         Route.Kind.Stats -> "Stats"
         Route.Kind.Status -> "Status"
         Route.Kind.Admin -> "Admin"
@@ -236,6 +239,7 @@ object RouteCatalog {
         Route.Kind.SugarBreak -> "cake"
         Route.Kind.Stretch -> "self_improvement"
         Route.Kind.FoodGuide -> "eco"
+        Route.Kind.Speech -> "volume_up"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
         Route.Kind.Ember -> "local_fire_department_rounded"
@@ -255,6 +259,8 @@ object RouteCatalog {
         Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
+        Route.Kind.Logs -> "subject"
+        Route.Kind.Diagnostics -> "troubleshoot"
         Route.Kind.Stats -> "bar_chart"
         Route.Kind.Status -> "monitor_heart"
         Route.Kind.Admin -> "build"
@@ -334,6 +340,8 @@ object HubCatalog {
         HubItem.destination(Route.Hosts, guestAction = "manage your hosts"),
         HubItem.destination(Route.Runners, needsRegistration = true),
         HubItem.destination(Route.Network(null), needsRegistration = true),
+        HubItem.destination(Route.Logs),
+        HubItem.destination(Route.Diagnostics),
     )
 
     val business: List<HubItem> = listOf(
@@ -357,6 +365,7 @@ object HubCatalog {
         HubItem.destination(Route.SugarBreak),
         HubItem.destination(Route.Stretch),
         HubItem.destination(Route.FoodGuide),
+        HubItem.destination(Route.Speech),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.PhoneSecurity),
         HubItem.destination(Route.OpenWrtRouter),
