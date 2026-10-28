@@ -617,6 +617,15 @@ QString systemNotice(const QJsonObject &event)
         return kind.isEmpty() ? QStringLiteral("Version control state changed")
                               : QStringLiteral("Version control state changed: %1").arg(kind);
     }
+    if (sub == QLatin1String("dev_intent")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        const QString trigger = event.value(QStringLiteral("trigger")).toString().trimmed();
+        QString text = kind.isEmpty() ? QStringLiteral("Development intent")
+                                     : QStringLiteral("Development intent: %1").arg(kind);
+        if (!trigger.isEmpty())
+            text += QStringLiteral(" (trigger: %1)").arg(trigger);
+        return text;
+    }
     if (sub == QLatin1String("api_retry")) {
         const int attempt = event.value(QStringLiteral("attempt")).toInt();
         const int max = event.value(QStringLiteral("max_retries")).toInt();
@@ -649,6 +658,17 @@ QString systemNotice(const QJsonObject &event)
                  summary.isEmpty() ? QString() : QStringLiteral(": ") + summary);
     }
     return QString();
+}
+
+QString commandLifecycleNotice(const QJsonObject &event)
+{
+    const QString state = event.value(QStringLiteral("state")).toString().trimmed();
+    const QString id = event.value(QStringLiteral("command_uuid")).toString().trimmed();
+    QString text = state.isEmpty() ? QStringLiteral("Command lifecycle update")
+                                  : QStringLiteral("Command %1").arg(state);
+    if (!id.isEmpty())
+        text += QStringLiteral(": %1").arg(id);
+    return text;
 }
 
 namespace {

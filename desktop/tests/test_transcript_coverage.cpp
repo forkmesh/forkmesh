@@ -31,6 +31,13 @@ static void testDrawnEvents()
         R"({"type":"system","subtype":"status","status":null})",
         R"({"type":"system","subtype":"vcs_state_changed","kind":"push","cwd":"/w"})",
         R"({"type":"system","subtype":"vcs_state_changed"})",
+        R"({"type":"system","subtype":"dev_intent","kind":"ios_app","trigger":"ios_command"})",
+        R"({"type":"system","subtype":"dev_intent","kind":"future_kind","trigger":"future_trigger"})",
+        R"({"type":"system","subtype":"dev_intent"})",
+        R"({"type":"command_lifecycle","state":"started","command_uuid":"93c66aa5-4c31-4a8f-a5ce-cba3efef2609"})",
+        R"({"type":"command_lifecycle","state":"done"})",
+        R"({"type":"command_lifecycle","state":"future_state"})",
+        R"({"type":"command_lifecycle"})",
         R"({"type":"system","subtype":"task_progress","task_id":"t"})",
         R"({"type":"assistant","message":{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"hi"},{"type":"tool_use","id":"a","name":"Bash","input":{}}]}})",
         R"({"type":"assistant","message":{"content":[{"type":"web_search_tool_result","tool_use_id":"a"}]}})",
@@ -58,8 +65,8 @@ static void testDrawnEvents()
 
 static void testMissingEvents()
 {
-    check(eventGaps(parse(R"({"type":"command_lifecycle","state":"started"})")) ==
-              QStringList{QStringLiteral("type:command_lifecycle")},
+    check(eventGaps(parse(R"({"type":"unknown_event","state":"started"})")) ==
+              QStringList{QStringLiteral("type:unknown_event")},
           "an event type the transcript ignores is a gap");
     check(eventGaps(parse(R"({"type":"system","subtype":"permission_denied","tool_name":"Bash"})")) ==
               QStringList{QStringLiteral("system:permission_denied")},
@@ -140,9 +147,9 @@ static void testTracker()
     Tracker tracker;
     check(tracker.isEmpty(), "a new tracker has no gaps");
     check(!tracker.noteEvent(parse(R"({"type":"result"})")), "a drawn event adds nothing");
-    check(tracker.noteEvent(parse(R"({"type":"command_lifecycle","state":"started"})")),
+    check(tracker.noteEvent(parse(R"({"type":"unknown_event","state":"started"})")),
           "the first event of a missing kind is reported");
-    check(!tracker.noteEvent(parse(R"({"type":"command_lifecycle","state":"done"})")),
+    check(!tracker.noteEvent(parse(R"({"type":"unknown_event","state":"done"})")),
           "a repeat of a known gap is counted, not reported again");
     check(tracker.kindCount() == 1 && tracker.total() == 2 &&
               tracker.gaps().first().count == 2,
@@ -161,12 +168,12 @@ static void testTracker()
     check(tracker.gaps().at(1).label == QLatin1String("Codex `model/rerouted` message"),
           "a gap carries a readable label");
     const QString text = summary(tracker.gaps());
-    check(text.contains(QStringLiteral("2 × command_lifecycle event")) &&
+    check(text.contains(QStringLiteral("2 × unknown_event event")) &&
               text.contains(QStringLiteral("1 × Codex model/rerouted message")),
           "the summary lists counts and labels");
     const QString prompt = agentPrompt(tracker.gaps(), QStringLiteral("agent #7"));
     check(prompt.contains(QLatin1String("agent #7")) &&
-              prompt.contains(QLatin1String("`command_lifecycle` event, 2 time(s)")) &&
+              prompt.contains(QLatin1String("`unknown_event` event, 2 time(s)")) &&
               prompt.contains(QLatin1String("TranscriptCoverage.cpp")) &&
               prompt.contains(QLatin1String("untrusted")),
           "the prompt names the session, each gap and where to fix it");
