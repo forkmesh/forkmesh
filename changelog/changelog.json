@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Chat", "text": "Android: chat media and opened files are saved under names that cannot step outside their folder or clash with another message's file."},
+  {"date": "2026-10-28", "area": "Chat", "text": "Android: a bot line or member shown as Guest switches to the sender's account once the server confirms their device, several new devices in a private chat share one approve-or-block banner, and restoring your identity key after a reinstall keeps your chat key and safety numbers."},
+  {"date": "2026-10-28", "area": "Chat", "text": "Android: links in chats show preview cards like on iPhone; in shared rooms a preview loads only when you tap it, and previews never reach private or local network addresses."},
   {"date": "2026-10-28", "area": "Server", "text": "Sign-up and password reset emails now reach Yahoo and other strict mail providers, and an address is no longer blocked from future emails when a provider refused one because of our own mail setup."},
   {"date": "2026-10-28", "area": "Projects", "text": "When a pull request is merged, its conversation shows a Merged entry, and a merged or closed pull request no longer offers merge, approve or request-changes controls on the website, desktop or iPhone."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Pull requests on iPhone look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, and a New pull request form that compares branches and can send the pull request to a copy of the repository on another ForkMesh instance."},

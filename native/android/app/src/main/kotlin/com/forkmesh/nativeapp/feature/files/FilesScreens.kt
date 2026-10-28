@@ -205,7 +205,7 @@ private fun mimeOf(name: String): String = MimeTypeMap.getSingleton().getMimeTyp
 
 private suspend fun exportCopy(context: Context, source: FileSource, item: FileItem, progress: (Long, Long) -> Boolean): Uri = withContext(Dispatchers.IO) {
     val folder = File(store.tempDir, UUID.randomUUID().toString()).also { it.mkdirs() }
-    val target = File(folder, item.name.replace('/', '_'))
+    val target = FilesModel.localTarget(folder, item.name)
     target.outputStream().use { source.readTo(item.path, it, Long.MAX_VALUE, progress) }
     FileProvider.getUriForFile(context, "${context.packageName}.composer.files", target)
 }

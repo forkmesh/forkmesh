@@ -1753,6 +1753,62 @@ the cited iOS commit.
   and the Glasses Alert ring during another app's call; ForkMesh's own calls
   do not count.
 
+### Chat and files (ledger S100, S114, S121, S124, iOS 22473e237a)
+
+- **Link previews (S100).** `core/.../chat/ChatLinkPreview.kt`,
+  `ChatLinkSites.kt` and `ChatLinkPreviewService.kt` port iOS
+  `ChatLinkPreview`, `ChatLinkSites` and `ChatLinkPreviewService` (site
+  catalog, oEmbed and Open Graph, browser retry, cache per project in
+  `cacheDir/chat-link-previews-<scope>.json`, dropped by `leaveProject`).
+  `ChatLinkPreviewPolicy.autoLoads` is iOS `autoLoadsLinkPreviews`: your own
+  links, direct messages and private office rooms (not `general`, `random`,
+  `welcome`) load at once; every shared room shows the iOS "Show preview of
+  host" button, because a fetch tells the site this phone's address. Every
+  fetch, each redirect hop and every image goes through `ChatLinkGuardedHttp`
+  (`ChatLinkAddresses.kt`): the host must resolve only to public addresses
+  (`ChatLinkAddresses.isPublic`: no private, loopback, link-local, CGNAT,
+  multicast, documentation, ULA, site-local or v4-mapped/NAT64/6to4 forms of
+  them), redirects are followed by hand, and `ChatLinkPublicSocketFactory`
+  checks the address the socket actually connected to, so a DNS answer that
+  changes between the check and the connect is refused too. Cards
+  (`feature/chat/ChatLinkPreviewCard.kt`) follow iOS `ChatLinkPreviewCard`;
+  Settings > Chat has the on/off switch. Guards: `ChatLinkAddressesTest`,
+  `ChatLinkPreviewTest`.
+- **Guest lines renamed (S114).** Android shows the sender name a person's
+  line carries, so the line that reads "Guest" is the bot line ("forkbot ·
+  via Guest 1234") and the roster owner. `NodeOwners` now keeps a "no owner"
+  answer one minute (`RETRY_MS`) instead of an hour, and `watch(node, claim)`
+  (called by `RelayRoom` and `OfficeChannelService` for `chat` and
+  `thread-reply` lines whose claim is not confirmed) asks the server again
+  every 61 s, at most ten times and 256 nodes, until it names the claimed
+  account; the owners listener then relabels the lines and the roster. An
+  answer naming another account leaves them as guests. Guard:
+  `NodeOwnersTest`.
+- **One banner for several devices (S121).** `DirectTrustNotices.pending`
+  returns one notice with every waiting device (`kids`), worded as iOS
+  ("2 new devices for pat want to join this chat…"); `PendingDeviceBanner`
+  approves or blocks all of them, and Block asks first ("Block these 2
+  devices?"). The conversation's system line folds the same way:
+  `DirectMessageService.notePendingDevice` rewrites the still-waiting line
+  instead of adding one per device.
+- **Chat key kept through a reinstall (S124).** `ChatDeviceKeys.forStore`
+  makes a missing chat identity key from the node seed
+  (`identity/ed25519Seed`, same HKDF as iOS) and writes
+  `chat/e2ee/ctrFloorV3`, which `RoomCounters` starts above; a stored key is
+  kept. `DataFolderIdentity.restoreSeed` removes the stored chat key when the
+  restored node key differs, so after the restart the old install's chat key,
+  kid and safety numbers come back. Guard: `ChatKeyReinstallTest`.
+- **Local file names (22473e237a).** Chat media go to
+  `cacheDir/chat-media/<first 24 hex of SHA-256(message id)>-<name>`
+  (`ChatMediaFile`; it was a 32-bit `String.hashCode`, which another sender
+  could collide with to show their file in place of yours) and the path must
+  stay inside the folder. Files open/share copies use
+  `FilesModel.localTarget`: the last part of the server-listed name, `.`,
+  `..` and empty names refused with "That file name cannot be saved on this
+  phone." `OfficeChannelService.onRoomOpened` was already ported in that
+  commit; Android has no native group call, so that part does not apply.
+  Guards: `ChatMediaFileTest`, `FilesModelTest`.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see
