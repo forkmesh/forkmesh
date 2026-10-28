@@ -2607,6 +2607,21 @@ def run_step(step, args: argparse.Namespace) -> int:
         return 1
 
 
+def bring_release_onto_main(tree: Path, tag: str, tag_commit: str) -> bool:
+    if run(["git", "-C", tree, "merge-base", "--is-ancestor", tag_commit, "HEAD"],
+           check=False).returncode == 0:
+        return False
+    merged = run(["git", "-C", tree, "-c", "user.name=ForkMesh Actions",
+                  "-c", "user.email=actions@forkmesh.local", "merge", "--no-ff", "-m",
+                  f"release: {tag} reaches main as it is promoted", tag_commit], check=False)
+    if merged.returncode != 0:
+        run(["git", "-C", tree, "merge", "--abort"], check=False)
+        raise CompletionError(f"{tag}'s release commit {tag_commit[:12]} does not merge into "
+                              f"main: {(merged.stdout + merged.stderr).strip()[-500:]}")
+    log(f"{tag}: the release branch merges into main with the promotion")
+    return True
+
+
 def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         channel: str, tag: str, tag_commit: str, build_commit: str,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
@@ -2622,6 +2637,8 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False):
         git(repo, "branch", "-D", branch)
     git(repo, "worktree", "add", "-q", "-b", branch, str(promote_tree), "main")
+    if promote:
+        bring_release_onto_main(promote_tree, tag, tag_commit)
     with tempfile.TemporaryDirectory(dir=work, prefix="sign-") as secret_dir:
         os.chmod(secret_dir, 0o700)
         secrets = Path(secret_dir)

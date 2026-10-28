@@ -1010,6 +1010,7 @@ ReleaseTagPrune pruneReleaseTagsIn(const QString &dir, const QString &keepTag)
 struct NewReleasePublish {
     bool tagged = false;
     QString err;
+    QString releaseBranch;
     QStringList stamped;
     QStringList skipped;
     QString tip;
@@ -6045,7 +6046,8 @@ void MainWindow::cutRelease(const forkmesh::releasedraft::Cut &cut,
     const bool pruneTags = cut.pruneTags;
 
     runOffThread<NewReleasePublish>(
-        [dir, targetRef, tag, message, actionsEnabled, mirrorPath] {
+        [dir, targetRef = QString(targetRef), tag, message, actionsEnabled, mirrorPath,
+         canRollOut]() mutable {
             NewReleasePublish publish;
             if (runGitCapture(dir, {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
                                     QStringLiteral("--quiet"),
@@ -6062,6 +6064,18 @@ void MainWindow::cutRelease(const forkmesh::releasedraft::Cut &cut,
                                              "repository.")
                                   .arg(targetRef);
                 return publish;
+            }
+            if (canRollOut && forkmesh::releasedraft::deployableTag(tag) &&
+                !targetRef.startsWith(QStringLiteral("release/"))) {
+                const QString branch = QStringLiteral("release/") + tag;
+                if (!runGitCapture(dir, {QStringLiteral("branch"), branch, targetRef},
+                                   nullptr, &publish.err)) {
+                    publish.err = QStringLiteral("Could not create %1 from %2: %3")
+                                      .arg(branch, targetRef, publish.err.trimmed());
+                    return publish;
+                }
+                publish.releaseBranch = branch;
+                targetRef = branch;
             }
             if (!releaseStampVersion(tag).isEmpty())
                 publish.stamped =
@@ -6113,7 +6127,9 @@ void MainWindow::cutRelease(const forkmesh::releasedraft::Cut &cut,
             const int index = repoIndexFor(owner, name);
             const bool current = index >= 0 && index == m_repoDetailIndex &&
                                  repoGitDir() == dir;
-            logSystem(QStringLiteral("Git: tagged release %1 at %2.").arg(tag, targetRef));
+            const QString taggedRef =
+                publish.releaseBranch.isEmpty() ? targetRef : publish.releaseBranch;
+            logSystem(QStringLiteral("Git: tagged release %1 at %2.").arg(tag, taggedRef));
             if (stampWarning.isEmpty())
                 setRepoDetailNotice(QStringLiteral("Published release %1.").arg(tag));
             else
@@ -6162,7 +6178,10 @@ void MainWindow::cutRelease(const forkmesh::releasedraft::Cut &cut,
                 }
             }
             if (done) {
-                QStringList detail{QStringLiteral("Tagged %1 at %2.").arg(tag, targetRef)};
+                QStringList detail{QStringLiteral("Tagged %1 at %2.").arg(tag, taggedRef)};
+                if (!publish.releaseBranch.isEmpty())
+                    detail << QStringLiteral("%1 reaches %2 when the release is promoted.")
+                                  .arg(publish.releaseBranch, targetRef);
                 if (!publish.stamped.isEmpty())
                     detail << QStringLiteral("Version bumped in %1.")
                                   .arg(publish.stamped.join(QStringLiteral(", ")));
