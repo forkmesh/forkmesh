@@ -2233,12 +2233,37 @@ build time, so Android always ships the same library as iOS.
   (`chat-call-facestream.js` and the face-changer modules it imports) is in
   the page, so when the server sends a tile's face stream instead of video
   (`representation: face`), `fmm-call.js` renders the moving face into the
-  tile and the page adds the "Face stream" badge above the name. Android
-  receives face streams; it sends one only once its group calls have a face
-  stage (the browser sends one only with a face or background chosen, and
-  the Android group call has no face changer yet), so a weak-link viewer
-  sees an Android caller's video freeze as before. The Kotlin codec in
-  `core/.../chat/facestream` is not used by the page.
+  tile and the page adds the "Face stream" badge above the name.
+- **Look, voice and sending a face stream in group calls (S139, as iOS).**
+  iOS group calls run the camera through the shared call look filter (the
+  face and background chosen for calls) and the chosen voice, with no picker
+  on the group screen, and send a face stream whenever the server asks,
+  from landmarks found on the camera (`FmmVideoSender.face`). Android does
+  the same: `GroupCallFeature` passes `GroupCallLook.page(FaceChangerFeature.look)`
+  (face, custom face photo, background, custom background photo and
+  `effectiveVoice`; face and background only on video calls) in `join`, and
+  the page's `prepareLocal` (the same shape as the browser's
+  `fmm/fmm-local.js`) builds `createFaceStage` for a face or background and
+  `createVoiceStage` (`chat-call-voice.js`, its worklet) for a voice. The
+  stand-in photos, backgrounds and networks are not copied a second time:
+  `GroupCallPage` serves `group-call/call-data/{face-photos,backgrounds,models}.js`
+  by cutting the `fm-call-face-photos`, `fm-call-backgrounds` and
+  `fm-call-models` script blocks out of the bundled `direct-call.html`
+  (`GroupCallPageData`), and the page loads them only when a look is chosen
+  or a face stream is due. The stage handed to `fmm-call.js` is wrapped
+  (`createFaceFeed`): when no stand-in face is drawn (no look, or only a
+  background) its `landmarks()` runs the browser's face mesh network
+  (`createFaceRenderer(...).trackFace`) on the camera at 15 fps, as iOS's
+  face sender, with the landmark smoother, so `fmm-call.js` sends face frames
+  and reference pictures whenever the server switches the sender to the face
+  stream. Reference pictures come from the stage canvas when a background is
+  chosen, so the real room is never sent, and from the camera otherwise.
+  The tracker starts only when the first face frame is due and stops with
+  the call. Still different from iOS: the web engine publishes no separate
+  face stream (`fmm-call.js` sets `face: false`), so Android switches to
+  the face stream when the server asks for it because viewers' links are
+  weak, but not on its own weak uplink, which iOS's extra face stream
+  covers; a look changed during a group call applies from the next call.
 - **Face changer hair and edges (S087).** Already on Android: the call
   page's face changer (`direct-call.html`, built by
   `app/tools/sync_native_call_faces.py`) runs the browser's `hair-192`

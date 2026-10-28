@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.crypto.B64
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.json.asJsonMap
 import com.forkmesh.nativeapp.json.jsonText
 
@@ -128,5 +129,37 @@ data class GroupCallVerify(
                 mismatch = view["mismatch"] == true,
             )
         }
+    }
+}
+
+object GroupCallLook {
+    fun page(look: FaceChangerLook, video: Boolean): Map<String, Any?> = linkedMapOf(
+        "face" to if (video) look.face else "",
+        "faceImage" to if (video) look.customFaceImage else "",
+        "background" to if (video) look.background else "",
+        "backgroundImage" to if (video) look.customBackgroundImage else "",
+        "voice" to look.effectiveVoice,
+    )
+}
+
+object GroupCallPageData {
+    const val FOLDER = "call-data/"
+    const val SOURCE = "direct-call.html"
+    private const val CLOSE = "</script>"
+    val BLOCKS = mapOf(
+        "face-photos.js" to "fm-call-face-photos",
+        "backgrounds.js" to "fm-call-backgrounds",
+        "models.js" to "fm-call-models",
+    )
+
+    fun block(page: String, file: String): String? {
+        val id = BLOCKS[file] ?: return null
+        val open = "<script id=\"$id\">"
+        val start = page.indexOf(open)
+        if (start < 0) return null
+        val body = start + open.length
+        val end = page.indexOf(CLOSE, body)
+        if (end < 0) return null
+        return page.substring(body, end)
     }
 }

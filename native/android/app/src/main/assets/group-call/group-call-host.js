@@ -1,11 +1,22 @@
 import { createGroupCalls } from "./chat-group-calls.js";
 import { createCallQualityMeter, fmmStatsReader, qualityEvent, rtcStatsReader } from "./call-quality-meter.js";
+import { callBackgroundById } from "./chat-call-backgrounds.js";
+import { callBackgroundsSupported, callFaceById, callFacesSupported, createFaceStage, isCustomFace } from "./chat-call-faces.js";
+import { createLandmarkSmoother } from "./chat-call-face-geometry.js";
+import { createFaceRenderer } from "./chat-call-face-render.js";
+import { sharedSegmentModels } from "./chat-call-segment.js";
+import { callVoiceById, callVoicesSupported, createVoiceStage } from "./chat-call-voice.js";
 
 const TICKET_TIMEOUT_MS = 15000;
 const QUALITY_POST_MS = 1000;
 const FACE_LABEL = "Face stream";
 const FACE_DETAIL = "Face stream. Animated from a recent photo while the connection is weak";
 const asset = (name) => new URL(name, window.location.href).href;
+const CALL_DATA = ["face-photos", "backgrounds", "models"];
+const TRACK_MS = 1000 / 15;
+const HOLD_MS = 400;
+const HIDDEN_VIDEO = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
+const dataLoads = new Map();
 const grid = document.getElementById("grid");
 const tiles = new Map();
 const ticketWaiters = new Map();
@@ -16,6 +27,7 @@ let lastState = "";
 let quality = null;
 let joinRoom = "";
 let identity = null;
+let look = { face: "", faceImage: "", background: "", backgroundImage: "", voice: "" };
 
 const post = (message) => {
   if (window.FmGroupBridge) window.FmGroupBridge.post(JSON.stringify(message));
@@ -40,6 +52,205 @@ function useIdentity(value) {
   const acct = value && typeof value.acct === "string" ? value.acct : "";
   const idk = value && typeof value.idk === "string" ? value.idk : "";
   identity = call && acct && idk ? { call, acct, idk } : null;
+}
+
+function useLook(value) {
+  const text = (key) => (value && typeof value[key] === "string" ? value[key] : "");
+  look = { face: text("face"), faceImage: text("faceImage"), background: text("background"), backgroundImage: text("backgroundImage"), voice: text("voice") };
+}
+
+function loadCallData(name) {
+  if (!dataLoads.has(name)) {
+    dataLoads.set(name, new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = asset("call-data/" + name + ".js");
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.head.append(script);
+    }));
+  }
+  return dataLoads.get(name);
+}
+
+function chosenFace() {
+  const id = look.face;
+  if (!id || !callFacesSupported(document)) return "";
+  if (isCustomFace(id)) return look.faceImage ? id : "";
+  return callFaceById(id)?.id || "";
+}
+
+function chosenBackground() {
+  const id = look.background;
+  if (!id || !callBackgroundsSupported(document)) return "";
+  if (id === "custom") return look.backgroundImage ? id : "";
+  return callBackgroundById(id)?.id || "";
+}
+
+function createFaceFeed(local, base) {
+  const camera = local.getVideoTracks()[0] || null;
+  if (!camera) return base;
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("aria-hidden", "true");
+  video.setAttribute("style", HIDDEN_VIDEO);
+  video.srcObject = new MediaStream([camera]);
+  document.body.append(video);
+  video.play().catch(() => {});
+  const frame = document.createElement("canvas");
+  const context = frame.getContext("2d");
+  const smoother = createLandmarkSmoother();
+  let renderer = null;
+  let loading = null;
+  let failed = false;
+  let stopped = false;
+  let points = null;
+  let trackedAt = -Infinity;
+  let seenAt = -Infinity;
+
+  function ensure() {
+    if (renderer || loading || failed || stopped) return;
+    loading = loadCallData("models")
+      .then(() => sharedSegmentModels("face"))
+      .then((models) => {
+        if (stopped || !models || !models.detector || !models.mesh) {
+          failed = true;
+          return;
+        }
+        const made = createFaceRenderer(document.createElement("canvas"), { models });
+        if (made.faceMesh) renderer = made;
+        else {
+          made.dispose();
+          failed = true;
+        }
+      })
+      .catch(() => {
+        failed = true;
+      })
+      .finally(() => {
+        loading = null;
+      });
+  }
+
+  function own() {
+    return !base || !base.face || !base.face();
+  }
+
+  function track() {
+    const time = performance.now();
+    if (time - trackedAt < TRACK_MS) return points;
+    trackedAt = time;
+    ensure();
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!renderer || !w || !h || video.readyState < 2) return points;
+    let found = null;
+    try {
+      found = renderer.trackFace(video, w, h);
+    } catch (_) {
+      found = null;
+    }
+    if (found && found.points && found.points.length === 68) {
+      const sx = base ? base.canvas.width / w : 1;
+      const sy = base ? base.canvas.height / h : 1;
+      const scaled = sx === 1 && sy === 1 ? found.points : found.points.map((p) => [p[0] * sx, p[1] * sy, ...(p.length > 2 ? [p[2] * sx] : [])]);
+      points = smoother.smooth(scaled, time);
+      seenAt = time;
+    } else if (time - seenAt > HOLD_MS) {
+      points = null;
+      smoother.reset();
+    }
+    return points;
+  }
+
+  return {
+    track: base ? base.track : null,
+    stats: base ? base.stats : null,
+    face: () => (base && base.face ? base.face() : ""),
+    expression: () => (base && base.expression ? base.expression() : null),
+    landmarks: () => {
+      if (!own()) return base.landmarks();
+      return { live: track() };
+    },
+    get canvas() {
+      if (base) return base.canvas;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (w && h) {
+        if (frame.width !== w || frame.height !== h) {
+          frame.width = w;
+          frame.height = h;
+        }
+        context.drawImage(video, 0, 0, w, h);
+      }
+      return frame;
+    },
+    stop() {
+      stopped = true;
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+      if (renderer) renderer.dispose();
+      renderer = null;
+      if (base) base.stop();
+    },
+  };
+}
+
+async function prepareLocal(local, media) {
+  const stops = [];
+  let audio = local.getAudioTracks()[0] || null;
+  let video = media === "video" ? local.getVideoTracks()[0] || null : null;
+  let stage = null;
+  const voice = callVoiceById(look.voice)?.id || "";
+  if (audio && voice && callVoicesSupported(window)) {
+    try {
+      const voiceStage = await createVoiceStage({ sourceTrack: audio, voiceId: voice, moduleUrl: asset("chat-call-voice-worklet.js"), globalRef: window });
+      audio = voiceStage.track;
+      stops.push(() => voiceStage.stop());
+    } catch (_) {}
+  }
+  if (video) {
+    const faceId = chosenFace();
+    const backgroundId = chosenBackground();
+    let base = null;
+    if (faceId || backgroundId) {
+      await Promise.all(CALL_DATA.map(loadCallData));
+      try {
+        base = createFaceStage({
+          cameraStream: local,
+          faceId,
+          faceImage: isCustomFace(faceId) ? look.faceImage : "",
+          backgroundId,
+          backgroundImage: backgroundId === "custom" ? look.backgroundImage : "",
+          documentRef: document,
+        });
+        if (!base || !base.track) {
+          if (base) base.stop();
+          base = null;
+        }
+      } catch (_) {
+        base = null;
+      }
+    }
+    stage = createFaceFeed(local, base);
+    if (stage) {
+      if (stage.track) video = stage.track;
+      const current = stage;
+      stops.push(() => current.stop());
+    }
+  }
+  return {
+    stream: new MediaStream([audio, video].filter(Boolean)),
+    stage,
+    stop() {
+      for (const stop of stops.splice(0)) {
+        try {
+          stop();
+        } catch (_) {}
+      }
+    },
+  };
 }
 
 async function callSigner() {
@@ -142,7 +353,8 @@ function render() {
   const order = [];
   if (active) {
     const self = tileFor("self", true);
-    showTile(self, active.local, "You", active.media !== "video" || active.cameraOff || !hasPicture(active.local));
+    const mine = (active.outgoing && active.outgoing.stream) || active.local;
+    showTile(self, mine, "You", active.media !== "video" || active.cameraOff || !hasPicture(mine));
     order.push("self");
     for (const [peer, tile] of active.tiles) {
       const entry = tileFor(peer, false);
@@ -176,9 +388,13 @@ function syncQuality(active) {
   const meter = createCallQualityMeter({
     readStats: () => (active.fmm ? fmm() : rtc()),
     tracks: () => ({
-      mic: current() ? active.local.getAudioTracks()[0] || null : null,
+      mic: current() ? ((active.outgoing && active.outgoing.stream) || active.local).getAudioTracks()[0] || null : null,
       peers: current() ? [...active.tiles.values()].flatMap((tile) => (tile.stream ? tile.stream.getAudioTracks() : [])) : [],
     }),
+    face: () => {
+      const stage = current() && active.outgoing ? active.outgoing.stage : null;
+      return stage && stage.face && stage.face() ? stage.stats || null : null;
+    },
   });
   const timer = setInterval(() => {
     if (!current()) return;
@@ -228,9 +444,10 @@ function changed() {
 }
 
 const ops = {
-  async join(channel, media, name, accent, chatRoom, callIdentity) {
+  async join(channel, media, name, accent, chatRoom, callIdentity, callLook) {
     account = String(name || "");
     useIdentity(callIdentity);
+    useLook(callLook);
     joinRoom = identity ? identity.call : String(chatRoom || "");
     if (accent) document.documentElement.style.setProperty("--fm-accent", String(accent));
     return calls.join(String(channel), String(channel), media === "video" ? "video" : "audio");
@@ -286,6 +503,7 @@ async function start() {
     callSigner,
     callAccount: () => (identity ? identity.acct : ""),
     callId: () => joinRoom,
+    prepareLocal,
     fmm: {
       workerUrl: asset("fmm/fmm-worker.js"),
       workletUrl: asset("fmm/fmm-playout-worklet.js"),
