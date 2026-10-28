@@ -86,6 +86,10 @@ dropped, and so is a guide whose pack is gone.
   load at start (the 2026-10-15 measurement put that at about 30 ms and 3 MB
   together). They were compiled in to save that; being real plugins was the
   owner's call.
+- Qt WebEngine is a core module the same way (`packages/web-engine.so`, not a
+  Market package), loaded the first time a page opens
+  ([browser](../desktop/browser.md#the-engine-is-a-module)); the empty shell
+  and what is still core are on [shell](../desktop/shell.md).
 - macOS and Windows still link listed plugins into the app
   (`FORKMESH_PACKAGE_MODULES` defaults off there): a module resolves the
   window's symbols from the executable, which works through `-rdynamic` on

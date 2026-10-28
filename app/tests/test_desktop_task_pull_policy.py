@@ -40,6 +40,7 @@ QT_CHAT = "".join(
     for name in MAIN_WINDOW_CHAT_SOURCES
 )
 QT_MAIN = (QT_SRC / "MainWindow.cpp").read_text(encoding="utf-8")
+QT_SERVICES = (QT_SRC / "MainWindowCorePackageServices.cpp").read_text(encoding="utf-8")
 
 
 def _function(source, signature):
@@ -49,9 +50,15 @@ def _function(source, signature):
 
 def test_startup_arms_one_read_not_a_poll():
     # A single-shot job after launch, not a repeating timer.
-    assert QT_MAIN.count("refreshOrganizationTaskBadge();") == 1
-    armed = QT_MAIN[:QT_MAIN.index("refreshOrganizationTaskBadge();")]
-    assert "QTimer::singleShot(25000" in armed[-400:]
+    assert "refreshOrganizationTaskBadge();" not in QT_MAIN
+    assert QT_SERVICES.count("refreshOrganizationTaskBadge();") == 1
+    armed = QT_SERVICES[:QT_SERVICES.index("refreshOrganizationTaskBadge();")]
+    assert "QTimer::singleShot(kOrganizationTasksDelayMs" in armed[-700:]
+    assert "constexpr int kOrganizationTasksDelayMs = 25 * 1000;" in QT_SERVICES
+    service = QT_SERVICES[QT_SERVICES.index("kOrganizationTasks, {"):]
+    assert service.startswith(
+        'kOrganizationTasks, {QStringLiteral("tasks"), QStringLiteral("agents")}'
+    )
 
 
 def test_reopening_the_tasks_section_reuses_the_catalog():

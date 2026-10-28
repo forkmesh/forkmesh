@@ -3380,8 +3380,24 @@ void MainWindow::startOfficeChannelMirror()
     refreshDirectFocus();
 }
 
+void MainWindow::stopLocalMesh()
+{
+    if (!m_localMesh)
+        return;
+    LocalMeshNode *mesh = m_localMesh;
+    m_localMesh = nullptr;
+    QObject::disconnect(mesh, nullptr, this, nullptr);
+    mesh->stop();
+    mesh->deleteLater();
+    setChannels(m_channels);
+    refreshMeshDebugBar();
+    refreshLocalControlTab();
+}
+
 void MainWindow::startLocalMesh()
 {
+    if (!corePackageServiceRunning(QStringLiteral("local-mesh")))
+        return;
     if (m_localMesh) {
         m_localMesh->setUserName(chatDisplayName());
         m_localMesh->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());

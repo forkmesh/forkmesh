@@ -756,7 +756,7 @@ int main(int argc, char *argv[])
     forkmesh::installPlatformLogFilter();
     forkmesh::logStartupTrace(QStringLiteral("Qt platform log filter installed"));
 
-#ifdef FORKMESH_HAVE_WEBENGINE
+#ifdef FORKMESH_WEB_ENGINE_BUILT
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     forkmesh::browser::installUngoogledChromiumFlags();
 #endif

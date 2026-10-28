@@ -842,8 +842,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     logStartup(QStringLiteral(
         "repository detail shell, Code and Issues deferred until opened"));
     startupStep(QStringLiteral("Loading repositories"));
-    traceStep(QStringLiteral("initialise the world speech bridge"),
-              [this] { initializeWorldSpeechBridge(); });
     traceStep(QStringLiteral("read the repository records"),
               [this] {
                   loadRelayRepositoryLists();
@@ -867,14 +865,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     // A bin whose window elapsed while ForkMesh was closed must not survive
     // the next launch, and a long-running session needs the sweep to keep
     // happening (issue #578).
-    purgeExpiredAgentRecycleBinInBackground();
     m_agentRecycleSweepTimer = new QTimer(this);
     connect(m_agentRecycleSweepTimer, &QTimer::timeout, this,
             &MainWindow::purgeExpiredAgentRecycleBinInBackground);
-    m_agentRecycleSweepTimer->start(60 * 60 * 1000);
-#ifndef FORKMESH_WINDOW_TESTS
-    startAgentParityWatch();
-#endif
     logStartup(QStringLiteral("actions + agents initialized"));
     if (!m_agentQueue.isEmpty())
         startupDetail(QStringLiteral("%1 agent session(s) queued to resume")
@@ -1060,17 +1053,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "  startup job scheduled: first relay latency probe in 2500ms"));
     traceStep(QStringLiteral("start operating-system reachability watch"),
               [this] { initRelayReachabilityWatch(); });
-#ifndef FORKMESH_WINDOW_TESTS
-    QTimer::singleShot(25000, this, [this] {
-        forkmesh::StartupTraceStep step(
-            QStringLiteral("delayed startup: refresh organization task badge"));
-        const forkmesh::BackgroundRoutine routine(
-            QStringLiteral("delayed startup: refresh organization task badge"));
-        refreshOrganizationTaskBadge();
-    });
-#endif
-    logStartup(QStringLiteral(
-        "  startup job scheduled: organization task refresh in 25000ms"));
     // ForkMesh Ads: one very coarse 30-minute timer and a first ask 20s in. It
     // declines by itself in a window-test build or on an offscreen node.
     scheduleAdBanner();
@@ -1124,13 +1106,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
               [this] { refreshHostsTable(); });
     traceStep(QStringLiteral("probe relays for the Nodes page"),
               [this] { refreshRelayNodes(); });
-    // Every saved host's logs stream into the main log from here on.
-    QTimer::singleShot(15 * 1000, this, [this] {
-        m_hostLogFeedsArmed = true;
-        syncHostLogFeeds();
-        m_coreLogFeedsArmed = true;
-        syncCoreLogFeeds();
-        startDeployLogFollower();
+    traceStep(QStringLiteral("start the core services of installed packages"), [this] {
+        registerCorePackageServices();
+        syncCorePackageServices();
     });
     logStartup(QStringLiteral(
         "application shell and startup models initialized"));

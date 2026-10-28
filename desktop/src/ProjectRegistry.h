@@ -52,7 +52,7 @@ inline const QString kInstanceChosenSetting = QStringLiteral("project/instanceCh
 QString encodeInstanceChoices(const QVector<InstanceChoice> &choices);
 QVector<InstanceChoice> decodeInstanceChoices(const QString &json);
 
-enum class StarterPack { Minimal, Standard, Everything };
+enum class StarterPack { Minimal, Standard, Everything, Empty };
 
 QStringList starterPackages(StarterPack pack, const QStringList &available);
 

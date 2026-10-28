@@ -4375,6 +4375,7 @@ void MainWindow::syncPackageRuntime()
     }
     syncNativePackagePages();
     syncPackageSurfaces();
+    syncCorePackageServices();
 }
 
 bool MainWindow::packageSurfaceShown(const QString &packageId) const

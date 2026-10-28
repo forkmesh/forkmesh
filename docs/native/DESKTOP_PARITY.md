@@ -130,6 +130,9 @@ in `MainWindowLocalControl<Family>.cpp`, with a pure, testable half in
 Later families (`update.`, `pings.`, `pulls.`) follow the same pattern.
 `pulls.` carries Merge all with AI from the phones' pull request lists; see
 [../desktop/pull-merge-all.md](../desktop/pull-merge-all.md#from-a-phone).
+`workflows.` lists and runs the desktop's repository workflows and special
+agents from the phones' Workflows screen; see
+[WORKFLOWS.md](WORKFLOWS.md#the-desktops-workflows).
 
 ### 19.4 Extension targets
 

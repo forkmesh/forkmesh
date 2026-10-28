@@ -561,7 +561,6 @@ void MainWindow::installAgentActivityHost()
         m_machineAgentTimer = new QTimer(this);
         m_machineAgentTimer->setInterval(2000);
         connect(m_machineAgentTimer, &QTimer::timeout, this, &MainWindow::tickMachineAgents);
-        m_machineAgentTimer->start();
     }
     if (!m_cloudAgentWatchTimer) {
         m_cloudAgentWatchTimer = new QTimer(this);
@@ -571,6 +570,5 @@ void MainWindow::installAgentActivityHost()
                 refreshCloudAgentSessions();
             pumpCloudAgentStream();
         });
-        m_cloudAgentWatchTimer->start();
     }
 }

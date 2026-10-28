@@ -9,14 +9,56 @@ removes.
 
 Code: `desktop/src/WorkspaceBrowserPane.*` (the widget, its profile and page),
 `desktop/src/BrowserPrivacy.*` (the switches, the blocklist, the user agent and
-address parsing), test `desktop/tests/test_browser_privacy.cpp`
-(`forkmesh-browser-privacy-tests`).
+address parsing), `desktop/src/WebEngine.*` (the engine interface) and
+`desktop/src/WebEngineQt.cpp` (the only file that includes Qt WebEngine), test
+`desktop/tests/test_browser_privacy.cpp` (`forkmesh-browser-privacy-tests`).
+
+## The engine is a module
+
+Linking Qt WebEngine costs about 36 MB of resident memory in every process
+that links it, before a page is opened: the library's relocations and startup
+code, plus Qt Quick and QML, which it pulls in. Measured 2026-10-28 with a Qt
+Widgets program that only shows an empty window, offscreen: 24 MB linked
+without WebEngine, 60 MB with it. Most people never open the Browser tab or an
+agent browser window, so since 2026-10-28 the app no longer links it on Linux:
+
+- `WebEngineQt.cpp` is built as `packages/web-engine.so` with a sidecar
+  (`web-engine.json`, entrypoint `core:web-engine`), next to the package
+  modules and loaded by the same loader with the same API, ABI and trust
+  checks ([package-modules](package-modules.md)). It is not a Market package
+  and is never gated on an install.
+- The core talks to it only through `forkmesh::web` (`WebEngine.h`): a profile
+  factory, a view factory and a small `View` interface (load, history, title,
+  scripts in the main or an isolated world, console messages, and url, title
+  and load-finished listeners). The module calls `registerEngine` from a
+  static initializer when it is loaded.
+- The engine has no policy. Which URLs a page may open, which requests are
+  blocked (Google's services for the Browser tab, everything but the widget
+  allowlist for agent widgets), where downloads go and how widget events are
+  read stay in core code and reach the engine as callbacks
+  (`ProfileOptions`, `PageOptions`), so the security rules are tested where
+  they always were.
+- `web::available()` reads only the sidecar, so showing the Browser tab or the
+  agent tools' "embedded" answer never loads the engine. The first
+  `createProfile` or `createView` does (`modules::loadForEntrypoint`). A
+  refused or missing module leaves the pane on its "opens in your own browser"
+  placeholder and agent browser windows without a page.
+- `main.cpp` still sets `AA_ShareOpenGLContexts` and the ungoogled Chromium
+  switches before `QApplication` when the build has an engine
+  (`FORKMESH_WEB_ENGINE_BUILT`), which is what lets Qt WebEngine start from a
+  library loaded later.
+- macOS and Windows, where package modules are off, compile `WebEngineQt.cpp`
+  into the app as before (`forkmesh_embed_web_engine`); so do the test
+  programs that drive real pages (`forkmesh-agent-windows-tests`, window and
+  perf tests). `forkmesh-web-engine-module-tests` checks the module path: Qt
+  WebEngine is not mapped after start, is mapped after the first profile, and
+  a page loads and runs a script.
 
 ## Build
 
 `FORKMESH_BROWSER_PANE` is `ON` by default. When CMake finds Qt
 WebEngineWidgets (the same `QUIET` lookup the agent browser windows use) the
-pane embeds it; when it does not, the pane shows the address and opens pages in
+pane embeds it (`FORKMESH_BROWSER_PANE_EMBEDS`); when it does not, the pane shows the address and opens pages in
 the system browser, as before. `-DFORKMESH_BROWSER_PANE=OFF` forces the system
 browser. On Debian and Ubuntu the package is `qt6-webengine-dev`.
 

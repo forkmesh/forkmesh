@@ -763,6 +763,8 @@ void testNewProjectChoices()
     check(projects::starterPackages(projects::StarterPack::Everything, available) ==
               QStringList({"agents", "chat", "code", "inbox", "notes", "tour"}),
           "everything leaves out organization plugins and duplicates");
+    check(projects::starterPackages(projects::StarterPack::Empty, available).isEmpty(),
+          "the empty pack installs nothing");
     check(projects::starterPackages(projects::StarterPack::Standard, {"notes"}).isEmpty(),
           "a pack only names plugins the catalog offers");
 

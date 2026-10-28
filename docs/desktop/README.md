@@ -27,6 +27,7 @@ Topic pages in this folder:
 - [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
 - [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
 - [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
+- [shell.md](shell.md): the empty shell: a project with nothing installed, core services that start and stop with their packages, memory measurements and what is still core
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
@@ -53,6 +54,7 @@ Everything is in `desktop/`.
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
 | `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/BackgroundRunnerBadge.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the top-bar badge, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
+| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([shell](shell.md)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
 | `src/ProjectAgentAccess.*`, `src/AgentRunRules.*`, `src/AgentNetworkGate.*` | Agent access policy, run/ask/deny decisions, external-call and destructive-command gate |
@@ -118,7 +120,9 @@ Everything is in `desktop/`.
   account unless asked) and one of three plugin packs, the phone's
   `StarterPack`: Minimal (`code`), Standard (`agents`, `chat`, `inbox`,
   `code`, `tour`) and Everything (every bundled plugin but the organization
-  ones), each with its dependencies (`projects::starterPackages`). Check reads
+  ones), each with its dependencies (`projects::starterPackages`). A fourth
+  pack, Empty (desktop only, 2026-10-28), installs nothing at all
+  ([shell.md](shell.md)). Check reads
   `/api/version` (the `x-forkmesh-worker` header, or `ok` with `rev` and
   `worker`) and then `/api/instance`, filling the name from the instance's
   project name and the logo from its `logo` path or favicon; an instance
