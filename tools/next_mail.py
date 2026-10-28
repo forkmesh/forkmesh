@@ -28,6 +28,8 @@ DKIM_NAME = "%s._domainkey.%s" % (SELECTOR, MAIL_DOMAIN)
 TXT_NAMES = (MAIL_DOMAIN, DKIM_NAME)
 SPF_KEEP = ("include:zohomail.com",)
 SENDER = "founders@forkmesh.com"
+FALLBACK_RELAY = "[live.smtp.mailtrap.io]:587"
+FALLBACK_TOKEN = "MAILTRAP_API_TOKEN"
 SIGN_HEADERS = ("From", "Sender", "Reply-To", "Subject", "Date", "Message-ID",
                 "To", "Cc", "MIME-Version", "Content-Type",
                 "Content-Transfer-Encoding", "In-Reply-To", "References",
@@ -164,7 +166,18 @@ def relay_clients(fleet, node):
     return [n for n in cores(fleet) if n.get("mail_relay") == node["name"]]
 
 
-def main_cf(node, fleet=None):
+FALLBACK_CF = """smtp_fallback_relay = {relay}
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+smtp_tls_policy_maps = hash:/etc/postfix/tls_policy
+""".format(relay=FALLBACK_RELAY)
+
+TLS_POLICY = "%s secure\n" % FALLBACK_RELAY
+
+
+def main_cf(node, fleet=None, fallback=False):
     relay = relay_for(fleet, node)
     clients = sorted(n["wg_ip"] for n in relay_clients(fleet, node))
     interfaces = ("127.0.0.1, [::1], " + node["wg_ip"]) if clients else (
@@ -208,7 +221,8 @@ bounce_queue_lifetime = 1d
 """.format(host=mail_host(node), domain=MAIL_DOMAIN,
            relayhost=("[%s]:25" % relay["wg_ip"]) if relay else "",
            interfaces=interfaces, networks=networks,
-           exceptions=" ".join(ip + "/32" for ip in clients))
+           exceptions=" ".join(ip + "/32" for ip in clients)) + (
+               FALLBACK_CF if fallback else "")
 
 
 SENDER_CANONICAL = """if !/^(founders|no-reply)@forkmesh\\.com$/
@@ -272,9 +286,17 @@ After=wg-quick@wg0.service
 """
 
 
-def install_script(node, fleet=None):
+def fallback_token():
+    try:
+        return common.credential("secrets.env", FALLBACK_TOKEN)
+    except ToolError:
+        return ""
+
+
+def install_script(node, fleet=None, fallback=False):
     host = mail_host(node)
-    files = {"/etc/postfix/main.cf": main_cf(node, fleet),
+    files = {"/etc/postfix/main.cf": main_cf(node, fleet, fallback),
+             "/etc/postfix/tls_policy": TLS_POLICY,
              "/etc/systemd/system/postfix.service.d/fmnext.conf": POSTFIX_DROPIN,
              "/etc/postfix/sender_canonical": SENDER_CANONICAL,
              "/etc/opendkim.conf": OPENDKIM_CONF,
@@ -298,7 +320,8 @@ echo "postfix postfix/mailname string {domain}" | debconf-set-selections
 apt-get install -y --no-install-recommends postfix opendkim
 {writes}
 install -d -m 0750 -o opendkim -g opendkim /etc/opendkim /etc/opendkim/keys
-umask 077
+postmap /etc/postfix/tls_policy
+{fallback}umask 077
 cat > /etc/opendkim/keys/{selector}.private
 chown opendkim:opendkim /etc/opendkim/keys/{selector}.private
 chmod 0600 /etc/opendkim/keys/{selector}.private
@@ -315,8 +338,21 @@ systemctl restart opendkim postfix fmnext-mail-events
 sleep 2
 systemctl is-active opendkim postfix fmnext-mail-events
 """.format(host=host, name=node["name"], ip=node["public_ipv4"],
-           domain=MAIL_DOMAIN,
+           domain=MAIL_DOMAIN, fallback=FALLBACK_SCRIPT if fallback else "",
            selector=SELECTOR, writes=writes, agent=AGENT_PATH)
+
+
+FALLBACK_SCRIPT = """IFS= read -r FMNEXT_FALLBACK_TOKEN
+(umask 077; printf '%s api:%s\\n' '{relay}' "$FMNEXT_FALLBACK_TOKEN" > /etc/postfix/sasl_passwd)
+unset FMNEXT_FALLBACK_TOKEN
+chmod 0600 /etc/postfix/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+chmod 0600 /etc/postfix/sasl_passwd.db
+""".format(relay=FALLBACK_RELAY)
+
+
+def install_input(token, key):
+    return (token.encode() + b"\n" if token else b"") + key
 
 
 def install(fleet, name, ssh, runner):
@@ -326,14 +362,20 @@ def install(fleet, name, ssh, runner):
         raise GuardError("mail runs on the cores only")
     if not key_path().exists():
         raise ToolError("run next_mail.py dkim --execute first")
+    token = fallback_token()
+    if "\n" in token or "'" in token:
+        raise GuardError("%s must be one line without quotes" % FALLBACK_TOKEN)
+    runner.say("%s: fallback relay %s" % (
+        name, FALLBACK_RELAY if token else "off (%s not in secrets.env)" % FALLBACK_TOKEN))
     next_ids.push_expectation(fleet, ssh, runner, name, rescan=IDS_PATHS,
                               allow=IDS_ALLOW, reason="core mail install",
                               minutes=30)
     runner.step("%s: hostname %s, postfix (loopback only) and opendkim"
                 % (name, mail_host(node)),
                 lambda: runner.say(ssh.run(
-                    node["public_ipv4"], install_script(node, fleet),
-                    input_bytes=key_path().read_bytes()).stdout.decode()))
+                    node["public_ipv4"], install_script(node, fleet, bool(token)),
+                    input_bytes=install_input(token, key_path().read_bytes())
+                    ).stdout.decode()))
 
 
 def restart(fleet, name, ssh, runner, timeout=900):
@@ -396,6 +438,7 @@ systemctl is-active postfix opendkim
 ss -ltnH 'sport = :25'
 timeout 8 bash -c '</dev/tcp/gmail-smtp-in.l.google.com/25' && echo outbound-25-open || echo outbound-25-blocked
 {probe}postconf -h relayhost
+postconf -h smtp_fallback_relay
 postqueue -p | tail -1
 """.format(probe=probe), check=False, timeout=60).stdout.decode()
     print(out.strip())

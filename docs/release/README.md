@@ -172,6 +172,12 @@ so a fix reaches the homepage for one platform without a release.
   macOS builds (2026-10-28) were made this way: compiled-in packages (the
   static Linux, MinGW and Mac builds have no Qt WebEngine) failed on an
   unguarded `QWebEngineView` in `FaceChangerFeature.cpp` at the tag.
+- A rebuild from `main` builds `code_commit(main)`: the newest commit that
+  changed anything outside `.forkmesh/releases`, which is what the desktop's
+  build provenance (`GenerateForkMeshVersion.cmake`) stamps. `main`'s tip is
+  often a release-metadata commit or a `--no-ff` merge with its branch's tree,
+  and building it failed with "FORKMESH_BUILD_COMMIT_OVERRIDE does not match
+  the clean checkout" (v1.5.0 Windows, 2026-10-28).
 - `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
   serves the promoted manifest. While the version is still held back for
   other platforms it reports that and succeeds.

@@ -210,6 +210,24 @@ normal path, at most once a minute.
   the relay. To undo it once `check` shows `PTR <ipv4>: ok` everywhere,
   remove the `mail_relay` lines, let autodeploy roll, and run
   `install nN --execute` on every core.
+- Every core falls back to Mailtrap so mail does not depend on one server
+  (user, 2026-10-28: "send email from any of the servers in case one or two
+  of them go down"). Postfix has `smtp_fallback_relay =
+  [live.smtp.mailtrap.io]:587`, used whenever the normal route fails with a
+  temporary error: n4 unreachable from n3/n5, or a provider deferring n4.
+  It logs in as `api` with `MAILTRAP_API_TOKEN` (already a server
+  credential, `optional_secrets`), which `next_mail.py install` sends on SSH
+  stdin into root-only `/etc/postfix/sasl_passwd` (0600, with its `.db`);
+  `/etc/postfix/tls_policy` makes that hop `secure` (verified TLS), so the
+  password never crosses an unverified connection. No other destination
+  gets credentials. `forkmesh.com` already carries Mailtrap's DKIM
+  (`rwmt1`/`rwmt2._domainkey`), so relayed mail still passes DMARC. If a
+  core's own Postfix does not answer, `_send_email` sends that message
+  through the Mailtrap API instead (`mail_providers.fallback`), within the
+  same provider hold and daily budget as any API send; a suppressed
+  recipient never falls back. Without the token in `secrets.env`, install
+  leaves the fallback off and says so. A hand-off to Mailtrap is recorded as
+  delivery: its own webhook carries the later lifecycle.
 - Adding a core checks this so it cannot happen silently again. On Vultr
   with core mail on, the `vm` step of `next_add_core.py` sets the new
   address's PTR and waits up to 10 minutes for it to publish; if it does

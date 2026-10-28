@@ -2347,6 +2347,11 @@ def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace)
     return {name: dmg for name in MACOS_ASSETS}
 
 
+def code_commit(repo: Path, ref: str) -> str:
+    return git(repo, "log", "-1", "--format=%H", ref, "--", ".",
+               f":(exclude){RELEASES}/**")
+
+
 def deploy_build(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     work = Path(args.work_dir).expanduser()
@@ -2360,7 +2365,7 @@ def deploy_build(args: argparse.Namespace) -> int:
     manifests = manifests_at(repo, "main")
     builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
     plan = plan_deploy(manifests, args.deploy_build, builds_text,
-                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build,
+                       code_commit(repo, "main"), args.tag, args.first_build,
                        args.from_main)
     label = PLATFORM_LABELS[plan["platform"]]
     tag, channel = plan["tag"], plan["channel"]
