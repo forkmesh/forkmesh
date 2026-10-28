@@ -241,6 +241,10 @@ normal path, at most once a minute.
   row turns red with "Reverse DNS does not match for ..." when one of
   them does not forward-confirm. Results are cached for 10 minutes per
   process.
+- The IDS mails its lockdown and test alerts through the same loopback
+  Postfix, and in a lockdown (when its firewall stops Postfix sending) posts
+  to the Mailtrap API as root with the token in `/etc/postfix/sasl_passwd`
+  ([IDS.md](IDS.md), "Direct mail").
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
