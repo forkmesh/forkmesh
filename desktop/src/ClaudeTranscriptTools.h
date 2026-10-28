@@ -43,6 +43,7 @@ QString serverToolResultText(const QJsonObject &block, bool *isError = nullptr);
 
 QString parentToolUseId(const QJsonObject &event);
 QString systemNotice(const QJsonObject &event);
+QString commandLifecycleNotice(const QJsonObject &event);
 QString resultTokenSummary(const QJsonObject &resultEvent);
 
 struct TaskNotification {

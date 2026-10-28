@@ -577,6 +577,14 @@ Claude Code `system/vcs_state_changed` draws a muted notice through
 `transcripttools::systemNotice`, including its `kind` (for example, push).
 An absent kind still draws a generic version control state change notice.
 
+Claude Code `system/dev_intent` draws the same muted notice style, including
+its development kind and trigger when present. `command_lifecycle` draws a
+muted notice with the command state and `command_uuid`, so starts and later
+updates can be matched. Missing fields still produce a generic notice, and
+unfamiliar kinds, triggers and states are shown as received. These rows keep
+their source event for the raw log jump and appear during live updates and
+history replay in both layout modes.
+
 Codex `remoteControl/status/changed`, `mcpServer/startupStatus/updated`, and
 `thread/settings/updated` draw the existing notice rows. Remote control notices
 name the server and status; MCP notices name the server and startup status,

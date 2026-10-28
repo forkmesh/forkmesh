@@ -4403,6 +4403,9 @@ void ClaudeTranscriptView::handleEvent(const QJsonObject &ev, bool countStats)
             if (!notice.isEmpty())
                 addNotice(notice);
         }
+    } else if (type == QLatin1String("command_lifecycle")) {
+        if (forkmesh::transcripttools::parentToolUseId(ev).isEmpty())
+            addNotice(forkmesh::transcripttools::commandLifecycleNotice(ev));
     } else if (type == QLatin1String("stream_event")) {
         if (forkmesh::transcripttools::parentToolUseId(ev).isEmpty())
             handleClaudeStreamEvent(ev.value(QStringLiteral("event")).toObject());
