@@ -89,6 +89,12 @@ can log in as `build` on the Mac.
   now finds every `ROOT / "..."` path (with `ROOT` the repository root) in the
   `native/ios/tools/*.py` scripts `codemagic.yaml` runs and checks
   `MAC_IOS_FETCH_SCRIPT` covers it.
+- The 2026-10-28 App Store build of `d55f97daed95` (iOS 1.5.0) failed in "Test
+  ForkMeshCore": the `FMCodeInsight` tests find `native/fixtures/insight/` by
+  walking up from their own `#filePath`, which the guard test neither matched
+  (it looked for `#file`) nor resolved (it only tried paths from the repository
+  root). It now follows walk-up lookups from the test's folder, and the sparse
+  checkout holds `/native/fixtures/`.
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
   20 s apart) because a core may advertise a commit before it holds every blob,
