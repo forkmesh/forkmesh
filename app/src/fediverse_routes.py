@@ -2043,6 +2043,10 @@ async def ap_inbox_handler(env, request):
     if (not key_url
             or urlparse(key_url).netloc != urlparse(actor_id).netloc):
         return json_response({"error": "key_actor_mismatch"}, status=401)
+    key_path = urlparse(key_url).path
+    if "%" in key_path or any(
+            part in (".", "..") for part in key_path.split("/")):
+        return json_response({"error": "key_actor_mismatch"}, status=401)
     if not ap.digest_matches(request.headers.get("digest") or "", body_bytes):
         return json_response({"error": "digest_mismatch"}, status=401)
     now = int(Date.now())

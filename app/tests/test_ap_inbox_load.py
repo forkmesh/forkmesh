@@ -402,6 +402,21 @@ def test_a_key_under_the_actors_own_path_still_signs_for_it():
     assert resp.data["error"] == "actor_mismatch"
 
 
+def test_a_key_path_cannot_climb_out_of_the_claimed_actor():
+    log = []
+    ns = _inbox_env(log, signature_verified=True)
+    victim = "https://mastodon.social/users/victim"
+    undo = {"type": "Undo", "actor": victim, "object": {
+        "type": "Follow", "actor": victim,
+        "object": "https://forkmesh.com/ap/repos/forkmesh/forkmesh"}}
+    for suffix in ("/../attacker#main-key", "/%2e%2e/attacker#main-key",
+                   "/./../attacker#main-key"):
+        resp = _run(ns["ap_inbox_handler"](None, _signed_request(
+            undo, victim, suffix)))
+        assert resp.status == 401
+        assert resp.data["error"] == "key_actor_mismatch"
+
+
 def test_signature_freshness_must_be_valid_and_covered():
     actor = "https://mastodon.social/users/known"
 

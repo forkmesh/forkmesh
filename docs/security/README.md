@@ -72,7 +72,10 @@ added to the desktop's saved hosts.
 - ActivityPub inbox (`ap_inbox_handler`): after the HTTP signature verifies,
   the key's actor (the document fetched from `keyId` without its fragment)
   must be the activity's `actor`, or a path under it (GoToSocial publishes
-  `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`.
+  `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`. A `keyId`
+  path with `.`/`..` segments or any percent-encoding is refused
+  (`key_actor_mismatch`): the fetch would normalise `victim/../attacker` to
+  another account's key while the prefix check still saw the victim.
   A key from the same server is not enough: on a shared instance one account
   could otherwise send Undo(Follow) or a self-Delete naming another account
   and erase that account's follows. Lemmy moderators sign their own Remove,
