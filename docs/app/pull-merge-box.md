@@ -59,6 +59,32 @@ branch.
   branch-backed pull lands as a merge commit, and a patch-backed pull is
   replayed onto the newest base. It is shown as a warning, not a blocker.
 
+## Merged and closed pulls
+
+A merged pull shows one row instead of the merge rows: "Pull request
+successfully merged and closed", saying the head branch is in the base and that
+nothing more can be merged from it (`renderRepoPullDoneBox`). A closed pull
+shows "Closed with unmerged commits". Before this the box kept the Review,
+Checks and Branch rows of a merged pull ("Independent review required",
+"Mergeability unknown", an Update branch button) under a disabled Merged
+button, which read as if the pull could still be merged. The live progress of
+a merge made on this page still shows inside the merged row.
+
+The review form keeps Comment but drops Approve and Request changes once the
+pull is not open (`renderPullReviewForm`).
+
+The conversation gets a "merged" entry (`repoPullMergedEvent` in
+`buildRepoPullTimeline`) from `pull.md`'s `status: merged`, `mergedAt` and
+`mergedBy`, placed by time, or last when `mergedAt` is missing. It names the
+merger only when `mergedBy` is a key the page can name (the author's); a mesh
+merge (`server/merge.go`) records no `mergedBy`, so the entry reads "Merged
+`head` into `base`". The desktop and the iPhone app add the same entry.
+
+On the desktop (`desktop/src/MainWindowPulls.cpp`) the entry is a conversation
+card in `renderPullThread`, the card above the merge button
+(`m_pullMergeBlockers`) carries the same merged or closed sentence, and the
+Approve and Request changes buttons are hidden while the pull is not open.
+
 ## Review chip in the pull request list
 
 Each open row of the pull request list shows its review state instead of its

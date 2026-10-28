@@ -21,6 +21,9 @@ public protocol CollabAPI: AnyObject {
         payload: JSONObject
     ) async throws -> DesktopCommandResult
     func compare(_ owner: String, _ name: String, base: String, head: String) async throws -> RepoComparison
+    func branches(_ owner: String, _ name: String) async throws -> [RepoBranch]
+    func remoteForks(_ owner: String, _ name: String) async throws -> [RemoteFork]
+    var instanceHost: String { get }
     func canMergePulls(_ owner: String, _ repo: String) async -> Bool
     func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan?
     func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool, deleteHead: Bool) async throws
@@ -28,6 +31,12 @@ public protocol CollabAPI: AnyObject {
 }
 
 extension CollabAPI {
+    public func branches(_ owner: String, _ name: String) async throws -> [RepoBranch] { [] }
+
+    public func remoteForks(_ owner: String, _ name: String) async throws -> [RemoteFork] { [] }
+
+    public var instanceHost: String { "" }
+
     public func publishedPull(_ owner: String, _ name: String, _ number: Int) async throws -> PublishedPull? {
         try await publishedPulls(owner, name).first { $0.number == number }
     }
@@ -49,6 +58,14 @@ public protocol CollabInbox: AnyObject {
         _ owner: String, _ name: String, title: String, base: String, head: String, patch: String, commits: String,
         description: String, authorName: String
     ) async throws
+    func openNewPull(
+        _ owner: String, _ name: String, title: String, base: String, head: String, patch: String, commits: String,
+        description: String, authorName: String
+    ) async throws -> Int
+    func openRemotePull(
+        _ fork: RemoteFork, title: String, base: String, head: String, patch: String, commits: String,
+        description: String, authorName: String
+    ) async throws -> Int
     func commentOnPull(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws
     func reviewPull(_ owner: String, _ name: String, _ number: Int, _ state: String, _ body: String) async throws
     func submitNewDiscussion(_ owner: String, _ name: String, title: String, body: String, category: String) async throws

@@ -96,7 +96,9 @@ public enum PublishedRecords {
             events: events,
             author: meta["author"] ?? "",
             authorName: meta["authorName"] ?? "",
-            createdMs: DartCore.intTryParse(meta["ts"] ?? meta["createdAt"] ?? "") ?? 0)
+            createdMs: DartCore.intTryParse(meta["ts"] ?? meta["createdAt"] ?? "") ?? 0,
+            mergedMs: DartCore.intTryParse(meta["mergedAt"] ?? "") ?? 0,
+            mergedBy: meta["mergedBy"] ?? "")
     }
 
     public static func pullHeadFromMarkdown(_ number: String, _ md: String) -> PublishedPull {
@@ -111,7 +113,9 @@ public enum PublishedRecords {
             signed: !(meta["sig"] ?? "").isEmpty,
             author: meta["author"] ?? "",
             authorName: meta["authorName"] ?? "",
-            createdMs: DartCore.intTryParse(meta["ts"] ?? meta["createdAt"] ?? "") ?? 0)
+            createdMs: DartCore.intTryParse(meta["ts"] ?? meta["createdAt"] ?? "") ?? 0,
+            mergedMs: DartCore.intTryParse(meta["mergedAt"] ?? "") ?? 0,
+            mergedBy: meta["mergedBy"] ?? "")
     }
 
     public static func pullEventFromMarkdown(_ md: String) -> PullEvent {

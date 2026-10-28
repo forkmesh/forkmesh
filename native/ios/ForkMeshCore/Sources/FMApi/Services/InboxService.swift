@@ -168,6 +168,43 @@ public final class InboxService {
         return ApiParse.numInt(answer["number"])
     }
 
+    public func openRemotePull(
+        _ fork: RemoteFork, title: String, base: String, head: String, patch: String, commits: String = "",
+        description: String = "", authorName: String = ""
+    ) async throws -> Int {
+        guard let url = fork.pullsURL, RemoteFork.validOrigin(fork.origin) else { throw ApiException("invalid_remote_fork") }
+        let ts = now
+        let content = [title, base, head, patch, commits].joined(separator: "\0")
+        let contentHash = InboxService.sha256Hex(content)
+        let canonical = signingPrefix("pull-event", fork.owner, fork.name) + "\(author)\n\(ts)\n\(contentHash)"
+        let sig = sign(canonical)
+        let body: JSONObject = [
+            "owner": .string(fork.owner),
+            "repo": .string(fork.name),
+            "pull": .object([
+                "title": .string(title),
+                "base": .string(base),
+                "head": .string(head),
+                "patch": .string(patch),
+                "commits": .string(commits),
+                "description": .string(description),
+                "author": .string(author),
+                "authorName": .string(authorName),
+                "ts": .int(ts),
+                "sig": .string(sig),
+            ]),
+        ]
+        let answer: JSONObject
+        do {
+            answer = try await postAnswer(url, body)
+        } catch let error as ApiException {
+            throw error
+        } catch {
+            throw ApiException("remote_unreachable")
+        }
+        return ApiParse.numInt(answer["number"])
+    }
+
     /// Signed patchset anchor of a line-anchored pull event, or nothing (the desktop's
     /// `PullEvent::hasAnchor()`).
     nonisolated static func pullCommentAnchorFields(_ ev: JSONObject) -> [String] {
