@@ -27,6 +27,7 @@ struct CrmContactScreen: View {
     @State private var confirmDelete = false
     @State private var notice: FmNotice?
     @State private var visible = false
+    @State private var invoices: ContactInvoicesState = .loading
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -56,6 +57,7 @@ struct CrmContactScreen: View {
                     if !data.listViews.isEmpty { listsSection(contact, data: data) }
                 }
                 detailsSection(contact)
+                CrmContactInvoicesSection(client: client, ref: ref, contact: contact, state: $invoices)
                 if !contact.fields.isEmpty {
                     Section("More") {
                         ForEach(contact.fields.keys.sorted(), id: \.self) { key in
@@ -386,6 +388,7 @@ struct CrmContactScreen: View {
         } catch {
             errorText = PackagesError.describe(error)
         }
+        invoices = await CrmContactInvoicesSection.fetch(client: client, ref: ref)
     }
 
     @ViewBuilder private func detail(_ title: String, _ value: String, icon: String, url: URL? = nil) -> some View {

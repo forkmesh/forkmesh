@@ -115,6 +115,13 @@ takes over the footer prompt box while visible), `userDirectoryChanged()`,
 `repositoryWorkflowsChanged()` (a desktop workflow was saved, ran or was
 pinned).
 
+**Reading another package's API.** `request` only reaches the package's own
+`apiPrefix`. A page that needs one more API lists its prefix in
+`accountPaths` and its request proof in `resourceProofs`, then signs that
+request itself, as Calendar does and as the CRM contact card does for
+[Invoicing](invoices.md#crm-links). There is no host call for one package to
+open another package's desktop page; link to the web page instead.
+
 **Login store.** A package can hand a password it was given to the user's
 password manager and ask for it back, without the host knowing which package
 that is. The store is the first installed page whose `storesLogins()` is true

@@ -239,6 +239,7 @@ def test_open_pixel_view_and_pay_click_track_analytics_and_ping_once():
         "💳 Grace Hopper clicked pay on invoice INV-0001",
     ]
     assert all(ping["to"] == "alice" and ping["kind"] == "plugin_activity" for ping in runtime.pings)
+    assert runtime.pings[0]["href"] == f"/dashboard/invoices?org=acme&invoice={invoice['id']}"
     overview = call(runtime.use("GET"), "/api/invoices/acme")["data"]
     summary = overview["summary"]
     assert (summary["sent"], summary["opened"], summary["openRate"], summary["viewRate"]) == (1, 1, 100, 100)

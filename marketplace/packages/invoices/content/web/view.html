@@ -24,21 +24,22 @@
               </section>
 
               <div data-invoice-app class="hidden">
-                <div class="mb-4 grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3 xl:grid-cols-5">
-                  <div class="border-b border-border p-4 sm:border-r xl:border-b-0"><p class="text-xs font-medium text-muted-foreground">Outstanding</p><p data-invoice-stat-outstanding class="mt-1 text-xl font-semibold text-foreground">—</p><p data-invoice-stat-outstanding-count class="text-xs text-muted-foreground"></p></div>
-                  <div class="border-b border-border p-4 sm:border-r xl:border-b-0"><p class="text-xs font-medium text-muted-foreground">Overdue</p><p data-invoice-stat-overdue class="mt-1 text-xl font-semibold text-foreground">—</p><p data-invoice-stat-overdue-count class="text-xs text-muted-foreground"></p></div>
-                  <div class="border-b border-border p-4 xl:border-b-0 xl:border-r"><p class="text-xs font-medium text-muted-foreground">Paid, last 30 days</p><p data-invoice-stat-paid class="mt-1 text-xl font-semibold text-foreground">—</p><p data-invoice-stat-paid-count class="text-xs text-muted-foreground"></p></div>
-                  <div class="border-b border-border p-4 sm:border-b-0 sm:border-r"><p class="text-xs font-medium text-muted-foreground">Opened</p><p data-invoice-stat-opened class="mt-1 text-xl font-semibold text-foreground">—</p><p data-invoice-stat-opened-detail class="text-xs text-muted-foreground"></p></div>
-                  <div class="p-4"><p class="text-xs font-medium text-muted-foreground">Average time to pay</p><p data-invoice-stat-days class="mt-1 text-xl font-semibold text-foreground">—</p><p data-invoice-stat-days-detail class="text-xs text-muted-foreground"></p></div>
+                <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-5">
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Outstanding</p><p data-invoice-stat-outstanding class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-outstanding-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Overdue</p><p data-invoice-stat-overdue class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-overdue-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Paid, last 30 days</p><p data-invoice-stat-paid class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-paid-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Opened</p><p data-invoice-stat-opened class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-opened-detail class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3 col-span-2 sm:col-span-1"><p class="text-xs font-medium text-muted-foreground">Average time to pay</p><p data-invoice-stat-days class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-days-detail class="text-xs text-muted-foreground"></p></div>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+                <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
                   <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
                     <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
                       <div class="relative min-w-0 flex-1"><i data-lucide="search" class="pointer-events-none absolute h-4 w-4 text-muted-foreground" style="left:.7rem;top:.5rem"></i><input data-invoice-search type="search" aria-label="Search invoices" placeholder="Search number, client, company or email" class="h-control w-full rounded-md border border-border bg-background text-control text-foreground" style="padding-left:2.25rem;padding-right:.75rem" /></div>
                       <select data-invoice-status-filter aria-label="Status" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"><option value="">All invoices</option><option value="open">Unpaid</option><option value="overdue">Overdue</option><option value="draft">Drafts</option><option value="paid">Paid</option><option value="void">Void</option></select>
                     </div>
-                    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Invoice</th><th class="px-4 py-2 font-semibold">Status</th><th class="px-4 py-2 text-right font-semibold">Amount</th><th class="px-4 py-2 font-semibold">Due</th><th class="px-4 py-2 font-semibold">Engagement</th></tr></thead><tbody data-invoice-list class="divide-y divide-border"></tbody></table></div>
+                    <ul data-invoice-cards class="divide-y divide-border sm:hidden"></ul>
+                    <div class="hidden overflow-x-auto sm:block"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Invoice</th><th class="px-4 py-2 font-semibold">Status</th><th class="px-4 py-2 text-right font-semibold">Amount</th><th class="px-4 py-2 font-semibold">Due</th><th class="px-4 py-2 font-semibold">Engagement</th></tr></thead><tbody data-invoice-list class="divide-y divide-border"></tbody></table></div>
                     <div data-invoice-empty class="fm-blankslate hidden"><i data-lucide="receipt"></i><p class="fm-blankslate-title">No invoices in this view.</p><p class="fm-blankslate-desc">Change the search or filter, or create an invoice.</p></div>
                   </section>
                   <section class="min-w-0 rounded-lg border border-border bg-card">
@@ -65,7 +66,7 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">Due<input data-invoice-due type="date" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <div class="grid gap-2 sm:col-span-2">
                     <div class="flex items-center justify-between"><p class="text-xs font-semibold text-foreground">Line items</p><button data-invoice-line-add type="button" class="fm-btn fm-btn-sm"><i data-lucide="plus"></i>Add line</button></div>
-                    <div class="overflow-x-auto rounded-md border border-border"><table class="w-full text-left text-xs"><thead class="border-b border-border bg-secondary text-muted-foreground"><tr><th class="px-2 py-2 font-semibold">Description</th><th class="w-20 px-2 py-2 font-semibold">Qty</th><th class="w-28 px-2 py-2 font-semibold">Unit price</th><th class="w-28 px-2 py-2 text-right font-semibold">Amount</th><th class="w-8"></th></tr></thead><tbody data-invoice-lines class="divide-y divide-border"></tbody></table></div>
+                    <div data-invoice-lines class="divide-y divide-border rounded-md border border-border px-2"></div>
                   </div>
                   <label class="grid gap-1 text-xs text-muted-foreground">Currency<input data-invoice-currency maxlength="3" placeholder="USD" class="h-control rounded-md border border-border bg-background px-3 text-control uppercase text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Tax rate (%)<input data-invoice-tax type="number" min="0" max="1000" step="0.01" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>

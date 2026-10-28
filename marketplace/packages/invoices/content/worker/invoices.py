@@ -403,9 +403,10 @@ def _track_origin(runtime):
     configured = str(secret("TRACK_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    origin = str(getattr(runtime, "request_origin", lambda: "")() or "").rstrip("/").lower()
-    if ORIGIN_RE.fullmatch(origin):
-        return origin
+    for source in ("request_origin", "public_origin"):
+        origin = str(getattr(runtime, source, lambda: "")() or "").rstrip("/").lower()
+        if ORIGIN_RE.fullmatch(origin):
+            return origin
     return TRACK_ORIGIN
 
 
@@ -1032,7 +1033,8 @@ async def _notify_sender(runtime, row, title, body, dedupe):
     if notify is None or not sender:
         return
     await notify(sender, "plugin_activity", title, body=body,
-                 href="%s?invoice=%s" % (PAGE_PATH, row.get("invoice_id")), dedupe=dedupe)
+                 href="%s?org=%s&invoice=%s" % (PAGE_PATH, row.get("org_name"), row.get("invoice_id")),
+                 dedupe=dedupe)
 
 
 async def _client_label(runtime, row):

@@ -1,7 +1,18 @@
 {
   "schemaVersion": 1,
   "sources": [
-    "InvoicesLink.cpp"
+    "InvoicesModel.h",
+    "InvoicesModel.cpp",
+    "InvoicesPage.h",
+    "InvoicesPage.cpp"
   ],
-  "mocHeaders": []
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_invoices_model.cpp",
+    "InvoicesModel.h",
+    "InvoicesModel.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
 }

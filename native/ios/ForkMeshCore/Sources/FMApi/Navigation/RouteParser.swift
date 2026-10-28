@@ -248,6 +248,7 @@ public enum RouteParser {
         case "settings": return [.settings(section: first)]
         case "network": return [.network(section: first)]
         case "ads": return [.ads]
+        case "invoices": return tail.isEmpty ? invoiceRoutes(query) : nil
         case "apps": return tail.isEmpty ? [.settings(section: "apps")] : nil
         case "calories": return [.calories]
         case "steps": return [.steps]
@@ -284,6 +285,14 @@ public enum RouteParser {
         case "inbox", "pings", "notifications": return [.inbox(.all)]
         default: return nil
         }
+    }
+
+    private static func invoiceRoutes(_ query: [String: String]) -> [Route] {
+        let org = nonEmpty(query["org"]).flatMap { isSafe($0) ? $0.lowercased() : nil }
+        let invoice = query["invoice"].flatMap { value in
+            value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
+        }
+        return [.invoices(organization: org, invoice: invoice)]
     }
 
     private static func instanceFeedPost(_ value: String?) -> String? {

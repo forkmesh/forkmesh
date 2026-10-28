@@ -7,8 +7,13 @@ links to the CRM and everything else it touches, sends invoices by email, and
 shows when an invoice is opened.
 
 Package: [`marketplace/packages/invoices`](../../marketplace/packages/invoices/README.md).
-It runs on the web (`/dashboard/invoices`), as a desktop rail button that
-opens that page, and as a public page at `/invoice` for the client.
+Members manage invoices on the web (`/dashboard/invoices`, laid out for
+phones too), in a native desktop page, and in native iPhone and Android
+screens; the client reads theirs on a public page at `/invoice`. The owner
+asked for every part to be manageable on mobile and desktop, so each app
+offers the same actions as the web page: create, edit, duplicate, email and
+remind, record payments, void, reopen, delete, settings, install, and the
+analytics.
 
 ## Code map
 
@@ -17,9 +22,36 @@ opens that page, and as a public page at `/invoice` for the client.
 | `content/worker/invoices.py` | The Worker API at `/api/invoices`: invoices, settings, CRM contact reads, sending, payments, tracking routes, the overdue sweep, export and purge. |
 | `content/web/view.html`, `content/web/page.js` | The dashboard page: totals, the invoice table, recent activity, the editor, the detail sheet with history, and the send, payment and settings dialogs. |
 | `content/www/invoice.{html,js,css}` | The client's page at `/invoice?t=<token>`, printable to PDF. Built with no site header, analytics or `innerHTML`. |
-| `content/desktop/InvoicesLink.cpp` | A `browserPath` rail link to `/dashboard/invoices`. |
+| `content/desktop/InvoicesPage.{h,cpp}` | The native desktop page and its registration (`/api/invoices`, proof `forkmesh-invoices-request-v1`). |
+| `content/desktop/InvoicesModel.{h,cpp}`, `content/desktop/tests/test_invoices_model.cpp` | The page's logic without widgets (money, totals, filters, allowed actions, labels) and its Qt test, target `forkmesh-invoices-tests`. |
+| `native/ios/ForkMeshCore/Sources/FMPackages/Invoice*.swift`, `PackagesClient+Invoices.swift`; `native/ios/ForkMesh/Features/Packages/Invoice*.swift`, `CrmContactInvoices.swift` | iPhone models, client, screen model, screens and the CRM card section. Tests: `FMPackagesTests/InvoicesTests.swift`, `FMApiTests/InvoiceRouteTests.swift`. |
+| `native/android/core/.../market/Invoices.kt`, `native/android/app/.../feature/market/InvoiceScreens.kt` | Android models, client, screen state and screens. Test: `core/src/test/.../market/InvoicesTest.kt`. |
 | `marketplace/packages/crm/content/web/page.js` (`loadCrmContactInvoices`, `renderCrmContactInvoices`) | The Invoices section on a CRM contact card. |
 | `tests/test_invoices.py` | API, tracking, sweep, lifecycle and page contracts against sqlite. |
+
+## Apps
+
+**Web.** Below the `sm` breakpoint the invoice table becomes a list of cards,
+the five totals sit two to a row, and each editor line item puts its
+description on its own row. Every class the page uses is in the hand-built
+`app/public/dashboard/tailwind.css`; a class missing from that file has no
+style at all, so check before adding one.
+
+**Desktop.** A native page in the rail with the overdue count as its badge,
+search hits on number and client, and `exportData()` like Analytics. In
+Control Tower the list and the open invoice sit side by side with every
+action as a button. In Focus the list sits beside the recent activity, and an
+invoice opens as its own page with a back button and the less common actions
+under ⋯. The host does not tell a package page when the layout mode changes,
+so the page reads it each time it is shown and on Refresh. "Open on the web"
+opens the dashboard page.
+
+**iPhone and Android.** A Business hub entry that appears once one of the
+user's organizations installs Invoicing (both apps gate it like the CRM). The
+route is `invoices(organization, invoice)` on both, and
+`/dashboard/invoices?org=<org>&invoice=<id>` links, which Pings use, open
+that invoice; without `org` the apps look through the installed
+organizations. Dates are typed as UTC days, like the web.
 
 ## Data
 
@@ -65,6 +97,14 @@ same row key) and only when the organization has the CRM installed:
 - With no From email in Invoicing settings, sending uses the CRM's sender
   (`crm_settings.fromEmail` and `fromName`).
 
+The iPhone and Android CRM contact screens show the same Invoices section.
+On the desktop the CRM page cannot reach another package's API through its
+own `request`, so its registration lists `/api/invoices` in `accountPaths`
+and `forkmesh-invoices-request-v1` in `resourceProofs` (the way Calendar
+reads other APIs) and signs that one request itself. Its New invoice and
+invoice rows open the web page, because the host has no way for one package
+to open another package's desktop page.
+
 The invoice detail links the client back to the contact
 (`/dashboard/crm?org=<org>&contact=<id>`). Invoicing writes nothing to CRM
 tables, so either plugin can be removed without breaking the other.
@@ -92,11 +132,14 @@ checked with `hmac.compare_digest`. The email holds:
   ever comes from the stored invoice, so the route is not an open redirect.
 
 The links use the `PACKAGE_INVOICES_TRACK_ORIGIN` secret when set, then the
-sender's own https origin, then `https://app.forkmesh.com`. `/invoice` is a
+sender's own https origin, then the instance's public origin (the desktop and
+phone apps send no `Origin`), then `https://app.forkmesh.com`. `/invoice` is a
 website route, so the App host 308s it to the website.
 
 The first open, first view and first pay click each ping the person who sent
-the invoice (`plugin_activity`, linking to `/dashboard/invoices?invoice=<id>`),
+the invoice (`plugin_activity`, linking to
+`/dashboard/invoices?org=<org>&invoice=<id>` so the apps can open it
+directly),
 naming the mail client when the user agent shows one. Apple Mail and Gmail
 load images through proxies, so an open can mean the mail app fetched the
 image rather than a person reading it; the page view is the firmer signal.

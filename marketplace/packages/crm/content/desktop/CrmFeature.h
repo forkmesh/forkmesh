@@ -475,6 +475,8 @@ private:
     // names. A click on a row or a picture in the grid opens it.
     void showContactDetail(const QString &contactId, bool reread = false);
     void closeContactDetail();
+    QWidget *contactInvoicesSection(const QString &contactId);
+    void requestInvoices(const QString &path, ReplyHandler handler);
     // What one connected account answered with: why it could not be read,
     // the address of its picture, and its newest posts, newest first.
     using UpdatesHandler = std::function<void(const QString &, const QUrl &,
@@ -617,6 +619,10 @@ private:
     std::function<void(const QString &,
                        forkmesh::market::NativePackageAgentReplyHandler)>
         m_askAgent;
+    std::function<QUrl(const QString &)> m_accountApiUrl;
+    std::function<QString(const QUrl &)> m_accountSessionToken;
+    std::function<bool(const QString &, const QString &, QString *, QString *, QString *)> m_signProof;
+    std::function<void(const QString &)> m_openWebPage;
     QJsonArray m_decks;
     QSet<QString> m_drafting;
     QSet<QString> m_autoSending;

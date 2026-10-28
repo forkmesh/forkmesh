@@ -97,7 +97,7 @@
     },
     {
       "id": "chrome.rail.button",
-      "label": "Add an Invoices button to the desktop rail that opens the web page",
+      "label": "Add an Invoices page to the desktop rail to create, send and track invoices",
       "risk": "low"
     }
   ],

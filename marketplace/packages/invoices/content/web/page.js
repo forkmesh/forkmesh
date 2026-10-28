@@ -129,6 +129,10 @@ window.ForkMeshDashboard.registerPage("invoices", ({
       <td class="px-4 py-3 text-right"><p class="font-semibold text-foreground">${escapeHtml(money(item.total, item.currency))}</p>${item.balance && item.balance !== item.total ? `<p class="text-xs text-muted-foreground">${escapeHtml(money(item.balance, item.currency))} due</p>` : ""}</td>
       <td class="px-4 py-3 text-xs text-muted-foreground">${escapeHtml(dateLabel(item.dueAt))}</td>
       <td class="px-4 py-3">${engagement(item)}</td></tr>`).join("");
+    const cards = $(`[data-invoice-cards]`);
+    if (cards) cards.innerHTML = items.map((item) => `<li><button type="button" data-invoice-open="${escapeHtml(item.id)}" class="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-secondary">
+      <span class="min-w-0"><span class="block font-semibold text-foreground">${escapeHtml(item.number)}</span><span class="block truncate text-xs text-muted-foreground">${escapeHtml(clientLabel(item))} · due ${escapeHtml(dateLabel(item.dueAt))}</span>${item.sentAt ? `<span class="block text-xs text-muted-foreground">${item.opens} opens · ${item.views} views · ${item.clicks} pay clicks</span>` : ""}</span>
+      <span class="shrink-0 text-right"><span class="block font-semibold text-foreground">${escapeHtml(money(item.balance || item.total, item.currency))}</span>${statusLabel(item)}</span></button></li>`).join("");
     $(`[data-invoice-empty]`)?.classList.toggle("hidden", items.length > 0);
     icons();
   }
@@ -160,12 +164,12 @@ window.ForkMeshDashboard.registerPage("invoices", ({
   function renderLines() {
     const host = $(`[data-invoice-lines]`); if (!host) return;
     const currency = ($(`[data-invoice-currency]`)?.value || state.settings.currency || "USD").toUpperCase();
-    host.innerHTML = state.lines.map((line, index) => `<tr>
-      <td class="px-2 py-1"><input data-invoice-line="${index}" data-field="description" value="${escapeHtml(line.description)}" maxlength="1000" aria-label="Description" class="h-control-sm w-full rounded-md border border-border bg-background px-2 text-control text-foreground" /></td>
-      <td class="px-2 py-1"><input data-invoice-line="${index}" data-field="quantity" value="${escapeHtml(String(line.quantity))}" type="number" min="0" step="any" aria-label="Quantity" class="h-control-sm w-full rounded-md border border-border bg-background px-2 text-control text-foreground" /></td>
-      <td class="px-2 py-1"><input data-invoice-line="${index}" data-field="unit" value="${escapeHtml(line.unit)}" inputmode="decimal" aria-label="Unit price" placeholder="0.00" class="h-control-sm w-full rounded-md border border-border bg-background px-2 text-control text-foreground" /></td>
-      <td data-invoice-line-amount="${index}" class="px-2 py-1 text-right text-foreground">${escapeHtml(money(lineAmount(line), currency))}</td>
-      <td class="px-1 py-1"><button data-invoice-line-remove="${index}" type="button" aria-label="Remove line" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="trash-2"></i></button></td></tr>`).join("");
+    host.innerHTML = state.lines.map((line, index) => `<div class="flex flex-wrap items-center gap-2 py-2 sm:flex-nowrap">
+      <input data-invoice-line="${index}" data-field="description" value="${escapeHtml(line.description)}" maxlength="1000" aria-label="Description" placeholder="Description" class="h-control-sm w-full min-w-0 rounded-md border border-border bg-background px-2 text-control text-foreground sm:flex-1" />
+      <input data-invoice-line="${index}" data-field="quantity" value="${escapeHtml(String(line.quantity))}" type="number" min="0" step="any" aria-label="Quantity" title="Quantity" class="h-control-sm w-20 rounded-md border border-border bg-background px-2 text-control text-foreground" />
+      <input data-invoice-line="${index}" data-field="unit" value="${escapeHtml(line.unit)}" inputmode="decimal" aria-label="Unit price" placeholder="Unit price" class="h-control-sm w-28 rounded-md border border-border bg-background px-2 text-control text-foreground" />
+      <span data-invoice-line-amount="${index}" class="ml-auto w-24 text-right text-xs text-foreground">${escapeHtml(money(lineAmount(line), currency))}</span>
+      <button data-invoice-line-remove="${index}" type="button" aria-label="Remove line" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="trash-2"></i></button></div>`).join("");
     renderTotals(); icons();
   }
   function renderTotals() {
@@ -250,7 +254,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     }).join("")}</ul>`;
   }
   function metric(label, value, hint = "") {
-    return `<div class="p-3"><p class="text-xs text-muted-foreground">${escapeHtml(label)}</p><p class="text-base font-semibold text-foreground">${escapeHtml(String(value))}</p>${hint ? `<p class="text-xs text-muted-foreground">${escapeHtml(hint)}</p>` : ""}</div>`;
+    return `<div class="min-w-0 bg-card p-3"><p class="text-xs text-muted-foreground">${escapeHtml(label)}</p><p class="text-base font-semibold text-foreground">${escapeHtml(String(value))}</p>${hint ? `<p class="text-xs text-muted-foreground">${escapeHtml(hint)}</p>` : ""}</div>`;
   }
   function renderDetail(invoice) {
     const head = $(`[data-invoice-detail-head]`); const body = $(`[data-invoice-detail-body]`); const actions = $(`[data-invoice-detail-actions]`);
@@ -261,7 +265,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     const openHint = invoice.firstOpenedAt ? `first ${relativeTimeLabel(invoice.firstOpenedAt)}` : invoice.sentAt ? "not yet" : "";
     const viewHint = invoice.firstViewedAt ? `first ${relativeTimeLabel(invoice.firstViewedAt)}` : invoice.sentAt ? "not yet" : "";
     body.innerHTML = `<div class="grid gap-4">
-      <div class="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-md border border-border sm:grid-cols-4 sm:divide-y-0">
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
         ${metric("Total", money(invoice.total, invoice.currency), invoice.paidAmount ? `${money(invoice.paidAmount, invoice.currency)} paid` : "")}
         ${metric("Due", dateLabel(invoice.dueAt), invoice.balance ? `${money(invoice.balance, invoice.currency)} to pay` : invoice.status === "paid" ? `paid ${dateLabel(invoice.paidAt)}` : "")}
         ${metric("Email opens", invoice.sentAt ? invoice.opens : "—", openHint)}
@@ -432,7 +436,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     $(`[data-invoice-uninstall]`)?.addEventListener("click", () => void uninstall());
     $(`[data-invoice-search]`)?.addEventListener("input", renderList);
     $(`[data-invoice-status-filter]`)?.addEventListener("change", renderList);
-    for (const selector of [`[data-invoice-list]`, `[data-invoice-activity]`]) {
+    for (const selector of [`[data-invoice-list]`, `[data-invoice-cards]`, `[data-invoice-activity]`]) {
       $(selector)?.addEventListener("click", (event) => { const row = event.target.closest("[data-invoice-open]"); if (row) void openDetail(row.dataset.invoiceOpen); });
     }
     $(`[data-invoice-form]`)?.addEventListener("submit", saveEditor);

@@ -6,6 +6,8 @@ view-and-pay link, and see when each one is opened, viewed and paid.
 
 - Invoices, payments and history are encrypted and shared only with members of
   the organization.
+- Everything can be managed on the web (laid out for phones too), in a native
+  desktop page, and in the iPhone and Android apps.
 - With the CRM installed, an invoice can be linked to a CRM contact; the
   contact card in the CRM lists that contact's invoices and what they owe.
 - The email carries an open-tracking image and a link to the invoice page at
