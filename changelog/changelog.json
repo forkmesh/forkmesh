@@ -11,6 +11,10 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Android", "text": "Android: Stats release tiles show a rebuilt download's build number from build 1."},
+  {"date": "2026-10-28", "area": "Android", "text": "Android: pull requests look like GitHub's, with an Open, Merged or Closed pill, the description as the first comment, a Merged entry and a done box, and New pull request compares branches and can send to a fork on another instance; Send to agent on a failed run's log sends the failing step and the end of the log."},
+  {"date": "2026-10-28", "area": "Android", "text": "Android: each Inbox ping shows the logo of the instance it came from under its icon."},
+  {"date": "2026-10-28", "area": "Android", "text": "Android: in DJ Studio, hold a queued song for its menu, drag it onto a deck as soon as your finger moves across the queue, see who added each jam song and when, and a song added while nothing plays starts right away."},
   {"date": "2026-10-28", "area": "Server", "text": "Sign-up and password reset emails now reach Yahoo and other strict mail providers, and an address is no longer blocked from future emails when a provider refused one because of our own mail setup."},
   {"date": "2026-10-28", "area": "Projects", "text": "When a pull request is merged, its conversation shows a Merged entry, and a merged or closed pull request no longer offers merge, approve or request-changes controls on the website, desktop or iPhone."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Pull requests on iPhone look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, and a New pull request form that compares branches and can send the pull request to a copy of the repository on another ForkMesh instance."},
