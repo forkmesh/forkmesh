@@ -37,6 +37,10 @@ object PullDetail {
     const val REVIEW_ACTIONS_COPY =
         "Submit comments, approvals, or requested changes through the signed Worker pull inbox."
     const val TIMELINE_EMPTY = "No review or comment events have been published yet."
+    const val COMMITS_TITLE = "Commits"
+
+    fun commitsLine(count: Int): String = "$count ${if (count == 1) "commit" else "commits"}"
+
     const val CONVERSATION_TITLE = "Conversation"
     const val REVIEW_TITLE = "Review"
     const val COMMENT_TITLE = "Comment"

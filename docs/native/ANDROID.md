@@ -2065,8 +2065,14 @@ local one, and adds "From <project>" to the row's TalkBack label, as iOS
   the events), federated replies, `PullWorkflowCards` (where `PullDoneCard`
   replaces the merge card once the pull is merged or closed, keeping Review
   files), then Review (Approve and Request changes only while open) and the
-  desktop requests. Android has no `commits.mbox` count on the record, so
-  the summary says "changes" rather than "N commits".
+  desktop requests. `ApiService.pullCommits` reads the pull's
+  `commits.mbox` beside `pull.md` (ledger ref, then `forkmesh/pull/<n>`, as
+  iOS `pullPayload`), so the summary and the changed files card say
+  "N commits"; only an empty list falls back to "changes". iOS lists the
+  commits in a tab of its changes page; Android's changes pages
+  (`PullReviewScreen`, `PatchFilesScreen`) have no tabs, so a Commits card
+  under the changed files lists them newest first, each opening
+  `PatchCommitScreen`.
 - The New pull request dialog (`A/feature/code/collab/NewPullDialog.kt`,
   logic in core `collab/PullCompose.kt`) compares two branch menus on the
   mirror, fills the title from the head branch, and keeps "Paste a patch

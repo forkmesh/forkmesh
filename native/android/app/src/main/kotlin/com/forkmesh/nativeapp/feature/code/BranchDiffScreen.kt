@@ -270,7 +270,7 @@ internal class BranchDiffScreen(
 }
 
 @Composable
-private fun PatchCommitRow(commit: PatchCommit, files: List<DiffFile>, onTap: () -> Unit) {
+internal fun PatchCommitRow(commit: PatchCommit, files: List<DiffFile>, onTap: () -> Unit) {
     val c = Fm.colors
     val (additions, deletions) = BranchDiff.totals(files)
     Row(

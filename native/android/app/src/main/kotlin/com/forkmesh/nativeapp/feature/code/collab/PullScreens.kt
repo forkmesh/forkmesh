@@ -70,6 +70,12 @@ import com.forkmesh.nativeapp.collab.PullState
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
+import androidx.compose.material3.HorizontalDivider
+import com.forkmesh.nativeapp.ui.kit.FmCard
+import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.code.diff.PatchCommit
+import com.forkmesh.nativeapp.code.diff.parseFormatPatchSeries
+import com.forkmesh.nativeapp.code.diff.parseUnifiedDiff
 
 private val PUBLISH_RETRY_DELAYS_MS = listOf(1_500L, 3_000L, 6_000L, 12_000L, 24_000L)
 
@@ -147,6 +153,7 @@ internal class PullDetailScreen(
     private var loadStarted = initial != null
     private var loadJob: Job? = null
     private val subscribed = mutableStateOf(false)
+    private var commits by mutableStateOf<List<PatchCommit>>(emptyList())
 
     override val title: String get() = "PR #${pull?.number ?: number}"
 
@@ -158,6 +165,15 @@ internal class PullDetailScreen(
                 loadStarted = true
                 loadJob = env.launch { load() }
             }
+        }
+        val loadedNumber = pull?.number
+        LaunchedEffect(loadedNumber) {
+            if (loadedNumber == null) return@LaunchedEffect
+            val series = withContext(Dispatchers.IO) {
+                runCatching { env.api.pullCommits(repo.owner, repo.name, loadedNumber) }.getOrDefault("")
+            }
+            val parsed = withContext(Dispatchers.Default) { parseFormatPatchSeries(series) }
+            if (parsed.isNotEmpty() || commits.isEmpty()) commits = parsed
         }
         CollabScaffold(topBar = { CollabTopBar(navigator, title = title) }) {
             val current = pull
@@ -219,7 +235,7 @@ internal class PullDetailScreen(
                         if (pull.signed) ChipView(CollabChip("verified_outlined", "signed"))
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text(PullState.summary(pull, 0), style = Fm.text.bodyMedium.copy(color = colors.textSecondary))
+                    Text(PullState.summary(pull, commits.size), style = Fm.text.bodyMedium.copy(color = colors.textSecondary))
                     PullDetail.branchesChip(pull)?.let {
                         Spacer(Modifier.height(10.dp))
                         ChipView(CollabChip("account_tree_outlined", it))
@@ -233,7 +249,13 @@ internal class PullDetailScreen(
             if (pull.patch.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(12.dp))
-                    PatchFilesCard(pull.patch)
+                    PatchFilesCard(pull.patch, commits.size)
+                }
+            }
+            if (commits.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    PullCommitsCard(repo, commits, env.navigator)
                 }
             }
             item {
@@ -383,6 +405,27 @@ private fun PullTimelineView(pull: PublishedPull, repo: RepoRef) {
             )
         }
         if (events.isEmpty()) Text(PullDetail.TIMELINE_EMPTY, style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+    }
+}
+
+@Composable
+private fun PullCommitsCard(repo: Repository, commits: List<PatchCommit>, navigator: Navigator) {
+    val colors = Fm.colors
+    val ordered = remember(commits) { commits.reversed().map { it to parseUnifiedDiff(it.patch) } }
+    FmCard(Modifier.fillMaxWidth().testTag("pull-commits"), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3)) {
+                Text(PullDetail.COMMITS_TITLE, style = Fm.text.titleMedium.copy(color = colors.textPrimary))
+                Text(PullDetail.commitsLine(commits.size), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+            }
+            HorizontalDivider(thickness = 1.dp, color = colors.border)
+            ordered.forEachIndexed { index, (commit, files) ->
+                com.forkmesh.nativeapp.feature.code.PatchCommitRow(commit, files) {
+                    navigator.push(com.forkmesh.nativeapp.feature.code.PatchCommitScreen(repo, commit, files))
+                }
+                if (index != ordered.lastIndex) FmRowDivider(indent = 56.dp)
+            }
+        }
     }
 }
 
