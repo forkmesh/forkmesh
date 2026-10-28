@@ -632,7 +632,9 @@ def caddy_binary_dropin(fleet):
         % (settings["version"], CADDY_DEBIAN_BIN, CADDY_BIN, CADDY_BIN))
 
 
-IDS_MAIL_CREDENTIALS = ("FMNEXT_IDS_MAIL_TOKEN", "FMNEXT_IDS_ALERT_EMAIL")
+IDS_MAIL_SMTP = "127.0.0.1:25"
+IDS_MAIL_TOKEN_FILE = "/etc/postfix/sasl_passwd"
+IDS_MAIL_ADDRESS = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,}$")
 IDS_STATE_DIR = "/var/lib/fmnext-ids"
 IDS_SEVERITIES = ("info", "alert", "lockdown")
 # Units the lockdown stops; each gets a drop-in that keeps it from starting
@@ -705,6 +707,15 @@ def ids_settings(fleet):
     url = ids.get("webhook_url", "")
     if url and not str(url).startswith("https://"):
         raise RenderError("ids.webhook_url must be https://")
+    if not isinstance(ids.get("direct_mail", False), bool):
+        raise RenderError("ids.direct_mail must be true or false")
+    if ids.get("direct_mail") and not IDS_MAIL_ADDRESS.match(
+            str(ids.get("mail_to", ""))):
+        raise RenderError("ids.mail_to must be the address IDS mail goes to "
+                          "when direct_mail = true")
+    sender = str(ids.get("mail_from", "") or "")
+    if sender and not IDS_MAIL_ADDRESS.match(sender):
+        raise RenderError("ids.mail_from must be an email address or empty")
     return ids
 
 
@@ -802,8 +813,6 @@ def ids_credential_names(fleet, role):
     names = [IDS_KEY_CREDENTIAL]
     if role == "core":
         names.append("RQLITE_PASSWORD")
-    if ids.get("direct_mail"):
-        names += list(IDS_MAIL_CREDENTIALS)
     return names
 
 
@@ -859,9 +868,10 @@ def ids_config(fleet, name, role, paths):
         "webhook": {"url": ids.get("webhook_url", "")},
     }
     if ids.get("direct_mail"):
-        config["mail"] = {"token_credential": IDS_MAIL_CREDENTIALS[0],
-                          "to_credential": IDS_MAIL_CREDENTIALS[1],
-                          "from": ids.get("mail_from", "")}
+        config["mail"] = {"to": ids["mail_to"],
+                          "from": ids.get("mail_from", ""),
+                          "smtp": IDS_MAIL_SMTP,
+                          "token_file": IDS_MAIL_TOKEN_FILE}
     if role == "core":
         turn_tcp, turn_udp = (turn_ports(fleet)[:2] if turn_enabled(fleet)
                               else ([], []))

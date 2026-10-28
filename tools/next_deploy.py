@@ -832,9 +832,56 @@ def tunnel_error(name, tunnel, port, host="127.0.0.1"):
     return ToolError(message)
 
 
-def upload(fleet, rev, tarball, ssh, runner, names=None):
+SKIP_ENV = "FMNEXT_DEPLOY_SKIP"
+
+
+def ssh_silent(ssh, ip):
+    try:
+        return ssh.run(ip, "true", check=False, timeout=30).returncode == 255
+    except (ToolError, OSError, subprocess.TimeoutExpired):
+        return True
+
+
+def skipped_cores(fleet, ssh, runner, explicit=None, environ=None, dns=None,
+                  detect=True):
+    environ = os.environ if environ is None else environ
+    cores = [n["name"] for n in fleet.get("nodes") or []]
+    if explicit is not None:
+        reasons = {name: "--skip" for item in explicit
+                   for name in item.split(",") if name}
+    elif SKIP_ENV in environ:
+        reasons = {name: "skipped by next_autodeploy gate 1"
+                   for name in environ[SKIP_ENV].split(",") if name}
+    elif detect:
+        dns = common.dns_health_nodes() if dns is None else dns
+        reasons = {}
+        for node in fleet.get("nodes") or []:
+            why = common.out_of_dns(dns.get(node["name"]))
+            if not why and runner.execute and ssh_silent(ssh, node["public_ipv4"]):
+                why = "SSH does not answer"
+            if why:
+                reasons[node["name"]] = why
+    else:
+        reasons = {}
+    outside = sorted(set(reasons) - set(cores))
+    if outside:
+        raise GuardError("only core nodes can be skipped: %s" % ", ".join(outside))
+    left = [name for name in cores if name not in reasons]
+    need = common.deploy_quorum(len(cores))
+    if reasons and len(left) < need:
+        raise GuardError("refusing to skip %s: only %d of %d cores would get the "
+                         "release and a deploy needs %d healthy cores" % (
+                             ", ".join("%s (%s)" % kv for kv in sorted(reasons.items())),
+                             len(left), len(cores), need))
+    for name, why in sorted(reasons.items()):
+        runner.say("%s: skipped (%s); it catches up when it is back "
+                   "(docs/deploy/auto-deploy.md)" % (name, why))
+    return reasons
+
+
+def upload(fleet, rev, tarball, ssh, runner, names=None, skip=()):
     nodes = [n for n in serving_nodes(fleet)
-             if not names or n["name"] in names]
+             if (not names or n["name"] in names) and n["name"] not in skip]
     sha = None
     if runner.execute:
         sha = hashlib.sha256(Path(tarball).read_bytes()).hexdigest()
@@ -938,11 +985,11 @@ def activate_node(fleet, node, rev, ssh, runner, vault, key):
     return state
 
 
-def restart(fleet, rev, ssh, runner, names=None, settle=None):
+def restart(fleet, rev, ssh, runner, names=None, settle=None, skip=()):
     vault = vault_on(fleet)
     key = vault_key(fleet, runner)
     order = [n for n in rollout_order(fleet, rev=rev)
-             if not names or n["name"] in names]
+             if (not names or n["name"] in names) and n["name"] not in skip]
     runner.say("rollout order: %s (one node at a time)" % ", ".join(
         n["name"] for n in order))
     done = []
@@ -988,6 +1035,10 @@ def main(argv=None, ssh=None, run=subprocess.run) -> int:
         p.add_argument("nodes", nargs="*")
         p.add_argument("--rev", help="release id (default: git HEAD, 12 hex)")
         p.add_argument("--allow-dirty", action="store_true")
+        p.add_argument("--skip", action="append", metavar="NODE",
+                       help="leave this core out (repeat or comma-separate); "
+                            "default: the cores held or out of DNS and those "
+                            "SSH cannot reach")
         common.add_execute_flags(p)
     p = sub.add_parser("rollback")
     p.add_argument("node")
@@ -1031,10 +1082,14 @@ def main(argv=None, ssh=None, run=subprocess.run) -> int:
         if args.command == "all":
             rev, tarball = build(fleet, runner, args.allow_dirty, run)
         whole_fleet = not args.nodes
+        skip = {}
+        if args.command in ("upload", "restart", "all"):
+            skip = skipped_cores(fleet, ssh, runner, explicit=args.skip,
+                                 detect=whole_fleet)
         if args.command in ("upload", "all"):
             if runner.execute and not tarball.is_file():
                 raise ToolError("%s is missing; run build first" % tarball)
-            upload(fleet, rev, tarball, ssh, runner, args.nodes)
+            upload(fleet, rev, tarball, ssh, runner, args.nodes, skip=skip)
         if args.command in ("migrate", "all"):
             if whole_fleet:
                 signal_world_deploy(fleet, ssh, runner, "deploying", rev)
@@ -1044,13 +1099,19 @@ def main(argv=None, ssh=None, run=subprocess.run) -> int:
             if whole_fleet and args.command == "restart":
                 signal_world_deploy(fleet, ssh, runner, "deploying", rev)
             signalled = whole_fleet
-            done = restart(fleet, rev, ssh, runner, args.nodes)
-            if runner.execute and set(done) >= known:
-                entry = record_release(rev, run=run)
-                runner.say("recorded %s in %s (commit %s)" % (
+            done = restart(fleet, rev, ssh, runner, args.nodes, skip=skip)
+            if runner.execute and set(done) >= known - set(skip):
+                entry = record_release(rev, run=run, skipped=sorted(skip))
+                runner.say("recorded %s in %s (commit %s)%s" % (
                     rev, common.deploy_manifest_path(),
-                    (entry.get("commit") or "unknown")[:12]))
+                    (entry.get("commit") or "unknown")[:12],
+                    "; skipped %s" % ", ".join(sorted(skip)) if skip else ""))
                 signal_world_deploy(fleet, ssh, runner, "ready", rev)
+            elif runner.execute and done:
+                caught = common.record_caught_up(rev, done)
+                if caught:
+                    runner.say("%s caught up to %s (deploy manifest)" % (
+                        ", ".join(caught), rev))
             signalled = False
         if not runner.execute:
             runner.say("(dry run: nothing was changed; pass --execute to apply)")
@@ -1065,7 +1126,7 @@ def main(argv=None, ssh=None, run=subprocess.run) -> int:
     return 0
 
 
-def record_release(rev, repo=REPO, run=subprocess.run):
+def record_release(rev, repo=REPO, run=subprocess.run, skipped=()):
     completed = run(["git", "rev-parse", "--verify", "--quiet", rev + "^{commit}"],
                     cwd=repo, capture_output=True, text=True, check=False)
     commit = completed.stdout.strip() if completed.returncode == 0 else ""
@@ -1084,7 +1145,8 @@ def record_release(rev, repo=REPO, run=subprocess.run):
             except (RuntimeError, OSError, ImportError):
                 fingerprint = ""
     return common.record_deploy(rev, commit=commit, signature=signature,
-                                fingerprint=fingerprint, by="next_deploy")
+                                fingerprint=fingerprint, by="next_deploy",
+                                skipped=skipped)
 
 
 if __name__ == "__main__":
