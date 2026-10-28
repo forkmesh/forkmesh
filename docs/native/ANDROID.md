@@ -7,6 +7,12 @@ Build, test and release steps are in `native/android/README.md`.
 Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 `C/` is `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/`.
 
+Ids such as S010 name rows of the iOS → Android sync ledger, which listed
+every iOS change Android still had to match. It was retired on 2026-10-28
+once Android had every iOS feature; it stays in history
+(`git show 63e84567bb:docs/native/SYNC.md`). Since then a phone change lands
+in both apps in the same pull request.
+
 ## 1. Toolchain and dependencies
 
 - Gradle wrapper, Android Gradle Plugin with built-in Kotlin (do not apply
@@ -578,6 +584,31 @@ signed with the v3 key (`native/android/README.md`); the default application id
 - The prompt composer has no mic button; dictation is `/dictate`, and a quiet
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
 
+iOS features Android does not have, because they need an Apple-only API:
+
+- **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
+- **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
+  new dependency.
+- **App Store update gate** (S052): Android is distributed directly and has
+  its own update notice.
+- **On-device Gemma** (S053): MLX runs on Apple silicon only.
+- **The system call screen** (S083, S138): CallKit and PushKit; Android rings
+  through its own `CallStyle` notification, in China too.
+- **The native call engine** (S085, S086, S089): Android one-to-one calls run
+  in the WebView call page, which has the voice changer, call backgrounds
+  and the face changer; group calls run on FM Media in the same page.
+- **3D face tracking in the face changer** (S087): blend shapes and depth
+  edges need TrueDepth. The call page runs the hair network and the edge
+  matte iOS moved to Metal.
+- **Dictation during a call**: Android's `SpeechRecognizer` opens a second
+  microphone capture that can take the microphone from the call, so it is
+  off while a call runs.
+- **The build Mac light and per-runner agent counts by the clock** (S119):
+  Android has no data for either, and the desktop light hides on a phone
+  that never paired a desktop instead of blinking red.
+- **The "face filter is slow" call diagnosis** (S128): the call page sends
+  no face-filter timings.
+
 ## 12. Shell prompt targets
 
 - The shell prompt is an overlay over the tab stack and `TabStack` composes
@@ -1019,7 +1050,7 @@ default in new projects except the chosen starter pack
     force-stopped app does not ring. The ringback tone follows the voice-call
     stream, so it is quiet through the earpiece on some phones.
 
-### Chat rows ported from iOS (SYNC.md S022 to S027)
+### Chat rows ported from iOS (ledger S022 to S027)
 
 - **Chat history file (S024).** The file is
   `chat-history/relay-<scope>.json` in the project's support folder, and its
@@ -1097,7 +1128,7 @@ default in new projects except the chosen starter pack
   keeps them, and the next sign-in restores them only for the same account
   (compared trimmed and lower-cased); another account drops them.
 
-### Message bubbles (SYNC.md S011)
+### Message bubbles (ledger S011)
 
 - **Which rooms.** `ChatHub.isConversation` is iOS's rule: server DMs
   (`direct:<id>`) and private office rooms that are neither server-visible
@@ -1141,7 +1172,7 @@ default in new projects except the chosen starter pack
   "Delivered/Read" line under the last own message work as before. The typing
   line becomes a received bubble with three pulsing dots.
 
-### Live touch in direct messages (SYNC.md S023)
+### Live touch in direct messages (ledger S023)
 
 - **Wire format.** `DirectLiveEngine` and `DirectLiveFrames` (core
   `DirectLive.kt`) port iOS's: sealed `type: "live"` frames with `taps`
@@ -1561,7 +1592,7 @@ Press response and merging neighbouring glass pieces are not ported.
 
 ## 25. Area parity with iOS (ledger rows)
 
-Rows of [SYNC.md](SYNC.md) ported to Android area by area. Each follows the
+Ledger rows ported to Android area by area. Each follows the
 cited iOS commit; wire and storage formats are unchanged.
 
 - **Market navigation line (S029).** `A/feature/market/MarketNavBar.kt` draws
@@ -1696,7 +1727,7 @@ names it instead of `FontFamily.Monospace` (Droid Sans Mono).
 
 ## 27. Feature parity, second round (ledger rows)
 
-Rows of [SYNC.md](SYNC.md) ported on `android-feature-round2`. Each follows
+Ledger rows ported on `android-feature-round2`. Each follows
 the cited iOS commit.
 
 - **Stalls in their own sections (S043).** `DiagnosticsBundle.report` adds
