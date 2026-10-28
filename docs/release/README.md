@@ -60,6 +60,15 @@ and publisher flags are documented beside the data in
    The desktop updater accepts a manifest only if its `tag` is the release
    being installed.
 
+## Data paths
+
+The release host's keystores (`release/`) and the served mirror
+(`mirrors/forkmesh-forkmesh.git`, whose `forkmesh-releases/` is the blob store)
+sit under `forkmesh_paths` `LAYOUT.core`: `data/core/` since the 2026-10-19 move,
+`data/` before it. The host had kept `LAYOUT.data`, the container, so the first
+release after the move (v1.5.0) found no Android keystore and would have
+published into an unserved `data/mirrors` folder.
+
 ## The version flips last
 
 `main` only names a new version once every platform can download it. The

@@ -314,3 +314,7 @@ def test_a_release_branch_that_conflicts_with_main_stops_the_promotion(tmp_path)
         tool.bring_release_onto_main(repo, "v1.5.0", tag_commit)
     assert _git(repo, "rev-parse", "HEAD") == head
     assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_signing_keys_and_the_served_mirror_live_in_the_core_data_folder():
+    assert tool.FORKMESH_DATA == tool.LAYOUT.core

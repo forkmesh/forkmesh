@@ -126,7 +126,7 @@ import forkmesh_safe_delete  # noqa: E402
 
 # Releases are cut from the ForkMesh home project, whichever project is open.
 LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
-FORKMESH_DATA = LAYOUT.data
+FORKMESH_DATA = LAYOUT.core
 INSTALLER_KEY_RE = re.compile(r"MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=")
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
