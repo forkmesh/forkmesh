@@ -570,10 +570,22 @@ Claude Code `system/vcs_state_changed` draws a muted notice through
 `transcripttools::systemNotice`, including its `kind` (for example, push).
 An absent kind still draws a generic version control state change notice.
 
+Codex `remoteControl/status/changed`, `mcpServer/startupStatus/updated`, and
+`thread/settings/updated` draw the existing notice rows. Remote control notices
+name the server and status; MCP notices name the server and startup status,
+with failures in the error style and any error or failure reason included.
+Thread settings notices summarize the model, effort, approval policy, working
+directory, sandbox policy, and collaboration mode, without repeating developer
+instructions. These rows use the shared transcript in both layout modes.
+
 These are deliberately not drawn, because another surface shows them or they
 are bookkeeping:
 
 - Usage page: `rate_limit_event`, `_codex_rate_limits`, Codex `account/*`.
+- Codex `turn/moderationMetadata`: internal safety-check bookkeeping, including
+  category flags and empty generation/tool metadata. It contains no transcript
+  content; user-facing failures already arrive through the normal error and
+  turn-result rows. The metadata remains available in Raw.
 - Host control protocol: `control_request`, `control_response`,
   `control_cancel_request`, `keep_alive`. Prompts arrive as their own card
   events.

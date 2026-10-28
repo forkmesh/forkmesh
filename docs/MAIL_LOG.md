@@ -189,8 +189,40 @@ normal path, at most once a minute.
   refused a signup verification from n5 with `550 5.7.25 Forward-confirmed
   reverse DNS failed`. The address was suppressed, so the user's later
   password reset never left the server, and the admin ping called it
-  "rejected by the mail provider". `next_mail.py rdns --execute` restored the
-  PTRs; `next_mail.py check nN` on every core shows whether they hold.
+  "rejected by the mail provider". `next_mail.py rdns --execute` set the PTRs
+  in Vultr's API, but they never published: 66.135.17.0/24 and
+  66.135.22.0/24 are legacy Constant blocks whose public reverse zone keeps
+  answering `*.constant.com` (Vultr's own default reads back as
+  `*.vultrusercontent.com`, and `reversedns.vultr.com` has the right name with
+  no delegation pointing at it). That needs a Vultr support ticket.
+- Until it is fixed, n3 and n5 relay through n4 (`mail_relay = "n4"` on
+  their `[[nodes]]` blocks in `deploy/fleet.toml`; `render.load_fleet`
+  refuses a relay that is not another core sending mail itself):
+  their Postfix has `relayhost = [10.77.0.4]:25` and still DKIM-signs, and n4
+  listens on its WireGuard address as well as loopback, accepts only n3's and
+  n5's `/32`s in `mynetworks` and exempts them from its client rate limit
+  (each sender already rate-limits its own app). n4 sends from the one IPv4
+  address with forward-confirmed reverse DNS. Port 25 is in the core-only
+  `wg0` ports of the firewall (`render.py`), and Postfix starts after
+  `wg-quick@wg0`. On a relaying core `fmnext-mail-events` ignores the
+  `status=sent` hand-off to a `10.77.*` relay; n4's agent reports the real
+  delivery or bounce for the same Message-ID. `next_mail.py check n3` probes
+  the relay. To undo it once `check` shows `PTR <ipv4>: ok` everywhere,
+  remove the `mail_relay` lines, let autodeploy roll, and run
+  `install nN --execute` on every core.
+- Adding a core checks this so it cannot happen silently again. On Vultr
+  with core mail on, the `vm` step of `next_add_core.py` sets the new
+  address's PTR and waits up to 10 minutes for it to publish; if it does
+  not, it deletes the empty VM (nothing is on it yet) and creates another,
+  three addresses at most, then stops and keeps the last one. The
+  `health` step then needs `PTR <ipv4>: ok` (forward-confirmed, as in
+  `check`) before the core joins DNS, unless the core has `mail_relay`.
+- `/status` checks the same thing all the time: `render.py` writes the
+  cores that send mail themselves (no `mail_relay`) into
+  `FORKMESH_MAIL_SENDERS=nN.next.forkmesh.com=<ipv4>,...`, and the email
+  row turns red with "Reverse DNS does not match for ..." when one of
+  them does not forward-confirm. Results are cached for 10 minutes per
+  process.
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 

@@ -147,19 +147,42 @@ def rdns(fleet, runner):
                                 n["instance_id"], i, mail_host(n)))
 
 
-def main_cf(node):
+def relay_for(fleet, node):
+    name = node.get("mail_relay")
+    if not name or not fleet:
+        return None
+    relay = next((n for n in cores(fleet) if n["name"] == name), None)
+    if relay is None or relay is node or relay.get("mail_relay"):
+        raise GuardError("%s relays via %s, which is not a direct-sending core"
+                         % (node["name"], name))
+    return relay
+
+
+def relay_clients(fleet, node):
+    if not fleet:
+        return []
+    return [n for n in cores(fleet) if n.get("mail_relay") == node["name"]]
+
+
+def main_cf(node, fleet=None):
+    relay = relay_for(fleet, node)
+    clients = sorted(n["wg_ip"] for n in relay_clients(fleet, node))
+    interfaces = ("127.0.0.1, [::1], " + node["wg_ip"]) if clients else (
+        "loopback-only")
+    networks = " ".join(["127.0.0.0/8", "[::1]/128"] +
+                        [ip + "/32" for ip in clients])
     return """compatibility_level = 3.6
 myhostname = {host}
 myorigin = {domain}
 mydestination =
-relayhost =
-inet_interfaces = loopback-only
+relayhost = {relayhost}
+inet_interfaces = {interfaces}
 inet_protocols = all
 smtp_address_preference = ipv4
-mynetworks = 127.0.0.0/8 [::1]/128
+mynetworks = {networks}
 smtpd_relay_restrictions = permit_mynetworks, reject
 smtpd_recipient_restrictions = permit_mynetworks, reject
-smtpd_client_event_limit_exceptions =
+smtpd_client_event_limit_exceptions = {exceptions}
 smtpd_client_message_rate_limit = 300
 anvil_rate_time_unit = 3600s
 local_transport = error:local delivery is disabled
@@ -182,7 +205,10 @@ non_smtpd_milters = $smtpd_milters
 internal_mail_filter_classes = bounce
 maximal_queue_lifetime = 2d
 bounce_queue_lifetime = 1d
-""".format(host=mail_host(node), domain=MAIL_DOMAIN)
+""".format(host=mail_host(node), domain=MAIL_DOMAIN,
+           relayhost=("[%s]:25" % relay["wg_ip"]) if relay else "",
+           interfaces=interfaces, networks=networks,
+           exceptions=" ".join(ip + "/32" for ip in clients))
 
 
 SENDER_CANONICAL = """if !/^(founders|no-reply)@forkmesh\\.com$/
@@ -240,10 +266,16 @@ ExecStart=
 ExecStart=/usr/sbin/opendkim -x /etc/opendkim.conf
 """
 
+POSTFIX_DROPIN = """[Unit]
+Wants=wg-quick@wg0.service
+After=wg-quick@wg0.service
+"""
 
-def install_script(node):
+
+def install_script(node, fleet=None):
     host = mail_host(node)
-    files = {"/etc/postfix/main.cf": main_cf(node),
+    files = {"/etc/postfix/main.cf": main_cf(node, fleet),
+             "/etc/systemd/system/postfix.service.d/fmnext.conf": POSTFIX_DROPIN,
              "/etc/postfix/sender_canonical": SENDER_CANONICAL,
              "/etc/opendkim.conf": OPENDKIM_CONF,
              "/etc/systemd/system/opendkim.service.d/fmnext.conf": OPENDKIM_DROPIN,
@@ -300,7 +332,7 @@ def install(fleet, name, ssh, runner):
     runner.step("%s: hostname %s, postfix (loopback only) and opendkim"
                 % (name, mail_host(node)),
                 lambda: runner.say(ssh.run(
-                    node["public_ipv4"], install_script(node),
+                    node["public_ipv4"], install_script(node, fleet),
                     input_bytes=key_path().read_bytes()).stdout.decode()))
 
 
@@ -355,12 +387,17 @@ def restart(fleet, name, ssh, runner, timeout=900):
 def check(fleet, name, ssh):
     import next_ids
     node = next_ids.target(fleet, name)
+    relay = relay_for(fleet, node)
+    probe = ("timeout 8 bash -c '</dev/tcp/{ip}/25' && echo relay-{name}-open "
+             "|| echo relay-{name}-unreachable\n".format(
+                 ip=relay["wg_ip"], name=relay["name"]) if relay else "")
     out = ssh.run(node["public_ipv4"], """hostname -f
 systemctl is-active postfix opendkim
 ss -ltnH 'sport = :25'
 timeout 8 bash -c '</dev/tcp/gmail-smtp-in.l.google.com/25' && echo outbound-25-open || echo outbound-25-blocked
+{probe}postconf -h relayhost
 postqueue -p | tail -1
-""", check=False, timeout=60).stdout.decode()
+""".format(probe=probe), check=False, timeout=60).stdout.decode()
     print(out.strip())
     for ip in (node["public_ipv4"], node.get("public_ipv6")):
         if ip:

@@ -126,7 +126,7 @@ import forkmesh_safe_delete  # noqa: E402
 
 # Releases are cut from the ForkMesh home project, whichever project is open.
 LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
-FORKMESH_DATA = LAYOUT.data
+FORKMESH_DATA = LAYOUT.core
 INSTALLER_KEY_RE = re.compile(r"MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=")
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -372,7 +372,7 @@ def promotion_blockers(latest: dict | None, candidate_names: frozenset[str],
 
 def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
                 main_commit: str, tag: str | None = None,
-                first_build: bool = False) -> dict:
+                first_build: bool = False, from_main: bool = False) -> dict:
     channel, candidate = deploy_target(manifests, tag)
     tag = str(candidate["tag"])
     names = PLATFORM_ASSETS[platform]
@@ -384,8 +384,11 @@ def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
     if published and first_build:
         return dict(plan, skip=True, build=current,
                     commit=str(candidate.get("build_commit", "")).lower())
-    if not published:
+    if not published and not from_main:
         return dict(plan, build=0, commit=str(candidate.get("build_commit", "")).lower())
+    if not published:
+        current = max(recorded_builds(builds_text, tag)[platform], 0)
+        plan["rebuild"] = True
     if current >= MAX_BUILD:
         raise CompletionError(f"{PLATFORM_LABELS[platform]} {tag} already reached build "
                               f"{MAX_BUILD}; cut a new version instead")
@@ -1084,7 +1087,7 @@ git config remote.origin.url "$1"
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
-git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
+git sparse-checkout set --no-cone '/native/ios/' '/native/fixtures/' '/codemagic.yaml' '/conformance/' \
   '/changelog/' '/tools/changelog.py' '/app/src/apns.py' '/app/src/app_runtime.py' \
   '/app/public/assets/call-segmentation/' '/marketplace/packages/vault/tests/fixtures/' \
   '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
@@ -2357,7 +2360,8 @@ def deploy_build(args: argparse.Namespace) -> int:
     manifests = manifests_at(repo, "main")
     builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
     plan = plan_deploy(manifests, args.deploy_build, builds_text,
-                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build)
+                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build,
+                       args.from_main)
     label = PLATFORM_LABELS[plan["platform"]]
     tag, channel = plan["tag"], plan["channel"]
     candidate = manifests[channel]
@@ -2376,6 +2380,8 @@ def deploy_build(args: argparse.Namespace) -> int:
     build_commit = str(candidate.get("build_commit", "")).lower()
     if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
         raise CompletionError(f"{channel} manifest has no exact tag/build commit")
+    if plan["rebuild"]:
+        require_build_from_tag(repo, channel, tag_commit, plan["commit"])
     installer_key = installer_public_key(git(repo, "show", "main:www/public/install.sh"))
     hosts = release_hosts(args)
     log(f"deploying {describe_plan(plan)}")
@@ -2601,6 +2607,21 @@ def run_step(step, args: argparse.Namespace) -> int:
         return 1
 
 
+def bring_release_onto_main(tree: Path, tag: str, tag_commit: str) -> bool:
+    if run(["git", "-C", tree, "merge-base", "--is-ancestor", tag_commit, "HEAD"],
+           check=False).returncode == 0:
+        return False
+    merged = run(["git", "-C", tree, "-c", "user.name=ForkMesh Actions",
+                  "-c", "user.email=actions@forkmesh.local", "merge", "--no-ff", "-m",
+                  f"release: {tag} reaches main as it is promoted", tag_commit], check=False)
+    if merged.returncode != 0:
+        run(["git", "-C", tree, "merge", "--abort"], check=False)
+        raise CompletionError(f"{tag}'s release commit {tag_commit[:12]} does not merge into "
+                              f"main: {(merged.stdout + merged.stderr).strip()[-500:]}")
+    log(f"{tag}: the release branch merges into main with the promotion")
+    return True
+
+
 def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         channel: str, tag: str, tag_commit: str, build_commit: str,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
@@ -2616,6 +2637,8 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False):
         git(repo, "branch", "-D", branch)
     git(repo, "worktree", "add", "-q", "-b", branch, str(promote_tree), "main")
+    if promote:
+        bring_release_onto_main(promote_tree, tag, tag_commit)
     with tempfile.TemporaryDirectory(dir=work, prefix="sign-") as secret_dir:
         os.chmod(secret_dir, 0o700)
         secrets = Path(secret_dir)
@@ -2698,6 +2721,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--first-build", action="store_true",
                         help="with --deploy-build: build only when the platform has no "
                              "build of this version yet")
+    parser.add_argument("--from-main", action="store_true",
+                        help="with --deploy-build: build a platform the release's build "
+                             "commit cannot build from main as build 1, skipping build 0")
     parser.add_argument("--only", action="append", choices=HOST_ASSETS,
                         help="build only this host asset (repeatable)")
     parser.add_argument("--dry-run", action="store_true")
@@ -2753,6 +2779,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--wait-candidate needs --tag")
     if args.first_build and not args.deploy_build:
         parser.error("--first-build goes with --deploy-build")
+    if args.from_main and not args.deploy_build:
+        parser.error("--from-main goes with --deploy-build")
     if args.check_build:
         return run_step(check_build, args)
     if args.wait_candidate:

@@ -53,3 +53,15 @@ def test_events_carry_the_sender_postfix_queued():
                           for line in lines) if e]
     assert [e["sender"] for e in events] == ["root@n2.next.forkmesh.com", "<>"]
     assert events[0]["node"] == "n2"
+
+
+def test_a_handoff_to_the_relay_core_is_not_a_delivery():
+    events = feed([
+        "4AB: message-id=<m1@forkmesh.com>",
+        "4AB: to=<a@yahoo.com>, relay=10.77.0.4[10.77.0.4]:25, delay=0.1, "
+        "dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as 9F1)",
+        "4AB: to=<a@yahoo.com>, relay=10.77.0.4[10.77.0.4]:25, delay=0.1, "
+        "dsn=4.4.1, status=deferred (connect to 10.77.0.4[10.77.0.4]:25: "
+        "Connection refused)",
+    ])
+    assert [e["event"] for e in events] == ["soft bounce"]
