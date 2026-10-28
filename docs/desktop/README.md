@@ -320,6 +320,40 @@ then rebuilds the GTK icon cache. It only acts when
 `~/.local/share/applications/forkmesh.desktop` exists, writes only files whose
 bytes differ, and does nothing on Windows or macOS.
 
+The prebuilt install (`www/public/install.sh` without a source checkout) never
+ran `desktop/install.sh`, so it left no app-menu entry: a user who closed the
+window had no way back except typing `~/.local/bin/forkmesh` in a terminal
+(onboarding feedback, 2026-10-28). The same startup step now writes
+`~/.local/share/applications/forkmesh.desktop` itself, with the same keys as
+`desktop/install.sh`, before the icon pass, so the icons follow at once. It
+writes the entry only when none exists and the running binary is the installed
+`~/.local/bin/forkmesh` (compared by canonical path), so a build-tree or
+AppImage run never adds a launcher, and a launcher the user edited is never
+overwritten. `forkmesh-launcher-icon-tests` covers both rules.
+
+### Signing in
+
+The desktop signs in with the email and password the user types, sending the
+email as `identifier` (`AccountCapability::passwordLoginRequest`). It used to
+send the account name from the instance step as `nodeName`, and the relay's
+login (`app/src/entry.py` `_account_login`) checks the password of the account
+named by `nodeName` first and ignores the email. The instance step pre-fills a
+suggested name, so a user whose real username differed got "Incorrect email or
+password" for the right password, each try counted toward the lockout, and the
+same password kept working on the website (onboarding feedback, 2026-10-28).
+With the email as the identifier, a correct password for a different account
+gets through the password check; the device proof, signed for the selected
+name, then fails, the password-only fallback returns the real account, and
+the existing selected-account check revokes that session and says which
+username the email belongs to. Nothing is switched silently.
+
+The wrong-password message says the desktop and the website share one account.
+A `too_many_attempts` answer shows the relay's `retryAfterMs` as a wait time
+(`AccountCapability::loginLockoutMessage`) and says the password has not
+changed, so a pause no longer reads like a wrong password. Every desktop
+password box for the account (welcome card and classic dialog) has an eye
+button (`kit::addPasswordReveal`), like the website.
+
 ## Data layout and paths
 
 `src/AppPaths.cpp` resolves `~/projects/<project>/` (override with

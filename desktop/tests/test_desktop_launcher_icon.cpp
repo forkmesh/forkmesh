@@ -98,6 +98,36 @@ void testUnchangedIconsAreNotRewritten()
           "no unthemed fallback is created when there was none");
 }
 
+void testInstallsLauncherForInstalledCopy()
+{
+    QTemporaryDir dir;
+    const QString home = dir.path() + "/share";
+    const QString client = dir.path() + "/bin/forkmesh";
+    const QString other = dir.path() + "/build/forkmesh";
+    writeFile(client, "binary");
+    writeFile(other, "binary");
+
+    check(!installLauncher(home, client, other),
+          "a build that is not the installed copy writes no launcher");
+    check(!launcherInstalled(home), "no launcher after a build-tree run");
+    check(!installLauncher(home, dir.path() + "/bin/missing", dir.path() + "/bin/missing"),
+          "a missing installed copy writes no launcher");
+
+    check(installLauncher(home, client, client),
+          "the installed copy adds itself to the applications menu");
+    check(launcherInstalled(home), "the launcher file exists");
+    QFile entry(home + "/applications/forkmesh.desktop");
+    check(entry.open(QIODevice::ReadOnly) &&
+              entry.readAll() == launcherEntry(client),
+          "the launcher runs the installed copy");
+    check(launcherEntry(client).contains("Exec=\"" + client.toUtf8() + "\" %u\n"),
+          "the launcher quotes the installed path");
+
+    writeFile(home + "/applications/forkmesh.desktop", "[Desktop Entry]\nName=Custom\n");
+    check(!installLauncher(home, client, client),
+          "an existing launcher is never overwritten");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -106,6 +136,7 @@ int main(int argc, char **argv)
     testNothingWithoutLauncher();
     testReplacesOpaqueIcon();
     testUnchangedIconsAreNotRewritten();
+    testInstallsLauncherForInstalledCopy();
     if (failures == 0)
         std::printf("desktop launcher icon tests passed\n");
     return failures == 0 ? 0 : 1;

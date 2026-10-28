@@ -211,6 +211,7 @@ QLabel *pageLede(const QString &text, QWidget *parent = nullptr);
 QWidget *labeledField(const QString &label, QWidget *field,
                       const QString &hint = QString(),
                       QWidget *parent = nullptr);
+void addPasswordReveal(QLineEdit *edit);
 
 inline constexpr int kCellDisplayChars = 512;
 inline constexpr int kDataTableFitRows = 100;
