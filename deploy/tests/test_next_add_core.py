@@ -1055,3 +1055,72 @@ def test_rqlite_ready_probe_sends_the_root_only_credentials():
     assert "-K /etc/forkmesh-next/rqlite.curlrc" in next_add_core.RQLITE_READY
     assert "/readyz" in next_add_core.RQLITE_READY
 
+
+
+def mail_vm(tmp_path, monkeypatch, published_from):
+    seed_config()
+    fleet_key(tmp_path, monkeypatch)
+    job, out = make_job(tmp_path)
+    vultr, http = vultr_fake()
+    http.routes[("POST", "/instances/%s/ipv4/reverse" % N4_ID)] = {}
+    http.routes[("DELETE", "/instances/" + N4_ID)] = {}
+
+    def creates():
+        return sum(1 for c in http.calls if c[:2] == ("POST", "/instances"))
+
+    def reverse(ip):
+        return ("n4.next.forkmesh.com" if creates() >= published_from
+                else "203-0-113-14.constant.com")
+    clock = Clock()
+    backend = next_add_core.FleetBackend(vultr=vultr, ssh=FakeSsh(), sleep=clock.sleep,
+                                         clock=clock, reverse=reverse)
+    monkeypatch.setattr(backend, "prefetch", lambda job: None)
+    monkeypatch.setattr(backend, "mail_enabled", lambda: True)
+    monkeypatch.setattr(backend, "provider", lambda job: "vultr")
+    return backend, job, http, out
+
+
+def test_vm_replaces_an_address_whose_reverse_dns_never_publishes(tmp_path, monkeypatch):
+    backend, job, http, out = mail_vm(tmp_path, monkeypatch, published_from=2)
+    backend.step_vm(job)
+    methods = [c[:2] for c in http.mutations()]
+    assert methods.count(("POST", "/instances")) == 2
+    assert methods.count(("DELETE", "/instances/" + N4_ID)) == 1
+    reverses = [c[2] for c in http.calls if c[1].endswith("/ipv4/reverse")]
+    assert reverses == [{"ip": N4_IP, "reverse": "n4.next.forkmesh.com"}] * 2
+    assert job.state.get("instance_id") == N4_ID and job.state.get("ip") == N4_IP
+    assert "deleting the empty VM" in out.getvalue()
+
+
+def test_vm_gives_up_after_three_addresses_and_keeps_the_last(tmp_path, monkeypatch):
+    backend, job, http, _ = mail_vm(tmp_path, monkeypatch, published_from=99)
+    with pytest.raises(ToolError) as error:
+        backend.step_vm(job)
+    methods = [c[:2] for c in http.mutations()]
+    assert methods.count(("POST", "/instances")) == 3
+    assert methods.count(("DELETE", "/instances/" + N4_ID)) == 2
+    assert "Vultr ticket" in str(error.value) and N4_IP in str(error.value)
+
+
+def test_vm_without_core_mail_skips_the_reverse_dns_check(tmp_path, monkeypatch):
+    backend, job, http, _ = mail_vm(tmp_path, monkeypatch, published_from=99)
+    monkeypatch.setattr(backend, "mail_enabled", lambda: False)
+    backend.step_vm(job)
+    assert not any(c[1].endswith("/ipv4/reverse") for c in http.calls)
+
+
+def test_health_needs_forward_confirmed_reverse_dns_unless_the_core_relays(
+        tmp_path, monkeypatch):
+    job, out = make_job(tmp_path)
+    backend = next_add_core.FleetBackend(ssh=FakeSsh())
+    monkeypatch.setattr(backend, "mail_enabled", lambda: True)
+    monkeypatch.setattr(backend, "provider", lambda job: "vultr")
+    monkeypatch.setattr(backend, "ptr_status", lambda ip, host: (
+        "wrong: 203-0-113-14.constant.com, want %s" % host))
+    n1 = {"name": "n1", "public_ipv4": "203.0.113.11"}
+    n4 = {"name": "n4", "public_ipv4": N4_IP}
+    with pytest.raises(ToolError) as error:
+        backend.check_mail_identity(job, {"nodes": [n1, n4]})
+    assert "mail_relay" in str(error.value) and N4_IP in str(error.value)
+    backend.check_mail_identity(job, {"nodes": [n1, dict(n4, mail_relay="n1")]})
+    assert "sends mail through n1" in out.getvalue()
