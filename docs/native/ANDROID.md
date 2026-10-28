@@ -2242,6 +2242,51 @@ build time, so Android always ships the same library as iOS.
   API, so they are not built. `direct-call.html` already matches iOS's copy
   byte for byte, including commit ac9cab0530 (World voice and camera).
 
+### Speech playground, Logs and Diagnostics (gaps older than the ledger)
+
+- **Speech.** `Route.Speech` (`/dashboard/speech`, package `speech`, You hub
+  Personal after Food Guide) opens `A/feature/tools/SpeechScreen.kt`, iOS
+  `SpeechScreen`: the text card with the spoken word highlighted, the four
+  samples, Speak / Pause / Resume with Stop and Save audio, the voice card and
+  voice sheet with previews, and the Speed and Pitch sliders (0.5 to 2, 0.05
+  steps). `SpeechPlaygroundModel` and its helpers live in
+  `core/.../tools/SpeechModels.kt` with `SpeechTest` (the iOS cases plus the
+  Android-only pieces below); the iOS screen does no recognition, so neither
+  does this one. `AndroidSpeechEngine` speaks through `TextToSpeech`:
+  - Speed goes to `setSpeechRate` as is (1.0 is normal there; iOS maps it to
+    the AVSpeech scale).
+  - Quality comes from `Voice.getQuality`: 500 is Premium, 400 Enhanced, the
+    rest Standard. Voices still to download are left out, and network voices
+    get an Online badge and lose ties to local ones. Google voice ids such as
+    `en-us-x-iol-local` show as "Voice IOL".
+  - Android has no Personal Voice, so that card and its request are not
+    built. The no-natural-voice hint names the Android settings path and has
+    a Get more voices button (`ACTION_INSTALL_TTS_DATA`, falling back to the
+    TTS settings).
+  - `TextToSpeech` takes at most `getMaxSpeechInputLength()` characters (4,000)
+    a call and cannot pause. `SpeechText.chunks` splits the text at sentence
+    ends, then spaces, and never inside a surrogate pair. Each piece is queued
+    with a `SpeechUtterance` id (session, offset, last), so `onRangeStart`
+    positions map back to the whole text and callbacks from a stopped session
+    are dropped. Pause stops the engine; Resume speaks again from the last
+    word started, or from the next piece when the engine sends no ranges.
+  - Save audio renders each piece with `synthesizeToFile`. The WAV parts are
+    joined into one file under `cache/speech-share/` by streaming their data
+    after one `SpeechWav.header`, so the whole recording is never held in
+    memory. The file is shared as `audio/wav` (iOS shares an `.m4a`).
+  - The manifest declares the `TTS_SERVICE` intent in `<queries>`. Without it,
+    Android 11 and later hide the speech engine from apps that target them,
+    which also affected Stretch Break and the Genie.
+- **Logs and Diagnostics.** `Route.Logs` and `Route.Diagnostics` (packages
+  `logs` and `diagnostics`, You hub Operate after Network) open the existing
+  `TelemetryScreen`, as iOS `.logs` / `.diagnostics`: Logs on the Logs tab
+  (`showLogs`), Diagnostics on Stats. iOS parses no link for them, so Android
+  does not either.
+- **Package destinations.** `routeFor` in `A/feature/market/MarketScreens.kt`
+  also accepts the iOS destination names `fileExplorer` (Files), `speech`,
+  `logs`, `diagnostics` and the capitalised `Agents`, `Inbox` and `Chat`, so a
+  catalog row written for iOS opens the same screen on Android.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see
