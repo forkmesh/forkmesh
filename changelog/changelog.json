@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Desktop", "text": "In the new interface, dots, arrows, labels and panels no longer sit on a box of a slightly different colour: every element now shares its section's background, and each theme uses one colour per role."},
   {"date": "2026-10-28", "area": "Desktop", "text": "New projects can start Empty, with nothing installed and nothing running until you add it from the Market; removing a feature now also stops its background work, and the built-in browser loads only when you first open a page, so the desktop on Linux starts with about 30 MB less memory."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Workflows on iPhone now also lists your desktop's workflows and special agents and runs them on the desktop, and Free disk space runs on your desktop from the phone."},
   {"date": "2026-10-27", "area": "Desktop", "text": "The new interface has two layout modes in the view menu: Control Tower, compact with every control in view, and Focus, one thing at a time; one choice now sets both the Agents and the Git page."},

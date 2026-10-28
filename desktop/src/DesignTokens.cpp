@@ -91,24 +91,24 @@ const ChatToneValues kChatTones[] = {
 };
 
 const PaletteEntry kNextDarkPalette[] = {
-    {"#010409", "#08080a"}, {"#0d1117", "#131317"}, {"#10151c", "#0c0c0e"},
-    {"#161b22", "#1a1a1e"}, {"#1b2129", "#1d1d21"}, {"#1c2433", "#1f1f23"},
+    {"#010409", "#0c0c0e"}, {"#0d1117", "#131317"}, {"#10151c", "#0c0c0e"},
+    {"#161b22", "#1a1a1e"}, {"#1b2129", "#202024"}, {"#1c2433", "#202024"},
     {"#1f2630", "#202024"}, {"#1f2937", "#202024"}, {"#21262d", "#202024"},
-    {"#282e35", "#252529"}, {"#30363d", "#27272b"}, {"#374151", "#2f2f33"},
-    {"#444c56", "#38383d"}, {"#484f58", "#3d3d43"}, {"#656d76", "#5f5f68"},
-    {"#6e7681", "#5f5f68"}, {"#8b949e", "#8d8d97"}, {"#b1bac4", "#bdbdc4"},
+    {"#282e35", "#27272b"}, {"#30363d", "#27272b"}, {"#374151", "#2f2f33"},
+    {"#444c56", "#2f2f33"}, {"#484f58", "#2f2f33"}, {"#656d76", "#5f5f68"},
+    {"#6e7681", "#5f5f68"}, {"#8b949e", "#8d8d97"}, {"#b1bac4", "#c4c4cb"},
     {"#c9d1d9", "#c4c4cb"}, {"#d1d5db", "#c4c4cb"}, {"#e6edf3", "#ececef"},
-    {"#f0f6fc", "#fafafa"}, {"#f9fafb", "#fafafa"},
+    {"#f0f6fc", "#ececef"}, {"#f9fafb", "#fafafa"},
 };
 
 const PaletteEntry kNextLightPalette[] = {
-    {"#f6f8fa", "#f3f3f5"}, {"#d0d7de", "#eaeaea"}, {"#1f2328", "#17171a"},
-    {"#656d76", "#71717a"}, {"#eaeef2", "#f0f0f2"}, {"#8c959f", "#9a9aa3"},
-    {"#d8dee4", "#eaeaea"}, {"#424a53", "#3a3a40"}, {"#57606a", "#5b5b65"},
-    {"#24292f", "#202024"}, {"#afb8c1", "#b8b8c0"}, {"#6e7781", "#71717a"},
-    {"#6e7681", "#71717a"}, {"#f3f4f6", "#f4f4f5"}, {"#eef1f5", "#f0f0f2"},
-    {"#ebecf0", "#ececef"}, {"#e6ebf1", "#e8e8ec"}, {"#e5e7eb", "#eaeaea"},
-    {"#e1e6eb", "#e2e2e6"},
+    {"#ffffff", "#fdfdfd"}, {"#f6f8fa", "#f3f3f5"}, {"#d0d7de", "#eaeaea"},
+    {"#1f2328", "#17171a"}, {"#656d76", "#6c6c75"}, {"#eaeef2", "#ebebeb"},
+    {"#8c959f", "#9a9aa3"}, {"#d8dee4", "#eaeaea"}, {"#424a53", "#3a3a40"},
+    {"#57606a", "#6c6c75"}, {"#24292f", "#17171a"}, {"#afb8c1", "#dedede"},
+    {"#6e7781", "#6c6c75"}, {"#6e7681", "#6c6c75"}, {"#f3f4f6", "#f2f2f2"},
+    {"#eef1f5", "#f2f2f2"}, {"#ebecf0", "#ebebeb"}, {"#e6ebf1", "#ebebeb"},
+    {"#e5e7eb", "#eaeaea"}, {"#e1e6eb", "#dedede"},
 };
 
 const char kNextSheetDir[] = ":/theme/next";
@@ -159,6 +159,22 @@ QString capFontWeights(const QString &text)
         QStringLiteral("font-weight:\\s*(?:6[5-9]\\d|[7-9]\\d\\d|bold)"));
     QString result = text;
     result.replace(pattern, QStringLiteral("font-weight: 600"));
+    return result;
+}
+
+QString dropBaseWidgetBackground(const QString &text)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral("(^|\\n)QWidget \\{[^}]*\\}"));
+    const QRegularExpressionMatch rule = pattern.match(text);
+    if (!rule.hasMatch())
+        return text;
+    static const QRegularExpression background(
+        QStringLiteral("\\s*background(?:-color)?:[^;]*;"));
+    QString body = rule.captured();
+    body.remove(background);
+    QString result = text;
+    result.replace(rule.capturedStart(), rule.capturedLength(), body);
     return result;
 }
 
@@ -598,7 +614,7 @@ QString nextStyleSheet(bool dark)
 {
     QString sheet = remapHexColours(QString::fromLatin1(styleSheetForDark(dark)),
                                     nextPalette(dark));
-    sheet = capFontWeights(sheet);
+    sheet = dropBaseWidgetBackground(capFontWeights(sheet));
     sheet += QLatin1Char('\n');
     sheet += nextOverlay(dark);
     if (edgeIndicators()) {
@@ -634,6 +650,17 @@ QPalette paletteForDesign(Design design, bool dark)
     QPalette palette = applicationPalette(dark);
     if (design != Design::Next)
         return palette;
+    const QColor page = color(Role::Bg, design, dark);
+    const QColor text = color(Role::Fg, design, dark);
+    palette.setColor(QPalette::Window, page);
+    palette.setColor(QPalette::Base, page);
+    palette.setColor(QPalette::AlternateBase, color(Role::BgSubtle, design, dark));
+    palette.setColor(QPalette::Button, color(Role::SurfaceRaised, design, dark));
+    palette.setColor(QPalette::ToolTipBase, color(Role::SurfaceRaised, design, dark));
+    palette.setColor(QPalette::WindowText, text);
+    palette.setColor(QPalette::Text, text);
+    palette.setColor(QPalette::ButtonText, text);
+    palette.setColor(QPalette::ToolTipText, text);
     palette.setColor(QPalette::Highlight, color(Role::Selection, design, dark));
     palette.setColor(QPalette::HighlightedText, color(Role::Fg, design, dark));
     palette.setColor(QPalette::Link, color(Role::AccentFg, design, dark));
