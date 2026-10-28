@@ -33089,7 +33089,7 @@ async def _send_email_smtp(env, sender, sender_name, to_email, subject,
         print("smtp send failed: kind %s: %s" % (
             kind, _safe_error_text(error)[:200]))
         await log("failed", error=type(error).__name__)
-        return False
+        return None
     account_bi = await _mailtrap_account_for_email(env, to_email)
     try:
         await d1_run(
@@ -33176,10 +33176,22 @@ async def _send_email(env, to_email, subject, text, html=None,
     subject = instance_features.rename(env, subject)
     text, html = _instance_brand_email(env, text, html)
     if via_smtp:
-        return await _send_email_smtp(env, sender, sender_name, to_email,
+        sent = await _send_email_smtp(env, sender, sender_name, to_email,
                                       subject, text, html, email_kind, log,
                                       send_id=send_id, ref=ref,
                                       recipient=recipient)
+        provider = mail_providers.fallback(env)
+        if sent is not None or not provider:
+            return bool(sent)
+        token = mail_providers.api_key(env, provider)
+        via, node = provider, ""
+        print("mail fallback: kind %s: local Postfix failed, sending through %s"
+              % (clean_string(email_kind or "account", 40), provider))
+        if await _mail_provider_held(env) or not await _mail_budget_spend(
+                env, email_kind):
+            await log("suppressed", error="fallback mail provider limit",
+                      budget=await _mail_budget_text(env, email_kind))
+            return False
     account_bi = await _mailtrap_account_for_email(env, to_email)
     send_id = send_id or _ap_uuid()
     message = {

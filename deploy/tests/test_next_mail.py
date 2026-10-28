@@ -139,3 +139,41 @@ def test_postfix_starts_after_wireguard():
             "<<'FMNEXT_EOF'\n" + next_mail.POSTFIX_DROPIN) in script
     assert "After=wg-quick@wg0.service\n" in next_mail.POSTFIX_DROPIN
     assert "inet_interfaces = 127.0.0.1, [::1], 10.77.0.4\n" in script
+
+
+def test_every_core_falls_back_to_mailtrap_over_verified_tls():
+    for node in FLEET["nodes"]:
+        cf = next_mail.main_cf(node, FLEET, fallback=True)
+        assert "smtp_fallback_relay = [live.smtp.mailtrap.io]:587\n" in cf
+        assert "smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd\n" in cf
+        assert "smtp_sasl_security_options = noanonymous\n" in cf
+        assert "smtp_tls_policy_maps = hash:/etc/postfix/tls_policy\n" in cf
+    assert next_mail.TLS_POLICY == "[live.smtp.mailtrap.io]:587 secure\n"
+    plain = next_mail.main_cf(FLEET["nodes"][1], FLEET)
+    assert "smtp_fallback_relay" not in plain and "sasl" not in plain
+
+
+def test_the_fallback_token_travels_on_stdin_before_the_dkim_key():
+    script = next_mail.install_script(FLEET["nodes"][0], FLEET, fallback=True)
+    read = script.index("IFS= read -r FMNEXT_FALLBACK_TOKEN")
+    assert read < script.index("cat > /etc/opendkim/keys/fmnext.private")
+    assert "> /etc/postfix/sasl_passwd)" in script
+    assert "chmod 0600 /etc/postfix/sasl_passwd\n" in script
+    assert "postmap /etc/postfix/tls_policy\n" in script
+    assert "FMNEXT_FALLBACK_TOKEN" not in next_mail.install_script(
+        FLEET["nodes"][0], FLEET)
+    assert next_mail.install_input("tok", b"KEY") == b"tok\nKEY"
+    assert next_mail.install_input("", b"KEY") == b"KEY"
+
+
+def test_the_fallback_script_writes_the_token_line(tmp_path):
+    import subprocess
+    script = next_mail.FALLBACK_SCRIPT.replace(
+        "postmap /etc/postfix/sasl_passwd", "touch /etc/postfix/sasl_passwd.db").replace(
+        "/etc/postfix/", str(tmp_path) + "/")
+    subprocess.run(["bash", "-euo", "pipefail", "-c", script + "cat > %s/rest" % tmp_path],
+                   input=b"secret-token\nKEYBYTES", check=True)
+    assert (tmp_path / "sasl_passwd").read_text() == (
+        "[live.smtp.mailtrap.io]:587 api:secret-token\n")
+    assert oct((tmp_path / "sasl_passwd").stat().st_mode & 0o777) == "0o600"
+    assert (tmp_path / "rest").read_bytes() == b"KEYBYTES"
