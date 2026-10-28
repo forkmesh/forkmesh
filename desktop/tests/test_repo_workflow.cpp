@@ -495,6 +495,13 @@ int main(int argc, char **argv)
         check(!approve(settings, repo, checkout.path(), path, shown) &&
                   !isApproved(settings, repo, checkout.path(), path),
               "an approval of the file shown earlier does not approve a file changed since");
+
+        check(!isApproved(settings, repo, checkout.path(), scriptPath) &&
+                  approve(settings, repo, checkout.path(), scriptPath) &&
+                  isApproved(settings, repo, checkout.path(), scriptPath),
+              "a committed shortcut script is approved on its own content");
+        check(writeScript("echo changed\n") && !isApproved(settings, repo, checkout.path(), scriptPath),
+              "changing an approved shortcut script asks again");
     }
 
     const QString repositoryRoot =

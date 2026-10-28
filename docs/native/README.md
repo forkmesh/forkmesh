@@ -254,7 +254,18 @@ Play, and Android releases ship as the signed
   `devices/check`; only when the account lists the phone's key is the new name
   recorded (the approval stays `code`, so signing out never forgets it). A
   phone the account does not list keeps its old name, so a code-approved phone
-  cannot claim the owner's name on its own.
+  cannot claim the owner's name on its own. The same holds at pairing time
+  (2026-10-28): the name a phone sends with its first hello is only a claim,
+  so the desktop's prompt reads "Guest phone (says it is alice)", and a code
+  approval drops a claimed name equal to the desktop's owner. Owner-only
+  families (and `hosts.*`) also require the device to be account-approved or
+  to have had its name confirmed by `devices/check` (`userConfirmed` in
+  `paired-devices.json`, `LocalControlServer::userVerified`). A record saved
+  before this change that names the owner without that confirmation is checked
+  with the account on its next connect and stays a guest until the account
+  lists its key. A guest still starts, steers and stops agents and sends
+  files, as the pairing prompt says; the phone shows the existing "Only the
+  account that owns this desktop ..." message for owner-only screens.
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
   desktop: [`native/ios/docs/FMCrypto.md`](../../native/ios/docs/FMCrypto.md).
 

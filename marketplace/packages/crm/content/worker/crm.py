@@ -5739,6 +5739,7 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
         "html": html,
         "category": "CRM one-off",
         "organization": org_bi,
+        "account": account_bi,
         "custom_variables": {
             "forkmesh_crm_send_id": send_id,
             "forkmesh_crm_org_bi": org_bi,
@@ -5996,6 +5997,7 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         "text": body,
         "category": "CRM outreach",
         "organization": org_bi,
+        "account": account_bi,
         "custom_variables": {
             "forkmesh_crm_org_bi": org_bi,
             "forkmesh_crm_outreach_template": template,
@@ -7251,6 +7253,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
             "tracked": True,
             "category": "CRM automated outreach",
             "organization": org_bi,
+            "account": account_bi,
             "custom_variables": {
                 "forkmesh_crm_send_id": send_id,
                 "forkmesh_crm_org_bi": org_bi,

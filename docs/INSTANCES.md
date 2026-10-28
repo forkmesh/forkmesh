@@ -1536,9 +1536,14 @@ Turnstile keys (see [Limits](#limits)).
 
 ## Directory
 
-After a successful launch, `instance_directory.publish` writes an
+After a successful launch, `instance_directory.publish_new` writes an
 `instance_directory` row keyed by domain (name, URL, logo, choices, World
-slot). An instance installed directly with the installer joins the same
+slot), but only when no row exists for that domain yet and the domain is the
+launch's own `sslip.io` name or resolves only to the address the launch
+connected to. A launch never updates or removes an entry: the launched
+server reports its own success, so anyone with an SSH server could otherwise
+name any domain and overwrite or delete its entry. Later changes to the
+choices go through the instance's signed announcement (below). An instance installed directly with the installer joins the same
 directory from its admin console (Platform → ForkMesh directory) or with the
 install setting `"directory": {"listed": true, "world": true}`: it publishes
 `/.well-known/forkmesh-instance.json` and sends a signed announcement that

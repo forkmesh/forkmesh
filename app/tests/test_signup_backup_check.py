@@ -4,6 +4,7 @@ import ast
 import asyncio
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import re
 import shutil
@@ -97,13 +98,14 @@ def test_page_and_server_agree_on_the_puzzle():
     assert ".signup-challenge[hidden]" in SIGNUP_HTML
 
 
-def _load_gate(limits):
-    wanted = {"_signup_backup_gate"}
+def _load_gate(limits, address="198.51.100.7"):
+    wanted = {"_signup_backup_gate", "_client_source_bucket"}
     consts = {"SIGNUP_BACKUP_MAX_PER_IP", "SIGNUP_BACKUP_MAX_PER_WINDOW",
               "SIGNUP_BACKUP_RATE_KEY", "SIGNUP_PATH"}
     selected = [
         node for node in ast.parse(ENTRY_TEXT, filename=str(ENTRY)).body
-        if (isinstance(node, ast.AsyncFunctionDef) and node.name in wanted)
+        if (isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+            and node.name in wanted)
         or (isinstance(node, ast.Assign) and {
             target.id for target in node.targets
             if isinstance(target, ast.Name)} & consts)
@@ -125,7 +127,8 @@ def _load_gate(limits):
 
     namespace = {
         "_turnstile": T,
-        "_transient_client_address": lambda _request: "198.51.100.7",
+        "_transient_client_address": lambda _request: address,
+        "ipaddress": ipaddress,
         "blind_index": blind_index,
         "signup_rate_check": signup_rate_check,
         "log_blocked_signup": log_blocked_signup,
@@ -150,6 +153,17 @@ def test_the_gate_spends_the_per_ip_budget_then_the_global_one(nonce):
     ]
     assert ns["SIGNUP_BACKUP_MAX_PER_IP"] < ns["SIGNUP_BACKUP_MAX_PER_WINDOW"]
     assert logged == []
+
+
+
+def test_the_per_ip_budget_charges_an_ipv6_slash_64_as_one_source(nonce):
+    keys = set()
+    for address in ("2001:db8:9:9::1", "2001:db8:9:9:ffff::2"):
+        ns, checked, _logged = _load_gate({}, address=address)
+        asyncio.run(ns["_signup_backup_gate"](
+            ENV, object(), {"backupProof": {"nonce": nonce}}, CDATA, {}))
+        keys.add(checked[0][0])
+    assert keys == {"bi:signup-backup-v1\n2001:db8:9:9::/64"}
 
 
 def test_an_exhausted_budget_is_a_logged_rate_limit(nonce):

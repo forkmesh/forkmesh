@@ -792,6 +792,8 @@ set(FORKMESH_APP_SOURCES
     src/ClientErrorReports.cpp
     src/GitRefusal.h
     src/GitRefusal.cpp
+    src/ReleaseTrust.h
+    src/ReleaseTrust.cpp
     src/PingSyncState.h
     src/PingSyncState.cpp
     src/DesktopPingForward.h
@@ -2264,6 +2266,22 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-agent-prompt-title-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-agent-prompt-title-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-release-trust-tests
+        tests/test_release_trust.cpp
+        src/ReleaseTrust.h
+        src/ReleaseTrust.cpp
+    )
+    target_include_directories(forkmesh-release-trust-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-release-trust-tests PRIVATE
+        Qt6::Core OpenSSL::Crypto)
+    target_compile_definitions(forkmesh-release-trust-tests PRIVATE
+        FORKMESH_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+    if(APPLE)
+        set_target_properties(forkmesh-release-trust-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4246,6 +4264,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
+        forkmesh-release-trust-tests
         forkmesh-diff-intra-line-tests
         forkmesh-pull-store-retire-tests
         forkmesh-web-branch-ops-tests
@@ -4543,6 +4562,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_version_stamp.py")
         add_test(
+            NAME forkmesh-auto-update-release-trust
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_auto_update_release_trust.py")
+        add_test(
             NAME forkmesh-compile-gate
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_compile_gate.py")
@@ -4630,6 +4653,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
              COMMAND forkmesh-agent-prompt-title-tests)
+    add_test(NAME forkmesh-release-trust-tests
+             COMMAND forkmesh-release-trust-tests)
     add_test(NAME forkmesh-workspace-parity-tests
              COMMAND forkmesh-workspace-parity-tests)
     add_test(NAME forkmesh-diff-intra-line-tests
@@ -4846,6 +4871,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
+        forkmesh-release-trust-tests
         forkmesh-diff-intra-line-tests
         forkmesh-ssh-mirror-push-tests
         forkmesh-pull-store-retire-tests

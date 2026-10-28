@@ -934,6 +934,9 @@ def absorb_cores(source: Path, fetch_url: str) -> dict:
         return {"absorbed": False, "reason": "main is missing"}
     if _checkout_git(source, ["merge-base", "--is-ancestor", cores, local]).returncode == 0:
         return {"absorbed": False, "reason": "already contained", "cores": cores}
+    agreed, why = cores_agreement(source, cores)
+    if not agreed:
+        return {"absorbed": False, "unconfirmed": True, "cores": cores, "reason": why}
     worktree = main_worktree(source)
     if not worktree:
         return absorb_without_worktree(source, local, cores)
@@ -969,6 +972,19 @@ def cores_main(url: str) -> str:
         if ref.strip() == "refs/heads/main" and re.fullmatch(r"[0-9a-f]{40,64}", oid):
             return oid
     return ""
+
+
+def cores_agreement(source: Path, oid: str) -> tuple:
+    cores = core_read_urls(source)
+    if not cores:
+        return True, ""
+    mains = {core["name"]: cores_main(core["url"]) for core in cores}
+    reachable = [name for name, main in mains.items() if main]
+    holding = [name for name in reachable if mains[name] == oid]
+    if len(holding) >= 2 or (holding and len(holding) == len(reachable)):
+        return True, ""
+    return False, "only %d of %d reachable cores serve main %s; waiting for a second core" % (
+        len(holding), len(reachable), oid[:12])
 
 
 def checkout_contains(source: Path, oid: str) -> bool:
@@ -1008,7 +1024,9 @@ def take_core_main(paths, core: dict, oid: str, log=print) -> bool:
         log("%s: took main %s into the checkout (%s)" % (
             core["name"], oid[:12], outcome["mode"]))
         return True
-    if outcome.get("reason") != "already contained":
+    if outcome.get("unconfirmed"):
+        log("%s: not taking main %s: %s" % (core["name"], oid[:12], outcome["reason"]))
+    elif outcome.get("reason") != "already contained":
         log("%s DIVERGED: main %s is not in the checkout; %s" % (
             core["name"], oid[:12], outcome.get("reason")))
     return False
@@ -1020,6 +1038,11 @@ def watch_cores(paths, run=subprocess.run, log=print) -> int:
     for core in core_read_urls(paths.source):
         oid = cores_main(core["url"])
         if not oid or checkout_contains(paths.source, oid) or seen.get(core["name"]) == oid:
+            continue
+        agreed, why = cores_agreement(paths.source, oid)
+        if not agreed:
+            log("%s: main moved to %s, which the checkout lacks; not taking it: %s" % (
+                core["name"], oid[:12], why))
             continue
         log("%s: main moved to %s, which the checkout lacks; taking it" % (
             core["name"], oid[:12]))

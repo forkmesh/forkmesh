@@ -1651,6 +1651,25 @@ int main(int argc, char *argv[])
         tampered["newPubkey"] = QStringLiteral("attacker-key");
         check(!ForkMeshIdentity::verifyRotation(tampered),
               "a rotation record retargeted to a different successor is rejected");
+        check(identity.acceptRotation(rotate, QStringLiteral("alice")).isEmpty(),
+              "only the successor key can accept a rotation");
+        const QJsonObject selfRotate = identity.signRotation(identity.publicKey());
+        const QJsonObject accepted =
+            identity.acceptRotation(selfRotate, QStringLiteral("Alice"));
+        check(accepted.value("nodeName").toString() == "alice" &&
+                  ForkMeshIdentity::verifyRotationAcceptance(accepted),
+              "the successor key signs the rotation acceptance");
+        check(ForkMeshIdentity::verifySignature(
+                  identity.publicKey(), accepted.value("newSig").toString(),
+                  ("forkmesh-rotate-accept-v1\nalice\n" + identity.publicKey() +
+                   "\n" + identity.publicKey() + "\n" +
+                   accepted.value("ts").toString())
+                      .toUtf8()),
+              "the acceptance signs the relay's forkmesh-rotate-accept-v1 text");
+        QJsonObject renamed = accepted;
+        renamed["nodeName"] = QStringLiteral("mallory");
+        check(!ForkMeshIdentity::verifyRotationAcceptance(renamed),
+              "an acceptance moved to another account is rejected");
     }
 
     // The desktop recovery kit uses the exact public container shared by the
@@ -4039,6 +4058,25 @@ int main(int argc, char *argv[])
               "a remote release event merges into the issue log");
         check(issues.loadAll().first().assignees == (QStringList{"maintainer"}),
               "releasing a claim removes only the claiming account");
+
+        IssueEvent signedEdit;
+        signedEdit.type = "edit";
+        signedEdit.id = "edit-web-1";
+        signedEdit.author = "WEBPUB";
+        signedEdit.authorName = "alice";
+        signedEdit.target = "comment-web-1";
+        signedEdit.body = "first draft";
+        signedEdit.ts = 1700000004000LL;
+        signedEdit.sig = "SIGNED-EDIT";
+        check(issues.applyRemoteEvent(issueNumber, signedEdit, QString(), &err),
+              "a signed remote edit merges into the issue log");
+        const int eventsAfterEdit = int(issues.loadAll().first().events.size());
+        IssueEvent replayedEdit = signedEdit;
+        replayedEdit.id = "edit-web-replayed";
+        replayedEdit.target = "comment-web-2";
+        check(issues.applyRemoteEvent(issueNumber, replayedEdit, QString(), &err) &&
+                  issues.loadAll().first().events.size() == eventsAfterEdit,
+              "a signed event replayed under a new id or target is not appended");
 
         // An owner-authored reward estimate, written into the issue record the
         // way the reward sync tool reads it. Paying it from the desktop wallet

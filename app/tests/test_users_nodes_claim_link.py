@@ -1470,3 +1470,32 @@ def test_claim_endpoints_need_the_code_of_a_totp_account():
     other_session = asyncio.run(ns["_account_claim_node"](env, _Request(
         _auth({"nodeId": "mirror1", "sessionToken": "bob-session"}))))
     assert other_session["data"] == {"error": "bad_totp"}
+
+
+def test_password_claim_clients_ask_for_and_send_the_authenticator_code():
+    qt_chat = "".join(path.read_text(encoding="utf-8") for path in QT_CHAT)
+    submit = qt_chat[qt_chat.index("void MainWindow::submitLinkNodeToUser("):
+                     qt_chat.index("QString MainWindow::linkErrorMessage(")]
+    assert 'body.insert(QStringLiteral("totp"), totp);' in submit
+    assert 'if (code == QStringLiteral("bad_totp"))\n            promptLinkNodeToUserWith(id, true);' in submit
+    errors = qt_chat[qt_chat.index("QString MainWindow::linkErrorMessage("):]
+    assert 'code == QStringLiteral("bad_totp")' in errors[:2000]
+    prompt = qt_chat[qt_chat.index("void MainWindow::promptLinkNodeToUserWith("):
+                     qt_chat.index("void MainWindow::submitLinkNodeToUser(")]
+    assert '"6-digit code (only if you enabled 2FA)"' in prompt
+    assert "submitLinkNodeToUser(identifier, password, totp);" in prompt
+
+    dashboard_js = assembled_dashboard_js()
+    for path in ('"/api/accounts/claim-node"', '"/api/accounts/claim-confirm"'):
+        call = dashboard_js[dashboard_js.index(path):][:400]
+        assert "headers: claimNodeAuthHeaders()," in call, path
+        assert "claimNodeAuthBody(password, {" in call, path
+    helpers = dashboard_js[dashboard_js.index("function claimNodeAuthHeaders()"):
+                           dashboard_js.index("async function claimNode()")]
+    assert 'if (token && token !== "cookie") headers.authorization = "Bearer " + token;' in helpers
+    assert "if (totp) body.totp = totp;" in helpers
+    assert dashboard_js.count('if (error.message === "bad_totp") revealClaimNodeTotp();') == 2
+    assert dashboard_js.count('bad_totp: "Enter the 6-digit code from your authenticator app."') == 2
+    composed = assembled_dashboard()
+    assert "data-claim-node-totp-row" in composed
+    assert 'data-claim-node-totp type="text"' in composed

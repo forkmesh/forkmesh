@@ -101,6 +101,17 @@ VISIBLE_REF_PREFIXES = ("refs/heads/", "refs/tags/", "refs/pr/", "refs/remotes/o
 COMMIT_ID_VISIBLE_REF_PREFIXES = VISIBLE_REF_PREFIXES + ("refs/forkmesh/history/",)
 COMMIT_ID_MIN_HEX = 7
 MAX_VISIBLE_COMMIT_MEMO = 1024
+VISIBLE_COMMIT_SET_LIMIT = 50_000
+VISIBLE_COMMIT_WALK_SLOTS = 2
+VISIBLE_COMMIT_WALK_WAIT_SECONDS = 5.0
+_visible_commit_walks = threading.BoundedSemaphore(VISIBLE_COMMIT_WALK_SLOTS)
+
+
+def _acquire_visible_commit_walk() -> None:
+    if not _visible_commit_walks.acquire(timeout=VISIBLE_COMMIT_WALK_WAIT_SECONDS):
+        raise GitError("repository visibility check is busy")
+
+
 # A receive-pack POST carrying a verified router capability may exceed
 # MAX_REQUEST_BODY up to limits.receiveMaxInputBytes (git's own
 # receive.maxInputSize). This default matches the SSH gateway's; a single
@@ -5092,6 +5103,11 @@ class GitRepository:
         self._ref_memo_lock = threading.Lock()
         self._ref_memo: dict[tuple[int, str], str] = {}
         self._visible_commit_memo: dict[tuple[int, str], bool] = {}
+        self._visible_index_lock = threading.Lock()
+        self._visible_index_key = 0
+        self._visible_refs: frozenset[str] = frozenset()
+        self._visible_tips: frozenset[str] = frozenset()
+        self._visible_commits: frozenset[bytes] | None = None
         # Process-unique and advanced after an in-process receive-pack. A
         # daemon generation reload creates fresh repository objects, so a
         # response can never cross a validated refs/config boundary.
@@ -5232,6 +5248,12 @@ class GitRepository:
             ]
             if re.fullmatch(r"[0-9a-f]{%d,64}" % COMMIT_ID_MIN_HEX, ref):
                 commit_id = ref
+        if FULL_COMMIT_ID_RE.fullmatch(commit_id):
+            names, _tips, commits = self._visible_index()
+            if commits is not None and not names.intersection(candidates):
+                if bytes.fromhex(commit_id) in commits:
+                    return commit_id
+                raise GatewayError("repository ref was not found")
         for candidate in candidates:
             commit = self._rev_parse_commit(candidate)
             if commit:
@@ -5266,24 +5288,109 @@ class GitRepository:
             return commit
         return ""
 
+    def _visible_index(
+        self,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[bytes] | None]:
+        generation = self.cache_generation
+        if not self._visible_index_lock.acquire(
+                timeout=VISIBLE_COMMIT_WALK_WAIT_SECONDS):
+            raise GitError("repository visibility check is busy")
+        try:
+            if self._visible_index_key != generation:
+                index = self._build_visible_index()
+                self._visible_refs, self._visible_tips, self._visible_commits = index
+                self._visible_index_key = generation
+            return self._visible_refs, self._visible_tips, self._visible_commits
+        finally:
+            self._visible_index_lock.release()
+
+    def _build_visible_index(
+        self,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[bytes] | None]:
+        listing = _run_git(
+            self.git_dir,
+            [
+                "for-each-ref",
+                "--format=%(objectname)%00%(objecttype)%00%(*objectname)"
+                "%00%(*objecttype)%00%(refname)",
+                *(prefix.rstrip("/") for prefix in COMMIT_ID_VISIBLE_REF_PREFIXES),
+            ],
+            max_output=16 * 1024 * 1024,
+        )
+        names: set[str] = set()
+        tips: set[str] = set()
+        complete = True
+        for row in listing.decode("utf-8", "replace").splitlines():
+            fields = row.split("\x00", 4)
+            if len(fields) != 5:
+                complete = False
+                continue
+            oid, kind, peeled, peeled_kind, name = fields
+            names.add(name)
+            if kind == "commit" and FULL_COMMIT_ID_RE.fullmatch(oid):
+                tips.add(oid)
+            elif (kind == "tag" and peeled_kind == "commit"
+                    and FULL_COMMIT_ID_RE.fullmatch(peeled)):
+                tips.add(peeled)
+            else:
+                complete = False
+        commits: frozenset[bytes] | None = None
+        if complete and not tips:
+            commits = frozenset()
+        elif complete:
+            _acquire_visible_commit_walk()
+            try:
+                raw = _run_git(
+                    self.git_dir,
+                    [
+                        "-c",
+                        "core.commitGraph=true",
+                        "rev-list",
+                        "--max-count=%d" % (VISIBLE_COMMIT_SET_LIMIT + 1),
+                        "--stdin",
+                    ],
+                    input_bytes=("\n".join(sorted(tips)) + "\n").encode("ascii"),
+                    max_output=(VISIBLE_COMMIT_SET_LIMIT + 1) * 66,
+                ).split()
+            except GitError:
+                raw = None
+            finally:
+                _visible_commit_walks.release()
+            if raw is not None and len(raw) <= VISIBLE_COMMIT_SET_LIMIT:
+                commits = frozenset(
+                    bytes.fromhex(item.decode("ascii")) for item in raw
+                    if FULL_COMMIT_ID_RE.fullmatch(item.decode("ascii", "ignore")))
+        return frozenset(names), frozenset(tips), commits
+
     def _commit_is_visible(self, commit: str) -> bool:
+        _names, tips, commits = self._visible_index()
+        if commit in tips:
+            return True
+        if commits is not None:
+            return bytes.fromhex(commit) in commits
         key = (self.cache_generation, commit)
         with self._ref_memo_lock:
             known = self._visible_commit_memo.get(key)
         if known is not None:
             return known
-        output = _run_git(
-            self.git_dir,
-            [
-                "for-each-ref",
-                "--count=1",
-                "--format=%(refname)",
-                "--contains",
-                commit,
-                *(prefix.rstrip("/") for prefix in COMMIT_ID_VISIBLE_REF_PREFIXES),
-            ],
-            max_output=4096,
-        )
+        _acquire_visible_commit_walk()
+        try:
+            output = _run_git(
+                self.git_dir,
+                [
+                    "-c",
+                    "core.commitGraph=true",
+                    "for-each-ref",
+                    "--count=1",
+                    "--format=%(refname)",
+                    "--contains",
+                    commit,
+                    *(prefix.rstrip("/") for prefix in COMMIT_ID_VISIBLE_REF_PREFIXES),
+                ],
+                max_output=4096,
+            )
+        finally:
+            _visible_commit_walks.release()
         visible = bool(output.strip())
         with self._ref_memo_lock:
             if len(self._visible_commit_memo) >= MAX_VISIBLE_COMMIT_MEMO:

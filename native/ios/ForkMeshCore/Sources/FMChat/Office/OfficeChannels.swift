@@ -235,6 +235,7 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingDeleteOrder: [String] = []
     @ObservationIgnored private var removedIds: Set<String> = []
     @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
+    @ObservationIgnored public var onRoomOpened: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
     @ObservationIgnored public var nodeOwners: ChatNodeOwners? {
         didSet {
@@ -630,6 +631,7 @@ public final class OfficeChannelService {
                 self?.dropped(room.id, connection)
             }
             advertise(socket)
+            onRoomOpened?(room.conversation, roomName)
             return true
         } catch {
             lastError = "\(error)"

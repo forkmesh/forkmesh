@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.App
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.account.projects.ProjectScope
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.core.Services
@@ -142,7 +143,10 @@ object PushFeature {
 
     fun onIntent(navigator: Navigator, intent: Intent?): Boolean {
         if (intent?.action != PingNotifier.ACTION_OPEN) return false
-        val target = PushTarget.from(
+        val trusted = IntentTokens.carries(appContext ?: App.instance, intent)
+        IntentTokens.strip(intent)
+        val target = PushTarget.fromIntent(
+            trusted,
             intent.getStringExtra(PushTarget.EXTRA_PROJECT),
             intent.getStringExtra(PushTarget.EXTRA_PING),
             intent.getStringExtra(PushTarget.EXTRA_HREF),
@@ -178,7 +182,8 @@ object PushFeature {
             openDirectMessages(nav, target)
             return
         }
-        val ping = remember(target)
+        val cached = remember(target)
+        val ping = cached ?: target.ping
         val link = target.link
         val runner = RunnerAttention.pingTarget(target.href)
         when {
@@ -196,7 +201,7 @@ object PushFeature {
                 markReadLater(target.pingId, ping)
             }
             ping != null -> {
-                openPing(nav, ping)
+                if (cached != null) openPing(nav, ping) else if (Services.get<NotificationService>() != null) nav.push(PingDetailScreen(ping))
                 Services.get<NotificationService>()?.refreshInBackground(silent = true)
             }
             else -> {
@@ -207,9 +212,8 @@ object PushFeature {
     }
 
     private fun remember(target: PushTarget): ForkNotification? {
-        if (target.pingId.isEmpty()) return null
         val service = Services.get<NotificationService>()
-        val row = target.ping ?: service?.find(target.pingId) ?: snapshotRow(service, target.pingId) ?: return null
+        val row = target.cachedRow { id -> service?.find(id) ?: snapshotRow(service, id) } ?: return null
         service?.insert(row)
         InboxFeature.insertPing(row)
         return row

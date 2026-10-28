@@ -953,15 +953,11 @@ async def _consume_oauth_state(runtime):
     return record, ""
 
 
-async def _oauth_callback_browser_bound(runtime, record):
-    state = str(record.get("state") or "").encode("utf-8")
-    cookie = str(runtime.oauth_transaction_cookie() or "").lower().encode(
-        "utf-8")
-    if state and hmac.compare_digest(cookie, state):
-        return True
-    started = str(record.get("sessionId") or "").encode("utf-8")
-    current = str(await runtime.session_id() or "").encode("utf-8")
-    return bool(started) and hmac.compare_digest(current, started)
+def _oauth_callback_browser_bound(runtime, record):
+    state = str(record.get("state") or "").lower()
+    cookie = str(runtime.oauth_transaction_cookie(state) or "").lower()
+    return bool(state) and hmac.compare_digest(
+        cookie.encode("utf-8"), state.encode("utf-8"))
 
 
 async def _oauth_callback_context(runtime, record):
@@ -1041,8 +1037,7 @@ async def handle_oauth_callback(runtime):
         return runtime.oauth_callback_response(
             invalid_outcome or "invalid_record_storage")
     context = await _oauth_callback_context(runtime, record)
-    if not context or not await _oauth_callback_browser_bound(
-            runtime, record):
+    if not context or not _oauth_callback_browser_bound(runtime, record):
         return runtime.oauth_callback_response("invalid_context")
     requested_guild_id = _snowflake(record.get("guildId"))
     if not requested_guild_id:

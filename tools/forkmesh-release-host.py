@@ -1295,17 +1295,62 @@ def fetch_homepage_manifest(url: str = HOMEPAGE_MANIFEST_URL) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def git_blob(repo: Path, spec: str) -> bytes | None:
+    shown = subprocess.run(["git", "-C", str(repo), "show", spec],
+                           capture_output=True, check=False)
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def manifest_signature_valid(manifest: bytes, signature: bytes | None,
+                             installer_key: str) -> bool:
+    if not signature or len(signature) != 64 or not installer_key:
+        return False
+    with tempfile.TemporaryDirectory(prefix="fm-release-sig-") as scratch:
+        scratch = Path(scratch)
+        key = scratch / "release-publisher.pem"
+        key.write_text(f"-----BEGIN PUBLIC KEY-----\n{installer_key}\n"
+                       "-----END PUBLIC KEY-----\n")
+        (scratch / "release.json").write_bytes(manifest)
+        (scratch / "release.json.sig").write_bytes(signature)
+        checked = run(["openssl", "pkeyutl", "-verify", "-pubin", "-rawin",
+                       "-inkey", key, "-in", scratch / "release.json",
+                       "-sigfile", scratch / "release.json.sig"], check=False)
+        return checked.returncode == 0
+
+
+def require_build_from_tag(repo: Path, channel: str, tag_commit: str,
+                           build_commit: str) -> None:
+    if build_commit == tag_commit:
+        return
+    ancestor = run(["git", "-C", repo, "merge-base", "--is-ancestor", tag_commit,
+                    build_commit], check=False)
+    if ancestor.returncode != 0:
+        raise CompletionError(f"{channel} build commit {build_commit[:12]} does not "
+                              f"descend from its tag commit {tag_commit[:12]}")
+
+
 def manifests_at(repo: Path, ref: str) -> dict[str, dict]:
     manifests = {}
+    installer = git_blob(repo, f"{ref}:www/public/install.sh")
+    try:
+        installer_key = installer_public_key(
+            installer.decode("utf-8", "replace") if installer else "")
+    except ConfigError as error:
+        log(f"cannot verify release manifests at {ref}: {error}")
+        return manifests
     listing = run(["git", "-C", repo, "ls-tree", "--name-only", f"{ref}:{RELEASES}"],
                   check=False)
     for name in listing.stdout.split():
-        shown = run(["git", "-C", repo, "show", f"{ref}:{RELEASES}/{name}/release.json"],
-                    check=False)
-        if shown.returncode != 0:
+        shown = git_blob(repo, f"{ref}:{RELEASES}/{name}/release.json")
+        if shown is None:
+            continue
+        signature = git_blob(repo, f"{ref}:{RELEASES}/{name}/release.json.sig")
+        if not manifest_signature_valid(shown, signature, installer_key):
+            log(f"{name}: release.json.sig does not verify against the installer's "
+                "release key; ignoring it")
             continue
         try:
-            manifest = json.loads(shown.stdout)
+            manifest = json.loads(shown)
         except ValueError:
             continue
         if isinstance(manifest, dict):
@@ -2055,6 +2100,7 @@ def complete_release(args: argparse.Namespace) -> int:
     build_commit = str(candidate.get("build_commit", "")).lower()
     if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
         raise CompletionError(f"{channel} manifest has no exact tag/build commit")
+    require_build_from_tag(repo, channel, tag_commit, build_commit)
     parked_tag = parked_tag_target(repo, tag, tag_commit)
     marker = work / f"failed-{channel}"
     if not args.tag and failure_backoff_active(marker, time.time()):

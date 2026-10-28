@@ -591,8 +591,11 @@ MAX_PACKAGE_INSTALL_EVENTS = 64
 # Private vulnerability reports: bounded so the open endpoint can't grow D1.
 MAX_SECURITY_REPORTS = 1000
 SECURITY_REPORT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
-SECURITY_REPORTS_PER_SOURCE_PER_HOUR = 10
+SECURITY_REPORTS_PER_SOURCE_PER_HOUR = 30
 SECURITY_REPORT_SOURCE_RATE_KEY = "security-report-source-v1"
+SECURITY_REPORTS_KEPT_PER_SOURCE = 1
+SECURITY_REPORT_KEPT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+SECURITY_REPORT_KEPT_RATE_KEY = "security-report-kept-v1"
 SECURITY_REPORT_TASKS_PER_HOUR = 6
 SECURITY_REPORT_TASK_AUTHOR = "security-report"
 SECURITY_AUDIT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
@@ -7990,8 +7993,18 @@ async def network_leaderboards(env):
     shared = globals().get("d1_shared_read")
     contrib_rows = await (shared(env, "contributor-board", contrib_scan)
                           if shared else contrib_scan())
+    private_contributors = set()
+    for r in contrib_rows or []:
+        label = clean_string(
+            r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
+        if valid_node_name(label):
+            _, contributor_rec = await _account_row(env, label)
+            if (contributor_rec or {}).get("profile_private"):
+                private_contributors.add(label)
     contrib_board = [
-        {"name": clean_string(
+        {"name": "Private contributor" if clean_string(
+             r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
+         in private_contributors else clean_string(
              r.get("display_name", ""), MAX_NODE_NAME) or "contributor",
          "total": int(r.get("total") or 0),
          "issues": int(r.get("issues") or 0),
@@ -8046,13 +8059,15 @@ REFERRAL_LEADERBOARD_TTL = 30  # seconds per colo; counters tolerate the lag
 
 # Resolve a raw referral code to (name, blind index) — only active, real user
 # accounts participate, so junk /r/ paths and node accounts count nothing.
-async def _referral_account(env, raw_name):
+async def _referral_account(env, raw_name, public=False):
     name = clean_string(raw_name or "", MAX_NODE_NAME).strip().lower()
     if not valid_node_name(name):
         return "", ""
     name_bi, rec = await _account_row(env, name)
     if (not rec or rec.get("status") != "active" or
             _account_kind(rec) != "user"):
+        return "", ""
+    if public and rec.get("profile_private"):
         return "", ""
     return name, name_bi
 
@@ -8184,7 +8199,10 @@ async def referral_click(env, raw_name, request=None):
     referral_token = ""
     try:
         name, name_bi = await _referral_account(env, raw_name)
-        if name_bi and request is not None and _is_link_preview_agent(request):
+        if (name_bi and request is not None
+                and _is_link_preview_agent(request)
+                and (await _referral_account(
+                    env, raw_name, public=True))[1]):
             clicks, signups, _last_ts = await _referral_counts(env, name_bi)
             return Response(
                 _referral_preview_page(
@@ -8223,7 +8241,7 @@ async def referral_card_handler(env, request, raw_name):
     if method_name(request) not in ("GET", "HEAD"):
         return json_response({"error": "method_not_allowed"}, status=405)
     await ensure_schema(env)
-    name, name_bi = await _referral_account(env, raw_name)
+    name, name_bi = await _referral_account(env, raw_name, public=True)
     if not name_bi:
         return json_response({"error": "not_found"}, status=404)
     origin = _ap_origin(env, request)
@@ -11416,10 +11434,12 @@ def _chat_call_fm_info(nodes):
     return info
 
 
-def chat_call_room(secret, channel_id):
-    return hmac.new(
-        secret.encode(), ("forkmesh-call-room-v1\n" + str(channel_id)).encode(),
-        "sha256").hexdigest()
+def chat_call_room(secret, channel_id, key_version=1):
+    version = int(key_version or 1)
+    label = (
+        "forkmesh-call-room-v1\n" + str(channel_id) if version <= 1
+        else "forkmesh-call-room-v2\n" + str(channel_id) + "\n" + str(version))
+    return hmac.new(secret.encode(), label.encode(), "sha256").hexdigest()
 
 
 def chat_call_account(secret, account_bi):
@@ -11429,8 +11449,9 @@ def chat_call_account(secret, account_bi):
         "sha256").hexdigest()[:32]
 
 
-def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi):
-    room = chat_call_room(secret, channel_id)
+def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi,
+                     key_version=1):
+    room = chat_call_room(secret, channel_id, key_version)
     return {
         "ticket": chat_call_sign(secret, {
             "room": room, "peer": peer,
@@ -11470,7 +11491,21 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
 
-    async def call_ticket(self, channel_id, account_bi):
+    async def channel_creations_since(self, actor, since):
+        actor = clean_string(actor or "", MAX_NODE_NAME).strip().lower()
+        if not actor:
+            return 0
+        row = await d1_first(
+            self.env,
+            "SELECT COUNT(*) AS n FROM sensitive_audit_log "
+            "WHERE actor_bi=? AND ts>? AND action=? AND outcome='success'",
+            await blind_index(self.env, actor),
+            int(since),
+            "chat.channel.create",
+        )
+        return int((row or {}).get("n") or 0)
+
+    async def call_ticket(self, channel_id, account_bi, key_version=1):
         secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
         nodes = chat_call_nodes(
             getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
@@ -11479,7 +11514,8 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
         peer = bytes(
             js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
         ticket = chat_call_ticket(
-            secret, channel_id, peer, int(Date.now()), account_bi)
+            secret, channel_id, peer, int(Date.now()), account_bi,
+            key_version)
         ticket["url"] = chat_call_pick(
             ticket["room"], nodes, await _chat_call_healthy(nodes))
         return ticket
@@ -11590,14 +11626,14 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
             # must not invite webhook senders to retry and duplicate it.
             pass
 
-    async def public_webhook_recipients(self):
-        # A public channel is discoverable by every active user and has no
-        # membership rows, so its notification audience is the active user
-        # directory. Bound the scan to the same audience ceiling as a private
-        # channel to keep one incoming request's fan-out finite.
+    async def public_webhook_recipients(self, channel_id):
         rows = await d1_all(
             self.env,
-            "SELECT data,username FROM users ORDER BY username LIMIT ?",
+            "SELECT u.data AS data,u.username AS username "
+            "FROM chat_channel_reads r JOIN users u "
+            "ON u.user_bi=r.account_bi WHERE r.channel_id=? "
+            "ORDER BY r.read_at DESC LIMIT ?",
+            str(channel_id or ""),
             chat_channels_api.MAX_CHANNEL_MEMBERS,
         )
         recipients = []
@@ -11726,12 +11762,16 @@ NOTES_REQUEST_PROOF = "forkmesh-notes-request-v1"
 class _NotesRuntime(_WorldCommunityRuntime):
     """Runtime boundary for encrypted notes and their transient live room."""
 
+    def _signed_query(self):
+        values = parse_qs(urlparse(self.request.url).query)
+        return all(values.get(key, [""])[0] for key in ("node", "ts", "sig"))
+
     def same_origin(self):
         authorization = str(
             self.request.headers.get("authorization") or "").strip().lower()
-        signed = bool(parse_qs(urlparse(self.request.url).query).get("sig"))
-        return (super().same_origin() or signed
-                or authorization.startswith("bearer "))
+        return (super().same_origin() or self._signed_query()
+                or (authorization.startswith("bearer ")
+                    and authorization[7:].strip() not in ("", "cookie")))
 
     async def json_body(self, limit):
         try:
@@ -11756,13 +11796,12 @@ class _NotesRuntime(_WorldCommunityRuntime):
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")
 
     async def session(self, data=None):
-        account_bi, record = await _account_session_record(
+        if self._signed_query():
+            return await _plugin_scope_signed_session(
+                self.env, self.request, getattr(self, "_notes_body_digest", ""),
+                NOTES_REQUEST_PROOF, "/api/notes")
+        return await _account_session_record(
             self.env, self.request, data if isinstance(data, dict) else {})
-        if account_bi and record:
-            return account_bi, record
-        return await _plugin_scope_signed_session(
-            self.env, self.request, getattr(self, "_notes_body_digest", ""),
-            NOTES_REQUEST_PROOF, "/api/notes")
 
     async def principal(self, kind, name):
         if kind == "user":
@@ -11856,6 +11895,10 @@ class _NotesRuntime(_WorldCommunityRuntime):
             self.env, actor, action, target_type, target)
 
     async def realtime(self, note_id, _account_bi, actor, role):
+        if not _request_origin_allowed(self.env, self.request):
+            return json_response(
+                {"error": "origin_not_allowed"}, status=403,
+                cache_control="no-store")
         room_id = self.env.FORKMESH_NOTE_ROOM.idFromName(
             "note:" + str(note_id))
         target = (
@@ -12123,7 +12166,16 @@ PLUGIN_AI_MAX_IMAGE_DATA_URL = 1_600_000
 PLUGIN_AI_MAX_TOKENS = 1200
 PLUGIN_AI_RATE_SUFFIX = ":plugin-ai"
 PACKAGE_SMTP_ORG_DAILY_LIMIT = 200
+PACKAGE_SMTP_ACCOUNT_DAILY_LIMIT = 200
+PACKAGE_SHARED_SENDER_NAME_MAX = 60
 PLUGIN_AI_ABSENT_ERRORS = frozenset({"missing_binding", "ai_unavailable"})
+
+
+def _package_shared_sender_name(org_name):
+    clean = " ".join(re.sub(
+        r"[\"'<>\\,;:@()\[\]\x00-\x1f\x7f\u2028\u2029]", " ",
+        str(org_name or "")).split())[:PACKAGE_SHARED_SENDER_NAME_MAX].strip()
+    return (clean + " via ForkMesh") if clean else smtp_mail.SENDER_NAME
 
 
 def _plugin_ai_text(result):
@@ -12493,9 +12545,13 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         payload = dict(payload if isinstance(payload, dict) else {})
         tracked = bool(payload.pop("tracked", False))
         organization = clean_string(payload.pop("organization", ""), 128)
+        claimed_account = clean_string(payload.pop("account", ""), 64)
+        if not token:
+            payload = await self._shared_sender_payload(payload, organization)
         if not token and smtp_mail.enabled(self.env):
             return await self._send_package_smtp(
-                payload, footer=not tracked, organization=organization)
+                payload, footer=not tracked, organization=organization,
+                account=await self._package_mail_account(claimed_account))
         if not token:
             token = str(getattr(self.env, "MAILTRAP_API_TOKEN", "") or "").strip()
             if token and not await _mail_budget_spend(self.env, "package"):
@@ -12558,19 +12614,63 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
                 outbound, "failed", 0, type(error).__name__, "", via=via)
             return {"accepted": False, "error": "mailtrap_unavailable"}
 
-    async def _package_smtp_reserve(self, organization):
+    async def _package_mail_reserve(self, bucket, cap):
         now = int(Date.now())
-        bucket = "mail-package-smtp:%s:%s:%s" % (
-            str(self._plugin or "-"), str(organization or "-"),
-            mail_budget.day_key(now))
         try:
             return await mail_budget.reserve(
                 lambda sql, *args: _mail_budget_execute(self.env, sql, *args),
-                bucket, PACKAGE_SMTP_ORG_DAILY_LIMIT, now)
+                bucket + ":" + mail_budget.day_key(now), cap, now)
         except Exception:
             return False
 
-    async def _send_package_smtp(self, outbound, footer=True, organization=""):
+    async def _package_smtp_reserve(self, organization, account=""):
+        if not await self._package_mail_reserve(
+                "mail-package-smtp-account:%s" % str(account or "-"),
+                PACKAGE_SMTP_ACCOUNT_DAILY_LIMIT):
+            return False
+        return await self._package_mail_reserve(
+            "mail-package-smtp:%s:%s" % (
+                str(self._plugin or "-"), str(organization or "-")),
+            PACKAGE_SMTP_ORG_DAILY_LIMIT)
+
+    async def _package_mail_account(self, claimed=""):
+        account_bi = ""
+        if self.request is not None:
+            try:
+                account_bi, _record = await self.session()
+            except Exception:
+                account_bi = ""
+        account_bi = str(account_bi or "")
+        if re.fullmatch(r"[0-9a-f]{64}", account_bi):
+            return account_bi
+        claimed = str(claimed or "")
+        return claimed if re.fullmatch(r"[0-9a-f]{64}", claimed) else ""
+
+    async def _shared_sender_payload(self, payload, organization):
+        origin = payload.get("from") if isinstance(payload.get("from"), dict) else {}
+        chosen = clean_string(origin.get("email", ""), 254).strip().lower()
+        name = ""
+        if organization:
+            try:
+                row = await d1_first(
+                    self.env, "SELECT name FROM orgs WHERE org_bi=?",
+                    organization)
+            except Exception:
+                row = None
+            name = str((row or {}).get("name") or "")
+        sender = str(getattr(self.env, "MAIL_SENDER", "")
+                     or getattr(self.env, "MAILTRAP_SENDER", "")
+                     or smtp_mail.SENDER).strip()
+        payload["from"] = {"email": sender,
+                           "name": _package_shared_sender_name(name)}
+        if valid_account_email(chosen) and chosen != sender.lower():
+            payload["reply_to"] = {"email": chosen}
+        else:
+            payload.pop("reply_to", None)
+        return payload
+
+    async def _send_package_smtp(self, outbound, footer=True, organization="",
+                                 account=""):
         via = {"via": "postfix", "node": smtp_mail.node(),
                "sender": smtp_mail.SENDER}
         sender = outbound.get("from") if isinstance(
@@ -12582,7 +12682,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             await self._mail_log(outbound, "rejected", 0, "one deliverable "
                                  "recipient required", "", **via)
             return {"accepted": False, "error": "recipient_invalid"}
-        if not await self._package_smtp_reserve(organization):
+        if not await self._package_smtp_reserve(organization, account):
             await self._mail_log(outbound, "suppressed", 0,
                                  "package daily mail cap reached", "", **via)
             return {"accepted": False, "error": "mail_budget_spent"}
@@ -12597,11 +12697,16 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
             print("package mail tracking skipped: %s" % type(error).__name__)
             html = outbound.get("html")
         try:
+            reply_to = outbound.get("reply_to") if isinstance(
+                outbound.get("reply_to"), dict) else {}
+            reply_address = str(reply_to.get("email") or "")
             message_id = await smtp_mail.send(self.env, smtp_mail.build(
                 smtp_mail.SENDER,
                 str(sender.get("name") or smtp_mail.SENDER_NAME), recipients[0],
                 outbound.get("subject"), outbound.get("text"),
-                html, "package"))
+                html, "package",
+                headers=({"Reply-To": reply_address}
+                         if valid_account_email(reply_address) else None)))
         except Exception as error:
             await self._mail_log(outbound, "failed", 0,
                                  type(error).__name__, "", **via)
@@ -15462,6 +15567,15 @@ async def verify_password(password, salt_b64, hash_b64):
         return hmac.compare_digest(got, expected)
     except Exception:
         return False
+
+
+PASSWORD_MISS_SALT = "A" * 22 + "=="
+PASSWORD_MISS_HASH = "A" * 43 + "="
+
+
+async def _verify_password_miss(password):
+    await verify_password(password, PASSWORD_MISS_SALT, PASSWORD_MISS_HASH)
+    return False
 
 
 # --- TOTP (RFC 6238, HMAC-SHA1, 6 digits, 30s) ------------------------------
@@ -22127,7 +22241,7 @@ async def _signup_backup_gate(env, request, data, cdata, outcome):
             _turnstile.refusal_payload(code, "/signup"),
             status=_turnstile.STATUS.get(code, 403),
             cache_control="no-store, max-age=0, must-revalidate")
-    signup_ip = _transient_client_address(request)
+    signup_ip = _client_source_bucket(_transient_client_address(request))
     budgets = [(SIGNUP_BACKUP_RATE_KEY, SIGNUP_BACKUP_MAX_PER_WINDOW)]
     if signup_ip:
         budgets.insert(0, (await blind_index(
@@ -22279,7 +22393,8 @@ async def _account_signup(env, request):
     # otherwise creatable, so a rejected duplicate doesn't burn the quota).
     signup_ip = _transient_client_address(request)
     throttled = await signup_rate_check(
-        env, await blind_index(env, signup_ip) if signup_ip else None)
+        env, await blind_index(env, _client_source_bucket(signup_ip))
+        if signup_ip else None)
     if throttled is not None:
         await log_blocked_signup(env, request, SIGNUP_PATH, 429, "rate_limited")
         return await _signup_refused(
@@ -22576,7 +22691,7 @@ async def _account_reserve(env, request):
     # install from one address do not starve each other); idempotent
     # re-reserves of a name this key already holds are free.
     if not existing:
-        reserve_ip = _transient_client_address(request)
+        reserve_ip = _client_source_bucket(_transient_client_address(request))
         throttled = await signup_rate_check(
             env, await blind_index(
                 env, "node-reserve-v1\n" + reserve_ip) if reserve_ip else None)
@@ -23082,6 +23197,7 @@ async def _account_profile(env, request):
         elif valid_node_name(identifier):
             name_bi, rec = await _account_row(env, identifier)
         if not rec or rec.get("status") != "active" or not rec.get("pass_hash"):
+            await _verify_password_miss(password)
             return await _login_failure_response(
                 env, attempt_keys, "invalid_credentials")
         if not await verify_password(password, rec.get("pass_salt", ""), rec.get("pass_hash", "")):
@@ -23350,6 +23466,7 @@ async def _account_profile(env, request):
             ACCOUNT_LOOKUP_CACHE_PREFIX + quote(profile_name),
             USERS_DIRECTORY_CACHE_KEY,
             USERS_WORLD_CACHE_KEY,
+            REFERRAL_LEADERBOARD_CACHE_KEY,
         ):
             try:
                 await edge_cache_delete(cache_key)
@@ -23462,9 +23579,11 @@ async def _resolve_user_by_password(env, data, request=None):
             rec = await decrypt_row(env, row.get("data"))
     elif valid_node_name(identifier):
         name_bi, rec = await _account_row(env, identifier)
-    if (not rec or rec.get("status") != "active" or not rec.get("pass_hash")
-            or not await verify_password(password, rec.get("pass_salt", ""),
-                                         rec.get("pass_hash", ""))):
+    usable = bool(rec and rec.get("status") == "active"
+                  and rec.get("pass_hash"))
+    if not (await verify_password(password, rec.get("pass_salt", ""),
+                                  rec.get("pass_hash", ""))
+            if usable else await _verify_password_miss(password)):
         return None, None, await _login_failure_response(
             env, attempt_keys, "invalid_credentials")
     if not name_bi:
@@ -23474,8 +23593,12 @@ async def _resolve_user_by_password(env, data, request=None):
         if request is not None:
             session_bi, _session_rec = await _account_session_record(
                 env, request, data)
+        totp = clean_string(data.get("totp", ""), 10).strip()
+        if session_bi != name_bi and not totp:
+            return None, None, json_response(
+                {"error": "bad_totp"}, status=401)
         if session_bi != name_bi and not await _account_totp_ok(
-                env, rec, clean_string(data.get("totp", ""), 10)):
+                env, rec, totp):
             return None, None, await _login_failure_response(
                 env, attempt_keys, "bad_totp")
     for attempt_key in attempt_keys:
@@ -24520,6 +24643,8 @@ async def _account_login(env, request):
           rec.get("pass_hash") and
           await verify_password(password, rec.get("pass_salt", ""),
                                 rec.get("pass_hash", "")))
+    if not (rec or {}).get("pass_hash"):
+        await _verify_password_miss(password)
     if not ok:
         return await _login_failure_response(
             env, attempt_keys, "invalid_credentials")
@@ -25388,10 +25513,32 @@ async def _account_rotate(env, request):
     if (await _account_key_revoked(env, name_bi, old_pubkey)
             or await _account_key_revoked(env, name_bi, new_pubkey)):
         return json_response({"error": "device_revoked"}, status=401)
+    new_signature = clean_string(data.get("newSig", ""), 200)
+    if not new_signature:
+        return json_response(
+            {"error": "new_key_proof_required"}, status=426)
+    accept_canonical = (
+        "forkmesh-rotate-accept-v1\n" + name + "\n" + old_pubkey + "\n"
+        + new_pubkey + "\n" + str(ts)).encode()
+    if not await ed25519_verify(new_pubkey, new_signature, accept_canonical):
+        return json_response({"error": "bad_new_key_signature"}, status=401)
 
     existing_bi, _ = await _account_row_by_pubkey(env, new_pubkey)
     if existing_bi and existing_bi != name_bi:
         return json_response({"error": "pubkey_taken"}, status=409)
+    allowed_owner_bis = {name_bi}
+    owner_user = clean_string(rec.get("owner", ""), MAX_NODE_NAME).lower()
+    if owner_user:
+        allowed_owner_bis.add(await blind_index(env, owner_user))
+    device_rows = await d1_all(
+        env, "SELECT account_bi FROM account_devices WHERE pubkey=?",
+        new_pubkey)
+    proven_user_bis = await _device_proven_user_bis(env, new_pubkey)
+    if (any((row or {}).get("account_bi") not in allowed_owner_bis
+            for row in device_rows or [])
+            or any(user_bi not in allowed_owner_bis
+                   for user_bi in proven_user_bis)):
+        return json_response({"error": "device_key_conflict"}, status=409)
 
     prev_pubkeys = rec.get("prev_pubkeys")
     if not isinstance(prev_pubkeys, list):
@@ -29564,20 +29711,28 @@ def _discord_oauth_config(env):
     }
 
 
+def _discord_oauth_transaction_cookie_name(state):
+    state = str(state or "").lower()
+    if not _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(state):
+        return ""
+    return DISCORD_OAUTH_TRANSACTION_COOKIE + "_" + state[:16]
+
+
 def _discord_oauth_transaction_cookie(value):
     value = str(value or "").lower()
     if not _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(value):
         return ""
     return (
-        DISCORD_OAUTH_TRANSACTION_COOKIE + "=" + value
+        _discord_oauth_transaction_cookie_name(value) + "=" + value
         + "; Path=" + DISCORD_OAUTH_CALLBACK_PATH
         + "; Max-Age=600; HttpOnly; Secure; SameSite=Lax"
     )
 
 
-def _clear_discord_oauth_transaction_cookie():
+def _clear_discord_oauth_transaction_cookie(state=""):
     return (
-        DISCORD_OAUTH_TRANSACTION_COOKIE + "=; Path="
+        (_discord_oauth_transaction_cookie_name(state)
+         or DISCORD_OAUTH_TRANSACTION_COOKIE) + "=; Path="
         + DISCORD_OAUTH_CALLBACK_PATH
         + "; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
     )
@@ -32404,12 +32559,25 @@ async def account_badges_handler(env, request, raw_name):
                 cache_seconds=30)
         return json_response({"error": "not_found"}, status=404)
     if method == "GET":
+        profile_private = bool(rec.get("profile_private"))
+        if profile_private:
+            _, viewer_rec = await _account_session_record(env, request)
+            viewer = clean_string(
+                (viewer_rec or {}).get("name", ""), MAX_NODE_NAME).lower()
+            if not (viewer and (
+                    viewer == name
+                    or await _account_owns_node(env, viewer, name))):
+                return json_response(
+                    {"error": "not_found"}, status=404,
+                    cache_control="no-store")
         badges = await _account_badges(env, name_bi)
         earned = {badge["slug"] for badge in badges}
-        return json_response(
-            {"ok": True, "account": name, "badges": badges,
-             "progress": await _account_badge_progress(env, name_bi, earned)},
-            cache_seconds=30)
+        body = {"ok": True, "account": name, "badges": badges,
+                "progress": await _account_badge_progress(
+                    env, name_bi, earned)}
+        if profile_private:
+            return json_response(body, cache_control="private, no-store")
+        return json_response(body, cache_seconds=30)
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
     try:
@@ -35698,12 +35866,7 @@ async def accounts_handler(env, request):
                               else ""),
                    "hasPayoutAddress": bool(
                        SOLANA_RE.match((rec.get("solana") or "").strip()))}
-        # viewer=<name> lets the public-profile page show the caller's own
-        # Follow/Following state. Display-only: a spoofed viewer can only see
-        # a wrong button label; actual follow writes are session-token gated.
-        viewer = clean_string(
-            parse_qs(urlparse(request.url).query).get("viewer", [""])[0],
-            MAX_NODE_NAME).lower()
+        viewer = await _account_lookup_viewer(env, request)
         social = await _account_social_counts(
             env, rec.get("name", name), viewer, rec)
         payload = {**payload, "social": social, **social}
@@ -35734,11 +35897,26 @@ async def _account_lookup_for_viewer(env, request, cached, target):
     if not isinstance(payload, dict) or not isinstance(
             payload.get("social"), dict):
         return None
-    viewer = parse_qs(urlparse(request.url).query).get("viewer", [""])[0]
+    viewer = await _account_lookup_viewer(env, request)
     following = await _account_is_following(env, target, viewer)
     payload["isFollowing"] = following
     payload["social"] = {**payload["social"], "isFollowing": following}
     return json_response(payload)
+
+
+async def _account_lookup_viewer(env, request):
+    wanted = clean_string(
+        parse_qs(urlparse(request.url).query).get("viewer", [""])[0],
+        MAX_NODE_NAME).strip().lower()
+    if not wanted:
+        return ""
+    try:
+        _, viewer_rec = await _account_session_record(env, request)
+    except Exception:
+        return ""
+    signed_in = clean_string(
+        (viewer_rec or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    return signed_in if signed_in == wanted else ""
 
 
 # --- Repository submission inboxes (encrypted) ------------------------------
@@ -37916,6 +38094,39 @@ async def _authorize_issue_manager(env, owner, data, request=None):
 
 
 ISSUE_OWN_EDITABLE_EVENT_TYPES = frozenset({"comment", "open"})
+ISSUE_REPLAY_CHECKED_EVENT_TYPES = frozenset({"comment", "edit", "vote"})
+
+
+async def _issue_event_signature_stored(env, owner, repo, number, event):
+    signature = str((event or {}).get("sig", "") or "").strip()
+    if (not signature or int(number or 0) <= 0
+            or event.get("type") not in ISSUE_REPLAY_CHECKED_EVENT_TYPES):
+        return False
+    paths = _forkbot_issue_json_candidates(number)
+    try:
+        data = await _forkbot_repo_gateway_json(
+            env, owner, repo,
+            "blobs?" + "&".join("path=" + quote(p, safe="") for p in paths))
+    except Exception:
+        return False
+    blobs = data.get("blobs") if isinstance(data, dict) else None
+    if not isinstance(blobs, dict):
+        return False
+    for path in paths:
+        text = _forkbot_blob_text(blobs.get(path))
+        if not text:
+            continue
+        try:
+            record = json.loads(text)
+        except Exception:
+            continue
+        events = record.get("events") if isinstance(record, dict) else None
+        if isinstance(events, list) and any(
+                isinstance(item, dict)
+                and str(item.get("sig") or "").strip() == signature
+                for item in events):
+            return True
+    return False
 
 
 async def _issue_comment_owned_by_submitter(env, owner, repo, number, event):
@@ -41972,6 +42183,11 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response(
             {"ok": True, "number": queued.get("number", number)},
             status=201)
+    stored_check = globals().get("_issue_event_signature_stored")
+    if (stored_check is not None and number > 0
+            and await stored_check(env, owner, repo, number, event)):
+        return json_response(
+            {"ok": True, "number": number, "alreadyApplied": True})
     moderation = globals().get("_moderation")
     moderation_refusal, moderation_context = (
         await moderation.submission_gate(
@@ -45706,7 +45922,7 @@ async def client_error_handler(env, request):
         )
     surface, detail = fields
     now = int(Date.now())
-    client_address = _transient_client_address(request)
+    client_address = _client_source_bucket(_transient_client_address(request))
     try:
         client_hash = await blind_index(
             env, "client-error:" + (client_address or "unknown"))
@@ -47341,12 +47557,31 @@ async def _file_security_report_task(env, report, now, digest):
 async def _security_report_source_budget(env, request):
     source = _client_source_bucket(_transient_client_address(request))
     if not source:
-        return None
+        return None, True
     await ensure_schema(env)
     key = await blind_index(
         env, SECURITY_REPORT_SOURCE_RATE_KEY + "\n" + source)
-    return await signup_rate_check(
+    throttled = await signup_rate_check(
         env, key, SECURITY_REPORTS_PER_SOURCE_PER_HOUR)
+    if throttled is not None:
+        return throttled, False
+    kept_key = await blind_index(
+        env, SECURITY_REPORT_KEPT_RATE_KEY + "\n" + source)
+    now = int(Date.now())
+    row = await d1_first(
+        env,
+        "INSERT INTO signup_rate (ip_bi,count,window_start_ts) VALUES (?,1,?) "
+        "ON CONFLICT(ip_bi) DO UPDATE SET "
+        "count=CASE WHEN ?-signup_rate.window_start_ts>=? "
+        "THEN 1 ELSE signup_rate.count+1 END,"
+        "window_start_ts=CASE WHEN ?-signup_rate.window_start_ts>=? "
+        "THEN ? ELSE signup_rate.window_start_ts END "
+        "RETURNING count,window_start_ts",
+        kept_key, now, now, SECURITY_REPORT_KEPT_WINDOW_MS,
+        now, SECURITY_REPORT_KEPT_WINDOW_MS, now,
+    )
+    count = int((row or {}).get("count") or 1)
+    return None, count <= SECURITY_REPORTS_KEPT_PER_SOURCE
 
 
 async def security_report_handler(env, request):
@@ -47367,28 +47602,38 @@ async def security_report_handler(env, request):
     report = _validate_security_report(payload)
     if not report:
         return json_response({"error": "invalid_report"}, status=400)
-    throttled = await _security_report_source_budget(env, request)
+    throttled, kept = await _security_report_source_budget(env, request)
     if throttled is not None:
         return throttled
     try:
         await ensure_schema(env)
+        now = int(Date.now())
         encrypted = await encrypt_row(env, {
             "title": report["title"],
             "body": report["body"],
             "component": report["component"],
             "contact": report["contact"],
-            "ts": int(Date.now()),
+            "ts": now,
         })
         await d1_run(
             env,
             "DELETE FROM security_reports WHERE ts<?",
-            int(Date.now()) - SECURITY_REPORT_RETAIN_MS,
+            now - SECURITY_REPORT_RETAIN_MS,
+        )
+        await d1_run(
+            env,
+            "DELETE FROM security_reports WHERE id IN "
+            "(SELECT id FROM security_reports WHERE ts%2=1 "
+            "ORDER BY id LIMIT 1) "
+            "AND (SELECT COUNT(*) FROM security_reports) >= ?",
+            MAX_SECURITY_REPORTS,
         )
         await d1_run(
             env,
             "INSERT INTO security_reports (ts, data) SELECT ?, ? "
             "WHERE (SELECT COUNT(*) FROM security_reports) < ?",
-            int(Date.now()), encrypted, MAX_SECURITY_REPORTS,
+            (now & ~1) if kept else (now | 1), encrypted,
+            MAX_SECURITY_REPORTS,
         )
     except Exception:
         pass
@@ -49838,6 +50083,35 @@ async def _https_mirror_flagship_recovery_refs(env, quorum):
     return frozenset({digest})
 
 
+async def _flagship_core_nodes(env, owner, repo):
+    if str(repo or "").strip().lower() != "forkmesh":
+        return None
+    core_nodes_of = globals().get("hosted_core_nodes")
+    cores = frozenset(
+        name for name in (
+            str(node or "").strip().lower()
+            for node in ((core_nodes_of(env) or [])
+                         if callable(core_nodes_of) else []))
+        if valid_node_name(name))
+    if not cores:
+        return None
+    owner = str(owner or "").strip().lower()
+    flagship = {"forkmesh", _instance_flagship_node(env)}
+    node = str(await _org_repo_node(env, "forkmesh", "forkmesh") or "")
+    if node.strip():
+        flagship.add(node.strip().lower())
+    return cores if owner in flagship else None
+
+
+def _flagship_core_routing(cores, current_nodes, endpoint_digests,
+                           current_pins):
+    current = {
+        node for node in cores
+        if endpoint_digests.get(node, "") in current_pins
+    } | {node for node in current_nodes if node in cores}
+    return set(cores), current or set(cores)
+
+
 async def _https_mirror_flagship_quorum(env, allowed_nodes=None, now=None):
     """Return fresh repository states independently attested by two mirrors.
 
@@ -50010,7 +50284,9 @@ async def _https_mirror_accepted_forkmesh_refs(env):
                 ).strip().lower()
                 if valid_node_name(node):
                     group_nodes.add(node)
-            quorum = await _https_mirror_flagship_quorum(env, group_nodes)
+            cores = await _flagship_core_nodes(env, owner, "forkmesh")
+            quorum = await _https_mirror_flagship_quorum(
+                env, group_nodes if cores is None else cores)
             pins.update(quorum.get("pins", ()))
             pins.update(await _https_mirror_flagship_recovery_refs(
                 env, quorum))
@@ -51035,6 +51311,9 @@ async def _https_mirror_public_context(env, owner, repo):
             ).strip().lower()
             if valid_node_name(node):
                 catalog_group_nodes.add(node)
+        flagship_cores = await _flagship_core_nodes(env, owner_l, repo_l)
+        if flagship_cores is not None:
+            catalog_group_nodes = set(flagship_cores)
         quorum = {
             "pins": frozenset(),
             "nodes": frozenset(),
@@ -51129,7 +51408,7 @@ async def _https_mirror_public_context(env, owner, repo):
             if source is None and not is_mirror:
                 source = record
         if (
-            not linked_target and group_mirrors
+            not linked_target and group_mirrors and flagship_cores is None
             and (not allowed_mirrors or not source
                  or target.get("source") == "remote-clone")
         ):
@@ -51247,6 +51526,10 @@ async def _https_mirror_public_context(env, owner, repo):
                 ):
                     allowed.add(node)
                     current_nodes.add(node)
+        if flagship_cores is not None:
+            allowed, current_nodes = _flagship_core_routing(
+                flagship_cores, current_nodes,
+                quorum.get("nodeDigests", {}), current_pins)
         hosted_nodes_of = globals().get("hosted_core_nodes")
         if target.get("source") == "hosted-web" and callable(hosted_nodes_of):
             # A ForkMesh-hosted repository is served by the core nodes, which
@@ -53829,10 +54112,18 @@ async def _git_push_account_for_pubkey(env, pubkey):
     if not pubkey:
         return ""
     try:
-        _, rec = await _account_row_by_pubkey(env, pubkey)
+        node_bi, rec = await _account_row_by_pubkey(env, pubkey)
         name = str((rec or {}).get("name") or "").strip().lower()
         if valid_node_name(name):
-            return name
+            foreign = await d1_first(
+                env,
+                "SELECT account_bi FROM account_devices "
+                "WHERE pubkey=? AND enabled=1 AND revoked_at=0 AND kind<>? "
+                "AND account_bi<>? AND account_bi<>COALESCE("
+                "(SELECT user_bi FROM nodes WHERE node_bi=?), '') LIMIT 1",
+                pubkey, CHAT_NODE_DEVICE_KIND, node_bi or "", node_bi or "",
+            )
+            return "" if (foreign or {}).get("account_bi") else name
         device = await d1_first(
             env,
             "SELECT account_bi FROM account_devices "

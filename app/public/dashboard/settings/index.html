@@ -4831,6 +4831,10 @@
                         Current password
                         <input data-claim-node-password type="password" autocomplete="current-password" placeholder="Required to claim a node" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </label>
+                      <label data-claim-node-totp-row class="hidden grid gap-2 text-sm font-semibold text-foreground">
+                        Authenticator code
+                        <input data-claim-node-totp type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                      </label>
                       </form>
                       <p data-claim-node-status class="min-h-4 text-xs text-muted-foreground"></p>
                       <button data-claim-node-send type="button" class="fm-btn w-fit">

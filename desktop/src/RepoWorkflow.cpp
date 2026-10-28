@@ -1033,17 +1033,31 @@ QList<Listing> listRepositoryWorkflows(const QString &checkout)
     return listings;
 }
 
+QJsonObject approvalContent(const QByteArray &bytes)
+{
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return {};
+    return withoutBookkeeping(document.object());
+}
+
 QString approvalDigest(const QString &checkout, const QString &path)
 {
     QFile file(path);
-    if (checkout.isEmpty() || !file.open(QIODevice::ReadOnly))
+    if (checkout.isEmpty() || !QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly))
         return {};
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject())
-        return {};
-    const QJsonObject object = withoutBookkeeping(document.object());
+    const QByteArray bytes = file.readAll();
     QCryptographicHash hash(QCryptographicHash::Sha256);
+    if (!path.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+        hash.addData(QByteArrayLiteral("forkmesh-shortcut-approval-v1"));
+        hash.addData(QByteArray(1, '\0'));
+        hash.addData(bytes);
+        return QString::fromLatin1(hash.result().toHex());
+    }
+    const QJsonObject object = approvalContent(bytes);
+    if (object.isEmpty())
+        return {};
     hash.addData(QJsonDocument(object).toJson(QJsonDocument::Compact));
     const QDir shortcuts(QDir(checkout).filePath(QStringLiteral(".forkmesh/shortcuts")));
     for (const QJsonValue &value : object.value(QStringLiteral("nodes")).toArray()) {

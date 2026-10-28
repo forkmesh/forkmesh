@@ -412,6 +412,7 @@ def _namespace(db):
                  "_record_unique_referral_click", "referral_click",
                  "_capture_referral_source",
                  "_record_referral_signup", "_finalize_referral_signup",
+                 "_is_public_roster_member", "_public_referral_bis",
                  "_credited_referrals_by_referrer",
                  "_referral_public_summary",
                  "referral_leaderboard"):
@@ -1681,6 +1682,49 @@ def test_signup_capture_marker_distinguishes_direct_referral_and_failure():
             "referralCaptured": False, "referrer": ""}
 
 
+def _publish_account_records(db, private=()):
+    for name, (name_bi, rec) in ACCOUNTS.items():
+        record = dict(rec)
+        if name in private:
+            record["profile_private"] = True
+        db.execute("UPDATE users SET data=? WHERE user_bi=?",
+                   (json.dumps(record), name_bi))
+
+
+def test_referral_surfaces_leave_out_private_accounts():
+    db = _stats_db()
+    ns = _namespace(db)
+    for referrer_bi, name, clicks in (("bi-alice", "alice", 5),
+                                      ("bi-carol", "carol", 4)):
+        db.execute(
+            "INSERT INTO referral_stats "
+            "(referrer_bi, name, clicks, signups, last_ts) "
+            "VALUES (?,?,?,0,0)", (referrer_bi, name, clicks))
+    db.executemany(
+        "INSERT INTO referral_attributions "
+        "(referred_bi,referred_name,referrer_bi,referrer_name,decision,data,"
+        "created_at,credited_at) VALUES (?,?,?,?,?,?,?,?)",
+        [("bi-dave", "dave", "bi-alice", "alice", "credited", "{}", 1, 2),
+         ("bi-bob", "bob", "bi-alice", "alice", "credited", "{}", 1, 2),
+         ("bi-eve", "eve", "bi-carol", "carol", "credited", "{}", 1, 2)])
+    _publish_account_records(db, private={"dave", "carol"})
+    db.commit()
+    board = asyncio.run(ns["referral_leaderboard"](object())).data["board"]
+    assert [row["name"] for row in board] == ["alice"]
+    assert board[0]["referredUsers"] == ["bob"]
+    summary = asyncio.run(ns["_referral_public_summary"](object(), "bi-alice"))
+    assert summary["referredUsers"] == ["bob"]
+    assert summary["creditedReferrals"] >= 0
+    everyone = asyncio.run(ns["_credited_referrals_by_referrer"](object()))
+    assert sorted(everyone["bi-alice"]) == ["bob", "dave"]
+    ns["_accounts"]["carol"] = ("bi-carol", {
+        **ACCOUNTS["carol"][1], "profile_private": True})
+    assert asyncio.run(ns["_referral_account"](object(), "carol")) == (
+        "carol", "bi-carol")
+    assert asyncio.run(ns["_referral_account"](
+        object(), "carol", public=True)) == ("", "")
+
+
 def test_leaderboard_orders_by_signups_then_clicks():
     db = _stats_db()
     ns = _namespace(db)
@@ -1721,6 +1765,7 @@ def test_leaderboard_orders_by_signups_then_clicks():
         "INSERT INTO referral_legacy_totals "
         "(referrer_bi,name,unattributed_signups,migrated_at) "
         "VALUES (?,?,?,?)", ("bi-alice", "alice", 7, 3))
+    _publish_account_records(db)
     db.commit()
     resp = asyncio.run(ns["referral_leaderboard"](object()))
     assert resp.data["ok"] is True
@@ -1880,6 +1925,16 @@ def test_public_directory_exposes_only_accepted_referrer_name():
     for private_field in (
             "signup_ip_bi", "user_agent_bi", "risk_flags", "data"):
         assert private_field not in helper
+
+
+def test_public_directory_drops_a_private_referrer_name():
+    directory = ast.unparse(_top_level_node("_account_users_directory"))
+    assert "public_names = {" in directory
+    assert "_is_public_roster_member(rec)" in directory
+    assert ("user_payload['referredBy'] = referred_by if admin_actor or "
+            "referred_by in public_names else ''") in directory
+    assert ("'referredBy': referred_by if referred_by in public_names "
+            "else ''") in directory
 
 
 def test_admin_directory_exposes_full_signup_evidence_without_public_caching():

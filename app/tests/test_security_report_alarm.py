@@ -30,6 +30,9 @@ _CONSTS = {
     "SECURITY_REPORT_RETAIN_MS",
     "SECURITY_REPORTS_PER_SOURCE_PER_HOUR",
     "SECURITY_REPORT_SOURCE_RATE_KEY",
+    "SECURITY_REPORTS_KEPT_PER_SOURCE",
+    "SECURITY_REPORT_KEPT_WINDOW_MS",
+    "SECURITY_REPORT_KEPT_RATE_KEY",
     "SIGNUP_MAX_PER_IP",
     "SIGNUP_RATE_WINDOW_MS",
 }
@@ -337,3 +340,55 @@ def test_a_flood_cannot_evict_stored_reports():
     assert "expired" not in titles
     assert titles[0] == "kept 0"
     assert titles[-1] == "flood 0"
+
+
+def test_a_flood_only_churns_its_own_reports_and_a_new_genuine_one_is_kept():
+    now = [400 * 24 * 60 * 60 * 1000]
+    ns, database, sent = _stored_harness(now)
+    cap = ns["MAX_SECURITY_REPORTS"]
+    database.executemany(
+        "INSERT INTO security_reports (ts, data) VALUES (?, ?)",
+        [(now[0] - 2000, "genuine %d" % index) for index in range(10)]
+        + [(now[0] - 999, "old bulk %d" % index) for index in range(cap - 10)])
+    database.commit()
+    limit = ns["SECURITY_REPORTS_PER_SOURCE_PER_HOUR"]
+    for index in range(limit):
+        assert _post(ns, _report(title="flood %d" % index),
+                     "2001:db8:66:1::%x" % (index + 1))[0] == 200
+    assert _post(ns, _report(title="real one"), "198.51.100.9")[0] == 200
+    rows = list(database.execute(
+        "SELECT ts, data FROM security_reports ORDER BY id"))
+    titles = [data for _ts, data in rows]
+    assert len(titles) == cap
+    assert titles[:10] == ["genuine %d" % index for index in range(10)]
+    assert "real one" in titles
+    assert dict((data, ts) for ts, data in rows)["real one"] % 2 == 0
+    assert dict((data, ts) for ts, data in rows)["flood 1"] % 2 == 1
+    assert dict((data, ts) for ts, data in rows)["flood 0"] % 2 == 0
+    assert len(sent) == limit + 1
+
+
+def test_kept_reports_are_never_evicted_and_a_full_kept_table_still_alarms():
+    now = [400 * 24 * 60 * 60 * 1000]
+    ns, database, sent = _stored_harness(now)
+    cap = ns["MAX_SECURITY_REPORTS"]
+    database.executemany(
+        "INSERT INTO security_reports (ts, data) VALUES (?, ?)",
+        [(now[0] - 2000, "genuine %d" % index) for index in range(cap)])
+    database.commit()
+    for index in range(5):
+        assert _post(ns, _report(title="flood %d" % index),
+                     "198.51.100.%d" % (index + 1))[0] == 200
+    titles = [row[0] for row in database.execute(
+        "SELECT data FROM security_reports ORDER BY id")]
+    assert titles == ["genuine %d" % index for index in range(cap)]
+    assert len(sent) == 5
+
+
+def test_agent_instructions_state_the_per_address_report_budget():
+    ns, _database, _sent = _stored_harness([0])
+    line = "accepts %d reports per hour from one address" % (
+        ns["SECURITY_REPORTS_PER_SOURCE_PER_HOUR"])
+    for name in ("AGENTS.md", "SECURITY.md"):
+        text = " ".join((PROJECT / name).read_text(encoding="utf-8").split())
+        assert line in text, name

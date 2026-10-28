@@ -57,6 +57,7 @@ FORKMESH_EXPECTED_RELEASE_VERSION="${FORKMESH_EXPECTED_RELEASE_VERSION:-}"
 FORKMESH_EXPECTED_RELEASE_MANIFEST_SHA256="${FORKMESH_EXPECTED_RELEASE_MANIFEST_SHA256:-}"
 FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE="${FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE:-}"
 FORKMESH_LOCAL_BINARY_SHA256="${FORKMESH_LOCAL_BINARY_SHA256:-}"
+FORKMESH_MIN_RELEASE_VERSION="0.1.0"
 DEFER_PINNED_REINSTALL=0
 ensure_qt_runtime() { :; }
 ensure_mirror_candidates() { :; }
@@ -73,18 +74,20 @@ def _signed_manifest_contract(
     repo="forkmesh/forkmesh",
     build_commit=None,
     version="0.7.0",
+    channel="latest",
 ):
     """Return release-v2 bytes suitable for controller-digest authentication."""
     return (
         '{"schema":"forkmesh-release-v2","repo":"%s",'
         '"tag":"v%s","tag_commit":"%s","build_commit":"%s",'
-        '"channel":"latest","checksums_sha256":"%s",'
+        '"channel":"%s","checksums_sha256":"%s",'
         '"assets":[{"name":"forkmesh-linux-x86_64"}]}'
         % (
             repo,
             version,
             "f0" * 20,
             build_commit or "a1" * 20,
+            channel,
             hashlib.sha256(sums_line.encode()).hexdigest(),
         )
     )
@@ -356,6 +359,106 @@ def test_trusted_ed25519_key_accepts_signature_and_rejects_tampering(tmp_path):
     )
     assert rejected.returncode != 0
     assert "signature is missing or invalid" in rejected.stderr
+
+
+def _sandboxed_env(tmp_path):
+    env = {key: value for key, value in os.environ.items()
+           if key not in ("FORKMESH_HOME", "FORKMESH_PROJECTS_DIR")}
+    home = tmp_path / "home"
+    for name in ("HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
+        path = home if name == "HOME" else home / name.lower()
+        path.mkdir(parents=True, exist_ok=True)
+        env[name] = str(path)
+    return env
+
+
+def _verify_signed(tmp_path, *, version="0.7.0", channel="latest",
+                   wanted_channel="latest", minimum=None, build_commit=""):
+    sums = tmp_path / "SHASUMS256.txt"
+    sums.write_text(hashlib.sha256(b"asset").hexdigest()
+                    + "  forkmesh-linux-x86_64\n", encoding="utf-8")
+    manifest = tmp_path / "release.json"
+    manifest.write_text(_signed_manifest_contract(
+        sums.read_text(encoding="utf-8"), version=version, channel=channel,
+        build_commit=build_commit or None), encoding="utf-8")
+    private_key = tmp_path / "private.pem"
+    public_key = tmp_path / "public.pem"
+    signature = tmp_path / "release.json.sig"
+    if not private_key.exists():
+        subprocess.run(["openssl", "genpkey", "-algorithm", "Ed25519",
+                        "-out", private_key], check=True)
+        subprocess.run(["openssl", "pkey", "-in", private_key, "-pubout",
+                        "-out", public_key], check=True)
+    subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey",
+                    private_key, "-in", manifest, "-out", signature],
+                   check=True)
+    override = ""
+    if minimum is not None:
+        override = 'FORKMESH_MIN_RELEASE_VERSION="%s"\n' % minimum
+    script = (PREAMBLE + override + 'RELEASE_CHANNEL="%s"\n' % wanted_channel
+              + _release_functions()
+              + '\n_verify_release_metadata "$MANIFEST" "$SIGNATURE" "$SUMS"\n')
+    env = _sandboxed_env(tmp_path)
+    env.update({
+        "OUT_DIR": str(tmp_path / "out"),
+        "MANIFEST": str(manifest),
+        "SIGNATURE": str(signature),
+        "SUMS": str(sums),
+        "FORKMESH_EXPECTED_RELEASE_MANIFEST_SHA256": "",
+        "FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE": str(public_key),
+        "FORKMESH_EXPECTED_BUILD_COMMIT": build_commit,
+        "FORKMESH_EXPECTED_RELEASE_VERSION": version if build_commit else "",
+    })
+    return subprocess.run(["bash", "-c", script], env=env, text=True,
+                          capture_output=True)
+
+
+def test_signed_manifest_must_be_for_the_wanted_channel(tmp_path):
+    if shutil.which("openssl") is None:
+        return
+    assert _verify_signed(tmp_path, channel="latest").returncode == 0
+    assert _verify_signed(tmp_path, channel="candidate-0.7.0").returncode == 0
+    for channel, wanted in (("candidate-0.6.0", "latest"), ("beta", "latest"),
+                            ("latest", "beta"), ("", "latest")):
+        refused = _verify_signed(tmp_path, channel=channel,
+                                 wanted_channel=wanted)
+        assert refused.returncode != 0, (channel, wanted)
+        assert "release channel" in refused.stderr
+    assert _verify_signed(tmp_path, channel="beta",
+                          wanted_channel="beta").returncode == 0
+
+
+def test_signed_manifest_older_than_the_installer_minimum_is_refused(tmp_path):
+    if shutil.which("openssl") is None:
+        return
+    refused = _verify_signed(tmp_path, version="1.2.7", minimum="1.2.8")
+    assert refused.returncode != 0
+    assert "older than this installer's minimum" in refused.stderr
+    assert _verify_signed(tmp_path, version="1.2.8",
+                          minimum="1.2.8").returncode == 0
+    assert _verify_signed(tmp_path, version="1.10.0",
+                          minimum="1.9.3").returncode == 0
+    assert _verify_signed(tmp_path, version="1.2.10",
+                          minimum="1.2.9").returncode == 0
+    assert _verify_signed(tmp_path, version="0.7.0",
+                          minimum="").returncode != 0
+    pinned = _verify_signed(tmp_path, version="1.2.7", minimum="1.2.8",
+                            build_commit="a1" * 20)
+    assert pinned.returncode == 0, pinned.stderr
+
+
+def test_installer_minimum_release_is_set_and_not_above_latest():
+    import json
+    import re
+    source = INSTALLER.read_text(encoding="utf-8")
+    found = re.findall(r'^FORKMESH_MIN_RELEASE_VERSION="([0-9.]+)"$', source,
+                       re.M)
+    assert len(found) == 1
+    latest = json.loads((INSTALLER.parents[2] / ".forkmesh" / "releases"
+                         / "latest" / "release.json").read_text())
+    def parts(text):
+        return [int(p) for p in text.lstrip("v").split(".")]
+    assert parts(found[0]) <= parts(latest["tag"])
 
 
 def test_builtin_release_key_survives_sparse_checkout_staging_reset():

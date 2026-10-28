@@ -562,8 +562,9 @@ A join ticket proves the caller may join that room. The app server mints it for
 a member of the private channel (`POST /api/chat/channels/<id>/call-ticket`):
 `base64url(json{"room","peer","acct","exp"}) + "." + base64url(HMAC-SHA256)`
 under the secret `FORKMESH_CALLS_SECRET`, which the app and the SFU share.
-`room` is HMAC-SHA256 of the channel id under the same secret, so the SFU never
-sees the channel id, `peer` is random per join, and tickets live 60 s. `acct`
+`room` is HMAC-SHA256 of the channel id (and, from key version 2 on, the
+channel's key version; see `docs/app/chat-group-calls.md`) under the same
+secret, so the SFU never sees the channel id, `peer` is random per join, and tickets live 60 s. `acct`
 is the first 32 hex digits of an HMAC of the account under the same secret: it
 lets the SFU count one account's places in a room without learning who the
 account is.

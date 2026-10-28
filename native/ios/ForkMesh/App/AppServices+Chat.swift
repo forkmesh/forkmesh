@@ -221,6 +221,9 @@ struct ChatInstaller: AppServicesInstaller {
         Services.put(calls)
         #if canImport(WebRTC)
         NativeGroupCall.shared.office = hub.office
+        hub.office?.onRoomOpened = { (conversation: String, roomName: String) in
+            Task { _ = await NativeGroupCall.shared.channelRekeyed(conversation, chatRoom: roomName) }
+        }
         hub.onGroupCallFrame = { (frame: JSONObject, conversation: String) in
             NativeGroupCall.shared.handleFrame(frame, conversation: conversation)
         }

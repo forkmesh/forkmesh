@@ -141,3 +141,43 @@ def test_the_host_answers_stale_only_after_the_worker_reports_an_outage(monkeypa
     runtime.status = 404
     status, _body = _call(app, request)
     assert status == 404
+
+
+def test_a_repository_gone_private_loses_every_stale_answer(gateway):  # noqa: F811
+    from forkmesh_host import repo_views
+    repo_views._public.clear()
+
+    async def steps(fast):
+        for sc in (PULLS, RECORD):
+            assert (await handled(fast, sc))[0]
+        StubGateway.status = 404
+        assert not (await handled(fast, PULLS))[0]
+        return [fast.stale_answer(sc, 503) for sc in (PULLS, RECORD)], len(fast.stale)
+    try:
+        answers, entries = run(gateway, steps)
+    finally:
+        repo_views._public.clear()
+    assert answers == [None, None]
+    assert entries == 0
+
+
+def test_stale_answers_are_refused_once_the_repository_is_known_not_public():
+    import time
+
+    from forkmesh_host import repo_views
+    fast = RepoFastPath("http://127.0.0.1:9")
+    url = "/v1/public/repositories/acme/site/tree?path=.forkmesh%2Fpulls"
+    other = "/v1/public/repositories/acme/site/blob?path=a"
+    sc = scope("/api/repo/acme/site/tree", "path=.forkmesh/pulls")
+    for key in (url, other):
+        fast.stale.put(key, "application/json", b'{"ok":true}')
+    assert fast.stale_answer(sc, 503) == ("application/json", b'{"ok":true}')
+    repo_views._public[("acme", "site")] = (time.monotonic(), False)
+    try:
+        assert fast.stale_answer(sc, 503) is None
+        assert len(fast.stale) == 0
+    finally:
+        repo_views._public.pop(("acme", "site"), None)
+    fast.stale.put(url, "application/json", b'{"ok":true}')
+    fast.forget_repository("acme", "site")
+    assert len(fast.stale) == 0

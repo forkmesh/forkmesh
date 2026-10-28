@@ -103,7 +103,13 @@ void MainWindow::handleLocalControlWorkflowsRequest(int connectionId, int reques
         if (action == QLatin1String("run") && repo != rw::kAccountRepo) {
             const int repoIndex = repoIndexForKey(repo);
             const QString path = repoWorkflowPath(repoIndex, id);
-            if (repoIndex >= 0 && !path.isEmpty() && !repoWorkflowApproved(repoIndex, path, QString())) {
+            if (repoIndex < 0 || path.isEmpty()) {
+                logSystem(QStringLiteral("Refused a workflow run from %1: %2 has no workflow file on this desktop.")
+                              .arg(who, subject));
+                server->respondError(connectionId, requestId, QStringLiteral("unknown_workflow"));
+                return;
+            }
+            if (!repoWorkflowApproved(repoIndex, path, QString())) {
                 logSystem(QStringLiteral("Refused a workflow run from %1: %2 is not approved on this desktop.")
                               .arg(who, subject));
                 server->respondError(connectionId, requestId, QStringLiteral("approval_required"),

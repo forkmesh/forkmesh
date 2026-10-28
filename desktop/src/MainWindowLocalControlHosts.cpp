@@ -175,7 +175,7 @@ void MainWindow::handleLocalControlHostsRequest(int connectionId, int requestId,
     if (!server)
         return;
     const LocalControlServer::Device device = server->deviceFor(connectionId);
-    if (device.key.isEmpty() ||
+    if (!LocalControlServer::userVerified(device) ||
         (!hostctl::ownerMayManageHosts(device.user, nodeOwnerDisplayName()) &&
          !hostctl::ownerMayManageHosts(device.user, accountOwner()))) {
         server->respondError(connectionId, requestId, QStringLiteral("not_owner"));

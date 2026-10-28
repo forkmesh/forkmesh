@@ -1,6 +1,6 @@
 # Security findings register
 
-Reviewed through: `b15f7e1c3b` on 2026-10-27 (full-system sweep; S-38 to S-60)
+Reviewed through: `fc80139d04` on 2026-10-28 (full-system sweep, two rounds; S-38 to S-83)
 
 Sentinel ([sentinel.md](sentinel.md)) keeps this page: fixed findings with the
 test that guards each fix, and open items that are already public. Unfixed
@@ -111,6 +111,29 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | S-58 | A hosted fork made private stayed in its parent's fork list, advisory credits listed repositories gone private, and dissolving an organization left its office chat | Low | Fixed | `app/tests/test_repo_forks.py`, `app/tests/test_security_advisories.py`, `app/tests/test_org_office_chat.py` |
 | S-59 | A contributor `pr/` branch push ran its own workflows on a mirror with Actions on | Low | Fixed | `server/actions_test.go` |
 | S-60 | Each IPv6 address got its own login and front-door rate-limit bucket | Low | Fixed | `app/tests/host/test_host_request_policy.py`, `app/tests/test_login_key_binding.py` |
+| S-61 | Two outside mirrors could serve or pin the flagship repository, and the cores' sync followed redirects to them, so a forged `main` could reach the operator checkout and the auto-deploy | Critical | Fixed | `app/tests/test_https_mirror_routing_integration.py`, `server/core_upstream_redirect_test.go`, `tools/test_source_publisher.py` |
+| S-62 | Desktop auto-update installed a `release.json` from the newest-dated tag without checking its signature, repository, channel or version | Critical | Fixed | `desktop/tests/test_release_trust.cpp`, `desktop/tests/validate_auto_update_release_trust.py` |
+| S-63 | Web file edits, release tags and other web commits to a core-held repository skipped the organization-owner push rule | High | Fixed | `app/tests/test_repository_file_edits.py`, `app/tests/test_repository_releases.py` |
+| S-64 | A code-paired phone could claim the desktop owner's name at pairing and pass every owner-only family | Medium | Fixed | `desktop/tests/test_local_control.cpp` |
+| S-65 | Key rotation bound any public key with no proof of possession, including another account's device key | Medium | Fixed | `app/tests/test_key_rotation.py`, `app/tests/test_git_push_route.py` |
+| S-66 | `install.sh` accepted an older or wrong-channel signed manifest, and the release host signed candidate data it had not verified | Medium | Fixed | `app/tests/test_installer_release.py`, `app/tests/test_release_host_completion.py` |
+| S-67 | An anonymous instance launch could rewrite or delete any domain's instance directory entry | Medium | Fixed | `app/tests/test_instance_directory.py` |
+| S-68 | A public channel webhook pushed any account's text to every user, and a few accounts could exhaust the global channel cap | Medium | Fixed | `app/tests/test_chat_channels_api.py` |
+| S-69 | A `keyId` with dot segments got past the ActivityPub actor check (S-56) | Medium | Fixed | `app/tests/test_ap_inbox_load.py` |
+| S-70 | Workflow approval (S-44) was skipped by enable and schedule toggles, package runs, phone workflow runs and phone shortcuts, and more link views opened any URL scheme | Medium | Fixed | `desktop/tests/validate_repo_workflow_approval.py`, `desktop/tests/validate_body_link_schemes.py`, `desktop/tests/test_repo_workflow.cpp` |
+| S-71 | iOS chat media and SMB file names could write outside the app's temporary folder, and Android acted on unstamped ping intents | Medium | Fixed | `native/ios/ForkMeshCore/Tests/FMChatTests/ChatMediaFileTests.swift`, `native/ios/ForkMeshCore/Tests/FMFilesTests/FileLocalTargetTests.swift`, `native/android/core/src/test/kotlin/com/forkmesh/nativeapp/security/PushIntentTrustTest.kt` |
+| S-72 | Microjob referral dedupe merged different posts on one host and split one post across subdomain, case, slug and query variants | Medium | Fixed | `app/tests/test_microjobs.py` |
+| S-73 | A member removed from a private channel stayed in a call already running | Low | Fixed | `app/tests/test_chat_call_tickets.py`, `app/tests/test_chat_group_calls_client.py`, `app/tests/test_android_group_call_page.py` |
+| S-74 | A signed issue edit, comment or vote replayed under a new id or target was applied again | Low | Fixed | `app/tests/test_issue_submission_inbox.py`, `server/issue_placeholder_test.go` |
+| S-75 | Login, profile and claim answered faster for unknown accounts | Low | Fixed | `app/tests/test_login_key_binding.py`, `app/tests/test_account_totp_gate.py` |
+| S-76 | Badges, referral surfaces, the contributors board and a `?viewer=` follow flag exposed private profiles | Low | Fixed | `app/tests/test_badges.py`, `app/tests/test_referrals.py`, `app/tests/test_boot_endpoint_caches.py`, `app/tests/test_leaderboards_hub.py` |
+| S-77 | The data export named the moderator and note behind an action, and the public status page repeated exception text | Low | Fixed | `app/tests/test_account_data.py`, `app/tests/test_status_page.py` |
+| S-78 | The live note socket checked no Origin, and the host's stale and about caches outlived a repository going private and replayed one visitor's CORS headers | Low | Fixed | `app/tests/test_notes_signed_session.py`, `app/tests/host/test_repo_fastpath_stale.py`, `app/tests/host/test_repo_ssr.py` |
+| S-79 | Bug report, product analysis, instance launch, guestbook and signup budgets counted each IPv6 address separately, and anonymous attachments had no global budget | Low | Fixed | `app/tests/test_bug_reports.py`, `app/tests/test_product_analysis.py`, `app/tests/test_login_key_binding.py` |
+| S-80 | An anonymous ForkBot chat request could name any account as an issue's opener | Low | Fixed | `app/tests/test_forkbot.py` |
+| S-81 | The shared package mail sender had no per-account cap and used a caller-chosen display name | Low | Fixed | `app/tests/test_mail_budget.py` |
+| S-82 | Commit-id reads could force unbounded graph walks on the gateway | Low | Fixed | `app/tests/test_mirror_gateway.py` |
+| S-83 | One request from a fleet runner could get its address probe-banned from the App | Low | Fixed | `deploy/tests/test_no_main_node.py` |
 
 ## Open, already public
 

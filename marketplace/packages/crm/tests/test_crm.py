@@ -1798,6 +1798,8 @@ def test_one_off_send_is_gated_like_outreach_and_capped_per_sender():
     assert sent["status"] == 201
     assert runtime.mailtrap_calls[-1][1]["from"] == {
         "email": "hello@acme.example", "name": "Acme Team"}
+    assert (runtime.mailtrap_calls[-1][1]["organization"],
+            runtime.mailtrap_calls[-1][1]["account"]) == ("org:acme", "bi:charlie")
 
     chosen = call(runtime.use("POST", body=dict(
         phish, fromEmail="founder@acme.example", fromName="Founder")),
@@ -1897,6 +1899,7 @@ def test_outreach_is_gated_by_role_or_roster_and_sends_from_the_org_sender():
     assert payload["from"] == {"email": "founders@acme.example", "name": "Acme Founders"}
     assert payload["to"] == [{"email": "sponsor@example.com"}]
     assert payload["category"] == "CRM outreach"
+    assert (payload["organization"], payload["account"]) == ("org:acme", "bi:charlie")
     assert "html" not in payload or not payload["html"]
     assert runtime.audits[-1][0][1] == "crm.outreach.send"
     # The recipient and subject only exist inside the sealed envelope.

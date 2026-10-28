@@ -279,6 +279,13 @@ class StaleCache:
         if old is not None:
             self.bytes -= len(old[2])
 
+    def has_prefix(self, prefix):
+        return any(key.startswith(prefix) for key in self._entries)
+
+    def drop_prefix(self, prefix):
+        for key in [key for key in self._entries if key.startswith(prefix)]:
+            self.discard(key)
+
     def get(self, key):
         entry = self._entries.get(key)
         if entry is None:
@@ -440,6 +447,7 @@ class RepoFastPath:
 
     def forget_repository(self, owner, repo):
         self.immutable.drop_prefix(self.gateway_url(owner, repo, "", []))
+        self.stale.drop_prefix(self.gateway_url(owner, repo, "", []))
 
     async def visible(self, owner, repo):
         from .repo_views import still_public
@@ -563,12 +571,16 @@ class RepoFastPath:
         except Exception:
             # Unknown/private repository (404), gateway error or timeout:
             # the Worker gives the canonical answer.
+            missing = upstream is not None and upstream.status_code == 404
             if upstream is not None:
-                if upstream.status_code == 404:
+                if missing:
                     self.stale.discard(url)
                     from .repo_views import recheck_public
                     recheck_public(owner, repo)
                 await upstream.aclose()
+            if missing and self.stale.has_prefix(
+                    self.gateway_url(owner, repo, "", [])):
+                await self.visible(owner, repo)
             self.stats["fallthrough"] += 1
             return False
         if operation == "sizes" and body is not None:
@@ -593,6 +605,10 @@ class RepoFastPath:
         if target is None or target[2] not in STALE_OPERATIONS:
             return None
         owner, repo, operation = target
+        from .repo_views import known_not_public
+        if known_not_public(owner, repo):
+            self.stale.drop_prefix(self.gateway_url(owner, repo, "", []))
+            return None
         pairs = gateway_query(
             operation, (scope.get("query_string") or b"").decode("latin-1"))
         if pairs is None:

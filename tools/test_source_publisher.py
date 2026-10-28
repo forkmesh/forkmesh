@@ -1525,3 +1525,46 @@ def test_publish_retries_a_failed_github_push_on_the_next_pass(box):
     assert len(calls) == 2
     assert sp.status_report(box, run=run)["github"] == [
         {"name": "github", "ok": True, "rejected": []}]
+
+
+def _three_cores(monkeypatch, mains):
+    urls = [{"name": "core %s" % name, "url": "https://%s.example/forkmesh/forkmesh.git" % name}
+            for name in mains]
+    monkeypatch.setattr(sp, "core_read_urls", lambda source: urls)
+    monkeypatch.setattr(sp, "cores_main", lambda url: mains[url.split("//")[1].split(".")[0]])
+
+
+def test_absorb_takes_main_only_when_a_second_core_serves_it(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "one-core-only")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    refused = sp.absorb_cores(box.source, str(cores))
+    assert not refused["absorbed"] and refused["unconfirmed"]
+    assert "only 1 of 3 reachable cores" in refused["reason"]
+    assert sh("rev-parse", "main", cwd=box.source) == before
+    _three_cores(monkeypatch, {"n3": pushed, "n4": pushed, "n5": before})
+    outcome = sp.absorb_cores(box.source, str(cores))
+    assert outcome["absorbed"] and sh("rev-parse", "main", cwd=box.source) == pushed
+
+
+def test_absorb_accepts_the_only_reachable_core(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lone-core")
+    _three_cores(monkeypatch, {"n3": pushed, "n4": "", "n5": ""})
+    assert sp.absorb_cores(box.source, str(cores))["absorbed"]
+    _, other = _cores_with(box, tmp_path / "again", "nobody-answers")
+    _three_cores(monkeypatch, {"n3": "", "n4": "", "n5": ""})
+    assert not sp.cores_agreement(box.source, other)[0]
+
+
+def test_watch_waits_for_a_second_core_before_taking_main(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lagging-peers")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [])
+    passes = []
+    monkeypatch.setattr(sp, "publish", lambda paths, run=None, log=None: passes.append(1) or 0)
+    logs = []
+    assert sp.watch_cores(box, run=systemctl_fake(), log=logs.append) == 0
+    assert passes == [] and sh("rev-parse", "main", cwd=box.source) == before
+    assert any("not taking it: only 1 of 3 reachable cores" in line for line in logs)
+    assert not (box.publisher_state / "cores-watch.json").exists()

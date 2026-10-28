@@ -1353,7 +1353,8 @@ async def _admin_update_user(env, request, form, actor):
             pass
     _users_directory_memos_clear()
     for cache_key in (ACCOUNT_LOOKUP_CACHE_PREFIX + quote(name),
-                      USERS_DIRECTORY_CACHE_KEY, USERS_WORLD_CACHE_KEY):
+                      USERS_DIRECTORY_CACHE_KEY, USERS_WORLD_CACHE_KEY,
+                      REFERRAL_LEADERBOARD_CACHE_KEY):
         try:
             await edge_cache_delete(cache_key)
         except Exception:

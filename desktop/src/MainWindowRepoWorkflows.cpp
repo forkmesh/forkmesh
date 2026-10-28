@@ -728,11 +728,18 @@ bool MainWindow::repoWorkflowApproved(int repoIndex, const QString &path, const 
     if (m_repoWorkflowApprovalNoticed.contains(key + QLatin1Char(':') + digest))
         return false;
     m_repoWorkflowApprovalNoticed.insert(key + QLatin1Char(':') + digest);
-    flashMessage(QStringLiteral("%1 in %2 is set to run on its own, but this desktop has not approved that "
-                                "workflow file. Review it to let it run.")
+    flashMessage(QStringLiteral("%1 in %2 did not run: this desktop has not approved that file. Review it "
+                                "to let it run.")
                      .arg(name.isEmpty() ? QFileInfo(path).fileName() : name, repository),
                  false, QStringLiteral("fm:workflows:approve"));
     return false;
+}
+
+bool MainWindow::repoWorkflowFileApproved(int repoIndex, const QString &path) const
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return false;
+    return rw::isApproved(QSettings(), shortcutRepoKey(repoIndex), m_repositories.at(repoIndex).localPath, path);
 }
 
 void MainWindow::approveRepoWorkflowFile(int repoIndex, const QString &path)
@@ -780,12 +787,13 @@ void MainWindow::reviewPendingRepoWorkflowApprovals()
     box->setIcon(QMessageBox::Question);
     box->setWindowTitle(QStringLiteral("Allow repository workflows?"));
     box->setTextFormat(Qt::RichText);
-    box->setText(QStringLiteral("These workflows are committed in repositories on this desktop and are set to run "
-                                "on a schedule or on repository events:<ul>%1</ul>")
+    box->setText(QStringLiteral("These workflow and shortcut files are committed in repositories on this desktop "
+                                "and wait for your approval before they run:<ul>%1</ul>")
                      .arg(rows.join(QString())));
-    box->setInformativeText(QStringLiteral("Allow only if you trust everyone who can change these files. A workflow "
-                                           "runs its scripts and agents as you. Any change to a file, or to a "
-                                           "script it runs, asks again."));
+    box->setInformativeText(QStringLiteral("Allow only if you trust everyone who can change these files: they run "
+                                           "scripts and agents as you. A change to one of these files, or to a "
+                                           ".forkmesh/shortcuts script a workflow names, asks again. Programs and "
+                                           "files those scripts use in turn are not checked."));
     QPushButton *allow = box->addButton(QStringLiteral("Allow"), QMessageBox::AcceptRole);
     QPushButton *later = box->addButton(QStringLiteral("Not now"), QMessageBox::RejectRole);
     box->setDefaultButton(later);
@@ -1611,8 +1619,12 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
         for (const rw::Listing &entry : listings)
             if (entry.workflow.id == workflowId)
                 listing = &entry;
-        const auto saved = [this, &reply, &repo, repoIndex](const rw::Workflow &workflow, const QString &path) {
-            approveRepoWorkflowFile(repoIndex, path);
+        const auto fileContent = [](const QString &path) {
+            QFile file(path);
+            return path.isEmpty() || !file.open(QIODevice::ReadOnly) ? QJsonObject()
+                                                                      : rw::approvalContent(file.readAll());
+        };
+        const auto saved = [this, &reply, &repo](const rw::Workflow &workflow, const QString &path) {
             scheduleTeammateRailRefresh();
             if (m_sectionStack && m_sectionStack->currentIndex() == kTeamSectionIndex)
                 loadTeammatesPanel();
@@ -1646,12 +1658,16 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             } else if (listing) {
                 workflow.createdAtMs = listing->workflow.createdAtMs;
             }
+            const QJsonObject before = listing ? fileContent(listing->path) : QJsonObject();
+            const bool wasApproved = listing && repoWorkflowFileApproved(repoIndex, listing->path);
             QString path;
             const QString error = rw::writeWorkflow(checkout, workflow, nowMs(), &path);
             if (!error.isEmpty()) {
                 reply(false, {}, error);
                 return;
             }
+            if (!listing || wasApproved || fileContent(path) != before)
+                approveRepoWorkflowFile(repoIndex, path);
             saved(workflow, path);
             return;
         }
@@ -1678,6 +1694,12 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
         if (action == QLatin1String("run")) {
             if (!listing->error.isEmpty()) {
                 reply(false, {}, listing->error);
+                return;
+            }
+            if (!repoWorkflowApproved(repoIndex, listing->path, workflow.name)) {
+                reply(false, {}, QStringLiteral("Approve %1 on this desktop before it runs: use Review on the "
+                                                "notice.")
+                                     .arg(workflow.name));
                 return;
             }
             const QString trigger = text(payload, "trigger").isEmpty() ? QStringLiteral("By hand · Workflows page")
@@ -1751,6 +1773,17 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             return;
         }
         if (action == QLatin1String("setEnabled") || action == QLatin1String("setSchedule")) {
+            const bool wasApproved = repoWorkflowFileApproved(repoIndex, listing->path);
+            const bool turnsOn = payload.value(action == QLatin1String("setEnabled") ? QStringLiteral("enabled")
+                                                                                    : QStringLiteral("active"))
+                                     .toBool();
+            const auto keepApproval = [this, repoIndex, wasApproved, turnsOn](const QString &path,
+                                                                             const QString &name) {
+                if (wasApproved)
+                    approveRepoWorkflowFile(repoIndex, path);
+                else if (turnsOn)
+                    repoWorkflowApproved(repoIndex, path, name);
+            };
             if (listing->legacy && workflow.isSpecialAgent()) {
                 Config config;
                 rw::toTeammate(workflow, &config);
@@ -1765,7 +1798,10 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 }
                 rw::Workflow moved;
                 findRepoWorkflow(repoIndex, workflowId, &moved);
-                saved(moved, QDir(checkout).filePath(rw::kFolder + QLatin1Char('/') + workflowId + QStringLiteral(".json")));
+                const QString movedPath =
+                    QDir(checkout).filePath(rw::kFolder + QLatin1Char('/') + workflowId + QStringLiteral(".json"));
+                keepApproval(movedPath, moved.name);
+                saved(moved, movedPath);
                 return;
             }
             rw::Workflow changed = workflow;
@@ -1789,6 +1825,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 reply(false, {}, error);
                 return;
             }
+            keepApproval(path, changed.name);
             saved(changed, path);
             return;
         }

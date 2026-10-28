@@ -104,6 +104,7 @@ struct Listing {
 };
 
 QList<Listing> listRepositoryWorkflows(const QString &checkout);
+QJsonObject approvalContent(const QByteArray &bytes);
 QString approvalDigest(const QString &checkout, const QString &path);
 QString approvalSettingsKey(const QString &repository, const QString &checkout, const QString &path);
 bool isApproved(const QSettings &settings, const QString &repository, const QString &checkout,

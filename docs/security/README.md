@@ -156,16 +156,20 @@ mostly one identical row per desktop status heartbeat.
 - The content security policy still allows inline scripts; a strict policy
   needs nonces.
 - The organization Discord OAuth callback must come from the browser that
-  started the connection: its transaction cookie (SameSite=Lax, scoped to
-  the callback path) must equal the state, or the callback request's session
-  must be the one that started it (`_oauth_callback_browser_bound` in
-  `app/src/organization_discord.py`). The one-time state, PKCE and the
-  starter's session alone did not stop an organization owner from sending the
-  authorize link to another server's admin and binding that server to their
-  organization. The account session cookie is SameSite=Strict, so on the
-  cross-site redirect back from Discord the transaction cookie is what
-  normally matches; a browser that drops it, or a second Connect click that
-  replaced it, gets `invalid_context` and connects again.
+  started the connection. Each Connect sets its own transaction cookie,
+  `forkmesh_discord_oauth_<first 16 hex of the state>` (SameSite=Lax, path
+  `/api/integrations/discord/callback`, ten minutes), and the callback
+  finishes only when a cookie holds exactly the returned state
+  (`_oauth_callback_browser_bound` in `app/src/organization_discord.py`).
+  The one-time state, PKCE and the starter's stored session alone did not stop
+  an organization owner from sending the authorize link to another server's
+  admin and binding that server to their organization. The callback cannot
+  check the session instead: the account cookie is SameSite=Strict, so the
+  browser never sends it on the redirect back from discord.com. Two tabs or a
+  second Connect click both finish, because each flow keeps its own cookie. A
+  browser that dropped the cookie, or a different browser, gets
+  `invalid_context`, and the World Discord panel says nothing was connected
+  and to press Connect Discord server again.
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
   such branches on `main`. Since 2026-10-19 it also bans the owner's personal

@@ -1349,7 +1349,8 @@ async def _forkbot_next_issue_number(env, repo_bi, owner, repo, kind="issue"):
         return int((seq_row or {}).get("number", 0) or 0)
     except Exception:
         return 0
-def _forkbot_attributed_body(body, source, actor, user_opened=False):
+def _forkbot_attributed_body(body, source, actor, user_opened=False,
+                             unverified=""):
     """Append a footer explaining ForkBot's role in a chat-created issue.
 
     Authenticated users are already recorded as the opener, so their footer
@@ -1361,6 +1362,8 @@ def _forkbot_attributed_body(body, source, actor, user_opened=False):
         return body
     if user_opened:
         footer = "ForkBot helped file this issue via chat."
+    elif unverified:
+        footer = "Filed by ForkBot via chat for %s (unverified)." % unverified
     elif actor and actor != FORKBOT_AUTHOR:
         footer = "Filed by ForkBot at @%s's request via chat." % actor
     else:
@@ -1420,6 +1423,11 @@ async def _forkbot_enqueue_issue(env, owner, repo, title, body, requester,
         return False, "inbox_full"
     session_actor = clean_string(
         authenticated_requester, MAX_NODE_NAME).strip().lower()
+    unverified = ""
+    if source == "forkbot" and not session_actor:
+        claimed = clean_string(requester, MAX_NODE_NAME).strip().lower()
+        unverified = claimed if valid_node_name(claimed) else ""
+        requester = ""
     actor = session_actor or (
         clean_string(requester, MAX_NODE_NAME).lower() or FORKBOT_AUTHOR)
     # A linked Discord account is a verified ForkMesh identity, not merely a
@@ -1434,7 +1442,8 @@ async def _forkbot_enqueue_issue(env, owner, repo, title, body, requester,
 
     now = int(Date.now())
     body = _forkbot_attributed_body(
-        body, source, actor, user_opened=bool(session_actor))
+        body, source, actor, user_opened=bool(session_actor),
+        unverified=unverified)
     reward_meta = {}
     if source == "discord" and isinstance(reward, dict):
         recipient = clean_string(
@@ -1520,7 +1529,8 @@ async def _forkbot_enqueue_issue(env, owner, repo, title, body, requester,
         "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
         repo_bi, await encrypt_row(env, item), submitter_bi,
     )
-    await _record_contributor(env, actor, "issues")
+    if actor != FORKBOT_AUTHOR:
+        await _record_contributor(env, actor, "issues")
     await _best_effort_inbox_side_effect(
         notify_pending_inbox(
             env, host_owner, repo, "issue", issue_author,

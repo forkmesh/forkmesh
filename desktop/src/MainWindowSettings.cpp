@@ -23,6 +23,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "ReactionEmoji.h"
+#include "ReleaseTrust.h"
 #include "SafeDelete.h"
 #include "SettingsSectionsView.h"
 #include "SystemdTimersPanel.h"
@@ -7408,18 +7409,26 @@ void MainWindow::maybeAutoUpdate()
                         runOffThread<AutoUpdateRelease>(
                             [clientDir] {
                                 AutoUpdateRelease release;
-                                QString latestTag;
+                                QString tagList;
                                 if (!gitOutput(clientDir,
-                                               {"for-each-ref", "--sort=-creatordate",
-                                                "--count=1", "refs/tags",
+                                               {"for-each-ref", "refs/tags",
                                                 "--format=%(refname:short)"},
-                                               &latestTag)
-                                    || latestTag.trimmed().isEmpty())
+                                               &tagList))
                                     return release;
-                                release.tag = latestTag.trimmed();
+                                const QString newest =
+                                    forkmesh::releasetrust::newestReleaseTag(
+                                        tagList.split(QLatin1Char('\n')));
+                                if (newest.isEmpty()
+                                    || forkmesh::releasetrust::compareVersions(
+                                           newest,
+                                           QStringLiteral(FORKMESH_VERSION))
+                                           <= 0)
+                                    return release;
+                                release.tag = newest;
                                 QString tagCommit;
                                 if (!gitOutput(clientDir,
-                                               {"rev-list", "-n1", release.tag},
+                                               {"rev-list", "-n1",
+                                                "refs/tags/" + release.tag},
                                                &tagCommit)
                                     || tagCommit.trimmed().isEmpty())
                                     return release;
@@ -7448,7 +7457,13 @@ void MainWindow::maybeAutoUpdate()
                                 if (tryPrebuiltAutoUpdate(clientDir, release.tag,
                                                           release.commit))
                                     return;
-                                updateRebuildRestart();
+                                logSystem(QStringLiteral(
+                                              "Auto-update: release %1 could "
+                                              "not be installed from its "
+                                              "signed release here; nothing "
+                                              "was changed. Use Update to "
+                                              "update by hand.")
+                                              .arg(release.tag));
                             });
                     });
             fetch->start(QStringLiteral("git"), {"fetch", "--quiet", "--tags"});

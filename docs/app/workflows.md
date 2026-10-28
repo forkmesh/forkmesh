@@ -544,18 +544,35 @@ page opening.
   hash>`. `checkRepoWorkflowSchedules`, `triggerRepoWorkflowsForEvent`,
   `checkTeammateSchedules` and `triggerTeammatesForEvent` call
   `repoWorkflowApproved` before they start anything.
-- **When the file changes.** Any change to the file or to a script it runs
-  needs approval again.
+- **When the file changes.** Any change to the file, or to a
+  `.forkmesh/shortcuts` script one of its shortcut steps names, needs approval
+  again. Programs and files those scripts use in turn are not part of the
+  digest, and the review box says so.
 - **What the user sees.** An unapproved workflow is skipped and raises one
   page notice per file version. Its **Review** button (`fm:workflows:approve`)
   opens an Allow / Not now box that lists the pending files. Allow stores the
   digest the box was opened with, so a file that changed while the box was
   open is not approved.
-- **Saving in the editor.** Saving, turning on, or changing the schedule of a
-  workflow in the Workflows editor approves the file it writes.
-- **What it does not cover.** Runs started by hand (play buttons, pins, the
-  page) are the user's own click and are not asked. Mentions in chat are not
-  covered either.
+- **Saving in the editor.** The editor's `save` action approves the file it
+  writes only when it is new, or when its content differs from the committed
+  file (the user edited it). Saving an unchanged file keeps whatever approval
+  the file already had, so a package cannot approve a stranger's workflow by
+  saving it back.
+- **Turning a workflow on.** `setEnabled` and `setSchedule` change the file,
+  and with it the digest. A file that was approved before the toggle gets its
+  approval carried to the new digest. A file that was not approved stays
+  unapproved; turning it on raises the review notice instead.
+- **Runs from a package.** The package `run` action is not the user's own
+  click on the desktop, so it checks `repoWorkflowApproved` for a repository
+  workflow, the same as the phone. Otherwise it answers that the file needs
+  approval and raises the notice.
+- **Shortcuts from the phone.** `insights` `runShortcut` (script or prompt)
+  and `queueShortcut` run committed `.forkmesh/shortcuts` and
+  `.forkmesh/skills` files. They answer `approval_required` until that file is
+  approved. A non-JSON file's digest is SHA-256 over its bytes, and it shares
+  the same store and the same review box.
+- **What it does not cover.** Clicks on the desktop's own play buttons and
+  pins are not asked. Mentions in chat are not covered either.
 - **Runs from the phone.** `workflows.run` from a paired phone runs a
   repository workflow only once its file is approved on this desktop, and
   answers `approval_required` otherwise (the phone shows the desktop's

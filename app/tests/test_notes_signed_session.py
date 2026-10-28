@@ -172,3 +172,81 @@ def test_password_session_still_wins_and_unsigned_requests_are_refused():
         bare, Request("POST", "https://forkmesh.test/api/notes", "{}")))
     assert resolved == ("", None)
     assert not runtime.same_origin()
+
+
+def test_signed_query_never_falls_back_to_the_browser_cookie():
+    cookie = ("bi:carol", {"name": "carol"})
+    namespace = _load(session=cookie)
+    forged = Request(
+        "POST", "https://forkmesh.test/api/notes/" + NOTE_ID
+        + "/shares?node=alice&ts=" + TIMESTAMP + "&sig=forged",
+        '{"type":"user","name":"mallory","role":"editor"}',
+        headers={"cookie": "forkmesh_account=carol-session",
+                 "origin": "https://evil.example"})
+    runtime, resolved = asyncio.run(_resolve(namespace, forged))
+    assert runtime.same_origin()
+    assert resolved == ("", None)
+
+    lone_sig = Request("POST", "https://forkmesh.test/api/notes?sig=x", "{}")
+    assert not namespace["_NotesRuntime"](object(), lone_sig).same_origin()
+
+    marker = Request("POST", "https://forkmesh.test/api/notes", "{}",
+                     headers={"authorization": "Bearer cookie"})
+    assert not namespace["_NotesRuntime"](object(), marker).same_origin()
+
+
+class _Room:
+    def __init__(self):
+        self.calls = []
+
+    def idFromName(self, name):
+        return name
+
+    def get(self, object_id):
+        room = self
+
+        class _Stub:
+            async def fetch(self, request):
+                room.calls.append((object_id, request))
+                return {"status": 101}
+        return _Stub()
+
+
+def test_live_note_socket_requires_an_allowed_origin():
+    namespace = _load()
+    allowed = {"https://app.forkmesh.test"}
+    namespace["_request_origin_allowed"] = (
+        lambda _env, request: request.headers.get("origin") in allowed)
+    namespace["json_response"] = (
+        lambda data, status=200, cache_control=None: {
+            "status": status, "data": data})
+    namespace["quote"] = quote
+
+    async def durable_object_request(request, target_url=""):
+        return target_url
+    namespace["durable_object_request"] = durable_object_request
+
+    class Env:
+        FORKMESH_NOTE_ROOM = _Room()
+
+    env = Env()
+    path = "https://app.forkmesh.test/api/notes/" + NOTE_ID + "/ws"
+    foreign = namespace["_NotesRuntime"](env, Request(
+        "GET", path, headers={"origin": "https://evil.forkmesh.test",
+                              "upgrade": "websocket"}))
+    refused = asyncio.run(foreign.realtime(NOTE_ID, "bi:alice", "alice",
+                                           "owner"))
+    assert refused["status"] == 403
+    assert env.FORKMESH_NOTE_ROOM.calls == []
+
+    missing = namespace["_NotesRuntime"](env, Request(
+        "GET", path, headers={"upgrade": "websocket"}))
+    assert asyncio.run(missing.realtime(
+        NOTE_ID, "bi:alice", "alice", "owner"))["status"] == 403
+
+    own = namespace["_NotesRuntime"](env, Request(
+        "GET", path, headers={"origin": "https://app.forkmesh.test",
+                              "upgrade": "websocket"}))
+    assert asyncio.run(own.realtime(
+        NOTE_ID, "bi:alice", "alice", "owner")) == {"status": 101}
+    assert env.FORKMESH_NOTE_ROOM.calls[0][0] == "note:" + NOTE_ID

@@ -495,7 +495,14 @@ signed with the v3 key (`native/android/README.md`); the default application id
   in the private `forkmesh.intents` preferences. `InboxFeature.onIntent`,
   `NotificationActionReceiver`, `DirectCallFeature.onIntent` and
   `CallActionReceiver` compare it in constant time and drop an intent without
-  it.
+  it. The ping tap (`com.forkmesh.push.OPEN`, `PingNotifier.openIntent`,
+  call rings included) carries it too since 2026-10-28: `PushFeature.onIntent`
+  builds its target through `PushTarget.fromIntent`, which opens nothing
+  without the token, so another app can no longer plant a ping row, switch
+  project or mark pings read. Even with the token the row carried in the
+  intent is only shown, never written to the inbox cache
+  (`PushTarget.cachedRow` looks the ping up in the cache and snapshots only).
+  Guard: `core/.../security/PushIntentTrustTest.kt`.
 - **Haptics** map to `VIRTUAL_KEY`, `KEYBOARD_TAP`, `CONTEXT_CLICK`, all
   suppressed under reduced motion.
 - **Timers** ring through `AlarmManager` (`TimerAlarmReceiver`, rescheduled

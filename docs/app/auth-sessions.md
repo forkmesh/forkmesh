@@ -26,10 +26,33 @@ and the World.
   login replaces it. Before this, revoking a stolen first desktop left its key
   trusted, and rotate let it bind a successor the owner could not see or
   revoke.
+- `POST /api/accounts/rotate` also needs `newSig`: the successor key signs
+  `forkmesh-rotate-accept-v1\n<account>\n<oldPubkey>\n<newPubkey>\n<ts>`
+  (`ForkMeshIdentity::acceptRotation` on the desktop). A request without it
+  gets 426 `new_key_proof_required`, a bad one 401 `bad_new_key_signature`.
+  The successor is refused with 409 `device_key_conflict` when another
+  account (other than a node's owning user) has it in `account_devices`, or
+  `_device_proven_user_bis` names another user. Without the proof, any account
+  could bind a key it did not hold, such as the browser or phone key on
+  someone else's public pull request, and then pass the pull author check.
+- `_git_push_account_for_pubkey` resolves a key to nobody when its `nodes` row
+  belongs to one account but an enabled device row for the same key belongs
+  to another (other than the node's owning user), so a primary key can never
+  outrank someone else's device.
 - Routes: `GET /api/accounts/sessions`, `DELETE /api/accounts/sessions/<id>`,
   `GET /api/accounts/devices`, `POST /api/accounts/devices/check`,
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
   `POST /api/accounts/logout`.
+
+## Password checks cost the same for unknown accounts
+
+`POST /api/accounts/login` and the password branch of
+`POST /api/accounts/profile` run one PBKDF2 check even when the identifier
+has no active account with a password (`_verify_password_miss`, against the
+fixed `PASSWORD_MISS_SALT` / `PASSWORD_MISS_HASH`). Without it a miss answered
+tens of milliseconds sooner than a wrong password, so response time told
+anyone whether an email address had an account. Tests:
+`app/tests/test_login_key_binding.py`, `app/tests/test_account_totp_gate.py`.
 
 ## Cookies and browser markers
 
@@ -98,9 +121,39 @@ digits, 30 seconds); other accounts may enroll optionally.
   the request also carries that account's own session (the S-3 rule of
   `/api/accounts/profile`). They used to be an uncounted password oracle with
   no TOTP.
-- Login budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
+  - A missing code answers `bad_totp` without touching any budget, so a
+    client that has not asked for the code yet (the desktop's "Log in as a
+    user", the dashboard's claim form) cannot lock its own account's
+    `login-totp:<name>` budget by retrying. Only a wrong code that follows a
+    correct password charges that budget; an outsider without the password is
+    charged on its source and source+name keys and never reaches the code
+    check.
+  - The desktop dialog and the dashboard form show a 2FA code field when the
+    answer is `bad_totp` and send it as `totp`; the dashboard also sends its
+    bearer token when it is not in cookie mode, so the own-session waiver
+    applies there too.
+- Address budgets charge an IPv6 address by its /64 (`_client_source_bucket`),
   the smallest block one customer is routed, so rotating addresses inside it
-  no longer buys new guesses.
+  no longer buys new guesses: login, signup, the signup backup check, node
+  reserve and the security webhook. `test_every_address_budget_in_the_worker_folds_ipv6_to_a_slash_64`
+  fails a new budget in `entry.py` that skips the fold. The same fold covers
+  the per-address budgets outside it: signed-out bug reports
+  (`bug_reports._reporter_key`), the `/product-analysis` login, instance
+  launches and directory registrations (`LaunchRuntime.client_key`), the AI
+  guestbook and client error reports. `test_every_per_address_budget_folds_ipv6_into_its_64`
+  lists every `_transient_client_address` call in `app/src` as either a
+  budget (must fold) or a stored value (kept as is), so a new call fails until
+  it is classified.
+- `/product-analysis` is guarded by one shared credential, so on top of the
+  per-source budget every failed login there also counts against one global
+  budget: 200 failures in an hour refuse every login, correct or not, until
+  the hour that started with the first of them ends. Administrators keep
+  their console session route into the page.
+- Signed-out bug reports share one hourly attachment budget of 64 MiB
+  (`ANONYMOUS_ATTACHMENT_BYTES_PER_WINDOW`), since every attachment is copied
+  to every core. Past it a signed-out report with attachments gets 429
+  `attachments_busy`; a report without attachments, or from a signed-in
+  account, is still accepted.
 - The login page draws `otpauthUri` as a QR code with the built-in `/qr.js`.
 - Recovery: another administrator resets 2FA in the console user editor
   (audited as `totp`); an administrator cannot reset their own.

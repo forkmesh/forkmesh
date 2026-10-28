@@ -6,6 +6,13 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (ROOT / "src/MainWindowRepoWorkflows.cpp").read_text(encoding="utf-8")
 TEAMMATES = (ROOT / "src/MainWindowTeammates.cpp").read_text(encoding="utf-8")
 DIAGNOSTICS = (ROOT / "src/MainWindowLocalControlDiagnostics.cpp").read_text(encoding="utf-8")
+INSIGHTS = (ROOT / "src/MainWindowLocalControlInsights.cpp").read_text(encoding="utf-8")
+
+
+def action_block(source: str, action: str) -> str:
+    start = source.index(f'action == QLatin1String("{action}")')
+    end = source.index("\n        if (action == QLatin1String(", start + 1)
+    return source[start:end]
 PHONE = (ROOT / "src/MainWindowLocalControlWorkflows.cpp").read_text(encoding="utf-8")
 
 
@@ -47,6 +54,32 @@ def main() -> None:
     phone = PHONE[PHONE.index('method == QLatin1String("workflows.run")'):]
     assert gated(phone, "runNativePackageRepositoryWorkflowAction("), (
         "a phone can run a committed workflow the desktop has not approved")
+    lookup = phone[phone.index("repoWorkflowPath(repoIndex, id)"):phone.index("repoWorkflowApproved(")]
+    assert "repoIndex < 0 || path.isEmpty()" in lookup and "return;" in lookup, (
+        "a phone run fails closed when the workflow file cannot be found")
+    package = function_body(WORKFLOWS, "void MainWindow::runNativePackageRepositoryWorkflowAction(")
+    saved = package[package.index("const auto saved = "):package.index('if (action == QLatin1String("save"))')]
+    assert "approveRepoWorkflowFile" not in saved, (
+        "a package's save callback must not approve every file it writes")
+    save = action_block(package, "save")
+    assert "fileContent(path) != before" in save and "wasApproved" in save, (
+        "saving approves only content the user changed, or keeps an approval the file had")
+    toggle = package[package.index('if (action == QLatin1String("setEnabled") || action == QLatin1String("setSchedule"))'):]
+    toggle = toggle[:toggle.index('if (action == QLatin1String("openAgent"))')]
+    assert "repoWorkflowFileApproved(repoIndex, listing->path)" in toggle and "if (wasApproved)" in toggle, (
+        "turning a workflow on keeps an existing approval and never creates one")
+    assert toggle.count("keepApproval(") >= 2
+    run = action_block(package, "run")
+    assert gated(run, "runTeammate(") and gated(run, "startRepoWorkflow("), (
+        "a package run of a committed workflow needs the file's approval")
+
+    for action, start in (("queueShortcut", "queueShortcut(info.absoluteFilePath()"),
+                          ("runShortcut", "runShortcut(path, repoIndex)")):
+        block = INSIGHTS[INSIGHTS.index(f'if (action == QLatin1String("{action}")'):]
+        assert gated(block, start), f"the phone's {action} runs a committed script without approval"
+    run_block = INSIGHTS[INSIGHTS.index('if (action == QLatin1String("runShortcut"))'):]
+    assert gated(run_block, "startAdHocAgentForRepo("), (
+        "the phone's prompt shortcuts start agents from committed files without approval")
     print("repo workflow approval contract passed")
 
 

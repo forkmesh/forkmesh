@@ -331,7 +331,7 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
 {
     const QString who = (name.isEmpty() ? QStringLiteral("A phone") : name) +
                         (user.isEmpty() ? QString()
-                                        : QStringLiteral(" (%1)").arg(user));
+                                        : QStringLiteral(" (says it is %1)").arg(user));
     const QString spaced = code.left(3) + QLatin1Char(' ') + code.mid(3);
     auto *box = new QMessageBox(this);
     box->setAttribute(Qt::WA_DeleteOnClose);

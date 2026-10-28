@@ -757,6 +757,11 @@ def recheck_public(owner, repo):
     _public.pop((owner, repo), None)
 
 
+def known_not_public(owner, repo):
+    known = _public.get((owner, repo))
+    return known is not None and known[1] is False
+
+
 def _remember(bundle):
     if len(_bundles) >= MAX_BUNDLES:
         oldest = min(_bundles.values(), key=lambda b: b.built)

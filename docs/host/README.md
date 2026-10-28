@@ -153,9 +153,13 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   Worker). The dashboard shows "Updating…" over such a page and reads it again
   (`docs/app/repo-views.md`). Only the gateway's `/v1/public/...` route fills
   the cache, so private repositories and private-view reads (`viewer`/`sig`)
-  never enter it; a later 404 from the gateway drops the entry, and the
-  15-minute limit bounds how long a repository made private could still be
-  answered from it during an outage. Commit-pinned reads stay in the existing
+  never enter it. A 404 from the gateway drops that entry and, if the
+  repository still has others, re-checks it with `still_public`; a repository
+  that is no longer public loses all its entries (`forget_repository` clears
+  both caches), and `stale_answer` refuses any repository `repo_views` last
+  saw as not public (`known_not_public`). Before this, the other entries of a
+  repository made private stayed answerable for 15 minutes. When the gateway
+  is down and the visibility is unknown, the 15-minute limit still bounds it. Commit-pinned reads stay in the existing
   `ImmutableCache`. This exists because every instance deploy restarted the
   gateway and a single-server instance showed pull request pages as unavailable for
   about 40 s (`docs/server/gateways.md`).

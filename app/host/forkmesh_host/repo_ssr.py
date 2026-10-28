@@ -469,7 +469,7 @@ def micro_cache_key(scope):
             _micro.pop(key, None)
         return None
     for name, _value in scope.get("headers") or []:
-        if name in (b"cookie", b"authorization"):
+        if name in (b"cookie", b"authorization", b"origin"):
             return None
     query = (scope.get("query_string") or b"").decode("latin-1")
     return MicroKey(path + ("?" + query if query else ""))
@@ -481,6 +481,29 @@ def _micro_response(entry):
     return _js.Response(body, status, "", _js.Headers(dict(headers)))
 
 
+def _micro_stored_headers(headers):
+    kept, vary = [], []
+    for name, value in headers:
+        if name.startswith("access-control-") or name == "timing-allow-origin":
+            continue
+        if name == "vary":
+            vary += [item.strip() for item in str(value).split(",")
+                     if item.strip()]
+            continue
+        kept.append((name, value))
+    if "origin" not in {item.lower() for item in vary}:
+        vary.append("Origin")
+    kept.append(("vary", ", ".join(vary)))
+    return kept
+
+
+def _micro_forget(key):
+    _micro.pop(key, None)
+    path = str(key).lower()
+    _about_memo.pop(path, None)
+    _quota_memo.pop(path, None)
+
+
 async def _micro_store(key, response):
     from . import js as _js
     body = await response._read()
@@ -490,9 +513,11 @@ async def _micro_store(key, response):
         if len(_micro) >= MICRO_MAX_ENTRIES:
             _micro.clear()
         now = asyncio.get_running_loop().time()
-        _micro[key] = (now, 200, headers, body)
+        _micro[key] = (now, 200, _micro_stored_headers(headers), body)
         _remember_about(str(key), body, now)
         _remember_quota(str(key), body, now)
+    elif int(response.status) in (404, 410):
+        _micro_forget(key)
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 

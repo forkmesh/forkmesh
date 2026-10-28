@@ -113,6 +113,7 @@ class FakeRuntime:
         }]
         self.oauth_user = {"id": "400000000000000001"}
         self.oauth_transaction = ""
+        self.oauth_cookies = []
         self.active_sessions = {"account-alice": "session-alice"}
         self.oauth_exchange_status = 200
         self.oauth_identity_status = 200
@@ -302,8 +303,12 @@ class FakeRuntime:
             + "&code_challenge=" + challenge
             + "&scope=identify%20guilds")
 
-    def oauth_transaction_cookie(self):
-        return self.oauth_transaction
+    def oauth_transaction_cookie(self, state=""):
+        jar = [value for value in [self.oauth_transaction, *self.oauth_cookies]
+               if value]
+        if state:
+            return state if state in jar else ""
+        return jar[0] if len(jar) == 1 else ""
 
     async def discord_guild(self, guild_id):
         if guild_id != GUILD:
@@ -551,14 +556,18 @@ async def test_oauth_callback_accepts_browser_that_omits_transaction_cookie():
     state = parse_qs(
         urlparse(started["data"]["authorizationUrl"]).query)["state"][0]
     runtime.oauth_transaction = ""
-    completed = await discord_api.handle_oauth_callback(
-        runtime.use("GET", "alice", query={
+    refused = await discord_api.handle_oauth_callback(
+        runtime.use("GET", query={
             "state": state, "code": "oauth-authorization-code-123456",
         }))
-    assert completed["data"]["outcome"] == "connected"
+    assert refused["data"]["outcome"] == "invalid_context"
     assert runtime.db.execute(
         "SELECT COUNT(*) AS n FROM organization_discord_oauth_grants"
-    ).fetchone()["n"] == 1
+    ).fetchone()["n"] == 0
+    panel = (ROOT.parent / "world" / "public" / "world" /
+             "world-discord-panel.js").read_text(encoding="utf-8")
+    message = panel.split("invalid_context:", 1)[1].split("\n", 1)[0]
+    assert "Connect Discord server" in message and "again" in message
 
 
 @run_async_test
@@ -593,14 +602,34 @@ async def test_oauth_callback_tolerates_replaced_transaction_cookie():
     state = parse_qs(
         urlparse(started["data"]["authorizationUrl"]).query)["state"][0]
     runtime.oauth_transaction = "f" * 64
-    completed = await discord_api.handle_oauth_callback(
-        runtime.use("GET", "alice", query={
+    refused = await discord_api.handle_oauth_callback(
+        runtime.use("GET", query={
             "state": state, "code": "oauth-authorization-code-123456",
         }))
-    assert completed["data"]["outcome"] == "connected"
+    assert refused["data"]["outcome"] == "invalid_context"
     assert runtime.db.execute(
         "SELECT COUNT(*) AS n FROM organization_discord_oauth_grants"
-    ).fetchone()["n"] == 1
+    ).fetchone()["n"] == 0
+
+
+@run_async_test
+async def test_oauth_callback_finishes_every_flow_started_in_this_browser():
+    runtime = FakeRuntime()
+    runtime.oauth_configured = True
+    states = []
+    for _ in range(2):
+        started = await discord_api.handle(
+            runtime.use("POST", "alice", {"guildId": GUILD}),
+            "forkmesh", "oauth/start")
+        states.append(parse_qs(
+            urlparse(started["data"]["authorizationUrl"]).query)["state"][0])
+        runtime.oauth_cookies.append(started["oauthTransaction"])
+    for state in reversed(states):
+        completed = await discord_api.handle_oauth_callback(
+            runtime.use("GET", query={
+                "state": state, "code": "oauth-authorization-code-123456",
+            }))
+        assert completed["data"]["outcome"] == "connected"
 
 
 @run_async_test
