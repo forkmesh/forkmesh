@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "LocalControl.h"
 #include "LocalControlInsights.h"
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
@@ -1304,6 +1305,8 @@ void MainWindow::notifyRepoWorkflowsChanged()
             for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
                 if (page.widget)
                     page.widget->repositoryWorkflowsChanged();
+            if (m_localControl)
+                m_localControl->broadcast(QStringLiteral("workflows.changed"));
         });
     }
     m_repoWorkflowNotifyTimer->start();

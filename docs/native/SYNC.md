@@ -220,4 +220,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S144 | 2026-10-25 | Code | fix | Send to agent on a failed Actions run's log sends the failing step and the end of the log instead of the log's first lines. | d196230867 | pending |  |
 | S145 | 2026-10-27 | Agents | fix | The token charts under the Dynamic Island always show, span the island and update every second, and agent tile borders move while a reply streams. | f87600c607 | pending |  |
 | S146 | 2026-10-27 | Agents | feature | With more than one desktop, Agents lists every desktop's agents in one list, each labelled with its desktop, and actions go to that agent's desktop. | ce55a298a1 | pending |  |
+| S147 | 2026-10-28 | Workflows | feature | Workflows lists your desktop's workflows and special agents and runs them on the desktop, and Free disk space runs on your desktop from the phone. | c48ebe358d | pending |  |
 <!-- ledger:end -->

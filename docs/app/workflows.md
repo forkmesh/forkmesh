@@ -181,9 +181,12 @@ steps that only the user's own desktop can run: the six parts of
 `tools/free_disk_space.py` ([../tools/free-disk-space.md](../tools/free-disk-space.md)),
 one step type each so each has its own icon.
 
-- **Who runs them.** Not the server and not the phones: the server engine and
-  both phone engines fail such a step with its `refusal` text, and
-  `POST /<id>/run` answers `runs_on_desktop`. **Run workflow** in the browser
+- **Who runs them.** Not the server and not the phone engines: the server
+  engine and both phone engines fail such a step with its `refusal` text, and
+  `POST /<id>/run` answers `runs_on_desktop`. The iPhone's **Run on your
+  desktop** drives the desktop the same way the browser does and records the
+  run ([../native/WORKFLOWS.md](../native/WORKFLOWS.md#the-desktops-workflows)).
+  **Run workflow** in the browser
   (`wfRunOnDesktop`) connects to the first linked desktop through
   `desktopControlHub()` ([desktop-agents-web.md](desktop-agents-web.md)), then
   for each step in graph order sends `diag.prepare` and `diag.run` with action
@@ -228,6 +231,8 @@ and schedules skip; data is kept. Nested packages add integration categories,
 examples and the Repository view.
 
 On the desktop the plugin is a native page too ([On the desktop](#on-the-desktop)).
+The phones also list the desktop's repository workflows and special agents
+and run them through the desktop's `workflows.` control family.
 On iPhone and Android the plugin is a native screen, and a phone can run a
 workflow itself: the package's `content/mobile/workflow-engine.js` runs in
 JavaScriptCore on iPhone, Android runs a Kotlin port, and both replay cases

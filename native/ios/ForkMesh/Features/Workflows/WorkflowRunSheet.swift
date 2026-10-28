@@ -47,12 +47,28 @@ struct WorkflowRunSheet: View {
 
     private var header: some View {
         HStack(spacing: FmSpace.x3) {
-            FmIconTile(icon: run.place == .phone ? "smartphone" : "cloud_outlined", tint: run.succeeded ? fm.success : fm.danger)
+            FmIconTile(icon: icon, tint: run.succeeded ? fm.success : fm.danger)
             VStack(alignment: .leading, spacing: 2) {
-                Text(run.place == .phone ? "Ran on this phone" : "Ran on ForkMesh").fmText(.titleMedium)
+                Text(place).fmText(.titleMedium)
                 Text(details).fmText(.bodySmall, color: fm.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var icon: String {
+        switch run.place {
+        case .phone: return "smartphone"
+        case .desktop: return "desktop_windows_outlined"
+        case .server: return "cloud_outlined"
+        }
+    }
+
+    private var place: String {
+        switch run.place {
+        case .phone: return "Ran on this phone"
+        case .desktop: return "Ran on your desktop"
+        case .server: return "Ran on ForkMesh"
         }
     }
 
@@ -60,7 +76,7 @@ struct WorkflowRunSheet: View {
         var parts: [String] = []
         if run.startedAt > 0 { parts.append(Format.relativeTime(run.startedAt)) }
         if run.finishedAt >= run.startedAt && run.startedAt > 0 { parts.append("\(run.finishedAt - run.startedAt) ms") }
-        parts.append(run.requests == 1 ? "1 request" : "\(run.requests) requests")
+        if run.place != .desktop { parts.append(run.requests == 1 ? "1 request" : "\(run.requests) requests") }
         return parts.joined(separator: " · ")
     }
 

@@ -4018,6 +4018,9 @@ private:
     void runLocalControlTeammateAction(int connectionId, int requestId, const QString &action,
                                        const QString &subject, const QJsonObject &params);
     forkmesh::localcontrol::hosts::ConfirmationStore m_teammateControlConfirmations;
+    void handleLocalControlWorkflowsRequest(int connectionId, int requestId,
+                                            const QString &method, const QJsonObject &params);
+    forkmesh::localcontrol::hosts::ConfirmationStore m_workflowControlConfirmations;
     void handleLocalControlInsightsRequest(int connectionId, int requestId,
                                       const QString &method, const QJsonObject &params); // insights. WS17
     QString localControlShortcutDir(const QString &repoKey, const QString &scope,

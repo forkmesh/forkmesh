@@ -23,6 +23,7 @@
 #include "LocalControlTerminals.h"
 #include "LocalControlUpdate.h"
 #include "LocalControlWallet.h"
+#include "LocalControlWorkflows.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "PingFixes.h"
@@ -65,6 +66,8 @@ void MainWindow::registerLocalControlFamilies()
                         &MainWindow::handleLocalControlDiagnosticsRequest);
     registerOwnerFamily(forkmesh::localcontrol::teammates::familyPrefix(),
                         &MainWindow::handleLocalControlTeammatesRequest);
+    registerOwnerFamily(forkmesh::localcontrol::workflows::familyPrefix(),
+                        &MainWindow::handleLocalControlWorkflowsRequest);
     registerOwnerFamily(forkmesh::localcontrol::insights::familyPrefix(),
                         &MainWindow::handleLocalControlInsightsRequest);
     registerOwnerFamily(forkmesh::localcontrol::discord::familyPrefix(),
