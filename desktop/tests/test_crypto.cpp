@@ -2229,6 +2229,29 @@ int main(int argc, char *argv[])
                        .contains(QStringLiteral("Login failed")),
               "a login with no relay verdict names the transport failure, not bad credentials");
     }
+    {
+        const QJsonObject request = AccountCapability::passwordLoginRequest(
+            QStringLiteral(" Ada@Example.com "), QStringLiteral("secret"),
+            QStringLiteral("123456"));
+        check(!request.contains(QStringLiteral("nodeName")) &&
+                  request.value(QStringLiteral("identifier")).toString() ==
+                      QStringLiteral("Ada@Example.com") &&
+                  request.value(QStringLiteral("password")).toString() ==
+                      QStringLiteral("secret"),
+              "a password login is checked against the typed email, not a suggested username");
+        const QString lockout = AccountCapability::loginLockoutMessage(90000);
+        check(lockout.contains(QStringLiteral("about 2 minutes")) &&
+                  lockout.contains(QStringLiteral("not a wrong password")) &&
+                  AccountCapability::loginLockoutMessage(4000).contains(
+                      QStringLiteral("about 4 seconds")) &&
+                  AccountCapability::loginLockoutMessage(0).contains(
+                      QStringLiteral("a few minutes")),
+              "a lockout says how long to wait and that the password is not wrong");
+        check(AccountCapability::incorrectPasswordMessage(
+                  QStringLiteral("app.forkmesh.com"))
+                  .contains(QStringLiteral("same account and password as app.forkmesh.com")),
+              "a wrong password says the desktop and the website share one account");
+    }
     check(AccountCapability::ownerSigningAllowed(
               true, true, QStringLiteral("Alice-Node")) &&
               !AccountCapability::ownerSigningAllowed(

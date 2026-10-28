@@ -14,6 +14,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Goal | Guide |
 | --- | --- |
 | Install ForkMesh and complete first-run setup | [Getting started](getting-started.md) |
+| Keep a private backup of a GitHub repository, no developer experience needed | [Back up a GitHub repository](back-up-a-github-repository.md) |
 | Supported platforms, signing, upgrade, rollback, uninstall | [Installation support matrix](install-support-matrix.md) |
 | Start your own instance on your server from forkmesh.com/start | [Start your own instance](start-your-own-instance.md) |
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QString>
 
 namespace AccountCapability {
@@ -48,6 +49,53 @@ inline QString loginFailureFallbackMessage(int httpStatus, const QString &error,
                           "email and password were not checked. Try again in "
                           "a few minutes.")
         .arg(relay, QString::number(httpStatus));
+}
+
+inline QJsonObject passwordLoginRequest(const QString &email,
+                                        const QString &password,
+                                        const QString &totp)
+{
+    return QJsonObject{{QStringLiteral("identifier"), email.trimmed()},
+                       {QStringLiteral("email"), email.trimmed()},
+                       {QStringLiteral("password"), password},
+                       {QStringLiteral("totp"), totp}};
+}
+
+inline QString loginWaitText(qint64 retryAfterMs)
+{
+    const qint64 seconds = qMax<qint64>(1, (retryAfterMs + 999) / 1000);
+    if (seconds < 60)
+        return seconds == 1 ? QStringLiteral("1 second")
+                            : QStringLiteral("%1 seconds").arg(seconds);
+    const qint64 minutes = (seconds + 59) / 60;
+    return minutes == 1 ? QStringLiteral("1 minute")
+                        : QStringLiteral("%1 minutes").arg(minutes);
+}
+
+inline QString loginLockoutMessage(qint64 retryAfterMs)
+{
+    const QString wait = retryAfterMs > 0
+                             ? QStringLiteral("about %1").arg(
+                                   loginWaitText(retryAfterMs))
+                             : QStringLiteral("a few minutes");
+    return QStringLiteral(
+               "Too many failed attempts, so sign-in is paused. Wait %1, "
+               "then try again. This is a short pause, not a wrong password: "
+               "your password has not changed.")
+        .arg(wait);
+}
+
+inline QString incorrectPasswordMessage(const QString &host)
+{
+    const QString site =
+        host.trimmed().isEmpty() ? QStringLiteral("the ForkMesh website")
+                                 : host.trimmed();
+    return QStringLiteral(
+               "Incorrect email or password. The desktop app uses the same "
+               "account and password as %1, so use the email and password "
+               "that work there. Click the eye in the password field to "
+               "check what you typed.")
+        .arg(site);
 }
 
 inline bool allowsPasswordOnlyFallback(const QString &error)

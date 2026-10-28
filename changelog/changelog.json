@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Other improvements", "text": "The new repository form says plainly that Import from GitHub copies issues and pull requests but not the code, shows whether the result will be public or private before you create it, and links a new step-by-step guide to backing up a GitHub repository."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "On Linux, ForkMesh adds itself to the applications menu the first time it runs, so you can find it again after closing it."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "Signing in on the desktop checks the email you type, so a suggested username that is not yours no longer reports a correct password as wrong; the password box has an eye button, and a lockout says how long to wait."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Version 1.5.0 brings the desktop, Android and iPhone apps to the same version number, and every platform starts it at build 0."},
   {"date": "2026-10-28", "area": "Market", "text": "Poker arrives in the Market: play no-limit Texas Hold'em with other ForkMesh users for virtual chips, with a dealer, bots to fill seats, side pots, turn clocks and casino sounds, on the web, the desktop, iPhone and Android."},
   {"date": "2026-10-28", "area": "Server", "text": "Sign-up and password reset emails now reach Yahoo and other strict mail providers, and an address is no longer blocked from future emails when a provider refused one because of our own mail setup."},
