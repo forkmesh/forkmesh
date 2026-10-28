@@ -229,4 +229,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S153 | 2026-10-28 | Code | feature | Pull requests look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, a Merged entry in the timeline, a merged or closed box instead of the merge buttons, and a New pull request form that compares branches and can send to a fork on another instance. | 8f86266635 | pending |  |
 | S154 | 2026-10-28 | Packages | feature | Poker: play no-limit Texas Hold'em with other ForkMesh users for virtual chips at a full-screen casino table with a dealer, bots, chat and sounds. | ab5642740e | synced | ab5642740e |
 | S155 | 2026-10-28 | Stats | fix | The Stats release tiles show a rebuilt download's number from build 1, since every version now starts at build 0. | f283b206c8 | pending |  |
+| S156 | 2026-10-28 | Pings | ui | A ping's detail page has a back link at the top that returns you to your list of pings. | 7d50b7e2c7 | pending |  |
 <!-- ledger:end -->
