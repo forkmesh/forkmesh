@@ -174,8 +174,10 @@ FaceChangerFeature::FaceChangerFeature(const forkmesh::market::NativePackageHost
     QVBoxLayout *previewBody = nullptr;
     layout->addWidget(card(QStringLiteral("Your camera"), &previewBody));
     buildEngine();
+#ifdef FORKMESH_HAVE_WEBENGINE
     if (m_view)
         previewBody->addWidget(m_view, 1);
+#endif
     auto *startRow = new QHBoxLayout;
     m_startButton = new QPushButton(QStringLiteral("Start camera"));
     m_startButton->setObjectName(QStringLiteral("primaryButton"));
