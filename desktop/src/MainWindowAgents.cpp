@@ -1387,8 +1387,11 @@ QWidget *MainWindow::buildAgentsTab()
     m_agentCodeSplit->setChildrenCollapsible(false);
     m_agentCodeSplit->addWidget(m_agentOutputStack);
     m_agentCodeSplit->addWidget(m_agentCodePage);
+    m_agentCodeSplit->addWidget(buildAgentTowerPanels());
     m_agentCodeSplit->setStretchFactor(0, 1);
     m_agentCodeSplit->setStretchFactor(1, 1);
+    m_agentCodeSplit->setStretchFactor(2, 0);
+    m_agentCodeSplit->setCollapsible(2, true);
 
     m_agentCodePollTimer = new QTimer(this);
     m_agentCodePollTimer->setInterval(3000);
@@ -1413,7 +1416,6 @@ QWidget *MainWindow::buildAgentsTab()
     auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
     agentOutputLayout->setContentsMargins(0, 8, 0, 0);
     agentOutputLayout->setSpacing(6);
-    agentOutputLayout->addWidget(buildAgentSubSessionStrip());
     agentOutputLayout->addWidget(m_agentCodeSplit, 1);
 
     filesChangedPage->setParent(detailPane);

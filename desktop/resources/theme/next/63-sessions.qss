@@ -183,4 +183,9 @@ QPushButton#sessionsDetailMore {
     text-align: left; padding: 4px 14px;
 }
 QPushButton#sessionsDetailMore:hover { text-decoration: underline; }
+QToolButton#sessionsSubSessionStop {
+    color: @fgSecondary; background: transparent; border: 1px solid @border;
+    border-radius: 6px; font-size: 11px; padding: 1px 8px;
+}
+QToolButton#sessionsSubSessionStop:hover { color: @danger; border-color: @danger; }
 QWidget#workspaceDetailsHost QScrollArea#sessionsDetails { border-left: none; }

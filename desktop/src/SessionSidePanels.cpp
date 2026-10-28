@@ -26,6 +26,7 @@
 #include <QSettings>
 #include <QStyle>
 #include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -97,6 +98,7 @@ QString cardTitle(const QString &key)
 {
     static const QHash<QString, QString> titles{
         {QStringLiteral("progress"), QStringLiteral("Progress")},
+        {QStringLiteral("subsessions"), QStringLiteral("Sub-sessions")},
         {QStringLiteral("outputs"), QStringLiteral("Outputs")},
         {QStringLiteral("sources"), QStringLiteral("Sources")},
         {QStringLiteral("background"), QStringLiteral("Background")},
@@ -113,6 +115,9 @@ QString cardHint(const QString &key)
     static const QHash<QString, QString> hints{
         {QStringLiteral("progress"),
          QStringLiteral("The agent's steps show here once it plans its work.")},
+        {QStringLiteral("subsessions"),
+         QStringLiteral("Subagents, background shells and workflows show here while they "
+                        "run, with Stop.")},
         {QStringLiteral("outputs"),
          QStringLiteral("Files the agent creates or edits show here.")},
         {QStringLiteral("sources"),
@@ -281,6 +286,21 @@ SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
     row.trailing->setTextFormat(Qt::PlainText);
     row.trailing->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     layout->addWidget(row.trailing);
+    if (card.key == QLatin1String("subsessions")) {
+        row.stop = new QToolButton(row.row);
+        row.stop->setObjectName(QStringLiteral("sessionsSubSessionStop"));
+        row.stop->setText(QStringLiteral("Stop"));
+        row.stop->setCursor(Qt::PointingHandCursor);
+        row.stop->setToolTip(QStringLiteral("Stop this sub-session; the main session keeps going"));
+        row.stop->hide();
+        layout->addWidget(row.stop);
+        const QPointer<QWidget> owner = row.row;
+        QObject::connect(row.stop, &QToolButton::clicked, this, [this, owner] {
+            const QString task = owner ? owner->property("sessionsTask").toString() : QString();
+            if (!task.isEmpty() && m_stopSubSession)
+                m_stopSubSession(task);
+        });
+    }
     auto *body = qobject_cast<QVBoxLayout *>(card.body->layout());
     const int at = card.more ? body->indexOf(card.more) : body->count();
     body->insertWidget(at, row.row);
@@ -531,6 +551,33 @@ void SessionSidePanels::setDetails(const Details &details)
 {
     m_details = details;
     refreshDetails();
+}
+
+void SessionSidePanels::setSubSessions(const QList<SubSession> &subSessions, bool canStop,
+                                       std::function<void(const QString &)> stop)
+{
+    m_stopSubSession = std::move(stop);
+    Card &card = m_cards[QStringLiteral("subsessions")];
+    while (card.rows.size() < subSessions.size())
+        addRow(card);
+    for (int index = 0; index < card.rows.size(); ++index) {
+        const Row &row = card.rows.at(index);
+        const SubSession sub = index < subSessions.size() ? subSessions.at(index) : SubSession();
+        setRow(row, {sub.icon, sub.text, sub.trailing, sub.tip, QString()});
+        if (!row.row)
+            continue;
+        row.row->setProperty("sessionsTask", sub.id);
+        if (QLayout *layout = row.row->layout())
+            layout->setContentsMargins(8 + qBound(0, sub.depth, 4) * 14, 0, 8, 0);
+        if (row.stop)
+            row.stop->setVisible(canStop && !sub.id.isEmpty());
+    }
+    const QString meta =
+        subSessions.isEmpty() ? QString() : QStringLiteral("%1 running").arg(subSessions.size());
+    if (card.meta && card.meta->text() != meta)
+        card.meta->setText(meta);
+    if (card.hint)
+        card.hint->setVisible(subSessions.isEmpty());
 }
 
 void SessionSidePanels::clearActivity()
