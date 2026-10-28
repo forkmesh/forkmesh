@@ -131,6 +131,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "marketing" -> Route.Marketing(null)
     "analytics" -> Route.Analytics(null)
     "competitors" -> Route.Competitors
+    "invoices" -> Route.Invoices(null, null)
     "ledger" -> Route.Ledger(null)
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories

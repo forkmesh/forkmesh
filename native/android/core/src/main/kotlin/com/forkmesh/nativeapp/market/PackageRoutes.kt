@@ -38,7 +38,7 @@ data class PackageHubRow(val id: String, val title: String, val destination: Str
 data class PipelineTarget(val organization: String?, val flow: String?)
 
 object PackageRoutes {
-    val BUSINESS_PACKAGE_IDS = listOf("crm", "marketing", "analytics", "competitor", "ledger")
+    val BUSINESS_PACKAGE_IDS = listOf("crm", "marketing", "analytics", "competitor", "invoices", "ledger")
 
     fun destination(pkg: MarketPackage): String? = (pkg.phoneSurface as? PackagePhoneSurface.Native)?.destination
 
@@ -48,6 +48,7 @@ object PackageRoutes {
             Triple("marketing", "Marketing", "marketing"),
             Triple("analytics", "Analytics", "analytics"),
             Triple("competitor", "Competitors", "competitors"),
+            Triple("invoices", "Invoices", "invoices"),
         )) if (id in installed) rows.add(PackageHubRow(id, title, destination))
         rows.add(PackageHubRow("ads", "Ads", "ads"))
         rows.add(PackageHubRow("ledger", "Ledger & tips", "ledger"))
