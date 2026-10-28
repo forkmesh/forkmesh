@@ -35,9 +35,14 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     return payload;
   }
   function message(kind, value = "") {
-    const node = $(`[data-invoice-${kind}]`); if (!node) return;
+    const dialog = [...$$("dialog[open]")].pop();
+    const node = dialog?.querySelector(`[data-invoice-dialog-${kind}]`) || $(`[data-invoice-${kind}]`); if (!node) return;
     const slot = node.querySelector("[data-invoice-message-text]") || node;
     slot.textContent = value; node.classList.toggle("hidden", !value);
+  }
+  function showDialog(dialog) {
+    dialog.querySelectorAll("[data-invoice-dialog-error], [data-invoice-dialog-notice]").forEach((node) => node.classList.add("hidden"));
+    dialog.showModal(); icons();
   }
   function selectedOrg() { return state.organizations.find((org) => org.name === state.organization); }
   function canManage() { return ["owner", "admin"].includes(selectedOrg()?.role || ""); }
@@ -210,7 +215,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     renderLines();
     $(`[data-invoice-delete]`).classList.toggle("hidden", !item || !["draft", "void"].includes(item.status));
     $(`[data-invoice-detail]`)?.close();
-    $(`[data-invoice-editor]`).showModal();
+    showDialog($(`[data-invoice-editor]`));
   }
   function editorBody() {
     const body = {
@@ -260,7 +265,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     const head = $(`[data-invoice-detail-head]`); const body = $(`[data-invoice-detail-body]`); const actions = $(`[data-invoice-detail-actions]`);
     if (!head || !body || !actions) return;
     const client = invoice.contactId && invoice.contact ? crmLink(invoice.contactId, clientLabel(invoice)) : escapeHtml(clientLabel(invoice));
-    head.innerHTML = `<h2 class="truncate text-sm font-semibold">${escapeHtml(invoice.number)} ${statusLabel(invoice)}</h2><p class="text-xs font-normal text-muted-foreground">${client}${invoice.client?.company && invoice.client?.name ? ` · ${escapeHtml(invoice.client.company)}` : ""}${invoice.contactId && !invoice.contact ? " · CRM contact removed" : ""}</p>`;
+    head.innerHTML = `<h2 id="invoice-detail-title" class="truncate text-sm font-semibold">${escapeHtml(invoice.number)} ${statusLabel(invoice)}</h2><p class="text-xs font-normal text-muted-foreground">${client}${invoice.client?.company && invoice.client?.name ? ` · ${escapeHtml(invoice.client.company)}` : ""}${invoice.contactId && !invoice.contact ? " · CRM contact removed" : ""}</p>`;
     const lines = invoice.items.map((line) => `<tr><td class="py-1 pr-2">${escapeHtml(line.description || "Item")}</td><td class="py-1 pr-2 text-right text-muted-foreground">${escapeHtml(String(line.quantity))} × ${escapeHtml(money(line.unitAmount, invoice.currency))}</td><td class="py-1 text-right">${escapeHtml(money(Math.round(line.quantity * line.unitAmount), invoice.currency))}</td></tr>`).join("");
     const openHint = invoice.firstOpenedAt ? `first ${relativeTimeLabel(invoice.firstOpenedAt)}` : invoice.sentAt ? "not yet" : "";
     const viewHint = invoice.firstViewedAt ? `first ${relativeTimeLabel(invoice.firstViewedAt)}` : invoice.sentAt ? "not yet" : "";
@@ -293,9 +298,9 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     state.detailId = id; setParam("invoice", id);
     const dialog = $(`[data-invoice-detail]`);
     const cached = byId(id); if (cached) renderDetail({ ...cached, events: null });
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) showDialog(dialog);
     try { const payload = await request(orgPath(`/items/${id}`)); if (state.detailId === id) renderDetail(payload.invoice); }
-    catch (error) { message("error", `Could not open the invoice: ${error.message}`); dialog.close(); }
+    catch (error) { dialog.close(); message("error", `Could not open the invoice: ${error.message}`); }
   }
   function openSend(invoice) {
     $(`[data-invoice-send-title]`).textContent = invoice.sentAt ? `Remind about ${invoice.number}` : `Email ${invoice.number}`;
@@ -304,7 +309,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     $(`[data-invoice-send-subject]`).placeholder = `${invoice.sentAt ? "Reminder: invoice" : "Invoice"} ${invoice.number} from ${state.settings.businessName || state.organization}`;
     $(`[data-invoice-send-message]`).value = "";
     $(`[data-invoice-send-message]`).placeholder = "Leave empty for a short message with the amount and due date.";
-    $(`[data-invoice-send-dialog]`).showModal();
+    showDialog($(`[data-invoice-send-dialog]`));
   }
   async function submitSend(event) {
     event.preventDefault();
@@ -324,7 +329,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     $(`[data-invoice-paid-amount]`).value = ((invoice.balance || invoice.total) / 100).toFixed(2);
     $(`[data-invoice-paid-date]`).value = new Date().toISOString().slice(0, 10);
     $(`[data-invoice-paid-method]`).value = ""; $(`[data-invoice-paid-note]`).value = "";
-    $(`[data-invoice-paid-dialog]`).showModal();
+    showDialog($(`[data-invoice-paid-dialog]`));
   }
   async function submitPaid(event) {
     event.preventDefault();
@@ -363,7 +368,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     });
     $(`[data-invoice-settings-save]`).classList.toggle("hidden", !canManage());
     $(`[data-invoice-settings-hint]`).textContent = canManage() ? "Shown on every invoice and invoice email." : "Only an organization owner or admin can change these.";
-    $(`[data-invoice-settings-dialog]`).showModal();
+    showDialog($(`[data-invoice-settings-dialog]`));
   }
   async function saveSettings(event) {
     event.preventDefault();
@@ -431,7 +436,7 @@ window.ForkMeshDashboard.registerPage("invoices", ({
     $(`[data-invoice-new]`)?.addEventListener("click", () => void openEditor());
     $(`[data-invoice-settings-open]`)?.addEventListener("click", openSettings);
     $(`[data-invoice-settings-form]`)?.addEventListener("submit", saveSettings);
-    $(`[data-invoice-manage]`)?.addEventListener("click", () => $(`[data-invoice-manage-dialog]`).showModal());
+    $(`[data-invoice-manage]`)?.addEventListener("click", () => showDialog($(`[data-invoice-manage-dialog]`)));
     $(`[data-invoice-export]`)?.addEventListener("click", () => void exportAll());
     $(`[data-invoice-uninstall]`)?.addEventListener("click", () => void uninstall());
     $(`[data-invoice-search]`)?.addEventListener("input", renderList);

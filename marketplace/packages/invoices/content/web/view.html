@@ -51,11 +51,12 @@
               </div>
             </div>
 
-            <dialog data-invoice-editor class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-editor aria-labelledby="invoice-editor-title" class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <form data-invoice-form class="fm-dialog">
-                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-invoice-editor-title class="text-sm font-semibold">New invoice</h2><p class="text-xs font-normal text-muted-foreground">Shared only with members of this organization.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 id="invoice-editor-title" data-invoice-editor-title class="text-sm font-semibold">New invoice</h2><p class="text-xs font-normal text-muted-foreground">Shared only with members of this organization.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <input data-invoice-id type="hidden" />
                 <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
+                  <div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger sm:col-span-2 hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
                   <label data-invoice-contact-field class="hidden gap-1 text-xs text-muted-foreground sm:col-span-2">CRM contact<select data-invoice-contact class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"><option value="">Not linked to a CRM contact</option></select></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Client name<input data-invoice-client-name maxlength="160" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Client email<input data-invoice-client-email type="email" maxlength="254" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
@@ -79,18 +80,19 @@
               </form>
             </dialog>
 
-            <dialog data-invoice-detail class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-detail aria-labelledby="invoice-detail-title" class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <div class="fm-dialog">
                 <div class="fm-dialog-header"><div data-invoice-detail-head class="fm-dialog-title min-w-0"></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
-                <div data-invoice-detail-body class="fm-dialog-body"></div>
+                <div class="fm-dialog-body"><div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div><div data-invoice-dialog-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-invoice-message-text class="fm-flash-body"></p></div><div data-invoice-detail-body></div></div>
                 <div data-invoice-detail-actions class="fm-dialog-footer flex-wrap"></div>
               </div>
             </dialog>
 
-            <dialog data-invoice-send-dialog class="w-full max-w-xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-send-dialog aria-labelledby="invoice-send-title" class="w-full max-w-xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <form data-invoice-send-form class="fm-dialog">
-                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-invoice-send-title class="text-sm font-semibold">Email invoice</h2><p class="text-xs font-normal text-muted-foreground">The email carries a private link to the invoice. You are pinged when it is opened, viewed or its pay link is clicked.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 id="invoice-send-title" data-invoice-send-title class="text-sm font-semibold">Email invoice</h2><p class="text-xs font-normal text-muted-foreground">The email carries a private link to the invoice. You are pinged when it is opened, viewed or its pay link is clicked.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <div class="fm-dialog-body grid gap-3">
+                  <div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
                   <label class="grid gap-1 text-xs text-muted-foreground">To<input data-invoice-send-to type="email" required maxlength="254" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Subject<input data-invoice-send-subject maxlength="300" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Message<textarea data-invoice-send-message maxlength="20000" rows="7" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
@@ -99,10 +101,11 @@
               </form>
             </dialog>
 
-            <dialog data-invoice-paid-dialog class="w-full max-w-md bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-paid-dialog aria-labelledby="invoice-paid-title" class="w-full max-w-md bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <form data-invoice-paid-form class="fm-dialog">
-                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Record a payment</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-header"><h2 id="invoice-paid-title" class="fm-dialog-title">Record a payment</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <div class="fm-dialog-body grid gap-3">
+                  <div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
                   <label class="grid gap-1 text-xs text-muted-foreground">Amount<input data-invoice-paid-amount type="number" min="0.01" step="0.01" required class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Paid on<input data-invoice-paid-date type="date" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Method<input data-invoice-paid-method maxlength="60" placeholder="Bank transfer, card, cash…" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
@@ -112,10 +115,11 @@
               </form>
             </dialog>
 
-            <dialog data-invoice-settings-dialog class="w-full max-w-2xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-settings-dialog aria-labelledby="invoice-settings-title" class="w-full max-w-2xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <form data-invoice-settings-form class="fm-dialog">
-                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 class="text-sm font-semibold">Invoicing settings</h2><p data-invoice-settings-hint class="text-xs font-normal text-muted-foreground">Shown on every invoice and invoice email.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 id="invoice-settings-title" class="text-sm font-semibold">Invoicing settings</h2><p data-invoice-settings-hint class="text-xs font-normal text-muted-foreground">Shown on every invoice and invoice email.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
+                  <div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger sm:col-span-2 hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
                   <label class="grid gap-1 text-xs text-muted-foreground">Business name<input data-invoice-setting="businessName" maxlength="160" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Default currency<input data-invoice-setting="currency" maxlength="3" class="h-control rounded-md border border-border bg-background px-3 text-control uppercase text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Business address<textarea data-invoice-setting="businessAddress" maxlength="1000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
@@ -133,10 +137,10 @@
               </form>
             </dialog>
 
-            <dialog data-invoice-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+            <dialog data-invoice-manage-dialog aria-labelledby="invoice-manage-title" class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <div class="fm-dialog">
-                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Invoicing data</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
-                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export every invoice with its payments and history, or uninstall the plugin and remove its stored data. Invoice links already emailed stop working once it is uninstalled.</p></div>
+                <div class="fm-dialog-header"><h2 id="invoice-manage-title" class="fm-dialog-title">Invoicing data</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body"><div data-invoice-dialog-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div><p class="text-sm text-muted-foreground">Export every invoice with its payments and history, or uninstall the plugin and remove its stored data. Invoice links already emailed stop working once it is uninstalled.</p></div>
                 <div class="fm-dialog-footer"><button data-invoice-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-invoice-export type="button" class="fm-btn fm-btn-sm">Export JSON</button></div>
               </div>
             </dialog>

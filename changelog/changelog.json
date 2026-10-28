@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Market", "text": "Invoicing on the web: when saving, emailing or recording a payment fails, the reason and what to do next now show inside the open dialog instead of behind it."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Tapping an agent alert now opens its page while it loads, finds agents on your other desktops and runners, and offers Try again instead of a blank page."},
   {"date": "2026-10-28", "area": "Projects", "text": "On a phone, the web issue and pull request lists are more compact, and the New issue, refresh and view buttons now line up at one height."},
   {"date": "2026-10-28", "area": "Agents", "text": "Deleting an agent now also ends anything still running in its worktree, so the phone no longer shows a leftover row named after the branch with \"(deleted)\"."},
