@@ -3625,12 +3625,61 @@
           min-height: 0;
         }
 
+        [data-repo-collection-chrome] :where(button, input, select, summary),
+        [data-repo-issue-list-header] :where(button, select),
+        [data-repo-pull-list-header] :where(button, select),
+        [data-repo-collection-pagination] :where(button) {
+          min-height: 0;
+        }
+
         /* iOS zooms the page into any focused field under 16px and leaves it
            zoomed; the filter and the inline comment box are the two fields
            a reviewer uses. */
         .fm-diff-filter [data-repo-pull-file-filter],
         [data-repo-pull-inline-body] {
           font-size: 16px;
+        }
+      }
+
+      @media (max-width: 639px) {
+        [data-repo-issue-view-title],
+        [data-repo-pull-view-title] {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+        }
+        [data-repo-issue-list-header] {
+          row-gap: 0;
+          padding-block: 4px;
+        }
+        [data-repo-issue-list-filters] {
+          flex-wrap: nowrap;
+          justify-content: flex-start;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          overscroll-behavior-x: contain;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+        [data-repo-issue-list-filters]::-webkit-scrollbar { display: none; }
+        a[data-repo-record-kind="issues"],
+        a[data-repo-record-kind="pulls"] {
+          padding: 6px 12px;
+        }
+        a[data-repo-record-kind="issues"] > :first-child,
+        a[data-repo-record-kind="pulls"] > :first-child {
+          margin-top: 2px;
+        }
+        [data-repo-record-title-line] {
+          line-height: 20px;
+        }
+        [data-repo-issue-row-title],
+        [data-repo-pull-row-title] {
+          font-size: 14px;
         }
       }
 

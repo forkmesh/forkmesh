@@ -21827,7 +21827,7 @@
       const content = isIssue ? `
           <i data-lucide="${item.status === "closed" ? "circle-check" : "circle-dot"}" class="mt-1 h-4 w-4 ${item.status === "closed" ? "text-muted-foreground" : "text-[var(--dashboard-open)]"}"></i>
           <span class="min-w-0">
-            <span class="block min-w-0 leading-6">
+            <span data-repo-record-title-line class="block min-w-0 leading-6">
               <span data-repo-issue-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
               ${item.deleted ? '<span class="issue-label ml-1 align-[2px]" style="--label-h:210;filter:saturate(0)" title="Deleted by its author.">deleted</span>' : ""}
               ${item.deleteAttempted ? '<span class="fm-label fm-label-attention ml-1 align-[2px]" title="Someone who did not open this issue tried to delete it; the deletion was not applied."><i data-lucide="triangle-alert" class="h-3 w-3"></i>unauthorized deletion</span>' : ""}
@@ -21848,7 +21848,7 @@
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
-            <span class="block min-w-0 leading-6">
+            <span data-repo-record-title-line class="block min-w-0 leading-6">
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
@@ -31716,7 +31716,7 @@ Your reply
       <div class="flex min-w-0 flex-wrap items-center gap-1">
         ${statusTabs.map(([stateName, icon, label, count]) => `<button type="button" data-dashboard-issue-filter="${stateName}" aria-pressed="${stateName === issuesView.filter ? "true" : "false"}" class="${issueStateTabClass(stateName === issuesView.filter)}"><i data-lucide="${icon}" class="h-4 w-4"></i>${label}<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span></button>`).join("")}
       </div>
-      <div class="flex min-w-0 flex-wrap items-center justify-end">
+      <div data-repo-issue-list-filters class="flex min-w-0 flex-wrap items-center justify-end">
         ${listFilters.map(([label, field]) => renderRepoCollectionFilter(
           label, issueFilterOptions(field), field, true)).join("")}
       </div>
