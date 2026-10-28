@@ -776,6 +776,10 @@ func writeIssueItem(root string, item collaborationItem) (bool, int, error) {
 			if eventType != "open" && eventID != "" && stringValue(existing["id"]) == eventID {
 				return true, candidateNumber, nil
 			}
+			if eventType != "open" && eventSig != "" && eventSig != "relay-placeholder" &&
+				stringValue(existing["sig"]) == eventSig {
+				return true, candidateNumber, nil
+			}
 		}
 		if candidateNumber == number {
 			existingPath, issue = path, candidate
@@ -929,6 +933,9 @@ func foldIssueEvents(target, source map[string]any) bool {
 		if key := issueEventKey(event); key != "" {
 			seen[key] = true
 		}
+		if signature := stringValue(event["sig"]); signature != "" {
+			seen["sig:"+signature] = true
+		}
 		kind := stringValue(event["type"])
 		if at := issueInt64(event["ts"]); at > latest[kind] {
 			latest[kind] = at
@@ -942,10 +949,14 @@ func foldIssueEvents(target, source map[string]any) bool {
 			continue
 		}
 		key := issueEventKey(event)
-		if key == "" || seen[key] {
+		signature := stringValue(event["sig"])
+		if key == "" || seen[key] || (signature != "" && seen["sig:"+signature]) {
 			continue
 		}
 		seen[key] = true
+		if signature != "" {
+			seen["sig:"+signature] = true
+		}
 		incoming = append(incoming, event)
 	}
 	if len(incoming) == 0 {

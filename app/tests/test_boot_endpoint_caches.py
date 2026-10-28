@@ -94,7 +94,8 @@ def _profile_scope(db, rows=None):
         "NODE_NAME_RE", "MAX_NODE_NAME", "valid_node_name", "_owned_nodes",
         "_profile_owner_names_from_rec", "_profile_catalog_owner_names",
         "_account_mirror_count", "_account_social_counts",
-        "_account_is_following", "_account_lookup_for_viewer"], namespace)
+        "_account_is_following", "_account_lookup_for_viewer",
+        "_account_lookup_viewer"], namespace)
 
 
 def test_social_counts_are_one_statement_plus_one_repository_read():
@@ -130,9 +131,16 @@ def test_a_viewer_lookup_reuses_the_guest_copy_with_a_live_follow_flag():
              "isFollowing": False,
              "social": {"followers": 1, "isFollowing": False}}
 
-    def lookup(viewer):
+    async def session_record(_env, request):
+        return ("bi:" + request.session, {"name": request.session}) \
+            if request.session else ("", None)
+
+    scope["_account_session_record"] = session_record
+
+    def lookup(viewer, session=None):
         request = SimpleNamespace(
-            url="https://app.example/api/accounts/jett?viewer=" + viewer)
+            url="https://app.example/api/accounts/jett?viewer=" + viewer,
+            session=viewer if session is None else session)
         return asyncio.run(scope["_account_lookup_for_viewer"](
             object(), request, FakeResponse(json.dumps(guest)), "jett"))
 
@@ -147,8 +155,35 @@ def test_a_viewer_lookup_reuses_the_guest_copy_with_a_live_follow_flag():
         assert json.loads(response.body)["isFollowing"] is False
         assert "cache-control" not in response.headers
     assert asyncio.run(scope["_account_lookup_for_viewer"](
-        object(), SimpleNamespace(url="https://x/?viewer=a"),
+        object(), SimpleNamespace(url="https://x/?viewer=a", session=""),
         FakeResponse("not json"), "jett")) is None
+
+
+def test_a_viewer_name_without_its_own_session_learns_no_follow_edge():
+    db = Db(follows={("bi:ann", "bi:jett")})
+    scope = _profile_scope(db)
+    guest = {"ok": True, "name": "jett", "isFollowing": False,
+             "social": {"isFollowing": False}}
+
+    async def session_record(_env, request):
+        return ("bi:" + request.session, {"name": request.session}) \
+            if request.session else ("", None)
+
+    scope["_account_session_record"] = session_record
+    for session in ("", "bob"):
+        request = SimpleNamespace(
+            url="https://app.example/api/accounts/jett?viewer=ann",
+            session=session)
+        response = asyncio.run(scope["_account_lookup_for_viewer"](
+            object(), request, FakeResponse(json.dumps(guest)), "jett"))
+        assert json.loads(response.body)["isFollowing"] is False
+        assert asyncio.run(scope["_account_lookup_viewer"](
+            object(), request)) == ""
+    handler = ENTRY_TEXT[ENTRY_TEXT.index(
+        "        profile_private = bool(rec.get(\"profile_private\"))"):
+        ENTRY_TEXT.index("async def _account_lookup_for_viewer(")]
+    assert ".get(\"viewer\"" not in handler
+    assert "viewer = await _account_lookup_viewer(env, request)" in handler
 
 
 def test_profile_handler_serves_viewers_from_the_guest_copy_after_privacy():

@@ -1578,8 +1578,10 @@ func runCodexAgent(ctx context.Context, command agentCommandRunner, node string,
 	}
 	defer removeTreeUnder(filepath.Dir(workdir), scratch)
 	// The job user owns the workdir; let it write its last message here.
+	messageOwner := os.Geteuid()
 	if info, err := os.Stat(workdir); err == nil {
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) != os.Geteuid() {
+			messageOwner = int(stat.Uid)
 			_ = os.Lchown(scratch, int(stat.Uid), int(stat.Gid))
 		}
 	}
@@ -1602,7 +1604,7 @@ func runCodexAgent(ctx context.Context, command agentCommandRunner, node string,
 	started := time.Now()
 	stdout := &cappedBuffer{limit: agentOutputLimit}
 	stderr, runErr := command(ctx, workdir, prompt, stdout, "codex", args...)
-	text, _ := os.ReadFile(lastMessage)
+	text, _ := readOwnedFile(lastMessage, messageOwner, agentOutputLimit)
 	outcome := agentRunOutcome{
 		text:       strings.TrimSpace(string(text)),
 		durationMs: time.Since(started).Milliseconds(),

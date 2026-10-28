@@ -129,9 +129,12 @@ public:
         qint64 lastSeenMs = 0;
         QString approval;
         qint64 accountCheckedMs = 0;
+        bool userConfirmed = false;
     };
 
     enum class AccountCheck { Owned, NotOwned, Unreachable };
+
+    static bool userVerified(const Device &device);
 
     // `signer` returns the base64url Ed25519 signature of this desktop's
     // identity key (publicKey) over the given bytes.

@@ -23,6 +23,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "ReactionEmoji.h"
+#include "ReleaseTrust.h"
 #include "SafeDelete.h"
 #include "SettingsSectionsView.h"
 #include "SystemdTimersPanel.h"
@@ -7408,18 +7409,26 @@ void MainWindow::maybeAutoUpdate()
                         runOffThread<AutoUpdateRelease>(
                             [clientDir] {
                                 AutoUpdateRelease release;
-                                QString latestTag;
+                                QString tagList;
                                 if (!gitOutput(clientDir,
-                                               {"for-each-ref", "--sort=-creatordate",
-                                                "--count=1", "refs/tags",
+                                               {"for-each-ref", "refs/tags",
                                                 "--format=%(refname:short)"},
-                                               &latestTag)
-                                    || latestTag.trimmed().isEmpty())
+                                               &tagList))
                                     return release;
-                                release.tag = latestTag.trimmed();
+                                const QString newest =
+                                    forkmesh::releasetrust::newestReleaseTag(
+                                        tagList.split(QLatin1Char('\n')));
+                                if (newest.isEmpty()
+                                    || forkmesh::releasetrust::compareVersions(
+                                           newest,
+                                           QStringLiteral(FORKMESH_VERSION))
+                                           <= 0)
+                                    return release;
+                                release.tag = newest;
                                 QString tagCommit;
                                 if (!gitOutput(clientDir,
-                                               {"rev-list", "-n1", release.tag},
+                                               {"rev-list", "-n1",
+                                                "refs/tags/" + release.tag},
                                                &tagCommit)
                                     || tagCommit.trimmed().isEmpty())
                                     return release;
@@ -7448,7 +7457,13 @@ void MainWindow::maybeAutoUpdate()
                                 if (tryPrebuiltAutoUpdate(clientDir, release.tag,
                                                           release.commit))
                                     return;
-                                updateRebuildRestart();
+                                logSystem(QStringLiteral(
+                                              "Auto-update: release %1 could "
+                                              "not be installed from its "
+                                              "signed release here; nothing "
+                                              "was changed. Use Update to "
+                                              "update by hand.")
+                                              .arg(release.tag));
                             });
                     });
             fetch->start(QStringLiteral("git"), {"fetch", "--quiet", "--tags"});
@@ -11970,6 +11985,11 @@ MainWindow::noticeDestination(const QString &href, int actionRunId,
         destination.label = QStringLiteral("Log");
         destination.icon = QStringLiteral("list-unordered");
         destination.tooltip = QStringLiteral("Open the log filtered to errors");
+    } else if (href == QLatin1String("fm:workflows:approve")) {
+        destination.href = href;
+        destination.label = QStringLiteral("Review");
+        destination.icon = QStringLiteral("workflow");
+        destination.tooltip = QStringLiteral("Review the repository workflows waiting for approval");
     } else if (href == QLatin1String("fm:offline:off")) {
         destination.href = href;
         destination.label = QStringLiteral("Go online");
@@ -12020,6 +12040,10 @@ bool MainWindow::openNoticeHref(const QString &href)
     }
     if (href == QLatin1String("fm:offline:off")) {
         setOfflineMode(false);
+        return true;
+    }
+    if (href == QLatin1String("fm:workflows:approve")) {
+        reviewPendingRepoWorkflowApprovals();
         return true;
     }
     if (href == QLatin1String("fm:chat:general")) {

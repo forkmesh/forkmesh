@@ -190,6 +190,33 @@ final class OfficeChannelsTests: XCTestCase {
         await service.closeAll()
     }
 
+    @MainActor func testOpeningARoomReportsTheRoomNameTheRelayNamed() async throws {
+        let api = FakeAccountApi()
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [["id": .string(OfficeChannelsTests.roomId), "name": "team", "visibility": "private", "keyVersion": 2]]
+        ]
+        let room = "chat-channel:\(OfficeChannelsTests.roomId):v2"
+        api.replies["GET /api/chat/channels/\(OfficeChannelsTests.roomId)/room-access"] = [
+            "room": .string(room), "passphrase": "office-pass",
+            "webSocketUrl": .string("/api/chat/channels/\(OfficeChannelsTests.roomId)/ws?ticket=abc"),
+        ]
+        let me = try Identity.fromSeed(Ed25519.generateSeed())
+        let service = OfficeChannelService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.next.forkmesh.com") }, selfId: { me.nodeId }, displayName: { "Me" },
+            nodeIdentity: me)
+        var opened: [String] = []
+        service.onRoomOpened = { conversation, name in opened.append(conversation + " " + name) }
+        await service.refresh()
+        let ok = await service.open("#office/team")
+        XCTAssertTrue(ok)
+        XCTAssertEqual(opened, ["#office/team \(room)"])
+        let again = await service.open("#office/team")
+        XCTAssertTrue(again)
+        XCTAssertEqual(opened.count, 1, "an already open room is not reported again")
+        await service.closeAll()
+    }
+
     @MainActor func testThreadRepliesInAnOfficeChannelGoBothWays() async throws {
         let api = FakeAccountApi()
         api.replies["GET /api/chat/channels"] = [

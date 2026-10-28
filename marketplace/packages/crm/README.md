@@ -277,6 +277,20 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 
 ## Email
 
+**One-off sends** (`POST /api/crm/<org>/emails/send`) that do not go out
+through the member's own Zoho connection follow the founders
+outreach rules: only owners, admins and the outreach roster may send, each
+sender gets `OUTREACH_DAILY_LIMIT` one-off sends per 24 hours, and only owners
+and admins may set `fromEmail`/`fromName`; everyone else sends as the
+organization's saved sender. Why: without a key the send goes through the
+host's shared mail account, so any account that made an organization and
+installed the CRM could otherwise send arbitrary HTML under a display name of
+its choice. On the shared sender the host then sends from its own address as
+`<organization> via ForkMesh` with the CRM's sender address as `Reply-To`
+(docs/MAIL_LOG.md), so the saved and chosen `fromName` show only in the CRM;
+every shared send carries `organization` and `account` so the host's per-org
+and per-account daily caps apply.
+
 ### Zoho Mail connection
 
 - **One click** (when the host runs a ForkMesh Zoho app): an owner or admin

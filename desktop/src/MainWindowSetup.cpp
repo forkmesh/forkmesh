@@ -21,6 +21,7 @@
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
 #include "PrivateMirrorStore.h"
+#include "ReleaseTrust.h"
 #include "RestartTiming.h"
 #include "SourceTreeWatch.h"
 #include "UserAvatarStore.h"
@@ -6827,6 +6828,8 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     // upstream branch, where promoted metadata lands.
     const QString wantedTagCommit = tagCommit.trimmed().toLower();
     bool publishesManifests = false;
+    QString rejectedBecause;
+    QString verifiedTagCommit;
     auto manifestForTag = [&](const QString &revision) -> QJsonObject {
         QByteArray out;
         if (!runGitCapture(clientDir,
@@ -6851,11 +6854,36 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
                             wantedTagCommit},
                            nullptr, nullptr))
             return {};
-        return candidate;
+        QByteArray signature;
+        runGitCapture(clientDir,
+                      {QStringLiteral("show"),
+                       revision + QStringLiteral(
+                                      ":.forkmesh/releases/latest/release.json.sig")},
+                      &signature, nullptr);
+        const forkmesh::releasetrust::Verdict verdict =
+            forkmesh::releasetrust::checkManifest(
+                out, signature, tag, QStringLiteral(FORKMESH_VERSION));
+        if (!verdict.ok) {
+            rejectedBecause = verdict.reason;
+            return {};
+        }
+        verifiedTagCommit = verdict.tagCommit;
+        return verdict.manifest;
     };
     QJsonObject manifest = manifestForTag(wantedTagCommit);
     if (manifest.isEmpty())
         manifest = manifestForTag(QStringLiteral("@{upstream}"));
+    if (manifest.isEmpty() && !rejectedBecause.isEmpty()) {
+        static QString rejectedLoggedFor;
+        if (rejectedLoggedFor != tag + rejectedBecause) {
+            rejectedLoggedFor = tag + rejectedBecause;
+            logSystem(QStringLiteral("Auto-update: release %1 was not "
+                                     "installed because %2. Nothing was "
+                                     "changed.")
+                          .arg(tag, rejectedBecause));
+        }
+        return true;
+    }
     if (manifest.isEmpty()) {
         if (publishesManifests) {
             // This repository ships signed prebuilts; the release's own set is
@@ -6871,10 +6899,16 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
             }
             return true;
         }
-        logSystem(QStringLiteral("Auto-update: release %1 publishes no "
-                                 "artifact manifest; building from source.")
-                      .arg(tag));
-        return false;
+        static QString unsignedLoggedFor;
+        if (unsignedLoggedFor != tag) {
+            unsignedLoggedFor = tag;
+            logSystem(QStringLiteral("Auto-update: release %1 publishes no "
+                                     "signed release manifest, so it is not "
+                                     "installed automatically. Use Update to "
+                                     "build it by hand.")
+                          .arg(tag));
+        }
+        return true;
     }
     static const QRegularExpression sha256Re(
         QStringLiteral("\\A[0-9a-f]{64}\\z"));
@@ -6912,9 +6946,11 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     const int slash = manifestRepo.indexOf(QLatin1Char('/'));
     if (assetHash.isEmpty() || slash <= 0) {
         logSystem(QStringLiteral("Auto-update: release %1 has no prebuilt "
-                                 "artifact for %2/%3; building from source.")
+                                 "artifact for %2/%3; building its signed "
+                                 "commit from source.")
                       .arg(tag, wantOs, wantArch));
-        return false;
+        autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
+        return true;
     }
     const QString owner = manifestRepo.left(slash);
     const QString name = manifestRepo.mid(slash + 1);
@@ -6965,7 +7001,7 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, tmp, hasher, staging, assetHash, tag, owner, name,
-             companionHash] {
+             companionHash, verifiedTagCommit] {
                 const QByteArray rest = reply->readAll();
                 tmp->write(rest);
                 hasher->addData(rest);
@@ -6980,16 +7016,16 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
                     logSystem(
                         QStringLiteral(
                             "Auto-update: artifact download for %1 failed "
-                            "(%2); falling back to a source build.")
+                            "(%2); building its signed commit from source.")
                             .arg(tag, ok ? QStringLiteral("checksum mismatch")
                                          : netError));
-                    updateRebuildRestart();
+                    autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
                     return;
                 }
                 QFile::remove(staging);
                 if (!QFile::rename(tmp->fileName(), staging)) {
                     QFile::remove(tmp->fileName());
-                    updateRebuildRestart();
+                    autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
                     return;
                 }
                 installMirrorCompanionThenRelaunch(staging, tag, owner, name,
@@ -7109,10 +7145,10 @@ void MainWindow::installPrebuiltAndRelaunch(const QString &artifactPath,
         QFile::remove(staged);
         if (!QFile::copy(artifactPath, staged)) {
             logSystem(QStringLiteral("Auto-update: could not stage the %1 "
-                                     "artifact; falling back to a source "
-                                     "build.")
+                                     "artifact; nothing was changed and the "
+                                     "next check tries again.")
                           .arg(tag));
-            updateRebuildRestart();
+            stopRestartCautionFlash();
             return;
         }
     }
@@ -7123,6 +7159,77 @@ void MainWindow::installPrebuiltAndRelaunch(const QString &artifactPath,
     logRestart(QStringLiteral("prebuilt update to %1 staged").arg(tag));
     m_updateAsUser.clear();
     installAndRelaunch(staged, runningClientExecutable());
+}
+
+void MainWindow::autoUpdateFromVerifiedSource(const QString &tag,
+                                              const QString &verifiedCommit)
+{
+    const QString clientDir = runningClientDir();
+    const QString repoDir = QFileInfo(clientDir).absolutePath();
+    if (!forkmesh::releasetrust::isCommitId(verifiedCommit)
+        || !QDir(repoDir).exists(QStringLiteral(".git"))
+        || !QDir(clientDir).exists(QStringLiteral("CMakeLists.txt"))) {
+        logSystem(QStringLiteral("Auto-update: release %1 cannot be built "
+                                 "from its signed commit here; nothing was "
+                                 "changed. Use Update to update by hand.")
+                      .arg(tag));
+        return;
+    }
+    startRestartCautionFlash();
+    beginRestartLog();
+    showUpdateLog();
+    logRestart(QStringLiteral("auto-update to %1 from signed commit %2 started")
+                   .arg(tag, verifiedCommit));
+    m_buildButton = m_rebuildButton;
+    m_buildStatusLabel = m_rebuildStatus;
+    m_updateAsUser.clear();
+    if (m_rebuildButton)
+        m_rebuildButton->setEnabled(false);
+    setRestartPhase(QStringLiteral("moving to the signed release commit"));
+    setRestartSpinProgress(20);
+    setUpdateStatus(QStringLiteral("Moving the checkout to release %1 (%2)...")
+                        .arg(tag, verifiedCommit.left(12)));
+    runUpdateStepUser(
+        QStringLiteral("git"),
+        {QStringLiteral("-C"), repoDir, QStringLiteral("merge"),
+         QStringLiteral("--ff-only"), verifiedCommit},
+        repoDir,
+        [this, clientDir, repoDir, tag, verifiedCommit] {
+            QString head;
+            if (!gitOutput(repoDir, {QStringLiteral("rev-parse"),
+                                     QStringLiteral("HEAD")},
+                           &head)
+                || head.trimmed().toLower() != verifiedCommit) {
+                logRestart(QStringLiteral("auto-update stopped: HEAD is not "
+                                          "the signed commit of %1")
+                               .arg(tag));
+                setUpdateStatus(QStringLiteral("Auto-update stopped: the "
+                                               "checkout is not at the signed "
+                                               "commit of %1.")
+                                    .arg(tag),
+                                true);
+                stopRestartSpin();
+                stopRestartCautionFlash();
+                if (m_rebuildButton)
+                    m_rebuildButton->setEnabled(true);
+                return;
+            }
+            buildAndRelaunch(clientDir);
+        },
+        [this, repoDir, tag] {
+            logRestart(QStringLiteral("auto-update stopped; %1 left untouched")
+                           .arg(repoDir));
+            setUpdateStatus(QStringLiteral("Auto-update to %1 stopped: the "
+                                           "checkout cannot fast-forward to "
+                                           "its signed commit. Nothing in %2 "
+                                           "was changed.")
+                                .arg(tag, repoDir),
+                            true);
+            stopRestartSpin();
+            stopRestartCautionFlash();
+            if (m_rebuildButton)
+                m_rebuildButton->setEnabled(true);
+        });
 }
 
 void MainWindow::updateRebuildRestart()

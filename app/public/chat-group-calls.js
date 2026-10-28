@@ -332,6 +332,7 @@ export function createGroupCalls({
       muted: false,
       cameraOff: false,
       state: "joining",
+      chatRoom: String(callId(channelKey) || ""),
       error: "",
       timers: [],
       retries: 0,
@@ -598,6 +599,31 @@ export function createGroupCalls({
     return true;
   }
 
+  async function channelRekeyed(channelKey, chatRoom) {
+    const current = call;
+    const room = String(chatRoom || "");
+    if (!current || current.channelKey !== channelKey || !room) return false;
+    if (!current.chatRoom) {
+      current.chatRoom = room;
+      return false;
+    }
+    if (current.chatRoom === room) return false;
+    current.chatRoom = room;
+    if (current.reconnecting) {
+      clearTimeout(current.reconnecting);
+      current.reconnecting = null;
+    }
+    dropConnection(current);
+    current.retries = 0;
+    current.state = "reconnecting";
+    onChange();
+    if (!(await connect(current)) && call === current) {
+      connectionLost(current, "The call could not connect.");
+    }
+    onChange();
+    return true;
+  }
+
   function leave() {
     const current = call;
     if (!current) return;
@@ -642,6 +668,7 @@ export function createGroupCalls({
 
   return {
     handleFrame,
+    channelRekeyed,
     join,
     leave,
     toggleMute,

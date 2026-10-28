@@ -37,6 +37,18 @@ description on its own row. Every class the page uses is in the hand-built
 `app/public/dashboard/tailwind.css`; a class missing from that file has no
 style at all, so check before adding one.
 
+The dialogs are modal, so `showModal()` makes the page behind them inert and
+covers it with the backdrop: an error written to the page flash while one is
+open is never seen. Each dialog carries its own `data-invoice-dialog-error`
+slot (the detail also has `data-invoice-dialog-notice`), and `message()`
+writes to the topmost open dialog's slot, falling back to the page flash.
+Stacked dialogs (email or payment over the detail) come later in
+`view.html`, so the last open dialog in document order is the one on top.
+`showDialog()` clears a dialog's slots as it opens, and a dialog that closes
+on failure closes before its message is written. Each dialog is named by its
+heading through `aria-labelledby`. `tests/dialog_message_checks.js` runs the
+page's own functions against the real markup.
+
 **Desktop.** A native page in the rail with the overdue count as its badge,
 search hits on number and client, and `exportData()` like Analytics. In
 Control Tower the list and the open invoice sit side by side with every

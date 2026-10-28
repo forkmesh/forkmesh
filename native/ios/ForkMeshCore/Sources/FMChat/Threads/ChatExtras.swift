@@ -1,5 +1,6 @@
 import FMApi
 import FMBase
+import FMCrypto
 import Foundation
 import Observation
 
@@ -33,6 +34,24 @@ public struct ChatAttachment: Equatable, Sendable {
     }
 
     public var kind: ChatAttachmentKind { ChatAttachmentKind.of(fileName: fileName, mime: mime) }
+}
+
+public enum ChatMediaFile {
+    public static func name(for attachment: ChatAttachment) -> String {
+        let digest = String(Sha256.hex(Array(attachment.messageId.utf8)).prefix(24))
+        let safe = attachment.fileName
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+            .replacingOccurrences(of: "..", with: "_")
+        return "\(digest)-\(safe)"
+    }
+
+    public static func url(for attachment: ChatAttachment, in directory: URL) -> URL? {
+        let folder = directory.standardizedFileURL
+        let url = folder.appendingPathComponent(name(for: attachment)).standardizedFileURL
+        guard url.deletingLastPathComponent().standardizedFileURL.path == folder.path else { return nil }
+        return url
+    }
 }
 
 public struct ChatThreadSummary: Equatable, Sendable {

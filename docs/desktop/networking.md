@@ -488,6 +488,12 @@ moves files, without relaying content in clear.
   closes a relayed connection; look the connection up by id again after either.
 - `LocalControlServer` and `Http3Get` have no `Q_OBJECT`; register the header
   for moc before adding signals.
+- A catalog record's `cloneUrl` is whatever the publishing node sent, and it
+  is passed to `git clone --bare` (`MainWindowRepoFetch.cpp`) and
+  `git fetch` (`fetchServedBranch`). Both put `--` before the source, so a URL
+  that starts with `-` cannot become a git option. Sources are not limited to
+  https, because local paths and LAN, ssh and http mirrors are real sources;
+  git's own `protocol.allow` defaults still refuse `ext::`.
 
 ## Application firewall rules
 

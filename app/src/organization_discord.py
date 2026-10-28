@@ -947,16 +947,17 @@ async def _consume_oauth_state(runtime):
         return None, "invalid_record_decrypt"
     if not hmac.compare_digest(str(record.get("state") or ""), state):
         return None, "invalid_record_state"
-    # Do not gate the callback on the optional browser transaction cookie.
-    # Privacy controls can omit it, and a second connection attempt can replace
-    # it while Discord is still returning the first valid authorization. The
-    # 256-bit state remains one-time and encrypted at rest; PKCE, the active
-    # ForkMesh session, owner role, exact redirect URI, requested guild, and
-    # Discord permission proof are all independently mandatory below.
     verifier = str(record.get("verifier") or "")
     if not _OAUTH_STATE_RE.fullmatch(verifier):
         return None, "invalid_record_verifier"
     return record, ""
+
+
+def _oauth_callback_browser_bound(runtime, record):
+    state = str(record.get("state") or "").lower()
+    cookie = str(runtime.oauth_transaction_cookie(state) or "").lower()
+    return bool(state) and hmac.compare_digest(
+        cookie.encode("utf-8"), state.encode("utf-8"))
 
 
 async def _oauth_callback_context(runtime, record):
@@ -1036,7 +1037,7 @@ async def handle_oauth_callback(runtime):
         return runtime.oauth_callback_response(
             invalid_outcome or "invalid_record_storage")
     context = await _oauth_callback_context(runtime, record)
-    if not context:
+    if not context or not _oauth_callback_browser_bound(runtime, record):
         return runtime.oauth_callback_response("invalid_context")
     requested_guild_id = _snowflake(record.get("guildId"))
     if not requested_guild_id:

@@ -440,6 +440,12 @@ LocalControlServer::~LocalControlServer()
         closeConnection(conn->id, QString());
 }
 
+bool LocalControlServer::userVerified(const Device &device)
+{
+    return !device.key.isEmpty() &&
+           (device.approval == accountApproval() || device.userConfirmed);
+}
+
 void LocalControlServer::setDesktopInfo(const QString &name, const QString &user)
 {
     m_name = name.left(kMaxNameChars);
@@ -831,8 +837,12 @@ bool LocalControlServer::claimsUnconfirmedUser(const Connection &conn) const
     if (it == m_devices.cend() || it->approval == accountApproval())
         return false;
     const QString claimed = conn.device.user.trimmed();
-    return !claimed.isEmpty() &&
-           claimed.compare(it->user.trimmed(), Qt::CaseInsensitive) != 0;
+    if (claimed.isEmpty())
+        return false;
+    if (claimed.compare(it->user.trimmed(), Qt::CaseInsensitive) != 0)
+        return true;
+    return !it->userConfirmed &&
+           claimed.compare(m_user.trimmed(), Qt::CaseInsensitive) == 0;
 }
 
 void LocalControlServer::confirmClaimedUser(Connection &conn)
@@ -856,8 +866,10 @@ void LocalControlServer::confirmClaimedUser(Connection &conn)
         if (it == self->m_devices.end()) {
             self->requestPairing(*c);
         } else {
-            if (verdict == AccountCheck::Owned)
+            if (verdict == AccountCheck::Owned) {
                 it->user = claimed;
+                it->userConfirmed = true;
+            }
             self->admitStored(*c);
         }
         if (self->onDevicesChanged)
@@ -1253,6 +1265,9 @@ void LocalControlServer::approvePairing(int connectionId)
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Pending)
         return;
+    if (conn->device.user.trimmed().compare(m_user.trimmed(), Qt::CaseInsensitive) == 0)
+        conn->device.user.clear();
+    conn->device.userConfirmed = false;
     pairDevice(*conn, codeApproval());
     if (onPairingClosed)
         onPairingClosed(connectionId);
@@ -1620,6 +1635,7 @@ void LocalControlServer::loadDevices()
         device.approval = boundedText(object, "approval", 16);
         device.accountCheckedMs =
             qint64(object.value(QStringLiteral("accountCheckedMs")).toDouble());
+        device.userConfirmed = object.value(QStringLiteral("userConfirmed")).toBool();
         m_devices.insert(device.key, device);
     }
 }
@@ -1643,6 +1659,8 @@ void LocalControlServer::saveDevices() const
         if (device.accountCheckedMs > 0)
             object.insert(QStringLiteral("accountCheckedMs"),
                           double(device.accountCheckedMs));
+        if (device.userConfirmed)
+            object.insert(QStringLiteral("userConfirmed"), true);
         devices.append(object);
     }
     forkmesh::ownerfile::write(

@@ -1173,7 +1173,8 @@ def test_flagship_quorum_requires_two_fresh_group_mirrors():
 def _source_dark_group_namespace(
         *, source_state, mirror_state, endpoints, address="mirror11",
         linked=False, override=False, source_kind="local-node",
-        include_local_source=False, owner_merge=None, mirror_states=None):
+        include_local_source=False, owner_merge=None, mirror_states=None,
+        cores=()):
     """Run the real routing-context builder over one simulated mirror group.
 
     `address` is the /<owner>/forkmesh the visitor actually requested, so a
@@ -1246,8 +1247,13 @@ def _source_dark_group_namespace(
     async def catalog_rows(_env, _now):
         return catalog
 
+    async def linked_node(_env, _org, _repo):
+        return "mirror11" if linked else ""
+
     namespace = _public_context_cache_namespace()
     namespace.update({
+        "hosted_core_nodes": lambda _env: list(cores),
+        "_org_repo_node": linked_node,
         "Date": type("D", (), {"now": staticmethod(lambda: now)}),
         "MAX_NODE_NAME": 80,
         "MAX_REPO_SEGMENT": 80,
@@ -1284,6 +1290,9 @@ def _source_dark_group_namespace(
     exec(_function_source("_https_mirror_deployed_flagship_refs"), namespace)
     exec(_function_source("_https_mirror_flagship_recovery_node"), namespace)
     exec(_function_source("_https_mirror_flagship_recovery_refs"), namespace)
+    exec(_function_source("_instance_flagship_node"), namespace)
+    exec(_function_source("_flagship_core_nodes"), namespace)
+    exec(_function_source("_flagship_core_routing"), namespace)
     exec(_function_source("_https_mirror_public_context"), namespace)
     context = asyncio.run(namespace["_https_mirror_public_context"](
         object(), address, "forkmesh"))
@@ -2015,6 +2024,10 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
         assert repo_bi == "repo-bi"
         return override["active"]
 
+    async def no_cores(_env, owner, repo):
+        assert (owner, repo) == ("source-node", "forkmesh")
+        return None
+
     namespace = {
         "re": re,
         "STATE_PIN_HISTORY": 100,
@@ -2032,6 +2045,7 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
             re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", str(value or ""))),
         "_https_mirror_flagship_quorum": quorum,
         "_admission_override_active": override_active,
+        "_flagship_core_nodes": no_cores,
         "Date": type("Clock", (), {"now": staticmethod(lambda: 1_000)}),
         "_HTTPS_MIRROR_STATE_PIN_MEMO": {
             "key_bi": None, "max_ts": None, "ts": 0, "pins": frozenset()},
@@ -2051,6 +2065,20 @@ def test_flagship_override_renews_fresh_divergent_endpoint_generations():
     pins = asyncio.run(
         namespace["_https_mirror_accepted_forkmesh_refs"](object()))
     assert pins == frozenset({current, first, second})
+
+
+    async def fleet_cores(_env, owner, repo):
+        return frozenset({"fmnext-n3", "fmnext-n4"})
+
+    async def core_quorum(_env, allowed_nodes):
+        assert allowed_nodes == frozenset({"fmnext-n3", "fmnext-n4"})
+        return {"pins": frozenset(), "nodes": frozenset(),
+                "nodeDigests": {"fmnext-n3": first}}
+    namespace["_flagship_core_nodes"] = fleet_cores
+    namespace["_https_mirror_flagship_quorum"] = core_quorum
+    pins = asyncio.run(
+        namespace["_https_mirror_accepted_forkmesh_refs"](object()))
+    assert pins == frozenset({current, first})
 
 
 def test_every_registered_mirror_can_refresh_its_exact_signed_health():
@@ -3709,3 +3737,91 @@ def test_a_signed_push_reaches_the_one_node_that_accepts_receive_pack():
     assert "mirror6" not in served(0)
     for cursor in range(len(nodes)):
         assert served(cursor, operation="git-receive-pack")[0] == "mirror6"
+
+
+def _flagship_core_namespace(cores, linked_node="fmnext-n1", instance=""):
+    async def org_repo_node(_env, org, repo):
+        assert (org, repo) == ("forkmesh", "forkmesh")
+        return linked_node
+
+    namespace = {
+        "hosted_core_nodes": lambda _env: list(cores),
+        "_org_repo_node": org_repo_node,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", value)),
+        "clean_string": lambda value, limit: str(value or "")[:limit],
+        "MAX_NODE_NAME": 80,
+    }
+    exec(_function_source("_instance_flagship_node"), namespace)
+    exec(_function_source("_flagship_core_nodes"), namespace)
+    exec(_function_source("_flagship_core_routing"), namespace)
+    return namespace
+
+
+def test_flagship_serving_nodes_are_the_fleet_cores_only():
+    namespace = _flagship_core_namespace(["fmnext-n3", "FMNEXT-N4", "bad node"])
+    cores = namespace["_flagship_core_nodes"]
+    env = SimpleNamespace()
+    assert asyncio.run(cores(env, "fmnext-n1", "forkmesh")) == frozenset(
+        {"fmnext-n3", "fmnext-n4"})
+    assert asyncio.run(cores(env, "forkmesh", "ForkMesh")) == frozenset(
+        {"fmnext-n3", "fmnext-n4"})
+    assert asyncio.run(cores(env, "attacker", "forkmesh")) is None
+    assert asyncio.run(cores(env, "fmnext-n1", "widgets")) is None
+    assert asyncio.run(_flagship_core_namespace([])["_flagship_core_nodes"](
+        env, "fmnext-n1", "forkmesh")) is None
+
+    routing = namespace["_flagship_core_routing"]
+    pinned = "a" * 64
+    allowed, current = routing(
+        frozenset({"fmnext-n3", "fmnext-n4"}),
+        {"attacker-a", "attacker-b", "fmnext-n4"},
+        {"attacker-a": pinned, "fmnext-n3": pinned}, {pinned})
+    assert allowed == {"fmnext-n3", "fmnext-n4"}
+    assert current == {"fmnext-n3", "fmnext-n4"}
+    allowed, current = routing(
+        frozenset({"fmnext-n3"}), {"attacker-a"}, {"attacker-a": pinned},
+        {pinned})
+    assert allowed == current == {"fmnext-n3"}
+
+
+def test_flagship_context_and_quorum_never_count_outside_mirrors():
+    context = _function_source("_https_mirror_public_context")
+    assert "flagship_cores = await _flagship_core_nodes(env, owner_l, repo_l)" in context
+    assert "catalog_group_nodes = set(flagship_cores)" in context
+    assert context.index("catalog_group_nodes = set(flagship_cores)") < context.index(
+        "_https_mirror_flagship_quorum(\n                env, catalog_group_nodes)")
+    assert "not linked_target and group_mirrors and flagship_cores is None" in context
+    override = context.index("allowed, current_nodes = _flagship_core_routing(")
+    assert context.index("_owner_merge_pin_state(") < override
+    assert override < context.index('"nodes": allowed,')
+    accepted = _function_source("_https_mirror_accepted_forkmesh_refs")
+    assert 'cores = await _flagship_core_nodes(env, owner, "forkmesh")' in accepted
+    assert "env, group_nodes if cores is None else cores)" in accepted
+
+
+def test_two_outside_mirrors_cannot_serve_or_pin_the_flagship():
+    source = "1" * 64
+    forged = "f" * 64
+    context, _ = _source_dark_group_namespace(
+        source_state=source,
+        mirror_state=forged,
+        endpoints=(("mirror9", forged), ("mirror14", forged),
+                   ("fmnext-n3", source), ("fmnext-n4", source)),
+        linked=True,
+        cores=("fmnext-n3", "fmnext-n4"),
+    )
+    assert context is not None
+    assert context["nodes"] == {"fmnext-n3", "fmnext-n4"}
+    assert context["currentNodes"] == {"fmnext-n3", "fmnext-n4"}
+    assert forged not in context["pins"] and source in context["pins"]
+    assert {"mirror9", "mirror14"}.issubset(context["groupNodes"])
+
+    before, _ = _source_dark_group_namespace(
+        source_state=source,
+        mirror_state=forged,
+        endpoints=(("mirror9", forged), ("mirror14", forged)),
+        linked=True,
+    )
+    assert forged in before["pins"]
+    assert {"mirror9", "mirror14"}.issubset(before["nodes"])

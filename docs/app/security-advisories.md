@@ -173,7 +173,9 @@ maintainer crediting themselves is accepted at once; everyone else starts
 are told when the advisory is published, or when the credit is added if they
 can already read it. Only accepted credits show publicly, in OSV `credits` and
 on the profile (`GET /api/security-advisories/credits/<name>`; the owner also
-sees pending and declined ones).
+sees pending and declined ones). That list drops advisories whose repository
+is now private or gone, like the feed and the researchers page, for every
+caller including the credited account.
 
 The researchers page ranks accepted credits on published (not withdrawn)
 advisories by points: critical 10, high 6, moderate 3, low 1, unrated 1. It is

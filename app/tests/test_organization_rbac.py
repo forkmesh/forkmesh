@@ -289,7 +289,7 @@ def test_sql_role_lists_agree_with_the_matrix():
         assert stale not in path.read_text(encoding="utf-8"), path.name
     assert "om.role IN " + insiders in _entry_function("_org_floor_team_rows")
     schema = (SRC / "schema.py").read_text(encoding="utf-8")
-    assert schema.count("m.role IN " + approvers) == 2
+    assert schema.count("m.role IN " + approvers) == 3
     api = (SRC / "organization_succession_api.py").read_text(encoding="utf-8")
     assert "m.role IN " + approvers in api
     office = (WORLD_SRC / "world_office_routes.py").read_text(encoding="utf-8")

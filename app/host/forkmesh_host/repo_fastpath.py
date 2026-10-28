@@ -83,6 +83,27 @@ STALE_CACHE_ENTRIES = 256
 STALE_CACHE_BYTES = 16 * 1024 * 1024
 STALE_CACHE_ENTRY_MAX = 1024 * 1024
 STALE_MAX_AGE_SECONDS = 900.0
+CONTENT_SECURITY_POLICY = b"default-src 'none'; sandbox"
+
+
+def active_content_type(value):
+    media = str(value or "").split(";", 1)[0].strip().lower()
+    return (not media or "html" in media or "xml" in media
+            or "script" in media or media.startswith("multipart/"))
+
+
+def passed_headers(upstream_headers, body_buffered):
+    out = []
+    for name in PASS_HEADERS:
+        value = upstream_headers.get(name)
+        if value and not (name == "content-length" and body_buffered):
+            out.append((name, value))
+    if active_content_type(dict(out).get("content-type", "")):
+        out = [(name, value) for name, value in out
+               if name not in ("content-type", "content-disposition")]
+        out += [("content-type", "application/octet-stream"),
+                ("content-disposition", "attachment")]
+    return [(name.encode(), value.encode("latin-1")) for name, value in out]
 
 
 def repository_read_path(value):
@@ -215,6 +236,18 @@ class ImmutableCache:
             _key, old = self._entries.popitem(last=False)
             self.bytes -= len(old[1])
 
+    def drop_prefix(self, prefix):
+        for key in [key for key in self._entries if key.startswith(prefix)]:
+            old = self._entries.pop(key)
+            self.bytes -= len(old[1])
+
+
+def url_repository(url):
+    parts = str(url).split("?", 1)[0].split("/")
+    if len(parts) != 7 or parts[1:4] != ["v1", "public", "repositories"]:
+        return None
+    return urllib.parse.unquote(parts[4]), urllib.parse.unquote(parts[5])
+
 
 class StaleCache:
     def __init__(self, max_entries=STALE_CACHE_ENTRIES,
@@ -245,6 +278,13 @@ class StaleCache:
         old = self._entries.pop(key, None)
         if old is not None:
             self.bytes -= len(old[2])
+
+    def has_prefix(self, prefix):
+        return any(key.startswith(prefix) for key in self._entries)
+
+    def drop_prefix(self, prefix):
+        for key in [key for key in self._entries if key.startswith(prefix)]:
+            self.discard(key)
 
     def get(self, key):
         entry = self._entries.get(key)
@@ -405,6 +445,14 @@ class RepoFastPath:
         self._default_ref[key] = (commit, name)
         return name
 
+    def forget_repository(self, owner, repo):
+        self.immutable.drop_prefix(self.gateway_url(owner, repo, "", []))
+        self.stale.drop_prefix(self.gateway_url(owner, repo, "", []))
+
+    async def visible(self, owner, repo):
+        from .repo_views import still_public
+        return await still_public(self, owner, repo)
+
     async def read(self, url, immutable=False):
         """(status, body, parsed JSON or None) of one gateway GET.
 
@@ -412,6 +460,10 @@ class RepoFastPath:
         answered from host memory afterwards."""
         if immutable:
             entry = self.immutable.get(url)
+            target = url_repository(url) if entry is not None else None
+            if entry is not None and (
+                    target is None or not await self.visible(*target)):
+                entry = None
             if entry is not None:
                 if entry[2] is None:
                     entry[2] = json.loads(entry[1])
@@ -495,6 +547,9 @@ class RepoFastPath:
         policy = cache_control(operation, pairs)
         if policy == IMMUTABLE and operation != "raw":
             entry = self.immutable.get(url)
+            if entry is not None and not await self.visible(owner, repo):
+                self.stats["fallthrough"] += 1
+                return False
             if entry is not None:
                 self.stats["memory"] += 1
                 await self._send_memory(scope, send, entry)
@@ -516,10 +571,16 @@ class RepoFastPath:
         except Exception:
             # Unknown/private repository (404), gateway error or timeout:
             # the Worker gives the canonical answer.
+            missing = upstream is not None and upstream.status_code == 404
             if upstream is not None:
-                if upstream.status_code == 404:
+                if missing:
                     self.stale.discard(url)
+                    from .repo_views import recheck_public
+                    recheck_public(owner, repo)
                 await upstream.aclose()
+            if missing and self.stale.has_prefix(
+                    self.gateway_url(owner, repo, "", [])):
+                await self.visible(owner, repo)
             self.stats["fallthrough"] += 1
             return False
         if operation == "sizes" and body is not None:
@@ -544,6 +605,10 @@ class RepoFastPath:
         if target is None or target[2] not in STALE_OPERATIONS:
             return None
         owner, repo, operation = target
+        from .repo_views import known_not_public
+        if known_not_public(owner, repo):
+            self.stale.drop_prefix(self.gateway_url(owner, repo, "", []))
+            return None
         pairs = gateway_query(
             operation, (scope.get("query_string") or b"").decode("latin-1"))
         if pairs is None:
@@ -554,6 +619,7 @@ class RepoFastPath:
         content_type, body = answer
         send = with_cors(scope, send)
         headers = [(b"x-content-type-options", b"nosniff"),
+                   (b"content-security-policy", CONTENT_SECURITY_POLICY),
                    (b"x-forkmesh-local-reads", b"1"),
                    (b"x-forkmesh-stale", b"1"),
                    (b"content-type", content_type.encode("latin-1")),
@@ -574,6 +640,7 @@ class RepoFastPath:
         content_type, body = entry[0], entry[1]
         etag = etag_for(body)
         headers = [(b"x-content-type-options", b"nosniff"),
+                   (b"content-security-policy", CONTENT_SECURITY_POLICY),
                    (b"x-forkmesh-local-reads", b"1"),
                    (b"content-type", content_type.encode("latin-1")),
                    (b"cache-control", IMMUTABLE.encode()),
@@ -598,11 +665,9 @@ class RepoFastPath:
     async def _send(self, scope, send, owner, repo, operation, pairs,
                     upstream, body, length):
         headers = [(b"x-content-type-options", b"nosniff"),
+                   (b"content-security-policy", CONTENT_SECURITY_POLICY),
                    (b"x-forkmesh-local-reads", b"1")]
-        for name in PASS_HEADERS:
-            value = upstream.headers.get(name)
-            if value and not (name == "content-length" and body is not None):
-                headers.append((name.encode(), value.encode("latin-1")))
+        headers += passed_headers(upstream.headers, body is not None)
         node = await self.node_name()
         if node:
             headers.append((b"x-forkmesh-served-by", node.encode()))

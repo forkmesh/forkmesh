@@ -1551,8 +1551,26 @@ def sign_issue_event(number, ev):
     return b64url(load_identity()[0].sign(canonical))
 
 
+def store_path_has_symlink(repo, path):
+    base = Path(repo)
+    cursor = base
+    for component in Path(path).relative_to(base).parts:
+        cursor /= component
+        if cursor.is_symlink():
+            return True
+    return False
+
+
+def checked_store_path(repo, path):
+    if store_path_has_symlink(repo, path):
+        raise ValueError(
+            f"{Path(path).relative_to(Path(repo)).as_posix()} must not contain "
+            "symlinks")
+    return Path(path)
+
+
 def issues_root(repo):
-    return Path(repo) / ISSUES_REL
+    return checked_store_path(repo, Path(repo) / ISSUES_REL)
 
 
 def issue_dir_candidates(repo, number):
@@ -1586,7 +1604,7 @@ def dump_record(record):
 
 def read_issue_record(repo, number):
     for d in issue_dir_candidates(repo, number):
-        f = d / f"issue-{number}.json"
+        f = checked_store_path(repo, d / f"issue-{number}.json")
         if f.is_file():
             return json.loads(f.read_text(errors="replace")), f
     raise ValueError(f"issue #{number} not found")
@@ -1662,9 +1680,10 @@ def create_issue(repo, title, body, labels, milestone, priority, assignees,
             "votes": 0, "events": events,
         }
         idir = issues_root(repo) / "open" / str(number)
+        checked_store_path(repo, idir / f"issue-{number}.json")
         idir.mkdir(parents=True, exist_ok=True)
         payload = dump_record(record)
-        path = idir / f"issue-{number}.json"
+        path = checked_store_path(repo, idir / f"issue-{number}.json")
         path.write_text(payload)
         # Re-read before committing: a concurrent writer may have taken the
         # same number (its folder appeared elsewhere, or it overwrote ours).
@@ -1716,7 +1735,7 @@ def search_issues(repo, query, status=None):
             if number in seen:
                 continue
             f = entry / f"issue-{number}.json"
-            if not f.is_file():
+            if store_path_has_symlink(repo, f) or not f.is_file():
                 continue
             try:
                 record = json.loads(f.read_text(errors="replace"))
@@ -1746,7 +1765,7 @@ def search_issues(repo, query, status=None):
 # .forkmesh/issues/milestones.json — a plain list of {title, due, status,
 # description}, the same file IssueStore::saveMilestones writes.
 def milestones_path(repo):
-    return issues_root(repo) / "milestones.json"
+    return checked_store_path(repo, issues_root(repo) / "milestones.json")
 
 
 def load_milestones(repo):
@@ -1821,7 +1840,7 @@ PROJECTS_REL = ".forkmesh/projects"
 
 
 def projects_root(repo):
-    return Path(repo) / PROJECTS_REL
+    return checked_store_path(repo, Path(repo) / PROJECTS_REL)
 
 
 def sorted_issue_numbers(issues):
@@ -1867,7 +1886,8 @@ def next_project_number(repo):
 
 
 def read_project_record(repo, number):
-    f = projects_root(repo) / str(number) / f"project-{number}.json"
+    f = checked_store_path(
+        repo, projects_root(repo) / str(number) / f"project-{number}.json")
     if not f.is_file():
         raise ValueError(f"project #{number} not found")
     return json.loads(f.read_text(errors="replace")), f
@@ -1876,7 +1896,8 @@ def read_project_record(repo, number):
 def validate_issue_links(repo, issues):
     numbers = sorted_issue_numbers(issues or [])
     missing = [n for n in numbers
-               if not any((d / f"issue-{n}.json").is_file()
+               if not any((d / f"issue-{n}.json").is_file() and
+                          not store_path_has_symlink(repo, d / f"issue-{n}.json")
                           for d in issue_dir_candidates(repo, n))]
     if missing:
         raise ValueError(
@@ -1945,9 +1966,10 @@ def create_project(repo, title, body, start_date=None, end_date=None,
             "createdAt": ts, "updatedAt": events[-1]["ts"],
             "author": pub, "authorName": name, "events": events,
         }
+        checked_store_path(repo, pdir / f"project-{number}.json")
         pdir.mkdir(parents=True, exist_ok=True)
         payload = dump_record(record)
-        path = pdir / f"project-{number}.json"
+        path = checked_store_path(repo, pdir / f"project-{number}.json")
         path.write_text(payload)
         # Re-read before committing: retry if a concurrent writer overwrote us.
         if path.read_text() != payload:
@@ -2044,7 +2066,7 @@ def sign_mcp_pull_marker(number, base, head, author, ts):
 
 
 def pulls_dir(repo):
-    return Path(repo) / ".forkmesh" / "pulls"
+    return checked_store_path(repo, Path(repo) / ".forkmesh" / "pulls")
 
 
 def next_pull_number(repo):
@@ -2063,7 +2085,8 @@ def existing_pr_for_head(repo, head):
         return None
     for entry in sorted(d.iterdir()):
         md = entry / "pull.md"
-        if not (entry.is_dir() and entry.name.isdigit() and md.exists()):
+        if not (entry.is_dir() and entry.name.isdigit() and md.exists()) or \
+                store_path_has_symlink(repo, md):
             continue
         fm = md.read_text(errors="replace")
         h = re.search(r"^head:\s*(.*)$", fm, re.M)
@@ -2104,6 +2127,7 @@ def open_pr_from_branch(repo, branch, title, description, base):
         raise ValueError("could not resolve the PR branch commits")
     number = next_pull_number(repo)
     pdir = pulls_dir(repo) / str(number)
+    checked_store_path(repo, pdir / "pull.md")
     pdir.mkdir(parents=True, exist_ok=True)
     client_sig = sign_mcp_pull_marker(number, base, branch, author, ts)
     front = "\n".join([
@@ -2122,13 +2146,13 @@ def open_pr_from_branch(repo, branch, title, description, base):
 
 def get_pr_diff(repo, number):
     pdir = pulls_dir(repo) / str(number)
-    md = pdir / "pull.md"
+    md = checked_store_path(repo, pdir / "pull.md")
     if not md.exists():
         raise ValueError(f"pull #{number} not found")
     fm, _ = read_frontmatter(md)
     if fm.get("status", "open") != "open":
         raise ValueError(f"pull #{number} is not open; its diff is no longer retained")
-    patch = pdir / "changes.patch"
+    patch = checked_store_path(repo, pdir / "changes.patch")
     if patch.exists():
         return patch.read_text(errors="replace")
     base, head = fm.get("base", BASE_BRANCH), fm.get("head", "")

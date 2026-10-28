@@ -93,8 +93,8 @@ class FakeRequest:
 
 
 def harness(bare, owner_write=True, org_write=False, access=True,
-            actor="jett"):
-    calls = {"pushes": [], "audits": []}
+            actor="jett", core_owner=True):
+    calls = {"pushes": [], "audits": [], "core_checks": []}
 
     async def js_fetch_with_timeout(url, init, timeout):
         parsed = urlparse(url)
@@ -155,6 +155,10 @@ def harness(bare, owner_write=True, org_write=False, access=True,
     async def audit(env, actor, action, *args):
         calls["audits"].append((actor, action) + args)
 
+    async def core_push_permitted(env, owner, repo, account):
+        calls["core_checks"].append((owner, repo, account))
+        return core_owner
+
     runtime = {
         "json_response": lambda data, status=200, cache_control=None: {
             "status": status, "data": data},
@@ -166,6 +170,7 @@ def harness(bare, owner_write=True, org_write=False, access=True,
         "_org_write_allowed": org_write_allowed,
         "_audit_sensitive_action": audit,
         "_core_push_nodes": lambda env: {"alice"},
+        "_core_push_permitted": core_push_permitted,
         "_https_mirror_push_send": push_send,
         "js_fetch_with_timeout": js_fetch_with_timeout,
         "_public_base_url": lambda env: "https://app.example.test",
@@ -644,3 +649,33 @@ def test_commit_paths_refuses_a_path_outside_the_tree():
         assert error.code == "invalid_path"
     else:
         raise AssertionError("commit_paths accepted a dot segment")
+
+
+def test_core_held_save_needs_an_organization_owner(bare_repo):
+    calls = harness(bare_repo, owner_write=False, org_write=True,
+                    core_owner=False)
+    before = git_out(bare_repo, "rev-parse", "main").strip()
+    result = run("alice", "project", FakeRequest(body={
+        "path": "README.md",
+        "branch": "main",
+        "oid": blob_oid(bare_repo, "main", "README.md"),
+        "content": "# Top\n\nMaintainer edit.\n",
+    }))
+    assert result["status"] == 403, result
+    assert result["data"]["error"] == "push_forbidden"
+    assert calls["pushes"] == []
+    assert calls["core_checks"] == [("alice", "project", "jett")]
+    assert git_out(bare_repo, "rev-parse", "main").strip() == before
+
+
+def test_core_held_commit_paths_needs_an_organization_owner(bare_repo):
+    calls = harness(bare_repo, core_owner=False)
+    try:
+        asyncio.run(repository_file_edits.commit_paths(
+            object(), FakeRequest(body={}), "alice", "project", "jett",
+            "main", {"notes.txt": b"x\n"}, "x"))
+    except repository_file_edits.FileEditError as error:
+        assert (error.code, error.status) == ("push_forbidden", 403)
+    else:
+        raise AssertionError("commit_paths pushed without an owner")
+    assert calls["pushes"] == []

@@ -42,7 +42,7 @@ void MainWindow::registerLocalControlFamilies()
                                     const QJsonObject &params) {
                 if (!m_localControl)
                     return;
-                if (device.key.isEmpty() ||
+                if (!LocalControlServer::userVerified(device) ||
                     (!hostctl::ownerMayManageHosts(device.user, nodeOwnerDisplayName()) &&
                      !hostctl::ownerMayManageHosts(device.user, accountOwner()))) {
                     m_localControl->respondError(connectionId, requestId,

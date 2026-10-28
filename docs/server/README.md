@@ -176,6 +176,39 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `refs/pr/*`, `refs/remotes/origin/*`, `HEAD` and commit ids, so hidden
   namespaces such as `refs/forkmesh/trash/` are never served
   (`test_reads_resolve_only_visible_refs`).
+- A commit id must have at least 7 hex digits, and is served only when one of
+  those visible refs, or a force-push backup under `refs/forkmesh/history/`
+  (kept resolvable for reviews, [CORE_PUSH.md](../CORE_PUSH.md)), contains
+  it. Until 2026-10-27 any id of 4+ digits resolved any object in the store,
+  so the public read API served deleted branches in `refs/forkmesh/trash/`,
+  merge staging, and objects a hosted fork borrows from its pool
+  (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
+- The check costs one walk per refs state, not per id: on the first commit-id
+  read of a cache generation the gateway lists the visible refs and, when
+  they reach at most `VISIBLE_COMMIT_SET_LIMIT` (50,000) commits, keeps that
+  commit set (about 5 MB at the limit). A full id is then answered from the
+  set without starting git. A bigger repository answers visible tips from
+  the ref list and walks the rest per id (`for-each-ref --contains`, memoized
+  per generation). Every walk forces `core.commitGraph=true` (repository
+  config is untrusted) and takes one of `VISIBLE_COMMIT_WALK_SLOTS` (2)
+  process-wide slots; a request that waits more than 5 s gets a 503, so a
+  flood of distinct old ids queues instead of taking every CPU
+  (`test_commit_id_visibility_is_cached_per_refs_state_and_bounded`).
+- The runner daemon reads a Codex job's `last-message.txt`, in a folder the
+  job user owns, with `readOwnedFile` (no symlink, no FIFO, owned by the job
+  user, at most 4 MiB), like every other job-owned file it reads
+  (`TestCodexLastMessageReadRefusesJobPlantedLinksAndFifos`).
+- A core (`role: core`) syncs its upstreams with `http.followRedirects=false`
+  (`syncCoreRepository`, `upstreamGitArgs` in `gateway.go`), for the fetch,
+  the first clone and the peer `main` convergence. The App's public Git route
+  can answer with a 307 to the serving node, and before this the core followed
+  it to whatever host the App named, so a mirror the App picked could feed the
+  core's `main` and tags. Now a redirecting upstream fails, and the sync moves
+  on to the next configured upstream, the peer cores listed by
+  `core_upstreams` (`deploy/core/render.py`). Mirrors and runners keep
+  following redirects: the public route is their only upstream
+  (`TestCoreSyncNeverFollowsARedirectToAnotherHost`,
+  `TestMirrorSyncStillFollowsRedirects`).
 - See [RUNNERS.md](../RUNNERS.md) and [IDS.md](../IDS.md).
 
 ## Traps

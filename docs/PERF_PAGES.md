@@ -88,6 +88,18 @@ with only the headers that route the read, when it is missing or past
 read; an older one only draws the page. Without one, the tabs a repository
 has by default are drawn so the strip does not grow later.
 
+The micro-cache (`micro_cache_key`) answers only anonymous reads that carry
+no `Cookie`, `Authorization` or `Origin` header. Cross-origin reads go to the
+Worker, which sets the CORS headers for that caller. Stored answers drop every
+`access-control-*` and `timing-allow-origin` header and always carry
+`Vary: Origin`, because one visitor's CORS answer replayed to another broke
+cross-origin readers. A refresh that answers 404 or 410 drops the entry and
+the `_about_memo`/`_quota_memo` copies (`_micro_forget`), so a repository made
+private or deleted is not answered from memory for the rest of the 300 s stale
+window. Tests: `app/tests/host/test_repo_ssr.py`
+`test_about_micro_cache_never_replays_one_visitors_cors_headers`,
+`test_about_micro_cache_forgets_a_repository_that_answers_not_found`.
+
 Below a short repository address (`/<name>/<folder>`, `/<name>/issues`) the
 page gets the root's header and tab strip with that tab selected
 (`short_sub_target`); `/<name>/issues/<n>` also gets the issue itself, its

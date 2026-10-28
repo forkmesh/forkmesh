@@ -50,6 +50,12 @@ class Runtime:
                 encoding="utf-8"
             )
         )
+        self.db.execute(
+            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+        for name in ("0183_organization_rbac_roles.sql",
+                     "0295_organization_succession_approver_snapshot.sql"):
+            self.db.executescript(
+                (MIGRATIONS / name).read_text(encoding="utf-8"))
         # Sentinels from stores succession must never mutate.
         self.db.executescript(
             """
@@ -518,6 +524,52 @@ def test_removed_approver_stops_counting_and_database_guard_fails_closed():
             (runtime.now_ms, case_id),
         )
     assert "succession_approval_threshold_not_met" in str(error.value)
+
+
+def test_members_added_after_grace_opens_cannot_approve_or_complete():
+    runtime = Runtime()
+    assert _configure(runtime)["status"] == 201
+    runtime.db.execute(
+        "INSERT INTO org_members VALUES (?,?,?,?,?)",
+        ("bi:org:acme", "bi:gwen", "guest", "gwen", runtime.now_ms))
+    runtime.db.commit()
+    runtime.now_ms += 31 * policy.DAY_MS
+    assert runtime.request("successor", "POST", "activate")["status"] == 201
+    runtime.accounts.update({
+        name: {"name": name, "status": "active", "kind": "user"}
+        for name in ("puppet-one", "puppet-two")
+    })
+    for name in ("puppet-one", "puppet-two"):
+        runtime.db.execute(
+            "INSERT INTO org_members VALUES (?,?,?,?,?)",
+            ("bi:org:acme", "bi:" + name, "member", name, runtime.now_ms))
+    runtime.db.execute(
+        "UPDATE org_members SET role='member' WHERE name='gwen'")
+    runtime.db.commit()
+    runtime.accounts["gwen"] = {
+        "name": "gwen", "status": "active", "kind": "user"}
+    for name in ("puppet-one", "puppet-two", "gwen"):
+        refused = runtime.request(name, "POST", "approve")
+        assert refused["status"] == 403
+        assert refused["data"]["error"] == "approver_joined_after_grace_opened"
+    case_id = runtime.db.execute(
+        "SELECT case_id FROM org_succession_cases WHERE status='grace'"
+    ).fetchone()[0]
+    with pytest.raises(sqlite3.IntegrityError) as error:
+        runtime.db.execute(
+            "INSERT INTO org_succession_approvals VALUES (?,?,?)",
+            (case_id, "bi:puppet-one", runtime.now_ms))
+    assert "succession_approver_not_authorized" in str(error.value)
+    with pytest.raises(sqlite3.IntegrityError) as error:
+        runtime.db.execute(
+            "DELETE FROM org_succession_case_approvers")
+    assert "succession_approver_snapshot_immutable" in str(error.value)
+    assert runtime.request("alice", "POST", "approve")["status"] == 200
+    runtime.now_ms += 8 * policy.DAY_MS
+    denied = runtime.request("successor", "POST", "finalize")
+    assert denied["status"] == 409
+    assert denied["data"]["approvalCount"] == 1
+    assert runtime.roles()["owner"] == "owner"
 
 
 def test_check_in_cancels_case_even_after_deadline_before_completion():

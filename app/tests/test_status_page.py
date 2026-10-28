@@ -122,7 +122,7 @@ def _load(*names, extra_globals=None):
     }
     helper_names = {
         "_cron_due_phases", "_status_phase_slots", "_status_next_check",
-        "_status_error_route_path",
+        "_status_error_route_path", "_status_route_family",
         "_status_expected_checks_for_hour", "_status_effective_hour",
         "_status_minute", "_is_tunnel_content_path",
         "_status_deploy_semaphore_active",
@@ -1179,7 +1179,8 @@ def test_static_page_error_does_not_fail_api():
     assert results["website"] == 1
     assert results["api"] == 0
     assert results["errors"] == 1
-    assert "/dashboard/index.html" in reasons["website"]
+    assert reasons["website"].endswith("/dashboard")
+    assert "index.html" not in reasons["website"]
 
 
 def test_git_clone_and_room_errors_are_bucketed_as_realtime():
@@ -1225,15 +1226,31 @@ def test_aggregated_do_aborts_fail_only_realtime_and_do_status_rows():
     assert "5 exceeded allowed duration" in reasons["durable_objects"]
 
 
-def test_reason_includes_status_and_message_and_extra_count():
+def test_reason_includes_status_and_route_family_and_extra_count():
     results, reasons, _minutes = _run_sample(error_rows=[
         {"path": "/api/repositories", "status": 500, "message": "boom"},
         {"path": "/api/other", "status": 502, "message": "boom2"},
     ])
     assert results["api"] == 1
     assert results["errors"] == 1
-    assert reasons["api"] == "500 on /api/repositories: boom (+1 more)"
-    assert reasons["errors"] == "500 on /api/repositories: boom (+1 more)"
+    assert reasons["api"] == "500 on /api/repositories (+1 more)"
+    assert reasons["errors"] == "500 on /api/repositories (+1 more)"
+
+
+def test_public_reason_never_repeats_exception_text_or_full_paths():
+    message = ("KeyError('alice@example.com')\nTraceback (most recent call "
+               "last):\n  File \"entry.py\", line 1")
+    results, reasons, _minutes = _run_sample(error_rows=[
+        {"path": "/api/accounts/alice/sessions/abc?token=t", "status": 500,
+         "message": message},
+        {"path": "/@alice/settings", "status": 500, "message": message},
+    ])
+    assert results["api"] == 1 and results["website"] == 1
+    assert reasons["api"] == "500 on /api/accounts"
+    assert reasons["website"] == "500 on /@[account]"
+    for text in filter(None, reasons.values()):
+        assert "alice" not in text and "Traceback" not in text
+        assert "KeyError" not in text and "token" not in text
 
 
 def test_offline_direct_mirror_503s_do_not_fail_any_system():
@@ -1266,7 +1283,8 @@ def test_a_500_on_a_direct_mirror_path_still_fails_the_api_bucket():
     ])
     assert results["api"] == 1
     assert results["errors"] == 1
-    assert "boom" in reasons["api"]
+    assert reasons["api"] == "500 on /api/repo/[repository]/releases"
+    assert "boom" not in reasons["api"] and "somenode" not in reasons["api"]
 
 
 def test_repository_content_paths_are_classified_and_room_paths_are_not():

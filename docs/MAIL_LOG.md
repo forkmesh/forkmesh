@@ -97,6 +97,32 @@ sets a provider hold until the retry time. With core SMTP the budget does not
 apply; Postfix's per-client rate limit, the IDS email cap and the marketing
 limit still do.
 
+Package mail over core SMTP (`_PluginApiRuntime._send_package_smtp`) has its
+own cap: `PACKAGE_SMTP_ORG_DAILY_LIMIT` sends per package, per organization,
+per UTC day, counted in the `mail_budget` bucket
+`mail-package-smtp:<package>:<organization>:<day>`. A package names the
+organization with an `organization` field in the payload it hands to
+`send_mailtrap` (the CRM passes its `org_bi`); a send without one shares the
+package's `-` bucket. Each sending account also gets
+`PACKAGE_SMTP_ACCOUNT_DAILY_LIMIT` sends per UTC day across every package and
+organization (bucket `mail-package-smtp-account:<account>:<day>`), because one
+account can hold several organizations. The account is the request's session
+account; only a send without a request (none today) falls back to the
+`account` field the package passes. Why: Postfix sees one client (the app), so
+without these caps one account could create organizations, install a package
+and use the shared sender as a relay, starving verification and reset mail.
+
+Package mail on the shared sender (core SMTP, or the host's Mailtrap key when
+the package supplies none) always goes out from the platform sender
+(`MAIL_SENDER`, else `founders@forkmesh.com`) with the display name
+`<organization> via ForkMesh` (the organization's name with quotes, angle
+brackets, address punctuation and control characters removed, capped at
+`PACKAGE_SHARED_SENDER_NAME_MAX` characters; plain `ForkMesh` without an
+organization). The package's chosen From address becomes `Reply-To` only when
+it is a valid address. Why: a package caller could otherwise put any display
+name, such as a bank or "ForkMesh Security", on DKIM-signed mail from our
+domain. A package that sends with its own Mailtrap key keeps its own From.
+
 ## Admin test email
 
 Settings, Admin access, **Send test email** (`POST /api/accounts/test-email`)

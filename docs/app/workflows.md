@@ -496,7 +496,7 @@ Limits: 60 steps, 120 connections, no loops, nothing connects into a trigger.
 | Run shortcut | `workflow.shortcut` | Runs a `.forkmesh/shortcuts` script (`bash`, with `FORKMESH_WORKFLOW_INPUT`, `FORKMESH_WORKFLOW` and `FORKMESH_WORKFLOW_RUN`) or prompt (an agent, Plan unless **may edit files**). **Wait** off starts it and moves on. |
 | Save output | `workflow.output` | Writes the run so far as Markdown; a path also saves it in the repository, never under `.git` or `.forkmesh` and never through a link out of the checkout. |
 | Note | `workflow.note` | Passes its input on. |
-| Desktop steps | `desktop.*` | The six `tools/free_disk_space.py` steps. |
+| Desktop steps | `desktop.*` | The six `tools/free_disk_space.py` steps, always the copy in this desktop's own source folder (`forkmesh::sourceDir()/..`), never one from the checkout that triggered the run: a repository could commit its own `tools/free_disk_space.py`. The phone's disk cleanup (`runLocalControlFreeDiskSpace`) uses the same copy. |
 
 **Runs.** `Runner` walks the steps in connection order, one at a time. A step
 runs when one of the steps before it succeeded (or failed with **Keep going if
@@ -528,6 +528,60 @@ has a conversation is chat, not a run: it continues that session
 one shared session. Schedules of workflows without an agent step are checked
 on the same 60 s tick (`checkRepoWorkflowSchedules`) across every local
 repository, and their event triggers fire from `triggerTeammatesForEvent`.
+
+**Approval before a workflow runs by itself.** A workflow file is code: a
+shortcut step runs a script with `bash`, and an agent step runs an agent with
+the file's instructions. Since 2026-10-27, a schedule or a repository event
+starts a workflow or special agent from a checkout only after the user has
+approved that file on this desktop. Before then, the author of any repository
+that ended up as a checkout (imported, forked, or changed by a merged pull
+request) could have run commands as the user within a minute of a repository
+page opening.
+- **The check.** `rw::approvalDigest` hashes the file's JSON without its
+  bookkeeping counters (`withoutBookkeeping`), plus the name and bytes of
+  every `.forkmesh/shortcuts` script its shortcut steps run. The digest is
+  stored in QSettings under `repoWorkflows/approved/<repository and path
+  hash>`. `checkRepoWorkflowSchedules`, `triggerRepoWorkflowsForEvent`,
+  `checkTeammateSchedules` and `triggerTeammatesForEvent` call
+  `repoWorkflowApproved` before they start anything.
+- **When the file changes.** Any change to the file, or to a
+  `.forkmesh/shortcuts` script one of its shortcut steps names, needs approval
+  again. Programs and files those scripts use in turn are not part of the
+  digest, and the review box says so.
+- **What the user sees.** An unapproved workflow is skipped and raises one
+  page notice per file version. Its **Review** button (`fm:workflows:approve`)
+  opens an Allow / Not now box that lists the pending files. Allow stores the
+  digest the box was opened with, so a file that changed while the box was
+  open is not approved.
+- **Saving in the editor.** The editor's `save` action approves the file it
+  writes only when it is new, or when its content differs from the committed
+  file (the user edited it). Saving an unchanged file keeps whatever approval
+  the file already had, so a package cannot approve a stranger's workflow by
+  saving it back.
+- **Turning a workflow on.** `setEnabled` and `setSchedule` change the file,
+  and with it the digest. A file that was approved before the toggle gets its
+  approval carried to the new digest. A file that was not approved stays
+  unapproved; turning it on raises the review notice instead.
+- **Runs from a package.** The package `run` action is not the user's own
+  click on the desktop, so it checks `repoWorkflowApproved` for a repository
+  workflow, the same as the phone. Otherwise it answers that the file needs
+  approval and raises the notice.
+- **Shortcuts from the phone.** `insights` `runShortcut` (script or prompt)
+  and `queueShortcut` run committed `.forkmesh/shortcuts` and
+  `.forkmesh/skills` files. They answer `approval_required` until that file is
+  approved. A non-JSON file's digest is SHA-256 over its bytes, and it shares
+  the same store and the same review box.
+- **What it does not cover.** Clicks on the desktop's own play buttons and
+  pins are not asked. Mentions in chat are not covered either.
+- **Runs from the phone.** `workflows.run` from a paired phone runs a
+  repository workflow only once its file is approved on this desktop, and
+  answers `approval_required` otherwise (the phone shows the desktop's
+  message). The phone sees a name, not the file's steps, so its confirmation
+  is not a review of the code. Account workflows are not repository files and
+  are not asked.
+- **This repository's special agents.** Their schedules are off in their
+  files (only `ux.json` is on), so nothing stops silently. A schedule a user
+  turns on outside the editor shows the notice once.
 
 **Rails.** A workflow can be pinned to the top bar, under the left rail, at the
 right edge or in the status bar (`ui/workflowPins`, at most 48 pins; one rail

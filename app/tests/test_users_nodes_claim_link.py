@@ -58,6 +58,7 @@ FUNCS = {
     "_transfer_pending", "_admin_authorized", "_admin_request_ownership",
     "_account_ownership_transfer_confirm", "_park_ownership_transfer",
     "_send_signup_verification",
+    "_account_key_revoked",
 }
 
 # The registration endpoint the installer's Go daemon calls lives in the
@@ -115,6 +116,7 @@ def _harness(accounts):
     now = [1_000_000_000]
     sessions = {}
     audit = []
+    revoked_devices = set()
 
     class _DateStub:
         @staticmethod
@@ -161,6 +163,10 @@ def _harness(accounts):
         if "FROM link_codes" in sql:
             row = link_rows.get(args[0])
             return dict(row) if row else None
+        if "FROM account_devices WHERE account_bi=? AND pubkey=?" in sql:
+            if tuple(args) in revoked_devices:
+                return {"enabled": 0, "revoked_at": 1}
+            return None
         raise AssertionError("unexpected d1_first: " + sql)
 
     async def d1_run(_env, sql, *args):
@@ -263,6 +269,28 @@ def _harness(accounts):
         audit.append({"actor": actor, "action": action, "target": target,
                       "outcome": outcome, "details": dict(details or {})})
 
+    login_fails = []
+    login_locks = {}
+
+    async def _login_source_key(_env, _request):
+        return "source"
+
+    async def _login_attempt_keys(_env, _request, identifier):
+        return ["source", "pair:" + identifier]
+
+    async def _login_locked_until(_env, key):
+        return login_locks.get(key, 0)
+
+    async def _login_failure_response(_env, attempt_keys, error):
+        login_fails.append((tuple(attempt_keys), error))
+        return json_response({"error": error}, status=401)
+
+    async def _login_clear(_env, key):
+        login_fails[:] = [f for f in login_fails if key not in f[0]]
+
+    async def _account_totp_ok(_env, _rec, code):
+        return code == "123456"
+
     namespace = _load_functions({
         "Date": _DateStub,
         "_award_badge": _award_badge,
@@ -303,6 +331,12 @@ def _harness(accounts):
         "_account_session_record": _account_session_record,
         "_verify_owner_signature": _verify_owner_signature,
         "_audit_sensitive_action": _audit_sensitive_action,
+        "_login_source_key": _login_source_key,
+        "_login_attempt_keys": _login_attempt_keys,
+        "_login_locked_until": _login_locked_until,
+        "_login_failure_response": _login_failure_response,
+        "_login_clear": _login_clear,
+        "_account_totp_ok": _account_totp_ok,
         "LINK_GRANT_MAX_AGE_MS": 5 * 60 * 1000,
         "LINK_GRANT_MAX_FUTURE_MS": 60 * 1000,
         "LINK_GRANT_NONCE_RE": re.compile(r"^[A-Za-z0-9_-]{16,64}$"),
@@ -325,6 +359,9 @@ def _harness(accounts):
     namespace["_link_rows"] = link_rows
     namespace["_sessions"] = sessions
     namespace["_audit"] = audit
+    namespace["_revoked_devices"] = revoked_devices
+    namespace["_login_fails"] = login_fails
+    namespace["_login_locks"] = login_locks
     return namespace
 
 
@@ -1348,3 +1385,117 @@ def test_dashboard_exposes_a_claim_node_panel():
     composed = assembled_dashboard()
     assert "data-claim-node-input" in composed
     assert "data-claim-code-confirm" in composed
+
+
+def test_a_revoked_primary_key_cannot_heartbeat_finalize_or_sign_as_admin():
+    accounts = {
+        "alice": dict(_user_rec(), is_admin=True, totp_enrolled=True),
+        "mirror1": dict(_node_rec(), claim_pending={
+            "user": "alice", "code": "123456",
+            "expires": 2_000_000_000, "attempts": 0}),
+    }
+    ns = _harness(accounts)
+    env = object()
+    ns["_revoked_devices"].update({
+        ("bi:mirror1", "PK-mirror1"), ("bi:alice", "PK-alice")})
+
+    beat = asyncio.run(ns["_account_heartbeat"](env, _Request(
+        {"nodeName": "mirror1", "ts": "1", "sig": "s"})))
+    assert beat["status"] == 401
+    assert beat["data"] == {"error": "device_revoked"}
+
+    finalized = _finalize(ns, env, "mirror1", "", "")
+    assert finalized["status"] == 401
+    assert finalized["data"] == {"error": "device_revoked"}
+    assert accounts["mirror1"]["status"] == "active"
+
+    admin = asyncio.run(ns["_admin_authorized"](env, "alice", "1", "s", b"x"))
+    assert admin is None
+    ns["_revoked_devices"].clear()
+    admin = asyncio.run(ns["_admin_authorized"](env, "alice", "1", "s", b"x"))
+    assert admin and admin["name"] == "alice"
+
+
+def test_claim_password_checks_spend_the_login_budget_and_honour_the_lock():
+    accounts = {"alice": _user_rec(), "mirror1": _node_rec()}
+    ns = _harness(accounts)
+    env = object()
+
+    wrong = asyncio.run(ns["_account_claim_node"](env, _Request(
+        {"identifier": "alice", "password": "wrong", "nodeId": ""})))
+    assert wrong["status"] == 401
+    assert wrong["data"] == {"error": "invalid_credentials"}
+    assert ns["_login_fails"] == [
+        (("source", "pair:alice"), "invalid_credentials")]
+
+    ns["_login_locks"]["source"] = 2_000_000_000
+    locked = asyncio.run(ns["_account_claim_node"](env, _Request(
+        _auth({"nodeId": "mirror1"}))))
+    assert locked["status"] == 429
+    assert locked["data"]["error"] == "too_many_attempts"
+    assert "claim_pending" not in accounts["mirror1"]
+    locked_confirm = asyncio.run(ns["_account_claim_confirm"](env, _Request(
+        _auth({"nodeId": "mirror1", "code": "123456"}))))
+    assert locked_confirm["status"] == 429
+
+
+def test_claim_endpoints_need_the_code_of_a_totp_account():
+    accounts = {"alice": dict(_user_rec(), totp_enrolled=True),
+                "mirror1": _node_rec()}
+    ns = _harness(accounts)
+    env = object()
+
+    no_code = asyncio.run(ns["_account_claim_node"](env, _Request(
+        _auth({"nodeId": "mirror1"}))))
+    assert no_code["status"] == 401
+    assert no_code["data"] == {"error": "bad_totp"}
+    assert "claim_pending" not in accounts["mirror1"]
+    confirm = asyncio.run(ns["_account_claim_confirm"](env, _Request(
+        _auth({"nodeId": "mirror1", "code": "000000"}))))
+    assert confirm["data"] == {"error": "bad_totp"}
+
+    with_code = asyncio.run(ns["_account_claim_node"](env, _Request(
+        _auth({"nodeId": "mirror1", "totp": "123456"}))))
+    assert with_code["status"] == 201
+
+    accounts["mirror1"].pop("claim_pending")
+    ns["_sessions"]["alice-session"] = "alice"
+    own_session = asyncio.run(ns["_account_claim_node"](env, _Request(
+        _auth({"nodeId": "mirror1", "sessionToken": "alice-session"}))))
+    assert own_session["status"] == 201
+
+    accounts["mirror1"].pop("claim_pending")
+    accounts["bob"] = _user_rec("bob", "bob@example.com")
+    ns["_sessions"]["bob-session"] = "bob"
+    other_session = asyncio.run(ns["_account_claim_node"](env, _Request(
+        _auth({"nodeId": "mirror1", "sessionToken": "bob-session"}))))
+    assert other_session["data"] == {"error": "bad_totp"}
+
+
+def test_password_claim_clients_ask_for_and_send_the_authenticator_code():
+    qt_chat = "".join(path.read_text(encoding="utf-8") for path in QT_CHAT)
+    submit = qt_chat[qt_chat.index("void MainWindow::submitLinkNodeToUser("):
+                     qt_chat.index("QString MainWindow::linkErrorMessage(")]
+    assert 'body.insert(QStringLiteral("totp"), totp);' in submit
+    assert 'if (code == QStringLiteral("bad_totp"))\n            promptLinkNodeToUserWith(id, true);' in submit
+    errors = qt_chat[qt_chat.index("QString MainWindow::linkErrorMessage("):]
+    assert 'code == QStringLiteral("bad_totp")' in errors[:2000]
+    prompt = qt_chat[qt_chat.index("void MainWindow::promptLinkNodeToUserWith("):
+                     qt_chat.index("void MainWindow::submitLinkNodeToUser(")]
+    assert '"6-digit code (only if you enabled 2FA)"' in prompt
+    assert "submitLinkNodeToUser(identifier, password, totp);" in prompt
+
+    dashboard_js = assembled_dashboard_js()
+    for path in ('"/api/accounts/claim-node"', '"/api/accounts/claim-confirm"'):
+        call = dashboard_js[dashboard_js.index(path):][:400]
+        assert "headers: claimNodeAuthHeaders()," in call, path
+        assert "claimNodeAuthBody(password, {" in call, path
+    helpers = dashboard_js[dashboard_js.index("function claimNodeAuthHeaders()"):
+                           dashboard_js.index("async function claimNode()")]
+    assert 'if (token && token !== "cookie") headers.authorization = "Bearer " + token;' in helpers
+    assert "if (totp) body.totp = totp;" in helpers
+    assert dashboard_js.count('if (error.message === "bad_totp") revealClaimNodeTotp();') == 2
+    assert dashboard_js.count('bad_totp: "Enter the 6-digit code from your authenticator app."') == 2
+    composed = assembled_dashboard()
+    assert "data-claim-node-totp-row" in composed
+    assert 'data-claim-node-totp type="text"' in composed

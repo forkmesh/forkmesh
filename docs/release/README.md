@@ -57,6 +57,46 @@ and publisher flags are documented beside the data in
    The desktop updater accepts a manifest only if its `tag` is the release
    being installed.
 
+## Release trust rules
+
+Every consumer of `release.json` checks `release.json.sig` against the one
+Ed25519 release key pinned in `www/public/install.sh`. The desktop pins the
+same key in `desktop/src/ReleaseTrust.cpp`;
+`desktop/tests/validate_auto_update_release_trust.py` fails if the two differ.
+
+- **Channel.** A manifest must name the channel being installed. A promoted
+  `latest` is a byte copy of its signed candidate, so under `latest` the
+  channel `candidate-<tag version>` is accepted too, for that tag only.
+- **install.sh** (signature trust only) also refuses a manifest whose tag is
+  older than `FORKMESH_MIN_RELEASE_VERSION`. The value is embedded in
+  `install.sh`, an empty or malformed value refuses every manifest, and it must
+  never be newer than the tag in `latest`
+  (`test_installer_minimum_release_is_set_and_not_above_latest`). Raise it when
+  a release must not be rolled back. A controller that pins a manifest SHA-256
+  or an exact build commit has already chosen the exact release, so neither
+  check applies there.
+- **Desktop auto-update** (`maybeAutoUpdate`, `tryPrebuiltAutoUpdate`):
+  - It orders tags by version number, not by tag date, and only looks at a tag
+    newer than the running `FORKMESH_VERSION`.
+  - The manifest must be signed, name `forkmesh/forkmesh`, match the tag and
+    channel, and be strictly newer than the running version
+    (`forkmesh::releasetrust::checkManifest`).
+  - If no prebuilt fits, or its download fails, the source fallback
+    fast-forwards only to the signed `tag_commit` and builds it once `HEAD`
+    equals that commit. It never builds what `git pull` brings.
+  - A release without a signed manifest, or one that fails a check, is logged
+    and left alone. The manual Update button still pulls and builds by hand.
+- **Release host** (`tools/forkmesh-release-host.py`): `manifests_at` drops
+  any channel whose `release.json.sig` does not verify against the installer
+  key. A candidate's `build_commit` must equal its `tag_commit` or descend from
+  it.
+
+Why: the auto-updater used to trust the newest-dated tag's unsigned
+`release.json`. That included its `repo` field, which chose where the binary
+was downloaded from. When no prebuilt fit, it built whatever `git pull`
+returned. `install.sh` accepted any signed manifest from any channel or
+version, so an old signed release could be replayed to roll a machine back.
+
 ## Platforms
 
 - **Linux:** static Qt and OpenSSL in a Debian 12 container; a release fails if

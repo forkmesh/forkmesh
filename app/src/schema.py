@@ -2973,6 +2973,10 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY (case_id, approver_bi))""",
     "CREATE INDEX IF NOT EXISTS idx_org_succession_approvals_case "
     "ON org_succession_approvals(case_id, approved_at)",
+    """CREATE TABLE IF NOT EXISTS org_succession_case_approvers (
+        case_id TEXT NOT NULL,
+        approver_bi TEXT NOT NULL,
+        PRIMARY KEY (case_id, approver_bi))""",
     """CREATE TABLE IF NOT EXISTS org_succession_events (
         event_id TEXT PRIMARY KEY,
         org_bi TEXT NOT NULL,
@@ -3002,6 +3006,8 @@ SCHEMA_STATEMENTS = [
                 SELECT 1 FROM org_succession_cases c
                 JOIN org_members m
                   ON m.org_bi=c.org_bi AND m.member_bi=NEW.approver_bi
+                JOIN org_succession_case_approvers s
+                  ON s.case_id=c.case_id AND s.approver_bi=NEW.approver_bi
                 WHERE c.case_id=NEW.case_id
                   AND c.status='grace'
                   AND NEW.approved_at<=c.grace_ends_at
@@ -3009,6 +3015,27 @@ SCHEMA_STATEMENTS = [
                   AND NEW.approver_bi<>c.owner_bi
                   AND NEW.approver_bi<>c.successor_bi
             );
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_snapshot
+        AFTER INSERT ON org_succession_cases
+        BEGIN
+            INSERT OR IGNORE INTO org_succession_case_approvers
+                (case_id, approver_bi)
+            SELECT NEW.case_id, m.member_bi FROM org_members m
+            WHERE m.org_bi=NEW.org_bi
+              AND m.role IN ('owner','admin','maintainer','member')
+              AND m.member_bi<>NEW.owner_bi
+              AND m.member_bi<>NEW.successor_bi;
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_no_update
+        BEFORE UPDATE ON org_succession_case_approvers
+        BEGIN
+            SELECT RAISE(ABORT, 'succession_approver_snapshot_immutable');
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_no_delete
+        BEFORE DELETE ON org_succession_case_approvers
+        BEGIN
+            SELECT RAISE(ABORT, 'succession_approver_snapshot_immutable');
         END""",
     """CREATE TRIGGER IF NOT EXISTS trg_org_succession_approval_no_update
         BEFORE UPDATE ON org_succession_approvals
@@ -3087,6 +3114,8 @@ SCHEMA_STATEMENTS = [
                 JOIN org_members m
                   ON m.org_bi=OLD.org_bi
                  AND m.member_bi=a.approver_bi
+                JOIN org_succession_case_approvers s
+                  ON s.case_id=a.case_id AND s.approver_bi=a.approver_bi
                 WHERE a.case_id=OLD.case_id
                   AND m.role IN ('owner','admin','maintainer','member')
                   AND a.approver_bi<>OLD.owner_bi

@@ -1,6 +1,6 @@
 # Security findings register
 
-Reviewed through: `c029745dd` on 2026-09-23 (seed; no commit after it has had a Sentinel review yet)
+Reviewed through: `fc80139d04` on 2026-10-28 (full-system sweep, two rounds; S-38 to S-83)
 
 Sentinel ([sentinel.md](sentinel.md)) keeps this page: fixed findings with the
 test that guards each fix, and open items that are already public. Unfixed
@@ -88,6 +88,52 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | S-35 | Client headers could set the mesh routing headers `x-fm-do-url`, `x-fm-do-id`, `x-fm-do-cf` on a cross-core Durable Object call | Low | Fixed | `app/tests/host/test_host_cluster_security.py` |
 | S-36 | `/_app/_host/*` on a per-node host reached host-internal paths | Low | Fixed | `deploy/tests/test_render.py` `test_node_relay_never_reaches_host_internal_paths` |
 | S-37 | The World dev server accepted any `Host` (DNS rebinding) and passed foreign origins upstream as its own | Low | Fixed | `world/tests/test_world_dev_server.py` |
+| S-38 | Raw repository reads answered by the host fast path kept the gateway's guessed XML type (`.atom`, `.rdf`, `.mml`, …) inline and dropped its CSP, so a committed file ran script on the App origin | High | Fixed | `app/tests/host/test_repo_fastpath.py`, `app/tests/test_mirror_gateway.py` |
+| S-39 | Revoking the device that held the account's primary key left that key trusted for signed APIs, rotation and admin requests | High | Fixed | `app/tests/test_mobile_node_devices.py`, `app/tests/test_key_rotation.py`, `app/tests/test_admin_totp_required.py` |
+| S-40 | `claim-node`, `claim-confirm` and `link-self` checked a password with no attempt budget and no TOTP | High | Fixed | `app/tests/test_account_totp_gate.py`, `app/tests/test_users_nodes_claim_link.py` |
+| S-41 | Organization guests passed the Office tasks gate (every task, the `security` department included) and auditors could write | High | Fixed | `world/tests/test_world_office_tasks.py` |
+| S-42 | Organization guests got member access through the package runtime (CRM, Marketing, Analytics, Competitor), the member email list and Vault organization grants; auditors could write | High | Fixed | `app/tests/test_mail_budget.py`, `marketplace/packages/crm/tests/test_member_emails.py`, `marketplace/packages/vault/tests/test_vault_api.py`, `marketplace/packages/analytics/tests/test_analytics.py` |
+| S-43 | The CRM one-off email send had no outreach gate, no cap and a caller-chosen sender over the shared SMTP account | High | Fixed | `marketplace/packages/crm/tests/test_crm.py`, `app/tests/test_mail_budget.py` |
+| S-44 | Repository workflows committed in a checkout ran on a schedule or event with no approval, and `desktop.*` steps ran the checkout's own cleanup script | High | Fixed | `desktop/tests/test_repo_workflow.cpp`, `desktop/tests/validate_repo_workflow_approval.py` |
+| S-45 | The Patreon email fallback matched an account whose email was never confirmed | Medium | Fixed | `app/tests/test_patreon_runtime.py` |
+| S-46 | Microjob claims were deduplicated by repository name and full URL, so fork copies and query variants paid again, and the daily caps could be raced | Medium | Fixed | `app/tests/test_microjobs.py` |
+| S-47 | Gateway reads resolved a commit id that only hidden refs (branch trash, merge staging, a fork pool) reach | Medium | Fixed | `app/tests/test_mirror_gateway.py` |
+| S-48 | The root runner daemon read a Codex job's last message through a path the job could replace with a symlink or FIFO | Medium | Fixed | `server/agents_test.go` |
+| S-49 | Links in issues, pulls, discussions and the Markdown preview opened any URL scheme | Medium | Fixed | `desktop/tests/test_crypto.cpp`, `desktop/tests/validate_body_link_schemes.py` |
+| S-50 | The MCP server followed committed symlinks in the pull, issue, project and milestone stores | Medium | Fixed | `tools/test_forkmesh_mcp_server.py` |
+| S-51 | The host fast path kept serving cached commit-pinned reads after a repository went private or was removed | Medium | Fixed | `app/tests/host/test_repo_fastpath.py` |
+| S-52 | Notes shared with an organization reached its guests, and auditors got editor rights | Medium | Fixed | `app/tests/test_notes.py` |
+| S-53 | A revoked organization app install could be authorized again by any member or guest; guests saw the organization's private apps, commands and package state | Medium | Fixed | `app/tests/test_apps_oauth.py`, `app/tests/test_apps_commands.py` |
+| S-54 | Succession approvals counted members added after the case opened | Medium | Fixed | `app/tests/test_organization_succession.py` |
+| S-55 | The Discord OAuth callback was not bound to the browser that started it | Medium | Fixed | `app/tests/test_organization_discord.py` |
+| S-56 | The ActivityPub inbox let a key from one account on a server send Undo or a self-Delete naming another account there | Low | Fixed | `app/tests/test_ap_inbox_load.py` |
+| S-57 | `/api/security/report` had no per-source budget, and a flood evicted stored reports | Low | Fixed | `app/tests/test_security_report_alarm.py` |
+| S-58 | A hosted fork made private stayed in its parent's fork list, advisory credits listed repositories gone private, and dissolving an organization left its office chat | Low | Fixed | `app/tests/test_repo_forks.py`, `app/tests/test_security_advisories.py`, `app/tests/test_org_office_chat.py` |
+| S-59 | A contributor `pr/` branch push ran its own workflows on a mirror with Actions on | Low | Fixed | `server/actions_test.go` |
+| S-60 | Each IPv6 address got its own login and front-door rate-limit bucket | Low | Fixed | `app/tests/host/test_host_request_policy.py`, `app/tests/test_login_key_binding.py` |
+| S-61 | Two outside mirrors could serve or pin the flagship repository, and the cores' sync followed redirects to them, so a forged `main` could reach the operator checkout and the auto-deploy | Critical | Fixed | `app/tests/test_https_mirror_routing_integration.py`, `server/core_upstream_redirect_test.go`, `tools/test_source_publisher.py` |
+| S-62 | Desktop auto-update installed a `release.json` from the newest-dated tag without checking its signature, repository, channel or version | Critical | Fixed | `desktop/tests/test_release_trust.cpp`, `desktop/tests/validate_auto_update_release_trust.py` |
+| S-63 | Web file edits, release tags and other web commits to a core-held repository skipped the organization-owner push rule | High | Fixed | `app/tests/test_repository_file_edits.py`, `app/tests/test_repository_releases.py` |
+| S-64 | A code-paired phone could claim the desktop owner's name at pairing and pass every owner-only family | Medium | Fixed | `desktop/tests/test_local_control.cpp` |
+| S-65 | Key rotation bound any public key with no proof of possession, including another account's device key | Medium | Fixed | `app/tests/test_key_rotation.py`, `app/tests/test_git_push_route.py` |
+| S-66 | `install.sh` accepted an older or wrong-channel signed manifest, and the release host signed candidate data it had not verified | Medium | Fixed | `app/tests/test_installer_release.py`, `app/tests/test_release_host_completion.py` |
+| S-67 | An anonymous instance launch could rewrite or delete any domain's instance directory entry | Medium | Fixed | `app/tests/test_instance_directory.py` |
+| S-68 | A public channel webhook pushed any account's text to every user, and a few accounts could exhaust the global channel cap | Medium | Fixed | `app/tests/test_chat_channels_api.py` |
+| S-69 | A `keyId` with dot segments got past the ActivityPub actor check (S-56) | Medium | Fixed | `app/tests/test_ap_inbox_load.py` |
+| S-70 | Workflow approval (S-44) was skipped by enable and schedule toggles, package runs, phone workflow runs and phone shortcuts, and more link views opened any URL scheme | Medium | Fixed | `desktop/tests/validate_repo_workflow_approval.py`, `desktop/tests/validate_body_link_schemes.py`, `desktop/tests/test_repo_workflow.cpp` |
+| S-71 | iOS chat media and SMB file names could write outside the app's temporary folder, and Android acted on unstamped ping intents | Medium | Fixed | `native/ios/ForkMeshCore/Tests/FMChatTests/ChatMediaFileTests.swift`, `native/ios/ForkMeshCore/Tests/FMFilesTests/FileLocalTargetTests.swift`, `native/android/core/src/test/kotlin/com/forkmesh/nativeapp/security/PushIntentTrustTest.kt` |
+| S-72 | Microjob referral dedupe merged different posts on one host and split one post across subdomain, case, slug and query variants | Medium | Fixed | `app/tests/test_microjobs.py` |
+| S-73 | A member removed from a private channel stayed in a call already running | Low | Fixed | `app/tests/test_chat_call_tickets.py`, `app/tests/test_chat_group_calls_client.py`, `app/tests/test_android_group_call_page.py` |
+| S-74 | A signed issue edit, comment or vote replayed under a new id or target was applied again | Low | Fixed | `app/tests/test_issue_submission_inbox.py`, `server/issue_placeholder_test.go` |
+| S-75 | Login, profile and claim answered faster for unknown accounts | Low | Fixed | `app/tests/test_login_key_binding.py`, `app/tests/test_account_totp_gate.py` |
+| S-76 | Badges, referral surfaces, the contributors board and a `?viewer=` follow flag exposed private profiles | Low | Fixed | `app/tests/test_badges.py`, `app/tests/test_referrals.py`, `app/tests/test_boot_endpoint_caches.py`, `app/tests/test_leaderboards_hub.py` |
+| S-77 | The data export named the moderator and note behind an action, and the public status page repeated exception text | Low | Fixed | `app/tests/test_account_data.py`, `app/tests/test_status_page.py` |
+| S-78 | The live note socket checked no Origin, and the host's stale and about caches outlived a repository going private and replayed one visitor's CORS headers | Low | Fixed | `app/tests/test_notes_signed_session.py`, `app/tests/host/test_repo_fastpath_stale.py`, `app/tests/host/test_repo_ssr.py` |
+| S-79 | Bug report, product analysis, instance launch, guestbook and signup budgets counted each IPv6 address separately, and anonymous attachments had no global budget | Low | Fixed | `app/tests/test_bug_reports.py`, `app/tests/test_product_analysis.py`, `app/tests/test_login_key_binding.py` |
+| S-80 | An anonymous ForkBot chat request could name any account as an issue's opener | Low | Fixed | `app/tests/test_forkbot.py` |
+| S-81 | The shared package mail sender had no per-account cap and used a caller-chosen display name | Low | Fixed | `app/tests/test_mail_budget.py` |
+| S-82 | Commit-id reads could force unbounded graph walks on the gateway | Low | Fixed | `app/tests/test_mirror_gateway.py` |
+| S-83 | One request from a fleet runner could get its address probe-banned from the App | Low | Fixed | `deploy/tests/test_no_main_node.py` |
 
 ## Open, already public
 

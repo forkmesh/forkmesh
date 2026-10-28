@@ -531,7 +531,19 @@ def core_role_settings(fleet):
     return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners,
-                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates])
+                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates,
+                      "FORKMESH_VAR_FORKMESH_PROBE_BAN_ALLOW=%s"
+                      % ",".join(probe_ban_allow(fleet))])
+
+
+def probe_ban_allow(fleet):
+    allowed = []
+    for runner in fleet.get("runners") or []:
+        allowed.append("%s/32" % ipaddress.IPv4Address(runner["public_ipv4"]))
+        if runner.get("public_ipv6"):
+            allowed.append(str(ipaddress.ip_network(
+                "%s/64" % runner["public_ipv6"], strict=False)))
+    return sorted(set(allowed))
 
 
 def public_hosts(fleet):

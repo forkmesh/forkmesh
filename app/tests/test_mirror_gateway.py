@@ -2221,6 +2221,36 @@ def test_batched_blobs_preserve_repeated_paths_and_bound_missing_files(applicati
     assert payload["blobs"]["does-not-exist"] is None
 
 
+def test_raw_active_media_types_are_attachments(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    for index, (media, expected, disposition) in enumerate((
+        ("application/atom+xml", "application/octet-stream", "attachment"),
+        ("application/rdf+xml", "application/octet-stream", "attachment"),
+        ("application/mathml+xml", "application/octet-stream", "attachment"),
+        ("application/xslt+xml", "application/octet-stream", "attachment"),
+        ("application/xhtml+xml", "application/octet-stream", "attachment"),
+        ("image/svg+xml", "application/octet-stream", "attachment"),
+        ("text/html", "application/octet-stream", "attachment"),
+        ("application/ecmascript", "application/octet-stream", "attachment"),
+        ("multipart/related", "application/octet-stream", "attachment"),
+        (None, "application/octet-stream", "attachment"),
+        ("text/x-python", "text/plain; charset=utf-8", "inline"),
+        ("image/png", "image/png", "inline"),
+    )):
+        monkeypatch.setattr(gateway.mimetypes, "guess_type",
+                            lambda _path, media=media: (media, None))
+        raw = dispatch(app, "raw", {"path": "README.md"},
+                       request_id="raw_active_%04d" % index)
+        assert raw.status == 200
+        assert raw.stream.content_type == expected, media
+        assert raw.stream.disposition == disposition, media
+    monkeypatch.undo()
+    for name in ("feed.atom", "x.rdf", "x.mml", "x.xht", "x.xsl", "x.svg",
+                 "x.html", "x.js"):
+        assert gateway._active_media_type(
+            gateway.mimetypes.guess_type(name)[0] or ""), name
+
+
 def test_raw_release_and_git_upload_pack_are_stream_specs(application):
     app, commit, release_hash, _logs = application
     raw = dispatch(
@@ -4169,6 +4199,125 @@ def test_reads_resolve_only_visible_refs(application):
             repository.resolve_commit(hidden)
     assert repository.resolve_commit("refs/heads/main") == tip
     assert repository.resolve_commit(tip[:12]) == tip
+
+
+def _hidden_commit(git_dir, parent, ref, content):
+    blob = subprocess.run(
+        ["git", "--git-dir", git_dir, "hash-object", "-w", "--stdin"],
+        input=content, check=True, capture_output=True,
+    ).stdout.decode().strip()
+    tree = subprocess.run(
+        ["git", "--git-dir", git_dir, "mktree"],
+        input=f"100644 blob {blob}\tsecret.txt\n".encode(),
+        check=True, capture_output=True,
+    ).stdout.decode().strip()
+    commit = subprocess.run(
+        ["git", "--git-dir", git_dir, "-c", "user.name=t",
+         "-c", "user.email=t@example.invalid", "commit-tree", tree,
+         "-p", parent, "-m", "hidden"],
+        check=True, capture_output=True,
+    ).stdout.decode().strip()
+    subprocess.run(["git", "--git-dir", git_dir, "update-ref", ref, commit],
+                   check=True)
+    return commit
+
+
+def test_reads_refuse_commit_reachable_only_from_hidden_refs(application):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    git_dir = str(repository.git_dir)
+    tip = repository.resolve_commit("main")
+
+    secret = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/secret", b"trashed secret\n")
+    for requested in (secret, secret[:7], secret[:12]):
+        with pytest.raises(gateway.GatewayError):
+            repository.resolve_commit(requested)
+        for operation in ("raw", "history", "tree"):
+            query = urlencode({"ref": requested, "path": "secret.txt"})
+            response = app.dispatch(
+                "GET",
+                f"/v1/public/repositories/alice/project/{operation}?{query}",
+                {}, b"")
+            assert response.status == 404, (operation, requested)
+            assert response.stream is None
+            assert b"trashed secret" not in response.body
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(tip[:6])
+
+    kept = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/history/main/0000000001", b"kept\n")
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(kept[:12]) == kept
+    response = app.dispatch(
+        "GET",
+        "/v1/public/repositories/alice/project/raw?"
+        + urlencode({"ref": kept, "path": "secret.txt"}), {}, b"")
+    assert response.status == 200
+    assert subprocess.run(
+        response.stream.command, check=True, capture_output=True,
+        env=gateway._git_environment()).stdout == b"kept\n"
+
+
+def test_commit_id_visibility_is_cached_per_refs_state_and_bounded(
+    application, monkeypatch
+):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    git_dir = str(repository.git_dir)
+    tip = repository.resolve_commit("main")
+    parent = subprocess.run(
+        ["git", "--git-dir", git_dir, "rev-parse", tip + "^"],
+        capture_output=True).stdout.decode().strip()
+    secret = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/secret", b"secret\n")
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(tip) == tip
+    spawns = []
+    real_run_git, real_run_git_status = gateway._run_git, gateway._run_git_status
+
+    def counted(real):
+        def run(*args, **kwargs):
+            spawns.append(args[1])
+            return real(*args, **kwargs)
+        return run
+
+    monkeypatch.setattr(gateway, "_run_git", counted(real_run_git))
+    monkeypatch.setattr(gateway, "_run_git_status", counted(real_run_git_status))
+    for _ in range(3):
+        assert repository.resolve_commit(tip) == tip
+        if parent:
+            assert repository.resolve_commit(parent) == parent
+        with pytest.raises(gateway.GatewayError):
+            repository.resolve_commit(secret)
+    assert spawns == []
+
+    monkeypatch.setattr(gateway, "VISIBLE_COMMIT_SET_LIMIT", 0)
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(tip) == tip
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(secret)
+    walks = [args for args in spawns if "--contains" in list(args)]
+    assert walks and all("core.commitGraph=true" in list(args) for args in walks)
+    spawns.clear()
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(secret)
+    assert not [args for args in spawns if "--contains" in list(args)]
+
+    busy = gateway.threading.BoundedSemaphore(1)
+    busy.acquire()
+    monkeypatch.setattr(gateway, "_visible_commit_walks", busy)
+    monkeypatch.setattr(gateway, "VISIBLE_COMMIT_WALK_WAIT_SECONDS", 0.01)
+    repository.invalidate_memory_generation()
+    other = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/other", b"other\n")
+    with pytest.raises(gateway.GitError):
+        repository.resolve_commit(other)
+    response = app.dispatch(
+        "GET",
+        "/v1/public/repositories/alice/project/history?"
+        + urlencode({"ref": other}), {}, b"")
+    assert response.status == 503
 
 
 def test_retired_runtime_roots_are_reaped_after_grace(monkeypatch):

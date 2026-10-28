@@ -339,6 +339,18 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
         }
     }
 
+    public static func forRoute(_ id: String, in rows: [UnifiedAgentRow]) -> UnifiedAgentRow? {
+        if let exact = rows.first(where: { $0.id == id }) { return exact }
+        if id.hasPrefix("node:") {
+            let session = String(id.dropFirst("node:".count))
+            if session.isEmpty { return nil }
+            return rows.first { !$0.isDesktop && !$0.outside && $0.cloudSessionId == session }
+        }
+        guard id.hasPrefix("desktop:") else { return nil }
+        let elsewhere = rows.filter { $0.elsewhere && $0.id.hasSuffix(":\(id)") }
+        return elsewhere.count == 1 ? elsewhere[0] : nil
+    }
+
     /// A run on the relay queue.
     public static func fromCloud(_ session: AgentLaunchSession) -> UnifiedAgentRow {
         let updated = max(session.updatedAtMs, session.completedAtMs, session.createdAtMs)
@@ -692,6 +704,21 @@ public final class AgentControlCenter: AgentControlling {
         await reload(cloud: false)
     }
 
+    public func row(forRoute id: String) -> UnifiedAgentRow? {
+        if let row = UnifiedAgentRow.forRoute(id, in: rows) { return row }
+        guard id.hasPrefix("node:") else { return nil }
+        let session = String(id.dropFirst("node:".count))
+        guard let claimed = cloudSessions.first(where: { $0.sessionId == session }).map(UnifiedAgentRow.fromCloud),
+              claimed.localId > 0
+        else { return nil }
+        let node = claimed.node.lowercased()
+        let desktop = (hub.currentLink?.desktopName ?? "").lowercased()
+        return rows.first { row in
+            row.isDesktop && !row.outside && row.localId == claimed.localId
+                && (row.node.lowercased() == node || (!row.elsewhere && !desktop.isEmpty && desktop == node))
+        }
+    }
+
     public func resetForProjectSwitch() {
         epoch &+= 1
         rows = []
@@ -893,7 +920,9 @@ public final class AgentControlCenter: AgentControlling {
                 if note != cloudNote { cloudNote = note }
             }
         }
-        return cloudSessions.map(UnifiedAgentRow.fromCloud)
+        let nodes = cloudSessions.map(UnifiedAgentRow.fromCloud)
+        if started == epoch { publish(deskRows, nodes) }
+        return nodes
     }
 
     public func stop(_ row: UnifiedAgentRow) async throws {

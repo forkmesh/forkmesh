@@ -176,7 +176,7 @@ void MainWindow::syncRepository(int index, bool quiet)
         (hasMirror ? QStringList{"-C", repo.mirrorPath, "fetch", "--progress",
                                 "--prune", "origin"} +
                         stableRefspecs
-                  : QStringList{"clone", "--progress", "--bare", source,
+                  : QStringList{"clone", "--progress", "--bare", "--", source,
                                 repo.mirrorPath});
     const QString mirrorPath = repo.mirrorPath;
 

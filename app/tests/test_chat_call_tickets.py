@@ -53,16 +53,18 @@ def test_only_members_of_a_private_channel_get_a_ticket():
     assert '_visibility(record) == "public"' in handler
     assert '"private_channel_required"' in handler
     assert '"calls_unavailable"' in handler
+    assert 'int(row.get("key_version") or 1)' in handler
     route = CHANNELS[CHANNELS.index("    if call_ticket:"):]
     route = route[:route.index("\n\n")]
     assert 'method != "POST"' in route
-    runtime = ENTRY[ENTRY.index("    async def call_ticket(self, channel_id, account_bi):"):]
+    runtime = ENTRY[ENTRY.index("    async def call_ticket(self, channel_id, account_bi, key_version=1):"):]
     runtime = runtime[:runtime.index("\n\n")]
     assert "FORKMESH_CALLS_SECRET" in runtime
     assert "FORKMESH_CALLS_NODES" in runtime
     assert "len(secret) < 32 or not nodes" in runtime
     assert "await _chat_call_healthy(nodes)" in runtime
-    assert "await runtime.call_ticket(channel_id, account_bi)" in CHANNELS
+    assert "await runtime.call_ticket(channel_id, account_bi, key_version)" in CHANNELS
+    assert "account_bi,\n            key_version)" in runtime
 
 
 NODES = ",".join(
@@ -97,3 +99,17 @@ def test_every_participant_of_a_room_lands_on_the_same_live_node():
                 raise AssertionError("losing an unrelated node moved a call")
     assert pick(rooms[0], nodes, set()) == chosen[0]
     assert pick(rooms[0], [], set()) == ""
+
+
+def test_a_rotated_channel_key_moves_the_call_to_a_new_room():
+    functions = _ticket_functions()
+    room = functions["chat_call_room"]
+    first = room(SECRET, CHANNEL)
+    assert room(SECRET, CHANNEL, 1) == first
+    second = room(SECRET, CHANNEL, 2)
+    third = room(SECRET, CHANNEL, 3)
+    assert len({first, second, third}) == 3
+    ticket = functions["chat_call_ticket"](
+        SECRET, CHANNEL, "ab" * 16, 1_800_000_000_000, "c" * 64, 2)
+    assert ticket["room"] == second
+    assert ticket["ticket"] != GO_TICKET

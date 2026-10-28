@@ -51,7 +51,11 @@ the core nodes' app host, like the World.
   `kind: "office"`, named `office/<org>/<room>`, mapped in
   `org_office_channels`. Membership follows org membership and team gates and
   is resynced on every `/api/office/session` and after member or team
-  changes; removal rotates the room key. These channels cannot be managed
+  changes; removal rotates the room key. Deleting the organization runs
+  `org_office_chat.dissolve` before the roster goes: it removes the office
+  `chat_channels` rows with their members, reads, invites and webhooks, the
+  `org_office_channels` mapping, and closes the live rooms, so former members
+  keep no channel to read. These channels cannot be managed
   from `/chat` and do not count toward the channel limit. The panel uses the
   site's chat modules (transport, seal, moderation, retention, rich text) and
   the account event channel for unread counts. "Message nearby" and knocks
@@ -281,6 +285,12 @@ Extras a client may set (validated in `EXTRAS`): `status`, `task`, `meeting`,
   account replaces the first.
 - **Revocation:** each socket rechecks session, account status, membership
   and teams every 30 s and is closed with 4003 when any lapses.
+- **Tasks:** `/api/tasks` (`world/src/world_office_tasks.py`) answers only
+  organization insiders (owner, admin, maintainer, member, auditor); a guest
+  gets the same 403 `org_member_required` as an outsider, and an auditor may
+  only read (`read_only_role` on every other method). Why: the board holds
+  organization-private work, including the `security` department tasks filed
+  from private vulnerability reports.
 - **Limits:** frames over 16 KiB close the socket (1009); more than 120
   frames in a burst (60/s refill) closes it (1008). Per-action token buckets
   for movement, signalling, extras, chat, whiteboard ops and cursors. At most

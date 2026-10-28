@@ -6391,6 +6391,31 @@
       "and hyphens, e.g. \"mirror-01\". You can also paste the node's 43-character public key.";
   }
 
+  function claimNodeAuthHeaders() {
+    const token = String(state.session?.sessionToken || "");
+    const headers = { "content-type": "application/json", accept: "application/json" };
+    if (token && token !== "cookie") headers.authorization = "Bearer " + token;
+    return headers;
+  }
+
+  function claimNodeAuthBody(password, extra) {
+    const body = {
+      identifier: state.session?.email || state.session?.nodeName || "",
+      password,
+      ...extra,
+    };
+    const totp = String($("[data-claim-node-totp]")?.value || "").replace(/\s+/g, "");
+    if (totp) body.totp = totp;
+    return body;
+  }
+
+  function revealClaimNodeTotp() {
+    const row = $("[data-claim-node-totp-row]");
+    if (row) row.classList.remove("hidden");
+    const field = $("[data-claim-node-totp]");
+    if (field) { field.value = ""; field.focus(); }
+  }
+
   async function claimNode() {
     const input = $("[data-claim-node-input]");
     // Not lowercased up front: a node's public-key ID is case-sensitive, and
@@ -6410,11 +6435,8 @@
     try {
       const response = await fetch("/api/accounts/claim-node", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6433,8 +6455,11 @@
           "good");
       }
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         invalid_node_id: claimNodeIdHint(nodeId),
         cannot_claim_self: "You can't claim your own account.",
         no_such_node: `No node called "${nodeId}" has registered with the relay. Check the ID on the node itself - or, if you have not installed one yet, see "No node yet?" below.`,
@@ -6471,11 +6496,8 @@
     try {
       const response = await fetch("/api/accounts/claim-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId, code,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId, code })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6494,8 +6516,11 @@
       if (codeInput) codeInput.value = "";
       setProfilePageHint("[data-claim-node-status]", `Linked "${nodeId}" to your account.`, "good");
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         no_such_node: "No node with that ID was found.",
         no_pending_claim: "No pending claim for that node. Send a new claim code.",
         bad_code: "That code is incorrect.",

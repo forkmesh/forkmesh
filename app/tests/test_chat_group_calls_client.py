@@ -177,3 +177,121 @@ def test_the_binding_ends_when_its_sender_leaves_or_goes_quiet(run):
     assert run["forgetAfterOwnerOut"] == 1
     assert run["afterReclaim"] == ["cat:c", "mallory:a"]
     assert run["afterExpiry"] == ["dan:c"]
+
+
+REKEY_HARNESS = r"""
+import { pathToFileURL } from "node:url";
+const { createGroupCalls } = await import(pathToFileURL(process.argv[2]).href);
+const realTimeout = setTimeout;
+globalThis.setTimeout = (fn) => realTimeout(fn, 0);
+globalThis.setInterval = () => 0;
+globalThis.clearInterval = () => {};
+const flush = async () => { for (let i = 0; i < 10; i += 1) await new Promise((resolve) => realTimeout(resolve, 2)); };
+const sockets = [];
+const sent = [];
+const tickets = [];
+class FakeWorker { postMessage() {} terminate() {} }
+class FakeStream {
+  constructor(tracks = []) { this.tracks = tracks; this.id = "local"; }
+  getTracks() { return this.tracks; }
+  getAudioTracks() { return this.tracks; }
+  getVideoTracks() { return []; }
+}
+class FakePeerConnection {
+  addTransceiver() { return { sender: {} }; }
+  async createOffer() { return { type: "offer", sdp: "v=0" }; }
+  async setLocalDescription(description) { this.localDescription = description; }
+  close() { this.closed = true; }
+}
+class FakeSocket {
+  constructor(url) { this.url = url; this.readyState = 1; this.sent = []; sockets.push(this); }
+  send(text) { this.sent.push(JSON.parse(text)); }
+  close() { this.readyState = 3; }
+}
+let version = 1;
+const calls = createGroupCalls({
+  sendFrame: async (channel, type, fields) => { sent.push({ channel, type, ...fields }); },
+  fetchTicket: async (channelId) => {
+    tickets.push(channelId + ":v" + version);
+    return { url: "wss://calls.example/calls/ws?room=v" + version, ticket: "t" + version };
+  },
+  accountName: "me",
+  callId: (channelKey) => (channelKey === "#team" ? "chat-channel:chan:v" + version : ""),
+  scope: {
+    RTCRtpScriptTransform: class {},
+    RTCPeerConnection: FakePeerConnection,
+    WebSocket: FakeSocket,
+    Worker: FakeWorker,
+    MediaStream: FakeStream,
+    crypto: globalThis.crypto,
+    navigator: { mediaDevices: { getUserMedia: async () => new FakeStream([{ kind: "audio", enabled: true, stop() {} }]) } },
+  },
+});
+const out = {};
+await calls.join("#team", "chan", "audio");
+sockets[0].onopen();
+sockets[0].onmessage({ data: JSON.stringify({ type: "joined", peer: "1".repeat(32) }) });
+await flush();
+out.sameRoom = await calls.channelRekeyed("#team", "chat-channel:chan:v1");
+out.otherChannel = await calls.channelRekeyed("#other", "chat-channel:other:v2");
+version = 2;
+out.rotated = await calls.channelRekeyed("#team", "chat-channel:chan:v2");
+await flush();
+sockets[1].onopen();
+out.sockets = sockets.map((s) => ({ url: s.url, open: s.readyState === 1, sent: s.sent.map((m) => m.type) }));
+out.tickets = tickets;
+out.outPresence = sent.filter((m) => m.type === "group-call-presence" && m.call === "out").length;
+out.again = await calls.channelRekeyed("#team", "chat-channel:chan:v2");
+out.active = Boolean(calls.active);
+calls.leave();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_rotated_channel_key_moves_the_call_to_the_new_room():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    result = subprocess.run(
+        [node, "--input-type=module", "-", str(PUBLIC / "chat-group-calls.js")],
+        input=REKEY_HARNESS, capture_output=True, text=True, timeout=120,
+        check=False)
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    assert out["sameRoom"] is False
+    assert out["otherChannel"] is False
+    assert out["rotated"] is True
+    assert out["tickets"] == ["chan:v1", "chan:v2"]
+    assert out["sockets"][0]["url"].endswith("room=v1")
+    assert out["sockets"][0]["open"] is False
+    assert "leave" in out["sockets"][0]["sent"]
+    assert out["sockets"][1]["url"].endswith("room=v2")
+    assert out["sockets"][1]["open"] is True
+    assert out["sockets"][1]["sent"] == ["join"]
+    assert out["outPresence"] == 1
+    assert out["again"] is False
+    assert out["active"] is True
+
+
+def test_the_chat_page_reports_channel_rotations_to_the_call():
+    chat = (PUBLIC / "chat.js").read_text(encoding="utf-8")
+    assert "void groupCalls.channelRekeyed(\n      scope, String(roomTransport?.access?.roomName" in chat
+    assert "old.keyVersion !== record.keyVersion" in chat
+    assert "`chat-channel:${id}:v${record.keyVersion}`" in chat
+
+
+def test_the_ios_call_follows_the_channel_room_like_the_web_client():
+    native = PUBLIC.parents[1] / "native" / "ios"
+    call = (native / "ForkMesh" / "Features" / "Chat" / "Calls" / "Native" / "NativeGroupCall.swift").read_text(encoding="utf-8")
+    rekeyed = call[call.index("    func channelRekeyed(_ scope: String, chatRoom room: String) async -> Bool {"):]
+    rekeyed = rekeyed[:rekeyed.index("\n    }\n")]
+    assert "guard chatRoom != room else { return false }" in rekeyed
+    assert "dropConnection()" in rekeyed
+    assert "await connect()" in rekeyed
+    assert 'chatRoom = office?.room(for: scope).map { "chat-channel:\\($0.id):v\\($0.keyVersion)" } ?? ""' in call
+    assert "_ = await office.open(self.conversation)" in call
+    services = (native / "ForkMesh" / "App" / "AppServices+Chat.swift").read_text(encoding="utf-8")
+    assert "hub.office?.onRoomOpened = { (conversation: String, roomName: String) in" in services
+    assert "NativeGroupCall.shared.channelRekeyed(conversation, chatRoom: roomName)" in services
+    core = (native / "ForkMeshCore" / "Sources" / "FMChat" / "Office" / "OfficeChannels.swift").read_text(encoding="utf-8")
+    assert "onRoomOpened?(room.conversation, roomName)" in core

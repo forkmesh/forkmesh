@@ -283,6 +283,7 @@ BI_COLUMNS = {
     "org_pull_rules": ("org_bi",),
     "org_repos": ("org_bi",),
     "org_succession_approvals": ("approver_bi",),
+    "org_succession_case_approvers": ("approver_bi",),
     "org_succession_cases": ("org_bi", "owner_bi", "successor_bi"),
     "org_succession_events": ("org_bi", "actor_bi"),
     "org_succession_policies": ("org_bi", "owner_bi", "successor_bi"),

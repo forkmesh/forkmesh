@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "ChatLinkText.h"
 #include "ChatRelayRules.h"
 #include "OfficeChannelMirror.h"
 #include "PingSettings.h"
@@ -10694,7 +10695,12 @@ void MainWindow::analyzeIssueCompleteness()
         dialog.resize(560, 480);
         auto *layout = new QVBoxLayout(&dialog);
         auto *view = new QTextBrowser(&dialog);
-        view->setOpenExternalLinks(true);
+        view->setOpenExternalLinks(false);
+        view->setOpenLinks(false);
+        connect(view, &QTextBrowser::anchorClicked, &dialog, [](const QUrl &link) {
+            if (const QUrl external = ChatLinkText::externalLinkUrl(link.toString()); external.isValid())
+                QDesktopServices::openUrl(external);
+        });
         view->setMarkdown(reportLines.join('\n'));
         layout->addWidget(view);
         auto *buttons =

@@ -54,12 +54,14 @@ object GroupCallFeature {
         office = service
         accountName = account
         service.onLiveFrame = { plain, conversation -> handleFrame(plain, conversation) }
+        service.onRoomOpened = { conversation, roomName -> roomOpened(conversation, roomName) }
         ProjectLifecycle.onClose { uninstall(service) }
     }
 
     private fun uninstall(service: OfficeChannelService) {
         if (office !== service) return
         service.onLiveFrame = null
+        service.onRoomOpened = null
         office = null
         worker.execute { end("") }
         recent.clear()
@@ -76,6 +78,14 @@ object GroupCallFeature {
         val current = page
         if (current != null && viewState.value.conversation == conversation) current.post("frame", listOf(plain, conversation))
     }
+
+    private fun roomOpened(conversation: String, roomName: String) {
+        val current = page
+        if (current != null && viewState.value.conversation == conversation) current.post("rekeyed", listOf(conversation, roomName))
+    }
+
+    private fun chatRoomName(conversation: String): String =
+        office?.room(conversation)?.let { "chat-channel:${it.id}:v${it.keyVersion}" } ?: ""
 
     fun join(conversation: String, media: DirectCallKind, accent: String): String? {
         if (active) return "Leave the current call first."
@@ -96,7 +106,7 @@ object GroupCallFeature {
             if (!made.awaitAttached()) error("The call screen did not open.")
             if (page !== made || viewState.value.conversation != conversation) return
             for (frame in recent.recent(conversation)) made.post("frame", listOf(frame, conversation))
-            val reply = made.request("join", listOf(conversation, media.wire, accountName(), accent), timeoutMs = 60_000L).asJsonMap()
+            val reply = made.request("join", listOf(conversation, media.wire, accountName(), accent, chatRoomName(conversation)), timeoutMs = 60_000L).asJsonMap()
             val problem = jsonText(reply["error"])
             if (problem.isNotEmpty()) end(problem)
         } catch (error: Exception) {

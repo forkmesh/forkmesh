@@ -310,6 +310,30 @@ def test_rows_you_only_acted_on_keep_their_contents_closed():
     assert account_data.withheld("admin_signup_referral_code")
 
 
+def test_moderator_notes_about_you_stay_with_the_moderators():
+    rt = seeded()
+    rt.add("INSERT INTO moderation_blocks(scope_bi,account_bi,created_at,hide_content,data) "
+           "VALUES(?,?,?,?,?)", "bi:scope:acme", "bi:alice", 1, 1,
+           'dk:{"name":"alice","by":"modmia","reason":"spam ring","scope":"acme"}')
+    rt.add("INSERT INTO repo_terms_flags(repo_bi,active,category,data,updated_by_bi,updated_at) "
+           "VALUES(?,?,?,?,?,?)", "bi:alice-laptop/proj", 1, "malware",
+           'dk:{"note":"internal: ties to case 7","actor":"adminzed"}', "bi:adminzed", 1)
+    blocks = call(rt.use("GET", "alice", query={"table": "moderation_blocks"}),
+                  "/api/accounts/data/rows")["data"]["rows"]
+    assert len(blocks) == 1
+    assert blocks[0]["fields"]["data"] == account_data.STAFF_NOTE
+    assert blocks[0]["fields"]["hide_content"] == 1
+    flags = call(rt.use("GET", "alice", query={"table": "repo_terms_flags",
+                                               "subject": "repos"}),
+                 "/api/accounts/data/rows")["data"]["rows"]
+    assert len(flags) == 1
+    assert flags[0]["fields"]["category"] == "malware"
+    assert flags[0]["fields"]["data"] == account_data.STAFF_NOTE
+    text = json.dumps(call(rt.use("GET", "alice"), "/api/accounts/export")["data"])
+    for secret in ("modmia", "spam ring", "adminzed", "case 7"):
+        assert secret not in text
+
+
 def test_inventory_scans_in_a_few_union_statements_and_falls_back_per_table():
     rt = seeded()
     statements = []

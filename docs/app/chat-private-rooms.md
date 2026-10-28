@@ -91,17 +91,29 @@ made before the change keep their old global `name_bi` until they are renamed.
 ## Channel limits and webhook pings
 
 - `POST /api/chat/channels` refuses a new channel with
-  `429 too_many_own_channels` once its creator already made
+  `429 too_many_own_channels` once its creator already holds
   `MAX_CHAT_CHANNELS_PER_CREATOR` (20) channels, and with
-  `429 too_many_channels` once the site holds `MAX_CHAT_CHANNELS` (100).
-  Office and Everyone channels count toward neither. Without the per-creator
-  cap (2026-10-22) one account could take every one of the 100 slots and
-  block channel creation for everyone else.
+  `429 too_many_new_channels` once its creator made
+  `CHANNEL_CREATE_MAX_PER_WINDOW` (5) channels in the last
+  `CHANNEL_CREATE_WINDOW_MS` (one hour). Office and Everyone channels count
+  toward neither. The hourly budget counts successful `chat.channel.create`
+  rows in `sensitive_audit_log` (`channel_creations_since`), not live
+  channels, so deleting a channel and making a new one does not reset it.
+- There is no site-wide channel ceiling (removed 2026-10-28). The old
+  `MAX_CHAT_CHANNELS` (100) was shared by everyone, so five accounts at their
+  per-creator cap blocked channel creation for the whole site until they
+  deleted their channels. Counting only recently active channels would not
+  help, because the owner of a squatting channel can keep it active. Growth
+  is bounded per account by the two limits above instead.
 - An incoming webhook post to a public channel always pings the channel's
-  creator, but pings the rest of the public audience (up to
-  `MAX_CHANNEL_MEMBERS` active users) only when none of that channel's
+  creator, and pings the channel's readers (accounts with a
+  `chat_channel_reads` row for it, which opening the channel writes; up to
+  `MAX_CHANNEL_MEMBERS`, newest first) only when none of that channel's
   webhooks has posted in the last `WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS`
-  (10 minutes). The check and the `last_used_at` write are one `UPDATE ...
+  (10 minutes). Until 2026-10-28 that audience was the first
+  `MAX_CHANNEL_MEMBERS` active users of the whole site, so any account could
+  make a public channel and a webhook and push its own text to 500 phones,
+  over and over by deleting and recreating the channel. The check and the `last_used_at` write are one `UPDATE ...
   WHERE NOT EXISTS ... RETURNING`, so parallel posts cannot all claim the
   window, and the gate needs no new table. Before 2026-10-22 every post made
   a ping (an uncoalesced phone banner) with the webhook's own title and text
@@ -325,6 +337,13 @@ protection. `ChatAttachmentView.sweepTemporaryFiles` deletes those files when
 the app goes to the background, and at launch also deletes leftover
 `viewonce-*` and `messages-voice*` recordings from a crash. Before, nothing
 ever deleted `tmp/chat-media/`.
+The file in `tmp/chat-media/` is named by `ChatMediaFile` (`FMChat`): the
+first 24 hex characters of the SHA-256 of the message id, a dash, and the file
+name with `/`, `\` and `..` replaced. The message id comes from the sender, so
+until 2026-10-28 an id such as `../../Documents/x` wrote attacker bytes into
+the app's Documents folder (visible in the Files app) as soon as the message
+was drawn. `ChatMediaFile.url` also refuses a path whose folder is not
+`chat-media` itself. Guard: `FMChatTests/ChatMediaFileTests.swift`.
 
 What is still not covered (audit 2026-10-14):
 

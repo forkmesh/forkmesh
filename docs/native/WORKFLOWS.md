@@ -67,7 +67,12 @@ desktop.
   the same `repo|id`, like `teammates.`, then calls the page's own
   `runNativePackageRepositoryWorkflowAction`, so a phone run is the same as
   pressing Run on the desktop (trigger "By hand · <phone>"). Editing and
-  deleting these workflows stays on the desktop.
+  deleting these workflows stays on the desktop. A phone `run` of a
+  repository workflow needs the workflow file's approval on the desktop
+  (`approval_required` otherwise), and fails closed with `unknown_workflow`
+  when the desktop cannot find the repository or the workflow file, so no
+  lookup gap skips the approval check (guard:
+  `desktop/tests/validate_repo_workflow_approval.py`).
 - **Free disk space from the phone.** An account workflow with desktop steps
   (`desktop.*`, `WorkflowDesktopSteps`, checked against `workflow-spec.json`
   in `DesktopWorkflowsTests`) shows **Run on your desktop** instead of the

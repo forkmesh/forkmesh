@@ -242,6 +242,25 @@ STATUS_REDACTED_ROUTE_PATHS = {
 }
 
 
+def _status_route_family(path):
+    path = str(path or "").split("?", 1)[0]
+    if path.startswith(STATUS_REDACTED_ROUTE_PREFIXES):
+        return path
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return "/"
+    for tail in ("info/refs", "git-upload-pack", "git-receive-pack"):
+        if path.endswith("/" + tail):
+            return "/[repository]/" + tail
+    if parts[:2] == ["api", "repo"] and len(parts) > 4:
+        return "/api/repo/[repository]/" + parts[4]
+    if parts[0] == "api" and len(parts) > 1:
+        return "/api/" + parts[1]
+    if parts[0].startswith("@"):
+        return "/@[account]"
+    return "/" + parts[0]
+
+
 def _status_error_route_path(path):
     for prefix in STATUS_REDACTED_ROUTE_PREFIXES:
         if path.startswith(prefix):
@@ -2471,7 +2490,8 @@ async def record_status_sample(
                 failed["durable_objects"] = True
                 hit_count["durable_objects"] += 1
                 if first_hit["durable_objects"] is None:
-                    first_hit["durable_objects"] = (row.get("status"), path, message.strip())
+                    first_hit["durable_objects"] = (
+                        row.get("status"), path, "Exceeded allowed duration")
             # 502/503/504 on a direct-mirror content path (release blob, repo
             # browse, git clone) means the selected endpoint is unreachable —
             # upstream availability, which the signed HTTPS health check
@@ -2486,8 +2506,7 @@ async def record_status_sample(
             failed["errors"] = True
             hit_count["errors"] += 1
             if first_hit["errors"] is None:
-                first_hit["errors"] = (
-                    row.get("status"), path, message.strip())
+                first_hit["errors"] = (row.get("status"), path, "")
             if (route.rstrip("/") == "/api/world/ws" or
                     REPO_ROOM_RE.match(route) or
                     GIT_INFO_RE.match(route) or GIT_PACK_RE.match(route)):
@@ -2499,7 +2518,7 @@ async def record_status_sample(
             failed[bucket] = True
             hit_count[bucket] += 1
             if first_hit[bucket] is None:
-                first_hit[bucket] = (row.get("status"), path, message.strip())
+                first_hit[bucket] = (row.get("status"), path, "")
 
         # Expected platform aborts are intentionally kept out of error_log:
         # every reconnecting room client can see the same DO failure, and one
@@ -2541,6 +2560,7 @@ async def record_status_sample(
         for bucket in buckets:
             if failed[bucket] and first_hit[bucket]:
                 status_code, path, message = first_hit[bucket]
+                path = _status_route_family(path)
                 text = (str(status_code) + " on " + path) if status_code else path
                 if message:
                     text += ": " + message[:120]

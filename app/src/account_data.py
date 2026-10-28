@@ -76,6 +76,7 @@ WITHHELD_TABLES = frozenset({
     "sensitive_audit_log", "workflow_credentials",
 })
 OPEN_KEY_TABLES = frozenset({"account_ssh_keys", "owner_encryption_keys"})
+STAFF_NOTE_TABLES = frozenset({"moderation_blocks", "repo_terms_flags"})
 DELETABLE = {
     "notifications": "recipient_bi",
     "repo_stars": "account_bi",
@@ -192,6 +193,7 @@ WITHHELD = "(withheld: security credential)"
 SEALED = "(encrypted with a key only its package or your devices hold)"
 ORG_ONLY = "(belongs to the organization; ask an owner or admin)"
 OTHERS = "(belongs to someone else; you only acted on it)"
+STAFF_NOTE = "(written by a moderator; the note and its author stay with the moderators)"
 
 _INVENTORY_MEMO = {}
 _EXPORT_MEMO = {}
@@ -600,6 +602,9 @@ async def render(runtime, table, info, row, subject, org_managed):
                 column == "data" or column.endswith(("_data", "sealed"))):
             if org_restricted or touched:
                 fields[column] = ORG_ONLY if org_restricted else OTHERS
+                continue
+            if table in STAFF_NOTE_TABLES:
+                fields[column] = STAFF_NOTE if value else value
                 continue
             opened = await runtime.open(value) if value else None
             if opened is None:
