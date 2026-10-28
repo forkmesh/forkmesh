@@ -12,6 +12,8 @@
  ],
  "notes": [
   {"date": "2026-10-28", "area": "iPhone", "text": "Tapping an agent alert now opens its page while it loads, finds agents on your other desktops and runners, and offers Try again instead of a blank page."},
+  {"date": "2026-10-28", "area": "Projects", "text": "A shared pull request link now previews the pull request itself: its state, reviews and approvals, comment counts, files and lines changed, the six code health scores and the faces of everyone taking part."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "In the new interface, dots, arrows, labels and panels no longer sit on a box of a slightly different colour: every element now shares its section's background, and each theme uses one colour per role."},
   {"date": "2026-10-28", "area": "Android", "text": "Invoicing on Android: create and edit invoices for CRM contacts, email them and send reminders, record payments, and see when each one is opened, viewed and paid."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Invoicing on iPhone: create and edit invoices for CRM contacts, email them and send reminders, record payments, and see when each one is opened, viewed and paid."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Invoicing has its own desktop page: create, email, track and record payments on invoices without leaving the app, and see a CRM contact's invoices on their card."},
