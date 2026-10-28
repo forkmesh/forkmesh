@@ -145,6 +145,13 @@ version, so an old signed release could be replayed to roll a machine back.
   image must carry the build commit and, for the Intel name, contain only
   universal Mach-O files. `FORKMESH_RELEASE_ALLOW_DROPPED_ASSETS=1` and
   `--macos-dmg PATH` are manual escape hatches.
+- **macOS checks (2026-10-28):** the build commit sits in a `QStringLiteral`
+  (`DesktopBuildCommit.cpp`, since 2026-10-25), which clang stores as UTF-16,
+  so `inspect_macos_dmg` looks for the UTF-16 form as well as ASCII; v1.5.0's
+  first image failed the check while carrying its commit. The Mac build now
+  gets the release version as `FORKMESH_VERSION` and stamps it with
+  `-DFORKMESH_VERSION_OVERRIDE`, as Linux and Windows do; before, a rebuild
+  from `main` took `main`'s `project()` version (that image said 1.2.8).
 - **iOS:** an App Store app with its own version
   (`native/ios/Config/Version.xcconfig`); each desktop release submits the
   newest build once (recorded in `<work>/ios-vX.Y.Z.json`), with the annotated
