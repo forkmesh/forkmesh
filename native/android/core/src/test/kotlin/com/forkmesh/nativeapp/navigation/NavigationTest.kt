@@ -32,7 +32,7 @@ class NavigationTest {
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
         Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -152,6 +152,18 @@ class NavigationTest {
         assertEq(listOf(Route.VideoMixDjStudio), RouteParser.parse("https://app.forkmesh.com/dashboard/video-mix-dj-studio")!!.stack)
         assertEq(listOf(Route.VideoMixDjStudio), RouteParser.parse("forkmesh://video-mix-dj-studio")!!.stack)
         expect(Route.VideoMixDjStudio in HubCatalog.personal.mapNotNull { it.route })
+        val pokerTable = "0123456789abcdef0123456789abcdef"
+        assertEq(listOf(Route.Poker(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/poker")!!.stack)
+        assertEq(listOf(Route.Poker(pokerTable)), RouteParser.parse("https://app.forkmesh.com/dashboard/poker?table=$pokerTable")!!.stack)
+        assertEq(listOf(Route.Poker(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/poker?table=nope")!!.stack)
+        assertEq(listOf(Route.Poker(pokerTable)), RouteParser.parse("forkmesh://dashboard/poker?table=$pokerTable")!!.stack)
+        assertEq(listOf(Route.Poker(null)), RouteParser.parse("forkmesh://poker")!!.stack)
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/poker/extra"))
+        assertEq("Poker", RouteCatalog.title(Route.Kind.Poker))
+        assertEq("casino", RouteCatalog.icon(Route.Kind.Poker))
+        expect(HubCatalog.personal.any { it.route == Route.Poker(null) && it.needsRegistration })
+        assertEq("poker", PackageGate.ROUTE_KINDS[Route.Kind.Poker])
+        assertEq("poker", PackageGate.HUB_ITEMS[Route.Kind.Poker.raw])
         assertEq(listOf(Route.RssReader), RouteParser.parse("forkmesh://dashboard/rss")!!.stack)
         assertEq(listOf(Route.Workflows), RouteParser.parse("https://app.forkmesh.com/dashboard/workflows")!!.stack)
         assertEq(listOf(Route.Workflows), RouteParser.parse("forkmesh://workflows")!!.stack)
@@ -583,7 +595,7 @@ class NavigationTest {
             Route.Notes, Route.Note(""), Route.Note("n1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
             Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Vault(null),
-            Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Approval("7/a1"), Route.InstalledApps,
+            Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,
         )
         for (route in gated) {
             expect(GuestGate.action(route, guest = true) != null, "guest must sign in before ${route.kind.raw}")

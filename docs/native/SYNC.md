@@ -227,5 +227,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S151 | 2026-10-28 | CRM | fix | Adding a CRM contact sends a request id, retries a dropped connection, and when the email is already in the CRM names that contact with Open and Add these details | 1ed74360c2 | pending |  |
 | S152 | 2026-10-28 | Agents | fix | Tapping an agent alert opens its page with a loading view, finds agents on other desktops and runners, and offers Try again instead of a blank page. | 846e99382a | pending |  |
 | S153 | 2026-10-28 | Code | feature | Pull requests look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, a Merged entry in the timeline, a merged or closed box instead of the merge buttons, and a New pull request form that compares branches and can send to a fork on another instance. | 8f86266635 | pending |  |
-| S154 | 2026-10-28 | Stats | fix | The Stats release tiles show a rebuilt download's number from build 1, since every version now starts at build 0. | f283b206c8 | pending |  |
+| S154 | 2026-10-28 | Packages | feature | Poker: play no-limit Texas Hold'em with other ForkMesh users for virtual chips at a full-screen casino table with a dealer, bots, chat and sounds. | ab5642740e | synced | ab5642740e |
+| S155 | 2026-10-28 | Stats | fix | The Stats release tiles show a rebuilt download's number from build 1, since every version now starts at build 0. | f283b206c8 | pending |  |
 <!-- ledger:end -->

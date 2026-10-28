@@ -190,6 +190,7 @@ sealed class Route {
     data object Usage : Route() { override val kind get() = Kind.Usage }
     data object RssReader : Route() { override val kind get() = Kind.RssReader }
     data object VideoMixDjStudio : Route() { override val kind get() = Kind.VideoMixDjStudio }
+    data class Poker(val table: String?) : Route() { override val kind get() = Kind.Poker }
     data class InstanceFeed(val post: String?) : Route() { override val kind get() = Kind.InstanceFeed }
     data object SecureDrive : Route() { override val kind get() = Kind.SecureDrive }
     data object Files : Route() { override val kind get() = Kind.Files }
@@ -236,7 +237,7 @@ sealed class Route {
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
         Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
         Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Poker("poker", "S046"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),

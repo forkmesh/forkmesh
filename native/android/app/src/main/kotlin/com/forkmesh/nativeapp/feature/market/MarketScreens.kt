@@ -153,6 +153,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "usage" -> Route.Usage
     "rssReader" -> Route.RssReader
     "videoMixDjStudio" -> Route.VideoMixDjStudio
+    "poker" -> Route.Poker(null)
     "instanceFeed" -> Route.InstanceFeed(null)
     "secureDrive" -> Route.SecureDrive
     "files" -> Route.Files
