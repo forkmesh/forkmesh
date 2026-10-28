@@ -42,8 +42,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.forkmesh.nativeapp.shell.ShellIsland
 import com.forkmesh.nativeapp.tools.AppTelemetry
 import com.forkmesh.nativeapp.tools.LogCategory
 import com.forkmesh.nativeapp.tools.TelemetryChart
@@ -71,18 +74,42 @@ internal fun TelemetryStripCompactView(telemetry: AppTelemetry, onOpen: () -> Un
             .padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        for (metric in TelemetryMetric.entries) {
-            val series = telemetry.lastSeconds(metric, TelemetryStripLayout.SPARK_SECONDS)
-            val line = when (metric.health(series)) {
-                TelemetryHealth.Good -> c.success
-                TelemetryHealth.Warning -> c.warning
-                TelemetryHealth.Bad -> c.danger
-                null -> c.textTertiary
-            }
-            Canvas(Modifier.width(12.dp).height(10.dp)) {
-                drawTelemetryChart(series, TelemetryStripLayout.SPARK_SECONDS, metric.floor, line, Color.Transparent, strokeWidth = 1.dp.toPx())
-            }
+        TelemetrySparks(telemetry, chartWidth = 12.dp, height = 10.dp)
+    }
+}
+
+private const val SPARK_FILL_ALPHA = 0.35f
+
+@Composable
+private fun TelemetrySparks(telemetry: AppTelemetry, chartWidth: Dp, height: Dp) {
+    val c = Fm.colors
+    for (metric in TelemetryMetric.entries) {
+        val series = telemetry.lastSeconds(metric, TelemetryStripLayout.SPARK_SECONDS)
+        val line = when (metric.health(series)) {
+            TelemetryHealth.Good -> c.success
+            TelemetryHealth.Warning -> c.warning
+            TelemetryHealth.Bad -> c.danger
+            null -> c.textTertiary
         }
+        Canvas(Modifier.width(chartWidth).height(height)) {
+            drawTelemetryChart(series, TelemetryStripLayout.SPARK_SECONDS, metric.floor, line, line.copy(alpha = SPARK_FILL_ALPHA), strokeWidth = 1.dp.toPx())
+        }
+    }
+}
+
+@Composable
+internal fun TelemetryEarSparksView(telemetry: AppTelemetry, width: Dp, height: Dp, modifier: Modifier = Modifier) {
+    telemetry.observe()
+    val summary = (listOf("Diagnostics") + TelemetryMetric.entries.map { "${it.title} ${it.format(telemetry.latest(it))}" }).joinToString(", ")
+    val chart = ShellIsland.fittedChartWidth(width.value, TelemetryMetric.entries.size, 1f, 12f).dp
+    Row(
+        modifier
+            .clearAndSetSemantics { contentDescription = summary }
+            .testTag("top-ear-telemetry"),
+        horizontalArrangement = Arrangement.spacedBy(1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TelemetrySparks(telemetry, chartWidth = chart, height = height)
     }
 }
 

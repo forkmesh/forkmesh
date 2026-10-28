@@ -651,7 +651,7 @@ class HomeShell : Screen() {
                     }
                     Box(Modifier.weight(1f)) {
                         body()
-                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
+                        ShellIslandStatus(Modifier.align(Alignment.TopCenter))
                     }
                 }
             } else {
@@ -674,7 +674,7 @@ class HomeShell : Screen() {
                             .then(if (keyboardUp) Modifier else Modifier.consumeWindowInsets(WindowInsets.navigationBars)),
                     ) {
                         body()
-                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
+                        ShellIslandStatus(Modifier.align(Alignment.TopCenter))
                     }
                 }
             }
@@ -770,7 +770,7 @@ private fun TopBar(
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
     ) {
-        ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
+        if (!rememberShellIslandEars()) ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot(onLongPress = onHome) }
             Spacer(Modifier.width(FmSpace.x3))

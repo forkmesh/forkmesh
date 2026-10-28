@@ -1753,6 +1753,50 @@ the cited iOS commit.
   and the Glasses Alert ring during another app's call; ForkMesh's own calls
   do not count.
 
+### Diagnostics lights by the clock and several desktops (ledger S113, S115, S119, S141)
+
+- **Where it sits.** Android has no Dynamic Island, so `ShellIsland.layout`
+  (`core/.../shell/ShellIsland.kt`) maps the iOS ears onto the status bar
+  and the top display cutout (`View.rootWindowInsets.displayCutout`, API 28
+  and later; a cutout counts as the island only when it is near the middle
+  and starts above the bottom of the status bar). The ears are the status
+  bar beside the cutout (126 dp in the middle when there is none). When
+  the room above a 16 dp clock line is at least 13 dp (most phones with a
+  punch hole), the lights sit there 24 dp in from the left corner and the
+  app charts sit in the right ear above the battery, and the top bar drops
+  its own chart strip (`rememberShellIslandEars`). The status dots sit in
+  the gap above a punch hole, under the status bar for a notch. On a short
+  status bar nothing fits beside the clock, so the lights and dots share
+  one 12 dp row just under the status bar and the charts stay in the top
+  bar. `ShellIslandStatus` (`A/shell/ShellIslandStatus.kt`) replaces the
+  S093 strip, shows only while Diagnostics is on, as iOS, takes no touches
+  and is offset by its window position so the rail layout lines up too.
+- **What it shows.** The service dots (`StatusDotRow.services`, without the
+  `core:`/`runner:` systems), then the desktop light, the other desktops
+  stacked 4 dp over each other with their presence dot, the core nodes
+  stacked the same way and the runners (`StatusDotRow.fleet`,
+  `FleetLight.lights`, following the installed status checks and "only
+  problems"). Cores carry tiny CPU, memory and disk bars from `/api/status`
+  `resources` (`NodeResources`, clamped to 0 to 100, amber from 75, red from
+  90). Android has no desktop vitals stream, so the desktop light's bars
+  and its busy/strained colour come from the desktop's `diag.health`
+  (`DiagnosticsStore`), read while a desktop link is open, every 15 minutes
+  when healthy and every 2 when not. Unlike iOS the desktop light hides
+  when no desktop was ever paired or seen, so a phone without one does not
+  blink red. Android has no build Mac light and no per-runner agent count,
+  so those are left out. The charts are filled at 35 %, in the top bar too.
+- **Several desktops (S141).** `DesktopControlHub` keeps the chosen desktop
+  (`desktop/preferred-key` in the project preferences), its `choices` with
+  each desktop's presence (Running, Not running or not reachable,
+  Checking…), and `checkDesktops`, which opens and closes a relay session to
+  each desktop that is not connected (forced on the Desktops page, at most
+  every 5 minutes after a warm link when there are several). A chosen
+  desktop is the only one dialled, and a link to another one is closed and
+  not used; a choice whose desktop is gone from the account falls back to
+  any. The Desktops page lists the other desktops with their status and a
+  Use button; Runs on in the prompt sheet lists every desktop and sending to
+  one picks it (`QuickLaunchBackend.desktopNames`/`chooseDesktop`).
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see
@@ -2495,6 +2539,9 @@ edit or delete as somebody else. Nothing here talks to older builds.
   draws the same service dots (5 dp, troubled ones blinking) in a 7 dp strip
   just under the status bar, over every tab and pushed page. It is drawn over
   the content without taking layout height and does not take touches.
+  `ShellIslandStatus` replaced it for S113 (section 27): the dots now show
+  only while Diagnostics is on and move above a punch hole when there is
+  room.
 - **Account data (S101).** Settings > Data follows iOS ([account-data.md](../app/account-data.md)).
   `AccountSyncService` (`C/settings/AccountSync.kt`) saves three items to
   `/api/accounts/data/store/<key>`: `android.home` (layout: `shell/*` and the
