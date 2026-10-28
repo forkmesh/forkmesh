@@ -10547,17 +10547,34 @@ void CrmFeature::editContact(const QJsonObject &contact)
     if (contact.isEmpty() && storedSheet(listOpen) && text(listOpen, "flow").isEmpty())
         body.insert(QStringLiteral("views"), QJsonArray{text(listOpen, "id")});
     const QString id = text(contact, "id");
+    if (id.isEmpty())
+        body.insert(QStringLiteral("requestId"),
+                    QUuid::createUuid().toString(QUuid::Id128));
     request(id.isEmpty() ? QByteArrayLiteral("POST")
                          : QByteArrayLiteral("PATCH"),
             organizationPath(QStringLiteral("/contacts") +
                              (id.isEmpty() ? QString()
                                            : QLatin1Char('/') + id)),
-            body, [this](bool ok, const QJsonObject &, const QString &error) {
+            body, [this](bool ok, const QJsonObject &payload, const QString &error) {
         if (!ok) {
-            setStatus(QStringLiteral("Contact was not saved: %1").arg(error), true);
+            const QJsonObject existing = payload.value(QStringLiteral("contact")).toObject();
+            const QString existingId = text(existing, "id");
+            if (existingId.isEmpty()) {
+                setStatus(QStringLiteral("Contact was not saved: %1").arg(error), true);
+                return;
+            }
+            setStatus(QStringLiteral("%1 already uses that email address and is already in the CRM.")
+                          .arg(text(existing, "name").isEmpty() ? text(existing, "email")
+                                                                : text(existing, "name")),
+                      true);
+            if (!contactById(existingId).isEmpty())
+                showContactDetail(existingId, true);
+            loadOrganization();
             return;
         }
-        setStatus(QStringLiteral("Contact saved."));
+        setStatus(payload.value(QStringLiteral("replayed")).toBool()
+                      ? QStringLiteral("Contact was already added.")
+                      : QStringLiteral("Contact saved."));
         loadOrganization();
     });
 }

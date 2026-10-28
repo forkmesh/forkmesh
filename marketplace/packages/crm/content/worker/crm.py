@@ -2593,21 +2593,66 @@ async def _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
     return True
 
 
+def _unique_conflict(error):
+    return "UNIQUE constraint failed" in str(error)
+
+
+async def _contact_taken(runtime, org_bi, email_bi):
+    row = await runtime.d1_first(
+        "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND email_bi=?",
+        org_bi, email_bi) if email_bi else None
+    return await _contact_row(runtime, org_bi, row["contact_id"]) if row else None
+
+
+async def _contact_exists_response(runtime, row):
+    return _response(runtime, {
+        "error": "contact_email_exists",
+        "contact": await _contact_project(runtime, row),
+    }, 409)
+
+
 async def _create_contact(runtime, org_bi, org_name, account_bi, actor, data):
+    request_id = str(data.get("requestId") or "").lower()
+    request_id = request_id if CONTACT_ID_RE.fullmatch(request_id) else ""
+    if request_id:
+        replay = await _contact_row(runtime, org_bi, request_id)
+        if replay:
+            return _response(runtime, {
+                "ok": True, "replayed": True,
+                "contact": await _contact_project(runtime, replay),
+            })
     contact = _flow_placement(_contact_data(data), await _org_flows(runtime, org_bi))
     if not contact.get("name") and not contact.get("email"):
         return _response(runtime, {"error": "name_or_email_required"}, 400)
     if data.get("email") and not contact.get("email"):
         return _response(runtime, {"error": "invalid_email"}, 400)
     email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
-    if email_bi and await runtime.d1_first(
-            "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND email_bi=?",
-            org_bi, email_bi):
-        return _response(runtime, {"error": "contact_email_exists"}, 409)
-    contact_id = runtime.new_id()
+    taken = await _contact_taken(runtime, org_bi, email_bi)
+    if taken:
+        return await _contact_exists_response(runtime, taken)
+    contact_id = request_id or runtime.new_id()
     now = runtime.now()
-    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
-                                 account_bi, actor, now, contact):
+    for attempt in range(2):
+        try:
+            inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                             email_bi, account_bi, actor, now, contact)
+            break
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            replay = await _contact_row(runtime, org_bi, contact_id) if request_id else None
+            if replay:
+                return _response(runtime, {
+                    "ok": True, "replayed": True,
+                    "contact": await _contact_project(runtime, replay),
+                })
+            taken = await _contact_taken(runtime, org_bi, email_bi)
+            if taken:
+                return await _contact_exists_response(runtime, taken)
+            if attempt:
+                raise
+            contact_id = runtime.new_id()
+    if not inserted:
         return _response(runtime, {"error": "crm_full"}, 409)
     await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
     await _record_contact_changes(runtime, org_bi, account_bi, actor,
@@ -4392,7 +4437,8 @@ async def _contact_handle_index(runtime, org_bi):
 
 
 async def _upsert_contact(runtime, org_bi, org_name, account_bi, actor, supplied,
-                          view_id, now, default_source, flows, handles=None):
+                          view_id, now, default_source, flows, handles=None,
+                          retried=False):
     """Create or merge one contact row into a sheet. Only the values supplied
     are applied, so a narrow row never blanks a wider stored record.
 
@@ -4435,8 +4481,16 @@ async def _upsert_contact(runtime, org_bi, org_name, account_bi, actor, supplied
         )
         return "updated", ""
     contact_id = runtime.new_id()
-    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
-                                 account_bi, actor, now, contact):
+    try:
+        inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                         email_bi, account_bi, actor, now, contact)
+    except Exception as error:
+        if retried or not email_bi or not _unique_conflict(error):
+            raise
+        return await _upsert_contact(runtime, org_bi, org_name, account_bi, actor,
+                                     supplied, view_id, now, default_source, flows,
+                                     handles, True)
+    if not inserted:
         return "skipped", "crm_full"
     if handle:
         handles["index"][handle] = contact_id
@@ -4597,8 +4651,14 @@ async def _shared_contact_write(runtime, account_bi, actor, view_id, contact_id,
                 org_bi, email_bi):
             return _response(runtime, {"error": "contact_exists"}, 409)
         contact_id = runtime.new_id()
-        if not await _insert_contact(runtime, contact_id, org_bi, org_name,
-                                     email_bi, account_bi, actor, now, contact):
+        try:
+            inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                             email_bi, account_bi, actor, now, contact)
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            return _response(runtime, {"error": "contact_exists"}, 409)
+        if not inserted:
             return _response(runtime, {"error": "crm_full"}, 409)
         await runtime.audit(actor, "crm.shared.contact.create", "crm_contact",
                             contact_id, details={"view": view_id})
