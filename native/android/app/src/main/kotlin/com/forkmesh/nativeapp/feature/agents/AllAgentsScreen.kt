@@ -395,7 +395,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     )
                     if (!confirmed) return@launch
                 }
-                navigator.push(DesktopTerminalScreen(session = row.localId, owner = row.repoOwner, name = row.repoName, provider = row.provider))
+                navigator.push(DesktopTerminalScreen(session = row.localId, owner = row.repoOwner, name = row.repoName, provider = row.provider, desktopKey = row.desktopKey))
             }
         }
         fun requestDelete() {
@@ -476,9 +476,9 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                             if (RunnerDesktopHandoff.canMove(row, center.hub.desktop != null)) {
                                 FmIconButton("desktop_windows_outlined", "Continue on desktop", onPressed = { if (!busy) moveToDesktop() }, color = c.accent)
                             }
-                            if (row.isPhoneTerminal && !row.elsewhere) {
-                                FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal)) }, icon = "terminal")
-                            } else if (row.offersTerminal && !row.elsewhere) {
+                            if (row.isPhoneTerminal) {
+                                FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal, desktopKey = row.desktopKey)) }, icon = "terminal")
+                            } else if (row.offersTerminal) {
                                 FmOutlinedButton("Terminal", onClick = if (busy) null else ({ openTerminal() }), icon = "terminal")
                             }
                             if (row.canStop) FmOutlinedButton("Stop", onClick = if (busy) null else ({ act(if (row.outside) "Interrupted it." else "Asked it to stop.") { center.stop(row) } }))
@@ -511,8 +511,8 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                             if (idle && row.conflicted) {
                                 FmToneButton("Fix conflicts", onPressed = { if (!busy) act(ConflictResolution.FIX_SENT) { center.fixConflicts(row) } }, icon = "smart_toy_outlined", tone = FmTone.Accent)
                             }
-                            if (row.repoName.isNotEmpty() && !row.elsewhere) {
-                                FmOutlinedButton("Worktrees", onClick = { navigator.push(WorktreesScreen(row.repoOwner, row.repoName)) }, icon = "account_tree_outlined")
+                            if (row.repoName.isNotEmpty()) {
+                                FmOutlinedButton("Worktrees", onClick = { navigator.push(WorktreesScreen(row.repoOwner, row.repoName, row.desktopKey)) }, icon = "account_tree_outlined")
                             }
                             if (!row.outside) FmToneButton("Delete", onPressed = { if (!busy) requestDelete() }, icon = "delete_outline", tone = FmTone.Danger)
                         }

@@ -150,6 +150,7 @@ class DesktopControlHub(
 
     init {
         local?.addListener(localListener)
+        lanLink?.let { lan -> lan.addEventTap { event -> keyedTaps.deliver(lan.desktopKey, event) } }
         refreshReach()
     }
 
@@ -222,6 +223,7 @@ class DesktopControlHub(
         if (lan != null && lan.isOpen && lan.desktopKey == key) return DesktopPresence.Online
         val relayNow = synchronized(lock) { relay }
         if (relayNow != null && relayNow.isOpen && relayNow.desktopKey == key) return DesktopPresence.Online
+        if (sideLinks.open(key) != null) return DesktopPresence.Online
         return presence[key] ?: DesktopPresence.Unknown
     }
 
@@ -243,7 +245,15 @@ class DesktopControlHub(
         } else {
             null
         }
-        dropped?.let { Thread({ it.close() }, "DesktopControlHub").apply { isDaemon = true }.start() }
+        if (dropped != null) {
+            synchronized(lock) {
+                attached?.takeIf { it.first === dropped }?.let {
+                    it.first.removeEventTap(it.second)
+                    attached = null
+                }
+            }
+            if (!sideLinks.adopt(dropped)) Thread({ dropped.close() }, "DesktopControlHub").apply { isDaemon = true }.start()
+        }
         refreshReach()
         revision++
         notifyListeners()
@@ -289,12 +299,6 @@ class DesktopControlHub(
         val preferred = preferredKey
         if (preferred.isEmpty() || key == preferred) return true
         return candidates.none { it.key == preferred && it.name.isNotEmpty() }
-    }
-
-    private fun linkKey(link: ControlLink): String = when (link) {
-        is RelayControlConnection -> link.desktopKey
-        is LanControlLink -> link.desktopKey
-        else -> ""
     }
 
     fun refreshAccountDesktops(force: Boolean = false): List<PairedDesktop> {
@@ -356,7 +360,9 @@ class DesktopControlHub(
             reach = DesktopReach.Connecting(targets.first().name)
             for (target in targets) if (presenceOf(target.key) != DesktopPresence.Online) presence[target.key] = DesktopPresence.Checking
             notifyListeners()
-            val (connection, target) = race(targets, opener) { key, reached ->
+            val kept = targets.firstNotNullOfOrNull { target -> sideLinks.take(target.key)?.let { it to target } }
+            if (kept != null) synchronized(lock) { retired.remove(kept.first) }
+            val (connection, target) = kept ?: race(targets, opener) { key, reached ->
                 presence[key] = if (reached) DesktopPresence.Online else DesktopPresence.Offline
             }
             if (!wanted(target.key)) {
@@ -552,7 +558,7 @@ class DesktopControlHub(
             if (existing != null) existing.first.removeEventTap(existing.second)
             val token = link.addEventTap { event ->
                 for ((_, tap) in taps) runCatching { tap(event) }
-                keyedTaps.deliver(linkKey(link), event)
+                if (link !is LanControlLink) keyedTaps.deliver(linkKey(link), event)
             }
             attached = link to token
         }
