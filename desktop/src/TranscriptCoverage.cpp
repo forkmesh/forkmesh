@@ -121,6 +121,9 @@ const QSet<QString> &handledCodexMethods()
 {
     static const QSet<QString> methods{
         QStringLiteral("thread/started"),
+        QStringLiteral("remoteControl/status/changed"),
+        QStringLiteral("mcpServer/startupStatus/updated"),
+        QStringLiteral("thread/settings/updated"),
         QStringLiteral("turn/started"),
         QStringLiteral("turn/completed"),
         QStringLiteral("turn/plan/updated"),
@@ -141,6 +144,7 @@ const QSet<QString> &unshownCodexMethods()
         QStringLiteral("thread/archived"),
         QStringLiteral("thread/unarchived"),
         QStringLiteral("thread/closed"),
+        QStringLiteral("turn/moderationMetadata"),
         QStringLiteral("serverRequest/resolved"),
         QStringLiteral("skills/changed"),
         QStringLiteral("app/list/updated"),

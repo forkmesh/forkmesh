@@ -1958,6 +1958,16 @@ bool ActionRunner::landVersionHeader()
 {
     if (m_repoWorkTree.isEmpty() || m_worktree.isEmpty())
         return false;
+    if (m_run.ref.startsWith(QStringLiteral("refs/tags/"))) {
+        QProcess ancestor;
+        ancestor.setWorkingDirectory(m_repoWorkTree);
+        ancestor.start(QStringLiteral("git"),
+                       {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"),
+                        m_run.ref + QStringLiteral("^{commit}"), QStringLiteral("HEAD")});
+        if (!ancestor.waitForFinished(30000) || ancestor.exitStatus() != QProcess::NormalExit ||
+            ancestor.exitCode() != 0)
+            return false;
+    }
     const QString rel = QStringLiteral("desktop/CMakeLists.txt");
     QFile src(m_workspace + QLatin1Char('/') + rel);
     QFile dst(m_repoWorkTree + QLatin1Char('/') + rel);

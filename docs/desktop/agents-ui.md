@@ -311,11 +311,18 @@ gate's PreToolUse hook still runs first and still only denies.
 are the run's sub-sessions. `agentclitasks::Ledger` keeps each open task's
 description, subagent type, nesting (`parent_task_id`, `spawn_depth`), last
 progress summary (`task_progress.summary`, else its changed description), last
-tool, tokens and tool calls. A strip above the transcript
-(`agentSubSessionStrip`) lists them, nested under the sub-session that started
-them, with **Stop** (`stop_task`) while the session is live. A finished
-sub-session leaves the strip; its Agent card in the transcript keeps the
-report.
+tool, tokens and tool calls. The **Sub-sessions** card of the side panels
+(`SessionSidePanels::setSubSessions`, filled by `fillAgentSubSessions`) lists
+them, nested under the sub-session that started them, one line each (name,
+tokens or kind; the tooltip has the facts and the latest progress), with
+**Stop** (`stop_task`) while the session is live. A finished sub-session leaves
+the card; its Agent card in the transcript keeps the report.
+
+Until 2026-10-28 they were a strip above the transcript
+(`agentSubSessionStrip`). It deleted and rebuilt every row, and hid and showed
+itself, on each task event, so it flashed and pushed the transcript up and
+down while subagents ran. The card keeps its rows and only changes their text,
+and it sits beside the transcript, so nothing below it moves.
 
 ### List views, sort and filters
 
@@ -578,10 +585,22 @@ unfamiliar kinds, triggers and states are shown as received. These rows keep
 their source event for the raw log jump and appear during live updates and
 history replay in both layout modes.
 
+Codex `remoteControl/status/changed`, `mcpServer/startupStatus/updated`, and
+`thread/settings/updated` draw the existing notice rows. Remote control notices
+name the server and status; MCP notices name the server and startup status,
+with failures in the error style and any error or failure reason included.
+Thread settings notices summarize the model, effort, approval policy, working
+directory, sandbox policy, and collaboration mode, without repeating developer
+instructions. These rows use the shared transcript in both layout modes.
+
 These are deliberately not drawn, because another surface shows them or they
 are bookkeeping:
 
 - Usage page: `rate_limit_event`, `_codex_rate_limits`, Codex `account/*`.
+- Codex `turn/moderationMetadata`: internal safety-check bookkeeping, including
+  category flags and empty generation/tool metadata. It contains no transcript
+  content; user-facing failures already arrive through the normal error and
+  turn-result rows. The metadata remains available in Raw.
 - Host control protocol: `control_request`, `control_response`,
   `control_cancel_request`, `keep_alive`. Prompts arrive as their own card
   events.
@@ -996,7 +1015,8 @@ Files and Stats).
 **Side panels (2026-10-27).** The right column of the new interface is
 `SessionSidePanels` (`src/SessionSidePanels.*`), a stack of cards:
 **Progress** (the to-do list from `TodoWrite`/`TaskCreate` and Codex plans,
-through `agenttasks::Tracker`), **Outputs** (files the agent wrote or edited,
+through `agenttasks::Tracker`), **Sub-sessions** (the live subagents, shells
+and workflows with Stop, see "Sub-sessions" above), **Outputs** (files the agent wrote or edited,
 newest first, with line counts; a failed edit is taken back), **Sources**
 (files read, pages fetched, web searches, skills and connectors), **Background**
 (subagents and background shells with running/done/failed/stopped),
@@ -1014,7 +1034,8 @@ and the panel folds them in 8 ms slices only while it is visible.
   up, Move down, Fold, Hide, Show panel and Reset panels.
 - Order, hidden and folded cards are kept in `sessions/panelOrder`,
   `sessions/panelHidden` and `sessions/panelCollapsed`, shared by the Sessions
-  page and the Agents page's **Details** tab. `normalizedCardOrder` keeps a
+  page, the Agents page's **Details** tab in Focus and its right column in
+  Control Tower. `normalizedCardOrder` keeps a
   saved order valid when a card is added: a new card goes after its default
   neighbour.
 - Clicking an output or a read file opens it; a page opens in the browser.
@@ -1114,6 +1135,19 @@ the last count it read (a cloud run's events are rebuilt when its history
 changes) and fills the session facts through `NextAccess::fillSessionSidePanels`.
 When a local agent starts and it is the selected session (or none is
 selected), `NextAccess::workspaceSessionStarted` opens the panel on Details.
+`NextAccess::feedSessionSidePanels` feeds a panel stack its session's facts and
+the events it has not read yet (the read count lives in the panel,
+`SessionSidePanels::feed`), so Focus and Control Tower share it.
+
+In **Control Tower** the same cards are a right column of the detail pane
+(`m_agentTowerPanels`, the third pane of `agentCodeSplit`, after the transcript
+and the Code page; `buildAgentTowerPanels`). It shows while a session is
+selected and the layout is not Focus, starts 220–320 px wide, can be dragged
+narrower or shut at its splitter handle, and refreshes once a second while it
+is on screen (`refreshAgentTowerPanels`), and at once on a sub-session event.
+Focus hides it and uses the Details tab; switching modes (`syncWorkspace`)
+re-checks it, and the Code page, put back on the way to Control Tower, goes
+in before the column.
 Switching into the Workspace view still opens on Terminal, the point of that
 view.
 

@@ -139,8 +139,16 @@ static void testCardOrder()
     const QStringList order = normalizedCardOrder(saved);
     check(order.size() == defaults.size(), "order holds every card once");
     check(order.value(0) == QLatin1String("tools"), "saved order is kept");
-    check(order.indexOf(QStringLiteral("outputs")) == order.indexOf(QStringLiteral("progress")) + 1,
+    check(order.indexOf(QStringLiteral("subsessions")) == order.indexOf(QStringLiteral("progress")) + 1,
           "missing cards slot in after their default neighbour");
+    check(order.indexOf(QStringLiteral("outputs")) == order.indexOf(QStringLiteral("subsessions")) + 1,
+          "a run of missing cards keeps its default order");
+    const QStringList older = normalizedCardOrder(
+        {QStringLiteral("tools"), QStringLiteral("progress"), QStringLiteral("outputs"),
+         QStringLiteral("sources"), QStringLiteral("background"), QStringLiteral("changes"),
+         QStringLiteral("context"), QStringLiteral("environment")});
+    check(older.indexOf(QStringLiteral("subsessions")) == older.indexOf(QStringLiteral("progress")) + 1,
+          "a saved order from before Sub-sessions gets it under Progress");
     const QStringList moved = movedCard(defaults, QStringLiteral("tools"), 0);
     check(moved.value(0) == QLatin1String("tools") && moved.size() == defaults.size(),
           "moved card lands at index");

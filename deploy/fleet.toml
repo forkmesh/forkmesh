@@ -233,6 +233,7 @@ instance_id = "840f8e63-9050-4c36-b8c4-b9e1db2bd142"
 wg_ip = "10.77.0.3"
 wg_pubkey = "Ab8pL/fq7/2LiPVGedKusFdi7rr9aki9vFTT2zU+ax0="
 rqlite_id = "n3"
+mail_relay = "n4"
 
 [[nodes]]
 name = "n4"
@@ -251,6 +252,7 @@ instance_id = "1963e65c-46bf-4f1a-bf87-b19f92d50c6c"
 wg_ip = "10.77.0.5"
 wg_pubkey = "nUtPbbiGai9xczJDKg1u9h13tUjlLFye/koaLwShWWY="
 rqlite_id = "n5"
+mail_relay = "n4"
 
 [[runners]]
 name = "r1"

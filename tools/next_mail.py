@@ -28,7 +28,6 @@ DKIM_NAME = "%s._domainkey.%s" % (SELECTOR, MAIL_DOMAIN)
 TXT_NAMES = (MAIL_DOMAIN, DKIM_NAME)
 SPF_KEEP = ("include:zohomail.com",)
 SENDER = "founders@forkmesh.com"
-RELAY_VIA = {"n3": "n4", "n5": "n4"}
 SIGN_HEADERS = ("From", "Sender", "Reply-To", "Subject", "Date", "Message-ID",
                 "To", "Cc", "MIME-Version", "Content-Type",
                 "Content-Transfer-Encoding", "In-Reply-To", "References",
@@ -149,11 +148,11 @@ def rdns(fleet, runner):
 
 
 def relay_for(fleet, node):
-    name = RELAY_VIA.get(node["name"])
+    name = node.get("mail_relay")
     if not name or not fleet:
         return None
     relay = next((n for n in cores(fleet) if n["name"] == name), None)
-    if relay is None or RELAY_VIA.get(name):
+    if relay is None or relay is node or relay.get("mail_relay"):
         raise GuardError("%s relays via %s, which is not a direct-sending core"
                          % (node["name"], name))
     return relay
@@ -162,7 +161,7 @@ def relay_for(fleet, node):
 def relay_clients(fleet, node):
     if not fleet:
         return []
-    return [n for n in cores(fleet) if RELAY_VIA.get(n["name"]) == node["name"]]
+    return [n for n in cores(fleet) if n.get("mail_relay") == node["name"]]
 
 
 def main_cf(node, fleet=None):

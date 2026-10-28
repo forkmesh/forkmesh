@@ -1889,6 +1889,7 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
         return;
     SessionSidePanels::Details details;
     const AgentSession *session = sessionId != 0 ? window.findAgentSession(sessionId) : nullptr;
+    window.fillAgentSubSessions(panels, session ? sessionId : 0);
     if (!session) {
         panels->setDetails(details);
         return;
@@ -1944,6 +1945,48 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     details.conflicted = stat.conflicted;
     details.prNumber = session->prNumber;
     panels->setDetails(details);
+}
+
+void forkmesh::ui::NextAccess::feedSessionSidePanels(MainWindow &window,
+                                                     SessionSidePanels *panels, int sessionId)
+{
+    if (!panels)
+        return;
+    SessionSidePanels::Feed &feed = panels->feed();
+    if (feed.session != sessionId) {
+        feed = SessionSidePanels::Feed();
+        feed.session = sessionId;
+        panels->clearActivity();
+    }
+    fillSessionSidePanels(window, panels, sessionId);
+    if (sessionId == 0)
+        return;
+    if (window.isCloudSession(sessionId)) {
+        const auto cloud = window.m_cloudAgentSessions.constFind(sessionId);
+        if (cloud == window.m_cloudAgentSessions.constEnd())
+            return;
+        const int turns = int(cloud->history.size());
+        const qint64 tail = cloud->history.isEmpty() ? 0 : cloud->history.last().text.size();
+        if (turns != feed.cloudTurns || tail != feed.cloudTail) {
+            feed.cloudTurns = turns;
+            feed.cloudTail = tail;
+            panels->replaceActivity(forkmesh::agents::cloudAgentTranscriptEvents(
+                cloud.value(), window.cloudAgentImageDirectory()));
+        }
+        return;
+    }
+    const auto events = window.m_streamEvents.constFind(sessionId);
+    if (events == window.m_streamEvents.constEnd()) {
+        window.ensureStreamEventsLoadedAsync(sessionId);
+        return;
+    }
+    if (events->size() < feed.consumed) {
+        panels->clearActivity();
+        feed.consumed = 0;
+    }
+    for (int index = feed.consumed; index < events->size(); ++index)
+        panels->append(events->at(index));
+    feed.consumed = int(events->size());
 }
 
 void MainWindow::fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
