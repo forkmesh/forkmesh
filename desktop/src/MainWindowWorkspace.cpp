@@ -1374,6 +1374,17 @@ void NextAccess::installWorkspace(MainWindow &window)
     syncWorkspace(window);
 }
 
+void NextAccess::applyLayoutMode(MainWindow &window, LayoutMode mode)
+{
+    if (layoutMode() == mode)
+        return;
+    setLayoutMode(mode);
+    syncWorkspace(window);
+    window.applyGitLayout();
+    window.logSystem(
+        QStringLiteral("Layout switched to %1").arg(layoutModeName(mode)));
+}
+
 void NextAccess::syncWorkspace(MainWindow &window)
 {
     Chrome *chrome = chromeOf(window);
@@ -2057,19 +2068,19 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         QMenu *layout = menu->addMenu(
             glyph(QStringLiteral("list-unordered"), Theme::Role::FgMuted),
             QStringLiteral("Layout"));
+        layout->setToolTipsVisible(true);
         auto *layoutGroup = new QActionGroup(layout);
-        for (const bool classic : {false, true}) {
-            QAction *action = layout->addAction(
-                classic ? QStringLiteral("Classic") : QStringLiteral("New"));
+        for (const LayoutMode mode : kLayoutModes) {
+            QAction *action = layout->addAction(layoutModeName(mode));
             action->setCheckable(true);
-            action->setChecked(classic == workspaceLayoutClassic());
+            action->setChecked(mode == layoutMode());
+            action->setToolTip(layoutModeDescription(mode));
             layoutGroup->addAction(action);
-            QObject::connect(action, &QAction::triggered, self, [self, classic] {
-                if (workspaceLayoutClassic() == classic)
+            QObject::connect(action, &QAction::triggered, self, [self, mode] {
+                if (layoutMode() == mode)
                     return;
-                QTimer::singleShot(0, self, [self, classic] {
-                    setWorkspaceLayoutClassic(classic);
-                    NextAccess::syncWorkspace(*self);
+                QTimer::singleShot(0, self, [self, mode] {
+                    NextAccess::applyLayoutMode(*self, mode);
                 });
             });
         }

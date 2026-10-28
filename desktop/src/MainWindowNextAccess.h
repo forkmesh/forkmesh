@@ -12,6 +12,7 @@ class QWidget;
 namespace forkmesh::ui {
 
 class SessionSidePanels;
+enum class LayoutMode;
 
 int railColumnWidth();
 
@@ -54,6 +55,7 @@ struct NextAccess {
 
     static void installWorkspace(MainWindow &window);
     static void syncWorkspace(MainWindow &window);
+    static void applyLayoutMode(MainWindow &window, LayoutMode mode);
     static void workspaceCommand(MainWindow &window, int command);
     static void workspaceSessionStarted(MainWindow &window, int sessionId);
     static void fillSessionSidePanels(MainWindow &window, SessionSidePanels *panels,

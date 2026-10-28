@@ -1056,9 +1056,10 @@ the filter (kept in memory, at most 200).
 
 ## Workspace layout in the new interface
 
-In the new interface (`app/design` = `next`) the Agents page has a **New**
-(default) and a **Classic** layout (`agents/workspaceLayout`,
-`src/WorkspaceLayout.h`, `workspaceLayoutNew()`). Code:
+In the new interface (`app/design` = `next`) the Agents page follows the
+app's layout mode ([ui-redesign.md](ui-redesign.md), "Two layout modes"):
+**Focus** (default) is the layout below, **Control Tower** the earlier page
+(`src/LayoutMode.h`, `src/WorkspaceLayout.h`, `workspaceLayoutNew()`). Code:
 `src/MainWindowWorkspace.cpp`; styles: `resources/theme/next/61-workspace.qss`.
 It is Qt Widgets, not QML (see [ui-redesign.md](ui-redesign.md)).
 

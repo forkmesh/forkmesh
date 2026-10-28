@@ -5,6 +5,7 @@
 #include "ClaudeTranscriptView.h"
 #include "DesignTokens.h"
 #include "MainWindow.h"
+#include "GitLayout.h"
 #include "MainWindowNextAccess.h"
 #include "WorkspaceLayout.h"
 
@@ -573,10 +574,10 @@ int runWorkspaceSnapshots(MainWindow &window)
             toolbar = startAll->parentWidget();
         check(!forkmesh::ui::workspaceLayoutClassic() && shown(sidebar) &&
                   shown(header),
-              QStringLiteral("the new layout is the default in the new "
+              QStringLiteral("the Focus layout is the default in the new "
                              "interface"));
 
-        forkmesh::ui::setWorkspaceLayoutClassic(true);
+        forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
         NextAccess::syncWorkspace(window);
         settle(20);
         check(Theme::isNext() && !shown(sidebar) && !shown(header) &&
@@ -584,22 +585,24 @@ int runWorkspaceSnapshots(MainWindow &window)
                   !shown(named("workspacePanelBar")) && shown(dock) &&
                   codePage && codePage->parentWidget() == codeSplit &&
                   !(table && table->property("workspaceCards").toBool()),
-              QStringLiteral("the Classic layout brings the earlier Agents "
-                             "page back inside the new interface"));
-        check(settings.value(QStringLiteral("agents/workspaceLayout"))
-                      .toString() == QLatin1String("classic"),
-              QStringLiteral("the layout choice is saved"));
+              QStringLiteral("the Control Tower layout brings the earlier "
+                             "Agents page back inside the new interface"));
+        check(settings.value(QStringLiteral("app/layoutMode")).toString() ==
+                      QLatin1String("controlTower") &&
+                  forkmesh::ui::gitLayoutCompact(),
+              QStringLiteral("the Control Tower choice is saved and covers the "
+                             "Git page too"));
         if (grab(dir, QStringLiteral("workspace-classic-layout")))
             ++saved;
 
-        forkmesh::ui::setWorkspaceLayoutClassic(false);
+        forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
         NextAccess::syncWorkspace(window);
         settle(20);
         check(shown(sidebar) && shown(header) && !shown(toolbar) &&
                   shown(named("workspaceSend")) && codePage &&
                   dock->isAncestorOf(codePage) &&
                   table && table->property("workspaceCards").toBool(),
-              QStringLiteral("switching back restores the new layout"));
+              QStringLiteral("switching back to Focus restores the new layout"));
         if (grab(dir, QStringLiteral("workspace-new-layout-again")))
             ++saved;
     }
@@ -615,7 +618,7 @@ int runWorkspaceSnapshots(MainWindow &window)
         else
             settings.remove(key);
     };
-    forkmesh::ui::setWorkspaceLayoutClassic(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     restore(QStringLiteral("app/design"), savedDesign);
     restore(QStringLiteral("app/theme"), savedTheme);
     MainWindow::applyTheme();
