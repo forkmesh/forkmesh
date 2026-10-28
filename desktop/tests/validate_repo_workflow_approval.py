@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (ROOT / "src/MainWindowRepoWorkflows.cpp").read_text(encoding="utf-8")
 TEAMMATES = (ROOT / "src/MainWindowTeammates.cpp").read_text(encoding="utf-8")
 DIAGNOSTICS = (ROOT / "src/MainWindowLocalControlDiagnostics.cpp").read_text(encoding="utf-8")
+PHONE = (ROOT / "src/MainWindowLocalControlWorkflows.cpp").read_text(encoding="utf-8")
 
 
 def function_body(source: str, signature: str) -> str:
@@ -43,6 +44,9 @@ def main() -> None:
     cleanup = function_body(DIAGNOSTICS, "void MainWindow::runLocalControlFreeDiskSpace(")
     assert "forkmesh::sourceDir()" in cleanup and "m_repositories" not in cleanup, (
         "the phone's disk cleanup must run this desktop's own tools/free_disk_space.py")
+    phone = PHONE[PHONE.index('method == QLatin1String("workflows.run")'):]
+    assert gated(phone, "runNativePackageRepositoryWorkflowAction("), (
+        "a phone can run a committed workflow the desktop has not approved")
     print("repo workflow approval contract passed")
 
 

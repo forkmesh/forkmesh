@@ -100,6 +100,17 @@ void MainWindow::handleLocalControlWorkflowsRequest(int connectionId, int reques
             server->respondError(connectionId, requestId, why);
             return;
         }
+        if (action == QLatin1String("run") && repo != rw::kAccountRepo) {
+            const int repoIndex = repoIndexForKey(repo);
+            const QString path = repoWorkflowPath(repoIndex, id);
+            if (repoIndex >= 0 && !path.isEmpty() && !repoWorkflowApproved(repoIndex, path, QString())) {
+                logSystem(QStringLiteral("Refused a workflow run from %1: %2 is not approved on this desktop.")
+                              .arg(who, subject));
+                server->respondError(connectionId, requestId, QStringLiteral("approval_required"),
+                                     QStringLiteral("Approve this workflow file on the desktop first."));
+                return;
+            }
+        }
         QJsonObject payload;
         if (action == QLatin1String("run")) {
             payload.insert(QStringLiteral("trigger"), QStringLiteral("By hand · %1").arg(who).left(160));
