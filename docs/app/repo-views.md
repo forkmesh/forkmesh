@@ -808,7 +808,70 @@ reads on the near-black terminal) and faint scanlines.
   multiples of 5 and every cell is a whole number of pixels wide. A glyph row
   is blended over the flat background with three `bytes.translate()` calls, so
   a whole card is still a few thousand row-slice writes. Run the tool after
-  changing the sizes or the glyph set.
+  changing the sizes or the glyph set. The 25 px faces (`r25`, `b25`) were
+  added for the pull request card below; the older atlases came out
+  byte-identical.
+
+## Pull request share card
+
+A shared pull request link used to unfurl as the repository card: the
+reader saw the repository, not the change. The host now gives a pull page
+its own preview (`app/host/forkmesh_host/pull_card.py`), drawn by
+`og_card.render_pull_card` in the same terminal window as the repository
+card:
+
+- **Header:** the state as a coloured pill (open, draft, merged, closed),
+  the number, the commit count, how long ago it was opened, and the review
+  verdict on the right (approved by N reviewers, changes requested, review
+  required), worked out like the pull list's chip (`review_state`).
+- **Title** (two lines at most) and who wants to merge which branch into
+  which.
+- **Diff:** lines added and removed, GitHub-style five squares, files
+  changed, and comments with how many people wrote them.
+- **Code health:** the six scores of the Files tab (Merge, Complexity,
+  Quality, Security, Network, Practices) as tiles with a bar each, green 85+,
+  orange 60+, red below; a clean Security score is grey, as on the page,
+  because a pattern scan finding nothing is not a security pass.
+  `diff_health.py` is a line-for-line port of the dashboard's
+  `diffHealthReport` and `parseDiffFiles`; `test_health_scores_match_the_dashboard`
+  runs both on the same patches under Node and fails when they differ.
+- **Reviews:** each reviewer's latest review (blocking ones first, the pull
+  author's own never), with their avatar and the start of what they wrote,
+  then ForkBot's automated review, summed up by its Summary section. Rows
+  that do not fit are left off.
+- **People:** the avatars of everyone involved (author, reviewers,
+  commenters), ten at most with a "+N", and how many people that is.
+  Avatars are read from `/api/accounts/<name>/avatar?size=128` through the
+  Worker, decoded and scaled with Pillow off the event loop, and remembered
+  per account for ten minutes; a missing picture, a bot or a git-only name
+  gets a coloured disc with its initial. All reads share a 3 s budget.
+
+Wiring:
+
+- `GET /<owner>/<repo>/pull/<n>.png` (and `/<name>/pull/<n>.png` on short
+  addresses) answers the card from the same bundle as the page
+  (`repo_views.build`), so a repository the gateway does not serve publicly
+  falls through to the Worker. Cards are remembered per bundle version for
+  ten minutes; the PNG is `public, max-age=300`.
+- `inject_view` rewrites the page's `og:*`, `twitter:*`, canonical link and
+  `<title>` for a pull: the image is `.../pull/<n>.png?v=<bundle version>.<CARD_REVISION>`,
+  so link-preview caches fetch a new card when the pull changes, and the
+  description is a one-line summary of the same facts for clients that show
+  only text. Only pages that already carry the public repository's share
+  tags are rewritten.
+- Link-preview fetchers (`PREVIEW_AGENTS`: Slackbot, Twitterbot,
+  facebookexternalhit, Discordbot, Mastodon, Bluesky's Cardyb, WhatsApp,
+  Telegram, LinkedIn and similar) wait up to `READER_BUDGET_SECONDS` for a
+  cold pull's bundle, like the AI readers, but do not get the diff in the
+  page.
+- The bundle's pull now carries `authorKey` (for the avatar and to leave the
+  author's own review out), `draft` and `commits` (the `From <sha>` lines of
+  `commits.mbox`, which the bundle already read).
+- A merged or closed pull has no patch in the bundle, so its card leaves out
+  the diff and code health rows.
+
+Tests: `app/tests/host/test_pull_card.py`, the pull card tests in
+`app/tests/test_repo_og_card.py`.
 
 ## Optional folder reads, repository logos and SVG images
 

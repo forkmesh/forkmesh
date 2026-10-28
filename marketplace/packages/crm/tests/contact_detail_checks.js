@@ -24,11 +24,13 @@ const exported = [
   "crmQueueReachMastodon", "crmMastodonLatest", "crmNextCardHtml", "CRM_NEXT_MODES", "refreshCrmMastodonNow",
   "crmRetryAfterMs", "crmGrantsTarget",
   "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
+  "crmInvoicesPath", "crmInvoiceTotals", "renderCrmContactInvoices",
 ];
+const hosts = {};
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
   `${body}\nreturn { ${exported.join(", ")} };`,
-)(() => null, () => [], () => ({ name: "Alice" }), (value) => String(value), (value) => String(value));
+)((selector) => hosts[selector] || null, () => [], () => ({ name: "Alice" }), (value) => String(value), (value) => String(value));
 
 let failures = 0;
 function check(condition, what) {
@@ -496,6 +498,33 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     view.contacts.push({ id: "g1", flow: "funding", stage: "researching", views: ["list"] });
     same(page.crmGrantsTarget(), null, "a grants pipeline with a row in it does not");
     Object.assign(view, { settings: saved.settings, views: saved.views, contacts: saved.contacts, activeView: saved.active, activeShared: saved.shared });
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { organization: view.organization, invoices: view.detailInvoices };
+    view.organization = "acme";
+    same(page.crmInvoicesPath("&contact=c1"), "/dashboard/invoices?org=acme&contact=c1", "new invoice link names the organization and contact");
+    check(/10\.50/.test(page.crmInvoiceTotals({ USD: 1050, EUR: 0 })) && !/EUR|€/.test(page.crmInvoiceTotals({ USD: 1050, EUR: 0 })), "invoice totals skip empty currencies");
+    const section = { hidden: false, classList: { toggle(name, on) { if (name === "hidden") section.hidden = on; } } };
+    const host = { innerHTML: "", closest: () => section };
+    hosts["[data-crm-detail-invoices]"] = host;
+    view.detailInvoices = {
+      invoices: [{ id: "i1", number: "INV-0001", total: 1050, currency: "USD", displayStatus: "overdue", sentAt: 1, opens: 2, views: 1, paidAt: 0 }],
+      totals: { billed: { USD: 1050 }, outstanding: { USD: 1050 } },
+    };
+    page.renderCrmContactInvoices();
+    check(host.innerHTML.includes("Overdue · opened 2×, viewed 1×"), "the card says how far the invoice got");
+    check(host.innerHTML.includes("/dashboard/invoices?org=acme&invoice=i1") && host.innerHTML.includes("INV-0001"), "each invoice links to its sheet");
+    check(host.innerHTML.includes("Billed") && host.innerHTML.includes("Outstanding") && !host.innerHTML.includes("Paid "), "totals list only what is non-zero");
+    view.detailInvoices = { unavailable: "install" };
+    page.renderCrmContactInvoices();
+    check(!section.hidden && host.innerHTML.includes("Install"), "an organization without Invoicing is offered it");
+    view.detailInvoices = { unavailable: "absent" };
+    page.renderCrmContactInvoices();
+    check(section.hidden, "a build without Invoicing hides the section");
+    delete hosts["[data-crm-detail-invoices]"];
+    Object.assign(view, { organization: saved.organization, detailInvoices: saved.invoices });
   }
 
   if (failures) {

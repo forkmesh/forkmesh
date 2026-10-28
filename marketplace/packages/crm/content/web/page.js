@@ -29,7 +29,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     teamPeriod: 30, teamMember: "", teamTable: false,
     // The contact whose detail card is open, and the posts and picture each
     // of its connected accounts answered with, keyed "service:handle".
-    detailContactId: "", detailUpdates: {},
+    detailContactId: "", detailUpdates: {}, detailInvoices: null,
     nextSkipped: new Set(),
     ai: null,
     },
@@ -3421,10 +3421,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!contact || !dialog || crmActiveShared()) return;
     state.crmView.detailContactId = contact.id;
     state.crmView.detailUpdates = {};
+    state.crmView.detailInvoices = { loading: true };
     renderCrmContactDetail();
     if (!dialog.open) dialog.showModal();
     crmSetContactParam(contact.id);
     void loadCrmContactUpdates(contact);
+    void loadCrmContactInvoices(contact);
   }
 
   function crmContactUrl(contactId) {
@@ -3585,6 +3587,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
             ? `<ul class="grid gap-2">${activity.map(crmDetailLine).join("")}</ul>`
             : `<p class="text-xs text-muted-foreground">Nothing has been linked to this record yet.</p>`}
         </section>
+        <section data-crm-detail-invoices-section>
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="crm-detail-heading">Invoices</h3>
+            <a href="${escapeHtml(crmInvoicesPath(`&contact=${encodeURIComponent(contact.id)}`))}" class="rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground hover:bg-secondary">New invoice</a>
+          </div>
+          <div data-crm-detail-invoices></div>
+        </section>
         <section>
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 class="crm-detail-heading">Recent updates</h3>
@@ -3604,6 +3613,63 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </div>
       </div>`;
     renderCrmContactUpdates();
+    renderCrmContactInvoices();
+  }
+
+  function crmInvoicesPath(suffix = "") {
+    return `/dashboard/invoices?org=${encodeURIComponent(state.crmView.organization)}${suffix}`;
+  }
+
+  function crmInvoiceMoney(amount, currency) {
+    const value = Number(amount || 0) / 100;
+    try { return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "USD" }).format(value); }
+    catch { return `${currency || ""} ${value.toFixed(2)}`.trim(); }
+  }
+
+  function crmInvoiceTotals(map) {
+    return Object.entries(map || {}).filter(([, value]) => value)
+      .map(([currency, value]) => crmInvoiceMoney(value, currency)).join(" · ");
+  }
+
+  async function loadCrmContactInvoices(contact) {
+    const org = state.crmView.organization;
+    try {
+      const payload = await crmRequest(`/api/invoices/${encodeURIComponent(org)}/contacts/${encodeURIComponent(contact.id)}`);
+      if (state.crmView.detailContactId !== contact.id) return;
+      state.crmView.detailInvoices = { invoices: payload.invoices || [], totals: payload.totals || {} };
+    } catch (error) {
+      if (state.crmView.detailContactId !== contact.id) return;
+      state.crmView.detailInvoices = { unavailable: error.status === 409 ? "install" : error.status === 404 ? "absent" : "error", error: error.message };
+    }
+    renderCrmContactInvoices();
+  }
+
+  function renderCrmContactInvoices() {
+    const host = $(`[data-crm-detail-invoices]`);
+    const slot = state.crmView.detailInvoices;
+    if (!host || !slot) return;
+    host.closest("[data-crm-detail-invoices-section]")?.classList.toggle("hidden", slot.unavailable === "absent");
+    if (slot.loading) { host.innerHTML = `<p class="text-xs text-muted-foreground">Reading invoices…</p>`; return; }
+    if (slot.unavailable === "install") {
+      host.innerHTML = `<p class="text-xs text-muted-foreground">Install <a href="${escapeHtml(crmInvoicesPath())}" class="crm-link">Invoicing</a> for this organization to bill this contact and see what they owe.</p>`;
+      return;
+    }
+    if (slot.unavailable) { host.innerHTML = `<p class="text-xs text-muted-foreground">Invoices could not be read: ${escapeHtml(slot.error || "")}.</p>`; return; }
+    if (!slot.invoices.length) { host.innerHTML = `<p class="text-xs text-muted-foreground">No invoices for this contact yet.</p>`; return; }
+    const totals = [
+      ["Billed", crmInvoiceTotals(slot.totals.billed)],
+      ["Paid", crmInvoiceTotals(slot.totals.paid)],
+      ["Outstanding", crmInvoiceTotals(slot.totals.outstanding)],
+    ].filter(([, value]) => value).map(([label, value]) => `${label} ${value}`).join(" · ");
+    const labels = { draft: "Draft", sent: "Sent", partial: "Part paid", overdue: "Overdue", paid: "Paid", void: "Void" };
+    host.innerHTML = `${totals ? `<p class="mb-2 text-xs text-muted-foreground">${escapeHtml(totals)}</p>` : ""}<ul class="grid gap-2">${slot.invoices.slice(0, 20).map((invoice) => {
+      const seen = invoice.sentAt ? [
+        invoice.opens ? `opened ${invoice.opens}×` : "not opened",
+        invoice.views ? `viewed ${invoice.views}×` : "",
+        invoice.paidAt ? `paid ${relativeTimeLabel(invoice.paidAt)}` : "",
+      ].filter(Boolean).join(", ") : "not sent";
+      return `<li class="crm-detail-line"><p class="text-xs text-muted-foreground">${escapeHtml(labels[invoice.displayStatus] || invoice.displayStatus)} · ${escapeHtml(seen)}</p><a href="${escapeHtml(crmInvoicesPath(`&invoice=${encodeURIComponent(invoice.id)}`))}" class="crm-link block text-xs">${escapeHtml(invoice.number)} · ${escapeHtml(crmInvoiceMoney(invoice.total, invoice.currency))}</a></li>`;
+    }).join("")}</ul>`;
   }
 
   async function saveCrmContactNote(contactId, button) {
@@ -4583,7 +4649,46 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmContactStages(contact?.stage || "");
     $(`[data-crm-contact-tags]`).value = (contact?.tags || []).join(", ");
     $(`[data-crm-contact-delete]`).classList.toggle("hidden", !contact);
+    state.crmView.contactRequestId = contact ? "" : crmRequestId();
+    crmContactDialogError();
     dialog.showModal(); $(`[data-crm-contact-name]`)?.focus();
+  }
+
+  function crmRequestId() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function crmContactDialogError(message = "", existing = null) {
+    const box = $(`[data-crm-contact-error]`); if (!box) return;
+    $(`[data-crm-contact-error-text]`).textContent = message;
+    const open = $(`[data-crm-contact-existing]`);
+    open.dataset.crmContactExisting = existing?.id || "";
+    open.classList.toggle("hidden", !existing?.id);
+    box.classList.toggle("hidden", !message);
+    if (message) box.scrollIntoView({ block: "nearest" });
+  }
+
+  async function openCrmExistingContact(id) {
+    if (!id) return;
+    $(`[data-crm-contact-dialog]`).close();
+    if (!crmContactById(id)) await loadCrm();
+    openCrmContactDetail(id);
+  }
+
+  function crmContactSaveError(error) {
+    const code = error.payload?.error || "";
+    const existing = error.payload?.contact || null;
+    if (code === "contact_email_exists" || code === "contact_exists") {
+      const label = existing ? crmContactLabel(existing) : "Another contact";
+      return [`${label} already uses that email address${existing ? ", so it is already in the CRM" : ""}.`, existing];
+    }
+    if (code === "crm_full") return ["The CRM is full: delete or merge contacts before adding more.", null];
+    if (code === "name_or_email_required") return ["Add a name or an email address.", null];
+    if (code === "invalid_email") return ["That email address is not valid.", null];
+    if (!error.status) return ["The server could not be reached. Check the connection and press Save again; it will not add the contact twice.", null];
+    return [`Could not save contact: ${error.message}`, null];
   }
 
   // Profiles are researched by hand: open a web search seeded with whatever the
@@ -4622,19 +4727,42 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // tab that is on screen, looking like the save was lost.
     const sheet = crmActiveView();
     if (sheet && !sheet.virtual && !sheet.flow && !id) body.views = [sheet.id];
+    if (!id && !String(body.name || "").trim() && !String(body.email || "").trim()) {
+      crmContactDialogError("Add a name or an email address.");
+      return;
+    }
+    const submit = $(`[data-crm-contact-submit]`);
+    if (submit?.disabled) return;
+    if (submit) submit.disabled = true;
+    crmContactDialogError();
     const sharedView = crmActiveShared();
-    if (sharedView?.canEdit && !id) {
-      try {
+    try {
+      if (sharedView?.canEdit && !id) {
         await saveCrmSharedContact(sharedView, "", body);
         $(`[data-crm-contact-dialog]`).close();
         crmMessage("notice", `Contact added to ${sharedView.name} in ${sharedView.organization}.`);
-      } catch (error) { crmMessage("error", `Could not save contact: ${error.message}`); }
-      return;
-    }
-    try {
-      await crmRequest(crmOrganizationPath(`/contacts${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
-      $(`[data-crm-contact-dialog]`).close(); crmMessage("notice", id ? "Contact updated." : "Contact added."); await loadCrm();
-    } catch (error) { crmMessage("error", `Could not save contact: ${error.message}`); }
+        return;
+      }
+      if (!id) body.requestId = state.crmView.contactRequestId || (state.crmView.contactRequestId = crmRequestId());
+      let payload;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          payload = await crmRequest(crmOrganizationPath(`/contacts${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
+          break;
+        } catch (error) {
+          const transient = !error.status || crmTransientStatus(error.status);
+          if (id || !transient || attempt >= CRM_READ_RETRY_DELAYS_MS.length) throw error;
+          await new Promise((resolve) => setTimeout(resolve, CRM_READ_RETRY_DELAYS_MS[attempt]));
+        }
+      }
+      $(`[data-crm-contact-dialog]`).close();
+      state.crmView.contactRequestId = "";
+      crmMessage("notice", id ? "Contact updated." : payload.replayed ? "Contact was already added." : "Contact added.");
+      await loadCrm();
+    } catch (error) {
+      const [message, existing] = crmContactSaveError(error);
+      crmContactDialogError(message, existing);
+    } finally { if (submit) submit.disabled = false; }
   }
 
   async function saveCrmInlineContactField(input) {
@@ -7021,7 +7149,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-contact-list]`)?.addEventListener("change", handleInlineContactField);
     $(`[data-crm-contact-cards]`)?.addEventListener("change", handleInlineContactField);
     detailDialog?.addEventListener("change", handleInlineContactField);
-    $(`[data-crm-contact-form]`)?.addEventListener("submit", saveCrmContact); $(`[data-crm-contact-delete]`)?.addEventListener("click", deleteCrmContact);
+    $(`[data-crm-contact-form]`)?.addEventListener("submit", saveCrmContact); $(`[data-crm-contact-existing]`)?.addEventListener("click", (event) => void openCrmExistingContact(event.currentTarget.dataset.crmContactExisting)); $(`[data-crm-contact-delete]`)?.addEventListener("click", deleteCrmContact);
     $(`[data-crm-contact-flow]`)?.addEventListener("change", () => renderCrmContactStages());
     $(`[data-crm-contact-lookup]`)?.addEventListener("click", openCrmProfileSearch);
     $(`[data-crm-email-new]`)?.addEventListener("click", () => openCrmEmail());

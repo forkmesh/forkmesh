@@ -245,6 +245,7 @@ object RouteParser {
             "settings" -> listOf(Route.Settings(first))
             "network" -> listOf(Route.Network(first))
             "ads" -> listOf(Route.Ads)
+            "invoices" -> if (first == null) listOf(Route.Invoices(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["invoice"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null

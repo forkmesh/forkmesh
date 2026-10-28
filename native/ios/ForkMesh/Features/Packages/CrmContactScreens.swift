@@ -27,6 +27,8 @@ struct CrmContactScreen: View {
     @State private var confirmDelete = false
     @State private var notice: FmNotice?
     @State private var visible = false
+    @State private var tab = CrmContactTab.overview
+    @State private var invoices: ContactInvoicesState = .loading
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -51,55 +53,75 @@ struct CrmContactScreen: View {
                 if notice != nil {
                     Section { FmNoticeLine($notice) }
                 }
-                if editable, let data, let flow {
-                    pipelineSection(contact, data: data, flow: flow)
-                    if !data.listViews.isEmpty { listsSection(contact, data: data) }
-                }
-                detailsSection(contact)
-                if !contact.fields.isEmpty {
-                    Section("More") {
-                        ForEach(contact.fields.keys.sorted(), id: \.self) { key in
-                            LabeledContent(CrmColumnCatalog.label(key)) {
-                                Text(contact.fields[key] ?? "").textSelection(.enabled).multilineTextAlignment(.trailing)
-                            }
-                        }
-                    }
-                }
-                if !contact.notes.isEmpty {
-                    Section("Notes") { Text(contact.notes).textSelection(.enabled) }
-                }
-                if let data { timelineSection(contact, data: data) }
-                if editable, let data {
-                    let duplicates = data.duplicates(of: contact)
-                    if !duplicates.isEmpty {
-                        Section("Possible duplicates") {
-                            ForEach(duplicates) { other in
-                                Button {
-                                    sheet = .merge(other)
-                                } label: {
-                                    HStack {
-                                        CrmContactRow(contact: other, flow: data.flow(other.flow))
-                                        Image(systemName: "arrow.triangle.merge").foregroundStyle(Color.accentColor)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
                 Section {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Added \(PackagesFormat.date(contact.createdAt)) by \(contact.createdBy.isEmpty ? "someone" : contact.createdBy)")
-                        Text("Updated \(PackagesFormat.relative(contact.updatedAt)) by \(contact.updatedBy.isEmpty ? contact.createdBy : contact.updatedBy)")
+                    Picker("Show", selection: $tab) {
+                        ForEach(CrmContactTab.allCases) { Text($0.title).tag($0) }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .pickerStyle(.segmented)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                switch tab {
+                case .overview:
+                    detailsSection(contact)
+                    CrmContactInvoicesSection(client: client, ref: ref, contact: contact, state: $invoices)
+                    if editable, let data, let flow {
+                        pipelineSection(contact, data: data, flow: flow)
+                        if !data.listViews.isEmpty { listsSection(contact, data: data) }
+                    }
+                case .activity:
+                    if let data { timelineSection(contact, data: data) }
+                    if editable, let data {
+                        let duplicates = data.duplicates(of: contact)
+                        if !duplicates.isEmpty {
+                            Section("Possible duplicates") {
+                                ForEach(duplicates) { other in
+                                    Button {
+                                        sheet = .merge(other)
+                                    } label: {
+                                        HStack {
+                                            CrmContactRow(contact: other, flow: data.flow(other.flow))
+                                            Image(systemName: "arrow.triangle.merge").foregroundStyle(Color.accentColor)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                case .notes:
+                    Section("Notes") {
+                        if contact.notes.isEmpty {
+                            Button("Add a note", systemImage: "square.and.pencil") { sheet = .edit(contact) }
+                                .disabled(!editable)
+                        } else {
+                            Text(contact.notes).textSelection(.enabled)
+                        }
+                    }
+                    if !contact.fields.isEmpty {
+                        Section("More") {
+                            ForEach(contact.fields.keys.sorted(), id: \.self) { key in
+                                LabeledContent(CrmColumnCatalog.label(key)) {
+                                    Text(contact.fields[key] ?? "").textSelection(.enabled).multilineTextAlignment(.trailing)
+                                }
+                            }
+                        }
+                    }
+                    Section {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Added \(PackagesFormat.date(contact.createdAt)) by \(contact.createdBy.isEmpty ? "someone" : contact.createdBy)")
+                            Text("Updated \(PackagesFormat.relative(contact.updatedAt)) by \(contact.updatedBy.isEmpty ? contact.createdBy : contact.updatedBy)")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity)
             }
         }
         .listSectionSpacing(.compact)
+        .environment(\.defaultMinListRowHeight, CrmLayout.dense ? 36 : 44)
         .navigationTitle(contact?.displayName ?? "Contact")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
@@ -386,24 +408,40 @@ struct CrmContactScreen: View {
         } catch {
             errorText = PackagesError.describe(error)
         }
+        invoices = await CrmContactInvoicesSection.fetch(client: client, ref: ref)
     }
 
     @ViewBuilder private func detail(_ title: String, _ value: String, icon: String, url: URL? = nil) -> some View {
         if !value.isEmpty {
             HStack(spacing: 10) {
-                Image(systemName: icon).foregroundStyle(.secondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.caption2).foregroundStyle(.secondary)
-                    if let url, url.scheme != nil {
-                        Link(value, destination: url).font(.subheadline).lineLimit(2)
-                    } else {
-                        Text(value).font(.subheadline).textSelection(.enabled)
-                    }
+                Image(systemName: icon).font(.footnote).foregroundStyle(.secondary).frame(width: 20)
+                Text(title).font(.footnote).foregroundStyle(.secondary).frame(width: 78, alignment: .leading)
+                if let url, url.scheme != nil {
+                    Link(value, destination: url).font(.subheadline).lineLimit(1).truncationMode(.middle)
+                } else {
+                    Text(value).font(.subheadline).lineLimit(2).textSelection(.enabled)
                 }
+                Spacer(minLength: 0)
             }
             .contextMenu {
                 Button("Copy", systemImage: "doc.on.doc") { CrmClipboard.copy(value) }
             }
+        }
+    }
+}
+
+enum CrmContactTab: String, CaseIterable, Identifiable {
+    case overview
+    case activity
+    case notes
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overview: return "Overview"
+        case .activity: return "Activity"
+        case .notes: return "Notes"
         }
     }
 }
@@ -413,17 +451,18 @@ struct CrmContactHeader: View {
     let flow: CrmFlow?
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .center, spacing: 14) {
-                CrmAvatar(name: contact.name, email: contact.email, size: 64)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(contact.displayName).font(.title2.bold()).lineLimit(2)
+        let dense = CrmLayout.dense
+        VStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                CrmAvatar(name: contact.name, email: contact.email, size: dense ? 46 : 56)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(contact.displayName).font((dense ? Font.headline : Font.title3).bold()).lineLimit(2)
                     if !contact.subtitle.isEmpty {
-                        Text(contact.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                        Text(contact.subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                     }
                     HStack(spacing: 5) {
-                        if let flow { CrmChip(text: flow.name, icon: CrmFlowIcon.symbol(flow.icon), tint: .secondary) }
                         CrmStageBadge(stage: contact.stage, flow: flow)
+                        if let flow { CrmChip(text: flow.name, icon: CrmFlowIcon.symbol(flow.icon), tint: .secondary) }
                         if contact.value > 0 { CrmChip(text: CrmText.money(contact.value), icon: "dollarsign", tint: .green) }
                     }
                 }
@@ -433,12 +472,12 @@ struct CrmContactHeader: View {
                 CrmStageDots(flow: flow, stage: contact.stage)
             }
         }
-        .padding(14)
+        .padding(12)
         .background(
             LinearGradient(
-                colors: [CrmPalette.stage(contact.stage, in: flow).opacity(0.18), Color(uiColor: .secondarySystemGroupedBackground)],
+                colors: [CrmPalette.stage(contact.stage, in: flow).opacity(0.16), Color(uiColor: .secondarySystemGroupedBackground)],
                 startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -488,6 +527,9 @@ struct CrmContactEditor: View {
     @State private var edit: CrmContactEdit
     @State private var newField = ""
     @State private var newValue = ""
+    @State private var submitting = false
+    @State private var moreOpen: Bool
+    @State private var requestId = CrmModel.newRequestId()
     @Environment(\.dismiss) private var dismiss
 
     init(model: CrmModel, original: CrmContact?, addTo: String? = nil) {
@@ -501,6 +543,7 @@ struct CrmContactEditor: View {
             start.stage = model.filter.stage.isEmpty ? (flow.stages.first ?? "lead") : model.filter.stage
         }
         _edit = State(initialValue: start)
+        _moreOpen = State(initialValue: false)
     }
 
     private var fieldKeys: [String] {
@@ -508,97 +551,192 @@ struct CrmContactEditor: View {
         return known + edit.fields.keys.sorted().filter { !known.contains($0) }
     }
 
+    private var moreFilled: Int {
+        [edit.owner, edit.source, edit.tags, edit.website, edit.location, edit.linkedin, edit.github, edit.mastodon,
+         edit.bluesky, edit.twitter].filter { !$0.isEmpty }.count + edit.fields.values.filter { !$0.isEmpty }.count
+    }
+
     var body: some View {
-        Form {
-            Section("Person") {
-                TextField("Name", text: $edit.name).textContentType(.name)
-                TextField("Email", text: $edit.email).textContentType(.emailAddress).keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Company", text: $edit.company).textContentType(.organizationName)
-                TextField("Title", text: $edit.title).textContentType(.jobTitle)
-                TextField("Phone", text: $edit.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
-            }
-            Section("Pipeline") {
-                if let data = model.data {
-                    Picker("Pipeline", selection: $edit.flow) {
-                        ForEach(data.flows) { Text($0.name).tag($0.id) }
-                    }
-                    .onChange(of: edit.flow) { _, flow in
-                        let stages = data.flow(flow).stages
-                        if !stages.contains(edit.stage) { edit.stage = stages.first ?? "lead" }
-                    }
-                    Picker("Stage", selection: $edit.stage) {
-                        ForEach(data.flow(edit.flow).stages, id: \.self) { Text(CrmStageLabel.title($0)).tag($0) }
-                    }
+        ScrollViewReader { proxy in
+            Form {
+                problem.id("crm-editor-top")
+                Section {
+                    TextField("Name", text: $edit.name).textContentType(.name)
+                    TextField("Email", text: $edit.email).textContentType(.emailAddress).keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Company", text: $edit.company).textContentType(.organizationName)
+                    TextField("Title", text: $edit.title).textContentType(.jobTitle)
+                    TextField("Phone", text: $edit.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
+                } header: {
+                    Text("Contact")
+                } footer: {
+                    if !edit.isValid { Text("A name or an email is enough to save.") }
                 }
-                TextField("Deal value", value: $edit.value, format: IntegerFormatStyle<Int64>()).keyboardType(.numberPad)
-                TextField("Next step", text: $edit.nextStep)
-                HStack {
-                    TextField("Owner", text: $edit.owner).textInputAutocapitalization(.never)
-                    if let members = model.data?.members, !members.isEmpty {
-                        Menu {
-                            ForEach(members, id: \.self) { member in Button(member) { edit.owner = member } }
-                        } label: {
-                            Image(systemName: "person.crop.circle.badge.plus")
+                Section("Pipeline") {
+                    if let data = model.data {
+                        Picker("Pipeline", selection: $edit.flow) {
+                            ForEach(data.flows) { Text($0.name).tag($0.id) }
+                        }
+                        .onChange(of: edit.flow) { _, flow in
+                            let stages = data.flow(flow).stages
+                            if !stages.contains(edit.stage) { edit.stage = stages.first ?? "lead" }
+                        }
+                        Picker("Stage", selection: $edit.stage) {
+                            ForEach(data.flow(edit.flow).stages, id: \.self) { Text(CrmStageLabel.title($0)).tag($0) }
+                        }
+                    }
+                    LabeledContent("Deal value") {
+                        TextField("0", value: $edit.value, format: IntegerFormatStyle<Int64>())
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    TextField("Next step", text: $edit.nextStep)
+                }
+                Section {
+                    DisclosureGroup(isExpanded: $moreOpen) {
+                        moreFields
+                    } label: {
+                        HStack {
+                            Text("More details")
+                            Spacer()
+                            if moreFilled > 0 {
+                                Text("\(moreFilled) filled").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
-                TextField("Source", text: $edit.source)
-                TextField("Tags, comma separated", text: $edit.tags).textInputAutocapitalization(.never)
-                CrmLastContactedRow(value: $edit.lastContactedAt)
-            }
-            Section("Online") {
-                TextField("Website", text: $edit.website).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Location", text: $edit.location)
-                TextField("LinkedIn", text: $edit.linkedin).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("GitHub", text: $edit.github).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Mastodon (@name@server)", text: $edit.mastodon).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Bluesky", text: $edit.bluesky).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("X / Twitter", text: $edit.twitter).textInputAutocapitalization(.never).autocorrectionDisabled()
-            }
-            Section("More fields") {
-                ForEach(fieldKeys, id: \.self) { key in
-                    TextField(CrmColumnCatalog.label(key), text: Binding(
-                        get: { edit.fields[key] ?? "" },
-                        set: { edit.fields[key] = $0 }))
-                }
-                HStack {
-                    TextField("New field", text: $newField).textInputAutocapitalization(.never)
-                    TextField("Value", text: $newValue)
-                    Button {
-                        let key = CrmText.slug(newField).replacingOccurrences(of: "-", with: "_")
-                        guard !key.isEmpty, !CrmColumnCatalog.isBuiltIn(key) else { return }
-                        edit.fields[key] = newValue
-                        newField = ""
-                        newValue = ""
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                    }
-                    .disabled(newField.trimmingCharacters(in: .whitespaces).isEmpty)
+                Section("Notes") {
+                    TextField("Notes", text: $edit.notes, axis: .vertical).lineLimit(2...10)
                 }
             }
-            Section("Notes") {
-                TextField("Notes", text: $edit.notes, axis: .vertical).lineLimit(3...12)
+            .onChange(of: model.errorText) { _, text in
+                if !text.isEmpty { withAnimation { proxy.scrollTo("crm-editor-top", anchor: .top) } }
             }
-            PackagesErrorBanner(text: model.errorText)
         }
         .navigationTitle(original == nil ? "New contact" : "Edit contact")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { model.clearError() }
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    model.clearError()
+                    dismiss()
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    Task {
-                        if await model.save(edit, original: original, addTo: addTo) != nil {
-                            FmHaptics.commit()
-                            dismiss()
-                        } else {
-                            FmHaptics.failure()
-                        }
+                Button {
+                    save()
+                } label: {
+                    if submitting { ProgressView() } else { Text("Save").bold() }
+                }
+                .disabled(!edit.isValid || submitting || model.saving)
+                .accessibilityIdentifier("crm-contact-save")
+            }
+        }
+        .interactiveDismissDisabled(submitting)
+    }
+
+    @ViewBuilder private var problem: some View {
+        if let found = model.existing, original == nil {
+            Section {
+                HStack(spacing: 10) {
+                    CrmAvatar(name: found.name, email: found.email, size: 36)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(found.displayName) is already in the CRM").font(.subheadline.weight(.semibold))
+                        Text(found.email.isEmpty ? "Same email address" : found.email).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .disabled(!edit.isValid || model.saving)
+                NavigationLink {
+                    CrmContactDestination(routeId: found.routeId)
+                } label: {
+                    Label("Open \(found.displayName)", systemImage: "person.crop.circle")
+                }
+                Button {
+                    addDetails(to: found)
+                } label: {
+                    Label(addTo == nil ? "Add these details to them" : "Add these details and the list", systemImage: "square.and.arrow.down.on.square")
+                }
+                .disabled(submitting)
+            } footer: {
+                Text("Adding fills only what their record is missing; nothing they already have is overwritten.")
+            }
+        } else if !model.errorText.isEmpty {
+            Section {
+                Label(model.errorText, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder private var moreFields: some View {
+        HStack {
+            TextField("Owner", text: $edit.owner).textInputAutocapitalization(.never)
+            if let members = model.data?.members, !members.isEmpty {
+                Menu {
+                    ForEach(members, id: \.self) { member in Button(member) { edit.owner = member } }
+                } label: {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                }
+            }
+        }
+        TextField("Source", text: $edit.source)
+        TextField("Tags, comma separated", text: $edit.tags).textInputAutocapitalization(.never)
+        CrmLastContactedRow(value: $edit.lastContactedAt)
+        TextField("Website", text: $edit.website).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+        TextField("Location", text: $edit.location)
+        TextField("LinkedIn", text: $edit.linkedin).textInputAutocapitalization(.never).autocorrectionDisabled()
+        TextField("GitHub", text: $edit.github).textInputAutocapitalization(.never).autocorrectionDisabled()
+        TextField("Mastodon (@name@server)", text: $edit.mastodon).textInputAutocapitalization(.never).autocorrectionDisabled()
+        TextField("Bluesky", text: $edit.bluesky).textInputAutocapitalization(.never).autocorrectionDisabled()
+        TextField("X / Twitter", text: $edit.twitter).textInputAutocapitalization(.never).autocorrectionDisabled()
+        ForEach(fieldKeys, id: \.self) { key in
+            TextField(CrmColumnCatalog.label(key), text: Binding(
+                get: { edit.fields[key] ?? "" },
+                set: { edit.fields[key] = $0 }))
+        }
+        HStack {
+            TextField("New field", text: $newField).textInputAutocapitalization(.never)
+            TextField("Value", text: $newValue)
+            Button {
+                let key = CrmText.slug(newField).replacingOccurrences(of: "-", with: "_")
+                guard !key.isEmpty, !CrmColumnCatalog.isBuiltIn(key) else { return }
+                edit.fields[key] = newValue
+                newField = ""
+                newValue = ""
+            } label: {
+                Image(systemName: "plus.circle.fill")
+            }
+            .disabled(newField.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private func save() {
+        guard !submitting else { return }
+        submitting = true
+        Task {
+            defer { submitting = false }
+            if await model.save(edit, original: original, addTo: addTo, requestId: original == nil ? requestId : "") != nil {
+                FmHaptics.commit()
+                dismiss()
+            } else {
+                FmHaptics.failure()
+            }
+        }
+    }
+
+    private func addDetails(to found: CrmContact) {
+        guard !submitting else { return }
+        submitting = true
+        Task {
+            defer { submitting = false }
+            if await model.addDetails(edit, to: found, addTo: addTo) != nil {
+                FmHaptics.commit()
+                model.notice = "Added the details to \(found.displayName)."
+                dismiss()
+            } else {
+                FmHaptics.failure()
             }
         }
     }

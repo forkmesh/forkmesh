@@ -288,6 +288,31 @@ public struct CrmContactEdit: Equatable, Sendable {
         }
     }
 
+    public func additions(to existing: CrmContact) -> JSONObject {
+        var body: JSONObject = [:]
+        let before = CrmContactEdit(contact: existing)
+        for key in Self.textKeys where !["flow", "stage", "notes"].contains(key) {
+            let trimmed = text(key).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && before.text(key).isEmpty { body[key] = .string(trimmed) }
+        }
+        let note = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !note.isEmpty && !existing.notes.contains(note) {
+            body["notes"] = .string(existing.notes.isEmpty ? note : existing.notes + "\n\n" + note)
+        }
+        if value > 0 && existing.value == 0 { body["value"] = .int(value) }
+        if lastContactedAt > existing.lastContactedAt { body["lastContactedAt"] = .int(lastContactedAt) }
+        let known = Set(existing.tags.map { $0.lowercased() })
+        let added = tagList.filter { !known.contains($0.lowercased()) }
+        if !added.isEmpty { body["addTags"] = .array(added.map { .string($0) }) }
+        var custom: JSONObject = [:]
+        for (key, raw) in fields.sorted(by: { $0.key < $1.key }) {
+            let next = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !next.isEmpty && (existing.fields[key] ?? "").isEmpty { custom[key] = .string(next) }
+        }
+        if !custom.isEmpty { body["fields"] = .object(custom) }
+        return body
+    }
+
     public func changes(from original: CrmContact?) -> JSONObject {
         var body: JSONObject = [:]
         let before = original.map(CrmContactEdit.init(contact:))
