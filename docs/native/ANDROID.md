@@ -608,6 +608,10 @@ iOS features Android does not have, because they need an Apple-only API:
   that never paired a desktop instead of blinking red.
 - **The "face filter is slow" call diagnosis** (S128): the call page sends
   no face-filter timings.
+- **A face stream for the phone's own weak uplink** (S139): the shared web
+  engine `fmm-call.js` has no separate face stream, so Android switches to a
+  face stream when the server asks for viewers on weak links but not for its
+  own uplink. Closing it means changing the web engine for every client.
 
 ## 12. Shell prompt targets
 
