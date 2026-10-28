@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "PokerModel.h",
+    "PokerModel.cpp",
+    "PokerSynth.h",
+    "PokerSynth.cpp",
+    "PokerSound.h",
+    "PokerSound.cpp",
+    "PokerTableView.h",
+    "PokerTableView.cpp",
+    "PokerPage.h",
+    "PokerPage.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_poker_model.cpp",
+    "PokerModel.h",
+    "PokerModel.cpp",
+    "PokerSynth.h",
+    "PokerSynth.cpp",
+    "PokerTableView.h",
+    "PokerTableView.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ]
+}

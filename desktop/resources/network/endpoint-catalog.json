@@ -2237,6 +2237,72 @@
       ]
     },
     {
+      "pattern": "app.forkmesh.com/api/poker",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Poker wallet, stats and the tables you can join",
+      "trigger": "Opening the Poker page, Refresh, returning to the lobby, and the account doorbell ringing package:poker while the lobby is open",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::loadLobby"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads the open poker table, looks up a six-letter table code, or exports your Poker wallet and stats",
+      "trigger": "Opening a table, the account doorbell ringing package:poker while a table is open, Join by code, and export on removal",
+      "modestPerHour": 240,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::loadTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::joinByCode",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::exportData"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Claims free chips, creates a table, sits down, acts in a hand, sends the turn-clock tick at wakeAt, sits out, rebuys, leaves, adds or removes bots, chats or invites players",
+      "trigger": "Claim free chips, New table, Sit down, Fold / Check / Call / Bet / Raise / All-in, the one-shot game-clock timer at the table's wakeAt, Sit out, Rebuy, Leave, Bots, Chat and Invite",
+      "modestPerHour": 240,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::claimChips",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::createTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::act",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sendTick",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::tableWrite",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sitDown",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::setAway",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::rebuy",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::leaveTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::addBot",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::removeBot",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sendChat",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::inviteFriends"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Closes a poker table you own and pays every stack back to its wallet",
+      "trigger": "Close table in the table's More menu",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::closeTable"
+      ]
+    },
+    {
       "pattern": "app.forkmesh.com/api/voice-changer",
       "method": "GET",
       "importance": 4,

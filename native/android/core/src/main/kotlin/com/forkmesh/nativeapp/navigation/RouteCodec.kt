@@ -78,6 +78,7 @@ object RouteCodec {
             is Route.Invoices -> { put("org", route.organization); put("id", route.invoice) }
             is Route.Vault -> put("section", route.section)
             is Route.InstanceFeed -> put("post", route.post)
+            is Route.Poker -> put("table", route.table)
             is Route.Cove -> put("id", route.id)
             is Route.Admin -> put("section", route.section)
             is Route.Settings -> put("section", route.section)
@@ -193,6 +194,7 @@ object RouteCodec {
             Route.Kind.Usage -> Route.Usage
             Route.Kind.RssReader -> Route.RssReader
             Route.Kind.VideoMixDjStudio -> Route.VideoMixDjStudio
+            Route.Kind.Poker -> Route.Poker(s("table"))
             Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files

@@ -63,6 +63,10 @@ extension ApiService {
         try await accountApiCall(method, "/api/video-mix-dj-studio\(suffix)", body)
     }
 
+    public func pokerApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
+        try await accountApiCall(method, "/api/poker\(suffix)", body)
+    }
+
     public func stretchApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
         try await accountApiCall(method, "/api/stretch\(suffix)", body)
     }

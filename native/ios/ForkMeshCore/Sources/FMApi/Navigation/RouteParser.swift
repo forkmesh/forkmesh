@@ -269,6 +269,7 @@ public enum RouteParser {
         case "nexus": return tail.isEmpty ? [.nexus] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
+        case "poker": return tail.isEmpty ? [.poker(table: pokerTable(query["table"]))] : nil
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "usage": return tail.isEmpty ? [.usage] : nil
         case "runners": return tail.isEmpty ? [.runners] : nil
@@ -293,6 +294,11 @@ public enum RouteParser {
             value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
         }
         return [.invoices(organization: org, invoice: invoice)]
+    }
+
+    private static func pokerTable(_ value: String?) -> String? {
+        guard let value, value.count == 32, value.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        return value
     }
 
     private static func instanceFeedPost(_ value: String?) -> String? {
@@ -335,6 +341,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
+        case "poker":
+            return tail.isEmpty ? [.poker(table: pokerTable(query["table"]))] : nil
         case "spider-room":
             return tail.isEmpty ? [.spiderRoom] : nil
         case "runners":

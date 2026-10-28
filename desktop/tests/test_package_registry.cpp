@@ -44,7 +44,7 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "catalog error: %s\n",
                      qPrintable(registry.errorString()));
     check(registry.isReady(), "the embedded marketplace catalog validates");
-    check(registry.packages().size() == 104,
+    check(registry.packages().size() == 129,
           "every embedded marketplace package is retained");
     const forkmesh::market::PackageManifest *designSystem =
         registry.package(QStringLiteral("design-system"));

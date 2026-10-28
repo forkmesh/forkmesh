@@ -1195,6 +1195,13 @@ def test_other_topics_still_share_the_socket_coalescing_window():
     assert len(runtime.pushes) == 2
 
 
+def test_every_package_doorbell_reaches_the_socket():
+    runtime = _account_event_runtime()
+    runtime.notify("alice", "package:poker")
+    runtime.notify("alice", "package:poker")
+    assert runtime.frames == ["package:poker", "package:poker"]
+
+
 def test_every_direct_message_rings_the_socket_and_the_phone():
     # Each message is its own notification, so neither the push nor the
     # socket frame Android reads may be coalesced away.
