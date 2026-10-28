@@ -648,6 +648,18 @@ int runStub(const QStringList &arguments)
             } else if (scenario == QStringLiteral("unshown")) {
                 const QJsonObject thread{{QStringLiteral("threadId"),
                                           QStringLiteral("thread-fresh")}};
+                const char *statusMessages[] = {
+                    R"({"method":"remoteControl/status/changed","params":{"serverName":"a","status":"disabled","environmentId":null}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{"name":"codex_apps","status":"starting","error":null,"failureReason":null}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{"name":"codex_apps","status":"failed","error":{"message":"connection refused"},"failureReason":"transport"}})",
+                    R"({"method":"thread/settings/updated","params":{"threadId":"thread-fresh","threadSettings":{"model":"gpt-test","effort":"high","approvalPolicy":"never","cwd":"/workspace","sandboxPolicy":{"type":"dangerFullAccess"},"collaborationMode":{"mode":"default","settings":{"developer_instructions":"do not repeat this"}}}}})",
+                    R"({"method":"remoteControl/status/changed","params":{}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{}})",
+                    R"({"method":"thread/settings/updated","params":{}})",
+                    R"({"method":"turn/moderationMetadata","params":{"metadata":{"generation":{},"prompt":{"omnimod":{"outputs":[{"is_blocked":false}]}},"tool_call":{},"tool_response":{}}}})",
+                };
+                for (const char *json : statusMessages)
+                    writeMessage(output, QJsonDocument::fromJson(QByteArray(json)).object());
                 writeMessage(output,
                              QJsonObject{{QStringLiteral("method"),
                                           QStringLiteral("model/rerouted")},
@@ -1837,6 +1849,29 @@ void runUnshownMessageTest(const QString &executable)
           qPrintable(QStringLiteral("only the Codex messages the session drops are "
                                     "recorded for the transcript check (got %1)")
                          .arg(kinds.join(QStringLiteral(", ")))));
+    QStringList notices;
+    QStringList errors;
+    for (const QJsonObject &event : events) {
+        if (event.value(QStringLiteral("type")).toString() != QLatin1String("_local_notice"))
+            continue;
+        const QString text = event.value(QStringLiteral("text")).toString();
+        notices.append(text);
+        if (event.value(QStringLiteral("level")).toString() == QLatin1String("error"))
+            errors.append(text);
+        check(forkmesh::transcriptcoverage::eventGaps(event).isEmpty(),
+              "normalized Codex status notices are drawn transcript events");
+    }
+    check(notices == QStringList{
+              QStringLiteral("Remote control (a): disabled"),
+              QStringLiteral("MCP server codex_apps: starting"),
+              QStringLiteral("MCP server codex_apps: failed — connection refused; transport"),
+              QStringLiteral("Thread settings updated — model: gpt-test, effort: high, approvals: never, directory: /workspace, sandbox: dangerFullAccess, mode: default"),
+              QStringLiteral("Remote control: unknown"),
+              QStringLiteral("MCP server: unknown"),
+              QStringLiteral("Thread settings updated.")},
+          "status messages produce readable notices, omit instructions and moderation bookkeeping, and tolerate absent fields");
+    check(errors == QStringList{QStringLiteral("MCP server codex_apps: failed — connection refused; transport")},
+          "MCP startup failures use the existing error notice style");
 }
 
 // Which conversation a resumed session may pick up. A session can be handed
