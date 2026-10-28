@@ -10,6 +10,7 @@ usage() {
 src="$(cd "$1" && pwd)"
 work="${2:-$HOME/desktop-release}"
 commit="${FORKMESH_BUILD_COMMIT:-}"
+release_version="${FORKMESH_VERSION:-}"
 [ -n "$commit" ] || usage
 [ "$(uname -s)" = "Darwin" ] || { echo "run this on macOS" >&2; exit 1; }
 # shellcheck source=tools/forkmesh-safe-rm.sh
@@ -171,6 +172,7 @@ PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" cmake -S "$src/desktop" -B "$buil
   -DFORKMESH_BUILD_TESTS=OFF \
   -DFORKMESH_REQUIRE_OPENSSL_3_5=ON \
   -DFORKMESH_BUILD_COMMIT_OVERRIDE="$commit" \
+  -DFORKMESH_VERSION_OVERRIDE="$release_version" \
   -DFORKMESH_HEAVY_JOBS_OVERRIDE="$jobs" \
   -DCMAKE_PREFIX_PATH="$qt_prefix;$static_prefix" \
   -DCMAKE_FIND_FRAMEWORK=LAST \
