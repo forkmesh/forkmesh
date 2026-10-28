@@ -100,7 +100,7 @@ rules:
   `# description:` line.
 
 ```sh
-# step: Reset build numbers to 1
+# step: Reset build numbers to 0
 python3 -u tools/forkmesh-release-host.py --reset-builds --tag "$tag"
 
 # step: Deploy Android build
@@ -168,7 +168,7 @@ Code: `shortcutStepMarker` and `trackShortcutStep` in
 in `desktop/src/MainWindowShortcuts.cpp`.
 
 **Phones.** Each `insights.shortcuts` entry with at least one step carries
-`"steps": [{"name": "Reset build numbers to 1"}, {"name": "Deploy Android build",
+`"steps": [{"name": "Reset build numbers to 0"}, {"name": "Deploy Android build",
 "shortcut": "deploy-build-android.sh"}]`. `shortcut` is present only on a
 linked step and names a file in the same repository and scope as the entry.
 Entries without steps have no `steps` key.

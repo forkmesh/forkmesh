@@ -255,7 +255,7 @@ public enum LiveReleases {
             : row.builds.map(\.arch).joined(separator: ", ")
         let build = row.builds.filter { $0.tag == tag }.map(\.build).max() ?? 0
         let behind = row.builds.contains { $0.tag != latest }
-        let note = [platform.kind, archs, build > 1 ? "build \(build)" : "", behind ? "behind \(latest)" : ""]
+        let note = [platform.kind, archs, build > 0 ? "build \(build)" : "", behind ? "behind \(latest)" : ""]
             .filter { !$0.isEmpty }.joined(separator: " · ")
         return StatsTileData(value: tag, note: note, status: behind ? .warning : .good)
     }

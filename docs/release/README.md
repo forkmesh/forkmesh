@@ -135,7 +135,7 @@ so a fix reaches the homepage for one platform without a release.
 - `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
   serves the promoted manifest. While the version is still held back for
   other platforms it reports that and succeeds.
-- `--reset-builds` writes `builds.json` with every platform at 1 for the
+- `--reset-builds` writes `builds.json` with every platform at 0 for the
   version; `--wait-candidate --tag vX.Y.Z` waits up to two hours for the
   release workflow's candidate manifest on `main`.
 - These modes wait up to four hours for the timer's run to release the host
@@ -144,6 +144,16 @@ so a fix reaches the homepage for one platform without a release.
   `build` and `commit` fields; the details and the reasons are in
   `.forkmesh/releases/README.md`, "Per-platform builds". The homepage shows
   `Build N` on a rebuilt download.
+- Every platform starts a new version at build 0, iOS included (since v1.5.0,
+  2026-10-28, at the maintainer's request). Before that desktop builds started
+  at 1 and the iOS number ran on across versions; App Store Connect only needs
+  it unique within a `MARKETING_VERSION` ([IOS_RELEASE.md](../native/IOS_RELEASE.md#version)).
+  The Android versionCode still grows, because the version is its high digits.
+- The Android stamp patterns match `versionCodeOverride ?: N` and
+  `versionNameOverride.ifEmpty { "X.Y.Z" }` in `build.gradle.kts`; when that
+  file took the override form the old patterns stopped matching and drafts
+  silently left Android behind. The pattern spells `{` as `\x7B` because
+  `validate_release_version_stamp.py` counts braces without skipping strings.
 
 The shortcuts run these modes as named steps, so the desktop, phone and web
 canvas show each operation:
@@ -151,7 +161,7 @@ canvas show each operation:
 | Shortcut | Steps |
 | --- | --- |
 | `Deploy Android build`, `Deploy Linux build`, `Deploy Windows build`, `Deploy macOS build` | Plan the build → Build, sign and publish → Check the homepage |
-| `Deploy new version` | Cut the new version (`tools/forkmesh_release_request.py create`) → Wait for the release candidate → Reset build numbers to 1 → Deploy Android, Linux, Windows and macOS build (each runs the linked shortcut with `--first-build`) |
+| `Deploy new version` | Cut the new version (`tools/forkmesh_release_request.py create`) → Wait for the release candidate → Reset build numbers to 0 → Deploy Android, Linux, Windows and macOS build (each runs the linked shortcut with `--first-build`) |
 
 They are shortcuts rather than Actions workflows because they need the
 release host's signing material, the office Mac and the primary checkout,

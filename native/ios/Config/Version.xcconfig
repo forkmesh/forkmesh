@@ -2,8 +2,8 @@
 // extension whose version differs from its app's is rejected at upload).
 // Codemagic's ios-native-release overrides CURRENT_PROJECT_VERSION on the
 // xcodebuild command line with the next free App Store Connect build number.
-MARKETING_VERSION = 1.4.1
-CURRENT_PROJECT_VERSION = 17
+MARKETING_VERSION = 1.5.0
+CURRENT_PROJECT_VERSION = 0
 FORKMESH_BUILD_COMMIT =
 
 FORKMESH_ENV = prod
