@@ -1984,6 +1984,73 @@ Ported from iOS 1ed74360c2.
   and offers Try again when nothing matches. Relay runs are published as soon
   as they land instead of after the desktop answers.
 
+### DJ Studio queue (ledger S120, S123)
+
+- `DjQueueThumb` (`A/feature/djstudio/DjQueue.kt`) reads its own pointer
+  gesture instead of `detectDragGesturesAfterLongPress`: a tap or a 350 ms
+  hold (no movement past touch slop) opens the menu; a move past touch slop
+  that heads across the queue (sideways in the vertical queue, up or down in
+  the horizontal one) lifts the song onto a deck at once; a move along the
+  queue is left unconsumed so the queue still scrolls. The thumb shrinks to
+  0.94 while pressed. TalkBack gets Load on Deck A/B and Remove from Queue as
+  custom actions.
+- `DjAutomix.playNow` is iOS's: a song added (`enqueue`, `enqueueAll`) while
+  no deck plays, nothing is scratched and no fade runs is loaded and started
+  on the deck the crossfader favours, or on the empty one when the
+  crossfader sits near the middle; the rest of a batch is queued.
+- `DjQueueItem.addedAt` (ms, from the jam's `addedAt` or set when queued
+  locally, saved with the queue) gives `addedStamp` (time today, else
+  "Oct 23, 3:45 PM") under the adder's name on a jam thumbnail, and
+  `addedLine` ("Added by bob on Oct 23, 2026 at 3:45 PM") in the menu and
+  the TalkBack label. Formats use `java.time` localized short times.
+
+### Inbox instance logo (ledger S122)
+
+`SwipeRow` in `A/feature/inbox/InboxScreen.kt` stacks the active project's
+`ProjectIcon` (16 dp) under the ping's icon for every ping that is not a
+local one, and adds "From <project>" to the row's TalkBack label, as iOS
+`InboxRow`.
+
+### Code: failed run handoff and pull requests (ledger S144, S153)
+
+- S144: the run page already sent `CiPrompts.fixFailedRun` from its Send to
+  an agent button. The log card now also carries `FmMessageTools` on a
+  failed or rejected run, and its send button opens the composer with
+  `CiPrompt.composeTarget` (workflow, run, commit, failed steps and the
+  excerpt around the last failure line) instead of the first 4000
+  characters of the log. `FmMessageTools` takes an optional `handoff`.
+- S153: `PublishedPull` now carries `author`, `authorName`, `createdMs`,
+  `mergedMs` and `mergedBy` from `pull.md`. `PullState` (core
+  `collab/PullThread.kt`) gives the Open/Merged/Closed pill, the summary
+  line and the done copy; `PullTimeline.events` adds the Merged entry by
+  time (`epochMs` takes seconds or milliseconds). `PullDetailScreen` follows
+  iOS's order: header (pill, number, summary, branches), changed files and
+  patch, the Conversation card (the description as the opening comment, then
+  the events), federated replies, `PullWorkflowCards` (where `PullDoneCard`
+  replaces the merge card once the pull is merged or closed, keeping Review
+  files), then Review (Approve and Request changes only while open) and the
+  desktop requests. Android has no `commits.mbox` count on the record, so
+  the summary says "changes" rather than "N commits".
+- The New pull request dialog (`A/feature/code/collab/NewPullDialog.kt`,
+  logic in core `collab/PullCompose.kt`) compares two branch menus on the
+  mirror, fills the title from the head branch, and keeps "Paste a patch
+  instead". When `remote-forks` lists forks on other instances, a Send to
+  menu offers them; `InboxService.openRemotePull` signs for the target's
+  owner and name with head `<this host>/<owner>/<repo>:<branch>` and posts
+  `{owner, repo, pull}` to the target's `/pulls` with no session, as iOS and
+  the website do. Errors stay in the dialog.
+
+### Stats release tiles (ledger S155)
+
+`LiveReleases.platformTile` shows "build N" from build 1, since every
+version now starts at build 0.
+
+### Docs library (iOS 00b40c1ee9)
+
+Nothing to port: `bundleDocsLibrary` in `app/build.gradle.kts` copies
+`native/ios/ForkMesh/Resources/DocsLibrary.json` into the APK's assets at
+build time, so Android always ships the same library as iOS.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see

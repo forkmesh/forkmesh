@@ -1454,6 +1454,12 @@ open class ApiService(
         jsonMaps(asList(getRepoRead(owner, name, "branches")))
             .map(RepoBranch::fromJson).filter { it.name.isNotEmpty() }
 
+    open fun remoteForks(owner: String, name: String): List<com.forkmesh.nativeapp.model.RemoteFork> =
+        com.forkmesh.nativeapp.model.RemoteFork.list(getRepoRead(owner, name, "remote-forks"))
+
+    open val instanceHost: String
+        get() = com.forkmesh.nativeapp.model.RemoteFork.instanceHost(settings.serverUrl)
+
     open fun mirrors(owner: String, name: String): List<RepoMirror> = mirrorSet(owner, name).mirrors
 
     open fun mirrorSet(owner: String, name: String): RepoMirrorSet {
@@ -1754,6 +1760,11 @@ open class ApiService(
             signed = (meta["sig"] ?: "").isNotEmpty(),
             events = events,
             branchBacked = meta["derive"] == "branch",
+            author = meta["author"] ?: "",
+            authorName = meta["authorName"] ?: "",
+            createdMs = dartIntTryParse(meta["ts"] ?: meta["createdAt"] ?: "") ?: 0L,
+            mergedMs = dartIntTryParse(meta["mergedAt"] ?: "") ?: 0L,
+            mergedBy = meta["mergedBy"] ?: "",
         )
     }
 

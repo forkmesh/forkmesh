@@ -1194,7 +1194,7 @@ class DjStudioModel internal constructor(
         }
     }
 
-    private fun snapshot(deck: DjDeck): DjAutomixDeck =
+    internal fun snapshot(deck: DjDeck): DjAutomixDeck =
         DjAutomixDeck(deck.loaded && !deck.failed, deck.playing, deck.position(), deck.duration, deck.effectiveRate, deck.repeats)
 
     fun mixNow() {
@@ -1444,7 +1444,7 @@ class DjStudioModel internal constructor(
             show("The queue is full. Play or remove a video first.")
             return
         }
-        queue = queue + DjQueueItem.of(UUID.randomUUID().toString(), id, title, author)
+        queue = queue + DjQueueItem.of(UUID.randomUUID().toString(), id, title, author, addedAt = System.currentTimeMillis())
         show(if (title.isEmpty()) "Added to the queue." else "Queued: $title")
         save()
     }
