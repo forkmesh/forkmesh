@@ -910,6 +910,10 @@ async def record_core_mail_event(env, event, now=None):
         if reason == "unsubscribe" and mail_budget.is_marketing_kind(
                 row.get("kind")):
             reason = "marketing_unsubscribe"
+        if mail_tracking.bounce_cause(
+                event.get("event"), event.get("dsn"),
+                event.get("reason")) == "sender":
+            reason = ""
         if reason and row.get("recipient_bi"):
             await d1_run(
                 env, "INSERT INTO mail_suppressions"

@@ -179,6 +179,18 @@ normal path, at most once a minute.
   spam, blocking, reputation, policy, SPF, DKIM, DMARC or authentication stays
   a policy refusal and keeps `/status` red. Either way the address goes into
   `mail_suppressions`, so it is never mailed again.
+- A bounce that blames our own sending setup does not suppress the
+  recipient: RFC 7372's sender-authentication codes `5.7.20`–`5.7.27`
+  (no passing DKIM, SPF failed, reverse DNS failed, unauthenticated) and
+  Microsoft's `5.7.515` set `mail_sends.cause = 'sender'` and keep `/status`
+  red, but leave `mail_suppressions` alone, so the address gets mail again
+  once the setup is fixed. On 2026-10-28 n3 and n5 had lost their IPv4 PTRs
+  (Vultr's generic `*.constant.com` names; IPv6 was still right), and Yahoo
+  refused a signup verification from n5 with `550 5.7.25 Forward-confirmed
+  reverse DNS failed`. The address was suppressed, so the user's later
+  password reset never left the server, and the admin ping called it
+  "rejected by the mail provider". `next_mail.py rdns --execute` restored the
+  PTRs; `next_mail.py check nN` on every core shows whether they hold.
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
