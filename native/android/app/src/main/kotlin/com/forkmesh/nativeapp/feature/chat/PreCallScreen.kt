@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.view.Gravity
 import android.view.ViewGroup
@@ -84,6 +85,11 @@ private fun testClipFailure(error: Throwable): String = when (error.message) {
     "recording_unsupported" -> "This phone cannot record a test clip."
     else -> "The test clip could not start."
 }
+
+private val CLIP_AUDIO: AudioAttributes = AudioAttributes.Builder()
+    .setUsage(AudioAttributes.USAGE_MEDIA)
+    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+    .build()
 
 private fun clearFolder(folder: File) {
     folder.listFiles()?.forEach { if (it.isFile) it.delete() }
@@ -480,6 +486,11 @@ private fun ClipReview(
     onDone: () -> Unit,
     onFailed: () -> Unit,
 ) {
+    val context = LocalContext.current
+    DisposableEffect(clip.file.path, playToken) {
+        val held = CallSpeaker.hold(context)
+        onDispose { if (held) CallSpeaker.release(context) }
+    }
     Box(Modifier.fillMaxSize().background(CALL_BACKDROP)) {
         if (clip.video) {
             key(clip.file.path, playToken) {
@@ -488,6 +499,7 @@ private fun ClipReview(
                         FrameLayout(host).apply {
                             setBackgroundColor(android.graphics.Color.BLACK)
                             val player = VideoView(host)
+                            player.setAudioAttributes(CLIP_AUDIO)
                             player.setOnPreparedListener { player.start() }
                             player.setOnCompletionListener { onDone() }
                             player.setOnErrorListener { _, _, _ ->
@@ -513,6 +525,7 @@ private fun ClipReview(
             DisposableEffect(clip.file.path, playToken) {
                 val player = runCatching {
                     MediaPlayer().apply {
+                        setAudioAttributes(CLIP_AUDIO)
                         setDataSource(clip.file.absolutePath)
                         setOnCompletionListener { onDone() }
                         prepare()
