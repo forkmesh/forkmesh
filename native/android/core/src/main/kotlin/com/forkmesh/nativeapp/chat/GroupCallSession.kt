@@ -11,8 +11,12 @@ data class GroupCallView(
     val muted: Boolean = false,
     val cameraOff: Boolean = false,
     val error: String = "",
+    val engine: String = "",
+    val verify: GroupCallVerify? = null,
 ) {
     val active: Boolean get() = conversation.isNotEmpty()
+
+    val fmm: Boolean get() = engine == ENGINE_FMM
 
     val title: String get() = "#" + conversation.removePrefix(OfficeFrames.PREFIX).removePrefix("#")
 
@@ -23,6 +27,7 @@ data class GroupCallView(
     }
 
     companion object {
+        const val ENGINE_FMM = "fmm"
         const val NOTE = "End-to-end encrypted. ForkMesh's call server forwards everyone's audio and video without being able to see or hear them."
     }
 }
@@ -31,8 +36,16 @@ sealed class GroupCallPageEvent {
     data object Ready : GroupCallPageEvent()
     data class Send(val conversation: String, val type: String, val body: Map<String, Any?>) : GroupCallPageEvent()
     data class Ticket(val id: Int, val conversation: String, val body: Map<String, Any?>) : GroupCallPageEvent()
-    data class State(val state: String, val others: Int, val muted: Boolean, val cameraOff: Boolean, val active: Boolean, val error: String) :
-        GroupCallPageEvent()
+    data class State(
+        val state: String,
+        val others: Int,
+        val muted: Boolean,
+        val cameraOff: Boolean,
+        val active: Boolean,
+        val error: String,
+        val engine: String = "",
+        val verify: GroupCallVerify? = null,
+    ) : GroupCallPageEvent()
     data class Result(val id: Int, val ok: Boolean, val value: Any?, val error: String) : GroupCallPageEvent()
 
     companion object {
@@ -51,6 +64,8 @@ sealed class GroupCallPageEvent {
                 cameraOff = message["cameraOff"] == true,
                 active = message["active"] == true,
                 error = jsonText(message["error"]).take(200),
+                engine = jsonText(message["engine"]).takeIf { it == "fmm" || it == "webrtc" }.orEmpty(),
+                verify = if (jsonText(message["engine"]) == "fmm") GroupCallVerify.parse(message["verify"]) else null,
             )
             "result" -> (message["id"] as? Number)?.toInt()?.let {
                 Result(it, message["ok"] == true, message["value"], jsonText(message["error"]))

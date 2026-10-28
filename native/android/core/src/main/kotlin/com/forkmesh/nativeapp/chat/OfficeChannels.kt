@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.apps.AppBlocks
 import com.forkmesh.nativeapp.crypto.ChatNodeKey
+import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -315,6 +316,16 @@ class OfficeChannelService(
         }
     }
 
+    fun callIdentity(conversation: String): GroupCallIdentity? {
+        val room = room(conversation) ?: return null
+        if (!room.isPrivate) return null
+        val seal = synchronized(lock) { sockets[room.id]?.takeIf { it.socket != null }?.seal } ?: return null
+        val acct = seal.acct.trim().lowercase()
+        if (!ChatV3.validAcct(acct)) return null
+        val keys = seal.keys
+        return GroupCallIdentity(call = seal.room, acct = acct, kid = keys.kid, idk = keys.idk.copyOf(), signer = keys::sign)
+    }
+
     fun callTicket(conversation: String, body: Map<String, Any?> = emptyMap()): Map<String, Any?>? {
         val room = room(conversation) ?: return null
         if (!room.isPrivate) return null
@@ -488,12 +499,13 @@ class OfficeChannelService(
                 copy.remove(RelayFrames.INTEGRATION_KEY)
                 opened.senderNode?.let { copy["senderId"] = it }
             }
+            plain = GroupCallE2ee.annotate(plain, opened.senderKid, opened.senderAcct)
         } else if (server) {
             val marked = LinkedHashMap(plain).also {
                 it.remove("private")
                 it["channel"] = "#${room.name}"
             }
-            plain = RelayFrames.serverFrame(mapOf("srv" to true), marked) ?: return
+            plain = RelayFrames.serverFrame(mapOf("srv" to true), GroupCallE2ee.annotate(marked, null, null)) ?: return
         } else {
             return
         }

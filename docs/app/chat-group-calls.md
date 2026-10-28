@@ -241,9 +241,9 @@ through its own worklet, so only received WebRTC audio tracks are measured.
   (`docs/server/rtc.md`, "Phone media engine"). Android (2026-10-23) runs
   this file's `createGroupCalls` in a WebView page
   (`native/android/app/src/main/assets/group-call/`, copies kept current by
-  `app/tools/sync_android_group_call.py`), WebRTC only: FM Media is off
-  there, so an Android phone cannot join a room that already runs on FM
-  Media (`docs/native/ANDROID.md`, "Group calls").
+  `app/tools/sync_android_group_call.py`), with FM Media and the compare
+  code since 2026-10-28, signing with the room seal's key through the
+  native bridge (`docs/native/ANDROID.md`, "Group calls on FM Media").
 - `app/tests/test_group_call_frame_crypto.py` runs the real worker in node
   against `fm_frame_crypto.cc` built with OpenSSL: frames cross both ways,
   replays are dropped and reordering inside the window is accepted on both
