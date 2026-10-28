@@ -4422,6 +4422,7 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
             return;
         }
     }
+    endOutsideAgentsIn(worktreePath);
     if (!agentIds.isEmpty()) {
         logSystem(
             QStringLiteral("Agents: dropped %1 stored session%2 on %3 in %4 ms; "

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Agents", "text": "Deleting an agent now also ends anything still running in its worktree, so the phone no longer shows a leftover row named after the branch with \"(deleted)\"."},
   {"date": "2026-10-28", "area": "Projects", "text": "A shared pull request link now previews the pull request itself: its state, reviews and approvals, comment counts, files and lines changed, the six code health scores and the faces of everyone taking part."},
   {"date": "2026-10-28", "area": "Desktop", "text": "In the new interface, dots, arrows, labels and panels no longer sit on a box of a slightly different colour: every element now shares its section's background, and each theme uses one colour per role."},
   {"date": "2026-10-28", "area": "Android", "text": "Invoicing on Android: create and edit invoices for CRM contacts, email them and send reminders, record payments, and see when each one is opened, viewed and paid."},
