@@ -132,6 +132,12 @@ so a fix reaches the homepage for one platform without a release.
   mirrors, merges the metadata to `main` and moves the tag. With `--dry-run`
   it only prints the plan. With `--first-build` it does nothing when the
   version already has a build for that platform.
+- `--deploy-build PLATFORM --from-main` is for a platform the release's build
+  commit cannot build: it builds from `main` as build 1 and leaves build 0
+  unused. `main` must contain the tag commit. v1.5.0's Linux, Windows and
+  macOS builds (2026-10-28) were made this way: compiled-in packages (the
+  static Linux, MinGW and Mac builds have no Qt WebEngine) failed on an
+  unguarded `QWebEngineView` in `FaceChangerFeature.cpp` at the tag.
 - `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
   serves the promoted manifest. While the version is still held back for
   other platforms it reports that and succeeds.

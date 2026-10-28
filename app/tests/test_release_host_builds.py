@@ -104,6 +104,19 @@ def test_a_new_version_builds_each_platform_once_at_its_build_commit():
     assert tool.plan_deploy(manifests, "linux", "", MAIN)["build"] == 1
 
 
+def test_a_platform_the_build_commit_cannot_build_ships_build_one_from_main():
+    manifests = _released()
+    manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR,))
+    plan = tool.plan_deploy(manifests, "linux", "", MAIN, from_main=True)
+    assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
+        "v1.2.9", 1, MAIN, True)
+    first = tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True, from_main=True)
+    assert (first["skip"], first["build"], first["commit"]) == (False, 1, MAIN)
+    manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
+    assert tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True,
+                            from_main=True)["skip"] is True
+
+
 def test_the_target_is_the_newest_candidate_not_older_than_latest():
     manifests = _released("v1.2.8")
     manifests["candidate-1.2.7"] = _manifest("v1.2.7", EVERYTHING)
@@ -145,6 +158,9 @@ def _fake_host(monkeypatch, tmp_path, manifests, built):
     monkeypatch.setattr(tool, "seed_mirrors", lambda *a, **k: None)
     monkeypatch.setattr(tool, "remove_worktree", lambda *a: None)
     calls = {}
+    monkeypatch.setattr(tool, "require_build_from_tag",
+                        lambda repo, channel, tag_commit, commit: calls.setdefault(
+                            "descends", (tag_commit, commit)))
 
     def build_apk(repo, work, tag, commit, code, signer):
         calls["apk"] = (tag, commit, code)
@@ -172,6 +188,7 @@ def test_an_android_rebuild_publishes_build_one_and_promotes(tmp_path, monkeypat
     assert calls["publish_args"] == ("--build", "1", "--asset-commit", MAIN)
     assert json.loads(calls["extra_files"][tool.BUILDS_FILE])["builds"]["android"] == 1
     assert calls["built_at"] == MAIN
+    assert calls["descends"] == (COMMIT, MAIN)
     assert "Android v1.2.8 build 1" in calls["landed"]
     assert calls["moved"][1:] == ("v1.2.8", "b" * 40)
 
@@ -230,6 +247,7 @@ def test_wait_for_candidate_polls_until_main_has_it(monkeypatch):
     [],
     ["--wait-candidate"],
     ["--first-build", "--tag", "v1.2.8"],
+    ["--from-main", "--tag", "v1.2.8"],
     ["--auto", "--deploy-build", "linux"],
     ["--deploy-build", "ios"],
 ])
