@@ -383,6 +383,7 @@ enum class DesktopControlFamilyName(val prefix: String) {
     FilesBrowse("files.browse."),
     Diagnostics("diag."),
     Teammates("teammates."),
+    Workflows("workflows."),
     Insights("insights."),
     Discord("discord."),
     Wallet("wallet."),

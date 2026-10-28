@@ -195,13 +195,13 @@ def parse_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
-def android_version_code(tag: str, build: int = 1) -> int:
+def android_version_code(tag: str, build: int = 0) -> int:
     """Android versionCode for build N of a desktop release:
     (MAJOR*10000 + MINOR*100 + PATCH) * 100 + N.
 
     It only has to increase from build to build so each APK installs over
     the previous one; v1.2.8 shipped as 10208 before build numbers, and its
-    successor v1.2.9 build 1 is 1020901.
+    successor v1.5.0 starts at build 0, 1050000.
     """
     version = parse_version(tag)
     if version is None:
@@ -212,8 +212,8 @@ def android_version_code(tag: str, build: int = 1) -> int:
             f"release {tag} does not fit the MAJOR*10000+MINOR*100+PATCH "
             "versionCode scheme"
         )
-    if not 1 <= build <= MAX_BUILD:
-        raise CompletionError(f"build {build} is outside 1-{MAX_BUILD}")
+    if not 0 <= build <= MAX_BUILD:
+        raise CompletionError(f"build {build} is outside 0-{MAX_BUILD}")
     return (major * 10000 + minor * 100 + patch) * 100 + build
 
 
@@ -302,7 +302,7 @@ def pending_android_completion(
 
 
 def valid_build(value) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_BUILD
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_BUILD
 
 
 def parse_builds(text: str) -> dict:
@@ -316,28 +316,28 @@ def parse_builds(text: str) -> dict:
     raw = data.get("builds") if isinstance(data.get("builds"), dict) else {}
     return {
         "tag": tag if parse_version(tag) else "",
-        "builds": {platform: raw[platform] if valid_build(raw.get(platform)) else 1
+        "builds": {platform: raw[platform] if valid_build(raw.get(platform)) else 0
                    for platform in PLATFORM_ASSETS},
     }
 
 
 def render_builds(tag: str, builds: dict[str, int]) -> str:
     return json.dumps({"tag": tag,
-                       "builds": {platform: builds.get(platform, 1)
+                       "builds": {platform: builds.get(platform, 0)
                                   for platform in PLATFORM_ASSETS}}, indent=2) + "\n"
 
 
 def recorded_builds(text: str, tag: str) -> dict[str, int]:
     state = parse_builds(text)
     if state["tag"] != tag:
-        return {platform: 1 for platform in PLATFORM_ASSETS}
+        return {platform: 0 for platform in PLATFORM_ASSETS}
     return dict(state["builds"])
 
 
 def platform_build(manifest: dict | None, platform: str) -> int:
     builds = [asset.get("build") for asset in (manifest or {}).get("assets", [])
               if isinstance(asset, dict) and asset.get("name") in PLATFORM_ASSETS[platform]]
-    return max((build for build in builds if valid_build(build)), default=1)
+    return max((build for build in builds if valid_build(build)), default=0)
 
 
 def deploy_target(manifests: dict[str, dict], tag: str | None = None) -> tuple[str, dict]:
@@ -385,7 +385,7 @@ def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
         return dict(plan, skip=True, build=current,
                     commit=str(candidate.get("build_commit", "")).lower())
     if not published:
-        return dict(plan, build=1, commit=str(candidate.get("build_commit", "")).lower())
+        return dict(plan, build=0, commit=str(candidate.get("build_commit", "")).lower())
     if current >= MAX_BUILD:
         raise CompletionError(f"{PLATFORM_LABELS[platform]} {tag} already reached build "
                               f"{MAX_BUILD}; cut a new version instead")
@@ -2424,8 +2424,8 @@ def reset_build_numbers(args: argparse.Namespace) -> int:
     _, candidate = deploy_target(manifests_at(repo, "main"), args.tag)
     tag = str(candidate["tag"])
     current = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
-    text = render_builds(tag, {platform: 1 for platform in PLATFORM_ASSETS})
-    summary = ", ".join(f"{PLATFORM_LABELS[p]} 1" for p in PLATFORM_ASSETS)
+    text = render_builds(tag, {platform: 0 for platform in PLATFORM_ASSETS})
+    summary = ", ".join(f"{PLATFORM_LABELS[p]} 0" for p in PLATFORM_ASSETS)
     if current == text:
         log(f"{tag} build numbers are already reset: {summary}")
         return 0
@@ -2442,10 +2442,10 @@ def reset_build_numbers(args: argparse.Namespace) -> int:
         (tree / BUILDS_FILE).write_text(text)
         git(tree, "add", "--", BUILDS_FILE)
         git(tree, "-c", "user.name=ForkMesh Actions", "-c", "user.email=actions@forkmesh.local",
-            "commit", "-q", "-m", f"release: reset {tag} build numbers to 1")
+            "commit", "-q", "-m", f"release: reset {tag} build numbers to 0")
     finally:
         remove_worktree(repo, tree)
-    land_on_main(repo, branch, f"Merge {branch}: reset {tag} build numbers to 1")
+    land_on_main(repo, branch, f"Merge {branch}: reset {tag} build numbers to 0")
     log(f"{tag} build numbers reset: {summary}")
     return 0
 
@@ -2691,7 +2691,7 @@ def main(argv: list[str] | None = None) -> int:
     modes.add_argument("--check-build", choices=sorted(PLATFORM_ASSETS), metavar="PLATFORM",
                        help="wait until the homepage offers that platform's newest build")
     modes.add_argument("--reset-builds", action="store_true",
-                       help="reset every platform's build number to 1 for the newest "
+                       help="reset every platform's build number to 0 for the newest "
                             "candidate's version (or --tag)")
     modes.add_argument("--wait-candidate", action="store_true",
                        help="wait until main carries the --tag release's candidate manifest")

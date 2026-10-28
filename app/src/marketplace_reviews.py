@@ -85,6 +85,7 @@ FIRST_PARTY_PACKAGES = {
     "openwrt": "OpenWrt Router",
     "organizations": "Organizations",
     "people": "People",
+    "poker": "Poker",
     "pull-requests": "Pull requests",
     "reddit-banner-board": "Reddit Banner Board",
     "rss-reader": "RSS Reader",

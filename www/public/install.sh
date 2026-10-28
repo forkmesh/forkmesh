@@ -2398,7 +2398,7 @@ register_desktop_entry() {
     # the .desktop entry isn't present — that's expected, not an error. The app
     # still runs from $BIN on the PATH.
     if [ "$INSTALLED_PREBUILT" = "1" ]; then
-      say "Installed the prebuilt binary; skipping app-menu registration (run:  forkmesh)."
+      say "ForkMesh adds itself to the application menu the first time it opens."
     else
       warn "Desktop integration script not found at $script; skipping menu registration."
     fi
@@ -3212,6 +3212,7 @@ fi
 case "$LAUNCH_MODE" in
   gui)
     say "Done — launching the ForkMesh desktop client now."
+    say "To open it again later, search \"ForkMesh\" in your applications menu, or type  forkmesh  in a terminal ($BIN)."
     ;;
   service)
     say "Done — the native ForkMesh mirror service is running."
@@ -3240,7 +3241,7 @@ case "$LAUNCH_MODE" in
     say "Done — the desktop client is installed but was not daemonized on this display-less machine."
     ;;
   *)
-    say "Done. Launch the desktop client with: forkmesh"
+    say "Done. Open ForkMesh from your applications menu (search \"ForkMesh\"), or type  forkmesh  in a terminal ($BIN)."
     ;;
 esac
 

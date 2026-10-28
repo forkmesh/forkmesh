@@ -481,22 +481,12 @@ workflows:
             echo "ERROR: App Store Connect has no app for com.forkmesh.forkmesh (expected 6803060735)." >&2
             exit 1
           fi
-          latest="$(python3 tools/asc_bundle_ids.py latest-build)"
-          if ! [[ "$latest" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: App Store Connect reported a non-numeric latest build number: $latest" >&2
-            exit 1
-          fi
           name="$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\) *$/\1/p' Config/Version.xcconfig)"
           pinned="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
           if [ -z "$name" ] || [ -z "$pinned" ]; then
             echo "ERROR: Config/Version.xcconfig needs MARKETING_VERSION and CURRENT_PROJECT_VERSION lines." >&2
             exit 1
           fi
-          next=$((latest + 1))
-          [ "$pinned" -gt "$next" ] && next="$pinned"
-          # Written into this clone only, never committed; both targets read it.
-          perl -pi -e "s/^CURRENT_PROJECT_VERSION *=.*\$/CURRENT_PROJECT_VERSION = ${next}/" Config/Version.xcconfig
-          grep -q "^CURRENT_PROJECT_VERSION = ${next}\$" Config/Version.xcconfig
           if [ "${FORKMESH_IOS_APP_STORE:-0}" = "1" ]; then
             store="$(python3 tools/asc_appstore.py version "$name")"
             if [ "$store" != "$name" ]; then
@@ -506,9 +496,19 @@ workflows:
               name="$store"
             fi
           fi
+          next="$(python3 tools/asc_bundle_ids.py next-build "$name")"
+          if ! [[ "$next" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: App Store Connect reported a non-numeric next build number for ${name}: $next" >&2
+            exit 1
+          fi
+          free="$next"
+          [ "$pinned" -gt "$next" ] && next="$pinned"
+          # Written into this clone only, never committed; both targets read it.
+          perl -pi -e "s/^CURRENT_PROJECT_VERSION *=.*\$/CURRENT_PROJECT_VERSION = ${next}/" Config/Version.xcconfig
+          grep -q "^CURRENT_PROJECT_VERSION = ${next}\$" Config/Version.xcconfig
           echo "FORKMESH_IOS_VERSION=${name}" >> "$CM_ENV"
           echo "FORKMESH_IOS_BUILD=${next}" >> "$CM_ENV"
-          echo "Building ${name} (${next}) (App Store Connect's highest build is ${latest}; the xcconfig says ${pinned})."
+          echo "Building ${name} (${next}) (App Store Connect's next free build of ${name} is ${free}; the xcconfig says ${pinned})."
       - *native_project
       - *native_watch_platform
       - *native_packages

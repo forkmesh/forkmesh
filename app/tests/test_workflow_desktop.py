@@ -103,6 +103,18 @@ def test_every_account_gets_the_cleanup_once_and_keeps_its_delete(harness):
     assert harness.call(path, user="alice").status == 404
 
 
+def test_the_list_marks_workflows_that_run_on_the_desktop(harness):
+    listed = harness.call("/api/workflows", user="alice").data["workflows"]
+    marks = {item["name"]: item.get("runsOn") for item in listed}
+    assert marks[SEEDED] == "desktop"
+    plain = harness.call("/api/workflows", "POST", {
+        "name": "Plain", "nodes": [_node("t", "core.manual", "Start")],
+        "connections": []}, user="alice")
+    assert plain.status in (200, 201)
+    listed = harness.call("/api/workflows", user="alice").data["workflows"]
+    assert "runsOn" not in next(item for item in listed if item["name"] == "Plain")
+
+
 def test_a_server_run_of_a_desktop_workflow_is_refused(harness):
     workflow_id = _seeded(harness)[0]["id"]
     response = harness.call("/api/workflows/" + workflow_id + "/run", "POST",

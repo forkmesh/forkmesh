@@ -96,6 +96,7 @@ public enum PackageRoutes {
         case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio
+        case "poker": return .poker(table: nil)
         case "appStoreStatus": return .appStoreStatus
         case "usage": return .usage
         case "rssReader": return .rssReader

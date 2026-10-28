@@ -3,6 +3,7 @@
 #include "DesignTokens.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QChildEvent>
@@ -15,6 +16,7 @@
 #include <QHash>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
@@ -787,6 +789,25 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
         layout->addWidget(hintLabel);
     }
     return wrapper;
+}
+
+void addPasswordReveal(QLineEdit *edit)
+{
+    if (!edit)
+        return;
+    const QColor tint = edit->palette().color(QPalette::PlaceholderText);
+    auto *reveal = edit->addAction(
+        QIcon(tintedIcon(QStringLiteral("eye"), tint, 16,
+                         edit->devicePixelRatioF())),
+        QLineEdit::TrailingPosition);
+    reveal->setObjectName(QStringLiteral("passwordReveal"));
+    reveal->setCheckable(true);
+    reveal->setToolTip(QStringLiteral("Show password"));
+    QObject::connect(reveal, &QAction::toggled, edit, [edit, reveal](bool on) {
+        edit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
+        reveal->setToolTip(on ? QStringLiteral("Hide password")
+                              : QStringLiteral("Show password"));
+    });
 }
 
 QString cellDisplayText(const QString &text, int maxChars)

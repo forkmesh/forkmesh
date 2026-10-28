@@ -108,7 +108,8 @@ in the critical worker suite, now fails if the job stops building the app or
 ends in an unconditional `exit 0`.
 
 The version is `Config/Version.xcconfig` (`MARKETING_VERSION`); release
-overrides `CURRENT_PROJECT_VERSION` with the next free build number. The same
+overrides `CURRENT_PROJECT_VERSION` with the version's next free build number
+(0 for a new version; `docs/native/IOS_RELEASE.md`). The same
 file carries `FORKMESH_ENV`, `FORKMESH_API_HOST` and `FORKMESH_WORLD_URL` into
 the Info.plist. On a Mac:
 

@@ -707,9 +707,9 @@ def test_signed_completion_never_claims_the_repository_is_mirrored():
     # The warning precedes the import: the provider tab restates it in the
     # modal subtitle and the source hint before anything is started.
     assert "NEW_REPO_PROVIDER_SUBTITLE" in script
-    assert "Mirroring the Git contents is a separate step" in script
-    assert "an external listing, not a ${platformName()} mirror" in script
-    assert "(no Git contents)" in modal
+    assert "This does not copy the code or keep anything up to date" in script
+    assert "It does not copy the code and is not kept up to date, so it is not a backup" in script
+    assert "(not the code)" in modal
 
     # And the receipt hands off to the steps that actually mirror it, reusing
     # the external-mirror handoff list rather than a second copy of it.
@@ -749,6 +749,6 @@ def test_dashboard_starts_and_resumes_jobs_without_mixing_setup_and_transfer():
     # The import mode names what it copies. It used to read "Full
     # repository", which a reporter reasonably took for a mirror of the
     # Git contents (issue #678).
-    assert "Full provider metadata &amp; collaboration history (no Git contents)" in modal
+    assert "Issues, pull requests &amp; history (not the code)" in modal
     assert "Full repository &amp;" not in modal
     assert "data-new-repo-migration-status" in built
