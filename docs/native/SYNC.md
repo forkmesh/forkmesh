@@ -226,4 +226,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S150 | 2026-10-28 | Settings | feature | Settings > Appearance has a Layout choice, Control Tower or Focus, which the CRM follows, and the CRM's More tab switches layout and theme right under its settings | 1ed74360c2 | pending |  |
 | S151 | 2026-10-28 | CRM | fix | Adding a CRM contact sends a request id, retries a dropped connection, and when the email is already in the CRM names that contact with Open and Add these details | 1ed74360c2 | pending |  |
 | S152 | 2026-10-28 | Agents | fix | Tapping an agent alert opens its page with a loading view, finds agents on other desktops and runners, and offers Try again instead of a blank page. | 846e99382a | pending |  |
+| S153 | 2026-10-28 | Code | feature | Pull requests look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, a Merged entry in the timeline, a merged or closed box instead of the merge buttons, and a New pull request form that compares branches and can send to a fork on another instance. | 8f86266635 | pending |  |
 <!-- ledger:end -->

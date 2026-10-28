@@ -736,3 +736,71 @@ def test_progress_respects_reduced_motion_and_reads_as_one_live_line():
     assert "if (!pullDetailIsCurrent(repo, number)) return;" in patch
     assert "PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]" in poll
     assert "const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];" in CONTENT
+
+
+@needs_node
+def test_a_merged_or_closed_pull_shows_a_done_box_instead_of_merge_rows():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const merged = detail({ values: parseFrontMatter(pullMd()).values });
+      merged.values.status = "merged";
+      const mergedHtml = renderRepoPullMergeBox(repo, 7, merged);
+      const closed = detail();
+      closed.values.status = "closed";
+      const closedHtml = renderRepoPullMergeBox(repo, 7, closed);
+      console.log(JSON.stringify({ mergedHtml, closedHtml }));
+    """)
+    merged = out["mergedHtml"]
+    assert 'data-repo-pull-done="merged"' in merged
+    assert "Pull request successfully merged and closed" in merged
+    assert "bob/leaderboard is in main" in merged
+    for row in ("review", "checks", "branch"):
+        assert 'data-repo-pull-merge-row="%s"' % row not in merged
+    assert "data-repo-pull-merge " not in merged and "Merge pull request" not in merged
+    closed = out["closedHtml"]
+    assert 'data-repo-pull-done="closed"' in closed
+    assert "Closed with unmerged commits" in closed
+
+
+@needs_node
+def test_the_merge_lands_in_the_timeline_where_it_happened():
+    harness = "\n".join([
+        _function("pullTimestamp"),
+        _function("pullHeadBranchRef"),
+        _function("buildRepoPullTimeline"),
+        _function("repoPullMergedEvent"),
+    ])
+    source = r"""
+const foldPullCommentChanges = (rows) => rows || [];
+const recordAuthorName = (values) => values.authorName || "";
+""" + harness + r"""
+const values = { status: "merged", base: "main", head: "bob/leaderboard", derive: "branch", author: "bob-key",
+  authorName: "bob", ts: 1700000000, mergedAt: 1700000300000, mergedBy: "bob-key" };
+const conversation = [
+  { id: "a", type: "review", state: "approved", ts: 1700000200 },
+  { id: "b", type: "comment", body: "thanks", ts: 1700000400000 },
+];
+const rows = buildRepoPullTimeline(values, conversation, [], []);
+const unknown = buildRepoPullTimeline({ ...values, mergedAt: "", mergedBy: "" }, conversation, [], []);
+const open = buildRepoPullTimeline({ ...values, status: "open" }, conversation, [], []);
+console.log(JSON.stringify({ rows: rows.map((row) => row.type), merged: rows.find((row) => row.type === "merged"),
+  unknown: unknown.map((row) => row.type), open: open.map((row) => row.type) }));
+"""
+    result = subprocess.run(["node", "--input-type=module", "-e", source], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)
+    assert out["rows"] == ["open", "review", "merged", "comment"]
+    assert out["merged"]["authorName"] == "bob"
+    assert out["merged"]["base"] == "main" and out["merged"]["head"] == "bob/leaderboard"
+    assert out["unknown"] == ["open", "review", "comment", "merged"]
+    assert "merged" not in out["open"]
+
+
+def test_a_finished_pull_offers_comments_but_not_reviews():
+    form = _function("renderPullReviewForm")
+    assert 'const reviewable = String(parsed?.values?.status || "open").trim().toLowerCase() === "open";' in form
+    assert '${reviewable ? `<button type="submit" data-repo-pull-review-action="changes_requested"' in form
+    assert '${reviewable ? `<button type="submit" data-repo-pull-review-action="approved"' in form
+    assert 'data-repo-pull-review-action="comment"' in form
+    render = _function("renderPullConversationEvent")
+    assert 'if (ev.type === "merged") {' in render

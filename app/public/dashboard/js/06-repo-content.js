@@ -5895,7 +5895,8 @@
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "synchronize") return { label: ev.forced ? "force-pushed" : "pushed", tone: neutral };
-    if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
+    if (ev.type === "merged") return { label: "merged this pull request", tone: "border-primary/40 text-primary" };
+    if (ev.type === "status") return { label: ev.state === "open" ? "reopened this pull request" : "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
     if (ev.type === "revision") {
       return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
@@ -6025,6 +6026,22 @@
         ? `<a href="${escapeHtml(ev.compareUrl)}" data-repo-pull-force-push-compare class="font-medium text-[var(--dashboard-link)] hover:underline">Compare</a>`
         : "";
       return renderIssueTimelineEvent("git-branch", author, ev.author, `<span>force-pushed</span>${branch ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(branch)}</span>` : ""}${before && after ? `<span>from</span><span class="font-mono text-[12px]">${escapeHtml(before)}</span><span>to</span><span class="font-mono text-[12px]">${escapeHtml(after)}</span>` : ""}${compare}`, ev.ts);
+    }
+    if (ev.type === "merged") {
+      const base = String(ev.base || "").trim();
+      const head = String(ev.head || "").trim();
+      const into = `${head ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(head)}</span><span>into</span>` : "<span>into</span>"}<span class="font-mono text-[12px] text-foreground">${escapeHtml(base || "main")}</span>`;
+      const who = String(ev.authorName || "").trim() || (ev.author ? `${String(ev.author).slice(0, 8)}…` : "");
+      if (who) {
+        return renderIssueTimelineEvent("git-merge", who, ev.author, `<span class="font-medium text-primary">merged</span>${into}`, ev.ts, "data-repo-pull-merged-event");
+      }
+      const fullWhen = formatRecordDateTime(ev.ts);
+      return `
+        <div data-repo-pull-merged-event data-repo-issue-event class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-1.5 pl-12 text-[14px] text-muted-foreground sm:ml-14">
+          <span aria-hidden="true" class="absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[rgb(var(--dashboard-canvas-rgb))] bg-primary text-primary-foreground"><i data-lucide="git-merge" class="h-4 w-4"></i></span>
+          <span class="inline-flex min-w-0 flex-wrap items-center gap-1"><span class="font-medium text-primary">Merged</span>${into}</span>
+          ${ev.ts ? `<time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>` : ""}
+        </div>`;
     }
     if (ev.type === "commit") {
       return renderIssueTimelineEvent("git-commit-horizontal", author.replace(/\s*<[^>]*>\s*$/, "") || author, ev.author, `<span class="min-w-0 truncate text-foreground">${escapeHtml(body || "Commit")}</span>${commit ? `<span class="font-mono text-[12px]">${escapeHtml(commit)}</span>` : ""}`, ev.ts);
@@ -6376,9 +6393,34 @@
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
-    return [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
+    const rows = [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
       .filter(Boolean)
       .sort((left, right) => pullTimestamp(left.ts) - pullTimestamp(right.ts));
+    const merged = repoPullMergedEvent(values);
+    if (merged && pullTimestamp(merged.ts) > 0) {
+      const at = rows.findIndex((row) => pullTimestamp(row.ts) > pullTimestamp(merged.ts));
+      rows.splice(at < 0 ? rows.length : at, 0, merged);
+    } else if (merged) {
+      rows.push(merged);
+    }
+    return rows;
+  }
+
+  function repoPullMergedEvent(values) {
+    const status = String(values?.status || "").trim().toLowerCase();
+    if (status !== "merged" && status !== "closed-merged") return null;
+    const by = String(values?.mergedBy || "").trim();
+    const author = String(values?.author || "").trim();
+    return {
+      id: "merged",
+      type: "merged",
+      author: by,
+      authorName: by && by === author ? recordAuthorName(values) || "" : "",
+      ts: Number(values?.mergedAt) || 0,
+      base: String(values?.base || "").trim(),
+      head: pullHeadBranchRef(values) || "",
+      body: "",
+    };
   }
 
   function stopRepoPullActivityRefresh() {
@@ -7241,6 +7283,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
+    const reviewable = String(parsed?.values?.status || "open").trim().toLowerCase() === "open";
     return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
@@ -7249,11 +7292,11 @@
           ${composeIdentityHtml(state.session, "Reviewing")}
           <textarea data-repo-pull-review-body data-mention-input="record" rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
+            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">${reviewable ? "Sent to the maintainer's inbox for review." : "This pull request is no longer open: comments still reach the inbox, reviews and merges are off."}</span></span>
             <div class="flex flex-wrap items-center gap-2">
               ${renderPullLifecycleButtons(repo, parsed)}
-              <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
-              <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>
+              ${reviewable ? `<button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>` : ""}
+              ${reviewable ? `<button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>` : ""}
               <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50">Comment</button>
             </div>
           </div>
@@ -8734,9 +8777,33 @@
     return "";
   }
 
+  function renderRepoPullDoneBox(parsed, model) {
+    const values = parsed?.values || {};
+    const status = String(values.status || "").trim().toLowerCase();
+    if (!model.merged && status !== "closed") return "";
+    const base = String(values.base || "").trim() || "main";
+    const head = pullHeadBranchRef(values);
+    const title = model.merged ? "Pull request successfully merged and closed" : "Closed with unmerged commits";
+    const detail = model.merged
+      ? `${head ? `${head} is` : "These changes are"} in ${base}. Nothing more can be merged from this pull request; comments are still welcome.`
+      : "This pull request was closed without merging. Reviews and merges are off until it is reopened.";
+    const progress = model.merged && model.footer.progress ? renderRepoPullMutationProgress(model.footer.progress) : "";
+    return `
+      <section data-repo-pull-merge-box data-repo-pull-done="${model.merged ? "merged" : "closed"}" class="fm-merge-box" aria-label="${model.merged ? "Merged" : "Closed"}">
+        <div class="fm-merge-row" data-repo-pull-merge-row="done" data-tone="${model.merged ? "good" : "muted"}">
+          <span class="fm-merge-row-icon"><i data-lucide="${model.merged ? "git-merge" : "git-pull-request-closed"}"></i></span>
+          <div class="fm-merge-row-body">
+            <p class="fm-merge-row-title">${escapeHtml(title)}</p>
+            <p class="fm-merge-row-detail">${escapeHtml(detail)}</p>
+            ${progress}
+          </div>
+        </div>
+      </section>`;
+  }
+
   function renderRepoPullMergeBox(repo, number, parsed) {
     const model = repoPullMergeModel(repo, number, parsed);
-    if (!model.open && !model.merged) return "";
+    if (!model.open || model.merged) return renderRepoPullDoneBox(parsed, model);
     const rows = model.rows.map((row) => {
       const icon = PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted;
       const conflicts = row.conflicts?.length

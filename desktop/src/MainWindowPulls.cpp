@@ -16,6 +16,8 @@
 
 #include <QTextTable>
 
+#include <limits>
+
 using namespace forkmesh::ui;
 
 namespace {
@@ -3101,10 +3103,15 @@ void MainWindow::showPull(int number)
         m_pullComposer->setEnabled(!found->archivedOnCodeBranch);
         m_pullComposer->setMentionCandidates(mentionCandidateNames());
     }
-    for (QPushButton *b : {m_pullCommentButton, m_pullApproveButton,
-                           m_pullRequestChangesButton})
-        if (b)
-            b->setEnabled(!found->archivedOnCodeBranch);
+    const bool pullOpen = found->status == QLatin1String("open");
+    if (m_pullCommentButton)
+        m_pullCommentButton->setEnabled(!found->archivedOnCodeBranch);
+    for (QPushButton *b : {m_pullApproveButton, m_pullRequestChangesButton}) {
+        if (!b)
+            continue;
+        b->setVisible(pullOpen);
+        b->setEnabled(pullOpen && !found->archivedOnCodeBranch);
+    }
     const QString pullTitle =
         QStringLiteral("#%1  %2").arg(found->number).arg(found->title);
     m_pullTitle->setText(pullTitle);
@@ -5646,6 +5653,50 @@ void MainWindow::renderPullThread(const PullRequest &pr)
              }});
     }
 
+    if (pr.status == QLatin1String("merged")) {
+        const QString key = pr.mergedBy.trimmed();
+        QString merger;
+        if (!key.isEmpty() && key == m_profileIdentity.publicKey())
+            merger = m_accountName;
+        else if (!key.isEmpty() && key == pr.author)
+            merger = pr.authorName;
+        const bool named = !merger.isEmpty();
+        if (!named && !key.isEmpty())
+            merger = key.left(10);
+        const QString into =
+            pr.head.isEmpty()
+                ? QStringLiteral("into <code>%1</code>")
+                      .arg(headerToken(pr.base.isEmpty() ? QStringLiteral("main") : pr.base))
+                : QStringLiteral("<code>%1</code> into <code>%2</code>")
+                      .arg(headerToken(pr.head),
+                           headerToken(pr.base.isEmpty() ? QStringLiteral("main") : pr.base));
+        const QString accent =
+            Theme::nextOrHex(Theme::Role::Accent, QStringLiteral("#8957e5"));
+        const qint64 mergedAt = pr.mergedAt;
+        entries.append(
+            {mergedAt > 0 ? mergedAt : std::numeric_limits<qint64>::max(), entryOrder++,
+             [this, merger, named, into, accent, mergedAt, pullLink, key] {
+                 const QString when =
+                     mergedAt > 0 ? formatIssueRelativeTime(mergedAt) : QString();
+                 const QString verb =
+                     QStringLiteral("<span style='color:%1'><b>merged</b></span> %2")
+                         .arg(accent, into);
+                 addConversationCard(
+                     m_pullThreadLayout,
+                     merger.isEmpty() ? QStringLiteral("ForkMesh") : merger,
+                     merger.isEmpty()
+                         ? QStringLiteral("<span style='color:%1'><b>Merged</b></span> %2 "
+                                          "<span style='color:#8b949e'>%3</span>")
+                               .arg(accent, into, when)
+                         : QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3"
+                                          "</span>")
+                               .arg(named ? userProfileLinkHtml(merger)
+                                          : merger.toHtmlEscaped(),
+                                    verb, when),
+                     QString(), accent, pullLink + QStringLiteral("#merged"), key);
+             }});
+    }
+
     if (const AgentSession *linked = agentSessionForPull(pr.number, pr.head)) {
         const AgentSession agent = *linked;
         const QString provider = agentProviderName(agent.provider);
@@ -7137,6 +7188,27 @@ void MainWindow::updatePullActionState()
                             conflicted, reviewBlocks, independentChangesRequested,
                             changesRequestedBy, conflictFiles, base, behind,
                             behindCount);
+    if (m_pullMergeBlockers && have && !archived && (merged || closed)) {
+        const QString into = base.isEmpty() ? QStringLiteral("main") : base;
+        m_pullMergeBlockers->setText(
+            merged
+                ? QStringLiteral(
+                      "<b><span style='color:%1'>Pull request successfully merged and "
+                      "closed</span></b><br><span style='color:#8b949e'>%2 is in "
+                      "<code>%3</code>. Nothing more can be merged from this pull "
+                      "request; comments are still welcome.</span>")
+                      .arg(Theme::nextOrHex(Theme::Role::Accent, QStringLiteral("#8957e5")),
+                           head.isEmpty() ? QStringLiteral("This change")
+                                          : QStringLiteral("<code>%1</code>")
+                                                .arg(head.toHtmlEscaped()),
+                           into.toHtmlEscaped())
+                : QStringLiteral(
+                      "<b><span style='color:#f85149'>Closed with unmerged "
+                      "commits</span></b><br><span style='color:#8b949e'>This pull "
+                      "request was closed without merging. Reviews and merges are off "
+                      "until it is reopened.</span>"));
+        m_pullMergeBlockers->show();
+    }
     const bool aiFixBusy = m_aiFix && m_aiFix->number == m_currentPullNumber;
     const int conflictCount = conflicted ? conflictFiles.size() : 0;
     if (m_pullResolveButton) {

@@ -331,16 +331,13 @@ struct RepoDiscussionsTab: View {
 
 // MARK: - Composers
 
-/// showNewPullDialog: title, base and head branches and a unified diff, sent
-/// to the signed pull inbox. Closes itself; the inline notice lands on the tab.
 struct NewPullSheet: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.dismiss) private var dismiss
     @State private var model: NewPullModel
-    @State private var busy: Bool = false
 
-    init(repo: Repository) {
-        _model = State(initialValue: NewPullModel(repo: repo))
+    init(repo: Repository, head: String = "") {
+        _model = State(initialValue: NewPullModel(repo: repo, api: CollabEnv.api, head: head))
     }
 
     var body: some View {
@@ -350,56 +347,205 @@ struct NewPullSheet: View {
                     .fmText(.titleMedium)
                     .padding(.bottom, FmSpace.x2)
                 CollabIdentityBar(verb: "Posting")
+                if model.forks.isEmpty == false {
+                    FmField(label: "Send to") {
+                        targetMenu
+                    }
+                    if model.target != nil {
+                        Text(PullCompose.remoteNote)
+                            .fmText(.bodySmall, color: fm.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                if model.pasting {
+                    pasteFields
+                } else {
+                    branchFields
+                }
                 FmField(label: "Title") {
                     FmTextField(text: $model.title)
+                        .accessibilityIdentifier("new-pull-title")
                 }
-                HStack(alignment: .top, spacing: 10) {
-                    FmField(label: "Base branch") {
-                        FmTextField(text: $model.base)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                    }
-                    FmField(label: "Head branch") {
-                        FmTextField(text: $model.head)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                    }
+                FmField(label: "Description") {
+                    FmTextField(text: $model.body, hint: "Leave a comment. Markdown is supported.", multiline: true)
+                        .frame(minHeight: 90, alignment: .top)
+                        .accessibilityIdentifier("new-pull-body")
                 }
-                FmField(label: "Unified diff (patch)") {
-                    FmTextField(text: $model.patch, multiline: true, mono: true)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .frame(minHeight: 110, alignment: .top)
+                if !model.errorText.isEmpty {
+                    Text(model.errorText)
+                        .fmText(.bodySmall, color: fm.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fmMessageTools(model.errorText)
+                }
+                if model.target == nil {
+                    FmInboxPendingNote()
                 }
                 FmDialogActions(
                     onCancel: { dismiss() },
-                    onConfirm: { submit() },
-                    confirmLabel: "Submit",
-                    busy: busy)
+                    onConfirm: model.ready && !model.sending ? { submit() } : nil,
+                    confirmLabel: model.target == nil ? "Create pull request" : "Send pull request",
+                    busy: model.sending)
                     .padding(.top, FmSpace.x2)
             }
             .padding(FmSpace.x5)
         }
         .fmSheetStyle(fitsContent: false)
+        .task {
+            await model.load()
+        }
+    }
+
+    private var targetMenu: some View {
+        Menu {
+            ForEach(model.targets.indices, id: \.self) { (index: Int) in
+                let fork: RemoteFork? = model.targets[index]
+                Button(action: { model.target = fork }) {
+                    if fork == model.target {
+                        Label(PullCompose.targetLabel(fork), systemImage: "checkmark.circle.fill")
+                    } else {
+                        Label(PullCompose.targetLabel(fork), systemImage: fork == nil ? "folder" : "globe")
+                    }
+                }
+            }
+        } label: {
+            pickerPill(PullCompose.targetLabel(model.target), icon: model.target == nil ? "folder_outlined" : "public")
+        }
+        .accessibilityLabel(Text("Send to"))
+        .accessibilityIdentifier("new-pull-target")
+    }
+
+    private var branchFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                FmField(label: "Base") {
+                    branchMenu(selection: model.base, choices: model.branches, label: "Base branch") { (name: String) in
+                        model.base = name
+                        if !model.head.isEmpty { Task { await model.compare() } }
+                    }
+                }
+                FmField(label: "Compare") {
+                    branchMenu(selection: model.head, choices: model.headChoices, label: "Head branch") { (name: String) in
+                        model.head = name
+                        Task { await model.compare() }
+                    }
+                }
+            }
+            comparisonView
+            if model.target == nil {
+                Button(action: { model.pasting = true }) {
+                    FmToneLabel(label: PullCompose.pastePatch, icon: "content_paste", tone: .accent)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder private var comparisonView: some View {
+        if model.comparing {
+            Text(PullCompose.comparing)
+                .fmText(.bodySmall, color: fm.textTertiary)
+        } else if let comparison = model.comparison {
+            VStack(alignment: .leading, spacing: FmSpace.x2) {
+                HStack(spacing: 6) {
+                    FmIcon("check_circle_outline", size: 16, color: fm.success)
+                    Text(PullCompose.ableToMerge(comparison))
+                        .fmText(.bodySmall, color: fm.success)
+                }
+                PatchFilesCard(files: model.files, commits: comparison.commitCount)
+            }
+        } else if !model.compareError.isEmpty {
+            Text(model.compareError)
+                .fmText(.bodySmall, color: fm.warning)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fmMessageTools(model.compareError)
+        } else if model.head.isEmpty {
+            Text(PullCompose.pickBranches)
+                .fmText(.bodySmall, color: fm.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Button(action: { Task { await model.compare() } }) {
+                FmToneLabel(label: PullCompose.compareLabel, icon: "difference_outlined", tone: .accent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var pasteFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                FmField(label: "Base branch") {
+                    FmTextField(text: $model.base)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                }
+                FmField(label: "Head branch") {
+                    FmTextField(text: $model.head)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                }
+            }
+            FmField(label: "Unified diff (patch)") {
+                FmTextField(text: $model.patch, multiline: true, mono: true)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .frame(minHeight: 110, alignment: .top)
+            }
+            if !model.branches.isEmpty {
+                Button(action: { model.pasting = false }) {
+                    FmToneLabel(label: PullCompose.useBranches, icon: "difference_outlined", tone: .accent)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func branchMenu(
+        selection: String, choices: [String], label: String, onPick: @escaping (String) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(choices, id: \.self) { (name: String) in
+                Button(action: { onPick(name) }) {
+                    if name == selection {
+                        Label(name, systemImage: "checkmark.circle.fill")
+                    } else {
+                        Text(name)
+                    }
+                }
+            }
+        } label: {
+            pickerPill(selection.isEmpty ? "Choose…" : selection, icon: "account_tree_outlined")
+        }
+        .disabled(choices.isEmpty)
+        .accessibilityLabel(Text(label))
+    }
+
+    private func pickerPill(_ text: String, icon: String) -> some View {
+        HStack(spacing: FmSpace.x2) {
+            FmIcon(icon, size: 16, color: fm.textSecondary)
+            Text(text)
+                .fmText(.bodyMedium, color: fm.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            FmIcon("keyboard_arrow_down_rounded", size: 17, color: fm.textTertiary)
+        }
+        .padding(.horizontal, FmSpace.x3)
+        .frame(height: 40)
+        .background(fm.bgOverlay)
+        .clipShape(FmRoundedShape(radius: FmRadius.md))
     }
 
     private func submit() {
-        // Like the dialog, a submit without a title or a patch just closes.
-        if !model.ready {
-            dismiss()
-            return
-        }
-        busy = true
-        let writer: CollabWriter = CollabEnv.writer(model.repo)
-        let title: String = model.title
-        let base: String = model.base
-        let head: String = model.head
-        let patch: String = model.patch
+        let model: NewPullModel = self.model
         Task {
-            let notice: CollabNotice? = await writer.submitPull(title: title, base: base, head: head, patch: patch)
-            busy = false
-            dismiss()
-            CollabMessenger.shared.show(notice)
+            let notice: CollabNotice? = await model.submit(inbox: CollabEnv.inbox, host: CollabEnv.api.instanceHost)
+            if let notice {
+                FmHaptics.commit()
+                dismiss()
+                CollabMessenger.shared.show(notice)
+            } else {
+                FmHaptics.failure()
+            }
         }
     }
 }
