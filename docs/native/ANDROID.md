@@ -1753,6 +1753,65 @@ the cited iOS commit.
   and the Glasses Alert ring during another app's call; ForkMesh's own calls
   do not count.
 
+### Agents (ledger S116, S118, S142, S143, S145, S146, S152)
+
+- **Image tile (S116, S142).** `feature/agents/AgentEagleTile.kt` follows iOS
+  `AgentEagleTile` as it stands after S142: the 32 dp tile's border is the
+  token ring (`AgentTokenRing.kt`), the churn moved to a 0.75 dp outline on the
+  file-count pill, then up to four tiny badges (`AgentLineBadge.of` in
+  `AgentLineChips.kt`, most urgent first), then a green `done` bar for a
+  finished agent or thin background-task lines (ten, or seven and `+n`). The
+  status dot sits on the top right with a ring of the tile colour. S116's
+  turning churn ring was replaced on iOS by S142; the token ring is what moves
+  while the agent works and stops when it is done, so S116 is covered by it.
+- **Token ring and charts (S143, S145).** `core/.../agents/AgentTokenFlow.kt`
+  ports `AgentTokenPace`, `AgentTokenSampler`, `AgentTokenSeries` and the
+  tile's phase clock. The ring reads the row's `tokensIn` / `tokensOut`
+  (`agents.list`, falling back to the session's stored counts) and, for the
+  desktop in use, the per-session live pair from `diag.vitals`
+  (`control/DesktopTokenFeed.kt`), samples once a second while the agent is
+  active and settles after 10 s without growth; lanes are 1 dp dashes
+  (2.5/2 dp) moving in opposite directions, still under reduced motion.
+  `AgentTokenChartsOverlay` (`AgentTokenCharts.kt`) is Android's place for
+  the charts that hang under the Dynamic Island: two 12 dp charts, 126 dp
+  together, just under the status bar and centred on the top camera cutout
+  when the display reports one (screen centre otherwise). They show with
+  Diagnostics (`showTelemetryStrip`) and the Agents package, tick every second
+  over 60 s, and ignore touches. HomeShell only adds one line next to
+  `StatusPageFeature.TopStrip`. `DesktopTokenFeed` is reference-counted (the
+  charts and the Agents screen hold it while the app is in the foreground),
+  sends `diag.watch` on the link in use and `diag.unwatch` when the last
+  holder leaves; the desktop keeps one watcher per connection, so a future
+  Android vitals store should share this feed rather than unwatch on its own.
+- **Set aside and merge (S118).** `agentops.merge` always sends
+  `offerSetAside: true`; a `checkout_dirty` refusal sets
+  `MergeCleanupModel.canSetAside`, and the merge dialog's button becomes
+  **Set aside and merge** (with the iOS explanation), which merges again with
+  `setAside: true`. The desktop's `setAside` note is appended to the merge
+  message and shown on the Merged dialog.
+- **Every desktop in one list (S146).** The hub gains `activeKey`,
+  `otherDesktops`, `link(desktopKey)` / `request(..., desktopKey)`,
+  `openLink`, per-desktop event taps and `channel(desktopKey)`; a desktop
+  that is not the one in use is reached over its own relay channel kept in
+  `DesktopSideLinks` (new file, so the hub's own dialling is untouched).
+  `AgentControlCenter` loads up to four other desktops after each full
+  refresh and again when one of them rings `agents.changed`; their rows carry
+  `desktopKey`, `elsewhere` and ids prefixed with the key, are labelled with
+  the desktop's name (host chip, badge, detail line, "On your desktops"), and
+  an unreachable one adds "<name>: Not reachable". Stop, prompt, continue,
+  transcript, the live stream, conflict fixes and agent ops (diff, merge,
+  delete, swipe delete through `AgentOpsFeature.client(desktopKey)`) go to
+  the row's desktop. Such rows never match the desktop in use's sessions,
+  queue, read marks, approvals or Agent Watch numbers. Worktrees and the
+  terminal stay on the desktop in use, so they are hidden for those rows.
+- **Agent alert page (S152).** `AgentRouteScreen` looks the id up with
+  `AgentControlCenter.row(forRoute)` (another desktop's `<key>:desktop:<n>`
+  when only one desktop has that number, a relay run by its session id, or a
+  relay run the desktop took over), waits while the list or the other
+  desktops are still loading, shows a skeleton shaped like the agent page,
+  and offers Try again when nothing matches. Relay runs are published as soon
+  as they land instead of after the desktop answers.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see

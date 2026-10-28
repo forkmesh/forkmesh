@@ -69,6 +69,11 @@ data class AgentReadState(val baselineMs: Long = 0, val seen: Map<String, Long> 
 
         fun facts(row: UnifiedAgentRow): AgentReadFacts? = when {
             row.outside -> null
+            row.elsewhere -> if (row.localId <= 0) null else AgentReadFacts(
+                key = "desktop:${row.desktopKey}:${row.repoName.lowercase()}#${row.localId}",
+                finishedAtMs = row.finishedAtMs,
+                active = row.isActive,
+            )
             row.isDesktop -> if (row.localId <= 0) null else AgentReadFacts(
                 key = desktopKey(row.repoName, row.localId),
                 finishedAtMs = row.finishedAtMs,

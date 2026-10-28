@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
 internal fun queueWaitingLabel(position: Int): String = "Waiting — #${position + 1} in queue"
 
 internal fun queuedRowFor(center: AgentControlCenter, sessionId: Int): UnifiedAgentRow? =
-    center.rows.firstOrNull { it.isDesktop && !it.outside && it.localId == sessionId }
+    center.rows.firstOrNull { it.isDesktop && !it.outside && !it.elsewhere && it.localId == sessionId }
 
 @Composable
 internal fun DesktopQueueSummaryRow(navigator: Navigator) {

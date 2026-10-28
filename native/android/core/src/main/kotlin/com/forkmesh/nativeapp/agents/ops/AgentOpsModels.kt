@@ -697,16 +697,19 @@ data class MergeStats(
     }
 }
 
-data class MergeOutcome(val branch: String, val stats: MergeStats? = null) {
+data class MergeOutcome(val branch: String, val stats: MergeStats? = null, val setAsideNote: String = "") {
     fun message(fallbackBranch: String = ""): String {
         val name = branch.ifEmpty { fallbackBranch }
         val head = if (name.isEmpty()) "Merged and cleaned up." else "Merged $name and cleaned up."
         val summary = stats?.summary.orEmpty()
-        return if (summary.isEmpty()) head else "$head $summary."
+        val text = if (summary.isEmpty()) head else "$head $summary."
+        val note = setAsideNote.trim()
+        return if (note.isEmpty()) text else "$text $note"
     }
 
     companion object {
-        fun from(reply: Map<String, Any?>): MergeOutcome = MergeOutcome(reply.str("branch"), MergeStats.from(reply))
+        fun from(reply: Map<String, Any?>): MergeOutcome =
+            MergeOutcome(reply.str("branch"), MergeStats.from(reply), reply.str("setAside"))
     }
 }
 
