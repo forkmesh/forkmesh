@@ -328,6 +328,22 @@ reduced motion).
   flush against the left edge of the window with a border down its right
   side, and the list is centred beside it at up to 80rem. "Collapse sidebar"
   is pinned to the bottom of the sidebar and is shared by both tabs.
+- **Issues and Pull requests on a phone** (October 2026, from the user's
+  iPhone screenshot): `shell.html` raises every button, input and select to
+  44px under `(pointer: coarse)`, but the New issue chevron is a `<summary>`,
+  so on a phone the refresh and New issue buttons stood 44px tall beside a
+  32px chevron. The toolbar (`data-repo-collection-chrome`), the list header
+  and the pagination are exempt from that floor, so every control keeps the
+  32px compact height and they line up. Below 640px the "All issues" /
+  "All pull requests" heading is visually hidden (the view select already
+  names the view, and the heading stays for screen readers) so the select,
+  refresh and New issue fit on one row; the filters (Author, Labels,
+  Milestones, Assignees, Types, Sort) sit on one line under Open/Closed and
+  scroll sideways (`data-repo-issue-list-filters`) instead of wrapping onto a
+  second and third line; and rows use 12px side padding, 6px vertical
+  padding and a 14px title. The rules are hand-written CSS keyed on data
+  attributes because the committed `tailwind.css` carries no `sm:` variants
+  for them. `dashboard-issue-filters.spec.js` "on a phone" checks it.
 - **Pull request views** are Pull requests, Authored by me and Mentioned, then
   a Branches link and the base branches of the open pulls. Pulls carry no
   labels, milestones, assignees or review requests in `pull.md`, so the list
@@ -792,7 +808,70 @@ reads on the near-black terminal) and faint scanlines.
   multiples of 5 and every cell is a whole number of pixels wide. A glyph row
   is blended over the flat background with three `bytes.translate()` calls, so
   a whole card is still a few thousand row-slice writes. Run the tool after
-  changing the sizes or the glyph set.
+  changing the sizes or the glyph set. The 25 px faces (`r25`, `b25`) were
+  added for the pull request card below; the older atlases came out
+  byte-identical.
+
+## Pull request share card
+
+A shared pull request link used to unfurl as the repository card: the
+reader saw the repository, not the change. The host now gives a pull page
+its own preview (`app/host/forkmesh_host/pull_card.py`), drawn by
+`og_card.render_pull_card` in the same terminal window as the repository
+card:
+
+- **Header:** the state as a coloured pill (open, draft, merged, closed),
+  the number, the commit count, how long ago it was opened, and the review
+  verdict on the right (approved by N reviewers, changes requested, review
+  required), worked out like the pull list's chip (`review_state`).
+- **Title** (two lines at most) and who wants to merge which branch into
+  which.
+- **Diff:** lines added and removed, GitHub-style five squares, files
+  changed, and comments with how many people wrote them.
+- **Code health:** the six scores of the Files tab (Merge, Complexity,
+  Quality, Security, Network, Practices) as tiles with a bar each, green 85+,
+  orange 60+, red below; a clean Security score is grey, as on the page,
+  because a pattern scan finding nothing is not a security pass.
+  `diff_health.py` is a line-for-line port of the dashboard's
+  `diffHealthReport` and `parseDiffFiles`; `test_health_scores_match_the_dashboard`
+  runs both on the same patches under Node and fails when they differ.
+- **Reviews:** each reviewer's latest review (blocking ones first, the pull
+  author's own never), with their avatar and the start of what they wrote,
+  then ForkBot's automated review, summed up by its Summary section. Rows
+  that do not fit are left off.
+- **People:** the avatars of everyone involved (author, reviewers,
+  commenters), ten at most with a "+N", and how many people that is.
+  Avatars are read from `/api/accounts/<name>/avatar?size=128` through the
+  Worker, decoded and scaled with Pillow off the event loop, and remembered
+  per account for ten minutes; a missing picture, a bot or a git-only name
+  gets a coloured disc with its initial. All reads share a 3 s budget.
+
+Wiring:
+
+- `GET /<owner>/<repo>/pull/<n>.png` (and `/<name>/pull/<n>.png` on short
+  addresses) answers the card from the same bundle as the page
+  (`repo_views.build`), so a repository the gateway does not serve publicly
+  falls through to the Worker. Cards are remembered per bundle version for
+  ten minutes; the PNG is `public, max-age=300`.
+- `inject_view` rewrites the page's `og:*`, `twitter:*`, canonical link and
+  `<title>` for a pull: the image is `.../pull/<n>.png?v=<bundle version>.<CARD_REVISION>`,
+  so link-preview caches fetch a new card when the pull changes, and the
+  description is a one-line summary of the same facts for clients that show
+  only text. Only pages that already carry the public repository's share
+  tags are rewritten.
+- Link-preview fetchers (`PREVIEW_AGENTS`: Slackbot, Twitterbot,
+  facebookexternalhit, Discordbot, Mastodon, Bluesky's Cardyb, WhatsApp,
+  Telegram, LinkedIn and similar) wait up to `READER_BUDGET_SECONDS` for a
+  cold pull's bundle, like the AI readers, but do not get the diff in the
+  page.
+- The bundle's pull now carries `authorKey` (for the avatar and to leave the
+  author's own review out), `draft` and `commits` (the `From <sha>` lines of
+  `commits.mbox`, which the bundle already read).
+- A merged or closed pull has no patch in the bundle, so its card leaves out
+  the diff and code health rows.
+
+Tests: `app/tests/host/test_pull_card.py`, the pull card tests in
+`app/tests/test_repo_og_card.py`.
 
 ## Optional folder reads, repository logos and SVG images
 

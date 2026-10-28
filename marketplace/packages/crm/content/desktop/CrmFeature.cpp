@@ -1647,7 +1647,11 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
       m_userRecordsAvailable(host.userRecordsAvailable),
       m_userRecords(host.userRecords),
       m_agentName(host.agentName),
-      m_askAgent(host.askAgent)
+      m_askAgent(host.askAgent),
+      m_accountApiUrl(host.accountApiUrl),
+      m_accountSessionToken(host.accountSessionToken),
+      m_signProof(host.signProof),
+      m_openWebPage(host.openWebPage)
 {
     setObjectName(QStringLiteral("crmSection"));
     auto *outer = new QVBoxLayout(this);
@@ -9943,6 +9947,7 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     bodyLayout->addSpacing(10);
     bodyLayout->addWidget(activityHeading);
     bodyLayout->addWidget(activity);
+    bodyLayout->addWidget(contactInvoicesSection(contactId));
 
     // --- the newest posts on the accounts the record names ---------------
     auto *updatesHeading = new QLabel(QStringLiteral("Recent updates"));
@@ -10101,6 +10106,177 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
             [this, contactId] { draftInvestorEmail(contactById(contactId)); });
     connect(edit, &QPushButton::clicked, this,
             [this, contactId] { editContact(contactById(contactId)); });
+}
+
+QWidget *CrmFeature::contactInvoicesSection(const QString &contactId)
+{
+    const QString organization = m_organization->currentData().toString();
+    auto *section = new QWidget;
+    section->setObjectName(QStringLiteral("crmContactInvoices"));
+    section->hide();
+    auto *layout = new QVBoxLayout(section);
+    layout->setContentsMargins(0, 10, 0, 0);
+    layout->setSpacing(4);
+    auto *heading = new QHBoxLayout;
+    auto *title = new QLabel(QStringLiteral("Invoices"));
+    QFont titleFont = title->font();
+    titleFont.setWeight(QFont::DemiBold);
+    title->setFont(titleFont);
+    heading->addWidget(title);
+    heading->addStretch(1);
+    auto *create = new QPushButton(QStringLiteral("New invoice"));
+    create->setObjectName(QStringLiteral("ghostButton"));
+    create->setToolTip(QStringLiteral("Open Invoicing on the web with this contact as the client"));
+    heading->addWidget(create);
+    layout->addLayout(heading);
+    auto *summary = new QLabel;
+    summary->setObjectName(QStringLiteral("mutedLabel"));
+    summary->setWordWrap(true);
+    summary->setTextFormat(Qt::PlainText);
+    layout->addWidget(summary);
+    auto *list = new QLabel;
+    list->setWordWrap(true);
+    list->setTextFormat(Qt::RichText);
+    list->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    layout->addWidget(list);
+    static const QRegularExpression idPattern(QStringLiteral("^[0-9a-f]{32}$"));
+    if (organization.isEmpty() || !idPattern.match(contactId).hasMatch() || !m_accountApiUrl)
+        return section;
+    const QString page = QStringLiteral("/dashboard/invoices?org=%1").arg(organization);
+    connect(create, &QPushButton::clicked, section, [this, page, contactId] {
+        if (m_openWebPage)
+            m_openWebPage(page + QStringLiteral("&contact=") + contactId);
+    });
+    connect(list, &QLabel::linkActivated, section, [this, page](const QString &id) {
+        if (m_openWebPage)
+            m_openWebPage(page + QStringLiteral("&invoice=") + id);
+    });
+    const QPointer<QWidget> alive(section);
+    requestInvoices(
+        QStringLiteral("/api/invoices/%1/contacts/%2").arg(organization, contactId),
+        [alive, summary, list, create](bool ok, const QJsonObject &payload, const QString &error) {
+            if (!alive)
+                return;
+            const QString code = payload.value(QStringLiteral("error")).toString();
+            if (!ok && code != QLatin1String("plugin_not_installed")) {
+                if (code.endsWith(QLatin1String("not_found")) || code.isEmpty())
+                    return;
+                summary->setText(QStringLiteral("Invoices could not load: %1").arg(error));
+                create->hide();
+                alive->show();
+                return;
+            }
+            if (!ok) {
+                summary->setText(payload.value(QStringLiteral("canInstall")).toBool()
+                    ? QStringLiteral("Install Invoicing for this organization to bill this contact and see "
+                                     "when an invoice is opened.")
+                    : QStringLiteral("Ask an organization owner or admin to install Invoicing to bill this "
+                                     "contact."));
+                create->hide();
+                alive->show();
+                return;
+            }
+            const auto money = [](double cents, const QString &currency) {
+                return QStringLiteral("%1 %2").arg(currency, QString::number(cents / 100.0, 'f', 2));
+            };
+            const auto totals = [money](const QJsonObject &amounts) {
+                QStringList parts;
+                for (auto it = amounts.constBegin(); it != amounts.constEnd(); ++it) {
+                    if (it.value().toDouble())
+                        parts << money(it.value().toDouble(), it.key());
+                }
+                return parts.isEmpty() ? QStringLiteral("0") : parts.join(QStringLiteral(", "));
+            };
+            const QJsonArray invoices = payload.value(QStringLiteral("invoices")).toArray();
+            const QJsonObject sums = payload.value(QStringLiteral("totals")).toObject();
+            summary->setText(invoices.isEmpty()
+                ? QStringLiteral("No invoices for this contact yet.")
+                : QStringLiteral("Billed %1 · paid %2 · outstanding %3")
+                      .arg(totals(sums.value(QStringLiteral("billed")).toObject()),
+                           totals(sums.value(QStringLiteral("paid")).toObject()),
+                           totals(sums.value(QStringLiteral("outstanding")).toObject())));
+            static const QHash<QString, QString> labels{
+                {QStringLiteral("draft"), QStringLiteral("Draft")},
+                {QStringLiteral("sent"), QStringLiteral("Sent")},
+                {QStringLiteral("partial"), QStringLiteral("Part paid")},
+                {QStringLiteral("overdue"), QStringLiteral("Overdue")},
+                {QStringLiteral("paid"), QStringLiteral("Paid")},
+                {QStringLiteral("void"), QStringLiteral("Void")},
+            };
+            QStringList rows;
+            for (const QJsonValue &value : invoices) {
+                const QJsonObject invoice = value.toObject();
+                const QString status = invoice.value(QStringLiteral("displayStatus")).toString(
+                    invoice.value(QStringLiteral("status")).toString());
+                QStringList parts{
+                    labels.value(status, status),
+                    money(invoice.value(QStringLiteral("total")).toDouble(),
+                          invoice.value(QStringLiteral("currency")).toString()),
+                };
+                if (invoice.value(QStringLiteral("sentAt")).toDouble() > 0)
+                    parts << QStringLiteral("%1 opens · %2 views")
+                                 .arg(invoice.value(QStringLiteral("opens")).toInt())
+                                 .arg(invoice.value(QStringLiteral("views")).toInt());
+                else
+                    parts << QStringLiteral("not sent");
+                rows << QStringLiteral("<div style=\"margin-bottom:4px\"><a href=\"%1\">%2</a> · %3</div>")
+                            .arg(invoice.value(QStringLiteral("id")).toString().toHtmlEscaped(),
+                                 invoice.value(QStringLiteral("number")).toString().toHtmlEscaped(),
+                                 parts.join(QStringLiteral(" · ")).toHtmlEscaped());
+                if (rows.size() >= 20)
+                    break;
+            }
+            list->setText(rows.join(QString()));
+            list->setVisible(!rows.isEmpty());
+            alive->show();
+        });
+    return section;
+}
+
+void CrmFeature::requestInvoices(const QString &path, ReplyHandler handler)
+{
+    const QUrl url = m_accountApiUrl ? m_accountApiUrl(path) : QUrl();
+    if (!m_network || !url.isValid()) {
+        handler(false, {}, QStringLiteral("Invoicing is not reachable from the desktop."));
+        return;
+    }
+    QNetworkRequest request(url);
+    request.setTransferTimeout(15000);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+    request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    const QString token = m_accountSessionToken ? m_accountSessionToken(url) : QString();
+    if (!token.isEmpty()) {
+        request.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Bearer ") + token.toUtf8());
+    } else {
+        QString node, ts, sig;
+        if (!m_signProof || !m_signProof(QStringLiteral("forkmesh-invoices-request-v1"),
+                                         QStringLiteral("GET\n") + url.path(QUrl::FullyDecoded), &node, &ts, &sig)) {
+            handler(false, {}, QStringLiteral("Sign in to your ForkMesh account on this device."));
+            return;
+        }
+        QUrl signedUrl = url;
+        QUrlQuery query(signedUrl);
+        query.addQueryItem(QStringLiteral("node"), node);
+        query.addQueryItem(QStringLiteral("ts"), ts);
+        query.addQueryItem(QStringLiteral("sig"), sig);
+        signedUrl.setQuery(query);
+        request.setUrl(signedUrl);
+    }
+    QNetworkReply *reply = m_network->get(request);
+    const QPointer<CrmFeature> guard(this);
+    connect(reply, &QNetworkReply::finished, this, [guard, reply, handler = std::move(handler)] {
+        const QJsonObject payload = QJsonDocument::fromJson(reply->readAll()).object();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const bool ok = reply->error() == QNetworkReply::NoError && status >= 200 && status < 300 &&
+                        payload.value(QStringLiteral("ok")).toBool(true);
+        QString error = payload.value(QStringLiteral("error")).toString();
+        error.replace(QLatin1Char('_'), QLatin1Char(' '));
+        if (error.isEmpty() && !ok)
+            error = status ? QStringLiteral("HTTP %1").arg(status) : reply->errorString();
+        reply->deleteLater();
+        if (guard)
+            handler(ok, payload, error);
+    });
 }
 
 // One connected account's newest public posts, or its newest public events:
@@ -10547,17 +10723,34 @@ void CrmFeature::editContact(const QJsonObject &contact)
     if (contact.isEmpty() && storedSheet(listOpen) && text(listOpen, "flow").isEmpty())
         body.insert(QStringLiteral("views"), QJsonArray{text(listOpen, "id")});
     const QString id = text(contact, "id");
+    if (id.isEmpty())
+        body.insert(QStringLiteral("requestId"),
+                    QUuid::createUuid().toString(QUuid::Id128));
     request(id.isEmpty() ? QByteArrayLiteral("POST")
                          : QByteArrayLiteral("PATCH"),
             organizationPath(QStringLiteral("/contacts") +
                              (id.isEmpty() ? QString()
                                            : QLatin1Char('/') + id)),
-            body, [this](bool ok, const QJsonObject &, const QString &error) {
+            body, [this](bool ok, const QJsonObject &payload, const QString &error) {
         if (!ok) {
-            setStatus(QStringLiteral("Contact was not saved: %1").arg(error), true);
+            const QJsonObject existing = payload.value(QStringLiteral("contact")).toObject();
+            const QString existingId = text(existing, "id");
+            if (existingId.isEmpty()) {
+                setStatus(QStringLiteral("Contact was not saved: %1").arg(error), true);
+                return;
+            }
+            setStatus(QStringLiteral("%1 already uses that email address and is already in the CRM.")
+                          .arg(text(existing, "name").isEmpty() ? text(existing, "email")
+                                                                : text(existing, "name")),
+                      true);
+            if (!contactById(existingId).isEmpty())
+                showContactDetail(existingId, true);
+            loadOrganization();
             return;
         }
-        setStatus(QStringLiteral("Contact saved."));
+        setStatus(payload.value(QStringLiteral("replayed")).toBool()
+                      ? QStringLiteral("Contact was already added.")
+                      : QStringLiteral("Contact saved."));
         loadOrganization();
     });
 }
@@ -13693,6 +13886,10 @@ const forkmesh::market::NativePackageRegistration crmRegistration({
     [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
         return new forkmesh::crm::CrmFeature(host, parent);
     },
+    QString(),
+    nullptr,
+    {QStringLiteral("forkmesh-invoices-request-v1")},
+    {QStringLiteral("/api/invoices")},
 });
 
 } // namespace

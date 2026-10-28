@@ -1,4 +1,5 @@
 #appWindowFrame { background-color: @border; }
+#appWindowFrame > QStackedWidget { background-color: @bgSubtle; border: none; }
 #windowChromeBar { background-color: @bgSubtle; border: none; }
 #serverRail, #navRail { background-color: @bgSubtle; border: none; }
 #appNavigationRail, #appNavigationRailContent {

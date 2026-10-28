@@ -19,7 +19,7 @@ none of them unless a build explicitly adds them.
 A package is a **plugin** when it has a `content/` folder: code or material
 that some host builds or ships (desktop sources from `content/desktop/build.json`,
 a Worker module, dashboard or `www` pages, World modules, themes, agent
-descriptors, Workflows packs). There are 89.
+descriptors, Workflows packs). There are 90.
 
 A package without `content/` is a **switch**: it only turns a core feature on
 or off (Chat, Issues, Agents, the repository tabs, see

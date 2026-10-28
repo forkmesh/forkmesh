@@ -115,6 +115,11 @@ layout" choices on 2026-10-27. Code: `src/LayoutMode.h` (`layoutMode()`,
 switched live by `NextAccess::applyLayoutMode`, which re-syncs the Agents
 workspace and re-applies the Git page.
 
+The iPhone app has the same two names under Settings > Appearance > Layout
+(`appearance/layoutMode`, a phone setting, not synced with the desktop's).
+The CRM uses it first: see "iPhone layout" in
+`marketplace/packages/crm/README.md`.
+
 | Page | Control Tower | Focus |
 | --- | --- | --- |
 | Agents | The earlier page: action bar, list views, detail buttons, terminal dock | Session cards, one conversation header, side panel for diff, terminal, browser and details |
@@ -153,6 +158,33 @@ complete in Next and one rule serves dark and light. Exceptions: `95-compact.qss
 only in compact density, `96-edge-indicators.qss` only when edge indicators are
 on. `desktop/CMakeLists.txt` generates `theme.qrc` from a glob, so a new sheet
 needs no registration.
+
+**One colour per role, and plain widgets paint nothing** (2026-10-28). The
+user found boxes in a slightly different colour behind the top bar's dots, the
+sidebar's arrows and many sections, each fitting the element's outline. There
+were two causes:
+
+- *Classic's base rule.* Classic opens with `QWidget { background-color: … }`,
+  which paints every plain container, label and tool button the page colour.
+  Inside the sidebar or top bar (`bgSubtle`), a card (`surface`) or a dialog,
+  that showed up as a lighter or darker box. More than 900
+  `background: transparent` rules patched it one widget at a time.
+  `nextStyleSheet` now removes the background from that first rule
+  (`dropBaseWidgetBackground`), so a plain widget shows its parent.
+  `paletteForDesign` sets `Window` and `Base` to `bg`, so windows, dialogs and
+  item views still have an opaque page colour. The window's page stack
+  (`#appWindowFrame > QStackedWidget` in `10-shell.qss`) paints `bgSubtle`.
+  Without it, the 1 px `border`-coloured window frame showed through the
+  splitter handle's transparent sides beside the content card. Classic keeps
+  the rule.
+- *Too many greys.* The remap tables sent Classic's neutrals to about ten
+  near-duplicates of each role, for example `#08080a` next to `bgSubtle`
+  `#0c0c0e`, and light `#ffffff` against `bg` `#fdfdfd`. Each entry now maps
+  to exactly one role value from `kRoles`. Light `#ffffff` goes to `bg`, and
+  instance themes, which override by role value, now reach those rules too.
+
+A new container needs no transparent rule in Next. Give it a background only
+when it really is a surface, and use a role for it.
 
 **The palette reaches code.** `applyTheme()` installs the Next palette with
 `Theme::setActivePalette`, so `Theme::remapColor` and `Theme::remapSheet`

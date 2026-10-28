@@ -15273,6 +15273,7 @@ private:
     void renderExternalTranscriptSlice(quint64 generation);
     void stopExternalSession(int sessionId); // signal the external CLI process to quit
     void killExternalSessionPids(const QList<qint64> &pids); // Graceful POSIX stop; native Windows termination.
+    void endOutsideAgentsIn(const QString &folder);
     QSet<QString> m_externalStopped;         // uuids we've stopped — keep them idle
     QSet<QString> ownStreamCwds() const;    // dirs ForkMesh's own streams drive
     void retireStreamCwd(const QString &path);

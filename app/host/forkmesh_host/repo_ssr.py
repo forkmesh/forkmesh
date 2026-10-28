@@ -160,6 +160,12 @@ READER_BUDGET_SECONDS = 5.0
 READER_AGENTS = ("chatgpt-user", "oai-searchbot", "gptbot", "claude-user",
                  "claude-searchbot", "claudebot", "perplexity-user",
                  "perplexitybot", "mistralai-user")
+PREVIEW_AGENTS = ("slackbot", "twitterbot", "facebookexternalhit", "facebot",
+                  "discordbot", "linkedinbot", "telegrambot", "whatsapp",
+                  "mastodon", "pleroma", "akkoma", "misskey", "cardyb",
+                  "skypeuripreview", "iframely", "embedly", "redditbot",
+                  "zulip", "mattermost", "bitlybot", "pinterestbot",
+                  "applebot", "vkshare", "w3c_validator")
 DIFF_MAX_PAGE_BYTES = 4 * 1024 * 1024
 
 
@@ -177,12 +183,20 @@ def short_pull(scope):
     return (int(match.group(1)), match.group(2) or "") if match else (0, "")
 
 
-def reader_agent(scope):
+def _agent_in(scope, tokens):
     for name, value in scope.get("headers") or []:
         if name == b"user-agent":
             agent = value.decode("latin-1").lower()
-            return any(token in agent for token in READER_AGENTS)
+            return any(token in agent for token in tokens)
     return False
+
+
+def reader_agent(scope):
+    return _agent_in(scope, READER_AGENTS)
+
+
+def preview_agent(scope):
+    return _agent_in(scope, PREVIEW_AGENTS)
 
 
 def _view_bundle(fastpath, owner, repo, view, number):
@@ -282,7 +296,7 @@ def repo_info(blob):
 
 class ShortTicket:
     def __init__(self, fastpath, name, tab=None, issue=0, code=None, pull=0,
-                 section="", reader=False):
+                 section="", reader=False, preview=False):
         self.fastpath = fastpath
         self.name = name
         self.tab = tab
@@ -291,6 +305,8 @@ class ShortTicket:
         self.pull = pull
         self.section = section
         self.reader = reader
+        self.preview = preview
+        self.origin = ""
         self.bundle = None
         self.bundle_owner = _short_owners.get(name.lower()) \
             if issue or pull else None
@@ -319,12 +335,14 @@ class ViewTicket:
     """A pull request, issue or discussion page being rendered
     (repo_views): the bundle build and the tab it opens on."""
 
-    def __init__(self, task, section, target=None, root=None, reader=False):
+    def __init__(self, task, section, target=None, root=None, reader=False,
+                 preview=False):
         self.task = task
         self.section = section
         self.target = target
         self.root = root
         self.reader = reader
+        self.preview = preview
         self.origin = ""
         self.reactions = None
         self.moderation = None
@@ -390,7 +408,10 @@ def start(fastpath, scope):
     key = micro_cache_key(scope)
     if key is not None:
         return key
-    from . import repo_views
+    from . import pull_card, repo_views
+    card = pull_card.card_target(scope)
+    if card is not None:
+        return pull_card.CardTicket(fastpath, *card)
     diff = repo_views.diff_target(scope)
     if diff is not None:
         return DiffTicket(fastpath, *diff)
@@ -407,7 +428,8 @@ def start(fastpath, scope):
         root = remembered_prerender(fastpath, owner, repo) \
             if name == "issue" and not section else None
         return ViewTicket(task, section, (owner, repo, name, number), root,
-                          reader_agent(scope))
+                          reader_agent(scope),
+                          name == "pull" and preview_agent(scope))
     target = page_target(scope)
     if target is None:
         name = short_target(scope)
@@ -426,7 +448,8 @@ def start(fastpath, scope):
             return ShortTicket(fastpath, sub[0], sub[1],
                                short_issue_number(scope) if sub[1] == "issues" else 0,
                                pull=pull, section=section,
-                               reader=reader_agent(scope))
+                               reader=reader_agent(scope),
+                               preview=bool(pull) and preview_agent(scope))
         return None
     return remembered_prerender(fastpath, *target)
 
@@ -784,6 +807,16 @@ async def _diff_response(ticket, worker_fetch, request):
 
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
+    from . import pull_card
+    if isinstance(ticket, pull_card.CardTicket):
+        try:
+            answer = await pull_card.respond(ticket, worker_fetch, request)
+        except Exception as error:
+            print("pull card skipped: %r" % (error,))
+            answer = None
+        if answer is not None:
+            return answer
+        return await worker_fetch(request)
     if isinstance(ticket, DiffTicket):
         try:
             answer = await _diff_response(ticket, worker_fetch, request)
@@ -798,7 +831,7 @@ async def fetch(ticket, worker_fetch, request):
         if target:
             return repo_code_ref.response(target)
     if not isinstance(ticket, MicroKey):
-        if isinstance(ticket, ViewTicket):
+        if isinstance(ticket, (ViewTicket, ShortTicket)):
             ticket.origin = request_origin(request)
         if isinstance(ticket, ViewTicket) and ticket.target is not None:
             owner, repo, view, number = ticket.target
@@ -832,7 +865,9 @@ async def fetch(ticket, worker_fetch, request):
 
 async def finish(task, response):
     """Add the rendered first view to the Worker's repository page."""
-    if task is None or isinstance(task, (MicroKey, CodeRefTicket, DiffTicket)):
+    from . import pull_card
+    if task is None or isinstance(task, (MicroKey, CodeRefTicket, DiffTicket,
+                                         pull_card.CardTicket)):
         return response
     view = task if isinstance(task, ViewTicket) else None
     if view is not None:
@@ -848,7 +883,8 @@ async def finish(task, response):
         try:
             data = await asyncio.wait_for(
                 asyncio.shield(task),
-                READER_BUDGET_SECONDS if view is not None and view.reader
+                READER_BUDGET_SECONDS if view is not None
+                and (view.reader or view.preview)
                 else (ISSUE_BUDGET_SECONDS if view.root is not None
                       else VIEW_BUDGET_SECONDS)
                 if view is not None else SSR_BUDGET_SECONDS)
@@ -928,11 +964,13 @@ async def _finish_short(ticket, response):
         if ticket.pull:
             link = "/" + urllib.parse.quote(repo) if canonical else None
             bundle = await _within(bundle_task, READER_BUDGET_SECONDS
-                                   if ticket.reader else VIEW_BUDGET_SECONDS)
+                                   if ticket.reader or ticket.preview
+                                   else VIEW_BUDGET_SECONDS)
             if bundle is not None and (bundle.owner, bundle.repo.lower()) == (
                     owner, repo.lower()):
                 rendered = inject_view(page, bundle, ticket.section, None,
-                                       link=link, reader=ticket.reader)
+                                       link=link, reader=ticket.reader,
+                                       origin=ticket.origin)
             if rendered is not None:
                 return _finished_short(body, response, rendered)
         try:
@@ -1242,6 +1280,9 @@ def inject_view(page, bundle, section="", reactions=None, link=None,
     page = page.replace(CHARSET, head, 1).replace(PLACEHOLDER, view, 1)
     if bundle.view in ("issues", "issue"):
         page = read_links(page, bundle.owner, bundle.repo, bundle.number)
+    if bundle.view == "pull":
+        from . import pull_card
+        page = pull_card.share_tags(page, bundle, origin, link)
     return page
 
 

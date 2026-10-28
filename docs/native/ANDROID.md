@@ -160,6 +160,9 @@ signed with the v3 key (`native/android/README.md`); the default application id
   ####" (SHA-256 of the base64url node key, first four bytes big-endian,
   1000 + value % 9000).
 - **Appearance** (`appearance/themeMode`, `appearance/accent`) is global.
+  `appearance/layoutMode` (`controlTower` or `focus`, default Control
+  Tower) is the phone's copy of the desktop's two layout modes; iOS reads it
+  for the CRM's density and shows it under Theme in Settings > Appearance.
 
 ## 6. Network, events and push
 

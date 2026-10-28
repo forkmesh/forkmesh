@@ -64,6 +64,7 @@ GONE_STATUSES = frozenset({403, 404, 410})
 MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
+MBOX_FROM = re.compile(r"^From [0-9a-f]{40} ", re.M)
 CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -616,21 +617,24 @@ async def plan_pull(reader, branch, number):
         return ""
 
     async def commits():
-        await reader.get("blob", [
+        data = await reader.get("blob", [
             ("path", "%s/%d/commits.mbox" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
+        return len(MBOX_FROM.findall(blob_text(data)))
 
     # The branch list (repoPullBaseTip, merge base) is not in the bundle: on
     # a busy repository it is the gateway's most expensive listing (ahead and
     # behind for every branch) and only the merge controls need it.
-    diff, conversation, _c = await asyncio.gather(
+    diff, conversation, commit_count = await asyncio.gather(
         patch(), _pull_conversation(reader, number, commit), commits())
     settings_data = await settings if settings is not None else None
     await root
     return {"settings": (settings_data or {}).get("blobs") or {}, "pull": {
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
-        "author": _record_author(values), "ts": values.get("ts") or values.get("createdAt") or "",
+        "author": _record_author(values), "authorKey": values.get("author", ""),
+        "draft": _is_draft(values), "commits": commit_count,
+        "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
         "body": body, "conversation": conversation, "patch": diff,
         "patchRef": patch_ref[0] if patch_ref else ""}}
