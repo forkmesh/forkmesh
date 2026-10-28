@@ -1891,8 +1891,15 @@ Ported from iOS 1ed74360c2.
   transcript, the live stream, conflict fixes and agent ops (diff, merge,
   delete, swipe delete through `AgentOpsFeature.client(desktopKey)`) go to
   the row's desktop. Such rows never match the desktop in use's sessions,
-  queue, read marks, approvals or Agent Watch numbers. Worktrees and the
-  terminal stay on the desktop in use, so they are hidden for those rows.
+  queue, read marks, approvals or Agent Watch numbers. The terminal
+  (`DesktopAgentTerminal(desktopKey = ...)`, as iOS `terminalChannel(for:)`)
+  and Worktrees (Android only) follow the row's desktop too. The LAN link
+  forwards its events to that desktop's taps even when another desktop is
+  the one chosen, so a LAN desktop that is not in use still streams.
+  Choosing another desktop (`choose`) keeps the old relay channel as a side
+  link instead of closing it, and `link()` takes over the chosen desktop's
+  side link when one is open, so switching back and forth dials nothing new;
+  a side link counts as Online in `presenceOf`.
 - **Agent alert page (S152).** `AgentRouteScreen` looks the id up with
   `AgentControlCenter.row(forRoute)` (another desktop's `<key>:desktop:<n>`
   when only one desktop has that number, a relay run by its session id, or a

@@ -39,7 +39,10 @@ internal class DesktopSideLinks(
         }
         if (kept != null) {
             if (kept.isOpen && (kept.idleMs < probeMs || kept.confirmAlive())) return kept
-            synchronized(lock) { if (links[key] === kept) links.remove(key) }
+            synchronized(lock) {
+                if (links[key] === kept) links.remove(key)
+                tapTokens.remove(kept)
+            }
             kept.close()
         }
         val dial = opener ?: throw LocalControlException("not_connected")
@@ -60,18 +63,52 @@ internal class DesktopSideLinks(
         }
     }
 
+    fun adopt(connection: RelayControlConnection): Boolean {
+        val key = connection.desktopKey
+        if (key.isEmpty() || !connection.isOpen) return false
+        keep(key, connection)
+        return true
+    }
+
+    fun take(key: String): RelayControlConnection? {
+        val connection = synchronized(lock) {
+            val kept = links[key]?.takeIf { it.isOpen } ?: return null
+            links.remove(key)
+            kept
+        }
+        synchronized(lock) { tapTokens.remove(connection) }?.let(connection::removeEventTap)
+        return connection
+    }
+
+    private val tapTokens = HashMap<RelayControlConnection, Any>()
+
     private fun keep(key: String, connection: RelayControlConnection) {
         val previous = synchronized(lock) { links.put(key, connection) }
-        if (previous != null && previous !== connection) previous.close()
-        connection.addEventTap { event -> taps.deliver(key, event) }
+        if (previous != null && previous !== connection) {
+            synchronized(lock) { tapTokens.remove(previous) }
+            previous.close()
+        }
+        val token = connection.addEventTap { event -> taps.deliver(key, event) }
+        synchronized(lock) { tapTokens.put(connection, token) }?.let(connection::removeEventTap)
         connection.onClose {
-            synchronized(lock) { if (links[key] === connection) links.remove(key) }
-            onClosed()
+            val mine = synchronized(lock) {
+                if (links[key] === connection) {
+                    links.remove(key)
+                    tapTokens.remove(connection)
+                    true
+                } else {
+                    false
+                }
+            }
+            if (mine) onClosed()
         }
     }
 
     fun closeAll() {
-        val all = synchronized(lock) { links.values.toList().also { links.clear() } }
+        val all = synchronized(lock) {
+            tapTokens.clear()
+            links.values.toList().also { links.clear() }
+        }
         for (connection in all) runCatching { connection.close() }
     }
 }
