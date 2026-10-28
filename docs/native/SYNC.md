@@ -221,5 +221,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S145 | 2026-10-27 | Agents | fix | The token charts under the Dynamic Island always show, span the island and update every second, and agent tile borders move while a reply streams. | f87600c607 | pending |  |
 | S146 | 2026-10-27 | Agents | feature | With more than one desktop, Agents lists every desktop's agents in one list, each labelled with its desktop, and actions go to that agent's desktop. | ce55a298a1 | pending |  |
 | S147 | 2026-10-28 | Workflows | feature | Workflows lists your desktop's workflows and special agents and runs them on the desktop, and Free disk space runs on your desktop from the phone. | c48ebe358d | pending |  |
-| S148 | 2026-10-28 | Agents | fix | Tapping an agent alert opens its page with a loading view, finds agents on other desktops and runners, and offers Try again instead of a blank page. | 846e99382a | pending |  |
+| S148 | 2026-10-28 | Business | feature | Invoicing is on the phone: create and edit invoices for CRM contacts, email them and send reminders, record payments, follow when each is opened, viewed and paid, and see a contact's invoices on their CRM card. | f53052a674 | synced | f53052a674 |
+| S149 | 2026-10-28 | Agents | fix | Tapping an agent alert opens its page with a loading view, finds agents on other desktops and runners, and offers Try again instead of a blank page. | 846e99382a | pending |  |
 <!-- ledger:end -->
