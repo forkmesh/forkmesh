@@ -169,8 +169,16 @@ class MergeCleanupModel(private val client: AgentOpsClient, val sessionId: Int) 
     var conflicted = false
         private set
 
+    @Volatile
+    var canSetAside = false
+        private set
+
+    @Volatile
+    var setAsideNote = ""
+        private set
+
     val outcome: MergeOutcome?
-        get() = mergedBranch?.let { MergeOutcome(it, mergeStats) }
+        get() = mergedBranch?.let { MergeOutcome(it, mergeStats, setAsideNote) }
 
     val canRun: Boolean
         get() = confirmation != null && !running && mergedBranch == null
@@ -193,13 +201,13 @@ class MergeCleanupModel(private val client: AgentOpsClient, val sessionId: Int) 
     val busy: Boolean
         get() = preparing || running
 
-    fun mergeNow(): Boolean {
+    fun mergeNow(setAside: Boolean = false): Boolean {
         if (busy || mergedBranch != null) return false
         prepare()
-        return run()
+        return run(setAside)
     }
 
-    fun run(): Boolean {
+    fun run(setAside: Boolean = false): Boolean {
         val current = confirmation ?: return false
         if (!canRun) return false
         if (current.isExpired(client.nowMs)) {
@@ -211,16 +219,19 @@ class MergeCleanupModel(private val client: AgentOpsClient, val sessionId: Int) 
         running = true
         changed()
         try {
-            val outcome = client.merge(sessionId, current.token, current.typeToConfirm)
+            val outcome = client.merge(sessionId, current.token, current.typeToConfirm, setAside)
             mergeStats = outcome.stats
             mergedBranch = outcome.branch.ifEmpty { current.typeToConfirm }
+            setAsideNote = outcome.setAsideNote
             errorText = ""
             confirmation = null
             conflicted = false
+            canSetAside = false
             return true
         } catch (error: Exception) {
             confirmation = null
             conflicted = AgentOpsClient.errorCode(error) == "conflicts"
+            canSetAside = AgentOpsClient.errorCode(error) == "checkout_dirty"
             errorText = AgentOpsClient.describe(error)
             return false
         } finally {

@@ -134,6 +134,11 @@ class DesktopControlHub(
     @Volatile
     var lanGraceMs: Long = 1_500
     private val localListener: () -> Unit = { localChanged() }
+    private val keyedTaps = DesktopKeyedTaps()
+    private val sideLinks = DesktopSideLinks(openRelay, relayIdleProbeMs, keyedTaps) {
+        notifyListeners()
+        for ((_, listener) in linkListeners) runCatching { listener() }
+    }
 
     @Volatile
     var reach: DesktopReach = DesktopReach.NotPaired
@@ -484,8 +489,53 @@ class DesktopControlHub(
     }
 
     fun removeEventTap(token: Any) {
-        taps.removeAll { it.first === token }
+        if (taps.removeAll { it.first === token }) return
+        keyedTaps.remove(token)
     }
+
+    fun addEventTap(desktopKey: String, tap: (ControlEvent) -> Unit): Any {
+        if (desktopKey.isEmpty()) return addEventTap(tap)
+        val token = keyedTaps.add(desktopKey, tap)
+        currentLink?.let { attachTaps(it) }
+        return token
+    }
+
+    fun linkKey(link: ControlLink): String = when (link) {
+        is LanControlLink -> link.desktopKey
+        is RelayControlConnection -> link.desktopKey
+        else -> ""
+    }
+
+    val activeKey: String
+        get() = currentLink?.let(::linkKey)?.takeIf { it.isNotEmpty() } ?: candidates.firstOrNull()?.key.orEmpty()
+
+    val otherDesktops: List<PairedDesktop>
+        get() {
+            val active = activeKey
+            return candidates.filter { it.name.isNotEmpty() && it.key != active }
+        }
+
+    fun link(desktopKey: String): ControlLink {
+        if (desktopKey.isEmpty() || desktopKey == activeKey) return link()
+        lanLink?.takeIf { it.isOpen && it.desktopKey == desktopKey }?.let { return it }
+        synchronized(lock) { relay }?.takeIf { it.isOpen && it.desktopKey == desktopKey }?.let { return it }
+        val target = candidates.firstOrNull { it.key == desktopKey && it.name.isNotEmpty() }
+            ?: throw LocalControlException("not_paired")
+        return sideLinks.link(target)
+    }
+
+    fun openLink(desktopKey: String): ControlLink? {
+        if (desktopKey.isEmpty() || desktopKey == activeKey) return currentLink
+        lanLink?.takeIf { it.isOpen && it.desktopKey == desktopKey }?.let { return it }
+        synchronized(lock) { relay }?.takeIf { it.isOpen && it.desktopKey == desktopKey }?.let { return it }
+        return sideLinks.open(desktopKey)
+    }
+
+    fun request(method: String, params: Map<String, Any?>, timeoutMs: Long, desktopKey: String): Map<String, Any?> =
+        link(desktopKey).request(method, params, timeoutMs)
+
+    fun channel(desktopKey: String): ControlCalling =
+        if (desktopKey.isEmpty()) HubControlCalling(this) else DesktopScopedCalling(this, desktopKey)
 
     fun disconnectRelay() {
         val current = synchronized(lock) { relay.also { relay = null } }
@@ -500,7 +550,10 @@ class DesktopControlHub(
             val existing = attached
             if (existing != null && existing.first === link) return
             if (existing != null) existing.first.removeEventTap(existing.second)
-            val token = link.addEventTap { event -> for ((_, tap) in taps) runCatching { tap(event) } }
+            val token = link.addEventTap { event ->
+                for ((_, tap) in taps) runCatching { tap(event) }
+                keyedTaps.deliver(linkKey(link), event)
+            }
             attached = link to token
         }
     }
@@ -537,6 +590,7 @@ class DesktopControlHub(
         keepWarm = false
         local?.removeListener(localListener)
         disconnectRelay()
+        sideLinks.closeAll()
     }
 
     companion object {

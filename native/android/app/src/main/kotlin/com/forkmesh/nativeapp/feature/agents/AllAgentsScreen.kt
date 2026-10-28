@@ -81,6 +81,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.control.PromptDeck
 
 internal val agentsNotice = FmStatus()
@@ -175,6 +177,7 @@ internal class AllAgentsScreen : Screen() {
 
 internal class AgentRouteScreen(private val rowId: String) : Screen() {
     private var looked by mutableStateOf(false)
+    private var retrying by mutableStateOf(false)
 
     override val title: String get() = "Agent"
 
@@ -182,25 +185,76 @@ internal class AgentRouteScreen(private val rowId: String) : Screen() {
     override fun Content(navigator: Navigator) {
         val center = AgentsFeature.control
         val tick = rememberCenterTick(center)
+        val scope = rememberCoroutineScope()
         LaunchedEffect(tick, looked) {
-            center.rows.firstOrNull { it.id == rowId }?.let { navigator.replace(UnifiedAgentScreen(it)) }
+            center.row(rowId)?.let { navigator.replace(UnifiedAgentScreen(it)) }
         }
         LaunchedEffect(Unit) {
-            if (center.rows.none { it.id == rowId }) withContext(Dispatchers.IO) { center.refresh() }
+            if (center.row(rowId) == null) withContext(Dispatchers.IO) { center.refresh() }
             looked = true
         }
         DetailScaffold(title, navigator) {
             tick.let { }
-            if (!looked || center.loading) {
-                FmLinearProgressIndicator(Modifier.fillMaxWidth())
+            if (!looked || retrying || center.loading || center.othersLoading) {
+                AgentRouteLoading()
             } else {
-                FmEmptyState(
-                    icon = "smart_toy_outlined",
-                    title = "Agent not found",
-                    message = center.desktopNote.ifEmpty { "The desktop or the relay no longer lists this run." },
-                )
+                AgentRouteMissing(center.desktopNote, retrying) {
+                    if (!retrying) {
+                        retrying = true
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { center.refresh() }
+                            } finally {
+                                retrying = false
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private val routeLoadingLines = listOf(0.92f, 0.78f, 0.86f, 0.6f, 0.9f, 0.7f)
+
+@Composable
+private fun AgentRouteLoading() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp)
+            .padding(top = 4.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "Opening agent" },
+        verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+    ) {
+        com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 220.dp, height = 18.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 54.dp, height = 16.dp, radius = com.forkmesh.nativeapp.ui.theme.FmRadius.md)
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 120.dp, height = 10.dp)
+            Spacer(Modifier.weight(1f))
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 56.dp, height = 10.dp)
+        }
+        Spacer(Modifier.height(FmSpace.x3))
+        for (share in routeLoadingLines) {
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(Modifier.fillMaxWidth(share), height = 11.dp)
+        }
+    }
+}
+
+@Composable
+private fun AgentRouteMissing(note: String, retrying: Boolean, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        FmEmptyState(
+            icon = "smart_toy_outlined",
+            title = "Agent not found",
+            message = if (note.isEmpty()) "The desktop or the relay no longer lists this run." else "Your desktop did not answer: $note",
+        )
+        FmToneButton(
+            "Try again",
+            onPressed = { if (!retrying) onRetry() },
+            icon = "refresh",
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = FmSpace.x6),
+        )
     }
 }
 
@@ -422,9 +476,9 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                             if (RunnerDesktopHandoff.canMove(row, center.hub.desktop != null)) {
                                 FmIconButton("desktop_windows_outlined", "Continue on desktop", onPressed = { if (!busy) moveToDesktop() }, color = c.accent)
                             }
-                            if (row.isPhoneTerminal) {
+                            if (row.isPhoneTerminal && !row.elsewhere) {
                                 FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal)) }, icon = "terminal")
-                            } else if (row.offersTerminal) {
+                            } else if (row.offersTerminal && !row.elsewhere) {
                                 FmOutlinedButton("Terminal", onClick = if (busy) null else ({ openTerminal() }), icon = "terminal")
                             }
                             if (row.canStop) FmOutlinedButton("Stop", onClick = if (busy) null else ({ act(if (row.outside) "Interrupted it." else "Asked it to stop.") { center.stop(row) } }))
@@ -432,7 +486,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                         }
                     }
                 }
-                if (row.isDesktop && !row.outside && row.localId > 0) {
+                if (row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0) {
                     QueuedRunNote(row, Modifier.padding(horizontal = FmSpace.x3).padding(bottom = FmSpace.x2))
                 }
                 if (row.outside) {
@@ -457,7 +511,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                             if (idle && row.conflicted) {
                                 FmToneButton("Fix conflicts", onPressed = { if (!busy) act(ConflictResolution.FIX_SENT) { center.fixConflicts(row) } }, icon = "smart_toy_outlined", tone = FmTone.Accent)
                             }
-                            if (row.repoName.isNotEmpty()) {
+                            if (row.repoName.isNotEmpty() && !row.elsewhere) {
                                 FmOutlinedButton("Worktrees", onClick = { navigator.push(WorktreesScreen(row.repoOwner, row.repoName)) }, icon = "account_tree_outlined")
                             }
                             if (!row.outside) FmToneButton("Delete", onPressed = { if (!busy) requestDelete() }, icon = "delete_outline", tone = FmTone.Danger)
@@ -497,7 +551,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 }
                 if (row.isDesktop && row.localId > 0) {
                     AgentBranchDiffRow(row.branchName, row.baseBranch) {
-                        navigator.push(AgentDiffScreen(row.localId, row.title, canMerge = !active && !row.isActive, base = row.baseBranch, onMerged = merged))
+                        navigator.push(AgentDiffScreen(row.localId, row.title, canMerge = !active && !row.isActive, base = row.baseBranch, onMerged = merged, desktopKey = row.desktopKey))
                     }
                 } else if (row.hasBranchOps) {
                     AgentBranchDiffRow(row.branchName, row.baseBranch) {
@@ -618,12 +672,12 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
             }, onDismiss = { showDelete = false })
         }
         if (showMerge && row.isDesktop) {
-            MergeCleanupDialog(row.localId, row.baseBranch, onDone = { message ->
+            MergeCleanupDialog(row.localId, row.baseBranch, desktopKey = row.desktopKey, onDone = { message ->
                 afterMerge(message, center, navigator, scope)
             }, onDismiss = { showMerge = false })
         }
         if (showDelete && row.isDesktop && !row.outside) {
-            AgentDeleteDialog(row.localId, onDone = { message ->
+            AgentDeleteDialog(row.localId, desktopKey = row.desktopKey, onDone = { message ->
                 agentsNotice.show(message)
                 scope.launch { withContext(Dispatchers.IO) { center.refresh() } }
                 navigator.pop()

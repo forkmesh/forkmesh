@@ -62,6 +62,12 @@ object AgentOpsFeature {
 
     val client: AgentOpsClient get() = runtime().client
 
+    fun client(desktopKey: String): AgentOpsClient {
+        val hub = AgentsFeature.hub
+        if (desktopKey.isEmpty() || desktopKey == hub.activeKey) return client
+        return AgentOpsClient(hub.channel(desktopKey))
+    }
+
     val approvals: ApprovalsQueue get() = runtime().approvals
 
     fun reset() {

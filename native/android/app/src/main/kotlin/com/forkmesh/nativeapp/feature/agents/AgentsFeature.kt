@@ -130,6 +130,8 @@ object AgentsFeature {
         private val controlLazy = lazy { AgentControlCenter(hub, queue) }
         val control: AgentControlCenter by controlLazy
 
+        val tokens: com.forkmesh.nativeapp.control.DesktopTokenFeed by lazy { com.forkmesh.nativeapp.control.DesktopTokenFeed(hub) }
+
         fun dispose() {
             if (controlLazy.isInitialized()) runCatching { control.dispose() }
             if (hubLazy.isInitialized()) runCatching { hub.dispose() }
@@ -169,6 +171,8 @@ object AgentsFeature {
     val hub: DesktopControlHub get() = runtime().hub
 
     val control: AgentControlCenter get() = runtime().control
+
+    val tokens: com.forkmesh.nativeapp.control.DesktopTokenFeed get() = runtime().tokens
 
     val sentPhotos: AgentSentPhotos get() = AgentSentPhotos.shared
 

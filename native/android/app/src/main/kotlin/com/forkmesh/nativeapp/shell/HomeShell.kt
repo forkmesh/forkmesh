@@ -652,6 +652,7 @@ class HomeShell : Screen() {
                     Box(Modifier.weight(1f)) {
                         body()
                         ShellIslandStatus(Modifier.align(Alignment.TopCenter))
+                        if (agentsOn) com.forkmesh.nativeapp.feature.agents.AgentTokenChartsOverlay(Modifier.align(Alignment.TopCenter))
                     }
                 }
             } else {
@@ -675,6 +676,7 @@ class HomeShell : Screen() {
                     ) {
                         body()
                         ShellIslandStatus(Modifier.align(Alignment.TopCenter))
+                        if (agentsOn) com.forkmesh.nativeapp.feature.agents.AgentTokenChartsOverlay(Modifier.align(Alignment.TopCenter))
                     }
                 }
             }
