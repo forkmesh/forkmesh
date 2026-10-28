@@ -562,6 +562,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowLocalControlFiles.cpp
     src/MainWindowLocalControlDiagnostics.cpp
     src/MainWindowLocalControlTeammates.cpp
+    src/MainWindowLocalControlWorkflows.cpp
     src/MainWindowLocalControlInsights.cpp
     src/MainWindowLocalControlDiscord.cpp
     src/MainWindowLocalControlWallet.cpp
@@ -926,6 +927,8 @@ set(FORKMESH_APP_SOURCES
     src/LocalControlDiagnostics.cpp
     src/LocalControlTeammates.h
     src/LocalControlTeammates.cpp
+    src/LocalControlWorkflows.h
+    src/LocalControlWorkflows.cpp
     src/LocalControlInsights.h
     src/LocalControlInsights.cpp
     src/LocalControlDiscord.h
@@ -5179,6 +5182,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-local-control-update-tests
         COMMAND forkmesh-local-control-update-tests)
+
+    qt_add_executable(forkmesh-local-control-workflows-tests
+        tests/test_local_control_workflows.cpp
+        src/LocalControlWorkflows.h
+        src/LocalControlWorkflows.cpp
+    )
+    target_include_directories(forkmesh-local-control-workflows-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-local-control-workflows-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-local-control-workflows-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-local-control-workflows-tests
+        COMMAND forkmesh-local-control-workflows-tests)
 
     qt_add_executable(forkmesh-local-control-repos-tests
         tests/test_local_control_repos.cpp

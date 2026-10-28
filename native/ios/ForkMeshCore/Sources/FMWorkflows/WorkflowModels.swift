@@ -377,6 +377,7 @@ public struct WorkflowStepResult: Equatable, Sendable, Identifiable {
 public enum WorkflowRunPlace: String, Equatable, Sendable {
     case phone
     case server
+    case desktop
 }
 
 public struct WorkflowRun: Equatable, Sendable, Identifiable {
@@ -392,8 +393,8 @@ public struct WorkflowRun: Equatable, Sendable, Identifiable {
 
     public init(json: JSONObject, place: WorkflowRunPlace, id: String? = nil, startedAt: Int64? = nil, finishedAt: Int64? = nil) {
         self.id = id ?? json.str("id")
-        self.place = place
         trigger = json.str("trigger", "manual")
+        self.place = trigger == "desktop" ? .desktop : place
         status = json.str("status")
         error = json.str("error")
         requests = json.int("requests")

@@ -59,6 +59,7 @@ public enum DesktopControlFamilyName: String, CaseIterable, Sendable {
     case filesBrowse = "files.browse."
     case diagnostics = "diag."
     case teammates = "teammates."
+    case workflows = "workflows."
     case insights = "insights."
     case discord = "discord."
     case secrets = "secrets."

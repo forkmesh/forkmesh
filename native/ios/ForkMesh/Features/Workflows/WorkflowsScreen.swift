@@ -1,5 +1,6 @@
 import FMApi
 import FMBase
+import FMControl
 import FMWorkflows
 import SwiftUI
 
@@ -37,8 +38,11 @@ struct WorkflowsScreen: View {
 
     @ViewBuilder private var content: some View {
         if let store = store {
-            WorkflowsList(store: store)
-                .task { await store.load() }
+            WorkflowsList(store: store, desktop: WorkflowsDesktop.store)
+                .task {
+                    store.desktopChannel = WorkflowsDesktop.hub
+                    await store.load()
+                }
         } else {
             FmEmptyState(icon: "account_tree_outlined", title: WorkflowsText.unavailableTitle)
         }
@@ -48,7 +52,12 @@ struct WorkflowsScreen: View {
 private struct WorkflowsList: View {
     @Environment(\.fmPalette) private var fm
     @Bindable var store: WorkflowsStore
+    let desktop: DesktopWorkflowsStore?
     @State private var opening: WorkflowOpening?
+    @State private var desktopOpening: String?
+    @State private var desktopPending: DesktopWorkflowConfirmation?
+    @State private var desktopNotice: String = ""
+    @State private var desktopNoticeIsError: Bool = false
     @State private var drafts: [Int: WorkflowDraft] = [:]
     @State private var serial: Int = 0
     @State private var creating: Bool = false
@@ -60,7 +69,7 @@ private struct WorkflowsList: View {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 0) {
                         FmIconButton(icon: "lock_outline", label: "Credentials", onPressed: { credentialsOpen = true })
-                        FmIconButton(icon: "refresh", label: "Refresh", onPressed: { Task { await store.load() } })
+                        FmIconButton(icon: "refresh", label: "Refresh", onPressed: { Task { await reload() } })
                     }
                 }
             }
@@ -86,7 +95,55 @@ private struct WorkflowsList: View {
                 WorkflowCredentialsScreen(store: store)
                     .shellPageClearance()
             }
+            .navigationDestination(item: $desktopOpening) { (id: String) in
+                if let desktop {
+                    DesktopWorkflowScreen(store: desktop, rowId: id)
+                        .shellPageClearance()
+                }
+            }
+            .task { await desktop?.refresh() }
+            .fmDialog(isPresented: Binding(get: { desktopPending != nil }, set: { if !$0 { desktopPending = nil } })) {
+                FmConfirmDialog(
+                    title: "Run on the desktop?", message: desktopPending?.summary, confirmLabel: "Run",
+                    onCancel: { desktopPending = nil },
+                    onConfirm: {
+                        let confirmation = desktopPending
+                        desktopPending = nil
+                        if let confirmation { Task { await performOnDesktop(confirmation) } }
+                    })
+            }
     }
+
+    private func reload() async {
+        await store.load()
+        await desktop?.refresh()
+    }
+
+    private func prepareOnDesktop(_ row: DesktopWorkflowRow) {
+        guard let desktop else { return }
+        Task {
+            do {
+                desktopPending = try await desktop.prepare("run", row)
+            } catch {
+                desktopNotice = DesktopWorkflowsText.describe(error)
+                desktopNoticeIsError = true
+            }
+        }
+    }
+
+    private func performOnDesktop(_ confirmation: DesktopWorkflowConfirmation) async {
+        guard let desktop else { return }
+        do {
+            let message = try await desktop.perform(confirmation)
+            desktopNotice = message.isEmpty ? "Sent to the desktop." : message
+            desktopNoticeIsError = false
+        } catch {
+            desktopNotice = DesktopWorkflowsText.describe(error)
+            desktopNoticeIsError = true
+        }
+    }
+
+    private var hasDesktopRows: Bool { !(desktop?.rows.isEmpty ?? true) }
 
     @ViewBuilder private func editor(_ target: WorkflowOpening) -> some View {
         switch target {
@@ -98,39 +155,64 @@ private struct WorkflowsList: View {
     }
 
     @ViewBuilder private var main: some View {
-        if store.showsSpinner {
+        if store.showsSpinner && !hasDesktopRows {
             FmSkeletonList()
-        } else if store.showsError {
+        } else if store.showsError && desktop == nil {
             ScrollView {
                 FmEmptyState(icon: "error_outline", title: WorkflowsText.unavailableTitle, message: store.error)
                     .containerRelativeFrame([.horizontal, .vertical])
             }
-            .fmRefreshable { await store.load() }
-        } else if store.workflows.isEmpty {
+            .fmRefreshable { await reload() }
+        } else if store.workflows.isEmpty && desktop == nil {
             ScrollView {
                 FmEmptyState(icon: "account_tree_outlined", title: WorkflowsText.emptyTitle, message: WorkflowsText.emptyMessage)
                     .containerRelativeFrame([.horizontal, .vertical])
             }
-            .fmRefreshable { await store.load() }
+            .fmRefreshable { await reload() }
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     FmNoticeLine(store.error.isEmpty ? nil : store.error, isError: true)
+                    FmNoticeLine(desktopNotice.isEmpty ? nil : desktopNotice, isError: desktopNoticeIsError,
+                                 onDismiss: { desktopNotice = "" })
+                    if desktop != nil {
+                        FmSectionHeader(
+                            title: DesktopWorkflowsText.accountTitle, icon: "cloud_outlined",
+                            count: store.workflows.isEmpty ? nil : store.workflows.count)
+                            .padding(.horizontal, FmSpace.x4)
+                            .padding(.top, FmSpace.x2)
+                        if store.workflows.isEmpty && !store.loading {
+                            Text(WorkflowsText.emptyMessage)
+                                .fmText(.bodySmall, color: fm.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, FmSpace.x4)
+                                .padding(.vertical, FmSpace.x2)
+                        }
+                    }
                     ForEach(store.workflows) { (workflow: WorkflowSummary) in
                         FmListRow(
                             title: workflow.name,
                             subtitle: subtitle(workflow),
                             leading: AnyView(FmIconTile(icon: WorkflowLook.triggerIcon(workflow.trigger), tint: tint(workflow))),
-                            trailing: workflow.active ? AnyView(FmStatusBadge(label: "Active", color: fm.accent)) : nil,
+                            trailing: trailing(workflow),
                             onTap: { opening = .existing(workflow.id) })
                             .accessibilityIdentifier("workflow-\(workflow.id)")
                         FmRowDivider()
                     }
+                    if let desktop {
+                        DesktopWorkflowsSection(
+                            store: desktop, onOpen: { desktopOpening = $0.id }, onRun: { prepareOnDesktop($0) })
+                    }
                 }
                 .padding(.bottom, FmSpace.x8)
             }
-            .fmRefreshable { await store.load() }
+            .fmRefreshable { await reload() }
         }
+    }
+
+    private func trailing(_ workflow: WorkflowSummary) -> AnyView? {
+        if store.desktopRunning == workflow.id { return AnyView(FmCircularProgressIndicator(size: 20, strokeWidth: 2)) }
+        return workflow.active ? AnyView(FmStatusBadge(label: "Active", color: fm.accent)) : nil
     }
 
     private func subtitle(_ workflow: WorkflowSummary) -> String {
