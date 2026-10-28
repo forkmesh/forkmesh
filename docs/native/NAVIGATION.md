@@ -709,6 +709,8 @@ to offer three depths.
   `PluginMenu.screenOwnsMenu` lists those routes so the shared button stays
   off them (CRM, Special Agents, and Coves for a repository; Coves without a
   repository is the repository picker and gets the shared button).
+  The CRM's own menu is its **More** section, so its "Rate, report or
+  uninstall…" row sits at the end of that list.
   Calendar's Today moved from the system overflow (which draws its own ⋯) to
   a plain button for the same reason.
 - **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): a native

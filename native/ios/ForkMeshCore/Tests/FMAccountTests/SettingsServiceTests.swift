@@ -186,6 +186,17 @@ final class SettingsServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testLayoutModeDefaultsToControlTowerAndPersistsByName() async {
+        let h = Harness()
+        XCTAssertEqual(h.settings.layoutMode, .controlTower)
+        h.settings.setLayoutMode(.focus)
+        XCTAssertEqual(h.prefs.string(forKey: SettingsService.layoutModeKey), "focus")
+        XCTAssertEqual(h.settings.layoutMode, .focus)
+        h.prefs.set("cockpit", forKey: SettingsService.layoutModeKey)
+        XCTAssertEqual(h.settings.layoutMode, .controlTower)
+    }
+
+    @MainActor
     func testAppearancePersistsChoicesByNameAndIgnoresUnknownValues() async {
         let h = Harness()
         h.settings.setThemeMode(.dark)
