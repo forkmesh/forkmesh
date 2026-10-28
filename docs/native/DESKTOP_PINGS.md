@@ -234,6 +234,40 @@ session is not in the relay's agent list).
   opens `AgentRouteScreen`, which resolves `desktop:<n>` for a number and
   `node:<id>` otherwise.
 
+#### The agent page a tap opens loads instead of going blank (iOS, 2026-10-28)
+
+A tap often lands before the Agents list has loaded, most of all on a cold
+launch, when the phone still has to reach the desktop over the relay. The page
+(`AgentRouteLookup`, `Features/Agents/Remote/AgentRouteScreens.swift`) used to
+show a bare spinner, call `refresh()`, and give up on the first miss. That
+failed four ways:
+
+- `AgentControlCenter.reload` returns at once while another refresh is in
+  flight (the Agents tab or the shell started one), so the page decided "not
+  found" before the list arrived. It now waits for `center.loading` to clear.
+- Relay runs were published only after the desktop answered, so a runner
+  alert waited out the desktop link and `agents.list` timeouts (20 s each)
+  when the desktop was asleep. `loadCloud` now publishes the relay rows as
+  soon as they land, next to the desktop rows already shown; the desktop's
+  answer then folds in any run it took over.
+- The id only matched one exact row. `AgentControlCenter.row(forRoute:)`
+  (over `UnifiedAgentRow.forRoute`) also finds a ping from another paired
+  desktop (`<key>:desktop:<n>`, when only one desktop has that number), a
+  relay run by its `cloudSessionId`, and a relay run the active desktop took
+  over as its desktop row.
+- A later refresh where the desktop failed dropped the row and swapped the
+  open page for "Agent not found". The page now keeps the row it found; while
+  a load is still running it follows the row if its id changes (`.id(row.id)`
+  rebuilds the run screen), and after that it stays put, like a page opened
+  from the list.
+
+While it looks, the page shows a skeleton shaped like the agent page
+(`agent-route-loading`); when nothing matches it says why (the desktop's error
+when there is one) and offers Try again (`agent-route-missing`). Tests:
+`AgentControlTests.testAnAlertsAgentIdFindsItsRowOnAnyDesktopOrTheQueue`,
+`testNodeRunsShowBeforeTheDesktopAnswers`,
+`testARelayRunTheDesktopTookOpensAsItsDesktopRow`.
+
 A tap on an Actions ping opens that run. The APNs payload carries `runId`
 next to `href`; the iOS `NotificationDeepLink` keeps `actions/runs/<id>` as
 its `reference` and `InboxRoutes` turns it into `.run`. Android's
