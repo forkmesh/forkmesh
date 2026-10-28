@@ -118,7 +118,8 @@ object AgentsFeature {
         val localControl: LocalControlService? by localControlLazy
 
         private val hubLazy = lazy {
-            DesktopControlHub(localControl, relayOpener(epoch), accountDesktopsLoader = accountDesktopsLoader(epoch)).also { hub ->
+            val prefs = Services.get<PrefStore>()?.let { base -> Services.get<ProjectScope>()?.prefs(base) ?: base }
+            DesktopControlHub(localControl, relayOpener(epoch), accountDesktopsLoader = accountDesktopsLoader(epoch), prefs = prefs).also { hub ->
                 ProjectLifecycle.scope.launch {
                     AppLifecycle.foreground.collect { if (current(epoch)) hub.keepWarm = it }
                 }

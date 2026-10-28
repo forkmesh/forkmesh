@@ -118,6 +118,12 @@ object ToolsFeature {
     }
 
     @Composable
+    fun TelemetryEarSparks(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+        val telemetry = Services.get<AppTelemetry>() ?: return
+        TelemetryEarSparksView(telemetry, width, height, modifier)
+    }
+
+    @Composable
     fun BugReportOverlay(screenName: String, content: @Composable () -> Unit) {
         BugReportOverlayView(screenName, sharedText, content)
     }
