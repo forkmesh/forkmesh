@@ -1691,15 +1691,35 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             reply(true, data, QString());
             return;
         }
+        if (action == QLatin1String("review")) {
+            if (repoWorkflowFileApproved(repoIndex, listing->path)) {
+                reply(true, {}, QStringLiteral("%1 is approved on this desktop.").arg(workflow.name));
+                return;
+            }
+            repoWorkflowApproved(repoIndex, listing->path, workflow.name);
+            reviewPendingRepoWorkflowApprovals();
+            const auto answer = [this, repo, path = listing->path, name = workflow.name, done] {
+                const bool approved = repoWorkflowFileApproved(repoIndexForKey(repo), path);
+                if (done)
+                    done(approved, {},
+                         approved ? QStringLiteral("Approved %1.").arg(name)
+                                  : QStringLiteral("%1 did not run: it is not approved on this desktop.").arg(name));
+            };
+            if (auto *box = qobject_cast<QMessageBox *>(m_repoWorkflowApprovalPrompt.data()))
+                connect(box, &QMessageBox::finished, this, answer);
+            else
+                answer();
+            return;
+        }
         if (action == QLatin1String("run")) {
             if (!listing->error.isEmpty()) {
                 reply(false, {}, listing->error);
                 return;
             }
             if (!repoWorkflowApproved(repoIndex, listing->path, workflow.name)) {
-                reply(false, {}, QStringLiteral("Approve %1 on this desktop before it runs: use Review on the "
-                                                "notice.")
-                                     .arg(workflow.name));
+                reply(false, {{QStringLiteral("code"), QStringLiteral("approval_required")}},
+                      QStringLiteral("Approve %1 on this desktop before it runs: use Review on the notice.")
+                          .arg(workflow.name));
                 return;
             }
             const QString trigger = text(payload, "trigger").isEmpty() ? QStringLiteral("By hand · Workflows page")
@@ -1717,7 +1737,8 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 }
                 const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, workflowId));
                 const bool recent = !runs.isEmpty() && nowMs() - runs.first().startedAtMs < 5000;
-                reply(recent && runs.first().status == rw::kStatusSuccess, {},
+                reply(recent && runs.first().status == rw::kStatusSuccess,
+                      recent ? QJsonObject{{QStringLiteral("runId"), runs.first().id}} : QJsonObject(),
                       recent ? rw::runSummaryText(runs.first())
                              : QStringLiteral("%1 did not start. Check that it is turned on, may read repositories "
                                               "and is not already working.")
