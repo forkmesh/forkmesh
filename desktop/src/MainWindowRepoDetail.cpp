@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "ChatLinkText.h"
 #include "OfficeChannelMirror.h"
 #include "MainWindowInternal.h"
 #include "NetworkFilesPanel.h"
@@ -11815,7 +11816,8 @@ void MainWindow::openReferenceLink(const QString &href)
         }
     }
 
-    QDesktopServices::openUrl(url.isValid() ? url : QUrl::fromUserInput(href));
+    if (const QUrl external = ChatLinkText::externalLinkUrl(href); external.isValid())
+        QDesktopServices::openUrl(external);
 }
 
 QString MainWindow::autolinkReferences(
@@ -11905,7 +11907,8 @@ void MainWindow::openBodyReference(const QString &href)
         }
         return;
     }
-    QDesktopServices::openUrl(QUrl(href));
+    if (const QUrl external = ChatLinkText::externalLinkUrl(href); external.isValid())
+        QDesktopServices::openUrl(external);
 }
 
 void MainWindow::copyReferenceLink(const QString &kind, const QString &id)

@@ -134,6 +134,30 @@ def test_content_pipeline_is_encrypted_shared_and_filter_ready():
     assert call(runtime.use("GET", "bob"), "/api/marketing/acme")["status"] == 404
 
 
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts["dave"] = "bi:dave"
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    created = call(runtime.use("POST", body={"title": "Launch story", "body": "Draft",
+                                              "channel": "blog"}),
+                   "/api/marketing/acme/content")
+    assert created["status"] == 201
+    item = created["data"]["content"]["id"]
+    for path in ("/api/marketing/acme", "/api/marketing/acme/content",
+                 f"/api/marketing/acme/content/{item}"):
+        guest = call(runtime.use("GET", "bob"), path)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("GET", "dave"), "/api/marketing/acme/content")["status"] == 200
+    for method, path, body in (
+            ("POST", "/api/marketing/acme/content", {"title": "Auditor post"}),
+            ("PATCH", f"/api/marketing/acme/content/{item}", {"status": "published"}),
+            ("DELETE", f"/api/marketing/acme/content/{item}", {})):
+        refused = call(runtime.use(method, "dave", body), path)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
+    assert runtime.db.execute("SELECT COUNT(*) FROM marketing_content").fetchone()[0] == 1
+
+
 def test_latest_channel_metrics_power_dashboard_totals():
     runtime = Runtime()
     for body in (
@@ -622,7 +646,7 @@ def test_discord_posts_lists_the_connector_posts_of_the_last_six_days():
     runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
     runtime.db.commit()
     guest = call(runtime.use("GET", "bob"), "/api/marketing/acme/discord-posts")
-    assert (guest["status"], guest["data"]["error"]) == (403, "organization_member_required")
+    assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
 
 
 def test_desktop_and_web_show_the_discord_posts_on_the_discord_channel():
@@ -3403,8 +3427,8 @@ def test_ready_x_post_validates_its_text_image_and_roles():
         "data"]["error"] == "ready_post_image_too_large"
     assert put({"text": "hi", "link": "javascript:alert(1)"})["data"][
         "error"] == "invalid_ready_post_link"
-    assert put({"text": "hi"}, "bob")["status"] == 403
-    assert call(runtime.use("GET", "bob"), "/api/marketing/acme/ready-post")["status"] == 403
+    assert put({"text": "hi"}, "bob")["status"] == 404
+    assert call(runtime.use("GET", "bob"), "/api/marketing/acme/ready-post")["status"] == 404
     assert call(runtime.use("DELETE"), "/api/marketing/acme/ready-post")["status"] == 405
 
 

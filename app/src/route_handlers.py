@@ -420,6 +420,8 @@ async def _account_finalize(env, request):
                 and await ed25519_verify(pubkey, signature, canonical)):
             return json_response({"error": "bad_signature"}, status=401)
         rec["pubkey"] = pubkey
+    if await _account_key_revoked(env, name_bi, rec["pubkey"]):
+        return json_response({"error": "device_revoked"}, status=401)
     # Finalize can never introduce a new name — it 404s above unless the
     # reservation already exists — so the name was moderated when it was
     # reserved. Only the deterministic filter re-runs here; re-asking the AI

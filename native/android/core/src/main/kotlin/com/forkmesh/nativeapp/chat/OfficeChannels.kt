@@ -293,6 +293,7 @@ class OfficeChannelService(
 
     @Volatile
     var onLiveFrame: ((Map<String, Any?>, String) -> Unit)? = null
+    var onRoomOpened: ((String, String) -> Unit)? = null
 
     fun sendLiveFrame(conversation: String, type: String, fields: Map<String, Any?>): Boolean {
         if (type !in GroupCallFrames.LIVE_TYPES) return false
@@ -569,6 +570,7 @@ class OfficeChannelService(
             synchronized(lock) { sockets[room.id] = holder }
             advertise(holder)
             notifyListeners()
+            onRoomOpened?.invoke(room.conversation, roomName)
             return true
         } catch (error: Exception) {
             lastError = error.message ?: error.toString()

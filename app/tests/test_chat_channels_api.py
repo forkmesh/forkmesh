@@ -153,8 +153,20 @@ class FakeRuntime:
             "messageId": message_id,
         })
 
-    async def public_webhook_recipients(self):
-        return sorted(self.accounts)
+    async def public_webhook_recipients(self, channel_id):
+        rows = self.db.execute(
+            "SELECT account_bi FROM chat_channel_reads WHERE channel_id=? "
+            "ORDER BY read_at DESC", (channel_id,)).fetchall()
+        return [row["account_bi"][len("bi:"):] for row in rows
+                if row["account_bi"][len("bi:"):] in self.accounts]
+
+    async def channel_creations_since(self, actor, since):
+        return sum(
+            1 for item in self.audits
+            if item["actor"] == actor
+            and item["action"] == "chat.channel.create"
+            and item["outcome"] == "success"
+            and item["ts"] > since)
 
     async def everyone_members(self):
         return [{"username": name, "joinedAt": 0} for name in sorted(self.accounts)]
@@ -165,6 +177,7 @@ class FakeRuntime:
     async def audit(self, actor, action, target_type="", target="",
                     outcome="success", details=None):
         self.audits.append({
+            "ts": self.clock,
             "actor": actor,
             "action": action,
             "target_type": target_type,
@@ -940,6 +953,10 @@ async def test_public_channels_support_incoming_webhooks():
         "lastUsedAt": 0,
     }]
     assert "url" not in listed["data"]["webhooks"][0]
+    opened = await api.handle(
+        runtime.use("GET", "bob"),
+        f"/api/chat/channels/{channel_id}/room-access")
+    assert opened["status"] == 200
 
     delivery = await api.handle(
         runtime.use("POST", "", {"text": "Build passed"}, query={"token": token}),
@@ -954,15 +971,19 @@ async def test_public_channels_support_incoming_webhooks():
     recipients = {
         item["recipient"] for item in runtime.webhook_notifications
     }
-    assert recipients == {"admin", "alice", "bob"}
+    assert recipients == {"alice", "bob"}
 
 
 @run_async_test
-async def test_a_public_webhook_pings_everyone_at_most_once_per_window():
+async def test_a_public_webhook_pings_its_readers_at_most_once_per_window():
     runtime = FakeRuntime()
     created = await create_channel(
         runtime, "public-updates", visibility="public", actor="alice")
     channel_id = created["data"]["channel"]["id"]
+    opened = await api.handle(
+        runtime.use("GET", "bob"),
+        f"/api/chat/channels/{channel_id}/history")
+    assert opened["status"] == 200
     collection = f"/api/chat/channels/{channel_id}/webhooks"
     tokens = []
     for name in ("Deploy bot", "Other bot"):
@@ -979,14 +1000,14 @@ async def test_a_public_webhook_pings_everyone_at_most_once_per_window():
         return sorted(
             item["recipient"] for item in runtime.webhook_notifications)
 
-    assert await post(tokens[0], "one") == ["admin", "alice", "bob"]
+    assert await post(tokens[0], "one") == ["alice", "bob"]
     runtime.clock += 1000
     assert await post(tokens[0], "two") == ["alice"]
     runtime.clock += 1000
     assert await post(tokens[1], "three") == ["alice"]
     assert len(runtime.webhook_deliveries) == 3
     runtime.clock += api.WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS
-    assert await post(tokens[1], "four") == ["admin", "alice", "bob"]
+    assert await post(tokens[1], "four") == ["alice", "bob"]
     listed = await api.handle(runtime.use("GET", "alice"), collection)
     assert sorted(
         item["lastUsedAt"] for item in listed["data"]["webhooks"]) == [
@@ -998,9 +1019,12 @@ async def test_a_public_webhook_pings_everyone_at_most_once_per_window():
 async def test_one_account_at_its_channel_cap_does_not_block_another():
     runtime = FakeRuntime()
     for index in range(api.MAX_CHAT_CHANNELS_PER_CREATOR):
+        if index and index % api.CHANNEL_CREATE_MAX_PER_WINDOW == 0:
+            runtime.clock += api.CHANNEL_CREATE_WINDOW_MS
         created = await create_channel(
             runtime, f"alice-{index}", actor="alice")
         assert created["status"] == 201, created
+    runtime.clock += api.CHANNEL_CREATE_WINDOW_MS
     refused = await create_channel(runtime, "alice-extra", actor="alice")
     assert refused["status"] == 429
     assert refused["data"] == {"error": "too_many_own_channels"}
@@ -1009,18 +1033,61 @@ async def test_one_account_at_its_channel_cap_does_not_block_another():
 
 
 @run_async_test
-async def test_the_site_wide_channel_ceiling_still_applies():
+async def test_channels_other_accounts_made_never_block_a_new_creator():
     runtime = FakeRuntime()
-    for index in range(api.MAX_CHAT_CHANNELS):
+    for index in range(150):
         runtime.db.execute(
             "INSERT INTO chat_channels (channel_id,name_bi,data,"
             "created_by_bi,created_at,updated_at,key_version) "
             "VALUES (?,?,?,?,?,?,1)",
             (f"{index + 1000:032x}", f"name-{index}", "{}",
              f"bi:other-{index}", 0, 0))
-    refused = await create_channel(runtime, "bob-first", actor="bob")
+    runtime.db.commit()
+    allowed = await create_channel(runtime, "bob-first", actor="bob")
+    assert allowed["status"] == 201
+
+
+@run_async_test
+async def test_deleting_channels_does_not_reset_the_creation_budget():
+    runtime = FakeRuntime()
+    for index in range(api.CHANNEL_CREATE_MAX_PER_WINDOW):
+        created = await create_channel(
+            runtime, f"burst-{index}", visibility="public", actor="alice")
+        assert created["status"] == 201, created
+        deleted = await api.handle(
+            runtime.use("DELETE", "alice", {}),
+            f"/api/chat/channels/{created['data']['channel']['id']}")
+        assert deleted["status"] == 200, deleted
+    refused = await create_channel(
+        runtime, "burst-extra", visibility="public", actor="alice")
     assert refused["status"] == 429
-    assert refused["data"] == {"error": "too_many_channels"}
+    assert refused["data"] == {"error": "too_many_new_channels"}
+    other = await create_channel(runtime, "bob-first", actor="bob")
+    assert other["status"] == 201
+    runtime.clock += api.CHANNEL_CREATE_WINDOW_MS
+    later = await create_channel(
+        runtime, "burst-extra", visibility="public", actor="alice")
+    assert later["status"] == 201
+
+
+@run_async_test
+async def test_a_public_webhook_never_pings_accounts_that_never_opened_it():
+    runtime = FakeRuntime()
+    runtime.accounts |= {f"user{index}" for index in range(20)}
+    created = await create_channel(
+        runtime, "spam", visibility="public", actor="alice")
+    channel_id = created["data"]["channel"]["id"]
+    webhook = await api.handle(
+        runtime.use("POST", "alice", {"name": "ForkMesh Security"}),
+        f"/api/chat/channels/{channel_id}/webhooks")
+    token = webhook["data"]["url"].rsplit("=", 1)[-1]
+    delivery = await api.handle(
+        runtime.use("POST", "", {"text": "click here"},
+                    query={"token": token}),
+        "/api/chat/webhooks")
+    assert delivery["status"] == 202
+    assert [item["recipient"] for item in runtime.webhook_notifications] == [
+        "alice"]
 
 
 @run_async_test
@@ -1668,3 +1735,29 @@ async def test_a_webhook_token_may_ride_in_a_header():
         runtime.use("POST", "", {"text": "deployed"}), "/api/chat/webhooks")
     assert delivered["status"] == 202
     assert runtime.webhook_deliveries[-1][2]["text"] == "deployed"
+
+
+ENTRY = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
+
+
+def _runtime_method(signature):
+    body = ENTRY[ENTRY.index(signature):]
+    return body[:body.index("\n\n")]
+
+
+def test_the_public_webhook_audience_is_the_channel_readers():
+    body = _runtime_method(
+        "    async def public_webhook_recipients(self, channel_id):")
+    assert "FROM chat_channel_reads r JOIN users u" in body
+    assert "WHERE r.channel_id=?" in body
+    assert "FROM users ORDER BY username" not in body
+    assert "MAX_CHANNEL_MEMBERS" in body
+
+
+def test_the_creation_budget_counts_the_audit_log_not_live_rows():
+    body = _runtime_method(
+        "    async def channel_creations_since(self, actor, since):")
+    assert "FROM sensitive_audit_log" in body
+    assert '"chat.channel.create"' in body
+    assert "outcome='success'" in body
+    assert "chat_channels" not in body

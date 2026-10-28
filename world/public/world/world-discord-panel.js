@@ -48,14 +48,14 @@ const OAUTH_OUTCOMES = {
   invalid_record_state: "The callback state did not match its encrypted authorization record (stage: record state binding).",
   invalid_record_verifier: "The authorization record contained an invalid PKCE verifier (stage: record PKCE validation).",
   invalid_record_guild: "The authorization record contained an invalid Server ID (stage: record guild validation).",
-  invalid_context: "Your ForkMesh login or organization-owner binding changed during authorization (stage: session context).",
+  invalid_context: "Discord sent you back to a different browser or tab than the one that started connecting, or your ForkMesh sign-in or owner role changed. Nothing was connected. Press Connect Discord server again here to finish (stage: session context).",
   invalid_code: "Discord did not return a valid authorization code (stage: authorization code).",
   setup: "Discord OAuth configuration changed during authorization. Please connect again.",
 };
 
 function consumeOAuthOutcome() {
   const url = new URL(window.location.href);
-  const outcome = text(url.searchParams.get("discord"), 20);
+  const outcome = text(url.searchParams.get("discord"), 40);
   if (!Object.hasOwn(OAUTH_OUTCOMES, outcome)) return;
   state.oauthNotice = OAUTH_OUTCOMES[outcome];
   state.open = true;

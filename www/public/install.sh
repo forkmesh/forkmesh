@@ -102,6 +102,7 @@ FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE="${FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_
 [ -n "$FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE" ] ||
   [ ! -f /etc/forkmesh/release-publisher.pem ] ||
   FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE=/etc/forkmesh/release-publisher.pem
+FORKMESH_MIN_RELEASE_VERSION="1.2.8"
 # Direct uploads do not carry a release manifest, so the authenticated
 # controller must supply their exact digest.
 FORKMESH_LOCAL_BINARY_SHA256="${FORKMESH_LOCAL_BINARY_SHA256:-}"
@@ -1616,6 +1617,36 @@ _manifest_tag() {
     head -n 1
 }
 
+_manifest_channel() {
+  [ -f "$1" ] || return 0
+  sed -n 's/.*"channel"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" |
+    head -n 1
+}
+
+_release_channel_accepts() {
+  local wanted="$1" channel="$2" version="${3#v}"
+  [ -n "$channel" ] || return 1
+  [ "$channel" = "$wanted" ] && return 0
+  [ "$wanted" = "latest" ] && [ -n "$version" ] &&
+    [ "$channel" = "candidate-$version" ]
+}
+
+_release_version_at_least() {
+  local have="${1#v}" want="${2#v}" index h w
+  printf '%s' "$have" | grep -Eq '^[0-9]{1,6}(\.[0-9]{1,6}){0,3}$' || return 1
+  printf '%s' "$want" | grep -Eq '^[0-9]{1,6}(\.[0-9]{1,6}){0,3}$' || return 1
+  local -a have_parts want_parts
+  IFS=. read -r -a have_parts <<<"$have"
+  IFS=. read -r -a want_parts <<<"$want"
+  for index in 0 1 2 3; do
+    h=$((10#${have_parts[$index]:-0}))
+    w=$((10#${want_parts[$index]:-0}))
+    [ "$h" -gt "$w" ] && return 0
+    [ "$h" -lt "$w" ] && return 1
+  done
+  return 0
+}
+
 _manifest_checksums_sha256() {
   [ -f "$1" ] || return 0
   sed -n 's/.*"checksums_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' "$1" |
@@ -1628,6 +1659,7 @@ _manifest_checksums_sha256() {
 _verify_release_metadata() {
   local manifest="$1" signature="$2" sums="$3"
   local manifest_hash sums_hash expected_sums tag build_commit asset_commit
+  local signature_trust=0
   manifest_hash="$(_sha256_file "$manifest")"
   if ! printf '%s' "$manifest_hash" | grep -Eq '^[0-9a-f]{64}$'; then
     warn "A working SHA-256 tool is required for every prebuilt install."
@@ -1650,6 +1682,7 @@ _verify_release_metadata() {
       warn "Release manifest signature is missing or invalid."
       return 1
     fi
+    signature_trust=1
   else
     warn "No independent release trust anchor is configured; refusing prebuilt bytes."
     return 1
@@ -1657,6 +1690,19 @@ _verify_release_metadata() {
 
   grep -Eq '"schema"[[:space:]]*:[[:space:]]*"forkmesh-release-v2"' "$manifest" ||
     { warn "Authenticated release manifest uses an unsupported schema."; return 1; }
+  if [ "$signature_trust" = "1" ]; then
+    tag="$(_manifest_tag "$manifest")"
+    if ! _release_channel_accepts "${RELEASE_CHANNEL:-latest}" \
+         "$(_manifest_channel "$manifest")" "$tag"; then
+      warn "Authenticated release manifest is not for the ${RELEASE_CHANNEL:-latest} release channel."
+      return 1
+    fi
+    if [ -z "$FORKMESH_EXPECTED_BUILD_COMMIT" ] &&
+       ! _release_version_at_least "$tag" "${FORKMESH_MIN_RELEASE_VERSION:-}"; then
+      warn "Authenticated release manifest ${tag:-without a tag} is older than this installer's minimum release ${FORKMESH_MIN_RELEASE_VERSION:-}."
+      return 1
+    fi
+  fi
   expected_sums="$(_manifest_checksums_sha256 "$manifest")"
   sums_hash="$(_sha256_file "$sums")"
   if ! printf '%s' "$expected_sums" | grep -Eq '^[0-9a-f]{64}$' ||

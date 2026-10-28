@@ -11,6 +11,12 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Settings", "text": "Claiming or linking a node with your password now asks for your authenticator code when two-factor sign-in is on."},
+  {"date": "2026-10-28", "area": "Chat", "text": "Webhook posts in a public channel now notify only people who opened that channel, and each account can create up to 5 channels an hour."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "A phone paired with a code is a guest until your account confirms it is yours; terminals, secrets, wallet and fleet controls stay with confirmed phones."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "Workflows and shortcuts committed in a repository now also need your approval before a phone, a package or a schedule toggle can run them."},
+  {"date": "2026-10-28", "area": "Desktop", "text": "Automatic updates now install only releases signed by ForkMesh that are newer than the version you run."},
+  {"date": "2026-10-27", "area": "Desktop", "text": "Workflows and special agents committed in a repository now run on a schedule or a repository event only after you approve the file on this desktop, and a change to the file or to a script it runs asks again."},
   {"date": "2026-10-28", "area": "Market", "text": "Invoicing on the web: when saving, emailing or recording a payment fails, the reason and what to do next now show inside the open dialog instead of behind it."},
   {"date": "2026-10-28", "area": "iPhone", "text": "Tapping an agent alert now opens its page while it loads, finds agents on your other desktops and runners, and offers Try again instead of a blank page."},
   {"date": "2026-10-28", "area": "Projects", "text": "On a phone, the web issue and pull request lists are more compact, and the New issue, refresh and view buttons now line up at one height."},

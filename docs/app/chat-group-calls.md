@@ -19,7 +19,7 @@ are known to the relay, so a call there could not be end-to-end encrypted
    private channel). The answer is
    `{"ticket", "room", "peer", "url"}`: a 60-second ticket for the call
    server (`chat_call_ticket` in `entry.py`), the opaque room id (HMAC of the
-   channel id), a random peer id for this join and the `wss://` URL of the
+   channel id and its key version), a random peer id for this join and the `wss://` URL of the
    call server that hosts this room. The app needs `FORKMESH_CALLS_SECRET`
    (32 characters or more, shared with every call server) and
    `FORKMESH_CALLS_NODES`, the comma-separated `wss://<node>/calls/ws` URLs of
@@ -30,6 +30,34 @@ are known to the relay, so a call there could not be end-to-end encrypted
    server sends as people join and leave (protocol in `docs/server/rtc.md`,
    "signal"). The server names each forwarded stream after its sender's peer
    id (`msid`).
+
+## Removing a member moves the call
+
+The call room follows the channel's key version (`chat_call_room`): key
+version 1 keeps the original `forkmesh-call-room-v1` derivation, and every
+later version hashes `forkmesh-call-room-v2`, the channel id and the version.
+Removing a member, or closing a public channel, raises the key version and
+closes the chat room (`revoke_room`). The call server has no control path to
+eject a peer, so before 2026-10-28 a removed member who was in a call stayed
+in it, kept receiving everyone's media and still held the current media keys
+until someone left.
+
+Now the remaining members move: when the chat room reconnects under a new room
+name, or the channel list shows a new key version, `chat.js` calls
+`groupCalls.channelRekeyed(channelKey, chatRoom)`. If that differs from the
+room the call joined under, the client leaves the call server (its `out`
+presence makes the others rotate their send keys), fetches a new ticket, which
+names the new room, and joins again. The removed member cannot get a ticket
+and is left alone in the old room. The phone apps do the same. The Android group call page runs a copy of
+`chat-group-calls.js`: `GroupCallFeature` passes the channel's room name
+(`chat-channel:<id>:v<keyVersion>`) as the fifth `join` argument and forwards
+every `OfficeChannelService.onRoomOpened` for the call's channel to the page's
+`rekeyed` operation. On iOS, `NativeGroupCall` records the same room name at
+join and `AppServices+Chat` sends every `OfficeChannelService.onRoomOpened` to
+`NativeGroupCall.channelRekeyed`, which leaves, fetches a new ticket and joins
+again. Neither phone reopens a closed channel socket on its own, so the
+call's 20-second heartbeat reopens it (`open`), which reads `room-access` and
+reports the new room name.
 
 ## Every core runs a call server
 

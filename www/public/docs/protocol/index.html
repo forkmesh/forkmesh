@@ -750,10 +750,13 @@
         </p>
         <p>
           <code>POST /api/accounts/rotate</code> accepts
-          <code>{ nodeName?, oldPubkey, newPubkey, ts, sig|signature }</code>
+          <code>{ nodeName?, oldPubkey, newPubkey, ts, sig|signature, newSig }</code>
           and verifies
           <code>forkmesh-rotate-v1\n&lt;oldPubkey&gt;\n&lt;newPubkey&gt;\n&lt;ts&gt;</code>
-          with the currently bound old key. A request that names the account
+          with the currently bound old key, and
+          <code>forkmesh-rotate-accept-v1\n&lt;nodeName&gt;\n&lt;oldPubkey&gt;\n&lt;newPubkey&gt;\n&lt;ts&gt;</code>
+          in <code>newSig</code> with the new key; without it the relay answers
+          <code>426 new_key_proof_required</code>. A request that names the account
           and finds <code>newPubkey</code> already bound returns success as
           an idempotent no-op. <code>nodeName</code> is optional for desktop
           rotation records; when omitted, the relay finds the account by

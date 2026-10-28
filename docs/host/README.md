@@ -96,7 +96,9 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
     agents are never keyword-blocked;
   - each visitor gets `FORKMESH_RATE_LIMIT_REQUESTS` per
     `FORKMESH_RATE_LIMIT_PERIOD_SECONDS`, then 429 for
-    `FORKMESH_RATE_LIMIT_TIMEOUT_SECONDS` (in memory, per core);
+    `FORKMESH_RATE_LIMIT_TIMEOUT_SECONDS` (in memory, per core); an IPv6
+    visitor is counted by its /64 (`rate_key`), since one customer holds a
+    whole /64 and could otherwise rotate through 2^64 budgets;
   - the visitor is the verified edge address, else `Cf-Connecting-Ip` set by
     Caddy; `/health`, `/readyz` and `/api/fleet/*` are exempt.
 - **Request rules in Caddy.** Each rules load writes
@@ -115,6 +117,32 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   learned `history?path=` but the fast path did not, every folder's History
   tab on an instance showed the whole repository's commits, because the fast
   path answered first and dropped `path`.
+- **Active content from the fast path.** Every fast-path answer (live,
+  in-memory and stale) carries `Content-Security-Policy: default-src 'none';
+  sandbox`, and a `raw` answer whose type is empty or contains `html`, `xml`
+  or `script`, or is `multipart/*`, goes out as `application/octet-stream`
+  with `Content-Disposition: attachment`. This is the rule the Worker applies
+  to routed reads (`edge_routing.active_content_type`;
+  `test_active_content_rule_matches_the_worker_router` keeps the two equal),
+  and the gateway's `raw_spec` uses it too. Why: the fast path answers before
+  the Worker and kept only the gateway's type and disposition, dropping its
+  CSP. The gateway blocked only seven types, so a file such as `feed.atom`
+  (`application/atom+xml` from Debian's `/etc/mime.types`) was served inline
+  without a CSP. Browsers display such a file as an XML document and run its
+  XHTML scripts, on the App origin.
+- **Commit-pinned answers in memory re-check visibility.** A hit in the
+  in-memory cache of commit-pinned reads (`ImmutableCache`), whether served
+  by `handle` or returned by `read` to the view bundles, is used only while
+  `repo_views.still_public` says the gateway still serves the repository on
+  its public route. That answer is kept for 5 seconds
+  (`PUBLIC_CHECK_SECONDS`). If the check fails, the hit falls through to the
+  Worker. When the public route answers 403, 404 or 410, every cached entry
+  of that repository is dropped (`forget_repository`). A 404 on any
+  fast-path read also clears the 5-second answer, so the next hit checks
+  again. If the gateway is unreachable, the entries are withheld but kept.
+  Why: hits used to be served without any check, so after a repository went
+  private, was quarantined or was deleted, its commit-pinned reads kept being
+  served from memory until eviction or a restart.
 - **Stale answers during a gateway restart.** The fast path keeps the last
   200 of each non-pinned `tree`, `blob`, `blobs`, `history`, `commit`,
   `branches` and `stats` read (`StaleCache`: 256 entries, 16 MB, 1 MB per
@@ -125,9 +153,13 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   Worker). The dashboard shows "Updating…" over such a page and reads it again
   (`docs/app/repo-views.md`). Only the gateway's `/v1/public/...` route fills
   the cache, so private repositories and private-view reads (`viewer`/`sig`)
-  never enter it; a later 404 from the gateway drops the entry, and the
-  15-minute limit bounds how long a repository made private could still be
-  answered from it during an outage. Commit-pinned reads stay in the existing
+  never enter it. A 404 from the gateway drops that entry and, if the
+  repository still has others, re-checks it with `still_public`; a repository
+  that is no longer public loses all its entries (`forget_repository` clears
+  both caches), and `stale_answer` refuses any repository `repo_views` last
+  saw as not public (`known_not_public`). Before this, the other entries of a
+  repository made private stayed answerable for 15 minutes. When the gateway
+  is down and the visibility is unknown, the 15-minute limit still bounds it. Commit-pinned reads stay in the existing
   `ImmutableCache`. This exists because every instance deploy restarted the
   gateway and a single-server instance showed pull request pages as unavailable for
   about 40 s (`docs/server/gateways.md`).

@@ -746,3 +746,20 @@ def test_hall_of_fame_drops_credits_of_a_repository_gone_private(world):
     del world.repos[("acme", "widget")]
     sa._hall_cache["value"] = None
     assert asyncio.run(sa.hall_of_fame(world.env)) == []
+
+
+def test_credit_list_drops_advisories_of_a_repository_gone_private(world):
+    key = Key()
+    advisory_id = report(world, "alice")
+    api(world, "POST", "/advisories/" + advisory_id, "alice",
+        {"action": "credit", "user": "alice", "type": "finder"})
+    assert publish(world, advisory_id, key).status == 200
+    path = "/api/security-advisories/credits/alice"
+    listed = public(world, "GET", path).data
+    assert listed["count"] == 1
+    assert listed["credits"][0]["repository"] == "acme/widget"
+    world.repos[("acme", "widget")] = "private"
+    hidden = public(world, "GET", path).data
+    assert hidden["count"] == 0 and hidden["credits"] == []
+    own = public(world, "GET", path, "alice").data
+    assert own["credits"] == []

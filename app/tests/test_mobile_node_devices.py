@@ -199,6 +199,7 @@ LOGIN_FUNCTIONS = {
     "_device_bind_canonical",
     "_device_proven_user_bis",
     "_device_retire_unproven_claims",
+    "_account_key_revoked",
 }
 
 
@@ -610,6 +611,8 @@ REGISTRY_FUNCTIONS = {
     "_account_desktops",
     "_account_desktops_handler",
     "_account_device_for_pubkey",
+    "_account_key_revoked",
+    "_account_drop_revoked_primary",
 }
 
 
@@ -684,6 +687,10 @@ class _Registry:
             return (await blind_index(env, owner),
                     dict(rec) if rec else None)
 
+        async def _save_account(_env, account_bi, rec, **_kwargs):
+            assert account_bi == registry.bi(rec["name"])
+            registry.accounts[rec["name"]] = dict(rec)
+
         async def bounded_json_request(request):
             return await request.json()
 
@@ -732,6 +739,7 @@ class _Registry:
             "_login_failure_response": _login_failure_response,
             "_audit_sensitive_action": _audit_sensitive_action,
             "_account_row": _account_row,
+            "_save_account": _save_account,
             "bounded_json_request": bounded_json_request,
             "_request_account_session_token": _request_account_session_token,
             "_request_origin_allowed": lambda _env, _request: True,
@@ -1165,6 +1173,70 @@ def test_owner_signing_keys_include_enabled_mobile_node_and_drop_revoked():
     assert registry.owner_keys("alice") == [DESKTOP_KEY]
 
 
+
+def test_revoking_the_primary_desktop_takes_its_key_off_the_account():
+    registry = _Registry()
+    registry.account("alice", pubkey=DESKTOP_KEY)
+    desktop_bi, _desktop_token = registry.bind(
+        "alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    web_token = registry.web_session("alice")
+    assert registry.owner_keys("alice") == [DESKTOP_KEY]
+    response = registry.devices(
+        web_token, method="DELETE", target=desktop_bi[:16], body=SUDO)
+    assert response["status"] == 200, response
+    rec = registry.accounts["alice"]
+    assert rec["pubkey"] == ""
+    assert rec["prev_pubkeys"] == [DESKTOP_KEY]
+    assert rec["pubkey_revoked_at"] == NOW
+    assert registry.owner_keys("alice") == []
+
+
+def test_revoke_all_takes_a_revoked_primary_key_off_the_account():
+    registry = _Registry()
+    registry.account("alice", pubkey=DESKTOP_KEY)
+    registry.bind("alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    _phone_bi, phone_token = registry.bind(
+        "alice", PHONE_KEY, "mobile_node", "iPhone")
+    response = registry.devices(
+        phone_token, method="POST", action="revoke-all", body=SUDO)
+    assert response["data"] == {
+        "ok": True, "revokedDevices": 1, "currentRevoked": False}
+    assert registry.accounts["alice"]["pubkey"] == ""
+    assert registry.owner_keys("alice") == [PHONE_KEY]
+
+
+def test_revoking_another_device_keeps_the_primary_key():
+    registry = _Registry()
+    registry.account("alice", pubkey=DESKTOP_KEY)
+    registry.bind("alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    phone_bi, _ = registry.bind("alice", PHONE_KEY, "mobile_node", "iPhone")
+    web_token = registry.web_session("alice")
+    registry.devices(
+        web_token, method="DELETE", target=phone_bi[:16], body=SUDO)
+    assert registry.accounts["alice"]["pubkey"] == DESKTOP_KEY
+    assert "prev_pubkeys" not in registry.accounts["alice"]
+    assert registry.owner_keys("alice") == [DESKTOP_KEY]
+
+
+def test_a_primary_key_with_a_revoked_device_row_never_signs():
+    registry = _Registry()
+    registry.account("alice", pubkey=DESKTOP_KEY)
+    desktop_bi, _ = registry.bind(
+        "alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    registry.db.execute(
+        "UPDATE account_devices SET revoked_at=?, enabled=0 "
+        "WHERE device_bi=?", (NOW, desktop_bi))
+    registry.db.commit()
+    assert registry.accounts["alice"]["pubkey"] == DESKTOP_KEY
+    assert registry.owner_keys("alice") == []
+    assert registry._run(registry.ns["_account_key_revoked"](
+        registry.env, registry.bi("alice"), DESKTOP_KEY)) is True
+    assert registry._run(registry.ns["_account_key_revoked"](
+        registry.env, registry.bi("alice"), PHONE_KEY)) is False
+    check = registry.check_device_signed("alice", DESKTOP_KEY, DESKTOP_KEY)
+    assert check["status"] == 401
+
+
 def test_device_check_answers_only_for_the_callers_own_enabled_keys():
     registry = _Registry()
     registry.account("alice", pubkey=DESKTOP_KEY)
@@ -1385,8 +1457,8 @@ def test_mobile_bind_never_touches_desktop_only_paths():
     # Mobile returns before the primary-key promotion, hosting-node touch and
     # referral finalize branch.
     assert login.index("return await _account_login_mobile_node_response(") < (
-        login.index('if not rec.get("pubkey"):'))
-    assert login.index('if not rec.get("pubkey"):') < login.index(
+        login.index('rec["pubkey"] = pubkey'))
+    assert login.index('rec["pubkey"] = pubkey') < login.index(
         "touch_registered_node(")
     assert login.index("touch_registered_node(") < login.index(
         "_finalize_referral_signup")

@@ -124,7 +124,7 @@ struct FileOpenScreen: View {
         if let local = source as? LocalFileSource { return try local.url(entry.path) }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("files-open-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let target = folder.appendingPathComponent(entry.name)
+        let target = try entry.localTarget(in: folder)
         try await source.download(entry.path, to: target, progress: nil)
         return target
     }
@@ -152,7 +152,7 @@ struct FileOpenScreen: View {
             if isText, dirty {
                 let temp = FileManager.default.temporaryDirectory.appendingPathComponent("files-share-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
-                let target = temp.appendingPathComponent(entry.name)
+                let target = try entry.localTarget(in: temp)
                 try Data(text.utf8).write(to: target)
                 sharing = SharedFile(url: target)
                 return

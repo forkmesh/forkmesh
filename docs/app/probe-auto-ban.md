@@ -95,7 +95,13 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
 - **Never banned:** non-routable addresses (loopback, private, link-local,
   carrier NAT, documentation, the mesh range) and every edge-provider range
   (a copy of `CLOUDFLARE_RANGES` in `deploy/core/render.py`, kept equal by a
-  test). `FORKMESH_PROBE_BAN_ALLOW` adds more.
+  test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
+  writes it into each core's `app.env` with every `[[runners]]` address from
+  `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
+  runner can reach the public App, and one probe from it would otherwise ban
+  the runner's address, cutting off its own claims and every other owner's
+  jobs. Autoscaled pool runners and user-run mirrors are not in the fleet
+  file and are not covered.
 - Bans block the App, World and proxied site routes, not static files served
   by the edge.
 

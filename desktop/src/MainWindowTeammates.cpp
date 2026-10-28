@@ -8265,6 +8265,9 @@ void MainWindow::checkTeammateSchedules()
         }
         if (!forkmesh::teammates::scheduleIsDue(teammate, now))
             continue;
+        if (const int repoIndex = activeTeammateRepoIndex();
+            !repoWorkflowApproved(repoIndex, repoWorkflowPath(repoIndex, teammate.id), teammate.name))
+            continue;
         runTeammate(teammate.id,
                     QStringLiteral("Scheduled · %1")
                         .arg(forkmesh::teammates::humanSchedule(
@@ -8372,6 +8375,10 @@ void MainWindow::triggerTeammatesForEvent(const QString &eventName,
         if (directlyMentioned.contains(teammate.id))
             continue;
         if (!forkmesh::teammates::scheduleMatchesEvent(teammate, eventName))
+            continue;
+        if (const int eventRepoIndex = repoIndex < 0 ? activeTeammateRepoIndex() : repoIndex;
+            !repoWorkflowApproved(eventRepoIndex, repoWorkflowPath(eventRepoIndex, teammate.id),
+                                  teammate.name))
             continue;
         const QString trigger =
             detail.trimmed().isEmpty()

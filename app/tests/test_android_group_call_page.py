@@ -60,7 +60,7 @@ await page.waitForFunction(() => window.__posts.some((item) => item.event === "r
 const out = { ready: true };
 out.mode = await page.evaluate(() => (typeof RTCRtpScriptTransform === "function" ? "script" : (RTCRtpSender.prototype.createEncodedStreams ? "streams" : "")));
 await page.evaluate(() => window.fmGroup(1, "frame", [{ type: "group-call-presence", peer: "0123456789abcdef0123456789abcdef", call: "in", sender: "pat" }, "#office/team"]));
-await page.evaluate(() => window.fmGroup(2, "join", ["#office/team", "video", "Jett", "rgba(10,132,255,.35)"]));
+await page.evaluate(() => window.fmGroup(2, "join", ["#office/team", "video", "Jett", "rgba(10,132,255,.35)", "chat-channel:team:v1"]));
 await page.waitForFunction(() => window.__posts.some((item) => item.event === "ticket"), null, { timeout: 15000 });
 const ticket = (await events("ticket"))[0];
 out.ticketChannel = ticket.channel;
@@ -72,6 +72,16 @@ out.states = (await events("state")).map((item) => item.state);
 out.active = (await events("state")).some((item) => item.active);
 out.tiles = await page.evaluate(() => [...document.querySelectorAll(".tile .name")].map((item) => item.textContent));
 out.selfMirrored = await page.evaluate(() => document.querySelector(".tile.self") !== null);
+await page.evaluate(() => window.fmGroup(5, "rekeyed", ["#office/team", "chat-channel:team:v1"]));
+await page.waitForFunction(() => window.__posts.some((item) => item.event === "result" && item.id === 5), null, { timeout: 15000 });
+out.sameRoom = (await events("result")).find((item) => item.id === 5).value;
+await page.evaluate(() => window.fmGroup(6, "rekeyed", ["#office/team", "chat-channel:team:v2"]));
+await page.waitForFunction(() => window.__posts.filter((item) => item.event === "ticket").length === 2, null, { timeout: 15000 });
+const second = (await events("ticket"))[1];
+await page.evaluate((id) => window.fmGroupTicket(id, true, { ticket: "t2", room: "r2", peer: "abcdefabcdefabcdefabcdefabcdefab", url: "wss://127.0.0.1:9/calls/ws" }), second.id);
+await page.waitForFunction(() => window.__posts.some((item) => item.event === "result" && item.id === 6), null, { timeout: 15000 });
+out.rotated = (await events("result")).find((item) => item.id === 6).value;
+out.tickets = (await events("ticket")).length;
 await page.evaluate(() => window.fmGroup(3, "mute", []));
 await page.waitForFunction(() => window.__posts.some((item) => item.event === "state" && item.muted), null, { timeout: 5000 });
 out.muted = true;
@@ -116,9 +126,26 @@ def test_the_page_joins_reports_state_and_leaves_in_chromium(tmp_path):
     assert out["ticketChannel"] == "#office/team"
     assert out["ticketBody"] == {}
     assert out["join"]["ok"] is True
+    assert out["sameRoom"] is False
+    assert out["rotated"] is True
+    assert out["tickets"] == 2
     assert out["active"]
     assert "joining" in out["states"]
     assert out["tiles"][0] == "You"
     assert out["left"]
     assert out["tilesAfter"] == 0
     assert out["external"] == []
+
+
+def test_the_app_tells_the_page_when_the_channel_room_changes():
+    text = HOST.read_text(encoding="utf-8")
+    assert "calls.channelRekeyed(String(channel), String(chatRoom" in text
+    assert "callId: () => joinRoom" in text
+    feature = (REPOSITORY / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh"
+               / "nativeapp" / "feature" / "chat" / "GroupCallFeature.kt").read_text(encoding="utf-8")
+    assert "service.onRoomOpened = { conversation, roomName -> roomOpened(conversation, roomName) }" in feature
+    assert 'current.post("rekeyed", listOf(conversation, roomName))' in feature
+    assert "chatRoomName(conversation)), timeoutMs" in feature
+    core = (REPOSITORY / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh"
+            / "nativeapp" / "chat" / "OfficeChannels.kt").read_text(encoding="utf-8")
+    assert "onRoomOpened?.invoke(room.conversation, roomName)" in core

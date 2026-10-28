@@ -80,6 +80,24 @@ The issue `edit` signature covers body and attachments but not `target`; the
 relay check above is what stops an edit being pointed at someone else's
 comment.
 
+## Replayed issue events
+
+The signature on an issue `edit` covers its body and attachments but not its
+`id` or `target`, and every stored event is public. A copy of a signed event
+under a new `id` was accepted again, so anyone could put back text the author
+had replaced or move an edit onto another of the author's comments. Each
+receiver now treats a signature it already holds as already applied:
+
+- the relay (`_issue_event_signature_stored`) answers a `comment`, `edit` or
+  `vote` whose signature is already in the stored issue with
+  `{"ok": true, "alreadyApplied": true}` and queues nothing;
+- the desktop (`IssueStore::applyRemoteEvent`) and the mirror node
+  (`writeIssueItem`, `foldIssueEvents` in `server/intake.go`) skip an event
+  whose signature matches one in the issue.
+
+Signing `target` would need a new issue event version on every client; that is
+not done yet.
+
 ## The web editor and keyboard focus
 
 Issue and pull request comments share one in-place editor,

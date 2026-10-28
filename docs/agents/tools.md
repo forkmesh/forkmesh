@@ -190,6 +190,17 @@ read-only. CRM tools and `list_tasks`/`get_task` need the token even to read.
 Agent, window and release tools need the desktop's intake socket
 (`FORKMESH_AGENT_INTAKE`).
 
+The issue, milestone, project and pull stores (`.forkmesh/issues`,
+`.forkmesh/projects`, `.forkmesh/pulls`) are read and written in the working
+tree, so every path goes through `checked_store_path`. It refuses a path
+with a symlink at any component below the repository root, the same rule
+`notes_root` applies to notes. Listings (`search_issues`,
+`existing_pr_for_head`) skip such entries. Without this check a repository
+author could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
+`/proc/self/environ` or the identity key, and `get_pr_diff` returned the
+target's bytes. A symlinked `milestones.json` or issue record was also
+written through to wherever it pointed.
+
 | Group | Tools | Notes |
 | --- | --- | --- |
 | Identity and code | `whoami`, `list_repos`, `list_repositories`, `list_files`, `read_file`, `search_code` | Local Git reads; `read_file` up to 1 MiB, `search_code` up to 200 hits |

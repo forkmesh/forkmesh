@@ -2420,6 +2420,13 @@ function reconcilePrivateChannels(records, options = {}) {
   for (const id of previous.keys()) {
     if (!privateChannels.has(id)) releaseChannelMessages(privateChannelKey(id));
   }
+  for (const [id, record] of privateChannels) {
+    const old = previous.get(id);
+    if (old && old.keyVersion !== record.keyVersion) {
+      void groupCalls.channelRekeyed(
+        privateChannelKey(id), `chat-channel:${id}:v${record.keyVersion}`).catch(() => {});
+    }
+  }
 
   if (savedPrivateChannelId && !privateChannels.has(savedPrivateChannelId)) {
     savedPrivateChannelId = "";
@@ -7186,6 +7193,8 @@ function handleTransportState(state, detail) {
       return;
     }
     if (!officeAuthorizationExpired) showOfficeFailure("");
+    void groupCalls.channelRekeyed(
+      scope, String(roomTransport?.access?.roomName || "")).catch(() => {});
     const connectedChannel = scope === "public-world-general" ? "#general" : scope;
     // An open socket is not a loaded channel: the relay's retained backlog is
     // still on the wire. Marking the channel ready here painted the empty

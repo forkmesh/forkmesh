@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "ChatLinkText.h"
 #include "MessageBoxClicks.h"
 #include "ProcessReaper.h"
 #include "AppPaths.h"
@@ -3043,7 +3044,11 @@ void MainWindow::appendMarketGuideCards()
             linkLabel->setObjectName(QStringLiteral("marketGuideLinks"));
             linkLabel->setTextFormat(Qt::RichText);
             linkLabel->setWordWrap(true);
-            linkLabel->setOpenExternalLinks(true);
+            linkLabel->setOpenExternalLinks(false);
+            connect(linkLabel, &QLabel::linkActivated, linkLabel, [](const QString &href) {
+                if (const QUrl external = ChatLinkText::externalLinkUrl(href); external.isValid())
+                    QDesktopServices::openUrl(external);
+            });
             layout->addWidget(linkLabel);
         }
         m_marketGuidesLayout->addWidget(card);

@@ -22,7 +22,9 @@ DONE = [
 def launch(runtime, events=DONE, **changes):
     runtime.install_events = list(events)
     runtime.client = "client-%d" % runtime.ids
-    answer = post(runtime, form(**changes))
+    body = form(**changes)
+    runtime.addresses.setdefault(body["domain"], [body["host"]])
+    answer = post(runtime, body)
     assert answer["status"] == 202, answer
     runtime.run_spawned()
     return answer["data"]["id"]
@@ -76,7 +78,7 @@ def test_a_failed_or_unfinished_launch_is_not_published():
     assert listed(runtime) == []
 
 
-def test_each_world_gets_its_own_slot_and_keeps_it():
+def test_each_world_gets_its_own_slot_and_a_relaunch_changes_nothing():
     runtime = Runtime()
     launch(runtime)
     launch(runtime, domain="two.example.com", projectName="Two")
@@ -89,18 +91,36 @@ def test_each_world_gets_its_own_slot_and_keeps_it():
     launch(runtime, domain="three.example.com", projectName="Three again")
     launch(runtime, domain="four.example.com")
     entries = {entry["url"]: entry for entry in listed(runtime)}
-    assert entries["https://two.example.com/"]["world"] is False
-    assert entries["https://two.example.com/"]["slot"] == -1
+    assert entries["https://two.example.com/"]["world"] is True
+    assert entries["https://two.example.com/"]["slot"] == 1
     assert entries["https://three.example.com/"]["slot"] == 2
-    assert entries["https://three.example.com/"]["name"] == "Three again"
-    assert entries["https://four.example.com/"]["slot"] == 1
+    assert entries["https://three.example.com/"]["name"] == "Acme Code"
+    assert entries["https://four.example.com/"]["slot"] == 3
 
 
-def test_turning_both_off_removes_the_instance():
+def test_a_launch_never_removes_or_rewrites_an_entry():
     runtime = Runtime()
-    launch(runtime)
+    launch_id = launch(runtime)
     launch(runtime, ownWorld=False, listOnHomepage="false")
+    launch(runtime, projectName="Scam Casino", logo=data_url(PNG))
+    entries = listed(runtime)
+    assert [(entry["id"], entry["name"], entry["slot"]) for entry in entries] == [
+        (launch_id, "Acme Code", 0)]
+
+
+def test_a_launch_only_lists_a_domain_that_points_at_its_server():
+    runtime = Runtime()
+    runtime.addresses["victim.example.com"] = ["1.1.1.1"]
+    launch(runtime, domain="victim.example.com")
+    runtime.addresses["shared.example.com"] = ["93.184.216.34", "1.1.1.1"]
+    launch(runtime, domain="shared.example.com")
+    runtime.addresses["inner.example.com"] = ["10.0.0.5"]
+    launch(runtime, domain="inner.example.com")
+    runtime.addresses["gone.example.com"] = []
+    launch(runtime, domain="gone.example.com")
     assert listed(runtime) == []
+    launch(runtime, domain="")
+    assert urls(runtime) == ["https://93-184-216-34.sslip.io/"]
 
 
 def test_the_world_holds_twelve_hexagons():
@@ -257,7 +277,7 @@ def test_an_admin_can_hide_show_and_delete_an_entry():
     assert asyncio.run(instance_directory.set_hidden(runtime, "../x", True)) is None
 
 
-def test_launching_again_brings_an_offline_instance_back_but_keeps_it_hidden():
+def test_launching_again_neither_revives_an_offline_entry_nor_unhides_it():
     runtime = Health()
     launch_id = launch(runtime)
     runtime.down.add("code.example.com")
@@ -265,7 +285,7 @@ def test_launching_again_brings_an_offline_instance_back_but_keeps_it_hidden():
     check(runtime)
     assert listed(runtime) == []
     launch(runtime)
-    assert urls(runtime) == ["https://code.example.com/"]
+    assert listed(runtime) == []
     asyncio.run(instance_directory.set_hidden(runtime, launch_id, True))
     launch(runtime)
     assert listed(runtime) == []

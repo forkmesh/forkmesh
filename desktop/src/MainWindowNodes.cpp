@@ -6012,6 +6012,12 @@ void MainWindow::fetchLinkedNodesFromOwner(const QString &node,
 
 void MainWindow::promptLinkNodeToUser()
 {
+    promptLinkNodeToUserWith(QString(), false);
+}
+
+void MainWindow::promptLinkNodeToUserWith(const QString &identifier,
+                                          bool needTotp)
+{
     if (accountOwner().isEmpty() ||
         !hasOwnerSigningCapability(accountOwner())) {
         logSystem("Register this node before linking it to a user account.");
@@ -6027,13 +6033,29 @@ void MainWindow::promptLinkNodeToUser()
         .arg(accountOwner().toHtmlEscaped()));
     label->setWordWrap(true);
     layout->addWidget(label);
+    if (needTotp) {
+        auto *totpHint = new QLabel(QStringLiteral(
+            "This account uses two-factor authentication. Enter your "
+            "password and the 6-digit code from your authenticator app."));
+        totpHint->setWordWrap(true);
+        layout->addWidget(totpHint);
+    }
     auto *idEdit = new QLineEdit;
     idEdit->setPlaceholderText(QStringLiteral("Email or username"));
+    idEdit->setText(identifier);
     layout->addWidget(idEdit);
     auto *pwEdit = new QLineEdit;
     pwEdit->setEchoMode(QLineEdit::Password);
     pwEdit->setPlaceholderText(QStringLiteral("Password"));
     layout->addWidget(pwEdit);
+    auto *totpEdit = new QLineEdit;
+    totpEdit->setObjectName(QStringLiteral("linkNodeTotpEdit"));
+    totpEdit->setPlaceholderText(
+        QStringLiteral("6-digit code (only if you enabled 2FA)"));
+    totpEdit->setMaxLength(6);
+    layout->addWidget(totpEdit);
+    if (!identifier.isEmpty())
+        pwEdit->setFocus();
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
     auto *linkButton =
         buttons->addButton(QStringLiteral("Link node"), QDialogButtonBox::AcceptRole);
@@ -6041,12 +6063,14 @@ void MainWindow::promptLinkNodeToUser()
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, dialog,
-            [this, dialog, idEdit, pwEdit] {
+            [this, dialog, idEdit, pwEdit, totpEdit, needTotp] {
                 const QString identifier = idEdit->text().trimmed();
                 const QString password = pwEdit->text();
-                if (identifier.isEmpty() || password.isEmpty())
+                const QString totp = totpEdit->text().trimmed();
+                if (identifier.isEmpty() || password.isEmpty() ||
+                    (needTotp && totp.isEmpty()))
                     return;
-                submitLinkNodeToUser(identifier, password);
+                submitLinkNodeToUser(identifier, password, totp);
                 dialog->accept();
             });
     dialog->show();
@@ -6055,7 +6079,8 @@ void MainWindow::promptLinkNodeToUser()
 }
 
 void MainWindow::submitLinkNodeToUser(const QString &identifier,
-                                      const QString &password)
+                                      const QString &password,
+                                      const QString &totp)
 {
     const QString node = accountOwner();
     if (node.isEmpty() || !hasOwnerSigningCapability(node) ||
@@ -6068,11 +6093,13 @@ void MainWindow::submitLinkNodeToUser(const QString &identifier,
     // secrets is the whole authorization (no confirmation code needed).
     const QByteArray canonical =
         ("forkmesh-link-self-v1\n" + node + "\n" + id + "\n" + ts).toUtf8();
-    const QJsonObject body{{"nodeName", node},
-                           {"identifier", id},
-                           {"password", password},
-                           {"ts", ts},
-                           {"sig", m_profileIdentity.signData(canonical)}};
+    QJsonObject body{{"nodeName", node},
+                     {"identifier", id},
+                     {"password", password},
+                     {"ts", ts},
+                     {"sig", m_profileIdentity.signData(canonical)}};
+    if (!totp.isEmpty())
+        body.insert(QStringLiteral("totp"), totp);
     QNetworkRequest request(accountsApiUrl("link-self"));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
@@ -6082,7 +6109,7 @@ void MainWindow::submitLinkNodeToUser(const QString &identifier,
         m_profileLinkUserButton->setEnabled(false);
         m_profileLinkUserButton->setText(QString::fromUtf8("Linking\xE2\x80\xA6"));
     }
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, id]() {
         const QJsonObject resp =
             QJsonDocument::fromJson(reply->readAll()).object();
         reply->deleteLater();
@@ -6107,6 +6134,8 @@ void MainWindow::submitLinkNodeToUser(const QString &identifier,
             m_profileLinkUserButton->setEnabled(true);
             m_profileLinkUserButton->setVisible(true);
         }
+        if (code == QStringLiteral("bad_totp"))
+            promptLinkNodeToUserWith(id, true);
     });
 }
 
@@ -6114,6 +6143,12 @@ QString MainWindow::linkErrorMessage(const QString &code) const
 {
     if (code == QStringLiteral("invalid_credentials"))
         return QStringLiteral("wrong email/username or password.");
+    if (code == QStringLiteral("bad_totp"))
+        return QStringLiteral("enter the 6-digit code from your authenticator "
+                              "app (the one you use to log in).");
+    if (code == QStringLiteral("too_many_attempts"))
+        return QStringLiteral("too many failed attempts. Wait a few minutes "
+                              "and try again.");
     if (code == QStringLiteral("cannot_link_self"))
         return QString::fromUtf8("this node is already your user account \xE2\x80\x94 "
                               "no linking needed.");

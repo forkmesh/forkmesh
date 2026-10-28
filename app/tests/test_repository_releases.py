@@ -211,3 +211,15 @@ def test_an_owner_moves_a_tag_with_a_grant_on_core_held_repositories(bare_repo, 
                        "target": "main"})
     assert refused["data"]["error"] == "tag_moves_unavailable"
     assert git_out(bare_repo, "rev-parse", "refs/tags/v6").strip() == first
+
+
+def test_a_maintainer_cannot_tag_a_core_held_repository(bare_repo):
+    calls = releases_harness(bare_repo, owner_write=False, org_write=True,
+                             core_owner=False)
+    result = release({"op": "tag", "tag": "v9.0.0", "branch": "main",
+                      "target": "main"})
+    assert result["status"] == 403, result
+    assert result["data"]["error"] == "push_forbidden"
+    assert calls["pushes"] == []
+    assert git(bare_repo, "rev-parse", "--verify", "-q", "refs/tags/v9.0.0",
+               check=False).returncode != 0

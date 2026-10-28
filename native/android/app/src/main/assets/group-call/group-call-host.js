@@ -11,6 +11,7 @@ let account = "";
 let calls = null;
 let lastState = "";
 let quality = null;
+let joinRoom = "";
 
 const post = (message) => {
   if (window.FmGroupBridge) window.FmGroupBridge.post(JSON.stringify(message));
@@ -144,8 +145,9 @@ function changed() {
 }
 
 const ops = {
-  async join(channel, media, name, accent) {
+  async join(channel, media, name, accent, chatRoom) {
     account = String(name || "");
+    joinRoom = String(chatRoom || "");
     if (accent) document.documentElement.style.setProperty("--fm-accent", String(accent));
     return calls.join(String(channel), String(channel), media === "video" ? "video" : "audio");
   },
@@ -160,6 +162,9 @@ const ops = {
   async camera() {
     calls.toggleCamera();
     return true;
+  },
+  async rekeyed(channel, chatRoom) {
+    return calls.channelRekeyed(String(channel), String(chatRoom || ""));
   },
   async frame(plain, channel) {
     calls.handleFrame(plain, String(channel));
@@ -190,6 +195,7 @@ async function start() {
     workerUrl,
     scope: window,
     callSigner: null,
+    callId: () => joinRoom,
     fmm: { enabled: false },
   });
   post({ event: "ready" });

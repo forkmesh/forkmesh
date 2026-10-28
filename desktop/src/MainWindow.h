@@ -3921,7 +3921,9 @@ private:
     // (users can own many nodes). promptLinkNodeToUser asks for the credentials;
     // submitLinkNodeToUser signs with this node's key and POSTs link-self.
     void promptLinkNodeToUser();
-    void submitLinkNodeToUser(const QString &identifier, const QString &password);
+    void promptLinkNodeToUserWith(const QString &identifier, bool needTotp);
+    void submitLinkNodeToUser(const QString &identifier, const QString &password,
+                              const QString &totp);
     void openLinkNodeInBrowser();
     void pollLinkNodeGrant();
     QString linkErrorMessage(const QString &code) const;
@@ -4240,6 +4242,8 @@ private:
     QString catalogOwner(const RepositoryRecord &repo) const;
     void runQuickUpdate();
     void updateRebuildRestart();
+    void autoUpdateFromVerifiedSource(const QString &tag,
+                                      const QString &verifiedCommit);
     void maybeAutoUpdate();
     bool tryPrebuiltAutoUpdate(const QString &clientDir, const QString &tag,
                                const QString &tagCommit);
@@ -8943,6 +8947,11 @@ private:
     QString finishRepoWorkflowRun(const forkmesh::repoworkflows::Run &run, const QString &markdown);
     void checkRepoWorkflowSchedules();
     void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
+    bool repoWorkflowApproved(int repoIndex, const QString &path, const QString &name);
+    QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
+    bool repoWorkflowFileApproved(int repoIndex, const QString &path) const;
+    void approveRepoWorkflowFile(int repoIndex, const QString &path);
+    void reviewPendingRepoWorkflowApprovals();
     QList<forkmesh::repoworkflows::Pin> workflowPins() const;
     void saveWorkflowPins(const QList<forkmesh::repoworkflows::Pin> &pins);
     void pinWorkflowToRail(const QString &repo, const QString &workflowId, const QString &rail);
@@ -13095,6 +13104,16 @@ private:
     QHash<int, RepoWorkflowHandle> m_repoWorkflowHandles;
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
+    struct PendingRepoWorkflowApproval {
+        QString repository;
+        QString checkout;
+        QString path;
+        QString name;
+        QString digest;
+    };
+    QHash<QString, PendingRepoWorkflowApproval> m_pendingRepoWorkflowApprovals;
+    QSet<QString> m_repoWorkflowApprovalNoticed;
+    QPointer<QWidget> m_repoWorkflowApprovalPrompt;
     QHash<QString, QPointer<QWidget>> m_workflowPinStrips;
     RailEventHook *m_workflowPinHook = nullptr;
     QPointer<QWidget> m_workflowPinDragSource;

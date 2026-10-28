@@ -564,7 +564,7 @@ async def _launch(runtime, data):
     await runtime.audit(actor or "anonymous", "instance.launch.start", domain)
     events = helper(helper_request)
     runtime.spawn(run_launch(runtime, launch_id, domain, owner, events,
-                             secrets, entry))
+                             secrets, entry, address))
     return runtime.response({
         "ok": True,
         "id": launch_id,
@@ -588,8 +588,20 @@ async def _pump(events, queue):
         await queue.put(None)
 
 
+async def launch_owns_domain(runtime, domain, address):
+    try:
+        if domain == sslip_domain(address):
+            return True
+        resolved = await runtime.resolve_host(domain)
+        found = {ipaddress.ip_address(str(item).split("%", 1)[0])
+                 for item in resolved or []}
+    except (ValueError, TypeError):
+        return False
+    return found == {ipaddress.ip_address(str(address))}
+
+
 async def run_launch(runtime, launch_id, domain, owner, events, secrets,
-                     entry=None):
+                     entry=None, address=""):
     log = ""
     steps = initial_steps()
     steps[0]["state"] = "running"
@@ -676,9 +688,11 @@ async def run_launch(runtime, launch_id, domain, owner, events, secrets,
         "UPDATE instance_launches SET state=?,message=?,log=?,steps=?,url=?,"
         "updated_at=? WHERE id=? AND state='running'", state, message, log,
         json.dumps(steps), url, runtime.now(), launch_id)
-    if state == "succeeded" and entry is not None:
+    if state == "succeeded" and entry is not None and address:
         try:
-            await instance_directory.publish(runtime, launch_id, domain, entry)
+            if await launch_owns_domain(runtime, domain, address):
+                await instance_directory.publish_new(
+                    runtime, launch_id, domain, entry)
         except Exception:
             pass
 
@@ -785,7 +799,8 @@ class LaunchRuntime(leases.WorkerRuntime):
         return status, raw
 
     async def client_key(self):
-        address = _transient_client_address(self.request)  # noqa: F821
+        address = _client_source_bucket(  # noqa: F821
+            _transient_client_address(self.request))  # noqa: F821
         seed = str(getattr(self.env, "ADMIN_PASS", "") or "instance-launch")
         return hashlib.sha256(
             ("instance-launch\n%s\n%s" % (seed, address)).encode("utf-8")

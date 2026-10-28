@@ -734,24 +734,12 @@ void MainWindow::runLocalControlFreeDiskSpace(int connectionId, int requestId,
                                             "the desktop."));
         return;
     }
-    QString root;
-    for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
-        const QString dir = writableRecordFor(repo).localPath.trimmed();
-        if (dir.isEmpty() ||
-            !QFileInfo(QDir(dir).filePath(diagctl::freeDiskSpaceScript())).isFile())
-            continue;
-        if (repo.owner == QLatin1String("forkmesh") && repo.name == QLatin1String("forkmesh")) {
-            root = dir;
-            break;
-        }
-        if (root.isEmpty())
-            root = dir;
-    }
-    if (root.isEmpty()) {
+    const QString root =
+        QDir::cleanPath(QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral("..")));
+    if (!QFileInfo(QDir(root).filePath(diagctl::freeDiskSpaceScript())).isFile()) {
         server->respondError(connectionId, requestId, QStringLiteral("no_checkout"),
-                             QStringLiteral("Add the forkmesh/forkmesh repository with a local "
-                                            "checkout on this desktop: the cleanup runs its "
-                                            "tools/free_disk_space.py."));
+                             QStringLiteral("This desktop's own source folder has no "
+                                            "tools/free_disk_space.py to run the cleanup."));
         return;
     }
     const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));

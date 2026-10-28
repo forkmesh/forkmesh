@@ -1074,3 +1074,84 @@ def test_the_mac_lock_is_shared_with_the_ios_builds_and_retaken_by_a_retry(tmp_p
     ran = _mac_shell(tmp_path, owned)
     assert ran.stdout == "ran\n"
     assert (tmp_path / "ci/lock/pid").read_text().strip().isdigit()
+
+
+def _git_repo(path):
+    import subprocess
+    env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+           "HOME": str(path), "PATH": "/usr/bin:/bin"}
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(path), "-c", "user.name=t",
+                               "-c", "user.email=t@example.invalid", *args],
+                              env=env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+    path.mkdir(parents=True, exist_ok=True)
+    git("init", "-q", "-b", "main")
+    return git
+
+
+def _release_key(tmp_path):
+    import subprocess
+    private = tmp_path / "release.pem"
+    subprocess.run(["openssl", "genpkey", "-algorithm", "Ed25519", "-out", private],
+                   check=True, capture_output=True)
+    public = subprocess.run(["openssl", "pkey", "-in", private, "-pubout"],
+                            check=True, capture_output=True, text=True).stdout
+    return private, "".join(public.splitlines()[1:-1])
+
+
+def _sign(private, data):
+    import subprocess
+    body = private.with_name("to-sign.bin")
+    body.write_bytes(data)
+    return subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey",
+                           private, "-in", body],
+                          check=True, capture_output=True).stdout
+
+
+def test_candidate_manifests_without_a_valid_signature_are_ignored(tmp_path):
+    import shutil
+    if shutil.which("openssl") is None:
+        return
+    private, public = _release_key(tmp_path)
+    repo = tmp_path / "repo"
+    git = _git_repo(repo)
+    (repo / "www/public").mkdir(parents=True)
+    (repo / "www/public/install.sh").write_text(f"'{public}'\n")
+    signed = b'{"tag":"v9.0.0","channel":"candidate-9.0.0"}'
+    forged = b'{"tag":"v9.0.1","channel":"candidate-9.0.1"}'
+    for channel, body, signature in (
+            ("candidate-9.0.0", signed, _sign(private, signed)),
+            ("candidate-9.0.1", forged, _sign(private, signed)),
+            ("candidate-9.0.2", forged, None)):
+        folder = repo / tool.RELEASES / channel
+        folder.mkdir(parents=True)
+        (folder / "release.json").write_bytes(body)
+        if signature is not None:
+            (folder / "release.json.sig").write_bytes(signature)
+    git("add", "-A")
+    git("commit", "-q", "-m", "releases")
+    assert tool.manifest_signature_valid(signed, _sign(private, signed), public)
+    assert not tool.manifest_signature_valid(signed, _sign(private, signed)[:63],
+                                             public)
+    assert list(tool.manifests_at(repo, "main")) == ["candidate-9.0.0"]
+
+
+def test_build_commit_must_descend_from_the_tag_commit(tmp_path):
+    repo = tmp_path / "repo"
+    git = _git_repo(repo)
+    git("commit", "-q", "--allow-empty", "-m", "tag")
+    tagged = git("rev-parse", "HEAD")
+    git("commit", "-q", "--allow-empty", "-m", "fix")
+    later = git("rev-parse", "HEAD")
+    git("checkout", "-q", "--orphan", "other")
+    git("commit", "-q", "--allow-empty", "-m", "unrelated")
+    unrelated = git("rev-parse", "HEAD")
+    tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, tagged)
+    tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, later)
+    for build in (unrelated, "0" * 40):
+        with pytest.raises(tool.CompletionError, match="does not descend"):
+            tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, build)
+    with pytest.raises(tool.CompletionError, match="does not descend"):
+        tool.require_build_from_tag(repo, "candidate-9.0.0", later, tagged)

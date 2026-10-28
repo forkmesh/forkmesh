@@ -36,8 +36,10 @@ the Worker and the test suite import it directly. Every side effect goes
 through the narrow runtime adapter the Worker hands in.
 """
 
+import html
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit)
 
 
 PREFIX = "/api/microjobs"
@@ -274,6 +276,131 @@ def normalize_public_url(value):
         return normalized, host
     except Exception:
         return "", ""
+
+
+SUBJECT_HOST_PREFIXES = ("www.", "old.", "m.", "mobile.")
+SUBJECT_TRACKING_KEYS = frozenset({
+    "ref", "ref_src", "ref_url", "fbclid", "gclid", "dclid", "msclkid",
+    "igshid", "si", "s", "t", "feature", "mc_cid", "mc_eid", "_ga",
+})
+SUBJECT_QUERY_KEYS = {
+    "news.ycombinator.com": {"": ("id",)},
+    "youtube.com": {"/watch": ("v",), "/playlist": ("list",), "": ()},
+}
+YOUTUBE_VIDEO_PATHS = ("shorts", "embed", "live", "v")
+PATH_SAFE = "/:@!$&'()*+,;=-._~"
+LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+TAG_ATTR_RE = re.compile(
+    r"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))")
+
+
+def _subject_host(host):
+    host = str(host or "").strip().lower().rstrip(".")
+    changed = True
+    while changed:
+        changed = False
+        for prefix in SUBJECT_HOST_PREFIXES:
+            rest = host[len(prefix):]
+            if host.startswith(prefix) and "." in rest:
+                host, changed = rest, True
+    if host.endswith(".reddit.com"):
+        host = "reddit.com"
+    return host
+
+
+def _subject_path(path):
+    path = quote(unquote(str(path or "")), safe=PATH_SAFE)
+    return re.sub(r"/{2,}", "/", path).rstrip("/")
+
+
+def _reddit_path(segments):
+    if "comments" not in segments:
+        return "/" + "/".join(segments)
+    index = segments.index("comments")
+    rest = segments[index + 1:]
+    if not rest:
+        return "/" + "/".join(segments)
+    parts = ["comments", rest[0]]
+    if len(rest) >= 3:
+        parts.append(rest[2])
+    return "/" + "/".join(parts)
+
+
+def referral_subject_url(url):
+    try:
+        parsed = urlsplit(str(url or ""))
+    except ValueError:
+        return ""
+    host = _subject_host(parsed.hostname)
+    if not host:
+        return ""
+    path = _subject_path(parsed.path)
+    pairs = parse_qsl(parsed.query, keep_blank_values=False,
+                      max_num_fields=40)
+    segments = [part for part in path.split("/") if part]
+    if host == "youtu.be" and segments:
+        host, path, pairs = "youtube.com", "/watch", [("v", segments[0])]
+    elif host == "youtube.com" and len(segments) >= 2 and (
+            segments[0].lower() in YOUTUBE_VIDEO_PATHS):
+        path, pairs = "/watch", [("v", segments[1])]
+    elif host == "redd.it" and segments:
+        host, path, pairs = "reddit.com", "/comments/" + segments[0].lower(), []
+    elif host == "reddit.com":
+        path = _reddit_path([part.lower() for part in segments])
+        pairs = []
+    rules = SUBJECT_QUERY_KEYS.get(host)
+    if rules is not None:
+        allowed = rules.get(path, rules.get("", ()))
+        pairs = [(key, value) for key, value in pairs if key in allowed]
+    else:
+        pairs = [(key, value) for key, value in pairs
+                 if key.lower() not in SUBJECT_TRACKING_KEYS
+                 and not key.lower().startswith("utm_")]
+    query = urlencode(sorted(set(pairs)))
+    return "https://" + host + path + ("?" + query if query else "")
+
+
+def page_canonical_url(page, url):
+    for tag in LINK_TAG_RE.findall(str(page or "")):
+        attributes = {}
+        for match in TAG_ATTR_RE.finditer(tag[5:]):
+            value = next((item for item in match.groups()[1:]
+                          if item is not None), "")
+            attributes.setdefault(match.group(1).lower(), value)
+        if "canonical" not in attributes.get("rel", "").lower().split():
+            continue
+        href = html.unescape(attributes.get("href", "")).strip()
+        if not href:
+            return ""
+        canonical, _host = normalize_public_url(urljoin(str(url), href))
+        return canonical
+    return ""
+
+
+def referral_subject(url, page=None):
+    subject = referral_subject_url(url)
+    canonical = referral_subject_url(page_canonical_url(page, url))
+    if subject and canonical and (
+            urlsplit(canonical).hostname == urlsplit(subject).hostname):
+        return canonical
+    return subject
+
+
+def referral_page_scope(url, page=None):
+    subject = referral_subject_url(url)
+    if not subject or referral_subject(url, page) != subject:
+        return ""
+    parsed = urlsplit(subject)
+    if parsed.hostname in SUBJECT_QUERY_KEYS or parsed.hostname == (
+            "reddit.com"):
+        return ""
+    return "https://" + parsed.hostname + parsed.path
+
+
+def merged_pull_subject(marker):
+    return "microjob:merged_pull:mcp:" + mcp_pull_canonical(
+        marker["number"], marker["base"], marker["head"], marker["author"],
+        marker["ts"])
 
 
 def referral_link_variants(origin, account):
@@ -642,7 +769,7 @@ async def _claims_for(runtime, account_bi):
     rows = await runtime.d1_all(
         "SELECT claim_id,job,status,amount_lamports,data,created_at,"
         "updated_at,tx_signature FROM microjob_claims WHERE account_bi=? "
-        "ORDER BY created_at DESC LIMIT 50",
+        "AND amount_lamports>0 ORDER BY created_at DESC LIMIT 50",
         str(account_bi),
     )
     claims = []
@@ -922,8 +1049,9 @@ async def _submit_merged_pull(runtime, context, data):
         "job": "merged_pull",
         "status": "approved",
         "subject": "%s/%s pull #%d" % (owner, repo, number),
-        "subjectBi": await runtime.blind(
-            "microjob:merged_pull:%s/%s:%d" % (owner, repo, number)),
+        "subjectBi": await runtime.blind(merged_pull_subject(marker)),
+        "legacySubjectBis": [await runtime.blind(
+            "microjob:merged_pull:%s/%s:%d" % (owner, repo, number))],
         "detail": "Merged pull request opened with the MCP agent tool.",
         "record": {
             "owner": owner,
@@ -944,11 +1072,18 @@ async def _submit_referral_post(runtime, context, data):
              "detail": "Give the public https:// page your link is posted on."},
             status=400,
         )
-    subject_bi = await runtime.blind("microjob:referral_post:" + url)
     account = context["account"]
     origin = runtime.public_origin()
 
     page = await runtime.read_public_page(url, MAX_FETCH_BYTES)
+    subject = referral_subject(url, page)
+    subject_bi = await runtime.blind("microjob:referral_post:" + subject)
+    legacy_bis = [await runtime.blind("microjob:referral_post:" + key)
+                  for key in (url, referral_subject_url(url)) if key]
+    scope = referral_page_scope(url, page)
+    scope_bi = (await runtime.blind(
+        "microjob:referral_post:account:%s:%s" % (
+            context["accountBi"], scope))) if scope else ""
     if page is None:
         return _response(
             runtime,
@@ -995,6 +1130,8 @@ async def _submit_referral_post(runtime, context, data):
         "status": status,
         "subject": url,
         "subjectBi": subject_bi,
+        "legacySubjectBis": legacy_bis,
+        "accountSubjectBi": scope_bi,
         "detail": detail,
         "record": {
             "url": url,
@@ -1010,7 +1147,21 @@ async def _record_claim(runtime, context, claim):
     job = claim["job"]
     lamports = JOBS[job]["lamports"]
     now = int(runtime.now())
-    quota = await _quota_error(runtime, context["accountBi"], lamports, now)
+    account_bi = str(context["accountBi"])
+    taken = {"error": "already_claimed",
+             "detail": "This exact work has already been claimed."}
+    subjects = [claim["subjectBi"]] + [
+        item for item in claim.get("legacySubjectBis") or ()
+        if item and item != claim["subjectBi"]]
+    scope_bi = str(claim.get("accountSubjectBi") or "")
+    if scope_bi and scope_bi not in subjects:
+        subjects.append(scope_bi)
+    marks = ",".join("?" * len(subjects))
+    if await runtime.d1_first(
+            "SELECT claim_id FROM microjob_claims WHERE subject_bi IN (%s) "
+            "LIMIT 1" % marks, *subjects):
+        return _response(runtime, taken, status=409)
+    quota = await _quota_error(runtime, account_bi, lamports, now)
     if quota:
         return _response(runtime, {"error": quota, "policy": public_policy()},
                          status=429)
@@ -1022,21 +1173,52 @@ async def _record_claim(runtime, context, claim):
         "detail": claim["detail"],
         "record": claim.get("record") or {},
     })
-    try:
-        await runtime.d1_run(
+    statements = [(
+        "INSERT INTO microjob_claims "
+        "(claim_id,account_bi,job,subject_bi,status,amount_lamports,"
+        "data,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,? "
+        "WHERE NOT EXISTS (SELECT 1 FROM microjob_claims "
+        "WHERE subject_bi IN (%s)) "
+        "AND (SELECT COUNT(*) FROM microjob_claims WHERE account_bi=? "
+        "AND status IN ('pending_review','approved','queued'))<? "
+        "AND (SELECT COUNT(*) FROM microjob_claims WHERE account_bi=? "
+        "AND created_at>=? AND status<>'rejected')<? "
+        "AND (SELECT COALESCE(SUM(amount_lamports),0) FROM "
+        "microjob_claims WHERE account_bi=? AND created_at>=? "
+        "AND status<>'rejected')+?<=?" % marks,
+        (claim_id, account_bi, job, claim["subjectBi"],
+         claim["status"], lamports, sealed, now, now,
+         *subjects,
+         account_bi, MAX_OPEN_CLAIMS_PER_ACCOUNT,
+         account_bi, now - DAY_MS, MAX_CLAIMS_PER_ACCOUNT_PER_DAY,
+         account_bi, now - DAY_MS, lamports,
+         MAX_DAILY_LAMPORTS_PER_ACCOUNT))]
+    if scope_bi:
+        statements.append((
             "INSERT INTO microjob_claims "
             "(claim_id,account_bi,job,subject_bi,status,amount_lamports,"
-            "data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            claim_id, context["accountBi"], job, claim["subjectBi"],
-            claim["status"], lamports, sealed, now, now,
-        )
+            "data,created_at,updated_at) SELECT ?,?,?,?,'rejected',0,?,?,? "
+            "WHERE EXISTS (SELECT 1 FROM microjob_claims WHERE claim_id=?)",
+            (str(runtime.new_id()), account_bi, job, scope_bi,
+             await runtime.seal({"companionOf": claim_id}), now, now,
+             claim_id)))
+    try:
+        if len(statements) == 1:
+            await runtime.d1_run(statements[0][0], *statements[0][1])
+        else:
+            await runtime.batch(statements)
     except Exception:
-        return _response(
-            runtime,
-            {"error": "already_claimed",
-             "detail": "This exact work has already been claimed."},
-            status=409,
-        )
+        return _response(runtime, taken, status=409)
+    if not await runtime.d1_first(
+            "SELECT claim_id FROM microjob_claims WHERE claim_id=?", claim_id):
+        if await runtime.d1_first(
+                "SELECT claim_id FROM microjob_claims WHERE subject_bi IN (%s) "
+                "LIMIT 1" % marks, *subjects):
+            return _response(runtime, taken, status=409)
+        quota = await _quota_error(
+            runtime, account_bi, lamports, now) or "daily_claim_limit"
+        return _response(runtime, {"error": quota, "policy": public_policy()},
+                         status=429)
     await runtime.audit(
         context["account"], "microjob.claim", "microjob_claim", claim_id,
         {"job": job, "status": claim["status"], "lamports": lamports},

@@ -663,6 +663,13 @@ def test_replay_chunks_are_sealed_paged_and_gated_by_the_project_setting():
     assert played["recording"]["viewport"] == {"width": 1280, "height": 720}
     failures = query(runtime, item, "errors")["groups"]
     assert failures[0]["type"] == "TypeError" and failures[0]["sessionId"] == "sess-aaaa-0001"
+    member_delete = call(runtime.use("DELETE", "charlie"),
+                         f"/api/analytics/acme/projects/{item['id']}"
+                         "/recordings/sess-aaaa-0001")
+    assert (member_delete["status"], member_delete["data"]["error"]) == (
+        403, "organization_admin_required")
+    assert runtime.db.execute(
+        "SELECT COUNT(*) FROM analytics_recording_chunks").fetchone()[0] == 2
     assert call(runtime.use("DELETE"), f"/api/analytics/acme/projects/{item['id']}"
                 "/recordings/sess-aaaa-0001")["data"]["deleted"]
     assert runtime.db.execute(
@@ -826,6 +833,25 @@ def test_membership_roles_and_the_instance_site_key():
         "plugin_not_installed"
     # A snippet left on a site after uninstall sees an unknown key, not a 500.
     assert capture(missing, "fma_" + "1" * 40, [pageview("/")])["status"] == 401
+
+
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts.update({"gus": "bi:gus", "dave": "bi:dave"})
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:gus','guest','gus',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    item = project(runtime)
+    path = f"/api/analytics/acme/projects/{item['id']}"
+    for target in ("/api/analytics/acme", path, path + "/persons", path + "/recordings"):
+        guest = call(runtime.use("GET", "gus"), target)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("GET", "dave"), path)["status"] == 200
+    assert call(runtime.use("POST", "dave", {"kind": "trends", "from": NOW - DAY, "to": NOW}),
+                path + "/query")["status"] == 200
+    for method, target in (("POST", path + "/objects"), ("PATCH", path),
+                           ("DELETE", path + "/recordings/sess-aaaa-0001")):
+        refused = call(runtime.use(method, "dave", {"kind": "trends"}), target)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
 
 
 def pages(runtime, path, method="GET"):

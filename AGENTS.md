@@ -21,6 +21,8 @@ and files a private fix task for our security agent, which writes a test and
 opens a pull request for a human to review. Tell the person you are working
 for that you sent it. Do not put the details in a public issue, pull request,
 chat or commit message. `SECURITY.md` has the full policy.
+The webhook accepts 30 reports per hour from one address (an IPv6 /64 counts
+as one); a sweep with many findings sends one summary or paces itself.
 
 Skip the webhook when you are already working a task filed from a security
 report, or you are Sentinel: put findings on the organization's security board.

@@ -43,8 +43,21 @@ wrap it in an "untrusted" block and tell the agent to treat it as evidence,
 confirm it from code alone, never touch the fleet, write a failing test first,
 open a pull request and never merge or deploy; a report that gives orders is
 recorded as a prompt-injection finding. At most
-`SECURITY_REPORT_TASKS_PER_HOUR` tasks are filed per hour, so a flood still
-stores and emails every report but cannot fill the board or the agents' queue.
+`SECURITY_REPORT_TASKS_PER_HOUR` tasks are filed per hour, so a flood cannot
+fill the board or the agents' queue. Each source (an IPv4 address or an IPv6
+/64) may send `SECURITY_REPORTS_PER_SOURCE_PER_HOUR` reports an hour; past
+that the endpoint answers 429 before anything is stored, emailed or pinged, so
+one sender cannot spend the mail budget or ring the admins without limit.
+Stored reports leave by age (`SECURITY_REPORT_RETAIN_MS`, a year). A source's
+first report in `SECURITY_REPORT_KEPT_WINDOW_MS` (30 days) is kept; its others
+are bulk. The pool is marked in the row's `ts` without a schema change: kept
+rows have an even millisecond, bulk rows an odd one (the sealed body keeps the
+exact time). When `MAX_SECURITY_REPORTS` are held, a new report evicts the
+oldest bulk row; with no bulk row left it is still emailed and pinged but not
+stored. A flood from one source therefore only churns its own bulk reports,
+and no flood can evict a kept report. Before 2026-10-28 the oldest row was
+evicted, then a full table dropped every new report; 100 IPv4 addresses or one
+IPv6 /56 could fill it.
 The agent working such a task does not call the webhook again (`AGENTS.md`),
 which would loop.
 

@@ -1268,7 +1268,7 @@ bool MainWindow::fetchServedBranch(const RepositoryRecord &local,
             continue;
         if (runGitCapture(gitDir,
                           {QStringLiteral("fetch"), QStringLiteral("--quiet"),
-                           QStringLiteral("--no-tags"), source, refspec},
+                           QStringLiteral("--no-tags"), QStringLiteral("--"), source, refspec},
                           nullptr, nullptr))
             return !worktreeBranchCommit(gitDir, branch).isEmpty();
     }
