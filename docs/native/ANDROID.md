@@ -1750,8 +1750,91 @@ the cited iOS commit.
 - **Other apps' calls (S038).** See [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md#android):
   `OtherAppCall` (app `platform/`) with its pure state in
   `core/.../net/OtherAppCallState.kt` quietens interface sounds, Agent Watch
-  and the Glasses Alert ring during another app's call; ForkMesh's own calls
-  do not count.
+  and the Glasses Alert ring during another app's call; since S130 ForkMesh's
+  own calls count too (see "Calls" below).
+
+### Calls (ledger S125 to S133)
+
+Ported from iOS 407a9d2c6f and a53238311c. Android calls still run in the
+`direct-call.html` WebView, which already carries the web resilience code;
+the native side turns it on and draws the iOS chrome.
+
+- **Reconnect and give up (S125).** `WebCallPeers` calls `setup` with
+  `{resilient: true, staged: true}`. The page then posts `connection`
+  (connected, disconnected, failed, stalled after 4 s without inbound audio
+  packets) instead of `closed`, and `restart` returns an ICE-restart offer.
+  `DirectCallEngine` follows iOS `DirectCalls.swift` line for line: the
+  callee resends its accept every 2 s (8 times) until an offer arrives, the
+  caller resends an unanswered offer every 3 s (5 times) and resends it on
+  a repeated accept, a repeated offer gets the stored answer and a new one
+  renegotiates, ICE is held while a restart is negotiated, the caller
+  restarts after 2 s on a drop (at once on failed or silent audio) and every
+  6 s after, the status reads "Reconnecting…", and the call ends with
+  `DirectCallEngine.DROPPED` after 30 s without recovery or
+  `CONNECT_FAILED` when it never connects within 30 s. `DirectCallFeature`
+  posts the ending's message as a chat notice. The page re-acquires an
+  ended microphone; if it cannot, `micLost` shows iOS's notice on the call
+  screen. Tests: `C/chat/DirectCallResilienceTest.kt` (manual clock).
+- **Mini window (S126).** Back (system back or the chevron at the top
+  start) calls `DirectCallFeature.minimize()`; `DirectCallOverlay` then
+  draws `DirectCallMiniWindow` instead of the call screen: an in-app
+  floating tile over the app's content (116x164 dp for video, 156x96 dp for
+  voice, 12 dp margin, 14 dp corners), which hosts the call WebView so the
+  page stays attached and keeps playing; the page's `layout("mini")` hides
+  the self view. It shows the other person's video when it is on, otherwise
+  their initial, name, a call timer or "Reconnecting…", plus Mute and Hang
+  up. A drag snaps to the nearer side edge at the released height (corners
+  within 12 %), kept in `fm.call.miniSide` / `fm.call.miniY` like iOS
+  `@AppStorage` (`C/chat/CallScreenLayout.kt`, `CallMiniLayout`). A tap
+  reopens the call. Picture-in-picture was not used: it would move the
+  whole activity out of the app, while iOS keeps the chat usable under the
+  tile.
+- **Staged video (S127, S132).** With `staged` the page fills the screen
+  with your camera (`body.staged.waiting`) until it has decoded the other
+  side's frames, and hides their video again when the track mutes or stops
+  delivering frames; it posts `remote-video`, which feeds
+  `WebCallPeers.remoteVideo`. The call screen shows the avatar and name
+  over your camera until then, and the draggable self view only once their
+  video shows. The switch happens on the page's first stats tick with
+  decoded frames (1 s). Video calls go to the loudspeaker when no headset
+  is connected (`CallSpeaker`: `setCommunicationDevice(builtin speaker)` on
+  API 31+, `isSpeakerphoneOn` below), released when the call ends.
+- **Diagnose (S128).** `C/chat/CallDiagnostics.kt` ports iOS
+  `CallDiagnostics.swift`; `CallDiagnosticsTest` checks it against the
+  shared `call-diagnostics-parity.json` (the Android copy is kept equal by
+  `app/tests/test_call_diagnostics_native_parity.py`). Numbers use JS
+  `toFixed` rounding so detail and prompt text match the web and iPhone.
+  The Diagnose dot beside the quality pill turns red on a problem; its
+  sheet lists issues, ranked fixes, a copyable prompt for an AI assistant
+  and a LESSON field, saved under `fm.call.diagnostics`. A pending fix
+  counts as worked when its problem clears and as failed when the call ends
+  (`DirectCallAudio`), not when the screen shrinks to the mini window.
+- **Microphone test (S129, S133).** The pre-call layer already records a
+  10 s test clip and plays it back (section 14, "Pre-call check"). Playback
+  now uses media audio attributes and holds `CallSpeaker`, so a clip
+  recorded while the WebView keeps the phone in communication mode plays on
+  the loudspeaker rather than the earpiece; media audio is not muted by
+  silent mode.
+- **Audio during a call (S130).** `DirectCallAudio` holds audio focus
+  (`AUDIOFOCUS_GAIN`, voice-communication attributes) while a call has a
+  phase. When focus comes back after a loss (a phone call, another app) or
+  the app returns to the foreground, it calls the page's `wake`, which
+  replays the media elements and re-acquires a dead microphone, and
+  re-applies the speaker route. Our own call now counts in
+  `OtherAppCall` (`OtherAppCallState` takes `ownCall`, which includes group
+  calls), so interface sounds, Agent Watch and alarm rings step back as
+  during other apps' calls. Dictation (`SpeechDictation`) does not start
+  during our call and a running voice session does not restart, because
+  `SpeechRecognizer` opens a second capture that can take the microphone
+  from the call; it says so instead.
+- **Answering (S131).** The accept permission prompt lives in
+  `DirectCallOverlay`, not the incoming screen, so its result is not lost
+  when the invite screen goes away. Before asking, `holdInvite()` keeps the
+  invite from going stale while the prompt is open. `DirectCallFeature.answer`
+  declines with iOS's message when the permission is refused, and says "The
+  call ended before it could be answered." or "Hang up the current call to
+  answer this one." when it can no longer be answered; the notification's
+  Answer action says the same.
 
 ## 28. NEXUS network inspection (sync ledger S046)
 
