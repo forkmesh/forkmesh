@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.ChatNodeKey
 import com.forkmesh.nativeapp.crypto.Ed25519
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealPolicy
@@ -181,5 +182,27 @@ class GroupCallSessionTest {
         val webrtc = GroupCallPageEvent.parse(Json.parseObject("""{"event":"state","state":"live","active":true,"engine":"webrtc","verify":{"code":null}}""")) as GroupCallPageEvent.State
         assertEq(null, webrtc.verify)
         assertEq("", (GroupCallPageEvent.parse(Json.parseObject("""{"event":"state","engine":"sfu"}""")) as GroupCallPageEvent.State).engine)
+    }
+
+    fun testTheCallPageDataComesFromTheDirectCallPage() {
+        val page = "<html><script id=\"fm-call-models\">\nwindow.FmCallSegmentModels = {};\n</script><script id=\"fm-call-faces\">x</script>"
+        assertEq("\nwindow.FmCallSegmentModels = {};\n", GroupCallPageData.block(page, "models.js"))
+        assertEq(null, GroupCallPageData.block(page, "face-photos.js"))
+        assertEq(null, GroupCallPageData.block(page, "faces.js"))
+        assertEq(null, GroupCallPageData.block("<script id=\"fm-call-models\">open", "models.js"))
+    }
+
+    fun testTheGroupCallUsesTheSavedLook() {
+        val look = FaceChangerLook()
+        look.setFace("maya")
+        look.setBackground("blur")
+        val video = GroupCallLook.page(look, video = true)
+        assertEq("maya", video["face"])
+        assertEq("blur", video["background"])
+        assertEq("maya", video["voice"])
+        val audio = GroupCallLook.page(look, video = false)
+        assertEq("", audio["face"])
+        assertEq("", audio["background"])
+        assertEq("maya", audio["voice"])
     }
 }

@@ -6,10 +6,12 @@ import com.forkmesh.nativeapp.chat.CallQualityHistory
 import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.GroupCallFrameBuffer
 import com.forkmesh.nativeapp.chat.GroupCallIdentity
+import com.forkmesh.nativeapp.chat.GroupCallLook
 import com.forkmesh.nativeapp.chat.GroupCallPageEvent
 import com.forkmesh.nativeapp.chat.GroupCallRoster
 import com.forkmesh.nativeapp.chat.GroupCallView
 import com.forkmesh.nativeapp.chat.OfficeChannelService
+import com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature
 import com.forkmesh.nativeapp.json.asJsonMap
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
@@ -117,7 +119,8 @@ object GroupCallFeature {
             for (frame in recent.recent(conversation)) made.post("frame", listOf(frame, conversation))
             val service = office
             if (service != null && service.open(conversation)) identity = service.callIdentity(conversation)
-            val joining = listOf(conversation, media.wire, accountName(), accent, chatRoomName(conversation), identity?.page())
+            val look = GroupCallLook.page(FaceChangerFeature.look, video = media == DirectCallKind.VIDEO)
+            val joining = listOf(conversation, media.wire, accountName(), accent, chatRoomName(conversation), identity?.page(), look)
             val reply = made.request("join", joining, timeoutMs = 60_000L).asJsonMap()
             val problem = jsonText(reply["error"])
             if (problem.isNotEmpty()) end(problem)

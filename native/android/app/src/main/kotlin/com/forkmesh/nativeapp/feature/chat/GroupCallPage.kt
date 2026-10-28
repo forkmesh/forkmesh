@@ -18,6 +18,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.forkmesh.nativeapp.chat.CallQuality
 import com.forkmesh.nativeapp.chat.CallQualityEvent
+import com.forkmesh.nativeapp.chat.GroupCallPageData
 import com.forkmesh.nativeapp.chat.GroupCallPageEvent
 import com.forkmesh.nativeapp.json.Json
 import java.io.ByteArrayInputStream
@@ -63,6 +64,9 @@ internal class GroupCallPage(
     @Volatile
     private var closed = false
 
+    @Volatile
+    private var dataPage: String? = null
+
     private val ready = CountDownLatch(1)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<Any?>>()
     private val ids = AtomicInteger()
@@ -91,11 +95,24 @@ internal class GroupCallPage(
         if (url.scheme != "https") return refused()
         val name = url.path.orEmpty().removePrefix("/")
         if (!name.startsWith(FOLDER) || name.contains("..") || name.contains('\\')) return refused()
+        val data = name.removePrefix(FOLDER)
+        if (data.startsWith(GroupCallPageData.FOLDER)) return callData(data.removePrefix(GroupCallPageData.FOLDER))
         return try {
             WebResourceResponse(mime(name), "utf-8", 200, "OK", mapOf("Cache-Control" to "no-store"), context.assets.open(name))
         } catch (_: IOException) {
             refused()
         }
+    }
+
+    private fun callData(file: String): WebResourceResponse {
+        if (closed || file !in GroupCallPageData.BLOCKS) return refused()
+        val page = dataPage ?: try {
+            context.assets.open(GroupCallPageData.SOURCE).bufferedReader(Charsets.UTF_8).use { it.readText() }.also { dataPage = it }
+        } catch (_: IOException) {
+            return refused()
+        }
+        val body = GroupCallPageData.block(page, file) ?: return refused()
+        return WebResourceResponse("text/javascript", "utf-8", 200, "OK", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(body.toByteArray(Charsets.UTF_8)))
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -222,6 +239,7 @@ internal class GroupCallPage(
         val failure = IllegalStateException("The call has ended.")
         for (future in pending.values) future.completeExceptionally(failure)
         pending.clear()
+        dataPage = null
         ready.countDown()
         main.post {
             val view = webView ?: return@post

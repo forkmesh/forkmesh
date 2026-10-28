@@ -436,8 +436,9 @@ drawing with the previous ones until the new ones are ready.
 **Android.** The codec (frames, reference pictures, mouth atlases) and the
 fixture test. The group call page runs in a WebView with a copy of
 `chat-call-facestream.js`, so it receives and draws face streams with the
-browser renderer; it does not send one yet (`docs/native/ANDROID.md`, "Group
-calls on FM Media").
+browser renderer, and sends one from the browser's face mesh network
+whenever the server asks (`docs/native/ANDROID.md`, "Group calls on FM
+Media").
 
 ## Privacy
 

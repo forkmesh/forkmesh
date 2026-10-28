@@ -40,6 +40,8 @@ MODULES = (
     "chat-call-segment.js",
     "chat-call-outfits.js",
     "chat-call-backgrounds.js",
+    "chat-call-voice.js",
+    "chat-call-voice-worklet.js",
 )
 HAND_WRITTEN = ("index.html", "group-call-host.js")
 
