@@ -209,11 +209,11 @@ def test_firewall_mesh_ports_only_from_core_on_wg0(tmp_path):
     assert "tcp dport { 22, 80, 443 } accept" in nft
     assert "udp dport { 443, 51820 } accept" in nft
     assert ('iifname "wg0" ip saddr { 10.77.0.1, 10.77.0.2, 10.77.0.3 } '
-            "tcp dport { 80, 4001, 4002, 8792, 8793 } accept") in nft
+            "tcp dport { 25, 80, 4001, 4002, 8792, 8793 } accept") in nft
     # Mesh ports are not open anywhere else.
     input_chain = nft.split("chain input", 1)[1].split("chain forward", 1)[0]
     for line in input_chain.splitlines():
-        if "4002" in line or "8792" in line:
+        if "4002" in line or "8792" in line or " 25, " in line:
             assert 'iifname "wg0"' in line
 
 

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "iPhone", "text": "A ping's detail page has a back link at the top that returns you to your list of pings."},
   {"date": "2026-10-28", "area": "Other improvements", "text": "The new repository form says plainly that Import from GitHub copies issues and pull requests but not the code, shows whether the result will be public or private before you create it, and links a new step-by-step guide to backing up a GitHub repository."},
   {"date": "2026-10-28", "area": "Desktop", "text": "On Linux, ForkMesh adds itself to the applications menu the first time it runs, so you can find it again after closing it."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Signing in on the desktop checks the email you type, so a suggested username that is not yours no longer reports a correct password as wrong; the password box has an eye button, and a lockout says how long to wait."},

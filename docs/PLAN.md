@@ -47,7 +47,11 @@ records the move from the old Cloudflare Worker stack, and
   name read as a plain value, such as `FORKMESH_CALLS_NODES` or
   `FORKMESH_CALLS_SECRET`, is an optional var. Before 2026-10-22 every
   `FORKMESH_*` name counted as a binding, and that failed the node deploy of
-  03524dc4dd77.
+  03524dc4dd77. Any name `ctx` in app, World or marketplace worker code is
+  read as the Workers execution context, so a local of that name fails the
+  test: the Poker package's per-round `ctx` (`ctx.big`, `ctx.credits`)
+  blocked every node deploy from ab5642740e on 2026-10-28 until it was
+  renamed `context`.
 - **Database.** rqlite. `d1_rqlite.py` gives it the D1 shape; plain reads are
   in-process read-only `sqlite3` on the local file, reads after a write use
   `weak`, primary-first reads use `linearizable`. `tools/rqlite_migrate.py`
