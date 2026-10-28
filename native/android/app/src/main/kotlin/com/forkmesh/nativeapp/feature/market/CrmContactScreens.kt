@@ -292,6 +292,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
                         emails.forEach { email -> CrmEmailRowView(email, null) { navigator.push(CrmEmailScreen(model, email)) } }
                         if (emails.isEmpty() && decks.isEmpty()) Text("No emails or deck views yet.", Modifier.padding(14.dp), style = Fm.text.bodySmall, color = Fm.colors.textTertiary)
                     }
+                    CrmContactInvoices(ref.organization, contact, navigator)
                     val duplicates = data.duplicatesOf(contact)
                     if (duplicates.isNotEmpty()) {
                         CrmSection("Possible duplicates") {

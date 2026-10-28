@@ -29,7 +29,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     teamPeriod: 30, teamMember: "", teamTable: false,
     // The contact whose detail card is open, and the posts and picture each
     // of its connected accounts answered with, keyed "service:handle".
-    detailContactId: "", detailUpdates: {},
+    detailContactId: "", detailUpdates: {}, detailInvoices: null,
     nextSkipped: new Set(),
     ai: null,
     },
@@ -3421,10 +3421,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!contact || !dialog || crmActiveShared()) return;
     state.crmView.detailContactId = contact.id;
     state.crmView.detailUpdates = {};
+    state.crmView.detailInvoices = { loading: true };
     renderCrmContactDetail();
     if (!dialog.open) dialog.showModal();
     crmSetContactParam(contact.id);
     void loadCrmContactUpdates(contact);
+    void loadCrmContactInvoices(contact);
   }
 
   function crmContactUrl(contactId) {
@@ -3585,6 +3587,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
             ? `<ul class="grid gap-2">${activity.map(crmDetailLine).join("")}</ul>`
             : `<p class="text-xs text-muted-foreground">Nothing has been linked to this record yet.</p>`}
         </section>
+        <section data-crm-detail-invoices-section>
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="crm-detail-heading">Invoices</h3>
+            <a href="${escapeHtml(crmInvoicesPath(`&contact=${encodeURIComponent(contact.id)}`))}" class="rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground hover:bg-secondary">New invoice</a>
+          </div>
+          <div data-crm-detail-invoices></div>
+        </section>
         <section>
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 class="crm-detail-heading">Recent updates</h3>
@@ -3604,6 +3613,63 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </div>
       </div>`;
     renderCrmContactUpdates();
+    renderCrmContactInvoices();
+  }
+
+  function crmInvoicesPath(suffix = "") {
+    return `/dashboard/invoices?org=${encodeURIComponent(state.crmView.organization)}${suffix}`;
+  }
+
+  function crmInvoiceMoney(amount, currency) {
+    const value = Number(amount || 0) / 100;
+    try { return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "USD" }).format(value); }
+    catch { return `${currency || ""} ${value.toFixed(2)}`.trim(); }
+  }
+
+  function crmInvoiceTotals(map) {
+    return Object.entries(map || {}).filter(([, value]) => value)
+      .map(([currency, value]) => crmInvoiceMoney(value, currency)).join(" · ");
+  }
+
+  async function loadCrmContactInvoices(contact) {
+    const org = state.crmView.organization;
+    try {
+      const payload = await crmRequest(`/api/invoices/${encodeURIComponent(org)}/contacts/${encodeURIComponent(contact.id)}`);
+      if (state.crmView.detailContactId !== contact.id) return;
+      state.crmView.detailInvoices = { invoices: payload.invoices || [], totals: payload.totals || {} };
+    } catch (error) {
+      if (state.crmView.detailContactId !== contact.id) return;
+      state.crmView.detailInvoices = { unavailable: error.status === 409 ? "install" : error.status === 404 ? "absent" : "error", error: error.message };
+    }
+    renderCrmContactInvoices();
+  }
+
+  function renderCrmContactInvoices() {
+    const host = $(`[data-crm-detail-invoices]`);
+    const slot = state.crmView.detailInvoices;
+    if (!host || !slot) return;
+    host.closest("[data-crm-detail-invoices-section]")?.classList.toggle("hidden", slot.unavailable === "absent");
+    if (slot.loading) { host.innerHTML = `<p class="text-xs text-muted-foreground">Reading invoices…</p>`; return; }
+    if (slot.unavailable === "install") {
+      host.innerHTML = `<p class="text-xs text-muted-foreground">Install <a href="${escapeHtml(crmInvoicesPath())}" class="crm-link">Invoicing</a> for this organization to bill this contact and see what they owe.</p>`;
+      return;
+    }
+    if (slot.unavailable) { host.innerHTML = `<p class="text-xs text-muted-foreground">Invoices could not be read: ${escapeHtml(slot.error || "")}.</p>`; return; }
+    if (!slot.invoices.length) { host.innerHTML = `<p class="text-xs text-muted-foreground">No invoices for this contact yet.</p>`; return; }
+    const totals = [
+      ["Billed", crmInvoiceTotals(slot.totals.billed)],
+      ["Paid", crmInvoiceTotals(slot.totals.paid)],
+      ["Outstanding", crmInvoiceTotals(slot.totals.outstanding)],
+    ].filter(([, value]) => value).map(([label, value]) => `${label} ${value}`).join(" · ");
+    const labels = { draft: "Draft", sent: "Sent", partial: "Part paid", overdue: "Overdue", paid: "Paid", void: "Void" };
+    host.innerHTML = `${totals ? `<p class="mb-2 text-xs text-muted-foreground">${escapeHtml(totals)}</p>` : ""}<ul class="grid gap-2">${slot.invoices.slice(0, 20).map((invoice) => {
+      const seen = invoice.sentAt ? [
+        invoice.opens ? `opened ${invoice.opens}×` : "not opened",
+        invoice.views ? `viewed ${invoice.views}×` : "",
+        invoice.paidAt ? `paid ${relativeTimeLabel(invoice.paidAt)}` : "",
+      ].filter(Boolean).join(", ") : "not sent";
+      return `<li class="crm-detail-line"><p class="text-xs text-muted-foreground">${escapeHtml(labels[invoice.displayStatus] || invoice.displayStatus)} · ${escapeHtml(seen)}</p><a href="${escapeHtml(crmInvoicesPath(`&invoice=${encodeURIComponent(invoice.id)}`))}" class="crm-link block text-xs">${escapeHtml(invoice.number)} · ${escapeHtml(crmInvoiceMoney(invoice.total, invoice.currency))}</a></li>`;
+    }).join("")}</ul>`;
   }
 
   async function saveCrmContactNote(contactId, button) {
