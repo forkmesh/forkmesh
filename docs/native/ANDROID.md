@@ -925,10 +925,8 @@ default in new projects except the chosen starter pack
     `callTicket` asks for the ticket. `GroupCallFeature` keeps a
     `GroupCallRoster` for the header's "Join · N" capsule and the last
     minute of call frames (`GroupCallFrameBuffer`) to replay into the page
-    before it joins, so names and keys are known at once. FM Media is off
-    (`fmm: { enabled: false }`, no call signer), so joining a room that
-    already runs on FM Media fails with the server's `room_engine` error
-    (ledger S140). Header buttons show for private, writable channels; a
+    before it joins, so names and keys are known at once. The page runs
+    FM Media when the WebView can (section 27, "Group calls on FM Media"). Header buttons show for private, writable channels; a
     direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
@@ -2158,6 +2156,60 @@ build time, so Android always ships the same library as iOS.
   calls the first time `#mesh` is on screen. Android has no local-network
   prompt for the mesh's Wi-Fi sockets, so nearby devices is the only prompt
   that moment brings.
+
+### Group calls on FM Media (ledger S140, S139, S087)
+
+- **FM Media and the compare code (S140).** The group call page now runs
+  the browser's FM Media engine (`fmm/*.js`: worker, playout worklet,
+  transport, FEC, jitter, frame sealing) and its call key exchange
+  (`fmm-e2ee.js`) instead of only WebRTC; iOS built a native engine, Android
+  reuses the web one because it already runs calls in a WebView.
+  `app/tools/sync_android_group_call.py` keeps every module byte-identical
+  to `app/public`. `group-call-host.js` passes the worker, worklet and
+  face-stream URLs inside `group-call/`, asks for `engines: ["fmm",
+  "webrtc"]`, and falls back to WebRTC when the WebView lacks WebTransport or
+  WebCodecs (`fmmSupported`) or the ticket has no FM Media block. The CSP
+  adds `https:` to `connect-src` (WebTransport) and `blob:` to `img-src`.
+  The call key is the room seal's identity key, as iOS
+  `OfficeChannelService.callIdentity`: `callIdentity` (core) returns the
+  seal's room name, account, kid and public key, and the private key never
+  enters the page. The page signs through the synchronous
+  `FmGroupBridge.sign(call, base64)`, which signs only messages that start
+  with `forkmesh-call-e2ee-`, are under 64 KB and name the current room
+  (`GroupCallIdentity.sign`). The identity goes to the page on join and
+  again with every `rekeyed`. `OfficeChannelService.accept` adds
+  `sealKid`/`sealAcct` from the opened seal to incoming `group-call-*`
+  frames and drops claimed copies from every other frame
+  (`GroupCallE2ee.annotate`, iOS `GroupCallE2ee.annotate`), so the page's
+  `requireSealed` check works. The page reports `engine` and the
+  verification view (emoji, names, digits, waiting and new names, verified,
+  mismatch) in its `state` event; `GroupCallVerify` (core) reads it and
+  holds iOS's `GroupCallVerifyText` wording and `summary` order. On FM Media
+  `GroupCallViews.kt` shows iOS's capsule under the state line ("Verify",
+  "Compare the code", "Verified"; `shield` or `verified_user` icon) that
+  opens a bottom sheet with the summary, the 40 sp emoji with names, "Or
+  compare numbers", and "They don't match" / "They match" (the page's
+  `confirm` op, `confirmCode`). After a mismatch the sheet shows the warning
+  and "Leave the call". Tiles show iOS's top-left note when a sender's media
+  signature is missing (orange) or forged (red); the page draws them.
+- **Face stream on weak links (S139).** The face-stream module
+  (`chat-call-facestream.js` and the face-changer modules it imports) is in
+  the page, so when the server sends a tile's face stream instead of video
+  (`representation: face`), `fmm-call.js` renders the moving face into the
+  tile and the page adds the "Face stream" badge above the name. Android
+  receives face streams; it sends one only once its group calls have a face
+  stage (the browser sends one only with a face or background chosen, and
+  the Android group call has no face changer yet), so a weak-link viewer
+  sees an Android caller's video freeze as before. The Kotlin codec in
+  `core/.../chat/facestream` is not used by the page.
+- **Face changer hair and edges (S087).** Already on Android: the call
+  page's face changer (`direct-call.html`, built by
+  `app/tools/sync_native_call_faces.py`) runs the browser's `hair-192`
+  network and guided-filter person matte, the code iOS ported to Metal. The
+  TrueDepth parts (ARKit 3D mesh pose, blend shapes, depth-firmed edges)
+  need a depth front camera and ARKit; Android has neither as a first-party
+  API, so they are not built. `direct-call.html` already matches iOS's copy
+  byte for byte, including commit ac9cab0530 (World voice and camera).
 
 ## 28. NEXUS network inspection (sync ledger S046)
 

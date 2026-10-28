@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.ChatNodeKey
+import com.forkmesh.nativeapp.crypto.Ed25519
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealPolicy
@@ -17,7 +18,7 @@ class GroupCallSessionTest {
 
     private class Rig(val service: OfficeChannelService, val api: FakeAccountApi, val socket: FakeOfficeSocket, val crypto: RoomCrypto, val peer: RoomSeal)
 
-    private fun rig(): Rig {
+    private fun rig(account: String = ""): Rig {
         val api = FakeAccountApi()
         api.replies["GET /api/chat/channels"] = mapOf(
             "channels" to listOf(
@@ -34,7 +35,7 @@ class GroupCallSessionTest {
         )
         val connector = FakeOfficeConnector()
         val me = ChatNodeKey.generate()
-        val service = OfficeChannelService(api, connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { me.node }, { "Me" }, nodeKey = { me })
+        val service = OfficeChannelService(api, connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { me.node }, { "Me" }, account = { account }, nodeKey = { me })
         service.refresh()
         expect(service.open("#office/team"))
         val socket = connector.last!!
@@ -117,5 +118,68 @@ class GroupCallSessionTest {
         now += 61_000
         assertEq(0, buffer.recent("#office/team").size)
         assertEq(0, buffer.recent("#office/other").size)
+    }
+
+    fun testCallFramesCarryTheSealedSenderForFmMedia() {
+        val rig = rig()
+        val seen = ArrayList<Map<String, Any?>>()
+        rig.service.onLiveFrame = { plain, _ -> seen.add(plain) }
+        val frame = rig.peer.seal(mapOf("type" to "group-call-verify", "id" to "v1", "senderId" to rig.peer.node, "sender" to "pat",
+            "channel" to "#team", "peer" to peerId, "sealKid" to "forged", "sealAcct" to "mallory", "ts" to System.currentTimeMillis()))
+        rig.socket.onText(Json.stringify(rig.crypto.encrypt(frame)))
+        assertEq(1, seen.size)
+        assertEq(rig.peer.keyId, seen[0]["sealKid"])
+        assertEq("pat", seen[0]["sealAcct"])
+    }
+
+    fun testAnnotateDropsClaimedSealFieldsFromOtherFrames() {
+        val chat = GroupCallE2ee.annotate(mapOf("type" to "chat", "sealKid" to "x", "text" to "hi"), "k", "a")
+        assertEq(mapOf<String, Any?>("type" to "chat", "text" to "hi"), chat)
+        val unsealed = GroupCallE2ee.annotate(mapOf("type" to "group-call-key", "sealKid" to "x", "sealAcct" to "y"), null, "")
+        assertEq(mapOf<String, Any?>("type" to "group-call-key"), unsealed)
+        val untouched = mapOf<String, Any?>("type" to "chat")
+        expect(GroupCallE2ee.annotate(untouched, "k", "a") === untouched)
+    }
+
+    fun testTheCallIdentitySignsOnlyCallMessagesForItsRoom() {
+        val rig = rig(account = "me")
+        val identity = rig.service.callIdentity("#office/team")!!
+        assertEq("chat-channel:$roomId:v1", identity.call)
+        assertEq("me", identity.acct)
+        assertEq(32, identity.idk.size)
+        val message = "forkmesh-call-e2ee-presence-v1\nabc".toByteArray()
+        val signature = identity.sign(identity.call, message)!!
+        expect(Ed25519.verify(identity.idk, message, signature))
+        assertEq(null, identity.sign(identity.call, "chat-bundle".toByteArray()))
+        assertEq(null, identity.sign("chat-channel:other:v1", message))
+        assertEq(null, identity.sign(identity.call, ByteArray(GroupCallE2ee.MAX_SIGN_BYTES + 1) { message[it % message.size] }))
+        assertEq(identity.idk.toList(), (identity.page()["idk"] as String).let { com.forkmesh.nativeapp.crypto.ChatV3.unb64u(it)!!.toList() })
+        assertEq(null, rig.service.callIdentity("#office/lobby"))
+    }
+
+    fun testTheVerificationCodeReadsLikeTheIPhone() {
+        val state = GroupCallPageEvent.parse(Json.parseObject("""{"event":"state","state":"live","others":2,"active":true,"engine":"fmm",
+            "verify":{"code":{"emoji":["🐶","🔑","🌵"],"emojiNames":["Dog","Key","Cactus"],"digits":"12345 67890"},
+            "waiting":["pat"],"late":false,"verified":false,"newcomers":[],"unfinished":0,"mismatch":false}}""")) as GroupCallPageEvent.State
+        assertEq("fmm", state.engine)
+        val verify = state.verify!!
+        expect(verify.hasCode && verify.canConfirm)
+        assertEq(listOf("Dog", "Key", "Cactus"), verify.names)
+        assertEq(GroupCallVerifyText.TITLE, verify.summary)
+        assertEq("Compare the code", verify.label)
+        assertEq("Or compare numbers: 12345 67890", GroupCallVerifyText.numbers(verify.digits))
+        assertEq("Waiting for pat to confirm…", verify.copy(late = true).summary)
+        assertEq("sam is not verified. Compare the new code to verify everyone.", verify.copy(newcomers = listOf("sam")).summary)
+        assertEq(GroupCallVerifyText.VERIFIED, verify.copy(verified = true).summary)
+        assertEq("Verified", verify.copy(verified = true).label)
+        assertEq(GroupCallVerifyText.INTERFERENCE, verify.copy(unfinished = 3).summary)
+        expect(!verify.copy(mismatch = true).canConfirm)
+        assertEq("Waiting for pat, sam and lee to confirm…", GroupCallVerifyText.waiting(listOf("pat", "sam", "lee")))
+        val preparing = GroupCallVerify.parse(mapOf("code" to null, "waiting" to emptyList<String>()))!!
+        assertEq(GroupCallVerifyText.PREPARING, preparing.summary)
+        assertEq("Verify", preparing.label)
+        val webrtc = GroupCallPageEvent.parse(Json.parseObject("""{"event":"state","state":"live","active":true,"engine":"webrtc","verify":{"code":null}}""")) as GroupCallPageEvent.State
+        assertEq(null, webrtc.verify)
+        assertEq("", (GroupCallPageEvent.parse(Json.parseObject("""{"event":"state","engine":"sfu"}""")) as GroupCallPageEvent.State).engine)
     }
 }

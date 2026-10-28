@@ -12,14 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,11 +41,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.forkmesh.nativeapp.chat.DirectCallKind
+import com.forkmesh.nativeapp.chat.GroupCallVerify
+import com.forkmesh.nativeapp.chat.GroupCallVerifyText
 import com.forkmesh.nativeapp.chat.GroupCallView
 import com.forkmesh.nativeapp.feature.facechanger.CallRoundButton
 import com.forkmesh.nativeapp.feature.facechanger.adoptContext
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
+import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlin.math.roundToInt
@@ -93,6 +102,7 @@ private fun GroupCallPanel(call: GroupCallView) {
     val quality by GroupCallFeature.quality.collectAsState()
     val hostView = LocalView.current
     val video = call.media == DirectCallKind.VIDEO
+    var showVerify by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(hostView) {
         hostView.keepScreenOn = true
         onDispose { hostView.keepScreenOn = false }
@@ -116,6 +126,7 @@ private fun GroupCallPanel(call: GroupCallView) {
             ) {
                 Text(call.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(call.stateLine, color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
+                if (call.fmm) GroupCallVerifyCapsule(call.verify) { showVerify = true }
             }
             CallQualityWidget(quality, video = video, peerLabel = "Others")
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -153,5 +164,93 @@ private fun GroupCallPanel(call: GroupCallView) {
                 CallRoundButton(icon = "call_end", label = "Leave", background = Fm.colors.danger) { GroupCallFeature.leave() }
             }
         }
+    }
+    if (showVerify && call.fmm) GroupCallVerifySheet(call.verify, onDismiss = { showVerify = false })
+}
+
+@Composable
+private fun GroupCallVerifyCapsule(verify: GroupCallVerify?, onOpen: () -> Unit) {
+    val label = verify?.label ?: "Verify"
+    Row(
+        Modifier
+            .padding(top = 4.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF333333))
+            .clickable(role = Role.Button, onClick = onOpen)
+            .semantics(mergeDescendants = true) { contentDescription = label }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        FmIcon(if (verify?.verified == true) "verified_user" else "shield", size = 15.dp, tint = Color.White)
+        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GroupCallVerifySheet(verify: GroupCallVerify?, onDismiss: () -> Unit) {
+    val c = Fm.colors
+    FmModalBottomSheet(onDismissRequest = onDismiss, showDragHandle = true) {
+        Column(
+            Modifier.fillMaxWidth().padding(FmSpace.x5),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(FmSpace.x4),
+        ) {
+            when {
+                verify?.mismatch == true -> {
+                    FmIcon("gpp_maybe", size = 44.dp, tint = c.danger, outlined = true)
+                    Text(GroupCallVerifyText.MISMATCH, color = c.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                    VerifyButton(GroupCallVerifyText.LEAVE, fill = c.danger, content = Color.White) {
+                        onDismiss()
+                        GroupCallFeature.leave()
+                    }
+                }
+                verify != null -> {
+                    Text(verify.summary, color = c.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    if (verify.hasCode && !verify.verified) {
+                        val spoken = verify.names.joinToString(", ")
+                        Row(
+                            Modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
+                            horizontalArrangement = Arrangement.spacedBy(FmSpace.x4),
+                        ) {
+                            verify.emoji.forEachIndexed { index, glyph ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(glyph, fontSize = 40.sp)
+                                    Text(verify.names.getOrElse(index) { "" }, color = c.textSecondary, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        Text(GroupCallVerifyText.numbers(verify.digits), color = c.textSecondary, fontSize = 14.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
+                            VerifyButton(GroupCallVerifyText.NO_MATCH, fill = c.danger.copy(alpha = .14f), content = c.danger) {
+                                GroupCallFeature.confirmCode(false)
+                            }
+                            VerifyButton(GroupCallVerifyText.MATCH, fill = c.accent, content = c.onAccent) {
+                                GroupCallFeature.confirmCode(true)
+                            }
+                        }
+                    } else if (verify.verified) {
+                        FmIcon("verified_user", size = 44.dp, tint = c.success)
+                    }
+                }
+                else -> Text(GroupCallVerifyText.PREPARING, color = c.textPrimary, fontSize = 15.sp, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+@Composable
+private fun VerifyButton(label: String, fill: Color, content: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .widthIn(min = 120.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(fill)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = FmSpace.x4, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = content, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }

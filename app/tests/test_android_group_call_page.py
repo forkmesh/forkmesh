@@ -52,7 +52,11 @@ await page.route("**/*", async (route) => {
 });
 await page.addInitScript(() => {
   window.__posts = [];
-  window.FmGroupBridge = { post: (text) => window.__posts.push(JSON.parse(text)) };
+  window.__signed = [];
+  window.FmGroupBridge = {
+    post: (text) => window.__posts.push(JSON.parse(text)),
+    sign: (call, data) => { window.__signed.push(call); return ""; },
+  };
 });
 await page.goto("https://appassets.androidplatform.net/group-call/index.html");
 const events = (name) => page.evaluate((wanted) => window.__posts.filter((item) => item.event === wanted), name);
@@ -60,7 +64,15 @@ await page.waitForFunction(() => window.__posts.some((item) => item.event === "r
 const out = { ready: true };
 out.mode = await page.evaluate(() => (typeof RTCRtpScriptTransform === "function" ? "script" : (RTCRtpSender.prototype.createEncodedStreams ? "streams" : "")));
 await page.evaluate(() => window.fmGroup(1, "frame", [{ type: "group-call-presence", peer: "0123456789abcdef0123456789abcdef", call: "in", sender: "pat" }, "#office/team"]));
-await page.evaluate(() => window.fmGroup(2, "join", ["#office/team", "video", "Jett", "rgba(10,132,255,.35)", "chat-channel:team:v1"]));
+out.faceStream = await page.evaluate(() => import(new URL("chat-call-facestream.js", location.href).href).then((m) => typeof m.createFaceStreamView));
+out.fmmWorker = await page.evaluate(() => new Promise((resolve) => {
+  const worker = new Worker(new URL("fmm/fmm-worker.js", location.href).href, { type: "module" });
+  worker.onerror = () => resolve("error");
+  setTimeout(() => { worker.terminate(); resolve("loaded"); }, 1500);
+}));
+out.fmmSupported = await page.evaluate(() => import(new URL("fmm/fmm-call.js", location.href).href).then((m) => m.fmmSupported(window)));
+const identity = { call: "chat-channel:team:v1", acct: "jett", kid: "k", idk: "A".repeat(43) };
+await page.evaluate((who) => window.fmGroup(2, "join", ["#office/team", "video", "Jett", "rgba(10,132,255,.35)", "chat-channel:team:v1", who]), identity);
 await page.waitForFunction(() => window.__posts.some((item) => item.event === "ticket"), null, { timeout: 15000 });
 const ticket = (await events("ticket"))[0];
 out.ticketChannel = ticket.channel;
@@ -69,6 +81,7 @@ await page.evaluate((id) => window.fmGroupTicket(id, true, { ticket: "t", room: 
 await page.waitForFunction(() => window.__posts.some((item) => item.event === "result" && item.id === 2), null, { timeout: 15000 });
 out.join = (await events("result")).find((item) => item.id === 2);
 out.states = (await events("state")).map((item) => item.state);
+out.engines = (await events("state")).map((item) => item.engine);
 out.active = (await events("state")).some((item) => item.active);
 out.tiles = await page.evaluate(() => [...document.querySelectorAll(".tile .name")].map((item) => item.textContent));
 out.selfMirrored = await page.evaluate(() => document.querySelector(".tile.self") !== null);
@@ -101,13 +114,30 @@ def test_the_shared_modules_are_current_copies():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_the_host_page_turns_fm_media_off_and_never_touches_storage():
+def test_the_host_page_runs_fm_media_and_never_touches_storage():
     text = HOST.read_text(encoding="utf-8")
-    assert "fmm: { enabled: false }" in text
-    assert "callSigner: null" in text
+    assert "enabled: false" not in text
+    assert "    callSigner,\n" in text
+    assert 'workerUrl: asset("fmm/fmm-worker.js")' in text
+    assert 'faceStreamUrl: asset("chat-call-facestream.js")' in text
+    assert "bridge.sign(current.call," in text
+    assert "calls.confirmCode(Boolean(match))" in text
     assert "localStorage" not in text
     page = (ASSETS / "index.html").read_text(encoding="utf-8")
-    assert "default-src 'none'" in page and "connect-src 'self' wss:" in page
+    assert "default-src 'none'" in page and "connect-src 'self' wss: https:;" in page
+    assert "img-src data: blob:;" in page
+
+
+def test_the_app_signs_only_through_the_call_identity():
+    page = (REPOSITORY / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh"
+            / "nativeapp" / "feature" / "chat" / "GroupCallPage.kt").read_text(encoding="utf-8")
+    assert "fun sign(call: String?, data: String?): String" in page
+    feature = (REPOSITORY / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh"
+               / "nativeapp" / "feature" / "chat" / "GroupCallFeature.kt").read_text(encoding="utf-8")
+    assert "identity?.sign(call, message)" in feature
+    core = (REPOSITORY / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh"
+            / "nativeapp" / "chat" / "OfficeChannels.kt").read_text(encoding="utf-8")
+    assert "GroupCallE2ee.annotate(plain, opened.senderKid, opened.senderAcct)" in core
 
 
 def test_the_page_joins_reports_state_and_leaves_in_chromium(tmp_path):
@@ -124,7 +154,10 @@ def test_the_page_joins_reports_state_and_leaves_in_chromium(tmp_path):
     out = json.loads(result.stdout.strip().splitlines()[-1])
     assert out["mode"] in ("script", "streams")
     assert out["ticketChannel"] == "#office/team"
-    assert out["ticketBody"] == {}
+    assert out["faceStream"] == "function"
+    assert out["fmmWorker"] == "loaded"
+    assert out["ticketBody"] == ({"engines": ["fmm", "webrtc"]} if out["fmmSupported"] else {})
+    assert "webrtc" in out["engines"]
     assert out["join"]["ok"] is True
     assert out["sameRoom"] is False
     assert out["rotated"] is True
@@ -144,8 +177,8 @@ def test_the_app_tells_the_page_when_the_channel_room_changes():
     feature = (REPOSITORY / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh"
                / "nativeapp" / "feature" / "chat" / "GroupCallFeature.kt").read_text(encoding="utf-8")
     assert "service.onRoomOpened = { conversation, roomName -> roomOpened(conversation, roomName) }" in feature
-    assert 'current.post("rekeyed", listOf(conversation, roomName))' in feature
-    assert "chatRoomName(conversation)), timeoutMs" in feature
+    assert 'current.post("rekeyed", listOf(conversation, roomName, fresh?.page()))' in feature
+    assert "chatRoomName(conversation), identity?.page())" in feature
     core = (REPOSITORY / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh"
             / "nativeapp" / "chat" / "OfficeChannels.kt").read_text(encoding="utf-8")
     assert "onRoomOpened?.invoke(room.conversation, roomName)" in core
