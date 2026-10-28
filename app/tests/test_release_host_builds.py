@@ -152,7 +152,8 @@ def _args(tmp_path, *extra):
 
 def _fake_host(monkeypatch, tmp_path, manifests, built):
     monkeypatch.setattr(tool, "manifests_at", lambda repo, ref: manifests)
-    monkeypatch.setattr(tool, "git", lambda *a, **k: MAIN if "rev-parse" in a else "")
+    monkeypatch.setattr(tool, "git",
+                        lambda *a, **k: MAIN if "rev-parse" in a or "log" in a else "")
     monkeypatch.setattr(tool, "parked_tag_target", lambda *a: None)
     monkeypatch.setattr(tool, "installer_public_key", lambda text: "key")
     monkeypatch.setattr(tool, "seed_targets", lambda hosts, *a: ["host"])
@@ -318,3 +319,17 @@ def test_a_release_branch_that_conflicts_with_main_stops_the_promotion(tmp_path)
 
 def test_signing_keys_and_the_served_mirror_live_in_the_core_data_folder():
     assert tool.FORKMESH_DATA == tool.LAYOUT.core
+
+
+def test_a_rebuild_from_main_takes_the_commit_its_build_provenance_names(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "other.txt").write_text("code\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "code")
+    code = _git(repo, "rev-parse", "HEAD")
+    (repo / ".forkmesh" / "releases").mkdir(parents=True)
+    (repo / ".forkmesh" / "releases" / "builds.json").write_text("{}\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "release metadata")
+    assert _git(repo, "rev-parse", "HEAD") != code
+    assert tool.code_commit(repo, "main") == code
