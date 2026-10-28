@@ -711,3 +711,30 @@ def test_access_log_redacts_room_tickets_and_signed_node_reads(tmp_path):
     query = query[:query.index("}")]
     for name in ("token", "sig", "ticket", "node"):
         assert "\treplace %s REDACTED\n" % name in query
+
+
+def fleet_with(tmp_path, **relays):
+    text = FLEET.read_text("utf-8")
+    for name, relay in relays.items():
+        anchor = 'name = "%s"\n' % name
+        assert text.count(anchor) == 1
+        text = text.replace(anchor, anchor + 'mail_relay = "%s"\n' % relay)
+    path = tmp_path / "fleet.toml"
+    path.write_text(text, "utf-8")
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wg_pubkeys": KEYS}))
+    return render.load_fleet(path, state_path=state)
+
+
+def test_app_env_lists_only_the_cores_that_send_mail_themselves(tmp_path):
+    files, _ = render.render_core(fleet_with(tmp_path, n3="n1"), "n2")
+    app_env = files["/etc/forkmesh-next/app.env"][0]
+    assert ("FORKMESH_MAIL_SENDERS=n1.next.forkmesh.com=203.0.113.11,"
+            "n2.next.forkmesh.com=203.0.113.12\n") in app_env
+
+
+@pytest.mark.parametrize("relays", [{"n3": "n9"}, {"n3": "n3"},
+                                    {"n3": "n1", "n1": "n2"}])
+def test_a_mail_relay_must_be_another_core_that_sends_itself(tmp_path, relays):
+    with pytest.raises(render.RenderError):
+        fleet_with(tmp_path, **relays)

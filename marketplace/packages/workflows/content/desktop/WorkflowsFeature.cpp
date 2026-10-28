@@ -1899,9 +1899,12 @@ void WorkflowsFeature::showPendingRun(const QJsonObject &run)
     const QString name = text(run, "workflowName");
     const QString where = text(run, "where");
     const qint64 started = integer(run, "startedAt");
+    const bool live = liveStatus(text(run, "status"));
     m_runSummary->setTextFormat(Qt::PlainText);
-    m_runSummary->setText(QStringLiteral("Running %1 %2…\nStarted %3 · trigger: %4")
-                              .arg(name, where, timeText(started), text(run, "trigger")));
+    m_runSummary->setText(
+        live ? QStringLiteral("Running %1 %2…\nStarted %3 · trigger: %4")
+                   .arg(name, where, timeText(started), text(run, "trigger"))
+             : QStringLiteral("%1 did not start %2.\n%3").arg(name, where, text(run, "error")));
     QString log = text(run, "log");
     if (log.isEmpty())
         log = QStringLiteral("▶ %1 started %2 at %3\n%4")
@@ -1909,7 +1912,7 @@ void WorkflowsFeature::showPendingRun(const QJsonObject &run)
                        where == QLatin1String("on ForkMesh") ? QStringLiteral("Waiting for ForkMesh to finish the run…")
                                                              : QStringLiteral("Waiting for the first step's output…"));
     setLiveText(m_runOutput, log, true);
-    showFlow(text(run, "id"), flowSteps(steps), true);
+    showFlow(text(run, "id"), flowSteps(steps), live);
 }
 
 void WorkflowsFeature::showFlow(const QString &key, const QList<FlowStep> &steps, bool live)
@@ -1953,6 +1956,18 @@ void WorkflowsFeature::landPendingRun(const QJsonObject &run, const QString &wor
     if (text(fresh, "trigger").isEmpty())
         fresh.insert(QStringLiteral("trigger"), text(m_pendingRun, "trigger"));
     m_pendingRun = fresh;
+}
+
+void WorkflowsFeature::failPendingRun(const QString &workflowKey, const QString &message)
+{
+    if (text(m_pendingRun, "workflowId") != workflowKey || !m_pendingRun.value(QStringLiteral("pending")).toBool() ||
+        !text(m_pendingRun, "runId").isEmpty())
+        return;
+    m_pendingRun.insert(QStringLiteral("status"), QStringLiteral("error"));
+    m_pendingRun.insert(QStringLiteral("finishedAt"), double(now()));
+    m_pendingRun.insert(QStringLiteral("error"), message);
+    m_pendingRun.insert(QStringLiteral("log"), QStringLiteral("✕ %1 did not start.\n%2")
+                                                   .arg(text(m_pendingRun, "workflowName"), message));
 }
 
 void WorkflowsFeature::updateDesktopPending(int running)
@@ -2355,9 +2370,9 @@ void WorkflowsFeature::runWorkflow(const QString &id, const QJsonObject &body, c
         m_busy = false;
         m_runDraftButton->setEnabled(true);
         if (!ok) {
-            m_pendingRun = QJsonObject();
-            stopFollowing();
+            failPendingRun(id, failureText(payload, error));
             renderDashboard();
+            stopFollowing();
             setStatus(QStringLiteral("The run did not start: %1").arg(failureText(payload, error)), true);
             return;
         }
@@ -3684,22 +3699,47 @@ void WorkflowsFeature::runLocal(const QJsonObject &summary, const QString &assig
                     m_draft.isLocal() && m_draft.repo == repo && m_draft.id == id ? pendingSteps(m_draft)
                                                                                   : QJsonArray());
     localAction(repo, id, QStringLiteral("run"), payload,
-                [this, key](bool ok, const QJsonObject &data, const QString &message) {
-        setStatus(message, !ok);
+                [this, key, repo, id, summary, assignment](bool ok, const QJsonObject &data, const QString &message) {
         const QString runId = text(data, "runId");
+        const bool pending =
+            text(m_pendingRun, "workflowId") == key && m_pendingRun.value(QStringLiteral("pending")).toBool();
+        if (!ok && runId.isEmpty() && text(data, "code") == QLatin1String("approval_required")) {
+            setStatus(QStringLiteral("%1 needs your approval on this desktop before it runs.").arg(text(summary, "name")));
+            if (pending) {
+                m_pendingRun.insert(QStringLiteral("log"),
+                                    QStringLiteral("▶ %1 is waiting for your approval.\n%2")
+                                        .arg(text(summary, "name"), message));
+                if (text(selectedDashboardRun(), "id") == text(m_pendingRun, "id"))
+                    showPendingRun(m_pendingRun);
+            }
+            localAction(repo, id, QStringLiteral("review"), {},
+                        [this, key, summary, assignment](bool approved, const QJsonObject &, const QString &reply) {
+                if (approved) {
+                    runLocal(summary, assignment);
+                    return;
+                }
+                setStatus(reply, true);
+                failPendingRun(key, reply);
+                loadLocal();
+                if (m_followWorkflow == key)
+                    stopFollowing();
+            });
+            return;
+        }
+        setStatus(message, !ok);
         if (m_followWorkflow == key)
             m_followRun = runId;
-        if (text(m_pendingRun, "workflowId") == key && m_pendingRun.value(QStringLiteral("pending")).toBool()) {
-            if (ok && !runId.isEmpty()) {
+        if (pending) {
+            if (!runId.isEmpty()) {
                 m_flowAliasFrom = text(m_pendingRun, "id");
                 m_flowAliasTo = runId;
                 m_pendingRun.insert(QStringLiteral("runId"), runId);
             } else {
-                m_pendingRun = QJsonObject();
+                failPendingRun(key, message);
             }
         }
         loadLocal();
-        if (!ok && m_followWorkflow == key)
+        if (runId.isEmpty() && m_followWorkflow == key)
             stopFollowing();
     });
 }

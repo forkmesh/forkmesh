@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -151,7 +152,8 @@ def _args(tmp_path, *extra):
 
 def _fake_host(monkeypatch, tmp_path, manifests, built):
     monkeypatch.setattr(tool, "manifests_at", lambda repo, ref: manifests)
-    monkeypatch.setattr(tool, "git", lambda *a, **k: MAIN if "rev-parse" in a else "")
+    monkeypatch.setattr(tool, "git",
+                        lambda *a, **k: MAIN if "rev-parse" in a or "log" in a else "")
     monkeypatch.setattr(tool, "parked_tag_target", lambda *a: None)
     monkeypatch.setattr(tool, "installer_public_key", lambda text: "key")
     monkeypatch.setattr(tool, "seed_targets", lambda hosts, *a: ["host"])
@@ -271,3 +273,63 @@ def test_build_modes_wait_for_the_lock(tmp_path):
             fcntl.flock(held, fcntl.LOCK_UN)
         assert tool.acquire_lock(other, True, sleep=release) is True
         assert waits == [tool.LOCK_POLL_SECONDS]
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                           *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def _release_repo(tmp_path):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.2.8 LANGUAGES CXX)\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", "release/v1.5.0")
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.5.0 LANGUAGES CXX)\n")
+    _git(repo, "commit", "-qam", "release: bump version to 1.5.0")
+    tag_commit = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    return repo, tag_commit
+
+
+def test_the_release_branch_reaches_main_only_with_the_promotion(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "other.txt").write_text("main moved on\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "unrelated work")
+    assert tool.bring_release_onto_main(repo, "v1.5.0", tag_commit) is True
+    assert "VERSION 1.5.0" in (repo / "CMakeLists.txt").read_text()
+    assert (repo / "other.txt").is_file()
+    assert _git(repo, "log", "-1", "--format=%s") == "release: v1.5.0 reaches main as it is promoted"
+    assert tool.bring_release_onto_main(repo, "v1.5.0", tag_commit) is False
+
+
+def test_a_release_branch_that_conflicts_with_main_stops_the_promotion(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.3.0 LANGUAGES CXX)\n")
+    _git(repo, "commit", "-qam", "someone else bumped it")
+    head = _git(repo, "rev-parse", "HEAD")
+    with pytest.raises(tool.CompletionError, match="does not merge into main"):
+        tool.bring_release_onto_main(repo, "v1.5.0", tag_commit)
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_signing_keys_and_the_served_mirror_live_in_the_core_data_folder():
+    assert tool.FORKMESH_DATA == tool.LAYOUT.core
+
+
+def test_a_rebuild_from_main_takes_the_commit_its_build_provenance_names(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "other.txt").write_text("code\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "code")
+    code = _git(repo, "rev-parse", "HEAD")
+    (repo / ".forkmesh" / "releases").mkdir(parents=True)
+    (repo / ".forkmesh" / "releases" / "builds.json").write_text("{}\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "release metadata")
+    assert _git(repo, "rev-parse", "HEAD") != code
+    assert tool.code_commit(repo, "main") == code

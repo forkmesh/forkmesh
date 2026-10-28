@@ -578,11 +578,51 @@ void workflowsFeatureChecks()
                                                    {QStringLiteral("startedAtMs"), double(now)},
                                                    {QStringLiteral("output"), output}}}}};
     };
-    localHost.repositoryWorkflowAction = [&localCalls, &agentFile, &localPayload,
+    bool sentinelApproved = false;
+    bool allowSentinel = false;
+    localHost.repositoryWorkflowAction = [&localCalls, &agentFile, &localPayload, &sentinelApproved, &allowSentinel,
                                           cleanRun](const QString &repo, const QString &id, const QString &action,
                                                     const QJsonObject &payload,
                                                     forkmesh::market::NativePackageReplyHandler done) {
         localCalls.append({repo, id, action, payload});
+        if (id == QLatin1String("sentinel") && action == QLatin1String("review")) {
+            sentinelApproved = allowSentinel;
+            QTimer::singleShot(0, [done, approved = allowSentinel] {
+                done(approved, {},
+                     approved ? QStringLiteral("Approved Sentinel.")
+                              : QStringLiteral("Sentinel did not run: it is not approved on this desktop."));
+            });
+            return;
+        }
+        if (id == QLatin1String("sentinel") && action == QLatin1String("run") && !sentinelApproved) {
+            QTimer::singleShot(0, [done] {
+                done(false, {{QStringLiteral("code"), QStringLiteral("approval_required")}},
+                     QStringLiteral("Approve Sentinel on this desktop before it runs: use Review on the notice."));
+            });
+            return;
+        }
+        if (id == QLatin1String("sentinel") && action == QLatin1String("run")) {
+            QJsonArray workflows = localPayload.value(QStringLiteral("workflows")).toArray();
+            QJsonObject sentinel = workflows.at(0).toObject();
+            QJsonArray recent = sentinel.value(QStringLiteral("recentRuns")).toArray();
+            recent.prepend(QJsonObject{{QStringLiteral("id"), QStringLiteral("lr3")},
+                                       {QStringLiteral("workflowId"), QStringLiteral("sentinel")},
+                                       {QStringLiteral("status"), QStringLiteral("running")},
+                                       {QStringLiteral("startedAtMs"), double(QDateTime::currentMSecsSinceEpoch())},
+                                       {QStringLiteral("trigger"), QStringLiteral("By hand · Workflows page")},
+                                       {QStringLiteral("steps"),
+                                        QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Sentinel")},
+                                                               {QStringLiteral("type"), QStringLiteral("agent.run")},
+                                                               {QStringLiteral("status"), QStringLiteral("running")},
+                                                               {QStringLiteral("output"),
+                                                                QStringLiteral("Reading open issues")}}}}});
+            sentinel.insert(QStringLiteral("running"), true);
+            sentinel.insert(QStringLiteral("recentRuns"), recent);
+            workflows.replace(0, sentinel);
+            localPayload.insert(QStringLiteral("workflows"), workflows);
+            QTimer::singleShot(0, [done] { done(true, {{QStringLiteral("runId"), QStringLiteral("lr3")}}, QString()); });
+            return;
+        }
         QJsonObject reply;
         if (action == QLatin1String("get") && id == QLatin1String("clean"))
             reply = QJsonObject{{QStringLiteral("workflow"), agentFile},
@@ -719,4 +759,43 @@ void workflowsFeatureChecks()
                        agentFile.value(QStringLiteral("kind")).toString() == QLatin1String("forkmesh.workflow"),
                    QStringLiteral("Save writes the edited special agent back to its workflow file"));
     delete desk;
+
+    auto *approving = static_cast<WorkflowsFeature *>(contribution->factory(localHost, nullptr));
+    approving->resize(1280, 860);
+    approving->show();
+    approving->refresh();
+    settle();
+    const auto sentinelCalls = [&localCalls](const QString &action) {
+        int count = 0;
+        for (const LocalCall &call : std::as_const(localCalls))
+            count += call.id == QLatin1String("sentinel") && call.action == action ? 1 : 0;
+        return count;
+    };
+    auto *approvingRuns = named<QTableWidget>(approving, QStringLiteral("workflowsRuns"));
+    auto *approvingOutput = named<QPlainTextEdit>(approving, QStringLiteral("workflowsRunOutput"));
+    const auto selectedRun = [approvingRuns](int column) {
+        const int row = approvingRuns ? approvingRuns->currentRow() : -1;
+        return row >= 0 && approvingRuns->item(row, column) ? approvingRuns->item(row, column) : nullptr;
+    };
+    if (auto *run = control(cardNamed(approving, QStringLiteral("Sentinel")), QStringLiteral("Run")))
+        run->click();
+    settle();
+    workflowsCheck(sentinelCalls(QStringLiteral("run")) == 1 && sentinelCalls(QStringLiteral("review")) == 1,
+                   QStringLiteral("Run on a workflow this desktop has not approved opens the approval box"));
+    workflowsCheck(selectedRun(3) && selectedRun(3)->text() == QLatin1String("Failed") &&
+                       selectedRun(0)->data(Qt::UserRole + 1).toString().startsWith(QLatin1String("pending:")) &&
+                       approvingOutput->toPlainText().contains(QLatin1String("did not start")) &&
+                       approvingOutput->toPlainText().contains(QLatin1String("not approved")),
+                   QStringLiteral("a run that is not approved stays in Recent runs as Failed with the reason"));
+    allowSentinel = true;
+    if (auto *run = control(cardNamed(approving, QStringLiteral("Sentinel")), QStringLiteral("Run")))
+        run->click();
+    settle();
+    auto *approvingFlow = dynamic_cast<RunFlow *>(named<QWidget>(approving, QStringLiteral("workflowsRunFlow")));
+    workflowsCheck(sentinelCalls(QStringLiteral("run")) == 3 && sentinelCalls(QStringLiteral("review")) == 2 &&
+                       selectedRun(0) && selectedRun(0)->data(Qt::UserRole + 1).toString() == QLatin1String("lr3") &&
+                       approvingFlow && approvingFlow->live() && approvingFlow->key() == QLatin1String("lr3") &&
+                       approvingOutput->toPlainText().contains(QLatin1String("Reading open issues")),
+                   QStringLiteral("after Allow the run starts and shows its steps and live output"));
+    delete approving;
 }

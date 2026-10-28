@@ -594,6 +594,36 @@ int runWorkspaceSnapshots(MainWindow &window)
                              "Git page too"));
         if (grab(dir, QStringLiteral("workspace-classic-layout")))
             ++saved;
+        const auto towerPanels = [codeSplit]() -> QWidget * {
+            return codeSplit ? codeSplit->findChild<QWidget *>(
+                                   QStringLiteral("sessionsDetails"),
+                                   Qt::FindDirectChildrenOnly)
+                             : nullptr;
+        };
+        const auto subSessionsCard = [&towerPanels]() -> QWidget * {
+            QWidget *panels = towerPanels();
+            if (!panels)
+                return nullptr;
+            for (QFrame *card : panels->findChildren<QFrame *>(
+                     QStringLiteral("sessionsDetailCard")))
+                if (card->property("sessionsPanel").toString() ==
+                    QLatin1String("subsessions"))
+                    return card;
+            return nullptr;
+        };
+        window.testSetAppViewMode(AppViewMode::Standard);
+        settle();
+        select(9301);
+        settle(20);
+        check(shown(towerPanels()) && shown(subSessionsCard()) &&
+                  !named("agentSubSessionStrip"),
+              QStringLiteral("Control Tower shows the side panels, Sub-sessions "
+                             "among them, beside the transcript instead of a "
+                             "strip above it"));
+        if (grab(dir, QStringLiteral("agents-control-tower")))
+            ++saved;
+        window.testSetAppViewMode(AppViewMode::Workspace);
+        settle(20);
 
         forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
         NextAccess::syncWorkspace(window);
@@ -603,6 +633,9 @@ int runWorkspaceSnapshots(MainWindow &window)
                   dock->isAncestorOf(codePage) &&
                   table && table->property("workspaceCards").toBool(),
               QStringLiteral("switching back to Focus restores the new layout"));
+        check(!shown(towerPanels()),
+              QStringLiteral("Focus hides the Control Tower side panels and "
+                             "keeps them in its Details tab"));
         if (grab(dir, QStringLiteral("workspace-new-layout-again")))
             ++saved;
     }

@@ -641,14 +641,14 @@ def _counts(state):
     return len(seats), len(seats) - bots, bots
 
 
-def _remove_seat(state, index, ctx, credit=True):
+def _remove_seat(state, index, context, credit=True):
     seat = state["seats"][index]
     if not seat:
         return
     if not seat.get("bot"):
         if credit and not seat.get("purged"):
-            ctx.credits.append((seat["bi"], int(seat.get("stack") or 0) + int(seat.get("rebuy") or 0)))
-        ctx.unseat.append(seat["bi"])
+            context.credits.append((seat["bi"], int(seat.get("stack") or 0) + int(seat.get("rebuy") or 0)))
+        context.unseat.append(seat["bi"])
     state["seats"][index] = None
 
 
@@ -660,17 +660,17 @@ def _maybe_schedule_start(state, now):
         _dealer_says(state, now, "Shuffle up and deal. First hand coming up.")
 
 
-def _start_hand(state, ctx):
-    now = ctx.now
+def _start_hand(state, context):
+    now = context.now
     for index, seat in enumerate(state["seats"]):
         if not seat:
             continue
         if seat.get("leaving"):
-            _remove_seat(state, index, ctx)
+            _remove_seat(state, index, context)
             _event(state, "leave", index)
             continue
         if seat.get("bot") and int(seat.get("stack") or 0) <= 0:
-            seat["stack"] = int(ctx.stake["maxBuyIn"])
+            seat["stack"] = int(context.stake["maxBuyIn"])
             _log(state, now, index, "rebuy", seat["stack"], "%s rebuys for %s" % (_label(seat), _chips(seat["stack"])))
         if int(seat.get("rebuy") or 0):
             seat["stack"] = int(seat.get("stack") or 0) + int(seat["rebuy"])
@@ -679,7 +679,7 @@ def _start_hand(state, ctx):
                      "lastAction": None, "handName": "", "best": [], "won": 0, "winner": False, "shown": False,
                      "status": "active" if _eligible(seat) else "out"})
     players = [index for index, seat in enumerate(state["seats"]) if seat and seat["status"] == "active"]
-    state.update({"board": [], "currentBet": 0, "lastRaise": ctx.big, "wakeAt": 0, "wakeKind": ""})
+    state.update({"board": [], "currentBet": 0, "lastRaise": context.big, "wakeAt": 0, "wakeKind": ""})
     _clear_turn(state)
     if len(players) < 2:
         state.update({"phase": "waiting", "deck": [], "dealt": [], "salts": [], "salt": "", "commitment": "",
@@ -707,15 +707,15 @@ def _start_hand(state, ctx):
     state["commitment"] = commitment(card_hashes(deck, salts))
     state["phase"] = "preflop"
     _event(state, "shuffle")
-    _dealer_says(state, now, "Hand #%d. Blinds %s / %s." % (state["hand"], _chips(ctx.small), _chips(ctx.big)))
-    small = _put(state["seats"][state["sb"]], ctx.small)
-    big = _put(state["seats"][state["bb"]], ctx.big)
+    _dealer_says(state, now, "Hand #%d. Blinds %s / %s." % (state["hand"], _chips(context.small), _chips(context.big)))
+    small = _put(state["seats"][state["sb"]], context.small)
+    big = _put(state["seats"][state["bb"]], context.big)
     state["seats"][state["sb"]]["lastAction"] = {"kind": "small blind", "amount": small}
     state["seats"][state["bb"]]["lastAction"] = {"kind": "big blind", "amount": big}
     _log(state, now, state["sb"], "blind", small, "%s posts the small blind %s" % (_label(state["seats"][state["sb"]]), _chips(small)))
     _log(state, now, state["bb"], "blind", big, "%s posts the big blind %s" % (_label(state["seats"][state["bb"]]), _chips(big)))
     _event(state, "blinds", state["bb"], small + big)
-    state["currentBet"] = max(ctx.big, small, big)
+    state["currentBet"] = max(context.big, small, big)
     order = []
     index = state["dealer"]
     for _round in range(2):
@@ -726,14 +726,14 @@ def _start_hand(state, ctx):
         state["seats"][index]["cards"].append(state["deck"].pop())
     _event(state, "deal", -1, len(players))
     first = _next_index(state, state["bb"], lambda seat: seat["status"] in IN_HAND)
-    _continue_betting(state, ctx, first)
+    _continue_betting(state, context, first)
 
 
-def _continue_betting(state, ctx, start):
+def _continue_betting(state, context, start):
     seats = state["seats"]
     in_hand = [index for index, seat in enumerate(seats) if seat and seat["status"] in IN_HAND]
     if len(in_hand) == 1:
-        _award_uncontested(state, ctx, in_hand[0])
+        _award_uncontested(state, context, in_hand[0])
         return
     current = int(state["currentBet"])
     needing = [index for index in in_hand if _can_bet(seats[index])
@@ -744,14 +744,14 @@ def _continue_betting(state, ctx, start):
         for step in range(count):
             index = (start + step) % count
             if index in needing:
-                _set_turn(state, ctx, index)
+                _set_turn(state, context, index)
                 return
-    _end_street(state, ctx)
+    _end_street(state, context)
 
 
-def _set_turn(state, ctx, index):
+def _set_turn(state, context, index):
     seat = state["seats"][index]
-    now = ctx.now
+    now = context.now
     state["toAct"] = index
     state["actStartedAt"] = now
     if seat.get("bot"):
@@ -762,11 +762,11 @@ def _set_turn(state, ctx, index):
         state["deadline"] = now
         _schedule(state, now, "auto")
     else:
-        state["deadline"] = now + ctx.turn_ms
-        _schedule(state, now + ctx.turn_ms, "timeout")
+        state["deadline"] = now + context.turn_ms
+        _schedule(state, now + context.turn_ms, "timeout")
 
 
-def _return_uncalled(state, ctx):
+def _return_uncalled(state, context):
     seats = [seat for seat in state["seats"] if seat and seat.get("bet")]
     if not seats:
         return
@@ -781,25 +781,25 @@ def _return_uncalled(state, ctx):
         if top["status"] == "allin" and top["stack"] > 0:
             top["status"] = "active"
         index = state["seats"].index(top)
-        _log(state, ctx.now, index, "return", extra, "%s gets %s back (uncalled)" % (_label(top), _chips(extra)))
+        _log(state, context.now, index, "return", extra, "%s gets %s back (uncalled)" % (_label(top), _chips(extra)))
 
 
-def _end_street(state, ctx):
-    _return_uncalled(state, ctx)
+def _end_street(state, context):
+    _return_uncalled(state, context)
     for seat in state["seats"]:
         if seat:
             seat["bet"] = 0
             seat["acted"] = False
             seat["locked"] = False
     state["currentBet"] = 0
-    state["lastRaise"] = ctx.big
+    state["lastRaise"] = context.big
     _clear_turn(state)
     in_hand = [index for index, seat in enumerate(state["seats"]) if seat and seat["status"] in IN_HAND]
     if len(in_hand) == 1:
-        _award_uncontested(state, ctx, in_hand[0])
+        _award_uncontested(state, context, in_hand[0])
         return
     if state["phase"] == "river":
-        _showdown(state, ctx)
+        _showdown(state, context)
         return
     bettors = [index for index in in_hand if _can_bet(state["seats"][index])]
     if len(bettors) < 2:
@@ -807,41 +807,41 @@ def _end_street(state, ctx):
             for index in in_hand:
                 state["seats"][index]["shown"] = True
             _event(state, "showdown")
-        _schedule(state, ctx.now + RUNOUT_MS, "runout")
-        _dealer_says(state, ctx.now, "All in. Running out the board.")
+        _schedule(state, context.now + RUNOUT_MS, "runout")
+        _dealer_says(state, context.now, "All in. Running out the board.")
         return
-    _deal_street(state, ctx)
+    _deal_street(state, context)
     first = _next_index(state, state["dealer"], lambda seat: seat["status"] in IN_HAND)
-    _continue_betting(state, ctx, first)
+    _continue_betting(state, context, first)
 
 
-def _deal_street(state, ctx):
+def _deal_street(state, context):
     deck = state["deck"]
     deck.pop()
     if state["phase"] == "preflop":
         state["board"] += [deck.pop(), deck.pop(), deck.pop()]
         state["phase"] = "flop"
-        _dealer_says(state, ctx.now, "Flop: " + _pretty(state["board"]))
+        _dealer_says(state, context.now, "Flop: " + _pretty(state["board"]))
     elif state["phase"] == "flop":
         state["board"].append(deck.pop())
         state["phase"] = "turn"
-        _dealer_says(state, ctx.now, "Turn: " + _pretty(state["board"][-1:]))
+        _dealer_says(state, context.now, "Turn: " + _pretty(state["board"][-1:]))
     else:
         state["board"].append(deck.pop())
         state["phase"] = "river"
-        _dealer_says(state, ctx.now, "River: " + _pretty(state["board"][-1:]))
+        _dealer_says(state, context.now, "River: " + _pretty(state["board"][-1:]))
     _event(state, state["phase"])
 
 
-def _runout(state, ctx):
+def _runout(state, context):
     if state["phase"] == "river":
-        _showdown(state, ctx)
+        _showdown(state, context)
         return
-    _deal_street(state, ctx)
-    _schedule(state, ctx.now + RUNOUT_MS, "runout")
+    _deal_street(state, context)
+    _schedule(state, context.now + RUNOUT_MS, "runout")
 
 
-def _finish(state, ctx, winners, shown, ranks):
+def _finish(state, context, winners, shown, ranks):
     seats = state["seats"]
     summary = []
     for index, amount in winners.items():
@@ -855,7 +855,7 @@ def _finish(state, ctx, winners, shown, ranks):
     for index, seat in enumerate(seats):
         if not seat or seat.get("bot") or seat["status"] == "out":
             continue
-        ctx.stats.append((seat["bi"], {"won": winners.get(index, 0), "rank": ranks.get(index)}))
+        context.stats.append((seat["bi"], {"won": winners.get(index, 0), "rank": ranks.get(index)}))
     state["lastHand"] = {
         "number": state["hand"], "board": list(state["board"]), "winners": summary,
         "shown": [{"seat": index, "name": seats[index]["name"], "cards": list(seats[index]["cards"]),
@@ -867,14 +867,14 @@ def _finish(state, ctx, winners, shown, ranks):
     state["history"] = (state.get("history") or [])[-(MAX_HISTORY - 1):] + [{
         "number": state["hand"], "winners": [item["name"] for item in summary],
         "amount": sum(item["amount"] for item in summary),
-        "handName": top["handName"] if top else "", "at": ctx.now}]
+        "handName": top["handName"] if top else "", "at": context.now}]
     state["phase"] = "showdown"
     _clear_turn(state)
 
 
-def _award_uncontested(state, ctx, winner):
+def _award_uncontested(state, context, winner):
     seats = state["seats"]
-    _return_uncalled(state, ctx)
+    _return_uncalled(state, context)
     total = sum(int(seat.get("total") or 0) for seat in seats if seat)
     seats[winner]["stack"] += total
     for seat in seats:
@@ -882,12 +882,12 @@ def _award_uncontested(state, ctx, winner):
             seat["bet"] = 0
     seats[winner]["handName"] = ""
     _event(state, "win", winner, total)
-    _dealer_says(state, ctx.now, "%s wins %s" % (_label(seats[winner]), _chips(total)))
-    _finish(state, ctx, {winner: total}, [], {})
-    _schedule(state, ctx.now + FOLD_WIN_NEXT_MS, "next")
+    _dealer_says(state, context.now, "%s wins %s" % (_label(seats[winner]), _chips(total)))
+    _finish(state, context, {winner: total}, [], {})
+    _schedule(state, context.now + FOLD_WIN_NEXT_MS, "next")
 
 
-def _showdown(state, ctx):
+def _showdown(state, context):
     seats = state["seats"]
     contenders = [index for index, seat in enumerate(seats) if seat and seat["status"] in IN_HAND]
     ranks = {}
@@ -924,11 +924,11 @@ def _showdown(state, ctx):
     if winners:
         top = max(winners, key=lambda item: winners[item])
         names = " and ".join(_label(seats[item]) for item in winners)
-        _dealer_says(state, ctx.now, "%s %s %s with %s" % (
+        _dealer_says(state, context.now, "%s %s %s with %s" % (
             names, "split" if len(winners) > 1 else "wins",
             _chips(sum(winners.values())), seats[top]["handName"]))
-    _finish(state, ctx, winners, contenders, ranks)
-    _schedule(state, ctx.now + NEXT_HAND_MS, "next")
+    _finish(state, context, winners, contenders, ranks)
+    _schedule(state, context.now + NEXT_HAND_MS, "next")
 
 
 def legal_actions(state, index, big):
@@ -949,16 +949,16 @@ def legal_actions(state, index, big):
     return {"fold": True, "check": to_call == 0, "call": call, "raise": raise_range, "allIn": seat["stack"]}
 
 
-def apply_action(state, ctx, index, action, amount=0, automatic=False):
+def apply_action(state, context, index, action, amount=0, automatic=False):
     if state.get("phase") not in STREETS:
         return "hand_not_running"
     if state.get("toAct") != index:
         return "not_your_turn"
     seat = state["seats"][index]
-    legal = legal_actions(state, index, ctx.big)
+    legal = legal_actions(state, index, context.big)
     if not legal:
         return "not_your_turn"
-    now = ctx.now
+    now = context.now
     current = int(state["currentBet"])
     to_call = max(0, current - seat["bet"])
     label = _label(seat)
@@ -1026,7 +1026,7 @@ def apply_action(state, ctx, index, action, amount=0, automatic=False):
     _clear_turn(state)
     state["wakeAt"] = 0
     state["wakeKind"] = ""
-    _continue_betting(state, ctx, (index + 1) % len(state["seats"]))
+    _continue_betting(state, context, (index + 1) % len(state["seats"]))
     return None
 
 
@@ -1072,11 +1072,11 @@ def bot_decision(state, index, big, rng=None):
     return "fold", 0
 
 
-def run_due(state, ctx, limit=12):
+def run_due(state, context, limit=12):
     changed = False
     for _step in range(limit):
         due = int(state.get("wakeAt") or 0)
-        if not due or due > ctx.now:
+        if not due or due > context.now:
             break
         kind = state.get("wakeKind") or ""
         state["wakeAt"] = 0
@@ -1084,23 +1084,23 @@ def run_due(state, ctx, limit=12):
         changed = True
         index = int(state.get("toAct") if state.get("toAct") is not None else -1)
         if kind == "next":
-            _start_hand(state, ctx)
+            _start_hand(state, context)
         elif kind == "runout":
-            _runout(state, ctx)
+            _runout(state, context)
         elif kind in ("bot", "auto", "timeout") and 0 <= index < len(state["seats"]) and state["seats"][index]:
             seat = state["seats"][index]
             if kind == "bot":
-                action, amount = bot_decision(state, index, ctx.big)
-                if apply_action(state, ctx, index, action, amount, automatic=True):
-                    apply_action(state, ctx, index, "fold", 0, automatic=True)
+                action, amount = bot_decision(state, index, context.big)
+                if apply_action(state, context, index, action, amount, automatic=True):
+                    apply_action(state, context, index, "fold", 0, automatic=True)
             else:
                 if kind == "timeout":
                     seat["timeouts"] = int(seat.get("timeouts") or 0) + 1
                     _event(state, "timeout", index)
-                    _log(state, ctx.now, index, "timeout", 0, "%s ran out of time" % _label(seat))
+                    _log(state, context.now, index, "timeout", 0, "%s ran out of time" % _label(seat))
                     if seat["timeouts"] >= TIMEOUTS_TO_AWAY:
                         seat["away"] = True
-                apply_action(state, ctx, index, "fold", 0, automatic=True)
+                apply_action(state, context, index, "fold", 0, automatic=True)
     return changed
 
 
@@ -1235,14 +1235,14 @@ def _audience(state, now):
     return names
 
 
-async def _apply_effects(runtime, ctx, table_id):
-    for account_bi, amount in ctx.credits:
+async def _apply_effects(runtime, context, table_id):
+    for account_bi, amount in context.credits:
         await _credit(runtime, account_bi, amount)
-    for account_bi, update in ctx.stats:
+    for account_bi, update in context.stats:
         await _record_stats(runtime, account_bi, update)
-    for account_bi in ctx.unseat:
+    for account_bi in context.unseat:
         await runtime.d1_run("DELETE FROM poker_seats WHERE table_id=? AND account_bi=?", table_id, account_bi)
-    for account_bi, name, seat, at in ctx.seat_rows:
+    for account_bi, name, seat, at in context.seat_rows:
         await runtime.d1_run(
             "INSERT INTO poker_seats(table_id,account_bi,account_name,seat,joined_at) VALUES(?,?,?,?,?) "
             "ON CONFLICT(table_id,account_bi) DO UPDATE SET seat=excluded.seat,account_name=excluded.account_name",
@@ -1259,11 +1259,11 @@ async def _mutate(runtime, table_id, change, viewer=""):
             return None, None, "table_not_found"
         now = runtime.now()
         before = json.dumps(state, sort_keys=True)
-        ctx = _Ctx(row, now)
-        problem = change(state, ctx) if change else None
+        context = _Ctx(row, now)
+        problem = change(state, context) if change else None
         if problem:
             return row, state, problem
-        run_due(state, ctx)
+        run_due(state, context)
         if viewer:
             watchers = state.setdefault("watchers", {})
             if now - int(watchers.get(viewer) or 0) > WATCH_SAVE_MS:
@@ -1273,7 +1273,7 @@ async def _mutate(runtime, table_id, change, viewer=""):
         if json.dumps(state, sort_keys=True) == before:
             return row, state, None
         if await _write(runtime, row, state, now):
-            await _apply_effects(runtime, ctx, table_id)
+            await _apply_effects(runtime, context, table_id)
             await _notify(runtime, _audience(state, now))
             return row, state, None
     return None, None, "busy"
@@ -1448,7 +1448,7 @@ async def _sit(runtime, table_id, account_bi, actor, data):
         return _error(runtime, "not_enough_chips", 409)
     wanted = _integer(data.get("seat"), -1)
 
-    def change(state, ctx):
+    def change(state, context):
         if _seat_of(state, account_bi) >= 0:
             return "already_seated"
         index = wanted
@@ -1460,11 +1460,11 @@ async def _sit(runtime, table_id, account_bi, actor, data):
             return "invalid_seat"
         if state["seats"][index] is not None:
             return "seat_taken"
-        _seat_player(state, index, account_bi, actor, buy_in, ctx.now)
-        ctx.seat_rows.append((account_bi, actor, index, ctx.now))
+        _seat_player(state, index, account_bi, actor, buy_in, context.now)
+        context.seat_rows.append((account_bi, actor, index, context.now))
         _event(state, "join", index, buy_in)
-        _log(state, ctx.now, index, "join", buy_in, "%s sits down with %s" % (actor, _chips(buy_in)))
-        _maybe_schedule_start(state, ctx.now)
+        _log(state, context.now, index, "join", buy_in, "%s sits down with %s" % (actor, _chips(buy_in)))
+        _maybe_schedule_start(state, context.now)
         return None
 
     row, state, problem = await _mutate(runtime, table_id, change, actor)
@@ -1476,7 +1476,7 @@ async def _sit(runtime, table_id, account_bi, actor, data):
 
 
 def _leave_change(account_bi, credit=True):
-    def change(state, ctx):
+    def change(state, context):
         index = _seat_of(state, account_bi)
         if index < 0:
             return "not_seated"
@@ -1489,7 +1489,7 @@ def _leave_change(account_bi, credit=True):
             seat["leaving"] = True
             if seat["status"] == "active":
                 if state.get("toAct") == index:
-                    apply_action(state, ctx, index, "fold", 0)
+                    apply_action(state, context, index, "fold", 0)
                 else:
                     seat["status"] = "folded"
                     seat["lastAction"] = {"kind": "fold", "amount": 0}
@@ -1498,12 +1498,12 @@ def _leave_change(account_bi, credit=True):
                                if other and other["status"] in IN_HAND]
                     if len(in_hand) == 1:
                         _clear_turn(state)
-                        _award_uncontested(state, ctx, in_hand[0])
-            _log(state, ctx.now, index, "leave", 0, "%s will leave after this hand" % seat["name"])
+                        _award_uncontested(state, context, in_hand[0])
+            _log(state, context.now, index, "leave", 0, "%s will leave after this hand" % seat["name"])
             return None
-        _remove_seat(state, index, ctx, credit)
+        _remove_seat(state, index, context, credit)
         _event(state, "leave", index)
-        _log(state, ctx.now, index, "leave", 0, "%s leaves the table" % seat["name"])
+        _log(state, context.now, index, "leave", 0, "%s leaves the table" % seat["name"])
         return None
     return change
 
@@ -1521,14 +1521,14 @@ async def _act(runtime, table_id, account_bi, actor, data):
         return _error(runtime, "invalid_action")
     hand = data.get("hand")
 
-    def change(state, ctx):
-        run_due(state, ctx)
+    def change(state, context):
+        run_due(state, context)
         index = _seat_of(state, account_bi)
         if index < 0:
             return "not_seated"
         if hand is not None and _integer(hand, -1) != int(state.get("hand") or 0):
             return "hand_changed"
-        return apply_action(state, ctx, index, action, data.get("amount"))
+        return apply_action(state, context, index, action, data.get("amount"))
 
     row, state, problem = await _mutate(runtime, table_id, change, actor)
     if problem:
@@ -1539,19 +1539,19 @@ async def _act(runtime, table_id, account_bi, actor, data):
 async def _away(runtime, table_id, account_bi, actor, data):
     away = bool(data.get("away", True))
 
-    def change(state, ctx):
+    def change(state, context):
         index = _seat_of(state, account_bi)
         if index < 0:
             return "not_seated"
         seat = state["seats"][index]
         seat["away"] = away
         seat["timeouts"] = 0
-        _log(state, ctx.now, index, "away" if away else "back", 0,
+        _log(state, context.now, index, "away" if away else "back", 0,
              "%s %s" % (seat["name"], "is sitting out" if away else "is back"))
         if away and state.get("toAct") == index:
-            apply_action(state, ctx, index, "fold", 0, automatic=True)
+            apply_action(state, context, index, "fold", 0, automatic=True)
         if not away:
-            _maybe_schedule_start(state, ctx.now)
+            _maybe_schedule_start(state, context.now)
         return None
 
     row, state, problem = await _mutate(runtime, table_id, change, actor)
@@ -1571,7 +1571,7 @@ async def _rebuy(runtime, table_id, account_bi, actor, data):
     if not await _debit(runtime, account_bi, amount):
         return _error(runtime, "not_enough_chips", 409)
 
-    def change(state, ctx):
+    def change(state, context):
         index = _seat_of(state, account_bi)
         if index < 0:
             return "not_seated"
@@ -1582,8 +1582,8 @@ async def _rebuy(runtime, table_id, account_bi, actor, data):
             seat["rebuy"] = int(seat.get("rebuy") or 0) + amount
         else:
             seat["stack"] = int(seat.get("stack") or 0) + amount
-        _log(state, ctx.now, index, "rebuy", amount, "%s adds %s" % (seat["name"], _chips(amount)))
-        _maybe_schedule_start(state, ctx.now)
+        _log(state, context.now, index, "rebuy", amount, "%s adds %s" % (seat["name"], _chips(amount)))
+        _maybe_schedule_start(state, context.now)
         return None
 
     row, state, problem = await _mutate(runtime, table_id, change, actor)
@@ -1602,7 +1602,7 @@ async def _bots(runtime, table_id, account_bi, actor, data):
     stake = _stake(row)
     remove = data.get("remove")
 
-    def change(state, ctx):
+    def change(state, context):
         if remove is not None:
             index = _integer(remove, -1)
             if not 0 <= index < len(state["seats"]) or not (state["seats"][index] or {}).get("bot"):
@@ -1617,22 +1617,22 @@ async def _bots(runtime, table_id, account_bi, actor, data):
                                if other and other["status"] in IN_HAND]
                     if len(in_hand) == 1:
                         _clear_turn(state)
-                        _award_uncontested(state, ctx, in_hand[0])
+                        _award_uncontested(state, context, in_hand[0])
                 elif state.get("toAct") == index:
-                    apply_action(state, ctx, index, "fold", 0)
+                    apply_action(state, context, index, "fold", 0)
             else:
-                _remove_seat(state, index, ctx)
+                _remove_seat(state, index, context)
                 _event(state, "leave", index)
             return None
         index = next((position for position, seat in enumerate(state["seats"]) if seat is None), -1)
         if index < 0:
             return "table_full"
-        if not _seat_bot(state, index, stake, ctx.now):
+        if not _seat_bot(state, index, stake, context.now):
             return "table_full"
         seat = state["seats"][index]
         _event(state, "join", index, seat["stack"])
-        _log(state, ctx.now, index, "join", seat["stack"], "%s (bot) sits down" % _label(seat))
-        _maybe_schedule_start(state, ctx.now)
+        _log(state, context.now, index, "join", seat["stack"], "%s (bot) sits down" % _label(seat))
+        _maybe_schedule_start(state, context.now)
         return None
 
     row, state, problem = await _mutate(runtime, table_id, change, actor)
@@ -1646,12 +1646,12 @@ async def _chat(runtime, table_id, account_bi, actor, data):
     if not text:
         return _error(runtime, "invalid_text")
 
-    def change(state, ctx):
+    def change(state, context):
         recent = [line for line in state.get("chat") or []
-                  if line.get("name") == actor and ctx.now - int(line.get("at") or 0) < CHAT_WINDOW_MS]
+                  if line.get("name") == actor and context.now - int(line.get("at") or 0) < CHAT_WINDOW_MS]
         if len(recent) >= CHAT_BURST:
             return "slow_down"
-        state["chat"] = (state.get("chat") or [])[-(MAX_CHAT - 1):] + [{"at": ctx.now, "name": actor, "text": text}]
+        state["chat"] = (state.get("chat") or [])[-(MAX_CHAT - 1):] + [{"at": context.now, "name": actor, "text": text}]
         _event(state, "chat", _seat_of(state, account_bi))
         return None
 

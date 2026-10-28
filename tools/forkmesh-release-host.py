@@ -126,7 +126,7 @@ import forkmesh_safe_delete  # noqa: E402
 
 # Releases are cut from the ForkMesh home project, whichever project is open.
 LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
-FORKMESH_DATA = LAYOUT.data
+FORKMESH_DATA = LAYOUT.core
 INSTALLER_KEY_RE = re.compile(r"MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=")
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -686,6 +686,7 @@ def _fat_slices(buffer: bytes, at: int) -> list[tuple[int, int]] | None:
 def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
     fat, thin, slice_starts = [], {}, {}
     commit = build_commit.lower().encode("ascii")
+    commit_utf16 = build_commit.lower().encode("utf-16-le")
     carries_commit = False
     tail, tail_position = b"", None
 
@@ -705,7 +706,7 @@ def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
                 if cpu in (MACHO_CPU_X86_64, MACHO_CPU_ARM64) and filetype in MACHO_LOADABLE:
                     thin[base + at] = cpu
             at = buffer.find(MACHO_THIN_64, at + 1)
-        if not carries_commit and commit and commit in buffer:
+        if not carries_commit and commit and (commit in buffer or commit_utf16 in buffer):
             carries_commit = True
 
     for position, data in udif_chunks(path):
@@ -1071,7 +1072,7 @@ printf '%s\n' "$2" > "src-$1.commit"
 MAC_DESKTOP_BUILD_SCRIPT = r"""
 set -euo pipefail
 cd desktop-release
-FORKMESH_BUILD_COMMIT="$2" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
+FORKMESH_BUILD_COMMIT="$2" FORKMESH_VERSION="$1" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
 """
 
 MAC_IOS_FETCH_SCRIPT = r"""
@@ -1087,7 +1088,7 @@ git config remote.origin.url "$1"
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
-git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
+git sparse-checkout set --no-cone '/native/ios/' '/native/fixtures/' '/codemagic.yaml' '/conformance/' \
   '/changelog/' '/tools/changelog.py' '/app/src/apns.py' '/app/src/app_runtime.py' \
   '/app/public/assets/call-segmentation/' '/marketplace/packages/vault/tests/fixtures/' \
   '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
@@ -2347,6 +2348,11 @@ def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace)
     return {name: dmg for name in MACOS_ASSETS}
 
 
+def code_commit(repo: Path, ref: str) -> str:
+    return git(repo, "log", "-1", "--format=%H", ref, "--", ".",
+               f":(exclude){RELEASES}/**")
+
+
 def deploy_build(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     work = Path(args.work_dir).expanduser()
@@ -2360,7 +2366,7 @@ def deploy_build(args: argparse.Namespace) -> int:
     manifests = manifests_at(repo, "main")
     builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
     plan = plan_deploy(manifests, args.deploy_build, builds_text,
-                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build,
+                       code_commit(repo, "main"), args.tag, args.first_build,
                        args.from_main)
     label = PLATFORM_LABELS[plan["platform"]]
     tag, channel = plan["tag"], plan["channel"]
@@ -2607,6 +2613,21 @@ def run_step(step, args: argparse.Namespace) -> int:
         return 1
 
 
+def bring_release_onto_main(tree: Path, tag: str, tag_commit: str) -> bool:
+    if run(["git", "-C", tree, "merge-base", "--is-ancestor", tag_commit, "HEAD"],
+           check=False).returncode == 0:
+        return False
+    merged = run(["git", "-C", tree, "-c", "user.name=ForkMesh Actions",
+                  "-c", "user.email=actions@forkmesh.local", "merge", "--no-ff", "-m",
+                  f"release: {tag} reaches main as it is promoted", tag_commit], check=False)
+    if merged.returncode != 0:
+        run(["git", "-C", tree, "merge", "--abort"], check=False)
+        raise CompletionError(f"{tag}'s release commit {tag_commit[:12]} does not merge into "
+                              f"main: {(merged.stdout + merged.stderr).strip()[-500:]}")
+    log(f"{tag}: the release branch merges into main with the promotion")
+    return True
+
+
 def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         channel: str, tag: str, tag_commit: str, build_commit: str,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
@@ -2622,6 +2643,8 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False):
         git(repo, "branch", "-D", branch)
     git(repo, "worktree", "add", "-q", "-b", branch, str(promote_tree), "main")
+    if promote:
+        bring_release_onto_main(promote_tree, tag, tag_commit)
     with tempfile.TemporaryDirectory(dir=work, prefix="sign-") as secret_dir:
         os.chmod(secret_dir, 0o700)
         secrets = Path(secret_dir)

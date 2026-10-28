@@ -178,6 +178,13 @@ def load_fleet(path, state_path=None, state=None, instances=None,
             raise RenderError("rqlite_voter must be true or false: %r" % node["name"])
     if nodes and not any(node.get("rqlite_voter", True) for node in nodes):
         raise RenderError("at least one core must be an rqlite voter")
+    for node in nodes:
+        if "mail_relay" not in node:
+            continue
+        relay = next((n for n in nodes if n.get("name") == node["mail_relay"]), None)
+        if relay is None or relay is node or "mail_relay" in relay:
+            raise RenderError("mail_relay of %s must name another core that sends "
+                              "mail itself: %r" % (node["name"], node["mail_relay"]))
     for runner in fleet.get("runners") or []:
         if not RUNNER_NAME.match(str(runner.get("name"))):
             raise RenderError("runner name must look like r1: %r" % runner.get("name"))
@@ -1910,6 +1917,11 @@ def replica_settings(fleet):
             % ",".join(shared_hosts(fleet)))
 
 
+def mail_senders(fleet):
+    return ",".join("%s.%s=%s" % (n["name"], fleet["domain"], n["public_ipv4"])
+                    for n in fleet["nodes"] if "mail_relay" not in n)
+
+
 def dns_settings(fleet):
     """app.env lines for the node DNS reconciler (dns_reconciler.py)."""
     mode = (fleet.get("dns") or {}).get("reconciler", "dry")
@@ -2082,6 +2094,7 @@ def render_core(fleet, node_name, replacement=False):
         "DNS_SETTINGS": replica_settings(fleet) if replica
         else dns_settings(fleet),
         "IDS_SETTINGS": ids_env_settings(fleet),
+        "MAIL_SENDERS": mail_senders(fleet),
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
         "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),

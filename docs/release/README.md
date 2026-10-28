@@ -31,8 +31,11 @@ and publisher flags are documented beside the data in
 ## Flow
 
 1. **Version.** Drafting a release stamps the version into every versioned file
-   on the target branch (including the Android versionCode
-   `MAJOR*10000 + MINOR*100 + PATCH`).
+   (including the Android versionCode `MAJOR*10000 + MINOR*100 + PATCH`) and
+   tags the result. For `forkmesh/forkmesh` the stamp and tag go on a new
+   `release/<tag>` branch cut from the target, so `main` keeps the previous
+   version until the release is promoted ([The version flips
+   last](#the-version-flips-last)).
 2. **Build.** `.forkmesh/release.yml` builds the static Go mirror daemon in the
    Actions sandbox; it refuses a dirty tree because binaries embed their build
    commit.
@@ -56,6 +59,37 @@ and publisher flags are documented beside the data in
    `/api/repo/<owner>/<repo>/releases/blob/sha256/<sha256>` and verifies them.
    The desktop updater accepts a manifest only if its `tag` is the release
    being installed.
+
+## Data paths
+
+The release host's keystores (`release/`) and the served mirror
+(`mirrors/forkmesh-forkmesh.git`, whose `forkmesh-releases/` is the blob store)
+sit under `forkmesh_paths` `LAYOUT.core`: `data/core/` since the 2026-10-19 move,
+`data/` before it. The host had kept `LAYOUT.data`, the container, so the first
+release after the move (v1.5.0) found no Android keystore and would have
+published into an unserved `data/mirrors` folder.
+
+## The version flips last
+
+`main` only names a new version once every platform can download it. The
+status page's per-platform "latest version" rows check the newest version
+`desktop/CMakeLists.txt` on `main` names, so a version on `main` whose
+candidate is still building shows as four outages for as long as the builds
+take. v1.5.0 (2026-10-28) recorded about an hour of them before the version
+line was held back by hand.
+
+- The desktop cuts `forkmesh/forkmesh` releases on `release/<tag>`
+  (`cutRelease`, `MainWindowReleases.cpp`); the release workflow and the host
+  build from the tag as before.
+- The Actions runner copies the candidate metadata onto `main` but no longer
+  the version line when the tag is not in `main`'s history
+  (`ActionRunner::landVersionHeader`).
+- The release host merges the tag commit into the same worktree that
+  promotes `latest` (`bring_release_onto_main`), so one merge into `main`
+  carries both the version and the promoted manifest. A conflict stops the
+  promotion and leaves `main` alone.
+- `--deploy-build --from-main` still needs the tag commit in `main`, so it only
+  works once the release is promoted.
 
 ## Release trust rules
 
@@ -111,6 +145,13 @@ version, so an old signed release could be replayed to roll a machine back.
   image must carry the build commit and, for the Intel name, contain only
   universal Mach-O files. `FORKMESH_RELEASE_ALLOW_DROPPED_ASSETS=1` and
   `--macos-dmg PATH` are manual escape hatches.
+- **macOS checks (2026-10-28):** the build commit sits in a `QStringLiteral`
+  (`DesktopBuildCommit.cpp`, since 2026-10-25), which clang stores as UTF-16,
+  so `inspect_macos_dmg` looks for the UTF-16 form as well as ASCII; v1.5.0's
+  first image failed the check while carrying its commit. The Mac build now
+  gets the release version as `FORKMESH_VERSION` and stamps it with
+  `-DFORKMESH_VERSION_OVERRIDE`, as Linux and Windows do; before, a rebuild
+  from `main` took `main`'s `project()` version (that image said 1.2.8).
 - **iOS:** an App Store app with its own version
   (`native/ios/Config/Version.xcconfig`); each desktop release submits the
   newest build once (recorded in `<work>/ios-vX.Y.Z.json`), with the annotated
@@ -138,6 +179,12 @@ so a fix reaches the homepage for one platform without a release.
   macOS builds (2026-10-28) were made this way: compiled-in packages (the
   static Linux, MinGW and Mac builds have no Qt WebEngine) failed on an
   unguarded `QWebEngineView` in `FaceChangerFeature.cpp` at the tag.
+- A rebuild from `main` builds `code_commit(main)`: the newest commit that
+  changed anything outside `.forkmesh/releases`, which is what the desktop's
+  build provenance (`GenerateForkMeshVersion.cmake`) stamps. `main`'s tip is
+  often a release-metadata commit or a `--no-ff` merge with its branch's tree,
+  and building it failed with "FORKMESH_BUILD_COMMIT_OVERRIDE does not match
+  the clean checkout" (v1.5.0 Windows, 2026-10-28).
 - `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
   serves the promoted manifest. While the version is still held back for
   other platforms it reports that and succeeds.

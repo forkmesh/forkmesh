@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ SSH_TIMEOUT = 600
 JOIN_TIMEOUT = 900
 REPOS_TIMEOUT = 1200
 HEALTH_TIMEOUT = 300
+PTR_TIMEOUT = 600
+VM_ATTEMPTS = 3
 SYNC_NUDGE_SECONDS = 60
 DAEMON_STATUS = "curl -fsS --max-time 10 http://127.0.0.1:8791/v1/status"
 DAEMON_SYNC = "curl -fsS --max-time 10 -X POST http://127.0.0.1:8791/v1/control/sync"
@@ -512,10 +515,18 @@ def fleet_state_path():
     return common.config_dir() / "fleet-state.json"
 
 
+def reverse_name(ip):
+    try:
+        return socket.gethostbyaddr(ip)[0].rstrip(".").lower()
+    except OSError:
+        return ""
+
+
 class FleetBackend:
     def __init__(self, vultr=None, ssh=None, cf=None, repo=None, sleep=time.sleep,
-                 clock=time.monotonic, git=None, prober=None):
+                 clock=time.monotonic, git=None, prober=None, reverse=None):
         self.prober = prober
+        self.reverse = reverse or reverse_name
         self.vultr = vultr
         self.clouds = {}
         self.ssh = ssh
@@ -690,6 +701,62 @@ class FleetBackend:
                        ("prefetch", lambda: self.prefetch(job))])
 
     def create_vm(self, job):
+        for attempt in range(1, VM_ATTEMPTS + 1):
+            instance = self.launch_vm(job)
+            if instance is None:
+                return None
+            if self.reverse_dns_published(job, instance):
+                break
+            if attempt == VM_ATTEMPTS:
+                raise ToolError(
+                    "%s: Vultr never published reverse DNS for %d new addresses; "
+                    "the last one, %s, is kept. Open a Vultr ticket for it and "
+                    "resume, or remove it (next_fleet.py destroy %s --yes "
+                    "--execute) and add the core later (docs/MAIL_LOG.md)"
+                    % (job.name, VM_ATTEMPTS, instance["main_ip"], job.name))
+            self.discard_vm(job, instance)
+        ip = instance["main_ip"]
+        if not common.wait_for(lambda: self.ssh.run(ip, "true", check=False,
+                                                    timeout=30).returncode == 0,
+                               SSH_TIMEOUT, interval=10, sleep=self.sleep,
+                               clock=self.clock):
+            raise ToolError("%s (%s) never answered SSH" % (job.name, ip))
+        job.say("%s: %s is up (%s, IPv6 %s)" % (job.name, instance["label"], ip,
+                                                 job.state.get("ipv6")))
+        return instance
+
+    def checks_reverse_dns(self, job):
+        return self.mail_enabled() and self.provider(job) == "vultr"
+
+    def reverse_dns_published(self, job, instance):
+        if not self.checks_reverse_dns(job):
+            return True
+        import next_mail
+        host = next_mail.mail_host({"name": job.name})
+        ip = instance["main_ip"]
+        self.vultr.set_reverse(instance["id"], ip, host)
+        if common.wait_for(lambda: self.reverse(ip) == host, PTR_TIMEOUT,
+                           interval=30, sleep=self.sleep, clock=self.clock):
+            job.say("%s: reverse DNS of %s is %s" % (job.name, ip, host))
+            return True
+        return False
+
+    def discard_vm(self, job, instance):
+        ip = instance["main_ip"]
+        job.say("%s: Vultr did not publish reverse DNS for %s within %d s (%s); "
+                "deleting the empty VM %s and creating another"
+                % (job.name, ip, PTR_TIMEOUT, self.reverse(ip) or "no PTR",
+                   instance["id"]))
+        self.vultr.delete_instance(instance["id"])
+        if not common.wait_for(lambda: not self.vultr.find_by_label(instance["label"]),
+                               VM_TIMEOUT, interval=10, sleep=self.sleep,
+                               clock=self.clock):
+            raise ToolError("%s: %s is still listed after its deletion"
+                            % (job.name, instance["label"]))
+        self.forget_host_key(ip)
+        job.state.set(instance_id="", ip="", ipv6="")
+
+    def launch_vm(self, job):
         import next_fleet
         number = int(job.state.get("number"))
         cloud = self.cloud(job)
@@ -732,13 +799,6 @@ class FleetBackend:
             self.forget_host_key(ip)
         job.state.set(ip=ip, ipv6=next_fleet.instance_ipv6(instance),
                       plan=instance.get("plan") or job.state.get("plan"))
-        if not common.wait_for(lambda: self.ssh.run(ip, "true", check=False,
-                                                    timeout=30).returncode == 0,
-                               SSH_TIMEOUT, interval=10, sleep=self.sleep,
-                               clock=self.clock):
-            raise ToolError("%s (%s) never answered SSH" % (job.name, ip))
-        job.say("%s: %s is up (%s, IPv6 %s)" % (job.name, instance["label"], ip,
-                                                 job.state.get("ipv6")))
         return instance
 
     def forget_host_key(self, ip):
@@ -1069,6 +1129,28 @@ class FleetBackend:
                 job.name, notes["inside"], "; " + "; ".join(notes["outside"])
                 if notes["outside"] else ""))
         job.say("%s: %s; public probes pass" % (job.name, notes["inside"]))
+        self.check_mail_identity(job, fleet)
+
+    def check_mail_identity(self, job, fleet):
+        import next_mail
+        node = next((n for n in fleet["nodes"] if n["name"] == job.name), None)
+        if not node or not self.checks_reverse_dns(job):
+            return
+        relay = next_mail.relay_for(fleet, node)
+        if relay:
+            job.say("%s: sends mail through %s (mail_relay)" % (job.name, relay["name"]))
+            return
+        status = self.ptr_status(node["public_ipv4"], next_mail.mail_host(node))
+        if not status.startswith("ok"):
+            raise ToolError("%s cannot send mail: PTR %s %s. Fix the PTR, or set "
+                            "mail_relay on %s in deploy/fleet.toml, then resume "
+                            "(docs/MAIL_LOG.md)"
+                            % (job.name, node["public_ipv4"], status, job.name))
+        job.say("%s: PTR %s %s" % (job.name, node["public_ipv4"], status))
+
+    def ptr_status(self, ip, host):
+        import next_mail
+        return next_mail.ptr_status(ip, host)
 
     def step_dns(self, job):
         import next_dns

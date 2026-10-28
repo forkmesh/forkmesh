@@ -195,7 +195,9 @@ normal path, at most once a minute.
   answering `*.constant.com` (Vultr's own default reads back as
   `*.vultrusercontent.com`, and `reversedns.vultr.com` has the right name with
   no delegation pointing at it). That needs a Vultr support ticket.
-- Until it is fixed, n3 and n5 relay through n4 (`next_mail.RELAY_VIA`):
+- Until it is fixed, n3 and n5 relay through n4 (`mail_relay = "n4"` on
+  their `[[nodes]]` blocks in `deploy/fleet.toml`; `render.load_fleet`
+  refuses a relay that is not another core sending mail itself):
   their Postfix has `relayhost = [10.77.0.4]:25` and still DKIM-signs, and n4
   listens on its WireGuard address as well as loopback, accepts only n3's and
   n5's `/32`s in `mynetworks` and exempts them from its client rate limit
@@ -205,8 +207,40 @@ normal path, at most once a minute.
   `wg-quick@wg0`. On a relaying core `fmnext-mail-events` ignores the
   `status=sent` hand-off to a `10.77.*` relay; n4's agent reports the real
   delivery or bounce for the same Message-ID. `next_mail.py check n3` probes
-  the relay. To undo it once `check` shows `PTR <ipv4>: ok` everywhere, empty
-  `RELAY_VIA` and run `install nN --execute` on every core.
+  the relay. To undo it once `check` shows `PTR <ipv4>: ok` everywhere,
+  remove the `mail_relay` lines, let autodeploy roll, and run
+  `install nN --execute` on every core.
+- Every core falls back to Mailtrap so mail does not depend on one server
+  (user, 2026-10-28: "send email from any of the servers in case one or two
+  of them go down"). Postfix has `smtp_fallback_relay =
+  [live.smtp.mailtrap.io]:587`, used whenever the normal route fails with a
+  temporary error: n4 unreachable from n3/n5, or a provider deferring n4.
+  It logs in as `api` with `MAILTRAP_API_TOKEN` (already a server
+  credential, `optional_secrets`), which `next_mail.py install` sends on SSH
+  stdin into root-only `/etc/postfix/sasl_passwd` (0600, with its `.db`);
+  `/etc/postfix/tls_policy` makes that hop `secure` (verified TLS), so the
+  password never crosses an unverified connection. No other destination
+  gets credentials. `forkmesh.com` already carries Mailtrap's DKIM
+  (`rwmt1`/`rwmt2._domainkey`), so relayed mail still passes DMARC. If a
+  core's own Postfix does not answer, `_send_email` sends that message
+  through the Mailtrap API instead (`mail_providers.fallback`), within the
+  same provider hold and daily budget as any API send; a suppressed
+  recipient never falls back. Without the token in `secrets.env`, install
+  leaves the fallback off and says so. A hand-off to Mailtrap is recorded as
+  delivery: its own webhook carries the later lifecycle.
+- Adding a core checks this so it cannot happen silently again. On Vultr
+  with core mail on, the `vm` step of `next_add_core.py` sets the new
+  address's PTR and waits up to 10 minutes for it to publish; if it does
+  not, it deletes the empty VM (nothing is on it yet) and creates another,
+  three addresses at most, then stops and keeps the last one. The
+  `health` step then needs `PTR <ipv4>: ok` (forward-confirmed, as in
+  `check`) before the core joins DNS, unless the core has `mail_relay`.
+- `/status` checks the same thing all the time: `render.py` writes the
+  cores that send mail themselves (no `mail_relay`) into
+  `FORKMESH_MAIL_SENDERS=nN.next.forkmesh.com=<ipv4>,...`, and the email
+  row turns red with "Reverse DNS does not match for ..." when one of
+  them does not forward-confirm. Results are cached for 10 minutes per
+  process.
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
