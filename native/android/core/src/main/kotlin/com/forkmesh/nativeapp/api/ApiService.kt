@@ -1640,6 +1640,30 @@ open class ApiService(
         return null
     }
 
+    open fun pullCommits(owner: String, name: String, number: Int): String {
+        val folder = ".forkmesh/pulls/$number"
+        for (ref in listOf(PULL_LEDGER_REF, "forkmesh/pull/$number")) {
+            val listing = try {
+                tree(owner, name, path = folder, ref = ref)
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            val files = listing.entries.filter { !it.isDirectory }.map { it.name }.toSet()
+            if ("pull.md" !in files && "commits.mbox" !in files) continue
+            if ("commits.mbox" !in files) return ""
+            return try {
+                blob(owner, name, "$folder/commits.mbox", ref = ref).content
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ""
+            }
+        }
+        return ""
+    }
+
     private fun cachedPull(repoKey: String, number: Int): PublishedPull? {
         val entry = synchronized(pullsCache) { pullsCache[repoKey] } ?: return null
         if (clock() - entry.createdAt >= CACHE_TTL_MS) return null
