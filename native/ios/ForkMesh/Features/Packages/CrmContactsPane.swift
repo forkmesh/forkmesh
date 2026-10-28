@@ -140,14 +140,21 @@ struct CrmContactRow: View {
     var flow: CrmFlow?
     var showStage = true
     var columns: [CrmColumn] = []
+    var dense: Bool?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            CrmAvatar(name: contact.name, email: contact.email, size: 36)
-            VStack(alignment: .leading, spacing: 3) {
+        let compact = dense ?? CrmLayout.dense
+        HStack(alignment: .center, spacing: compact ? 9 : 12) {
+            CrmAvatar(name: contact.name, email: contact.email, size: compact ? 32 : 42)
+            VStack(alignment: .leading, spacing: compact ? 1 : 3) {
                 HStack(spacing: 6) {
-                    Text(contact.displayName).font(.body.weight(.semibold)).lineLimit(1)
+                    Text(contact.displayName).font((compact ? Font.subheadline : Font.body).weight(.semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
                     if showStage { CrmStageBadge(stage: contact.stage, flow: flow) }
+                }
+                HStack(spacing: 6) {
+                    Text(contact.subtitle.isEmpty ? contact.email : contact.subtitle)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 4)
                     if contact.value > 0 {
                         Text(CrmText.money(contact.value))
@@ -155,42 +162,42 @@ struct CrmContactRow: View {
                             .foregroundStyle(.green)
                     }
                 }
-                if !contact.subtitle.isEmpty {
-                    Text(contact.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                if !contact.nextStep.isEmpty {
+                if compact {
+                    denseFooter
+                } else if !contact.nextStep.isEmpty {
                     Label(contact.nextStep, systemImage: "arrow.turn.down.right")
                         .font(.caption)
                         .foregroundStyle(Color.primary.opacity(0.8))
                         .lineLimit(1)
                 }
-                ForEach(columns.prefix(2)) { column in
+                ForEach(columns.prefix(compact ? 1 : 2)) { column in
                     let value = contact.value(of: column.field)
                     if !value.isEmpty {
                         Text("\(column.label): \(value)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                footer
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, compact ? 0 : 3)
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder private var footer: some View {
-        let tags = contact.tags.prefix(3)
-        if !tags.isEmpty || contact.lastContactedAt > 0 || !contact.owner.isEmpty {
+    @ViewBuilder private var denseFooter: some View {
+        let tags = contact.tags.prefix(2)
+        if !contact.nextStep.isEmpty || !tags.isEmpty || contact.lastContactedAt > 0 {
             HStack(spacing: 4) {
-                ForEach(Array(tags), id: \.self) { CrmChip(text: "#" + $0, tint: .purple) }
-                if !contact.owner.isEmpty { CrmChip(text: contact.owner, icon: "person", tint: .secondary) }
+                if !contact.nextStep.isEmpty {
+                    Label(contact.nextStep, systemImage: "arrow.turn.down.right").labelStyle(.titleAndIcon).lineLimit(1)
+                } else {
+                    ForEach(Array(tags), id: \.self) { CrmChip(text: "#" + $0, tint: .purple) }
+                }
                 Spacer(minLength: 0)
                 if contact.lastContactedAt > 0 {
-                    Text(PackagesFormat.relative(contact.lastContactedAt))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    Text(PackagesFormat.relative(contact.lastContactedAt)).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
+            .font(.caption2)
+            .foregroundStyle(Color.primary.opacity(0.75))
         }
     }
 }
@@ -261,80 +268,6 @@ struct CrmContactActions: View {
     }
 }
 
-struct CrmNextContactSection: View {
-    @Bindable var model: CrmModel
-    let mode: CrmNextContact.Mode
-    let present: (CrmSheet) -> Void
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        let next = model.nextContact(mode)
-        Section {
-            if let contact = next.contact {
-                NavigationLink(value: Route.contact(id: contact.routeId)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(contact.displayName).font(.headline)
-                        if !contact.subtitle.isEmpty {
-                            Text(contact.subtitle).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Text("**Why them:** \(next.reason)").font(.footnote)
-                    }
-                    .padding(.vertical, 2)
-                }
-                HStack(spacing: 8) {
-                    reachButton(contact)
-                    Button("Contacted", systemImage: "checkmark") {
-                        Task { if await model.markContacted([contact.id]) { FmHaptics.commit() } }
-                    }
-                    .buttonStyle(.bordered)
-                    Button("Skip") { model.nextSkipped.insert(contact.id) }
-                        .buttonStyle(.bordered)
-                }
-                .controlSize(.small)
-                .labelStyle(.titleAndIcon)
-            } else {
-                Text(emptyText).font(.footnote).foregroundStyle(.secondary)
-                if !model.nextSkipped.isEmpty {
-                    Button("Show skipped again") { model.nextSkipped.removeAll() }
-                }
-            }
-        } header: {
-            HStack(alignment: .firstTextBaseline) {
-                Label(mode.title, systemImage: mode == .reachOut ? "person.badge.plus" : "arrowshape.turn.up.left")
-                Spacer()
-                if next.due > 0 {
-                    Text(mode == .reachOut ? "\(next.due) never contacted" : "\(next.due) due").monospacedDigit()
-                }
-            }
-        } footer: {
-            Text(mode.note)
-        }
-    }
-
-    private var emptyText: String {
-        if !model.nextSkipped.isEmpty { return "Everyone here has been skipped for now." }
-        return mode == .reachOut
-            ? "No new leads: everyone reachable has been contacted, or the rest are at a won or ended stage."
-            : "Nobody to follow up: no unanswered replies and nobody quiet for \(CrmNextContact.followUpDays)+ days."
-    }
-
-    @ViewBuilder
-    private func reachButton(_ contact: CrmContact) -> some View {
-        if contact.email.contains("@") {
-            Button("Email", systemImage: "envelope") {
-                present(.compose(CrmEmailDraft(contact: contact), outreach: false))
-            }
-            .buttonStyle(.borderedProminent)
-        } else if let url = CrmText.profileURL("mastodon", contact.mastodon) {
-            Button("Mastodon", systemImage: "bubble.left.and.bubble.right") { openURL(url) }
-                .buttonStyle(.borderedProminent)
-        } else if let url = CrmText.profileURL("twitter", contact.twitter) {
-            Button("X", systemImage: "at") { openURL(url) }
-                .buttonStyle(.borderedProminent)
-        }
-    }
-}
-
 struct CrmContactList: View {
     @Bindable var model: CrmModel
     let data: CrmOrganizationData
@@ -348,13 +281,9 @@ struct CrmContactList: View {
         let rows = model.visibleContacts
         let columns = model.activeView?.summaryColumns ?? []
         List(selection: selecting ? $selection : nil) {
-            if !selecting, !model.tabContacts.isEmpty {
-                ForEach(CrmNextContact.Mode.allCases) { mode in
-                    CrmNextContactSection(model: model, mode: mode, present: present)
-                }
-            }
-            if let flow {
+            if let flow, !selecting {
                 Section { CrmStageStrip(model: model, flow: flow, contacts: model.tabContacts) }
+                    .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
             }
             if model.filter.isActive {
                 CrmFilterChips(model: model).listRowBackground(Color.clear)
@@ -382,6 +311,8 @@ struct CrmContactList: View {
             }
         }
         .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .environment(\.defaultMinListRowHeight, CrmLayout.dense ? 40 : 52)
         .environment(\.editMode, .constant(selecting ? .active : .inactive))
         .safeAreaInset(edge: .bottom) {
             if selecting {

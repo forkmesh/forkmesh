@@ -42,6 +42,29 @@ generic package sockets and generated registries.
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
 
+## Adding a contact
+
+`POST /api/crm/<org>/contacts` is safe to send again. Every client picks a
+`requestId` (32 hex characters) when its add form opens and sends it with the
+contact; the worker uses it as the new contact's id, so a second send of the
+same form (a double tap, a phone that lost the reply, a retry after a 5xx)
+answers `200` with `"replayed": true` and the contact it already made instead
+of adding a twin or answering "already uses that email". Web, desktop and iOS
+retry a create on a network error or a 5xx only because of this; edits are
+never replayed.
+
+An email the organization already has answers `409 contact_email_exists`
+with that `contact`, so the form can say who it is and offer **Open it** (web,
+desktop) or, on iOS, **Open** and **Add these details to them** (fills only
+the fields their record is missing, adds new tags and the list the form was
+opened from; nothing they already have is overwritten). The form shows the
+error inside itself: before this the web message landed behind the open
+dialog and the iOS one at the bottom of a long form, so a failed add looked
+like nothing happened. Two adds of one address racing past the check hit the
+unique email index; the worker turns that into the same `409` (and a CSV row
+into an update) instead of a `500`. A shared sheet's add still answers
+`contact_exists` without naming anyone.
+
 ## Editing contacts
 
 - Moves: **Move to pipeline list** (keeps a stage of the same name, else the
@@ -945,6 +968,23 @@ raising, so the caller can keep the lead.
   imports, and a rail count of never-contacted contacts. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
+- **iPhone layout**: a section bar under the title holds **Home** (greeting,
+  four tiles: contacts with the week's new ones, open deal value, people to
+  contact, won value; the busiest or open pipeline as a bar; **Up next** with
+  one Reach out and one Follow up drawn from every contact; recent emails),
+  **Contacts** (the list and pipeline chips, then the list), **Pipeline** (a
+  board or a stage list you open stage by stage, with a pipeline picker),
+  **Activity** (Activity, Mail, Outreach, Team, Decks, Shared) and **More**
+  (CRM settings, then the layout and theme switcher, then mail, organizing
+  and CSV tools, and the package's rate/report row). `+` adds a contact at
+  once and holds the other adds. The app's layout setting
+  (`appearance/layoutMode`, Settings > Appearance > Layout, also in the
+  toolbar's mode menu) sets the density: **Control Tower** is compact
+  (coloured tiles, small rows, the pipeline opens as a board), **Focus** is
+  roomier (Up next first, larger rows, the pipeline opens as a stage list).
+  The contact page is a short header, four quick actions and Overview /
+  Activity / Notes tabs; the add form keeps name, email, company, title,
+  phone and the pipeline in view and folds the rest under **More details**.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client
