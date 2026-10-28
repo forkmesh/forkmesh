@@ -201,10 +201,36 @@ def test_the_requested_file_imports_cleanly_without_overlap():
         assert raw["internal"]["sources"], raw["slug"]
 
 
+def test_the_client_work_file_imports_cleanly_with_its_thread_sources():
+    server = _server_side()
+    text = (HERE / "ecosystem_client_work.json").read_text(encoding="utf-8")
+    items, errors = server.parse_payload(text)
+    assert errors == []
+    changes, errors = server.plan_import(items, [], 1793180000000)
+    assert errors == []
+    assert len(changes) == len(items)
+    elsewhere = set()
+    for name in ("ecosystem_third_parties.json", "ecosystem_hn_launches.json",
+                 "ecosystem_requested.json"):
+        elsewhere |= {raw["slug"] for raw in json.loads(
+            (HERE / name).read_text(encoding="utf-8"))}
+    for raw in items:
+        assert raw["slug"] not in elsewhere, raw["slug"]
+        assert raw["published"] is True, raw["slug"]
+        assert raw["integration"] == "watching", raw["slug"]
+        sources = raw["internal"]["sources"]
+        assert sources[0] == (
+            "https://x.com/askwhykartik/status/2115118935150354782"), (
+                raw["slug"])
+        assert raw["internal"]["action"] in server.ACTIONS, raw["slug"]
+        for key in server.INTERNAL_LEVEL_KEYS:
+            assert raw["internal"][key] in server.LEVELS, (raw["slug"], key)
+
+
 def test_every_seeded_listing_compares_itself_with_forkmesh():
     server = _server_side()
     for name in ("ecosystem_third_parties.json", "ecosystem_hn_launches.json",
-                 "ecosystem_requested.json"):
+                 "ecosystem_requested.json", "ecosystem_client_work.json"):
         for raw in json.loads((HERE / name).read_text(encoding="utf-8")):
             rows = raw.get("comparison")
             assert rows and 3 <= len(rows) <= server.MAX_COMPARISON_ROWS, (
