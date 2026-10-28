@@ -343,8 +343,12 @@ tab could inherit the hidden bar and lose its Back button. Ping detail pages
 (`InboxItemScreen`, `PingDetailScreen`, every ping kind and every entry point:
 inbox row, notification tap, Notifications list) use
 `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), which shows the
-bar again whenever the page is on top. Android's ping pages draw their own
-back button (`RoutePage`, `FmPanelHeader`) and need nothing extra.
+bar again whenever the page is on top. Both pages also draw their own back
+link as the first thing on the page (`ping-detail-back`: "All pings" on
+`PingDetailScreen`, "Inbox" on `InboxItemScreen`), so the way back to the
+list never depends on the navigation bar (2026-10-28). Android's ping pages
+draw their own back button (`RoutePage`, `FmPanelHeader`) and need nothing
+extra.
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance`
 (bar height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad)

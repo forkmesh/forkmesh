@@ -104,6 +104,29 @@ static void testRawLines()
           "stderr and cut lines are not judged");
 }
 
+static void testCodexStatusMessages()
+{
+    const char *messages[] = {
+        R"({"method":"remoteControl/status/changed","params":{"environmentId":null,"installationId":"installation","serverName":"a","status":"disabled"}})",
+        R"({"method":"mcpServer/startupStatus/updated","params":{"error":null,"failureReason":null,"name":"codex_apps","status":"starting","threadId":"t"}})",
+        R"({"method":"mcpServer/startupStatus/updated","params":{"error":{"message":"connection refused"},"failureReason":"transport","name":"codex_apps","status":"failed","threadId":"t"}})",
+        R"({"method":"thread/settings/updated","params":{"threadId":"t","threadSettings":{"model":"gpt-test","effort":"high","approvalPolicy":"never","sandboxPolicy":{"type":"dangerFullAccess"},"collaborationMode":{"mode":"default","settings":{"developer_instructions":"untrusted instructions"}}}}})",
+        R"({"method":"turn/moderationMetadata","params":{"threadId":"t","turnId":"turn","metadata":{"generation":{},"prompt":{"omnimod":{"outputs":[{"is_blocked":false,"results":[{"category_flags":{"A1":false}}]}]}},"tool_call":{},"tool_response":{}}}})",
+    };
+    for (const char *json : messages) {
+        const QString line = QString::fromUtf8(json);
+        check(rawLineGaps(line).isEmpty(),
+              "Codex status notices and internal moderation metadata are covered");
+        Tracker tracker;
+        check(!tracker.noteEvent(droppedLineEvent(QStringLiteral("codex"), line)) &&
+                  tracker.isEmpty(),
+              "replaying previously dropped Codex status messages clears their gaps");
+    }
+    check(rawLineGaps(QStringLiteral(R"({"method":"turn/moderationMetadata/new","params":{}})")) ==
+              QStringList{QStringLiteral("codex:turn/moderationMetadata/new")},
+          "the moderation exclusion only covers the known method");
+}
+
 static void testDroppedClaudeLines()
 {
     check(claudeLineGaps(QStringLiteral("Warning: something on stdout")) ==
@@ -197,6 +220,7 @@ int main(int argc, char **argv)
     testDrawnEvents();
     testMissingEvents();
     testRawLines();
+    testCodexStatusMessages();
     testDroppedClaudeLines();
     testTracker();
     testLongSample();
