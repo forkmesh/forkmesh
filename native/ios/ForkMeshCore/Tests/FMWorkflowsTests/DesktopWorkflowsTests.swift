@@ -253,6 +253,15 @@ final class DesktopWorkflowsTests: XCTestCase {
         XCTAssertEqual(WorkflowDesktopSteps.bytes(1_572_864), "1.5 MB")
     }
 
+    func testListMarksDesktopWorkflowsAndConfirmationNamesTheSteps() {
+        XCTAssertTrue(WorkflowSummary(json: ["id": "w1", "runsOn": "desktop"]).runsOnDesktop)
+        XCTAssertFalse(WorkflowSummary(json: ["id": "w2"]).runsOnDesktop)
+        XCTAssertEqual(
+            WorkflowDesktopSteps.confirmation(Self.cleanupDraft()),
+            "Measure the disk, Remove agent leftovers, Report free space. " + WorkflowsText.desktopRunNote)
+        XCTAssertEqual(WorkflowDesktopSteps.confirmation(.blank), WorkflowsText.desktopRunNote)
+    }
+
     func testServerDesktopRunsShowAsDesktop() {
         XCTAssertEqual(WorkflowRun(json: ["trigger": "desktop"], place: .server).place, .desktop)
         XCTAssertEqual(WorkflowRun(json: ["trigger": "manual"], place: .server).place, .server)
