@@ -547,3 +547,45 @@ test("opening an issue paints its page from the clicked row before the mirror an
     .toHaveText("Fix the parser #1", { timeout: 15_000 });
   await expect(page.locator("[data-repo-issue-views]")).toBeHidden();
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("issue toolbar buttons share one height and the list header stays compact", async ({
+    page,
+  }) => {
+    await mockIssuesPage(page);
+    await page.goto("/acme/widgets/issues");
+    await expect(page.locator("[data-repo-issues] [data-repo-record-number]")).toHaveCount(
+      ISSUES.length,
+    );
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+
+    const heights = await page.evaluate(() => [
+      "[data-repo-issues-refresh]",
+      "[data-repo-issue-new]",
+      "[data-repo-issue-new-menu] summary",
+      "[data-repo-issue-view-select]",
+    ].map((selector) => document.querySelector(selector).getBoundingClientRect().height));
+    expect(new Set(heights).size).toBe(1);
+    const tops = await page.evaluate(() => [
+      "[data-repo-issue-view-select]",
+      "[data-repo-issues-refresh]",
+      "[data-repo-issue-new]",
+    ].map((selector) => document.querySelector(selector).getBoundingClientRect().top));
+    expect(new Set(tops).size).toBe(1);
+
+    const header = page.locator("[data-repo-issue-list-header]");
+    const filters = page.locator("[data-repo-issue-list-filters]");
+    const filterBox = await filters.boundingBox();
+    expect(filterBox.height).toBeLessThanOrEqual(32);
+    expect((await header.boundingBox()).height).toBeLessThanOrEqual(80);
+    expect(await filters.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    expect((await page.locator('[data-dashboard-issue-filter="open"]').boundingBox()).height)
+      .toBeLessThanOrEqual(32);
+
+    const row = page.locator('[data-repo-issues] a[data-repo-record-number="3"]');
+    expect((await row.boundingBox()).height).toBeLessThanOrEqual(56);
+    await expect(row.locator("[data-repo-issue-row-title]")).toHaveCSS("font-size", "14px");
+  });
+});
