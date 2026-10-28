@@ -607,6 +607,8 @@ struct AgentsScreen: View {
             case .control(let row):
                 if let center = HostsFeature.agents {
                     AgentRunScreen(center: center, row: row)
+                } else {
+                    AgentOpsUnavailableView()
                 }
             }
         }

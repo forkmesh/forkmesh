@@ -197,6 +197,76 @@ final class AgentControlTests: XCTestCase {
         XCTAssertNil(UnifiedAgentRow.forPull(rows, owner: "alice", name: "app", number: 0, head: ""))
     }
 
+    func testAnAlertsAgentIdFindsItsRowOnAnyDesktopOrTheQueue() {
+        let desk = UnifiedAgentRow.fromDesktop(desktopRow(3, status: "completed"), transport: .lan, desktop: "desk")
+        let other = OtherDesktopAgents.listed(
+            LocalAgentsSnapshot.fromJSON(["sessions": [["id": 5, "status": "completed", "prompt": "Ship it"]]]),
+            key: "k2", name: "laptop", transport: .relay
+        ).rows
+        let twin = OtherDesktopAgents.listed(
+            LocalAgentsSnapshot.fromJSON(["sessions": [["id": 5, "status": "running", "prompt": "Ship it too"]]]),
+            key: "k3", name: "studio", transport: .relay
+        ).rows
+        let node = UnifiedAgentRow.fromCloud(cloud("s9", status: "completed", node: "mirror37"))
+        let rows = [desk, node] + other
+        XCTAssertEqual(UnifiedAgentRow.forRoute("desktop:3", in: rows)?.id, "desktop:3")
+        XCTAssertEqual(UnifiedAgentRow.forRoute("node:s9", in: rows)?.id, "node:s9")
+        XCTAssertEqual(UnifiedAgentRow.forRoute("desktop:5", in: rows)?.id, "k2:desktop:5", "a ping from a second desktop")
+        XCTAssertNil(UnifiedAgentRow.forRoute("desktop:5", in: rows + twin), "two desktops share the number")
+        XCTAssertNil(UnifiedAgentRow.forRoute("desktop:4", in: rows))
+        XCTAssertNil(UnifiedAgentRow.forRoute("node:", in: rows))
+    }
+
+    @MainActor func testNodeRunsShowBeforeTheDesktopAnswers() async throws {
+        let desktop = try FakeRelayDesktop()
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        desktop.handler = { method, _ in
+            method == "agents.list" ? ["sessions": [["id": 3, "status": "running", "prompt": "Go"]]] : nil
+        }
+        let gate = CloudGate()
+        let hub = DesktopControlHub(
+            local: nil,
+            openRelay: { target in
+                await gate.wait()
+                return try await RelayControlConnection.open(
+                    channel: desktop, identity: identity, desktopKey: target.key, node: "desk")
+            },
+            paired: { [PairedDesktop(key: desktop.publicKey, name: "desk", pairedAtMs: 1)] })
+        let cloudApi = FakeCloudAgents()
+        cloudApi.sessions = [cloud("s9", status: "queued", node: "mirror37")]
+        let center = AgentControlCenter(hub: hub, cloud: cloudApi)
+        let refresh = Task { await center.refresh() }
+        for _ in 0..<300 where center.rows.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(center.rows.map(\.id), ["node:s9"])
+        XCTAssertTrue(center.loading)
+        gate.open()
+        await refresh.value
+        XCTAssertEqual(Set(center.rows.map(\.id)), ["desktop:3", "node:s9"])
+    }
+
+    @MainActor func testARelayRunTheDesktopTookOpensAsItsDesktopRow() async throws {
+        let desktop = try FakeRelayDesktop()
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        desktop.handler = { method, _ in
+            method == "agents.list" ? ["sessions": [["id": 4, "status": "running", "prompt": "Go"]]] : nil
+        }
+        let hub = DesktopControlHub(
+            local: nil,
+            openRelay: { target in
+                try await RelayControlConnection.open(channel: desktop, identity: identity, desktopKey: target.key, node: "desk")
+            },
+            paired: { [PairedDesktop(key: desktop.publicKey, name: "desk", pairedAtMs: 1)] })
+        let cloudApi = FakeCloudAgents()
+        cloudApi.sessions = [cloud("dup", status: "running", node: "desk", localId: 4)]
+        let center = AgentControlCenter(hub: hub, cloud: cloudApi)
+        await center.refresh()
+        XCTAssertEqual(center.rows.map(\.id), ["desktop:4"])
+        XCTAssertEqual(center.row(forRoute: "node:dup")?.id, "desktop:4")
+        XCTAssertNil(center.row(forRoute: "node:gone"))
+    }
+
     func testMergeShowsADesktopRunOnceAndPutsRunningFirst() {
         let desk = [
             UnifiedAgentRow.fromDesktop(desktopRow(3, status: "completed"), transport: .lan, desktop: "desk"),

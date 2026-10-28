@@ -225,4 +225,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S149 | 2026-10-28 | CRM | ui | The CRM has a compact layout with Home, Contacts, Pipeline, Activity and More sections, a shorter add form and a contact page with Overview, Activity and Notes tabs | 1ed74360c2 | pending |  |
 | S150 | 2026-10-28 | Settings | feature | Settings > Appearance has a Layout choice, Control Tower or Focus, which the CRM follows, and the CRM's More tab switches layout and theme right under its settings | 1ed74360c2 | pending |  |
 | S151 | 2026-10-28 | CRM | fix | Adding a CRM contact sends a request id, retries a dropped connection, and when the email is already in the CRM names that contact with Open and Add these details | 1ed74360c2 | pending |  |
+| S152 | 2026-10-28 | Agents | fix | Tapping an agent alert opens its page with a loading view, finds agents on other desktops and runners, and offers Try again instead of a blank page. | 846e99382a | pending |  |
 <!-- ledger:end -->
