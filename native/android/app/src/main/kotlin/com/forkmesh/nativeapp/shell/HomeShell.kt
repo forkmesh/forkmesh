@@ -333,7 +333,10 @@ class HomeShell : Screen() {
         val runnerAttention by RunnerAttentionFeature.items.collectAsState()
         val badges by ShellBadges.counts.collectAsState()
         val rssUnread by ShellBadges.rssUnread.collectAsState()
+        val toursLeft by com.forkmesh.nativeapp.feature.navigation.ShellTour.left.collectAsState()
+        LaunchedEffect(Unit) { com.forkmesh.nativeapp.feature.navigation.ShellTour.refresh() }
         return mapOf(
+            Route.Kind.Tour to ShellMenuBadge(toursLeft),
             Route.Kind.AllAgents to ShellMenuBadge(activeAgents, running = true),
             Route.Kind.Timers to ShellMenuBadge(timers.count { it.isRunning }, running = true),
             Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),

@@ -1753,6 +1753,51 @@ the cited iOS commit.
   and the Glasses Alert ring during another app's call; ForkMesh's own calls
   do not count.
 
+### Shell: the tour and first-launch permissions (ledger S134, S135)
+
+- **Tour tracks and live stops (S134).** The catalog is plain Kotlin in
+  `core/.../navigation/TourCatalog.kt` (`TourTrack`, `TourScene`, `TourStop`,
+  `TourJump`, `TourPlace`, `TourProgress`; `TourCatalogTest` ports the iOS
+  cases and adds the progress store). The words follow iOS except where iOS
+  names Apple surfaces: the palette shortcut is Ctrl-K, the system stop names
+  the Agents and Inbox widgets, the running-agents notification and the New
+  agent Quick Settings tile instead of Siri, the Live Activity and Control
+  Center, and Timers count "in the notification shade". Progress keeps the
+  old seen key (`nav/tour.v1`) and adds `nav/tour.done.v1` and
+  `nav/tour.place.v1` in the device prefs. `TourScreen`
+  (`A/feature/navigation/TourScreen.kt`) is the chooser (hero, three track
+  cards with stop count, minutes and the stops' icons, "Pick up where you left
+  off", the finished card, "Not now") and the player (header with the track,
+  "n of m", close and tappable segments; a `HorizontalPager` of stops; Back,
+  Show me and Next/Finish). Back from the player returns to the chooser.
+  `TourStage.kt` holds the 330 dp rounded stage, the 1.9 s autoplay that a
+  touch pauses for 6 s, the pulsing `tourTarget` ring and the mock pieces
+  (top bar with the sparkle button and `AvatarWithDot`, `ShellBarRows` for the
+  bottom bar, rows, pills); `TourScenes.kt` has the 18 scenes and uses
+  `ShellHomeTile` for Home, Market and Looks. With animations off the ring,
+  ripples and sparkle spin stop and steps still advance. Show me pops the
+  tour and, 300 ms later, calls the shell (`select`, `selectHome`, `openHub`,
+  `openPrompt`, `openPalette`, `ProjectDrawer.open`) or
+  `NavigationFeature.open(route)`. The Tour icon on Home counts the tracks
+  not done (`ShellTour.left`).
+- **No permission prompt at launch (S135).** `PermissionPacing`
+  (`core/.../account`, `PermissionPacingTest`) holds the intro text and the
+  `permissions/intro` and `permissions/nearby-opened` keys in the device
+  prefs. `PermissionsIntro.install` runs after the package gate with
+  `freshInstall = needsStarterPack()`, so an install that predates this build
+  never sees the screen and keeps its mesh starting at launch.
+  `PermissionsIntroScreen` shows before the starter pack. Android asked at
+  launch in two places: `PushFeature.PermissionPrompt` asked for
+  `POST_NOTIFICATIONS` as soon as a session existed, and `ChatFeature`
+  started the `#mesh` room at install, whose transport asked for
+  `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN` at once. Now the notification ask is
+  `PushFeature.askWhenUseful`, called after the first chat message is sent
+  (and still when a nearby `#mesh` peer appears); `LocalMeshRoom.waitsForRoom`
+  keeps `start` off until `roomOpened`, which `ChatFeature.setMeshOnScreen`
+  calls the first time `#mesh` is on screen. Android has no local-network
+  prompt for the mesh's Wi-Fi sockets, so nearby devices is the only prompt
+  that moment brings.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see

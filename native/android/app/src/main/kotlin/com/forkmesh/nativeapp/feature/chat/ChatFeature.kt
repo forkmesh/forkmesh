@@ -18,6 +18,7 @@ import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.chat.LocalMeshRoom
 import com.forkmesh.nativeapp.chat.LocalNodeSyncApplier
+import com.forkmesh.nativeapp.account.PermissionPacing
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.MeshSnapshot
 import com.forkmesh.nativeapp.chat.NodeSyncApplierSummary
@@ -185,6 +186,8 @@ object ChatFeature {
         publishRelay(room)
 
         val local = buildMesh(settings, identity, secrets, native, account)
+        local.waitsForRoom = !PermissionPacing.nearbyAllowed(prefs)
+        local.onFirstRoomOpen = { PermissionPacing.markNearbyOpened(prefs) }
         local.wakeSender = { tokens ->
             if ((auth?.core?.session?.sessionToken ?: "").isNotEmpty() && api != null) {
                 AppLifecycle.scope.launch(Dispatchers.IO) {
@@ -406,6 +409,12 @@ object ChatFeature {
 
     fun setMeshOnScreen(visible: Boolean) {
         meshOnScreen = visible
+        val local = mesh ?: return
+        if (visible && !local.running) {
+            AppLifecycle.scope.launch(Dispatchers.IO) {
+                if (local.roomOpened()) publishMesh(local)
+            }
+        }
     }
 
     fun tab(): Screen = ChatScreen()

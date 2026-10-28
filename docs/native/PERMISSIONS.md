@@ -40,5 +40,21 @@ mesh starts at launch as before, so nearby messages keep arriving.
 
 ## Android
 
-Tracked in `docs/native/SYNC.md`: Android should show the same screen and
-defer `POST_NOTIFICATIONS`, Bluetooth and nearby-Wi-Fi requests the same way.
+Android shows the same screen (`PermissionsIntroScreen`,
+`native/android/app/.../feature/account/`), with its text in `PermissionPacing`
+(`core/.../account`) and the same `permissions/intro` and
+`permissions/nearby-opened` keys. Installs that predate the change skip it and
+keep the mesh starting at launch.
+
+| Permission | Asked when | Code |
+| --- | --- | --- |
+| Notifications (`POST_NOTIFICATIONS`, Android 13 and later) | after the first chat message is sent, or when a nearby `#mesh` peer appears; also by Timers and Glasses Alert on use, and "Allow notifications" on the Pings background card | `PushFeature.askWhenUseful`, `PushFeature.requestNotificationPermission` |
+| Nearby devices (`BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN`) | the first time `#mesh` is opened (the mesh does not start before it), or Glasses Alert is turned on | `LocalMeshRoom.waitsForRoom`, `ChatFeature.setMeshOnScreen`, `GlassesWatchService` |
+| Local network and Wi-Fi | no prompt: the mesh's sockets need only normal permissions, and they also wait for `#mesh` | `LocalMeshRoom.roomOpened` |
+| Camera, microphone | starting a call, recording a message, dictating, scanning a QR code, Face Changer | each feature |
+| Photos | the system photo picker, which needs no permission | `PhotoPicker` |
+| Physical activity | turning on Pedometer or Sleep | `StepsScreen`, `SleepScreen` |
+
+Before this change Android asked for notifications as soon as a session
+existed and started `#mesh` at launch, so the nearby devices prompt came up
+before the user had seen anything. See [ANDROID.md](ANDROID.md), section 27.
