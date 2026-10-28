@@ -58,6 +58,7 @@
 #include "AgentTaskList.h"
 #include "RepoWorkflowRunner.h"
 #include "OrganizationTaskStore.h"
+#include "CorePackageServices.h"
 #include "TaskWorkItems.h"
 #include "ListViewMode.h"
 #include "AgentCloudSessions.h"
@@ -3934,6 +3935,7 @@ private:
     // The local mesh room: people running ForkMesh on this network, found
     // automatically, with nothing about the room leaving it.
     void startLocalMesh();
+    void stopLocalMesh();
     // The phone on this network driving the desktop over the mesh port
     // (LocalControl.h; MainWindowLocalControl.cpp).
     void startLocalControl();
@@ -4351,6 +4353,9 @@ private:
     QString currentNativePackageId() const;
     void updatePackageActionsButton();
     void syncPackageRuntime();
+    void registerCorePackageServices();
+    void syncCorePackageServices();
+    bool corePackageServiceRunning(const QString &id) const;
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
     void syncNativePackagePages();
@@ -5469,6 +5474,7 @@ private:
     void forwardHostLogLine(const QString &node, int source, const QString &text);
     void syncCoreLogFeeds();
     void stopCoreLogFeeds();
+    void stopHostLogFeeds();
     void startDeployLogFollower();
     void launchCoreLogFeed(const QString &node);
     void readCoreLogFeedOutput(const QString &node);
@@ -7391,6 +7397,7 @@ private:
     void announceDesktopOnline(qint64 nowMs);
     void startPowerAlertWatch();
     void startAgentParityWatch();
+    void stopAgentParityWatch();
     void checkAgentParity();
     void raisePowerAlert(const forkmesh::pingforward::Source &source);
     forkmesh::poweralert::Reading currentPowerReading();
@@ -12575,6 +12582,8 @@ private:
     DiscordClient *m_discordClient = nullptr;
     bool m_discordTranscriptRefreshPending = false;
     bool m_discordPackageActive = false; // Discord package contributions attached
+    forkmesh::CorePackageServices m_corePackageServices;
+    bool m_corePackageServicesRegistered = false;
     QSet<QString> m_hiddenPackageSurfaces;
     bool m_packageSurfacesSynced = false;
     std::map<QString,

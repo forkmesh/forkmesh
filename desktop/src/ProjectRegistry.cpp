@@ -223,6 +223,8 @@ QStringList starterPackages(StarterPack pack, const QStringList &available)
                                           QStringLiteral("analytics"),
                                           QStringLiteral("competitor")};
     QStringList packages;
+    if (pack == StarterPack::Empty)
+        return packages;
     for (const QString &id : available) {
         if (packages.contains(id))
             continue;

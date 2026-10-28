@@ -19,8 +19,12 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
   core keeps only its listing files. Configure removes module files the
   configuration no longer builds. Modules link Qt Multimedia, OpenGL, WebP
   and (since 2026-10-25, for the Video Mix DJ Studio's YouTube decks) Qt
-  WebEngine when the build has them, the libraries the app already links, so
-  a module adds nothing to what the process loads. Modules resolve the app's symbols through
+  WebEngine when the build has them. The linker records only the libraries a
+  module uses, so most modules need nothing the app has not loaded. Qt
+  WebEngine is the exception since 2026-10-28: the app no longer links it on
+  Linux ([browser](browser.md#the-engine-is-a-module)), so Face Changer and
+  the Video Mix DJ Studio map it when they load, like the `web-engine` module
+  does. Modules resolve the app's symbols through
   the `-rdynamic` export the stall watchdog already needs, so the app binary
   does not grow. Installed-by-default plugins (agent-watch, analytics, docs)
   are modules too and load at start (about 30 ms and 3 MB together, see

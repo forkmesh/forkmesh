@@ -634,6 +634,69 @@ static void testCaptureLive()
                      [&refused](const QJsonObject &r) { refused = r; });
     check(refused.value(QStringLiteral("error")).toString() == QLatin1String("not_shared"),
           "a page the user stopped sharing cannot be read");
+
+    registry.setShared(id, true);
+    QJsonObject acted;
+    {
+        QEventLoop loop;
+        bool answered = false;
+        registry.act(6,
+                     QJsonObject{{QStringLiteral("window_id"), id},
+                                 {QStringLiteral("action"), QStringLiteral("reload")}},
+                     [&](const QJsonObject &r) {
+                         acted = r;
+                         answered = true;
+                         loop.quit();
+                     });
+        if (!answered)
+            loop.exec();
+    }
+    check(acted.value(QStringLiteral("ok")).toBool() &&
+              acted.value(QStringLiteral("loaded")).toBool(),
+          "a reload action waits for the page to load again");
+    check(acted.value(QStringLiteral("title")).toString() == QLatin1String("Dev page"),
+          "an action reply carries the page title");
+
+    const QString widgetId =
+        registry
+            .handle(6, QString(), QString(), WidgetMethod,
+                    QJsonObject{{QStringLiteral("title"), QStringLiteral("Live widget")},
+                                {QStringLiteral("data"), QJsonObject{{QStringLiteral("n"), 1}}},
+                                {QStringLiteral("html"),
+                                 QStringLiteral("<script>forkmesh.onData(function(v) {"
+                                                "forkmesh.send({got: v}); });"
+                                                "forkmesh.send({start: forkmesh.data});"
+                                                "</script>")}})
+            .value(QStringLiteral("window_id"))
+            .toString();
+    check(windowIdValid(widgetId), "a live widget opens");
+    const auto waitForEvents = [&registry, &widgetId](int count) {
+        QElapsedTimer waitedForEvents;
+        waitedForEvents.start();
+        while (waitedForEvents.elapsed() < 20000) {
+            const WindowState *state = registry.state(widgetId);
+            if (!state || state->events.size() >= count)
+                break;
+            QEventLoop loop;
+            QTimer::singleShot(100, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        const WindowState *state = registry.state(widgetId);
+        return state ? state->events : QList<QJsonValue>();
+    };
+    QList<QJsonValue> events = waitForEvents(1);
+    check(!events.isEmpty() &&
+              events.first().toObject().value(QStringLiteral("start")).toObject().value(
+                  QStringLiteral("n")) == QJsonValue(1),
+          "a live widget reads its data and sends an event");
+    registry.handle(6, QString(), QString(), WidgetMethod,
+                    QJsonObject{{QStringLiteral("window_id"), widgetId},
+                                {QStringLiteral("data"), QJsonObject{{QStringLiteral("n"), 2}}}});
+    events = waitForEvents(2);
+    check(events.size() >= 2 &&
+              events.at(1).toObject().value(QStringLiteral("got")).toObject().value(
+                  QStringLiteral("n")) == QJsonValue(2),
+          "new widget data reaches the page and its answer comes back");
 }
 #endif
 

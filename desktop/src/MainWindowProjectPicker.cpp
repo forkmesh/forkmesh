@@ -537,6 +537,9 @@ void MainWindow::promptAddProject()
     auto *packColumn = new QVBoxLayout;
     packColumn->setSpacing(2);
     const QList<std::tuple<projects::StarterPack, QString, QString>> packs{
+        {projects::StarterPack::Empty, QStringLiteral("Empty"),
+         QStringLiteral("Only the shell, the Market and Settings. Nothing runs until "
+                        "you add it from the Market.")},
         {projects::StarterPack::Minimal, QStringLiteral("Minimal"),
          QStringLiteral("Just your code. Add more from the Market later.")},
         {projects::StarterPack::Standard, QStringLiteral("Standard"),

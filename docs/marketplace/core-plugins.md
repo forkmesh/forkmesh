@@ -107,7 +107,9 @@ repository tab, sidebar link, search hit, command palette entry, assistant
 route, quick action, recents row) shows only while the package is effectively
 installed (it and everything it depends on are installed) and the app's own
 place is in the package's places. Deep links and direct routes keep working;
-hiding is about entry points.
+hiding is about entry points. On the desktop the core's background services
+behind a switch (the agent watchers, the local mesh, log feeds, the task
+read) start and stop with it too ([shell](../desktop/shell.md)).
 
 ### Account state
 
