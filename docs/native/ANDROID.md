@@ -1797,6 +1797,51 @@ the cited iOS commit.
   Use button; Runs on in the prompt sheet lists every desktop and sending to
   one picks it (`QuickLaunchBackend.desktopNames`/`chooseDesktop`).
 
+### CRM layout and reliable adds (ledger S149, S150, S151)
+
+Ported from iOS 1ed74360c2.
+
+- **Layout setting (S150).** `LayoutModeChoice` (`core/.../settings/Appearance.kt`)
+  is stored by name in `appearance/layoutMode` (`controlTower` or `focus`;
+  anything else reads as Control Tower), the same key and values as iOS
+  `LayoutMode`. Settings > Appearance shows it as a second segment track under
+  Theme (`LayoutModeTrack`, tags `appearance-layout-*`) with the mode's note.
+  `crmDense()` reads it from `AppearanceStore`, so the CRM redraws as soon as
+  the mode changes. The CRM's top bar has a layout button (layout and theme in
+  one menu) and its More tab repeats both tracks under CRM settings.
+- **Sections (S149).** `CrmSection` (`core/.../market/CrmDashboard.kt`) is
+  Home, Contacts, Pipeline, Activity, More; `CrmModel.show` picks a matching
+  tab (Contacts leaves the activity tabs, Activity leaves the contact tabs,
+  Pipeline picks the first pipeline). `CrmSectionBar` is a glass capsule under
+  the top bar; Contacts and Activity add their chips. Home (`CrmHomePane`)
+  shows a greeting, the Zoho alert, four KPI tiles from `CrmDashboard`, the
+  busiest pipeline's stage bar, the two "up next" picks across every contact
+  (`nextContact(mode, everyone = true)`) and recent emails; Control Tower puts
+  the KPIs first in filled tiles, Focus puts the picks first on plain cards.
+  Pipeline offers Board or Stages (collapsible stage groups with a chip that
+  moves a contact on, Android's stand-in for the iOS swipe); Control Tower
+  opens on the board. More holds what the old overflow menu had: CRM
+  settings, mail, lists and pipelines, CSV import and export, and the plugin
+  options. Opening the CRM on a pipeline route starts on Pipeline. The next
+  contact cards left the contact list, as on iOS. Contact rows, the contact
+  header, detail lines and action buttons are tighter in Control Tower.
+- **Contact page (S149).** A segment track switches Overview (details,
+  pipeline, lists), Activity (timeline, invoices, duplicates) and Notes
+  (notes, custom fields, added and updated lines).
+- **Shorter add form and reliable adds (S151).** The editor keeps Contact,
+  Pipeline and Notes open and folds owner, source, tags, last contacted,
+  profiles and custom fields into "More details" with a filled count. A new
+  contact sends a `requestId` made once per form (`CrmModel.newRequestId`),
+  and `save` retries a dropped connection or a 408, 425 or 5xx twice (0.4 s,
+  then 1.5 s) only when it has one, so a retry cannot add the contact twice.
+  A `contact_email_exists` reply names the contact (`PackagesException.from`
+  copies `contact` into `contactId`, `contactName`, `contactEmail`); the form
+  then shows them at the top with Open and "Add these details", which sends
+  `CrmContactEdit.additions`: only fields their record lacks, notes appended,
+  new tags as `addTags`, and the list as `views` (the server merges lists).
+  The editor saves on its own coroutine rather than `CrmRunner`, so the error
+  shows once, at the top of the form.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see

@@ -6,6 +6,7 @@ import com.forkmesh.nativeapp.settings.AppTheme
 import com.forkmesh.nativeapp.settings.Appearance
 import com.forkmesh.nativeapp.settings.AppearanceKeys
 import com.forkmesh.nativeapp.settings.InstanceTheme
+import com.forkmesh.nativeapp.settings.LayoutModeChoice
 import com.forkmesh.nativeapp.settings.ThemeColor
 import com.forkmesh.nativeapp.api.HttpTransport
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +87,11 @@ object AppearanceStore {
     fun setThemeMode(mode: ThemeModeChoice) {
         prefs?.putString(AppearanceKeys.THEME_MODE, mode.name)
         state.value = state.value.copy(themeMode = mode)
+    }
+
+    fun setLayoutMode(mode: LayoutModeChoice) {
+        prefs?.putString(AppearanceKeys.LAYOUT_MODE, mode.name)
+        state.value = state.value.copy(layoutMode = mode)
     }
 
     fun setAccent(accent: AccentChoice) {
