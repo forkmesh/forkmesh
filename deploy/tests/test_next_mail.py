@@ -85,9 +85,11 @@ def test_ptr_status_needs_forward_confirmed_reverse_dns():
 
 
 FLEET = {"nodes": [
-    {"name": "n3", "public_ipv4": "203.0.113.3", "wg_ip": "10.77.0.3"},
+    {"name": "n3", "public_ipv4": "203.0.113.3", "wg_ip": "10.77.0.3",
+     "mail_relay": "n4"},
     {"name": "n4", "public_ipv4": "203.0.113.4", "wg_ip": "10.77.0.4"},
-    {"name": "n5", "public_ipv4": "203.0.113.5", "wg_ip": "10.77.0.5"},
+    {"name": "n5", "public_ipv4": "203.0.113.5", "wg_ip": "10.77.0.5",
+     "mail_relay": "n4"},
 ]}
 
 
@@ -121,6 +123,14 @@ def test_a_relay_that_is_missing_or_relays_itself_is_refused():
     import pytest
     with pytest.raises(next_mail.GuardError):
         next_mail.main_cf(FLEET["nodes"][0], {"nodes": [FLEET["nodes"][0]]})
+    chained = {"nodes": [dict(FLEET["nodes"][0]),
+                         dict(FLEET["nodes"][1], mail_relay="n5"),
+                         dict(FLEET["nodes"][2], mail_relay="")]}
+    with pytest.raises(next_mail.GuardError):
+        next_mail.main_cf(chained["nodes"][0], chained)
+    itself = dict(FLEET["nodes"][1], mail_relay="n4")
+    with pytest.raises(next_mail.GuardError):
+        next_mail.main_cf(itself, {"nodes": [itself]})
 
 
 def test_postfix_starts_after_wireguard():

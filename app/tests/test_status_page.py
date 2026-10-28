@@ -5362,3 +5362,41 @@ def test_a_raising_synthetic_probe_needs_the_next_minutes_probe_to_confirm():
     assert minute(3, dns) == (True, "")
     assert minute(4, dns) == failure
     assert minute(5, (True, "")) == (True, "")
+
+
+def test_core_mail_status_needs_forward_confirmed_reverse_dns_on_every_sender():
+    now = 2_000_000_000_000
+    module = _core_mail_module([("latest", now - 60_000, "delivery", "2.0.0")])
+    env = type("Env", (), {"FORKMESH_MAIL_SENDERS":
+                           "n4.next.forkmesh.com=203.0.113.4, "
+                           "n5.next.forkmesh.com=203.0.113.5"})()
+    published = {"203.0.113.4": True, "203.0.113.5": False}
+    lookups = []
+
+    def matches(host, ip):
+        lookups.append(ip)
+        return published[ip]
+    module._reverse_dns_matches = matches
+    assert asyncio.run(module._core_mail_status(env, now)) == (False, (
+        "Reverse DNS does not match for n5.next.forkmesh.com (203.0.113.5), "
+        "so Yahoo and other providers refuse its mail"))
+    published["203.0.113.5"] = True
+    assert asyncio.run(module._core_mail_status(env, now + 60_000))[0] is False
+    assert sorted(lookups) == ["203.0.113.4", "203.0.113.5"]
+    later = now + module.MAIL_REVERSE_DNS_CACHE_MS
+    assert asyncio.run(module._core_mail_status(env, later)) == (True, "")
+    assert len(lookups) == 4
+
+
+def test_reverse_dns_match_needs_the_name_to_resolve_back(monkeypatch):
+    import socket
+    module = _core_mail_module([])
+    monkeypatch.setattr(socket, "gethostbyaddr",
+                        lambda ip: ("n4.next.forkmesh.com.", [], [ip]))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port: [
+        (None, None, None, "", ("203.0.113.4", 0))])
+    assert module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.4")
+    assert not module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.9")
+    monkeypatch.setattr(socket, "gethostbyaddr",
+                        lambda ip: ("203-0-113-4.constant.com", [], [ip]))
+    assert not module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.4")

@@ -435,6 +435,47 @@ def _smtp_answers(host="127.0.0.1", port=25, timeout=3):
     return code == 250
 
 
+MAIL_REVERSE_DNS_CACHE_MS = 10 * 60 * 1000
+_mail_reverse_dns_seen = {}
+
+
+def _mail_senders(env):
+    senders = []
+    for item in str(getattr(env, "FORKMESH_MAIL_SENDERS", "") or "").split(","):
+        host, _, ip = item.strip().partition("=")
+        if host and ip:
+            senders.append((host.strip().lower(), ip.strip()))
+    return senders
+
+
+def _reverse_dns_matches(host, ip):
+    import ipaddress
+    import socket
+    try:
+        name = socket.gethostbyaddr(ip)[0].rstrip(".").lower()
+        if name != host:
+            return False
+        return ipaddress.ip_address(ip) in {
+            ipaddress.ip_address(a[4][0]) for a in socket.getaddrinfo(host, None)}
+    except (OSError, ValueError):
+        return False
+
+
+async def _mail_reverse_dns_broken(env, now):
+    import asyncio
+    senders = _mail_senders(env)
+    stale = [s for s in senders if int(now) - _mail_reverse_dns_seen.get(
+        s, (-MAIL_REVERSE_DNS_CACHE_MS, True))[0] >= MAIL_REVERSE_DNS_CACHE_MS]
+    if stale:
+        results = await asyncio.gather(
+            *(asyncio.to_thread(_reverse_dns_matches, host, ip)
+              for host, ip in stale), return_exceptions=True)
+        for sender, ok in zip(stale, results):
+            _mail_reverse_dns_seen[sender] = (int(now), ok is True)
+    return ["%s (%s)" % sender for sender in senders
+            if not _mail_reverse_dns_seen[sender][1]]
+
+
 def _mail_over_smtp(env):
     return (getattr(env, "MAIL_TRANSPORT", "") or "").strip().lower() == "smtp"
 
@@ -456,6 +497,10 @@ async def _core_mail_status(env, now):
         answers = False
     if not answers:
         return False, "The core mail service (Postfix) is not answering"
+    broken = await _mail_reverse_dns_broken(env, now)
+    if broken:
+        return False, ("Reverse DNS does not match for " + ", ".join(broken)
+                       + ", so Yahoo and other providers refuse its mail")
     row = await d1_first(
         env,
         "SELECT status,sent_at,dsn,cause FROM mail_sends WHERE sent_at>=? "
