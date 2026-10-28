@@ -162,6 +162,7 @@ Planned extractions are described in
 | [`face-changer`](packages/face-changer/manifest.json) | Web page with the call face, outfit, background and voice changer, also opened inside the iPhone and Android apps: record and share a clip, snapshot, pop out. Video never reaches the server. |
 | [`speech`](packages/speech/README.md) | On-device text to speech in the iPhone app. |
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
+| [`invoices`](packages/invoices/README.md) | Organization invoices linked to CRM contacts, emailed with a private view-and-pay link, with open, view, pay-click and overdue tracking. |
 | [`competitor`](packages/competitor/manifest.json), [`notes`](packages/notes/README.md), [`tasks`](packages/tasks/README.md), [`calendar`](packages/calendar/README.md) | Organization competitor list; dashboard pages for host notes, tasks and calendar services. |
 
 Most optional packages ship with `install.default: false` and appear only once
