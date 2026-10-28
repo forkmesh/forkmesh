@@ -9,6 +9,7 @@ import importlib.util
 import plistlib
 import re
 import struct
+import subprocess
 import sys
 import zlib
 from pathlib import Path
@@ -643,6 +644,15 @@ def test_a_commit_stored_as_a_utf16_qstringliteral_counts(tmp_path):
     assert tool.inspect_macos_dmg(_write(tmp_path, payload), BUILD)["carries_commit"] is True
     other = _fat([ARM64, X86_64], commit="") + bytes(100) + ("b" * 40).encode("utf-16-le")
     assert tool.inspect_macos_dmg(_write(tmp_path, other), BUILD)["carries_commit"] is False
+
+
+def test_the_windows_build_finds_its_commit_as_ascii_or_a_utf16_qstringliteral(tmp_path):
+    line = next(l for l in tool.BUILD_WINDOWS_SCRIPT.splitlines() if l.startswith("python3 -c"))
+    program = line.split("'")[1]
+    for text, encoding, found in ((BUILD, "utf-16-le", 0), (BUILD, "ascii", 0), ("b" * 40, "utf-16-le", 1)):
+        exe = tmp_path / "forkmesh.exe"
+        exe.write_bytes(bytes(64) + text.encode(encoding) + bytes(64))
+        assert subprocess.run([sys.executable, "-c", program, BUILD, str(exe)]).returncode == found
 
 
 def test_the_mac_build_stamps_the_release_version_not_the_checkout_version():
