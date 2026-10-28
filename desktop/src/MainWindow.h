@@ -128,6 +128,7 @@ namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
 namespace forkmesh::ui { class OverflowActionRow; }
+namespace forkmesh::ui { class SessionSidePanels; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
@@ -15329,13 +15330,15 @@ private:
     void answerClaudeElicitation(int sessionId, const QString &key,
                                  const QString &action, const QJsonObject &content);
     void closeClaudeElicitation(const QString &key);
-    QWidget *buildAgentSubSessionStrip();
+    QWidget *buildAgentTowerPanels();
+    void refreshAgentTowerPanels();
     void refreshAgentSubSessions();
+    void fillAgentSubSessions(forkmesh::ui::SessionSidePanels *panels, int sessionId);
     void stopAgentSubSession(int sessionId, const QString &taskId);
     QHash<QString, QPointer<ClaudeElicitationDialog>> m_claudeElicitations;
-    QWidget *m_agentSubSessionStrip = nullptr;
-    QLabel *m_agentSubSessionHeader = nullptr;
-    QWidget *m_agentSubSessionRows = nullptr;
+    forkmesh::ui::SessionSidePanels *m_agentTowerPanels = nullptr;
+    QTimer *m_agentTowerPanelsTimer = nullptr;
+    bool m_agentTowerPanelsSized = false;
     QString saveNewAgentPromptImage(const QImage &image);
     QPushButton *m_agentStopButton = nullptr;
     QPushButton *m_agentStartButton = nullptr;

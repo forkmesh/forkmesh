@@ -1087,7 +1087,7 @@ git config remote.origin.url "$1"
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
-git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
+git sparse-checkout set --no-cone '/native/ios/' '/native/fixtures/' '/codemagic.yaml' '/conformance/' \
   '/changelog/' '/tools/changelog.py' '/app/src/apns.py' '/app/src/app_runtime.py' \
   '/app/public/assets/call-segmentation/' '/marketplace/packages/vault/tests/fixtures/' \
   '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
@@ -2347,6 +2347,11 @@ def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace)
     return {name: dmg for name in MACOS_ASSETS}
 
 
+def code_commit(repo: Path, ref: str) -> str:
+    return git(repo, "log", "-1", "--format=%H", ref, "--", ".",
+               f":(exclude){RELEASES}/**")
+
+
 def deploy_build(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     work = Path(args.work_dir).expanduser()
@@ -2360,7 +2365,7 @@ def deploy_build(args: argparse.Namespace) -> int:
     manifests = manifests_at(repo, "main")
     builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
     plan = plan_deploy(manifests, args.deploy_build, builds_text,
-                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build,
+                       code_commit(repo, "main"), args.tag, args.first_build,
                        args.from_main)
     label = PLATFORM_LABELS[plan["platform"]]
     tag, channel = plan["tag"], plan["channel"]

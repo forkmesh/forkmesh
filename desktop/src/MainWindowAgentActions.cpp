@@ -103,8 +103,21 @@ void MainWindow::setAgentCodeMode(bool code)
     const bool firstShow = m_agentCodeSplit && !m_agentCodePage->isVisible();
     m_agentCodePage->show();
     const int total = m_agentCodeSplit ? m_agentCodeSplit->width() : 0;
-    if (firstShow && total > 0)
-        m_agentCodeSplit->setSizes({total / 2, total - total / 2});
+    if (firstShow && total > 0) {
+        QList<int> sizes = m_agentCodeSplit->sizes();
+        const int transcript = m_agentCodeSplit->indexOf(m_agentOutputStack);
+        const int code = m_agentCodeSplit->indexOf(m_agentCodePage);
+        int rest = total;
+        for (int at = 0; at < sizes.size(); ++at)
+            if (at != transcript && at != code)
+                rest -= sizes.at(at);
+        rest = qMax(0, rest);
+        if (transcript >= 0 && code >= 0) {
+            sizes[transcript] = rest / 2;
+            sizes[code] = rest - rest / 2;
+            m_agentCodeSplit->setSizes(sizes);
+        }
+    }
     refreshAgentFilesPanel(m_selectedAgentSessionId);
     if (m_agentCodePollTimer)
         m_agentCodePollTimer->start();
