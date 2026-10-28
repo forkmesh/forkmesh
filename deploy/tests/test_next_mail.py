@@ -82,3 +82,50 @@ def test_ptr_status_needs_forward_confirmed_reverse_dns():
     def missing(_ip):
         raise socket.herror(1, "Unknown host")
     assert next_mail.ptr_status(v6, host, missing).startswith("no PTR")
+
+
+FLEET = {"nodes": [
+    {"name": "n3", "public_ipv4": "203.0.113.3", "wg_ip": "10.77.0.3"},
+    {"name": "n4", "public_ipv4": "203.0.113.4", "wg_ip": "10.77.0.4"},
+    {"name": "n5", "public_ipv4": "203.0.113.5", "wg_ip": "10.77.0.5"},
+]}
+
+
+def test_cores_without_ipv4_reverse_dns_relay_through_n4_over_wireguard():
+    n3, n4, n5 = FLEET["nodes"]
+    for client in (n3, n5):
+        cf = next_mail.main_cf(client, FLEET)
+        assert "relayhost = [10.77.0.4]:25\n" in cf
+        assert "inet_interfaces = loopback-only\n" in cf
+        assert "mynetworks = 127.0.0.0/8 [::1]/128\n" in cf
+        assert "smtpd_milters = unix:opendkim/opendkim.sock\n" in cf
+    relay = next_mail.main_cf(n4, FLEET)
+    assert "relayhost = \n" in relay
+    assert "inet_interfaces = 127.0.0.1, [::1], 10.77.0.4\n" in relay
+    assert ("mynetworks = 127.0.0.0/8 [::1]/128 10.77.0.3/32 10.77.0.5/32\n"
+            in relay)
+    assert ("smtpd_client_event_limit_exceptions = 10.77.0.3/32 10.77.0.5/32\n"
+            in relay)
+    assert "smtpd_relay_restrictions = permit_mynetworks, reject\n" in relay
+
+
+def test_a_core_alone_sends_directly_on_loopback():
+    cf = next_mail.main_cf({"name": "n4", "wg_ip": "10.77.0.4"},
+                           {"nodes": [FLEET["nodes"][1]]})
+    assert "relayhost = \n" in cf
+    assert "inet_interfaces = loopback-only\n" in cf
+    assert "smtpd_client_event_limit_exceptions = \n" in cf
+
+
+def test_a_relay_that_is_missing_or_relays_itself_is_refused():
+    import pytest
+    with pytest.raises(next_mail.GuardError):
+        next_mail.main_cf(FLEET["nodes"][0], {"nodes": [FLEET["nodes"][0]]})
+
+
+def test_postfix_starts_after_wireguard():
+    script = next_mail.install_script(FLEET["nodes"][1], FLEET)
+    assert ("cat > /etc/systemd/system/postfix.service.d/fmnext.conf "
+            "<<'FMNEXT_EOF'\n" + next_mail.POSTFIX_DROPIN) in script
+    assert "After=wg-quick@wg0.service\n" in next_mail.POSTFIX_DROPIN
+    assert "inet_interfaces = 127.0.0.1, [::1], 10.77.0.4\n" in script

@@ -32,6 +32,7 @@ cmake -S "$src/desktop" -B "$build" -G Ninja \
   -DFORKMESH_BUILD_TESTS=OFF \
   -DFORKMESH_REQUIRE_OPENSSL_3_5=ON \
   -DFORKMESH_DISABLE_MOLD=ON \
+  -DFORKMESH_PACKAGE_MODULES=OFF \
   -DCMAKE_PREFIX_PATH="/opt/forkmesh/qt;/opt/forkmesh/deps" \
   -DOPENSSL_ROOT_DIR=/opt/forkmesh/openssl -DOPENSSL_USE_STATIC_LIBS=ON \
   -DFORKMESH_WEBP_LIBRARY=/usr/lib/x86_64-linux-gnu/libwebp.a \

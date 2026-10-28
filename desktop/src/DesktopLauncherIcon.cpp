@@ -1,6 +1,7 @@
 #include "DesktopLauncherIcon.h"
 
 #include <QBuffer>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -58,6 +59,42 @@ bool launcherInstalled(const QString &dataHome)
     return QFileInfo::exists(dataHome + QStringLiteral("/applications/forkmesh.desktop"));
 }
 
+QByteArray launcherEntry(const QString &clientBin)
+{
+    return QStringLiteral("[Desktop Entry]\n"
+                          "Type=Application\n"
+                          "Version=1.0\n"
+                          "Name=ForkMesh\n"
+                          "GenericName=Decentralized Git\n"
+                          "Comment=Peer-to-peer Git hosting, chat, issues, and CI\n"
+                          "Exec=\"%1\" %u\n"
+                          "Icon=forkmesh\n"
+                          "Terminal=false\n"
+                          "Categories=Development;RevisionControl;\n"
+                          "MimeType=x-scheme-handler/forkmesh;\n"
+                          "Keywords=git;fork;mesh;p2p;repository;\n"
+                          "StartupNotify=true\n"
+                          "StartupWMClass=forkmesh\n")
+        .arg(clientBin)
+        .toUtf8();
+}
+
+bool installLauncher(const QString &dataHome, const QString &clientBin,
+                     const QString &runningBin)
+{
+    if (dataHome.isEmpty() || launcherInstalled(dataHome))
+        return false;
+    const QString installed = QFileInfo(clientBin).canonicalFilePath();
+    if (installed.isEmpty() ||
+        installed != QFileInfo(runningBin).canonicalFilePath())
+        return false;
+    const QString path = dataHome + QStringLiteral("/applications/forkmesh.desktop");
+    if (!writeIfChanged(path, launcherEntry(clientBin)))
+        return false;
+    QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
+    return true;
+}
+
 QStringList refresh(const QString &dataHome, const QImage &icon, const QByteArray &svg)
 {
     QStringList changed;
@@ -86,6 +123,13 @@ void refreshInstalled()
 {
 #if defined(Q_OS_LINUX)
     const QString home = dataHome();
+    if (installLauncher(home, QDir::homePath() + QStringLiteral("/.local/bin/forkmesh"),
+                        QCoreApplication::applicationFilePath())) {
+        const QString databaseTool =
+            QStandardPaths::findExecutable(QStringLiteral("update-desktop-database"));
+        if (!databaseTool.isEmpty())
+            QProcess::startDetached(databaseTool, {home + QStringLiteral("/applications")});
+    }
     QFile svg(QStringLiteral(":/app/forkmesh.svg"));
     const QByteArray svgBytes = svg.open(QIODevice::ReadOnly) ? svg.readAll() : QByteArray();
     const QStringList changed =

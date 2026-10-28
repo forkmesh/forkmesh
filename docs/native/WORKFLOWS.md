@@ -85,6 +85,18 @@ desktop.
   as a desktop run. The step list shows each step's progress live
   (`desktopLive`). The desktop runs `tools/free_disk_space.py` in its own
   forkmesh/forkmesh checkout; nothing new runs on the desktop for this.
+- **Run on your desktop from the list.** The user asked (2026-10-28) for
+  Free disk space to have a button that runs it on the desktop, and for every
+  workflow to show on the phone. The button sat only inside the editor, and
+  Android had none of this section (S147 was still pending), so an Android
+  phone listed only the account's workflows and Free disk space failed when
+  run there. Now the server's list marks a workflow with desktop steps
+  `runsOn: "desktop"` (`WorkflowSummary.runsOnDesktop`), and its row on both
+  phones shows a play button instead of the Active badge: it opens the
+  workflow, asks with the steps named (`WorkflowDesktopSteps.confirmation`),
+  and runs it with `runOnDesktop`, a spinner on the row while it goes. Without
+  a paired desktop it says so instead. Android has the On your desktop section,
+  its detail screen and the editor's Run on your desktop as on iOS.
 
 ## One engine, three runtimes
 

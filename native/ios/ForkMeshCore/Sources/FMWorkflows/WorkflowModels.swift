@@ -130,10 +130,12 @@ public struct WorkflowSummary: Equatable, Sendable, Identifiable {
     public var lastRunAt: Int64
     public var lastStatus: String
     public var updatedAt: Int64
+    public var runsOnDesktop: Bool
 
     public init(json: JSONObject) {
         id = json.str("id")
         name = json.str("name", "Untitled workflow")
+        runsOnDesktop = json.str("runsOn") == "desktop"
         active = json.bool("active")
         trigger = json.str("trigger")
         steps = json["nodes"]?.arrayValue?.count ?? json.int("nodes")

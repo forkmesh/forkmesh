@@ -220,7 +220,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S144 | 2026-10-25 | Code | fix | Send to agent on a failed Actions run's log sends the failing step and the end of the log instead of the log's first lines. | d196230867 | pending |  |
 | S145 | 2026-10-27 | Agents | fix | The token charts under the Dynamic Island always show, span the island and update every second, and agent tile borders move while a reply streams. | f87600c607 | pending |  |
 | S146 | 2026-10-27 | Agents | feature | With more than one desktop, Agents lists every desktop's agents in one list, each labelled with its desktop, and actions go to that agent's desktop. | ce55a298a1 | pending |  |
-| S147 | 2026-10-28 | Workflows | feature | Workflows lists your desktop's workflows and special agents and runs them on the desktop, and Free disk space runs on your desktop from the phone. | c48ebe358d | pending |  |
+| S147 | 2026-10-28 | Workflows | feature | Workflows lists your desktop's workflows and special agents and runs them on the desktop, and Free disk space runs on your desktop from the phone. | c48ebe358d | synced | a0ad9632e2 |
 | S148 | 2026-10-28 | Business | feature | Invoicing is on the phone: create and edit invoices for CRM contacts, email them and send reminders, record payments, follow when each is opened, viewed and paid, and see a contact's invoices on their CRM card. | f53052a674 | synced | f53052a674 |
 | S149 | 2026-10-28 | CRM | ui | The CRM has a compact layout with Home, Contacts, Pipeline, Activity and More sections, a shorter add form and a contact page with Overview, Activity and Notes tabs | 1ed74360c2 | pending |  |
 | S150 | 2026-10-28 | Settings | feature | Settings > Appearance has a Layout choice, Control Tower or Focus, which the CRM follows, and the CRM's More tab switches layout and theme right under its settings | 1ed74360c2 | pending |  |
@@ -229,5 +229,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S153 | 2026-10-28 | Code | feature | Pull requests look like GitHub's: an Open, Merged or Closed pill, the description as the first comment, a Merged entry in the timeline, a merged or closed box instead of the merge buttons, and a New pull request form that compares branches and can send to a fork on another instance. | 8f86266635 | pending |  |
 | S154 | 2026-10-28 | Packages | feature | Poker: play no-limit Texas Hold'em with other ForkMesh users for virtual chips at a full-screen casino table with a dealer, bots, chat and sounds. | ab5642740e | synced | ab5642740e |
 | S155 | 2026-10-28 | Stats | fix | The Stats release tiles show a rebuilt download's number from build 1, since every version now starts at build 0. | f283b206c8 | pending |  |
-| S156 | 2026-10-28 | Pings | ui | A ping's detail page has a back link at the top that returns you to your list of pings. | 7d50b7e2c7 | pending |  |
+| S156 | 2026-10-28 | Workflows | feature | Free disk space has a play button in the Workflows list that runs it on your desktop. | a0ad9632e2 | synced | a0ad9632e2 |
+| S157 | 2026-10-28 | Pings | ui | A ping's detail page has a back link at the top that returns you to your list of pings. | 7d50b7e2c7 | pending |  |
 <!-- ledger:end -->

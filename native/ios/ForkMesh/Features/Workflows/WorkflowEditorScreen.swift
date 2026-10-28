@@ -263,8 +263,7 @@ struct WorkflowEditorScreen: View {
     }
 
     private var desktopRunMessage: String {
-        let steps = (draft?.ordered ?? []).filter { WorkflowDesktopSteps.step($0.type) != nil && !$0.disabled }.map(\.name)
-        return (steps.isEmpty ? "" : steps.joined(separator: ", ") + ". ") + WorkflowsText.desktopRunNote
+        draft.map(WorkflowDesktopSteps.confirmation) ?? WorkflowsText.desktopRunNote
     }
 
     private func anywhereRunSection(_ draft: WorkflowDraft) -> some View {

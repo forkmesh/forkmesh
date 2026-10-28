@@ -2134,7 +2134,7 @@ def render_core(fleet, node_name, replacement=False):
     add("/etc/systemd/journald.conf.d/60-forkmesh-next.conf",
         template("journald.conf", values))
     mesh_ports = sorted({values["HTTP_PORT"], raft_port, values["MESH_PORT"],
-                         int(app.get("certsync_port", 8793)), 80})
+                         int(app.get("certsync_port", 8793)), 80, 25})
     # 80 on wg0: the HTTP-01 forwarder of every peer asks this Caddy.
     peers_agent = autoscale_enabled(fleet) and not replica
     public_tcp, public_udp = [22, 80, 443], [443, wg_port]
