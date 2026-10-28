@@ -2767,6 +2767,7 @@ public:
     // Persists a cancelled run through the normal Actions store and checks
     // whether the current cleanup preference removes it immediately.
     bool testCancelledActionRunCleanup(bool expectDeleted);
+    bool testSupersedeKeepsOtherPullsHeld();
     void testWatchAllLiveRuns() { watchAllLiveRuns(); }
     void testCloseParallelRun(int runId) { closeParallelRun(runId); }
     void testAppendRunLog(int runId, const QString &text)

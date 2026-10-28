@@ -581,6 +581,16 @@ request workflows ("CI tests", "Desktop client CI tests") filed two identical
 rows. The held runs are now collected and `notifyHeldActionRuns` files one row
 naming every held workflow, linked to the first held run.
 
+No re-ping for every held pull request on restart: `cancelSupersededRuns`
+treated any newer run of the same workflow in the repository as superseding, so
+pull request #90's held "CI tests" run cancelled #85's, and the cancelled run was
+deleted (`actions/autoDeleteCancelledRuns`). After a restart the check sweep
+(`applyPullCheckHeads`) found no run for those heads, queued them again, and
+pinged "Nth pull request needs your approval" for each one. A run now supersedes
+only runs of the same workflow for the same pull request (`pullNumber`, 0 for a
+push), so held runs survive and the sweep's already-ran check skips them. Test:
+`testSupersedeKeepsOtherPullsHeld` in `desktop/tests/test_window_resize.cpp`.
+
 The Actions page's approval pane says why a run is held. It used to show only
 the diff of the workflow file against the last approved copy, so a held pull
 request whose workflow was unchanged read "No changes from the approved

@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-28", "area": "Desktop", "text": "Restarting the desktop no longer pings you again for every pull request still waiting for check approval."},
   {"date": "2026-10-28", "area": "Agents", "text": "Running sub-sessions now show as a steady, draggable Sub-sessions card in the side panels, and Control Tower gets those panels as a right column beside the conversation."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Running a special agent such as the CEO from the Workflows page now asks you to approve its file right there and then shows the run's steps and log, and a run that cannot start stays in Recent runs with the reason."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Codex transcripts now show remote control status, MCP startup progress and failures, and thread settings changes without flagging internal moderation metadata as missing."},
