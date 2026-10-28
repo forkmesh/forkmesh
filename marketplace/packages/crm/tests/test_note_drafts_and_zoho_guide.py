@@ -96,9 +96,10 @@ def test_web_zoho_guide_has_the_redirect_secrets_and_both_setups():
     assert "Self Client" in guide and "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ" in guide
     assert "data-crm-zoho-guide data-crm-requires-install" in WEB_VIEW
     assert f'const CRM_ZOHO_CALLBACK = "{CALLBACK}";' in WEB_SCRIPT
-    assert "else if (state.crmView.canManageSettings) openCrmZohoGuide();" in WEB_SCRIPT
+    step = WEB_SCRIPT.split("function runCrmZohoStep(", 1)[1].split("\n  }\n", 1)[0]
+    assert step.rstrip().endswith("else openCrmZohoGuide();")
     opener = WEB_SCRIPT.split("function openCrmZohoGuide(", 1)[1].split("\n  }\n", 1)[0]
-    assert "connect.disabled = !(canManage && zoho.oneClick && !zoho.connected);" in opener
+    assert "connect.disabled = !(canManage && (zoho.oneClick || crmZohoSetupAvailable()) && !zoho.connected);" in opener
     assert "curl -s" not in guide and "Connect with code" in guide
 
 
@@ -106,7 +107,7 @@ def test_web_settings_redeem_a_self_client_code():
     assert "data-crm-zoho-code" in WEB_VIEW and "data-crm-zoho-exchange" in WEB_VIEW
     exchange = WEB_SCRIPT.split("async function exchangeCrmZohoCode(", 1)[1].split("\n  }\n", 1)[0]
     assert 'crmOrganizationPath("/zoho/exchange"), "POST"' in exchange
-    assert "await syncCrmZoho();" in exchange
+    assert 'await syncCrmZoho(false, "organization");' in exchange
     assert '$(`[data-crm-zoho-exchange]`)?.addEventListener("click", () => void exchangeCrmZohoCode());' in WEB_SCRIPT
 
 

@@ -33,7 +33,7 @@ struct AllAgentsScreen: View {
         let pending: AgentPendingDeletes = .shared
         return center.rows.filter { row in
             (filter == nil || row.badge == filter)
-                && !pending.isHidden(AgentLines.deletion(AgentLines.line(row))?.key ?? "")
+                && !pending.isHidden(AgentLines.deletionKey(AgentLines.line(row)) ?? "")
         }
     }
 

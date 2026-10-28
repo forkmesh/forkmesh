@@ -383,6 +383,7 @@ QWidget *MainWindow::buildSideRail()
     icons.reload = QIcon(tintedOcticonPixmap(QStringLiteral("sync"), muted, 14));
     icons.external = QIcon(tintedOcticonPixmap(QStringLiteral("link-external"), muted, 14));
     browser->setIcons(icons);
+    browser->setInstallHandler([this] { installEmbeddedBrowser(); });
     m_sideRailBrowser = browser;
     panelColumn->addWidget(browser, 1);
     panelRow->addLayout(panelColumn, 1);

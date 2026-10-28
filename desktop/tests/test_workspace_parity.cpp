@@ -1,3 +1,4 @@
+#include "LayoutMode.h"
 #include "PromptDrop.h"
 #include "WorkspaceOpenIn.h"
 #include "WorkspaceShortcuts.h"
@@ -9,6 +10,7 @@
 #include <QHash>
 #include <QProcess>
 #include <QSet>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -187,6 +189,47 @@ void includeCopy(const QString &root)
            "listed files git does not ignore are not copied");
 }
 
+void layoutModeMigration(const QString &root)
+{
+    using forkmesh::ui::LayoutMode;
+    const auto modeFor = [&root](const QString &name,
+                                 const QList<QPair<QString, QString>> &values) {
+        QSettings settings(root + QStringLiteral("/") + name + QStringLiteral(".ini"),
+                           QSettings::IniFormat);
+        for (const auto &value : values)
+            settings.setValue(value.first, value.second);
+        return forkmesh::ui::layoutModeFromSettings(settings);
+    };
+    expect(modeFor(QStringLiteral("fresh"), {}) == LayoutMode::Focus,
+           "a fresh install starts in the Focus layout");
+    expect(modeFor(QStringLiteral("classic"),
+                   {{QStringLiteral("agents/workspaceLayout"), QStringLiteral("classic")}}) ==
+               LayoutMode::ControlTower,
+           "the Classic Agents layout becomes Control Tower");
+    expect(modeFor(QStringLiteral("compact"),
+                   {{QStringLiteral("git/layout"), QStringLiteral("compact")}}) ==
+               LayoutMode::ControlTower,
+           "the Compact Git layout becomes Control Tower");
+    expect(modeFor(QStringLiteral("new"),
+                   {{QStringLiteral("agents/workspaceLayout"), QStringLiteral("new")},
+                    {QStringLiteral("git/layout"), QStringLiteral("new")}}) ==
+               LayoutMode::Focus,
+           "the New layouts become Focus");
+    expect(modeFor(QStringLiteral("chosen"),
+                   {{QStringLiteral("app/layoutMode"), QStringLiteral("focus")},
+                    {QStringLiteral("agents/workspaceLayout"), QStringLiteral("classic")}}) ==
+               LayoutMode::Focus,
+           "a saved layout mode wins over the old settings");
+    expect(modeFor(QStringLiteral("tower"),
+                   {{QStringLiteral("app/layoutMode"), QStringLiteral("controlTower")}}) ==
+               LayoutMode::ControlTower,
+           "Control Tower is read back");
+    for (const LayoutMode mode : forkmesh::ui::kLayoutModes)
+        expect(!forkmesh::ui::layoutModeName(mode).isEmpty() &&
+                   !forkmesh::ui::layoutModeDescription(mode).isEmpty(),
+               "every layout mode has a name and a description");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -208,6 +251,7 @@ int main(int argc, char **argv)
     dropPlan(root.path());
     includeList();
     includeCopy(root.path());
+    layoutModeMigration(root.path());
     if (failures == 0)
         std::printf("workspace parity: all checks passed\n");
     return failures == 0 ? 0 : 1;

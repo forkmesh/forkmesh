@@ -23,7 +23,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | Examples | `app/src/workflow_templates.py` |
 | `.forkmesh` repository files on the canvas | `app/src/workflow_files.py` |
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
-| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsCards` for the list, thumbnail and compact cards, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
+| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsCards` for the list, thumbnail and compact cards, `WorkflowsRunFlow` for the animated run steps and the new-run sparkle, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
 | Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py`, `test_workflow_desktop.py` |
@@ -261,18 +261,49 @@ maps every server error code).
   (see [One list](#one-list-on-the-desktop)). Recent runs merges the 30 kept runs
   of every workflow that has run (`GET /<id>/runs`, at most four at a time,
   only for workflows with a `lastRunAt`), newest first, filtered by workflow
-  and result; selecting one shows each step's result, time, item count and
-  error, first item or last log line, with the log in the tooltip, and under
-  them the run's output (`workflowsRunOutput`): each step's output, log lines
-  and error under its name.
+  and result; selecting one shows the run's steps as an animated chain
+  (`RunFlow`, `workflowsRunFlow`), under it the run's output
+  (`workflowsRunOutput`): each step's output, log lines and error under its
+  name, and under that a table of each step's result, time, item count and
+  error, first item or last log line, with the log in the tooltip.
 - **Run goes to Recent runs.** Run, Run with an assignment, a rail pin and the
   editor's Run workflow all follow the new run (`followRun`): the run filters
-  reset, the runs pane grows to at least 40% of the page and the new run is
+  reset (the workflow filter stays when it already names that workflow), the
+  runs pane grows to at least 40% of the page and the new run is
   selected. A desktop run is matched by the `runId` the `run` action returns
   (special agents return it too), else by the first run of that workflow
   started within two minutes of the click. An account run has no id until
   `POST /<id>/run` answers, so a "Running" placeholder row (`m_pendingRun`)
-  stands in for it until then. While a selected desktop run is running or
+  stands in for it until then. Every Run makes that placeholder at once
+  (`startPendingRun`), for an account run, a repository workflow and a run
+  of desktop steps alike, with the workflow's steps as Waiting when the page
+  knows them (`pendingSteps`), so the run appears and its steps show before
+  anything answers. It stays until the real run is in the list: an account
+  run swaps it for the run `POST /<id>/run` returns (`landPendingRun`), a
+  desktop run once a list holds the `runId` the `run` action returned, and a
+  pending one with a `runId` goes after two minutes. Desktop steps fill the
+  placeholder as each one starts and ends (`updateDesktopPending`).
+- **Run animation.** The user asked (2026-10-27) for a new run to sparkle into
+  Recent runs and for the right side to show the flow at once, each step
+  animated, with the log below. When the followed run's row first appears,
+  `RunSparkle::burst` puts a short-lived overlay on the table's viewport: a
+  white flash, a sweep across the row and stars, 1.4 s, then it deletes
+  itself. It finds the row by run id each frame and keeps the last place when
+  the placeholder is replaced. `RunFlow` draws one circle per step joined by
+  lines: Waiting is numbered, Running spins with a pulsing halo and a dot
+  running into it along the line, Succeeded, Failed, Skipped and Stopped get
+  a check, cross, dash or square with a pop and a ring, and a line fills in
+  green after a step succeeds. While a run is live with no running step (an
+  account run, which answers only when finished) a light runs along the whole
+  chain; with no steps yet it says Starting. When several steps change in
+  one update they turn one after another (160 ms apart), so an account run's
+  result plays through its steps. A new run's steps fade in one by one;
+  steps of the same run, or of the run that replaced the placeholder
+  (`m_flowAliasFrom`/`m_flowAliasTo`), keep their state and only animate what
+  changed. The timer runs at 30 fps only while something moves or the run is
+  live and the page is visible. The chain scrolls sideways past about 104 px
+  a step and keeps the running step in view; each circle's tooltip has the
+  step's result, time and detail.
   waiting, the page asks the host for it (`get`, which returns the active run)
   every second and redraws the steps and output, keeping the output scrolled
   to the end unless you scrolled up. The runner fills a running step's
@@ -383,6 +414,30 @@ desktop** (repository workflows and special agents) and **Your workflows**
   workflow without an agent step gets **Add a special agent step**, which opens
   it with an `agent.run` step after its last step (read-only permission) to
   fill in and save.
+- **Details pane and its log.** The user asked (2026-10-27) that clicking a
+  workflow show its log at the bottom right and open a right-hand pane to see
+  and manage all of it. Clicking a card (`selectEntry`) now does three things:
+  it highlights the card, opens the details pane (`workflowsDetails`, a
+  splitter beside the cards under the toolbar; 360 to 440 px at first, then
+  the width you drag it to), and sets Recent runs' workflow filter to that
+  workflow. If the selected run is not one of the workflow's runs, its newest
+  run is selected, so its steps and log fill the bottom right. A workflow that
+  has never run gets an empty log and "<name> has not run yet". The pane
+  (`renderDetails`) shows the portrait, name, kind and place, a state chip,
+  the rail, description, file problem, Run now / Stop and Run with an
+  assignment. It also has a button for every action from the More menu: Edit
+  steps, Turn on/off, Start or Pause schedule, Pin to rail, Open output file,
+  Agent home or Add an agent step, and Show file for desktop workflows;
+  Duplicate and Open in browser for account ones; and Delete. Below those are
+  the facts (trigger, schedule, next and last run, running step, runs and
+  failures, steps, where, rail, file) and the latest output. Buttons look up
+  the entry by key when clicked, so a refresh between drawing and clicking
+  acts on current data. The pane redraws only when its entry, the busy flag
+  or the theme changes (`m_detailsShown`), and keeps its scroll position for
+  the same workflow. It closes on × or when its workflow is gone; × also sets
+  the run filter back to All workflows. Running from the pane keeps the
+  workflow filter: `followRun` resets it only when it names another workflow,
+  and Last output does the same.
 
 **Account workflow pins.** The host keeps them with the desktop's pins
 (`ui/workflowPins`) under the repository key `@account/workflows`

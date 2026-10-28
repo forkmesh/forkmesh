@@ -522,6 +522,10 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentIntake.cpp
     src/MainWindowAgentHub.cpp
     src/MainWindowSessions.cpp
+    src/SessionInsights.h
+    src/SessionInsights.cpp
+    src/SessionSidePanels.h
+    src/SessionSidePanels.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -2206,6 +2210,18 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-browser-pane-tests
+        tests/test_browser_pane.cpp
+    )
+    target_include_directories(forkmesh-browser-pane-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-browser-pane-tests PRIVATE
+        forkmesh-browser-pane Qt6::Widgets)
+    if(APPLE)
+        set_target_properties(forkmesh-browser-pane-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-git-index-queue-tests
         tests/test_git_index_queue.cpp
         src/GitIndexQueue.h
@@ -2235,6 +2251,7 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-workspace-parity-tests
         tests/test_workspace_parity.cpp
+        src/LayoutMode.h
         src/PromptDrop.h
         src/WorkspaceOpenIn.h
         src/WorkspaceShortcuts.h
@@ -3283,6 +3300,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
         target_compile_definitions(forkmesh-window-tests PRIVATE FORKMESH_HAVE_PORTAL)
     endif()
 
+    qt_add_executable(forkmesh-session-insights-tests
+        tests/test_session_insights.cpp
+        src/SessionInsights.h
+        src/SessionInsights.cpp
+        src/AgentTaskList.h
+        src/AgentTaskList.cpp
+        src/ClaudeTranscriptTools.h
+        src/ClaudeTranscriptTools.cpp
+    )
+    target_link_libraries(forkmesh-session-insights-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-session-insights-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-session-insights-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-agent-task-list-tests
         tests/test_agent_task_list.cpp
         src/AgentTaskList.h
@@ -4157,6 +4190,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
         forkmesh-browser-privacy-tests
+        forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests
@@ -4176,6 +4210,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
         forkmesh-agent-task-list-tests
+        forkmesh-session-insights-tests
         forkmesh-sonifier-tests
         forkmesh-ui-sounds-tests
         forkmesh-user-activity-tests
@@ -4249,6 +4284,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-agent-folders-tests
              COMMAND forkmesh-agent-folders-tests)
     add_test(NAME forkmesh-agent-task-list-tests COMMAND forkmesh-agent-task-list-tests)
+    add_test(NAME forkmesh-session-insights-tests COMMAND forkmesh-session-insights-tests)
     add_test(NAME forkmesh-sonifier-tests COMMAND forkmesh-sonifier-tests)
     add_test(NAME forkmesh-ui-sounds-tests COMMAND forkmesh-ui-sounds-tests)
     add_test(NAME forkmesh-user-activity-tests
@@ -4532,6 +4568,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-upstream-sync-tests)
     add_test(NAME forkmesh-browser-privacy-tests
              COMMAND forkmesh-browser-privacy-tests)
+    add_test(NAME forkmesh-browser-pane-tests
+             COMMAND forkmesh-browser-pane-tests)
+    set_tests_properties(forkmesh-browser-pane-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-git-index-queue-tests
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
@@ -4747,6 +4787,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-public-mirror-tests
         forkmesh-upstream-sync-tests
         forkmesh-browser-privacy-tests
+        forkmesh-browser-pane-tests
         forkmesh-git-index-queue-tests
         forkmesh-agent-prompt-title-tests
         forkmesh-diff-intra-line-tests

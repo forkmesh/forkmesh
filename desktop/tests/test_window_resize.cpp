@@ -6248,6 +6248,72 @@ bool initGitRepo(QTemporaryDir &repo)
            runGitChecked(repo.path(), {"commit", "--allow-empty", "-m", "initial"});
 }
 
+void checkMergeResolutionKeepsJsonValid()
+{
+    QTemporaryDir repo;
+    const auto write = [&repo](const QString &name, const QByteArray &contents) {
+        QFile file(repo.path() + QLatin1Char('/') + name);
+        return file.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+               file.write(contents) == contents.size();
+    };
+    const auto commitBoth = [&](const QByteArray &json, const QByteArray &notes,
+                                const QString &message) {
+        return write(QStringLiteral("changelog.json"), json) &&
+               write(QStringLiteral("notes.json"), notes) &&
+               runGitChecked(repo.path(), {"add", "-A"}) &&
+               runGitChecked(repo.path(), {"commit", "-m", message});
+    };
+    const bool fixtureReady =
+        initGitRepo(repo) &&
+        commitBoth("{\"items\": [\n  \"base\"\n]}\n", "// notes\n{base}\n",
+                   QStringLiteral("base")) &&
+        runGitChecked(repo.path(), {"checkout", "-b", "side"}) &&
+        commitBoth("{\"items\": [\n  \"base\",\n  \"side\"\n]}\n",
+                   "// notes\n{side}\n", QStringLiteral("side")) &&
+        runGitChecked(repo.path(), {"checkout", "main"}) &&
+        commitBoth("{\"items\": [\n  \"base\",\n  \"main\"\n]}\n",
+                   "// notes\n{main}\n", QStringLiteral("main"));
+    QProcess merge;
+    merge.setWorkingDirectory(repo.path());
+    merge.start(QStringLiteral("git"), {"merge", "--no-edit", "side"});
+    merge.waitForFinished(10000);
+    const bool conflicted = fixtureReady && merge.exitCode() != 0;
+
+    const bool acceptedBoth =
+        write(QStringLiteral("changelog.json"),
+              "{\"items\": [\n  \"base\",\n  \"main\"\n  \"side\"\n]}\n") &&
+        write(QStringLiteral("notes.json"), "// notes\n{main}\n{side}\n");
+    QString error;
+    const bool brokenCommitted =
+        forkmesh::ui::commitResolvedMerge(repo.path(), &error);
+    const bool stillMerging =
+        !gitOutput(repo.path(), {"rev-parse", "-q", "--verify", "MERGE_HEAD"})
+             .isEmpty();
+    check(conflicted && acceptedBoth && !brokenCommitted && stillMerging &&
+              error.contains(QStringLiteral("changelog.json")) &&
+              error.contains(QStringLiteral("line 4")) &&
+              !error.contains(QStringLiteral("notes.json")),
+          QStringLiteral("a merge resolution that leaves a conflicted JSON file "
+                         "unparseable is not committed and names the file and "
+                         "line (conflicted=%1 committed=%2 merging=%3 error=%4)")
+              .arg(conflicted)
+              .arg(brokenCommitted)
+              .arg(stillMerging)
+              .arg(error));
+
+    error.clear();
+    const bool fixed = write(QStringLiteral("changelog.json"),
+                             "{\"items\": [\n  \"base\",\n  \"main\",\n  \"side\"\n]}\n");
+    const bool committed = fixed && forkmesh::ui::commitResolvedMerge(repo.path(), &error);
+    const QString parents = gitOutput(repo.path(), {"rev-list", "--parents", "-n", "1", "HEAD"});
+    check(committed && parents.split(QLatin1Char(' ')).size() == 3,
+          QStringLiteral("a valid JSON resolution commits the merge, even beside a "
+                         ".json file that was never valid JSON (committed=%1 "
+                         "parents=%2 error=%3)")
+              .arg(committed)
+              .arg(parents, error));
+}
+
 void checkErrorLogTriage(MainWindow &window)
 {
     QSettings().setValue(forkmesh::kReportUserVisibleErrorsSetting, true);
@@ -11486,7 +11552,7 @@ void checkWorkspaceDesign(MainWindow &window)
          assistant(QStringLiteral("I moved the rarely used actions into a menu.")),
          QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
                      {QStringLiteral("text"), QStringLiteral("now the composer, please")}}});
-    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     NextAccess::syncWorkspace(window);
     window.testShowAgentSession(session.id);
     settle();
@@ -11654,7 +11720,7 @@ void checkWorkspaceDesign(MainWindow &window)
     }
     shoot(QStringLiteral("agents-narrow-list"));
 
-    forkmesh::ui::setWorkspaceLayoutClassic(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     NextAccess::syncWorkspace(window);
     if (QSplitter *split = window.testAgentWorkspaceSplit())
         split->setSizes({300, 1000, 0});
@@ -11806,7 +11872,7 @@ void checkWorkspaceDesign(MainWindow &window)
               QStringLiteral("the session menu offers Open in and copy actions (%1)")
                   .arg(entries.join(QStringLiteral(", "))));
     }
-    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     NextAccess::syncWorkspace(window);
     settle();
     {
@@ -16501,43 +16567,46 @@ void checkGitCompactLayout(MainWindow &window)
     };
 
     settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
-    forkmesh::ui::setGitLayoutCompact(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     MainWindow::applyTheme();
     settle();
     const QString fresh = window.testGitLayoutState();
     check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
               fresh.endsWith(QStringLiteral(" rows=1 commit=1 branch=gitNextHeader")),
-          QStringLiteral("the New Git layout has the page header, the branches "
-                         "column and the branch picker in the header (%1)")
+          QStringLiteral("the Focus layout's Git page has the page header, the "
+                         "branches column and the branch picker in the header "
+                         "(%1)")
               .arg(fresh));
     shot(QStringLiteral("new"));
 
-    forkmesh::ui::setGitLayoutCompact(true);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
     window.testApplyGitLayout();
     settle();
     const QString compact = window.testGitLayoutState();
     check(compact == QStringLiteral("header=0 side=0 files=1 history=1 rows=1 "
                                     "commit=1 branch=gitHistoryHeader"),
-          QStringLiteral("the Compact Git layout stacks files over history with "
-                         "room for the file list and the commit button, and the "
-                         "branch picker in the history header (%1)")
+          QStringLiteral("the Control Tower layout's Git page stacks files over "
+                         "history with room for the file list and the commit "
+                         "button, and the branch picker in the history header "
+                         "(%1)")
               .arg(compact));
     shot(QStringLiteral("compact"));
 
-    forkmesh::ui::setGitLayoutCompact(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     window.testApplyGitLayout();
     settle();
     const QString back = window.testGitLayoutState();
     check(back == fresh,
-          QStringLiteral("switching back to the New Git layout restores it (%1)")
+          QStringLiteral("switching back to the Focus layout restores the Git "
+                         "page (%1)")
               .arg(back));
 
     if (designWas.isValid())
         settings.setValue(QStringLiteral("app/design"), designWas);
     else
         settings.remove(QStringLiteral("app/design"));
-    settings.remove(QLatin1String(forkmesh::ui::kGitLayoutSetting));
-    forkmesh::ui::gitLayoutState() = -1;
+    settings.remove(QLatin1String(forkmesh::ui::kLayoutModeSetting));
+    forkmesh::ui::layoutModeState() = -1;
     MainWindow::applyTheme();
     settle();
 }
@@ -16688,6 +16757,9 @@ else:
             QStringLiteral("--inline-diff-comments-only")))
         return failures == 0 ? 0 : 1;
     if (app.arguments().contains(QStringLiteral("--diff-health-only")))
+        return failures == 0 ? 0 : 1;
+    checkMergeResolutionKeepsJsonValid();
+    if (app.arguments().contains(QStringLiteral("--merge-json-guard-only")))
         return failures == 0 ? 0 : 1;
     // The focused Agents efficiency suite starts at the window, like the
     // other single-feature subsets, so the shared widget probes stay out of

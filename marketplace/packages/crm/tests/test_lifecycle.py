@@ -62,7 +62,7 @@ def test_install_creates_schema_and_uninstall_exports_purges_and_reverses():
         "crm_list_activity",
         "crm_mail_messages",
         "crm_outreach_log", "crm_outreach_team", "crm_settings",
-        "crm_view_shares", "crm_views"]
+        "crm_view_shares", "crm_views", "crm_zoho_members"]
 
     created = crm_call(runtime.use("POST", body={
         "name": "Ada", "email": "ada@example.com"}), "/api/crm/acme/contacts")
@@ -125,7 +125,7 @@ def test_schema_survives_until_the_last_organization_uninstalls():
         "crm_list_activity",
         "crm_mail_messages",
         "crm_outreach_log", "crm_outreach_team", "crm_settings",
-        "crm_view_shares", "crm_views"]
+        "crm_view_shares", "crm_views", "crm_zoho_members"]
     still = crm_call(runtime.use("GET"), "/api/crm/beta")
     assert still["data"]["contacts"][0]["name"] == "Beta Contact"
 

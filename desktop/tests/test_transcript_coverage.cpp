@@ -29,6 +29,8 @@ static void testDrawnEvents()
         R"({"type":"system","subtype":"init","model":"m","cwd":"/w"})",
         R"({"type":"system","subtype":"thinking_tokens","estimated_tokens":3})",
         R"({"type":"system","subtype":"status","status":null})",
+        R"({"type":"system","subtype":"vcs_state_changed","kind":"push","cwd":"/w"})",
+        R"({"type":"system","subtype":"vcs_state_changed"})",
         R"({"type":"system","subtype":"task_progress","task_id":"t"})",
         R"({"type":"assistant","message":{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"hi"},{"type":"tool_use","id":"a","name":"Bash","input":{}}]}})",
         R"({"type":"assistant","message":{"content":[{"type":"web_search_tool_result","tool_use_id":"a"}]}})",

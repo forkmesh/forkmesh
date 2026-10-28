@@ -103,9 +103,40 @@ Below the themes it has two more entries:
   `MainWindow::resetAppearanceToDefaults`) removes `app/theme`, `app/design` and
   `ui/matchInstanceTheme`, so the app looks the way a fresh install does:
   Classic, following the system's light or dark setting, in ForkMesh's own
-  colours. It leaves density, the Agents layout and the view mode alone. The
+  colours. It leaves density, the layout mode and the view mode alone. The
   entry is greyed out while those three settings are already at their defaults
   (`appearanceIsDefault`).
+
+**Two layout modes: Control Tower and Focus.** In the new interface the
+view menu's **Layout** section (and the Agents page's ⋯ → **Layout**) picks
+one mode for the whole app; it replaced the separate "Agents layout" and "Git
+layout" choices on 2026-10-27. Code: `src/LayoutMode.h` (`layoutMode()`,
+`setLayoutMode()`, setting `app/layoutMode` = `controlTower` or `focus`),
+switched live by `NextAccess::applyLayoutMode`, which re-syncs the Agents
+workspace and re-applies the Git page.
+
+| Page | Control Tower | Focus |
+| --- | --- | --- |
+| Agents | The earlier page: action bar, list views, detail buttons, terminal dock | Session cards, one conversation header, side panel for diff, terminal, browser and details |
+| Git | Changed files over history, branch picker, Fetch and Pull in the history header | Page header with Changes and History tabs beside branches, remotes, worktrees and tags |
+
+- Control Tower is the cockpit: compact, every control in view. Focus is where
+  the recent designs are headed: one thing at a time, controls behind menus.
+- The page checks stay as they were (`workspaceLayoutClassic()`,
+  `workspaceLayoutNew()`, `gitLayoutCompact()`); they now read the mode.
+- A box that never chose a mode keeps what it had: `layoutModeFromSettings`
+  reads `agents/workspaceLayout` = `classic` or `git/layout` = `compact` as
+  Control Tower, anything else as Focus. Choosing a mode writes
+  `app/layoutMode` and drops the two old keys.
+- "Focus" here is the layout, not the **Focus** view (`AppViewMode::Focus`,
+  rail and status strip hidden); the two combine freely.
+- **Changing a layout.** Make the change in the mode the user is running
+  (`app/layoutMode` in their settings; Focus when it is missing and neither old
+  key says otherwise), then check the other mode still works: switch modes
+  with the change in place and make sure the page builds, its controls still
+  act, and switching back restores it. The window tests switch both ways
+  (`workspace_snapshots.cpp`, the Git layout check in `test_window_resize.cpp`);
+  extend them when a change touches what either mode shows.
 
 **Halloween is a built-in theme, not a Market skin.** `halloween` always uses the
 dark base and installs `Theme::halloweenRoleColors()` (pumpkin-orange accent,
@@ -1892,15 +1923,15 @@ re-arranges both ways on a live design switch: Next to Classic puts every
 moved widget back where `buildRepoCommitsTab` placed it, in the same order.
 A window that starts in Classic is never touched.
 
-- **Git layout** (view menu, Next only; `GitLayout.h`, setting
-  `git/layout`). "New" is the page described below. "Compact" brings back
-  the page as it was before this restyle (commit 68b35e6386): changed files
-  on top of the left column and history underneath, no branches column and
-  no page header, with the branch picker, Fetch, Pull and rescan back in the
+- **Git page in each layout mode** (see "Two layout modes" above;
+  `GitLayout.h`, `gitLayoutCompact()`). Focus is the page described below.
+  Control Tower brings back the page as it was before this restyle (commit
+  68b35e6386): changed files on top of the left column and history
+  underneath, no branches column and no page header, with the branch picker, Fetch, Pull and rescan back in the
   history header and the "▾ CHANGES" caption showing the count again. Only
   the page arrangement changes (`arrangePage(false)`); the change rows, the
   commit box and the history rows keep the new design. The commit box now
-  sits in the files pane, so Compact gives the change list a three-row
+  sits in the files pane, so Control Tower gives the change list a three-row
   minimum height and raises the files pane's 130 px floor to what the panel
   needs; without them the files/history splitter squeezed the list to
   nothing and cut off the Commit button in a short window. Switching back

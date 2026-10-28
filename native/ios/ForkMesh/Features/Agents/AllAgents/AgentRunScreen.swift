@@ -79,7 +79,7 @@ struct AgentRunScreen: View {
                     .padding(.bottom, 6)
                     .accessibilityIdentifier("agent-run-outside-note")
             }
-            if row.isDesktop, !row.outside {
+            if row.isDesktop, !row.outside, !row.elsewhere {
                 DesktopQueuePositionLine(center: center, sessionId: row.localId)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
@@ -159,7 +159,7 @@ struct AgentRunScreen: View {
             HStack(spacing: 6) {
                 if row.isPhoneTerminal {
                     NavigationLink {
-                        DesktopTerminalScreen(center: center, terminal: row.terminal)
+                        DesktopTerminalScreen(center: center, terminal: row.terminal, desktopKey: row.desktopKey)
                             .shellPageClearance()
                     } label: {
                         Label("Terminal", systemImage: "apple.terminal")
@@ -276,7 +276,7 @@ struct AgentRunScreen: View {
                         .accessibilityIdentifier("agent-run-cleanup")
                     }
                 }
-                if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client {
+                if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client(for: row) {
                     NavigationLink {
                         AgentDiffScreen(
                             client: client, sessionId: row.localId, canMerge: canMergeDesktop, mergeOnOpen: true,
@@ -356,14 +356,15 @@ struct AgentRunScreen: View {
         }
         .task {
             if row.offersTerminal && terminalResume == nil {
-                terminalResume = await DesktopTerminalSupport.check(center.hub, DesktopTerminalSupport.resumeCapability)
+                terminalResume = await DesktopTerminalSupport.check(
+                    center.hub, DesktopTerminalSupport.resumeCapability, desktopKey: row.desktopKey)
             }
         }
         .task {
             await follow()
-            let id = center.hub.addEventTap { name, _ in
+            let id = center.hub.addEventTap({ name, _ in
                 if name == "agents.changed" && row.isDesktop && !streaming { Task { await load() } }
-            }
+            }, for: row.desktopKey)
             tapId = id
         }
         .task(id: followsCloudLive) {
@@ -411,7 +412,7 @@ struct AgentRunScreen: View {
     private var shownBlocks: [TranscriptBlock] { pending.isEmpty ? blocks : blocks + pending.blocks }
 
     @ViewBuilder private var changesLink: some View {
-        if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client {
+        if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client(for: row) {
             NavigationLink {
                 AgentDiffScreen(
                     client: client, sessionId: row.localId, canMerge: canMergeDesktop, onMerged: merged, onLeave: leave)
@@ -629,7 +630,7 @@ struct AgentRunScreen: View {
 
     private var deletesHere: Bool {
         if isRunnerRun { return RunnerAgentFeature.api != nil }
-        return deletesOnDesktop && AgentOpsFeature.client != nil
+        return deletesOnDesktop && AgentOpsFeature.client(for: row) != nil
     }
 
     private func deleteNow() {

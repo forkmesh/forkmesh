@@ -37,6 +37,35 @@ ten minutes.
   draws the desktop in use, with the other desktops stacked behind it, each
   with its own dot. The core nodes are stacked the same way. Before this the
   phone took whichever desktop answered first and showed only that one.
+- **Agents from every desktop (iOS, 2026-10-27).** A phone paired with two
+  desktops showed "No agent sessions yet" because its chosen desktop had none,
+  while the desktop it was connected to on the LAN had dozens. The Agents list
+  now shows the agents of every desktop of the account in one list.
+  `AgentControlCenter.rows` holds the desktop in use's rows plus up to four
+  other desktops' (`otherDesktops`, one `OtherDesktopAgents` each; an
+  unreachable one adds "<name>: Not reachable" to the list's notes). They
+  load on a full `refresh()`, after the desktop in use, and again when that
+  desktop rings `agents.changed`.
+  - Reaching another desktop: `link(to:)` / `request(_:_:to:)` use the LAN
+    channel when it goes to that desktop, else a relay channel kept per
+    desktop (`sideLinks`). `choose(key:)` keeps the old desktop's relay
+    channel as a side link and takes over the chosen desktop's side link, so
+    switching back and forth dials nothing new. `addEventTap(_:for:)` hears
+    one desktop's events whichever channel carries them. `openLink(for:)`
+    returns that desktop's open channel without dialling.
+  - The same local session id means a different agent on each desktop, so
+    every action follows the row's `desktopKey`. The center sends stop,
+    prompt, questions, answer, continue and transcript there. The transcript
+    stream follows that desktop. `DesktopScopedChannel` (from
+    `hub.channel(for:)` / `terminalChannel(for:)`) is a family and terminal
+    channel bound to one desktop. The app gives it to the agent-ops client
+    (`AgentOpsFeature.client(for:)`: diff, merge, delete, swipe delete) and to
+    an agent's terminal.
+  - Rows from another desktop have `elsewhere` set and ids prefixed with the
+    desktop key. They never match the relay-pushed sessions, which do not say
+    which desktop they came from, nor the active desktop's folders, queue,
+    unread marks, approvals or voice numbers. Their delete and read keys
+    carry the desktop key, and the line's host chip shows the desktop's name.
 - The desktop approves the phone without a code because its key is an enabled
   `owner_sign` device of the same account (`checkLocalControlAccountDevice`),
   records it in `data/local_control/paired-devices.json` as

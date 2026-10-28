@@ -55,6 +55,7 @@ const QSet<QString> &drawnSystemSubtypes()
         QStringLiteral("thinking_tokens"),
         QStringLiteral("compact_boundary"),
         QStringLiteral("api_retry"),
+        QStringLiteral("vcs_state_changed"),
         QStringLiteral("local_command_output"),
         QStringLiteral("task_notification"),
         QStringLiteral("status")};
