@@ -638,6 +638,20 @@ def test_an_arm64_only_local_dmg_is_published_as_the_arm64_image_only(tmp_path):
     assert names == frozenset({DMG})
 
 
+def test_a_commit_stored_as_a_utf16_qstringliteral_counts(tmp_path):
+    payload = _fat([ARM64, X86_64], commit="") + bytes(100) + BUILD.encode("utf-16-le")
+    assert tool.inspect_macos_dmg(_write(tmp_path, payload), BUILD)["carries_commit"] is True
+    other = _fat([ARM64, X86_64], commit="") + bytes(100) + ("b" * 40).encode("utf-16-le")
+    assert tool.inspect_macos_dmg(_write(tmp_path, other), BUILD)["carries_commit"] is False
+
+
+def test_the_mac_build_stamps_the_release_version_not_the_checkout_version():
+    assert 'FORKMESH_VERSION="$1"' in tool.MAC_DESKTOP_BUILD_SCRIPT
+    script = (ROOT / "tools/package/macos_universal_on_mac.sh").read_text()
+    assert 'release_version="${FORKMESH_VERSION:-}"' in script
+    assert '-DFORKMESH_VERSION_OVERRIDE="$release_version"' in script
+
+
 def test_one_single_arch_binary_makes_the_local_dmg_arm64_only(tmp_path):
     payload = _fat([ARM64, X86_64]) + bytes(100) + _thin(ARM64)
     report = tool.inspect_macos_dmg(_write(tmp_path, payload), BUILD)

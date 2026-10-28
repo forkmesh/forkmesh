@@ -15,6 +15,7 @@ const QSet<QString> &drawnEventTypes()
 {
     static const QSet<QString> types{
         QStringLiteral("system"),
+        QStringLiteral("command_lifecycle"),
         QStringLiteral("stream_event"),
         QStringLiteral("assistant"),
         QStringLiteral("user"),
@@ -56,6 +57,7 @@ const QSet<QString> &drawnSystemSubtypes()
         QStringLiteral("compact_boundary"),
         QStringLiteral("api_retry"),
         QStringLiteral("vcs_state_changed"),
+        QStringLiteral("dev_intent"),
         QStringLiteral("local_command_output"),
         QStringLiteral("task_notification"),
         QStringLiteral("status")};
