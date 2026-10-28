@@ -487,6 +487,24 @@ class DirectMessagesTest {
         expect(r.dm.isVerified(r.conversation))
     }
 
+    fun testSeveralNewDevicesShareOneLineAndOneBanner() {
+        val r = rig()
+        val phone = peerSeal()
+        val tablet = peerSeal()
+        phone.acceptKeyFrame(mySeal(r.store).keyFrame())
+        tablet.acceptKeyFrame(mySeal(r.store).keyFrame())
+        r.socket.onText(envelope(phone.keyFrame()))
+        r.socket.onText(envelope(tablet.keyFrame()))
+        val lines = r.dm.messages(r.conversation).filter { it.senderId == DirectMessageFrames.SYSTEM_SENDER }
+        assertEq(1, lines.size, "one line for both devices")
+        assertEq(DirectTrustText.pendingDevices("pat", 2, own = false), lines.single().text)
+        val banner = r.dm.trustNotices(r.conversation).single()
+        assertEq(setOf(phone.keyId, tablet.keyId), banner.kids.toSet())
+        for (kid in banner.kids) expect(r.dm.approveDevice(r.conversation, kid))
+        expect(r.dm.pendingDevices(r.conversation).isEmpty())
+        expect(r.dm.trustNotices(r.conversation).isEmpty())
+    }
+
     fun testABlockedDeviceIsIgnored() {
         val r = rig()
         val phone = peerSeal()

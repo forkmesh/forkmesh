@@ -103,6 +103,7 @@ import com.forkmesh.nativeapp.feature.account.VGap
 import com.forkmesh.nativeapp.feature.account.openExternalUrl
 import com.forkmesh.nativeapp.feature.account.orgs.OrgsScreen
 import com.forkmesh.nativeapp.feature.chat.ChatFeature
+import com.forkmesh.nativeapp.feature.chat.ChatLinkPreviewSettingRow
 import com.forkmesh.nativeapp.feature.chat.RelayConnection
 import com.forkmesh.nativeapp.feature.chat.showChatRetentionSheet
 import com.forkmesh.nativeapp.model.ChatRetention
@@ -261,27 +262,30 @@ class SettingsScreen : AccountScreen() {
                 item {
                     Section("Chat") {
                         FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                            FmListRow(
-                                title = "Chat messages disappear after",
-                                modifier = Modifier.testTag("settings-chat-retention-row"),
-                                subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
-                                leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
-                                onTap = {
-                                    scope.launch {
-                                        val choice = showChatRetentionSheet(
-                                            messenger,
-                                            "Chat messages disappear after",
-                                            ChatRetention.clamp(chatRetention.defaultMs),
-                                        ) ?: return@launch
-                                        chatStatus.clear()
-                                        try {
-                                            auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
-                                        } catch (refused: ChatRetentionException) {
-                                            chatStatus.error(refused.message ?: "Could not save when messages disappear.")
+                            Column(Modifier.fillMaxWidth()) {
+                                FmListRow(
+                                    title = "Chat messages disappear after",
+                                    modifier = Modifier.testTag("settings-chat-retention-row"),
+                                    subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
+                                    leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
+                                    onTap = {
+                                        scope.launch {
+                                            val choice = showChatRetentionSheet(
+                                                messenger,
+                                                "Chat messages disappear after",
+                                                ChatRetention.clamp(chatRetention.defaultMs),
+                                            ) ?: return@launch
+                                            chatStatus.clear()
+                                            try {
+                                                auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
+                                            } catch (refused: ChatRetentionException) {
+                                                chatStatus.error(refused.message ?: "Could not save when messages disappear.")
+                                            }
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                                ChatLinkPreviewSettingRow()
+                            }
                         }
                         FmInlineStatus(chatStatus, Modifier.padding(top = FmSpace.x2))
                     }

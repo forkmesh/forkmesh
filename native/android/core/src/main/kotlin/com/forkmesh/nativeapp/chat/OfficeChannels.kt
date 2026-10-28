@@ -431,6 +431,16 @@ class OfficeChannelService(
 
     private fun sealAccount(): String = account().trim().lowercase().ifEmpty { selfId() }
 
+    private fun watchClaim(plain: Map<String, Any?>) {
+        val type = jsonText(plain["type"])
+        if (type != "chat" && type != "thread-reply") return
+        val node = jsonText(plain["senderId"])
+        val claim = jsonText(plain["ownerUser"] ?: plain["owner"])
+        if (node.isEmpty() || node == selfId() || claim.isBlank() || RelayFrames.isIntegration(plain)) return
+        val known = owners() ?: return
+        if (known.verified(node, claim).isEmpty()) known.watch(node, claim)
+    }
+
     fun loadHistory(conversation: String) {
         val room = room(conversation) ?: return
         try {
@@ -501,6 +511,7 @@ class OfficeChannelService(
             if (room.isPrivate && live != null && !history) onLiveFrame?.invoke(plain, room.conversation)
             return
         }
+        watchClaim(plain)
         val message = OfficeFrames.chatMessage(plain, room.conversation, selfId(), recipients, ::botAccount) ?: return
         if (append(message, room.id) && live != null && !message.self) onMessage?.invoke(message)
     }

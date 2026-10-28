@@ -692,6 +692,7 @@ class ChatScreen : Screen() {
                                                 scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleSticker(message, slug) }
                                             }),
                                         )
+                                        ChatRowLinkPreviews(row)
                                         if (message.id == lastOwn) {
                                             val receiptText = remember(row.receipt, revision) {
                                                 val times = ChatDepth.hub?.receiptTimes(message) ?: com.forkmesh.nativeapp.model.ChatReceiptTimes()

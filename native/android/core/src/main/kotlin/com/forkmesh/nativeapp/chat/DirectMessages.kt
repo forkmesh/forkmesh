@@ -811,14 +811,35 @@ class DirectMessageService(
     private fun acceptBundle(record: DirectConversation, seal: RoomSeal, frame: Map<String, Any?>, holder: RoomSocket?, replay: Boolean) {
         val outcome = seal.acceptKeyFrame(frame, now()) ?: return
         if (outcome.isNew && holder != null && !replay) advertise(holder)
-        if (outcome.isNew && outcome.state == TrustState.PENDING) {
-            systemLine(record, "pending-${outcome.kid}", DirectMessageFrames.pendingDeviceLine(deviceOwnerName(record, outcome.acct)))
-        }
+        if (outcome.isNew && outcome.state == TrustState.PENDING) notePendingDevice(record, outcome.kid, outcome.acct)
         if (outcome.state == TrustState.APPROVED && outcome.updated) {
             if (holder != null) peerLearned(holder)
             releaseHeld(record, seal, outcome.kid, holder)
         }
         notifyListeners()
+    }
+
+    private fun notePendingDevice(record: DirectConversation, kid: String, acct: String) {
+        val devices = devices(record.conversation)
+        val waiting = devices.filter { it.state == TrustState.PENDING }.map { it.kid }.toSet()
+        if (waiting.size > 1) {
+            val folded = DirectTrustNotices.pending(record.conversation, devices, record.otherUser).firstOrNull()?.text
+            if (folded != null && foldPendingLine(record, waiting, folded)) return
+        }
+        systemLine(record, "pending-$kid", DirectMessageFrames.pendingDeviceLine(deviceOwnerName(record, acct)))
+    }
+
+    private fun foldPendingLine(record: DirectConversation, waiting: Set<String>, text: String): Boolean {
+        val prefix = "system-pending-"
+        val changed = synchronized(lock) {
+            val list = history[record.conversation] ?: return@synchronized false
+            val at = list.indexOfLast { it.senderId == DirectMessageFrames.SYSTEM_SENDER && it.id.startsWith(prefix) && it.id.removePrefix(prefix) in waiting }
+            if (at < 0) return@synchronized false
+            history[record.conversation] = list.toMutableList().also { it[at] = it[at].copy(text = text) }
+            true
+        }
+        if (changed) notifyListeners()
+        return changed
     }
 
     private fun deviceOwnerName(record: DirectConversation, acct: String): String =
