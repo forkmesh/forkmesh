@@ -329,20 +329,21 @@ object PushFeature {
         context.activity()?.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST)
     }
 
+    fun askWhenUseful(context: Context) {
+        if (!needsPermission(context)) return
+        val prefs = Prefs(context)
+        if (prefs.getBool(PERMISSION_ASKED_KEY, false)) return
+        prefs.putBool(PERMISSION_ASKED_KEY, true)
+        requestPermission(context)
+    }
+
     @Composable
     fun PermissionPrompt() {
         val context = LocalContext.current
-        val auth = Services.get<AuthService>() ?: return
-        val session by auth.session.collectAsState()
         val mesh by ChatFeature.meshSnapshot.collectAsState()
         val nearby = (mesh?.peerCount ?: 0) > 0
-        LaunchedEffect(session?.sessionToken, nearby) {
-            if (session?.sessionToken.isNullOrEmpty() && !nearby) return@LaunchedEffect
-            if (!needsPermission(context)) return@LaunchedEffect
-            val prefs = Prefs(context)
-            if (prefs.getBool(PERMISSION_ASKED_KEY, false)) return@LaunchedEffect
-            prefs.putBool(PERMISSION_ASKED_KEY, true)
-            requestPermission(context)
+        LaunchedEffect(nearby) {
+            if (nearby) askWhenUseful(context)
         }
     }
 

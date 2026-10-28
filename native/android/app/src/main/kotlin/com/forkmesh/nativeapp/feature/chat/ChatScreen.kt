@@ -763,6 +763,7 @@ class ChatScreen : Screen() {
         val blocked = guestComposeBlocked(guest, conversation)
         val requireAccount = AccountFeature.rememberRequireAccount()
         val scope = rememberCoroutineScope()
+        val context = LocalContext.current
         if (blocked != null) {
             FmBottomActionBar(padding = PaddingValues(FmSpace.x3)) {
                 GuestComposeNotice(action = blocked, onLogIn = { scope.launch { requireAccount(blocked) } })
@@ -793,7 +794,10 @@ class ChatScreen : Screen() {
                 status.clear()
                 scope.launch {
                     when (val result = ChatFeature.sendChatText(text)) {
-                        ChatSendResult.Sent -> draft = ""
+                        ChatSendResult.Sent -> {
+                            draft = ""
+                            com.forkmesh.nativeapp.feature.push.PushFeature.askWhenUseful(context)
+                        }
                         ChatSendResult.Empty -> {}
                         is ChatSendResult.NeedsAccount -> requireAccount(result.action)
                         is ChatSendResult.Failed -> if (result.message.isNotEmpty()) status.error(result.message)
