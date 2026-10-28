@@ -29,7 +29,7 @@ object PackageGate {
     const val TOUR = "tour"
     const val WORKFLOWS = "workflows"
 
-    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor")
+    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices")
 
     val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
 
@@ -39,7 +39,7 @@ object PackageGate {
         "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
         "hosts" to "hosts", "network" to "network",
-        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
+        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
         "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide",
         "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
@@ -72,6 +72,7 @@ object PackageGate {
         put("marketing", Route.Kind.Marketing)
         put("analytics", Route.Kind.Analytics)
         put("competitor", Route.Kind.Competitors)
+        put("invoices", Route.Kind.Invoices)
         put("ledger", Route.Kind.Ledger)
         put("vault", Route.Kind.Vault)
         put("coves", Route.Kind.Coves, Route.Kind.Cove)

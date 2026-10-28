@@ -3,7 +3,7 @@ import Foundation
 public enum PackageGate {
     public static let legacyCutoff = "2026-10-11"
 
-    public static let organizationPackages: Set<String> = ["crm", "marketing", "analytics", "competitor"]
+    public static let organizationPackages: Set<String> = ["crm", "marketing", "analytics", "competitor", "invoices"]
 
     public static let devicePackages: Set<String> = ["sign-in"]
 
@@ -30,7 +30,7 @@ public enum PackageGate {
         "sleep": "sleep", "sugarBreak": "sugar-break", "stretch": "stretch", "foodGuide": "food-guide",
         "signIn": "sign-in", "signOut": "sign-in", "workflows": "workflows",
         "crm": "crm", "marketing": "marketing", "analytics": "analytics", "competitor": "competitor",
-        "competitors": "competitor",
+        "competitors": "competitor", "invoices": "invoices",
     ]
 
     public static let kinds: [Route.Kind: String] = [
@@ -48,7 +48,7 @@ public enum PackageGate {
         .runners: "runners",
         .provision: "hosts", .network: "network", .node: "network",
         .crm: "crm", .contact: "crm", .crmOrg: "crm", .marketing: "marketing", .analytics: "analytics",
-        .competitors: "competitor", .ledger: "ledger",
+        .competitors: "competitor", .invoices: "invoices", .ledger: "ledger",
         .vault: "vault", .coves: "coves", .cove: "coves", .calories: "calories", .steps: "steps", .water: "water",
         .sleep: "sleep", .sugarBreak: "sugar-break", .stretch: "stretch", .foodGuide: "food-guide", .speech: "speech",
         .glassesAlert: "glasses-alert", .phoneSecurity: "phone-security", .eyeControl: "eye-control", .ember: "ember", .strata: "strata", .synapse: "synapse", .openWrtRouter: "openwrt", .fileExplorer: "files", .faceChanger: "face-changer", .videoMixDjStudio: "video-mix-dj-studio", .appStoreStatus: "app-store-status", .usage: "usage", .rssReader: "rss-reader", .instanceFeed: "instance-feed", .secureDrive: "secure-drive", .spiderRoom: "spider-room", .workflows: "workflows", .localAI: "on-device-ai", .activity: "activity", .logs: "logs", .diagnostics: "diagnostics", .people: "people", .docs: "docs",

@@ -28,6 +28,7 @@ struct CrmContactScreen: View {
     @State private var notice: FmNotice?
     @State private var visible = false
     @State private var tab = CrmContactTab.overview
+    @State private var invoices: ContactInvoicesState = .loading
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -63,6 +64,7 @@ struct CrmContactScreen: View {
                 switch tab {
                 case .overview:
                     detailsSection(contact)
+                    CrmContactInvoicesSection(client: client, ref: ref, contact: contact, state: $invoices)
                     if editable, let data, let flow {
                         pipelineSection(contact, data: data, flow: flow)
                         if !data.listViews.isEmpty { listsSection(contact, data: data) }
@@ -406,6 +408,7 @@ struct CrmContactScreen: View {
         } catch {
             errorText = PackagesError.describe(error)
         }
+        invoices = await CrmContactInvoicesSection.fetch(client: client, ref: ref)
     }
 
     @ViewBuilder private func detail(_ title: String, _ value: String, icon: String, url: URL? = nil) -> some View {

@@ -71,6 +71,7 @@ FIRST_PARTY_PACKAGES = {
     "glasses-alert": "Glasses Alert",
     "hosts": "Hosts & fleet",
     "inbox": "Inbox",
+    "invoices": "Invoicing",
     "issues": "Issues",
     "ledger": "Ledger",
     "marketing": "Marketing",
