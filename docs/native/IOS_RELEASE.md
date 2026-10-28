@@ -12,10 +12,15 @@ the app must follow. Building on the office Mac instead of Codemagic is in
 `CURRENT_PROJECT_VERSION` for every target (an extension or watch app whose
 version differs from the app's is rejected at upload).
 
-- `ios-native-release` builds with one past the highest build number App Store
-  Connect holds for the app, or the xcconfig's number if higher, written into
-  its clone only. `asc_bundle_ids.py latest-build` reads the highest numeric
-  `version` among the 200 most recent builds.
+- Build numbers count per version and start at 0: `ios-native-release` builds
+  with one past the highest build App Store Connect holds for the
+  `MARKETING_VERSION` it ships (after any rename to a version the store still
+  accepts), 0 when that version has none, or the xcconfig's number if higher,
+  written into its clone only. `asc_bundle_ids.py next-build VERSION` reads the
+  builds filtered by `preReleaseVersion.version`. Apple only needs a build
+  number to be unique within its version, and lookups for TestFlight and App
+  Review already filter by version and build. Since 1.5.0 (2026-10-28); before
+  that the number ran on across versions (1.4.1 ended at 21).
 - `ios-native-adhoc` also goes one past the last ad hoc build, counted on the
   build Mac in `~/ci/ios-adhoc-build` (`FORKMESH_ADHOC_BUILD_FILE`).
 - A failed upload spends its build number.

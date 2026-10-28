@@ -615,10 +615,10 @@ QList<ReleaseVersionFile> releaseVersionFiles()
            releaseVersion}}},
         {QStringLiteral("native/android/app/build.gradle.kts"),
          {{QRegularExpression(QStringLiteral(
-                                  "^(\\s*versionName = \")([0-9]+\\.[0-9]+\\.[0-9]+)\""),
+                                  "^(\\s*versionName = versionNameOverride\\.ifEmpty \\x7B \")([0-9]+\\.[0-9]+\\.[0-9]+)\""),
                               QRegularExpression::MultilineOption),
            releaseVersion},
-          {QRegularExpression(QStringLiteral("^(\\s*versionCode = )([0-9]+)"),
+          {QRegularExpression(QStringLiteral("^(\\s*versionCode = versionCodeOverride \\?: )([0-9]+)"),
                               QRegularExpression::MultilineOption),
            [](const QString &current, const QString &version) {
                const int code = releaseAndroidVersionCode(version);

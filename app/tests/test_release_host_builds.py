@@ -47,12 +47,12 @@ def _released(tag="v1.2.8", builds=None):
 
 def test_every_build_gets_a_larger_android_version_code():
     codes = [tool.android_version_code(tag, build)
-             for tag, build in (("v1.2.8", 1), ("v1.2.8", 2), ("v1.2.8", 99), ("v1.2.9", 1),
-                                ("v1.3.0", 1), ("v2.0.0", 1))]
+             for tag, build in (("v1.2.8", 0), ("v1.2.8", 1), ("v1.2.8", 99), ("v1.2.9", 0),
+                                ("v1.3.0", 0), ("v1.5.0", 0), ("v2.0.0", 0))]
     assert codes == sorted(codes) and len(set(codes)) == len(codes)
-    assert tool.android_version_code("v1.2.9") == 1020901
+    assert tool.android_version_code("v1.5.0") == 1050000
     assert tool.android_version_code("v1.2.9") > 10208
-    for build in (0, 100):
+    for build in (-1, 100):
         with pytest.raises(tool.CompletionError):
             tool.android_version_code("v1.2.9", build)
 
@@ -60,19 +60,19 @@ def test_every_build_gets_a_larger_android_version_code():
 def test_build_numbers_file_round_trips_and_ignores_garbage():
     text = tool.render_builds("v1.2.8", {"android": 3, "linux": 2})
     assert json.loads(text) == {"tag": "v1.2.8", "builds": {
-        "android": 3, "linux": 2, "macos": 1, "windows": 1}}
+        "android": 3, "linux": 2, "macos": 0, "windows": 0}}
     assert tool.parse_builds(text)["builds"]["android"] == 3
-    junk = tool.parse_builds('{"tag": "latest", "builds": {"android": true, "linux": 0, '
+    junk = tool.parse_builds('{"tag": "latest", "builds": {"android": true, "linux": -1, '
                              '"macos": "4", "windows": 100}}')
-    assert junk == {"tag": "", "builds": {p: 1 for p in tool.PLATFORM_ASSETS}}
+    assert junk == {"tag": "", "builds": {p: 0 for p in tool.PLATFORM_ASSETS}}
     assert tool.parse_builds("not json")["tag"] == ""
-    assert tool.recorded_builds(text, "v1.2.9") == {p: 1 for p in tool.PLATFORM_ASSETS}
+    assert tool.recorded_builds(text, "v1.2.9") == {p: 0 for p in tool.PLATFORM_ASSETS}
 
 
-def test_the_first_rebuild_of_a_release_is_build_two_from_main():
+def test_the_first_rebuild_of_a_release_is_build_one_from_main():
     plan = tool.plan_deploy(_released(), "android", "", MAIN)
     assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
-        "v1.2.8", 2, MAIN, True)
+        "v1.2.8", 1, MAIN, True)
     assert plan["channel"] == "candidate-1.2.8"
 
 
@@ -82,7 +82,7 @@ def test_the_next_build_follows_the_file_and_the_signed_manifest():
     manifests = _released(builds={APK: 6})
     assert tool.plan_deploy(manifests, "android", builds, MAIN)["build"] == 7
     stale = tool.render_builds("v1.2.7", {"android": 9})
-    assert tool.plan_deploy(_released(), "android", stale, MAIN)["build"] == 2
+    assert tool.plan_deploy(_released(), "android", stale, MAIN)["build"] == 1
 
 
 def test_a_reset_never_reuses_a_published_build_number():
@@ -96,12 +96,12 @@ def test_a_new_version_builds_each_platform_once_at_its_build_commit():
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR,))
     plan = tool.plan_deploy(manifests, "linux", "", MAIN)
     assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
-        "v1.2.9", 1, COMMIT, False)
+        "v1.2.9", 0, COMMIT, False)
     assert tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True)["skip"] is False
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
     skipped = tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True)
-    assert skipped["skip"] is True and skipped["build"] == 1
-    assert tool.plan_deploy(manifests, "linux", "", MAIN)["build"] == 2
+    assert skipped["skip"] is True and skipped["build"] == 0
+    assert tool.plan_deploy(manifests, "linux", "", MAIN)["build"] == 1
 
 
 def test_the_target_is_the_newest_candidate_not_older_than_latest():
@@ -164,15 +164,15 @@ def _fake_host(monkeypatch, tmp_path, manifests, built):
     return calls
 
 
-def test_an_android_rebuild_publishes_build_two_and_promotes(tmp_path, monkeypatch):
+def test_an_android_rebuild_publishes_build_one_and_promotes(tmp_path, monkeypatch):
     calls = _fake_host(monkeypatch, tmp_path, _released(), None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android")) == 0
-    assert calls["apk"] == ("v1.2.8", MAIN, 1020802)
+    assert calls["apk"] == ("v1.2.8", MAIN, 1020801)
     assert calls["promote"] is True
-    assert calls["publish_args"] == ("--build", "2", "--asset-commit", MAIN)
-    assert json.loads(calls["extra_files"][tool.BUILDS_FILE])["builds"]["android"] == 2
+    assert calls["publish_args"] == ("--build", "1", "--asset-commit", MAIN)
+    assert json.loads(calls["extra_files"][tool.BUILDS_FILE])["builds"]["android"] == 1
     assert calls["built_at"] == MAIN
-    assert "Android v1.2.8 build 2" in calls["landed"]
+    assert "Android v1.2.8 build 1" in calls["landed"]
     assert calls["moved"][1:] == ("v1.2.8", "b" * 40)
 
 
@@ -181,7 +181,7 @@ def test_a_first_build_of_a_new_version_waits_for_the_others(tmp_path, monkeypat
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
     calls = _fake_host(monkeypatch, tmp_path, manifests, None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android", "--first-build")) == 0
-    assert calls["apk"] == ("v1.2.9", COMMIT, 1020901)
+    assert calls["apk"] == ("v1.2.9", COMMIT, 1020900)
     assert calls["promote"] is False
     assert calls["publish_args"] == ()
     assert "moved" not in calls
@@ -191,7 +191,7 @@ def test_a_dry_run_only_plans(tmp_path, monkeypatch, capsys):
     calls = _fake_host(monkeypatch, tmp_path, _released(), None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android", "--dry-run")) == 0
     assert "apk" not in calls and "promote" not in calls
-    assert "Android v1.2.8 build 2" in capsys.readouterr().out
+    assert "Android v1.2.8 build 1" in capsys.readouterr().out
 
 
 def test_check_build_waits_for_the_homepage(monkeypatch):
