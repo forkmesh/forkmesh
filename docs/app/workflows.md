@@ -85,7 +85,7 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 | --- | --- |
 | `GET /api/workflows/catalog` | Core nodes, integrations, operators, and `requests`: each integration's base URL, credential placement, headers and per-operation path, query and body templates (public) |
 | `GET /api/workflows/desktop-script` | Source of `tools/free_disk_space.py` with each function's line range and the functions each desktop step runs (public); `script_unavailable` (404) when the server has no copy |
-| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}` |
+| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}`; a listed workflow with desktop steps carries `runsOn: "desktop"`, so the phones can offer Run on your desktop on its row without opening it |
 | `GET`/`POST /api/workflows/<id>` | Read / replace (`rotateHook: true` issues a new webhook token) |
 | `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data); `runs_on_desktop` (409) for a workflow with desktop steps |
 | `POST /api/workflows/<id>/record` | Store a run the browser drove on the desktop: `{startedAt, finishedAt, nodes, output: {freedBytes, freeBytes, totalBytes}}` |
