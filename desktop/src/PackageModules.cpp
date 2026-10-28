@@ -2,6 +2,7 @@
 
 #include "DesktopPackageExtension.h"
 #include "NativePackageExtension.h"
+#include "WebEngine.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -149,6 +150,16 @@ void install()
     setDesktopPackageExtensionModules(
         [](const QString &entrypoint) { return providesEntrypoint(entrypoint); },
         [](const QString &entrypoint) { return loadForEntrypoint(entrypoint); });
+    web::setEngineModule(
+        [] {
+            QMutexLocker locker(&lock());
+            for (const Module &module : std::as_const(registry())) {
+                if (module.entrypoints.contains(web::kModuleEntrypoint))
+                    return module.error.isEmpty();
+            }
+            return false;
+        },
+        [] { return loadForEntrypoint(web::kModuleEntrypoint); });
 }
 
 bool providesEntrypoint(const QString &entrypoint)

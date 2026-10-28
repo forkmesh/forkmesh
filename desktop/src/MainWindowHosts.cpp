@@ -3655,6 +3655,13 @@ void MainWindow::forwardHostLogLine(const QString &node, int source,
                   QStringLiteral("MIRROR"));
 }
 
+void MainWindow::stopHostLogFeeds()
+{
+    for (const QSharedPointer<HostLogFeed> &feed : std::as_const(m_hostLogFeeds))
+        feed->stop();
+    m_hostLogFeeds.clear();
+}
+
 void MainWindow::syncHostLogFeeds()
 {
 #ifdef FORKMESH_WINDOW_TESTS

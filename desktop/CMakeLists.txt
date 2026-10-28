@@ -373,6 +373,14 @@ function(forkmesh_link_webengine target)
     endif()
 endfunction()
 
+function(forkmesh_embed_web_engine target)
+    if(TARGET Qt6::WebEngineWidgets)
+        forkmesh_link_webengine(${target})
+        target_sources(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/WebEngineQt.cpp)
+        target_compile_definitions(${target} PRIVATE FORKMESH_WEB_ENGINE_BUILT)
+    endif()
+endfunction()
+
 # Applied to every target that compiles the MainWindow sources.
 function(forkmesh_link_multimedia target)
     if(TARGET Qt6::MultimediaWidgets)
@@ -547,6 +555,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowPackageExtensions.cpp
     src/MainWindowLedger.cpp
     src/MainWindowPackageChrome.cpp
+    src/MainWindowCorePackageServices.cpp
     src/MainWindowMcp.cpp
     src/MainWindowLocalControl.cpp
     src/MainWindowLocalControlHosts.cpp
@@ -647,13 +656,17 @@ option(FORKMESH_BROWSER_PANE "Embed the ungoogled Qt WebEngine browser in the wo
 add_library(forkmesh-browser-pane STATIC
     src/WorkspaceBrowserPane.cpp
     src/BrowserPrivacy.h
-    src/BrowserPrivacy.cpp)
+    src/BrowserPrivacy.cpp
+    src/WebEngine.h
+    src/WebEngine.cpp)
 target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::Widgets)
 set_target_properties(forkmesh-browser-pane PROPERTIES AUTOMOC OFF)
+if(TARGET Qt6::WebEngineWidgets)
+    target_compile_definitions(forkmesh-browser-pane PRIVATE FORKMESH_WEB_ENGINE_BUILT)
+endif()
 if(FORKMESH_BROWSER_PANE)
     if(TARGET Qt6::WebEngineWidgets)
-        target_link_libraries(forkmesh-browser-pane PRIVATE Qt6::WebEngineWidgets)
-        target_compile_definitions(forkmesh-browser-pane PRIVATE FORKMESH_HAVE_WEBENGINE)
+        target_compile_definitions(forkmesh-browser-pane PRIVATE FORKMESH_BROWSER_PANE_EMBEDS)
         message(STATUS "Browser pane: the Browser tab embeds ungoogled Qt WebEngine")
     else()
         message(STATUS "Browser pane: Qt WebEngine Widgets not found; the Browser tab opens pages in the system browser")
@@ -1210,6 +1223,8 @@ set(FORKMESH_APP_SOURCES
     src/AppPaths.cpp
     src/ProjectRegistry.h
     src/ProjectRegistry.cpp
+    src/CorePackageServices.h
+    src/CorePackageServices.cpp
     src/ProjectInvite.h
     src/ProjectInvite.cpp
     src/ProjectAgentAccess.h
@@ -1514,7 +1529,6 @@ target_include_directories(forkmesh PRIVATE
 target_link_libraries(forkmesh PRIVATE Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)
 forkmesh_link_webp(forkmesh)
 forkmesh_link_multimedia(forkmesh)
-forkmesh_link_webengine(forkmesh)
 forkmesh_link_opengl(forkmesh)
 forkmesh_link_http3(forkmesh)
 forkmesh_link_power_source(forkmesh)
@@ -1553,6 +1567,7 @@ if(UNIX AND NOT APPLE)
     target_compile_options(forkmesh PRIVATE -fno-omit-frame-pointer)
 endif()
 forkmesh_add_package_modules()
+forkmesh_add_web_engine_module()
 
 # The file/folder tree icons under icons/ are loaded at runtime through
 # MainWindow::iconsDir() (MainWindowRepoDetail.cpp), which falls back to a
@@ -2615,6 +2630,19 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-core-package-services-tests
+        tests/test_core_package_services.cpp
+        src/CorePackageServices.h
+        src/CorePackageServices.cpp
+    )
+    target_include_directories(forkmesh-core-package-services-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-core-package-services-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-core-package-services-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-settings-write-tests
         tests/test_settings_write.cpp
         src/SettingsWrite.h
@@ -3086,11 +3114,33 @@ if(FORKMESH_BUILD_TESTS)
     )
     target_include_directories(forkmesh-agent-windows-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(forkmesh-agent-windows-tests PRIVATE Qt6::Widgets Qt6::Network)
-    forkmesh_link_webengine(forkmesh-agent-windows-tests)
+    target_link_libraries(forkmesh-agent-windows-tests PRIVATE forkmesh-browser-pane Qt6::Widgets Qt6::Network)
+    forkmesh_embed_web_engine(forkmesh-agent-windows-tests)
     if(APPLE)
         set_target_properties(forkmesh-agent-windows-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
+    endif()
+
+    if(FORKMESH_PACKAGE_MODULES AND TARGET forkmesh-web-engine)
+        qt_add_executable(forkmesh-web-engine-module-tests
+            tests/test_web_engine_module.cpp
+            src/PackageModules.h
+            src/PackageModules.cpp
+            src/NativePackageExtension.h
+            src/NativePackageExtension.cpp
+            src/DesktopPackageExtension.h
+            src/DesktopPackageExtension.cpp
+        )
+        target_include_directories(forkmesh-web-engine-module-tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_link_libraries(forkmesh-web-engine-module-tests PRIVATE
+            forkmesh-browser-pane Qt6::Widgets)
+        set_target_properties(forkmesh-web-engine-module-tests PROPERTIES ENABLE_EXPORTS ON)
+        add_dependencies(forkmesh-web-engine-module-tests forkmesh-web-engine)
+        add_test(NAME forkmesh-web-engine-module-tests
+            COMMAND forkmesh-web-engine-module-tests)
+        set_tests_properties(forkmesh-web-engine-module-tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 
     qt_add_executable(forkmesh-agent-hub-tests
@@ -3291,7 +3341,7 @@ if(FORKMESH_BUILD_TESTS)
         ${FORKMESH_MARKETPLACE_INCLUDE_DIRS})
     forkmesh_link_webp(forkmesh-window-tests)
     forkmesh_link_multimedia(forkmesh-window-tests)
-    forkmesh_link_webengine(forkmesh-window-tests)
+    forkmesh_embed_web_engine(forkmesh-window-tests)
 forkmesh_link_opengl(forkmesh-window-tests)
     forkmesh_link_http3(forkmesh-window-tests)
     forkmesh_link_power_source(forkmesh-window-tests)
@@ -4134,7 +4184,7 @@ forkmesh_link_opengl(forkmesh-window-tests)
         ${FORKMESH_MARKETPLACE_INCLUDE_DIRS})
     forkmesh_link_webp(forkmesh-perf-tests)
     forkmesh_link_multimedia(forkmesh-perf-tests)
-    forkmesh_link_webengine(forkmesh-perf-tests)
+    forkmesh_embed_web_engine(forkmesh-perf-tests)
 forkmesh_link_opengl(forkmesh-perf-tests)
     forkmesh_link_http3(forkmesh-perf-tests)
     forkmesh_link_power_source(forkmesh-perf-tests)
@@ -4206,6 +4256,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-list-view-mode-tests
         forkmesh-system-open-folder-tests
         forkmesh-agent-ticker-tests
+        forkmesh-core-package-services-tests
         forkmesh-settings-write-tests
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
@@ -4606,6 +4657,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-system-open-folder-tests)
     add_test(NAME forkmesh-agent-ticker-tests
              COMMAND forkmesh-agent-ticker-tests)
+    add_test(NAME forkmesh-core-package-services-tests
+             COMMAND forkmesh-core-package-services-tests)
     add_test(NAME forkmesh-settings-write-tests
              COMMAND forkmesh-settings-write-tests)
     add_test(NAME forkmesh-note-request-proof-tests
@@ -4795,6 +4848,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-list-view-mode-tests
         forkmesh-system-open-folder-tests
         forkmesh-agent-ticker-tests
+        forkmesh-core-package-services-tests
         forkmesh-settings-write-tests
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
