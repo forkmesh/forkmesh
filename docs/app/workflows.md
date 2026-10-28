@@ -556,6 +556,12 @@ page opening.
 - **What it does not cover.** Runs started by hand (play buttons, pins, the
   page) are the user's own click and are not asked. Mentions in chat are not
   covered either.
+- **Runs from the phone.** `workflows.run` from a paired phone runs a
+  repository workflow only once its file is approved on this desktop, and
+  answers `approval_required` otherwise (the phone shows the desktop's
+  message). The phone sees a name, not the file's steps, so its confirmation
+  is not a review of the code. Account workflows are not repository files and
+  are not asked.
 - **This repository's special agents.** Their schedules are off in their
   files (only `ux.json` is on), so nothing stops silently. A schedule a user
   turns on outside the editor shows the notice once.
