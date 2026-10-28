@@ -230,4 +230,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S154 | 2026-10-28 | Packages | feature | Poker: play no-limit Texas Hold'em with other ForkMesh users for virtual chips at a full-screen casino table with a dealer, bots, chat and sounds. | ab5642740e | synced | ab5642740e |
 | S155 | 2026-10-28 | Stats | fix | The Stats release tiles show a rebuilt download's number from build 1, since every version now starts at build 0. | f283b206c8 | pending |  |
 | S156 | 2026-10-28 | Workflows | feature | Free disk space has a play button in the Workflows list that runs it on your desktop. | a0ad9632e2 | synced | a0ad9632e2 |
+| S157 | 2026-10-28 | Pings | ui | A ping's detail page has a back link at the top that returns you to your list of pings. | 7d50b7e2c7 | pending |  |
 <!-- ledger:end -->
