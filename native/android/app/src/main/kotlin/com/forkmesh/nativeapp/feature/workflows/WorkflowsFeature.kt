@@ -3,14 +3,20 @@ package com.forkmesh.nativeapp.feature.workflows
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.control.DesktopControlHub
+import com.forkmesh.nativeapp.control.HubControlCalling
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.navigation.Route
+import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.security.MemorySecretStore
 import com.forkmesh.nativeapp.security.SecretStore
 import com.forkmesh.nativeapp.workflows.HttpWorkflowTransport
 import com.forkmesh.nativeapp.workflows.WorkflowCatalog
+import com.forkmesh.nativeapp.workflows.DesktopWorkflowsStore
 import com.forkmesh.nativeapp.workflows.WorkflowCredential
+import com.forkmesh.nativeapp.workflows.WorkflowDesktopRunner
 import com.forkmesh.nativeapp.workflows.WorkflowDraft
 import com.forkmesh.nativeapp.workflows.WorkflowEngine
 import com.forkmesh.nativeapp.workflows.WorkflowPhoneCredentials
@@ -18,12 +24,44 @@ import com.forkmesh.nativeapp.workflows.WorkflowPhoneRunner
 import com.forkmesh.nativeapp.workflows.WorkflowRun
 import com.forkmesh.nativeapp.workflows.WorkflowTargets
 import com.forkmesh.nativeapp.workflows.WorkflowsApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 object WorkflowsFeature {
     private const val OWNER = "existing"
 
     fun install() {
         NavigationFeature.register(Route.Kind.Workflows, OWNER) { WorkflowsScreen() }
+    }
+}
+
+object WorkflowsDesktop {
+    private val lock = Any()
+
+    private class Runtime(val hub: DesktopControlHub) {
+        val store = DesktopWorkflowsStore(HubControlCalling(hub)) { block -> ProjectLifecycle.scope.launch(Dispatchers.IO) { block() } }
+    }
+
+    @Volatile
+    private var runtime: Runtime? = null
+
+    val hub: DesktopControlHub? get() = runCatching { AgentsFeature.hub }.getOrNull()
+
+    val store: DesktopWorkflowsStore?
+        get() = synchronized(lock) {
+            val hub = hub ?: return null
+            val existing = runtime
+            if (existing != null && existing.hub === hub) return existing.store
+            existing?.store?.stop()
+            if (existing == null) ProjectLifecycle.onClose { reset() }
+            Runtime(hub).also { runtime = it }.store
+        }
+
+    fun reset() {
+        synchronized(lock) {
+            runtime?.store?.stop()
+            runtime = null
+        }
     }
 }
 
@@ -34,6 +72,21 @@ class WorkflowsSession(val api: WorkflowsApi, secrets: SecretStore) {
     val credentials = mutableStateOf<List<WorkflowCredential>>(emptyList())
     val phoneRuns = mutableStateMapOf<String, List<WorkflowRun>>()
     val phoneIds = mutableStateOf<Set<String>>(emptySet())
+    val desktopRunning = mutableStateOf("")
+    val desktopLive = mutableStateOf<Map<String, String>>(emptyMap())
+
+    val canRunOnDesktop: Boolean get() = WorkflowsDesktop.hub != null
+
+    fun runOnDesktop(draft: WorkflowDraft): WorkflowRun {
+        desktopRunning.value = draft.id
+        desktopLive.value = emptyMap()
+        try {
+            return WorkflowDesktopRunner(WorkflowsDesktop.hub?.let { HubControlCalling(it) }, api).run(draft) { desktopLive.value = it }
+        } finally {
+            desktopRunning.value = ""
+            desktopLive.value = emptyMap()
+        }
+    }
 
     fun loadCatalog() {
         if (catalog.value.core.isNotEmpty()) return
