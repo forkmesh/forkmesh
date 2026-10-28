@@ -1,0 +1,30 @@
+{
+  "name": "invoices",
+  "version": "1.0.0",
+  "description": "Organization invoicing linked to the CRM, with emailed invoices and open, view and payment tracking.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["invoices", "invoicing", "billing", "payments", "crm"],
+  "interface": {
+    "displayName": "Invoicing",
+    "shortDescription": "Invoice CRM contacts and track payment.",
+    "longDescription": "Create invoices for CRM contacts, email them with a private view-and-pay link, see when each one is opened, viewed and paid, and keep outstanding and overdue totals in view.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Which invoices are overdue?",
+      "Who has opened their invoice but not paid?",
+      "How much is outstanding this month?"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

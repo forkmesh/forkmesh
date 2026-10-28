@@ -1,0 +1,114 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "invoices",
+  "name": "Invoicing",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "Create invoices for CRM contacts, email them with a view-and-pay link, see when each one is opened, viewed and paid, and track what is outstanding.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Invoicing dashboard with outstanding, overdue and paid totals, open rate, and invoice rows showing opened and viewed counts"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:invoices",
+    "worker": "content/worker/invoices.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "www-page": "content/www/invoice.html",
+    "www-script": "content/www/invoice.js",
+    "www-style": "content/www/invoice.css",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/invoices",
+        "title": "Invoices",
+        "description": "Organization invoices linked to CRM contacts, with email delivery and open, view and payment tracking.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Invoices", "icon": "receipt", "order": 43 }
+      }
+    },
+    {
+      "id": "public-invoice",
+      "socket": "www.page",
+      "entrypoint": "www-page",
+      "config": {
+        "route": "/invoice",
+        "title": "Invoice",
+        "assets": ["www-script", "www-style"]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "organization.invoices.read",
+      "label": "Read encrypted invoices, payments and their open and view history for your organizations",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.invoices.write",
+      "label": "Create, edit, mark paid, void and delete shared organization invoices",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.crm.read",
+      "label": "Read CRM contact names, emails and companies to bill a contact and show their invoices on the contact card",
+      "risk": "sensitive"
+    },
+    {
+      "id": "email.send",
+      "label": "Email an invoice to its client only after you press Send",
+      "risk": "high"
+    },
+    {
+      "id": "email.open.track",
+      "label": "Record when a sent invoice email is opened, its page viewed or its pay link clicked, with the reader's mail client",
+      "risk": "sensitive"
+    },
+    {
+      "id": "invoice.public.link",
+      "label": "Let anyone with an invoice's private link read that invoice",
+      "risk": "sensitive"
+    },
+    {
+      "id": "notifications.plugin.send",
+      "label": "Ping the sender when an invoice is opened, viewed, clicked or becomes overdue",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add an Invoices button to the desktop rail that opens the web page",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": { "bundled": true, "default": false },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "organization" },
+  "worker": { "module": "invoices", "api": "/api/invoices" }
+}
