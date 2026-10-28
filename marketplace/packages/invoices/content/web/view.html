@@ -1,0 +1,143 @@
+          <section data-view="invoices" class="view active h-full overflow-y-auto">
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Invoices</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Bill CRM contacts, email invoices, and see when they are opened, viewed and paid.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select data-invoice-organization aria-label="Organization" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"></select>
+                  <button data-invoice-settings-open data-invoice-requires-install type="button" class="fm-btn hidden"><i data-lucide="settings"></i>Settings</button>
+                  <button data-invoice-manage data-invoice-requires-install type="button" class="fm-btn hidden"><i data-lucide="database"></i>Plugin data</button>
+                  <button data-invoice-new data-invoice-requires-install type="button" class="fm-btn fm-btn-cta hidden"><i data-lucide="plus"></i>New invoice</button>
+                </div>
+              </div>
+              <div data-invoice-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
+              <div data-invoice-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-invoice-message-text class="fm-flash-body"></p></div>
+
+              <section data-invoice-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="receipt"></i>
+                <h2 class="fm-blankslate-title">Invoicing is not installed for <span data-invoice-install-org class="font-mono"></span></h2>
+                <p class="fm-blankslate-desc">Install encrypted, organization-private invoices linked to your CRM contacts.</p>
+                <button data-invoice-install type="button" class="fm-btn fm-btn-sm mt-3 hidden">Install for this organization</button>
+                <p data-invoice-install-denied class="fm-blankslate-desc mt-3 hidden">Ask an organization owner or admin to install Invoicing.</p>
+              </section>
+
+              <div data-invoice-app class="hidden">
+                <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-5">
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Outstanding</p><p data-invoice-stat-outstanding class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-outstanding-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Overdue</p><p data-invoice-stat-overdue class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-overdue-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Paid, last 30 days</p><p data-invoice-stat-paid class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-paid-count class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Opened</p><p data-invoice-stat-opened class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-opened-detail class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3 col-span-2 sm:col-span-1"><p class="text-xs font-medium text-muted-foreground">Average time to pay</p><p data-invoice-stat-days class="mt-1 truncate text-lg font-semibold text-foreground">—</p><p data-invoice-stat-days-detail class="text-xs text-muted-foreground"></p></div>
+                </div>
+
+                <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                  <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+                    <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
+                      <div class="relative min-w-0 flex-1"><i data-lucide="search" class="pointer-events-none absolute h-4 w-4 text-muted-foreground" style="left:.7rem;top:.5rem"></i><input data-invoice-search type="search" aria-label="Search invoices" placeholder="Search number, client, company or email" class="h-control w-full rounded-md border border-border bg-background text-control text-foreground" style="padding-left:2.25rem;padding-right:.75rem" /></div>
+                      <select data-invoice-status-filter aria-label="Status" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"><option value="">All invoices</option><option value="open">Unpaid</option><option value="overdue">Overdue</option><option value="draft">Drafts</option><option value="paid">Paid</option><option value="void">Void</option></select>
+                    </div>
+                    <ul data-invoice-cards class="divide-y divide-border sm:hidden"></ul>
+                    <div class="hidden overflow-x-auto sm:block"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Invoice</th><th class="px-4 py-2 font-semibold">Status</th><th class="px-4 py-2 text-right font-semibold">Amount</th><th class="px-4 py-2 font-semibold">Due</th><th class="px-4 py-2 font-semibold">Engagement</th></tr></thead><tbody data-invoice-list class="divide-y divide-border"></tbody></table></div>
+                    <div data-invoice-empty class="fm-blankslate hidden"><i data-lucide="receipt"></i><p class="fm-blankslate-title">No invoices in this view.</p><p class="fm-blankslate-desc">Change the search or filter, or create an invoice.</p></div>
+                  </section>
+                  <section class="min-w-0 rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-3 text-sm font-semibold text-foreground">Recent activity</h2>
+                    <ul data-invoice-activity class="divide-y divide-border"></ul>
+                    <p data-invoice-activity-empty class="hidden px-4 py-3 text-xs text-muted-foreground">Opens, views, pay clicks and payments appear here once you send an invoice.</p>
+                  </section>
+                </div>
+              </div>
+            </div>
+
+            <dialog data-invoice-editor class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-invoice-form class="fm-dialog">
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-invoice-editor-title class="text-sm font-semibold">New invoice</h2><p class="text-xs font-normal text-muted-foreground">Shared only with members of this organization.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <input data-invoice-id type="hidden" />
+                <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
+                  <label data-invoice-contact-field class="hidden gap-1 text-xs text-muted-foreground sm:col-span-2">CRM contact<select data-invoice-contact class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground"><option value="">Not linked to a CRM contact</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Client name<input data-invoice-client-name maxlength="160" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Client email<input data-invoice-client-email type="email" maxlength="254" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Company<input data-invoice-client-company maxlength="160" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Invoice number<input data-invoice-number maxlength="40" placeholder="Assigned on save" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Billing address<textarea data-invoice-client-address maxlength="1000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Issued<input data-invoice-issued type="date" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Due<input data-invoice-due type="date" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <div class="grid gap-2 sm:col-span-2">
+                    <div class="flex items-center justify-between"><p class="text-xs font-semibold text-foreground">Line items</p><button data-invoice-line-add type="button" class="fm-btn fm-btn-sm"><i data-lucide="plus"></i>Add line</button></div>
+                    <div data-invoice-lines class="divide-y divide-border rounded-md border border-border px-2"></div>
+                  </div>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Currency<input data-invoice-currency maxlength="3" placeholder="USD" class="h-control rounded-md border border-border bg-background px-3 text-control uppercase text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Tax rate (%)<input data-invoice-tax type="number" min="0" max="1000" step="0.01" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <div class="grid gap-1 text-right text-xs text-muted-foreground sm:col-span-2"><p>Subtotal <span data-invoice-subtotal class="ml-2 text-foreground">—</span></p><p>Tax <span data-invoice-taxtotal class="ml-2 text-foreground">—</span></p><p class="text-sm font-semibold text-foreground">Total <span data-invoice-total class="ml-2">—</span></p></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Pay link (https)<input data-invoice-payment-url type="url" maxlength="1000" placeholder="https://… (Stripe, PayPal or bank payment page)" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Notes to the client<textarea data-invoice-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Terms<textarea data-invoice-terms maxlength="4000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                </div>
+                <div class="fm-dialog-footer"><button data-invoice-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto hidden">Delete</button><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm">Save invoice</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-invoice-detail class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><div data-invoice-detail-head class="fm-dialog-title min-w-0"></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div data-invoice-detail-body class="fm-dialog-body"></div>
+                <div data-invoice-detail-actions class="fm-dialog-footer flex-wrap"></div>
+              </div>
+            </dialog>
+
+            <dialog data-invoice-send-dialog class="w-full max-w-xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-invoice-send-form class="fm-dialog">
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-invoice-send-title class="text-sm font-semibold">Email invoice</h2><p class="text-xs font-normal text-muted-foreground">The email carries a private link to the invoice. You are pinged when it is opened, viewed or its pay link is clicked.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body grid gap-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">To<input data-invoice-send-to type="email" required maxlength="254" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Subject<input data-invoice-send-subject maxlength="300" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Message<textarea data-invoice-send-message maxlength="20000" rows="7" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                </div>
+                <div class="fm-dialog-footer"><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button data-invoice-send-submit type="submit" class="fm-btn fm-btn-sm"><i data-lucide="send"></i>Send</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-invoice-paid-dialog class="w-full max-w-md bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-invoice-paid-form class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Record a payment</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body grid gap-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Amount<input data-invoice-paid-amount type="number" min="0.01" step="0.01" required class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Paid on<input data-invoice-paid-date type="date" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Method<input data-invoice-paid-method maxlength="60" placeholder="Bank transfer, card, cash…" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Note<input data-invoice-paid-note maxlength="500" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                </div>
+                <div class="fm-dialog-footer"><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm">Record payment</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-invoice-settings-dialog class="w-full max-w-2xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-invoice-settings-form class="fm-dialog">
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 class="text-sm font-semibold">Invoicing settings</h2><p data-invoice-settings-hint class="text-xs font-normal text-muted-foreground">Shown on every invoice and invoice email.</p></div><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Business name<input data-invoice-setting="businessName" maxlength="160" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Default currency<input data-invoice-setting="currency" maxlength="3" class="h-control rounded-md border border-border bg-background px-3 text-control uppercase text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Business address<textarea data-invoice-setting="businessAddress" maxlength="1000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">From name<input data-invoice-setting="fromName" maxlength="120" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">From email<input data-invoice-setting="fromEmail" type="email" maxlength="254" placeholder="Uses the CRM sender when empty" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Number prefix<input data-invoice-setting="prefix" maxlength="20" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Next number<input data-invoice-setting="nextNumber" type="number" min="1" step="1" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Days until due<input data-invoice-setting="dueDays" type="number" min="0" max="365" step="1" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Default tax rate (%)<input data-invoice-setting="taxRate" type="number" min="0" max="1000" step="0.01" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Default pay link (https)<input data-invoice-setting="paymentUrl" type="url" maxlength="1000" class="h-control rounded-md border border-border bg-background px-3 text-control text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Payment instructions<textarea data-invoice-setting="paymentInstructions" maxlength="4000" rows="3" placeholder="Bank details or how to pay" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Footer<textarea data-invoice-setting="footer" maxlength="1000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-control text-foreground"></textarea></label>
+                </div>
+                <div class="fm-dialog-footer"><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button data-invoice-settings-save type="submit" class="fm-btn fm-btn-sm">Save settings</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-invoice-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Invoicing data</h2><button data-invoice-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export every invoice with its payments and history, or uninstall the plugin and remove its stored data. Invoice links already emailed stop working once it is uninstalled.</p></div>
+                <div class="fm-dialog-footer"><button data-invoice-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-invoice-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-invoice-export type="button" class="fm-btn fm-btn-sm">Export JSON</button></div>
+              </div>
+            </dialog>
+          </section>

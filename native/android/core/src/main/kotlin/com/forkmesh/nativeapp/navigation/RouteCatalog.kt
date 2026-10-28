@@ -138,6 +138,7 @@ object RouteCatalog {
         Route.Kind.Marketing -> "Marketing"
         Route.Kind.Analytics -> "Analytics"
         Route.Kind.Competitors -> "Competitors"
+        Route.Kind.Invoices -> "Invoices"
         Route.Kind.Ads -> "Ads"
         Route.Kind.Ledger -> "Ledger & tips"
         Route.Kind.Vault -> "Vault"
@@ -223,6 +224,7 @@ object RouteCatalog {
         Route.Kind.Marketing -> "campaign"
         Route.Kind.Analytics -> "show_chart"
         Route.Kind.Competitors -> "travel_explore"
+        Route.Kind.Invoices -> "receipt_long"
         Route.Kind.Ads -> "ads_click"
         Route.Kind.Ledger -> "account_balance_wallet"
         Route.Kind.Vault -> "key"
@@ -340,6 +342,7 @@ object HubCatalog {
         HubItem.destination(Route.Marketing(null), needsRegistration = true, guestAction = "plan marketing"),
         HubItem.destination(Route.Analytics(null), needsRegistration = true, guestAction = "see product analytics"),
         HubItem.destination(Route.Competitors, needsRegistration = true, guestAction = "keep a competitor watchlist"),
+        HubItem.destination(Route.Invoices(null, null), needsRegistration = true, guestAction = "send invoices"),
         HubItem.destination(Route.Ads, needsRegistration = true, guestAction = "manage your ads"),
         HubItem.destination(Route.Ledger(null), needsRegistration = true),
     )
