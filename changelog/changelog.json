@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-29", "area": "Agents", "text": "On iPhone and Android, an agent's question now shows at the bottom of its transcript with tap-to-pick answers, and typing in the follow-up box answers it."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Restart computer from your phone now works when another user is on the screen or nobody is logged in, once you turn on Settings, General, Let my phones restart this computer; until then the phone says which setting to turn on."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Restarting the desktop no longer pings you again for every pull request still waiting for check approval."},
   {"date": "2026-10-28", "area": "Server", "text": "When two of the three servers are down, ForkMesh stays up read-only: pages, repositories, clones and downloads keep working, and saving changes shows a clear read-only message until the servers recover."},

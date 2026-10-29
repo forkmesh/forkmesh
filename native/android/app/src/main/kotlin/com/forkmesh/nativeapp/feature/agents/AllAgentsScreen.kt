@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.control.AgentControlCenter
+import com.forkmesh.nativeapp.control.AgentQuestion
 import com.forkmesh.nativeapp.control.AgentTranscriptDelta
 import com.forkmesh.nativeapp.control.DesktopTranscriptStream
 import com.forkmesh.nativeapp.control.RunnerDesktopHandoff
@@ -268,6 +269,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
     private var message by mutableStateOf("")
     private var photos by mutableStateOf<List<PromptAttachment>>(emptyList())
     private var attachments by mutableStateOf<List<AgentAttachmentRef>>(emptyList())
+    private var questions by mutableStateOf<List<AgentQuestion>>(emptyList())
     private var busy by mutableStateOf(false)
     private var showMerge by mutableStateOf(false)
     private var showDelete by mutableStateOf(false)
@@ -332,6 +334,9 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 stream?.let { opened -> withContext(NonCancellable + Dispatchers.IO) { opened.stop() } }
             }
         }
+        LaunchedEffect(row.id, text.length) {
+            questions = withContext(Dispatchers.IO) { runCatching { center.questions(row) }.getOrDefault(emptyList()) }
+        }
         fun act(done: String, target: FmStatus = status, onFailure: () -> Unit = {}, notice: () -> String = { "" }, block: () -> Unit) {
             busy = true
             status.clear()
@@ -348,6 +353,14 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 } finally {
                     busy = false
                 }
+            }
+        }
+        fun answerQuestion(question: AgentQuestion, answer: String, onFailure: () -> Unit = {}) {
+            act("Answer sent.", sendStatus, onFailure = onFailure) {
+                center.answer(row, question, answer)
+                questions = runCatching { center.questions(row) }.getOrDefault(emptyList())
+                val live = liveStream
+                if (live != null) live.refollow() else scope.launch { pulls++ }
             }
         }
         fun moveToDesktop() {
@@ -588,7 +601,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
-                    TranscriptFollowBox(list, tail = text.length to blocks.size, modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-run-transcript") {
+                    TranscriptFollowBox(list, tail = Triple(text.length, blocks.size, questions.size), modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-run-transcript") {
                         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(horizontal = FmSpace.x3, vertical = FmSpace.x2)) {
                             if (blocks.isEmpty()) {
                                 item {
@@ -603,6 +616,10 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                                 Spacer(Modifier.height(FmSpace.x3))
                                 AgentAttachmentStrip(attachments)
                             }
+                            if (questions.isNotEmpty()) item {
+                                Spacer(Modifier.height(FmSpace.x3))
+                                AgentQuestionCards(questions, busy) { question, answer -> answerQuestion(question, answer) }
+                            }
                             transcriptEnd()
                         }
                     }
@@ -613,13 +630,18 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                         text = message,
                         onTextChange = { message = it },
                         draftSurface = PromptDraftStore.agentSurface("unified/${row.id}"),
-                        hint = row.composerHint,
+                        hint = if (questions.isEmpty()) row.composerHint else AgentQuestion.COMPOSER_HINT,
                         attachments = if (row.outside) emptyList() else photos,
                         onAttachmentsChanged = if (row.outside) null else ({ photos = it }),
                         onSend = {
                             val next = message.trim()
                             val sending = photos
-                            if (next.isNotEmpty() || sending.isNotEmpty()) {
+                            val asked = questions.firstOrNull()
+                            if (asked != null && next.isNotEmpty() && sending.isEmpty()) {
+                                sent++
+                                message = ""
+                                answerQuestion(asked, next, onFailure = { if (message.isEmpty()) message = next })
+                            } else if (next.isNotEmpty() || sending.isNotEmpty()) {
                                 sent++
                                 message = ""
                                 photos = emptyList()
