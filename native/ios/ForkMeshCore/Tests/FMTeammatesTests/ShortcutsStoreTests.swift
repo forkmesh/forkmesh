@@ -247,6 +247,6 @@ final class ShortcutsStoreTests: XCTestCase {
 
     func testScriptRefusalReadsPlainly() {
         XCTAssertEqual(TeamErrorText.describe(code: "script_on_desktop"), "Script shortcuts run on the desktop itself.")
-        XCTAssertTrue(TeamErrorText.describe(code: "approval_required").contains("Allow"))
+        XCTAssertTrue(TeamErrorText.describe(code: "approval_required").contains("Update ForkMesh"))
     }
 }

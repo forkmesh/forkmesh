@@ -8950,10 +8950,11 @@ private:
     void checkRepoWorkflowSchedules();
     void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
     bool repoWorkflowApproved(int repoIndex, const QString &path, const QString &name);
-    QString queueRepoWorkflowApproval(int repoIndex, const QString &path, const QString &name);
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
     bool repoWorkflowFileApproved(int repoIndex, const QString &path) const;
     void approveRepoWorkflowFile(int repoIndex, const QString &path);
+    void approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                          const QString &who);
     void reviewPendingRepoWorkflowApprovals();
     QList<forkmesh::repoworkflows::Pin> workflowPins() const;
     void saveWorkflowPins(const QList<forkmesh::repoworkflows::Pin> &pins);

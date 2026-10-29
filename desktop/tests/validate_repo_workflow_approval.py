@@ -25,6 +25,11 @@ def gated(body: str, start: str) -> bool:
     return "repoWorkflowApproved(" in body and body.index("repoWorkflowApproved(") < body.index(start)
 
 
+def approved_first(body: str, start: str) -> bool:
+    marker = "approveRepoWorkflowFileFromPhone("
+    return marker in body and body.index(marker) < body.index(start)
+
+
 def main() -> None:
     for signature in ("void MainWindow::checkRepoWorkflowSchedules()",
                       "void MainWindow::triggerRepoWorkflowsForEvent("):
@@ -52,9 +57,9 @@ def main() -> None:
     assert "forkmesh::sourceDir()" in cleanup and "m_repositories" not in cleanup, (
         "the phone's disk cleanup must run this desktop's own tools/free_disk_space.py")
     phone = PHONE[PHONE.index('method == QLatin1String("workflows.run")'):]
-    assert gated(phone, "runNativePackageRepositoryWorkflowAction("), (
-        "a phone can run a committed workflow the desktop has not approved")
-    lookup = phone[phone.index("repoWorkflowPath(repoIndex, id)"):phone.index("repoWorkflowApproved(")]
+    assert approved_first(phone, "runNativePackageRepositoryWorkflowAction("), (
+        "a run from the paired phone approves the workflow file before it starts")
+    lookup = phone[phone.index("repoWorkflowPath(repoIndex, id)"):phone.index("approveRepoWorkflowFileFromPhone(")]
     assert "repoIndex < 0 || path.isEmpty()" in lookup and "return;" in lookup, (
         "a phone run fails closed when the workflow file cannot be found")
     package = function_body(WORKFLOWS, "void MainWindow::runNativePackageRepositoryWorkflowAction(")
@@ -76,10 +81,13 @@ def main() -> None:
     for action, start in (("queueShortcut", "queueShortcut(info.absoluteFilePath()"),
                           ("runShortcut", "runShortcut(path, repoIndex)")):
         block = INSIGHTS[INSIGHTS.index(f'if (action == QLatin1String("{action}")'):]
-        assert gated(block, start), f"the phone's {action} runs a committed script without approval"
+        assert approved_first(block, start), f"the phone's {action} must record its approval before running"
     run_block = INSIGHTS[INSIGHTS.index('if (action == QLatin1String("runShortcut"))'):]
-    assert gated(run_block, "startAdHocAgentForRepo("), (
-        "the phone's prompt shortcuts start agents from committed files without approval")
+    assert approved_first(run_block, "startAdHocAgentForRepo("), (
+        "the phone's prompt shortcuts record their approval before starting an agent")
+    helper = function_body(WORKFLOWS, "void MainWindow::approveRepoWorkflowFileFromPhone(")
+    assert "approveRepoWorkflowFile(repoIndex, path)" in helper and "logSystem(" in helper, (
+        "a phone approval goes through the normal approval store and is logged")
     print("repo workflow approval contract passed")
 
 

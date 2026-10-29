@@ -35,14 +35,18 @@ They just send both steps in one tap and skip the sheet. The user asked for
 one-tap runs, and the list already shows what each row does. The detail page
 on iPhone keeps its **Run** button with the sheet.
 
-A shortcut file committed in a repository runs from a phone only once this
-desktop has allowed it (finding S-70 in
-[../security/findings.md](../security/findings.md); a change to the file asks
-again). When a phone run is refused, the desktop opens its **Allow repository
-workflows?** window right away. That window lists every unapproved file in the
-same shortcuts folder, so one **Allow** covers the whole repository's shortcuts.
-The phone says to click Allow on the desktop and run the shortcut again; it no
-longer shows the bare `approval required` code.
+A run started from a paired phone counts as the user's approval of that
+file. The desktop records the approval for the file as it is now, the same
+store its **Allow repository workflows?** window writes, logs "approved on
+this desktop by a run from <phone>" and runs it. The same goes for running a
+workflow from the phone (`workflows.run`). The user asked for this on
+2026-10-29: the phone is their own device and should not depend on someone
+clicking Allow at the desktop. Unattended runs (schedules, repository events,
+special-agent schedules) still wait for an approval, and a later change to
+the file asks again (S-44 and S-70 in
+[../security/findings.md](../security/findings.md)). An older desktop still
+answers `approval_required`; the phones then say to update ForkMesh on the
+desktop.
 
 A workflow's **Run shortcut** step runs a script or prompt shortcut too,
 waits for it and hands its output to the next step, so a shortcut can run on a

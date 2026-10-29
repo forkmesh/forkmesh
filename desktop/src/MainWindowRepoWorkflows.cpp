@@ -712,35 +712,22 @@ QString MainWindow::repoWorkflowPath(int repoIndex, const QString &workflowId) c
     return {};
 }
 
-QString MainWindow::queueRepoWorkflowApproval(int repoIndex, const QString &path, const QString &name)
-{
-    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
-        return {};
-    const QString repository = shortcutRepoKey(repoIndex);
-    const QString checkout = m_repositories.at(repoIndex).localPath;
-    if (rw::isApproved(QSettings(), repository, checkout, path))
-        return {};
-    const QString digest = rw::approvalDigest(checkout, path);
-    if (digest.isEmpty())
-        return {};
-    const QString key = rw::approvalSettingsKey(repository, checkout, path);
-    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
-    return key + QLatin1Char(':') + digest;
-}
-
 bool MainWindow::repoWorkflowApproved(int repoIndex, const QString &path, const QString &name)
 {
     if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
         return false;
     const QString repository = shortcutRepoKey(repoIndex);
-    if (rw::isApproved(QSettings(), repository, m_repositories.at(repoIndex).localPath, path))
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    if (rw::isApproved(QSettings(), repository, checkout, path))
         return true;
-    const QString noticed = queueRepoWorkflowApproval(repoIndex, path, name);
-    if (noticed.isEmpty())
+    const QString digest = rw::approvalDigest(checkout, path);
+    if (digest.isEmpty())
         return false;
-    if (m_repoWorkflowApprovalNoticed.contains(noticed))
+    const QString key = rw::approvalSettingsKey(repository, checkout, path);
+    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
+    if (m_repoWorkflowApprovalNoticed.contains(key + QLatin1Char(':') + digest))
         return false;
-    m_repoWorkflowApprovalNoticed.insert(noticed);
+    m_repoWorkflowApprovalNoticed.insert(key + QLatin1Char(':') + digest);
     flashMessage(QStringLiteral("%1 in %2 did not run: this desktop has not approved that file. Review it "
                                 "to let it run.")
                      .arg(name.isEmpty() ? QFileInfo(path).fileName() : name, repository),
@@ -764,6 +751,16 @@ void MainWindow::approveRepoWorkflowFile(int repoIndex, const QString &path)
     QSettings settings;
     if (rw::approve(settings, repository, checkout, path))
         m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(repository, checkout, path));
+}
+
+void MainWindow::approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                                  const QString &who)
+{
+    if (repoWorkflowFileApproved(repoIndex, path))
+        return;
+    approveRepoWorkflowFile(repoIndex, path);
+    if (repoWorkflowFileApproved(repoIndex, path))
+        logSystem(QStringLiteral("%1 approved on this desktop by a run from %2.").arg(label, who));
 }
 
 void MainWindow::reviewPendingRepoWorkflowApprovals()

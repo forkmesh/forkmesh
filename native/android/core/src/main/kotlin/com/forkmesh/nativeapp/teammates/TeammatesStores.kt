@@ -113,7 +113,7 @@ object TeamErrorText {
             "script_on_desktop" -> "Script shortcuts run on the desktop itself."
             "shortcut_running" -> "Another shortcut is already running on the desktop."
             "shortcut_not_started" -> "The desktop could not start that shortcut."
-            "approval_required" -> "The desktop has not allowed this shortcut file yet. Click Allow in the window that opened on the desktop, then run it again."
+            "approval_required" -> "This desktop's ForkMesh still asks you to allow the file there first. Update ForkMesh on the desktop so runs from this phone count as your approval."
             "empty_shortcut" -> "That shortcut has no prompt."
             "unsupported_agent", "model_mismatch" -> "The shortcut names an agent or model the desktop cannot run."
             "agent_not_started" -> "The desktop could not start an agent."
