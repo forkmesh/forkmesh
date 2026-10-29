@@ -1895,6 +1895,7 @@
       canonicalProfileReady = hydrateCanonicalProfile(session)
         .then((nextSession) => {
           if (bounceToVerification(nextSession)) return;
+          void backfillAdminUrl(nextSession);
           return loadNotifications();
         })
         .catch(() => {});

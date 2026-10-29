@@ -20184,6 +20184,17 @@ async def _clean_profile_links(env, rec, raw_links):
     return out, None
 
 
+async def _account_admin_link(env, name, rec):
+    if not (rec or {}).get("totp_enrolled") or not await _is_admin_flag(
+            env, name):
+        return {}
+    admin_path = _admin_path(env)
+    if not admin_path:
+        return {"isAdmin": True}
+    return {"isAdmin": True,
+            "adminUrl": "/" + admin_path + "?admin=" + quote(name)}
+
+
 async def _account_public_payload(
         env, rec, session_token=None, session_device_label="",
         session_client_ip="", session_device_bi=""):
@@ -25685,6 +25696,7 @@ async def _account_sessions(env, request, target_session_id=""):
                         env, account_bi,
                         max([s["lastSeenAt"] for s in sessions] or [0])),
                     **_account_email_activity(rec),
+                    **await _account_admin_link(env, actor, rec),
                 },
                 "privacyNotice": (
                     "Only you can see this list. Each row shows a broad device "

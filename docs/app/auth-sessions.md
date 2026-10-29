@@ -75,6 +75,17 @@ anyone whether an email address had an account. Tests:
   `/api/accounts/sessions` (`restoreSession` in `www/public/api-client.js`),
   waiting at most `WORLD_SESSION_RESTORE_BUDGET_MS` (250 ms) before starting
   as a guest.
+- The admin shortcut (the shield button in the dashboard header and
+  **Admin console** in the account menu) needs `adminUrl` in the stored
+  session. A session rebuilt from the cookie used to carry only the account
+  name, and the one-time profile read (`/api/accounts/<name>`) returns
+  `isAdmin` but never the private console path, so an admin signed in that
+  way lost the button for good. The `account` block of
+  `GET /api/accounts/sessions` now carries `isAdmin` and `adminUrl` for an
+  admin (nothing for anyone else; `_account_admin_link`, which reads the
+  admin flag only for TOTP-enrolled accounts), and the dashboard's
+  `backfillAdminUrl` asks it once when a stored admin session has no
+  `adminUrl`, then marks the session `adminUrlCheckedAt`.
 - Session validity is not polled: pages check on load, focus and socket
   frames. Tabs share state through `BroadcastChannel("forkmesh.session")` and
   `localStorage`; sign-out clears both.

@@ -2886,6 +2886,39 @@
     }
   }
 
+  async function backfillAdminUrl(session) {
+    if (!session?.isAdmin || session.adminUrl || session.adminUrlCheckedAt) return session;
+    try {
+      const token = String(session.sessionToken || "");
+      const response = await fetch("/api/accounts/sessions", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          ...(token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) return session;
+      const account = (await response.json().catch(() => null))?.account;
+      const current = state.session || session;
+      if (!account || account.isAdmin !== true ||
+          String(account.nodeName || "").toLowerCase() !== String(current?.nodeName || "").toLowerCase()) {
+        return session;
+      }
+      const nextSession = {
+        ...current,
+        isAdmin: true,
+        adminUrl: String(account.adminUrl || ""),
+        adminUrlCheckedAt: Date.now(),
+      };
+      writeSession(nextSession);
+      renderProfile(nextSession);
+      return nextSession;
+    } catch (_) {
+      return session;
+    }
+  }
+
   const MARKDOWN_VIDEO_TEXTAREAS = [
     "[data-repo-issue-body]", "[data-repo-pull-body]",
     "[data-repo-issue-comment-body]", "[data-repo-issue-comment-edit-body]",
