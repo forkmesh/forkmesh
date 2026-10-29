@@ -8950,6 +8950,7 @@ private:
     void checkRepoWorkflowSchedules();
     void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
     bool repoWorkflowApproved(int repoIndex, const QString &path, const QString &name);
+    QString queueRepoWorkflowApproval(int repoIndex, const QString &path, const QString &name);
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
     bool repoWorkflowFileApproved(int repoIndex, const QString &path) const;
     void approveRepoWorkflowFile(int repoIndex, const QString &path);

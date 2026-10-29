@@ -35,6 +35,15 @@ They just send both steps in one tap and skip the sheet. The user asked for
 one-tap runs, and the list already shows what each row does. The detail page
 on iPhone keeps its **Run** button with the sheet.
 
+A shortcut file committed in a repository runs from a phone only once this
+desktop has allowed it (finding S-70 in
+[../security/findings.md](../security/findings.md); a change to the file asks
+again). When a phone run is refused, the desktop opens its **Allow repository
+workflows?** window right away. That window lists every unapproved file in the
+same shortcuts folder, so one **Allow** covers the whole repository's shortcuts.
+The phone says to click Allow on the desktop and run the shortcut again; it no
+longer shows the bare `approval required` code.
+
 A workflow's **Run shortcut** step runs a script or prompt shortcut too,
 waits for it and hands its output to the next step, so a shortcut can run on a
 schedule, after a special agent or from a button pinned to any rail

@@ -437,6 +437,22 @@ void MainWindow::runLocalControlInsightsAction(int connectionId, int requestId,
     if (!server)
         return;
     const QString who = localControlDeviceLabel(connectionId);
+    const auto refuseUnapprovedShortcut = [&](int repoIndex, const QString &repo, const QString &file,
+                                              const QString &path) {
+        logSystem(QStringLiteral("Refused shortcut %1 in %2 from %3: the file is not approved on this desktop.")
+                      .arg(file, repo, who));
+        const QFileInfoList siblings =
+            QDir(QFileInfo(path).absolutePath()).entryInfoList(QDir::Files | QDir::Readable, QDir::Name);
+        for (const QFileInfo &other : siblings)
+            if (insightctl::validShortcutFile(other.fileName()))
+                queueRepoWorkflowApproval(
+                    repoIndex, other.absoluteFilePath(),
+                    insightctl::parseShortcutMeta(other.fileName(), readShortcutText(other.absoluteFilePath())).name);
+        reviewPendingRepoWorkflowApprovals();
+        server->respondError(connectionId, requestId, QStringLiteral("approval_required"),
+                             QStringLiteral("Allow this shortcut in the window that opened on the desktop, then "
+                                            "run it again."));
+    };
     if (action == QLatin1String("toggleFamily")) {
         const QString family = subject.section(QLatin1Char('|'), 0, 0);
         const bool enabled = subject.endsWith(QLatin1String("|on"));
@@ -477,10 +493,7 @@ void MainWindow::runLocalControlInsightsAction(int connectionId, int requestId,
             insightctl::parseShortcutMeta(file, readShortcutText(info.absoluteFilePath())).name;
         if (action == QLatin1String("queueShortcut") &&
             !repoWorkflowApproved(repoIndex, info.absoluteFilePath(), name)) {
-            logSystem(QStringLiteral("Refused shortcut %1 in %2 from %3: the file is not approved on this desktop.")
-                          .arg(file, repo, who));
-            server->respondError(connectionId, requestId, QStringLiteral("approval_required"),
-                                 QStringLiteral("Approve this shortcut file on the desktop first."));
+            refuseUnapprovedShortcut(repoIndex, repo, file, info.absoluteFilePath());
             return;
         }
         if (action == QLatin1String("unqueueShortcut")) {
@@ -537,10 +550,7 @@ void MainWindow::runLocalControlInsightsAction(int connectionId, int requestId,
         }
         if ((scope == QLatin1String("shortcut") || scope == QLatin1String("repository")) &&
             !repoWorkflowApproved(repoIndex, QFileInfo(path).absoluteFilePath(), file)) {
-            logSystem(QStringLiteral("Refused shortcut %1 in %2 from %3: the file is not approved on this desktop.")
-                          .arg(file, repo, who));
-            server->respondError(connectionId, requestId, QStringLiteral("approval_required"),
-                                 QStringLiteral("Approve this shortcut file on the desktop first."));
+            refuseUnapprovedShortcut(repoIndex, repo, file, QFileInfo(path).absoluteFilePath());
             return;
         }
         const QFileInfo info(path);

@@ -712,22 +712,35 @@ QString MainWindow::repoWorkflowPath(int repoIndex, const QString &workflowId) c
     return {};
 }
 
+QString MainWindow::queueRepoWorkflowApproval(int repoIndex, const QString &path, const QString &name)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return {};
+    const QString repository = shortcutRepoKey(repoIndex);
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    if (rw::isApproved(QSettings(), repository, checkout, path))
+        return {};
+    const QString digest = rw::approvalDigest(checkout, path);
+    if (digest.isEmpty())
+        return {};
+    const QString key = rw::approvalSettingsKey(repository, checkout, path);
+    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
+    return key + QLatin1Char(':') + digest;
+}
+
 bool MainWindow::repoWorkflowApproved(int repoIndex, const QString &path, const QString &name)
 {
     if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
         return false;
     const QString repository = shortcutRepoKey(repoIndex);
-    const QString checkout = m_repositories.at(repoIndex).localPath;
-    if (rw::isApproved(QSettings(), repository, checkout, path))
+    if (rw::isApproved(QSettings(), repository, m_repositories.at(repoIndex).localPath, path))
         return true;
-    const QString digest = rw::approvalDigest(checkout, path);
-    if (digest.isEmpty())
+    const QString noticed = queueRepoWorkflowApproval(repoIndex, path, name);
+    if (noticed.isEmpty())
         return false;
-    const QString key = rw::approvalSettingsKey(repository, checkout, path);
-    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
-    if (m_repoWorkflowApprovalNoticed.contains(key + QLatin1Char(':') + digest))
+    if (m_repoWorkflowApprovalNoticed.contains(noticed))
         return false;
-    m_repoWorkflowApprovalNoticed.insert(key + QLatin1Char(':') + digest);
+    m_repoWorkflowApprovalNoticed.insert(noticed);
     flashMessage(QStringLiteral("%1 in %2 did not run: this desktop has not approved that file. Review it "
                                 "to let it run.")
                      .arg(name.isEmpty() ? QFileInfo(path).fileName() : name, repository),
