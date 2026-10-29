@@ -181,6 +181,21 @@ def token() -> str:
     return signing_input + "." + b64url(der_to_raw(der))
 
 
+def api_error(method: str, path: str, code: int, detail: str) -> str:
+    try:
+        errors = json.loads(detail).get("errors") or []
+    except (ValueError, AttributeError):
+        errors = []
+    for entry in errors:
+        if isinstance(entry, dict) and str(entry.get("code", "")).startswith("FORBIDDEN_ERROR.PLA_NOT_ACCEPTED"):
+            return (
+                "ERROR: Apple is waiting for the latest Program License Agreement; no build can run until "
+                "the team's Account Holder accepts it at https://developer.apple.com/account "
+                f"(Apple: {entry.get('detail', '').strip()})"
+            )
+    return f"ERROR: App Store Connect {method} {path} answered {code}: {detail}"
+
+
 def call(bearer: str, method: str, path: str, body=None):
     request = urllib.request.Request(
         API + path,
@@ -193,7 +208,7 @@ def call(bearer: str, method: str, path: str, body=None):
             raw = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", "replace")
-        raise SystemExit(f"ERROR: App Store Connect {method} {path} answered {error.code}: {detail}")
+        raise SystemExit(api_error(method, path, error.code, detail))
     return json.loads(raw) if raw else {}
 
 
@@ -208,7 +223,7 @@ def download(bearer: str, path: str) -> bytes | None:
         detail = error.read().decode("utf-8", "replace")
         if error.code == 404:
             return None
-        raise SystemExit(f"ERROR: App Store Connect GET {path} answered {error.code}: {detail}")
+        raise SystemExit(api_error("GET", path, error.code, detail))
 
 
 def find_bundle_id(bearer: str, identifier: str):
