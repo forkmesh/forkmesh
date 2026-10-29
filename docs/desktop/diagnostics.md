@@ -1021,8 +1021,16 @@ the chart's memory quadrant. It lists the top 30 processes with Kill, Kill all
 and Stop agent.
 
 - `diagnostics/highMemoryAutoKill` (off by default) lets the automatic pop-up
-  SIGTERM the largest process (never PID 1 or ForkMesh), then
+  SIGTERM the largest process it may end, then
   `continueHighMemoryAutoKill()` repeats each second until memory is below 85%.
+- The killer must not take ForkMesh down with it. Each refresh stores
+  `SystemStats::killProtectedPids()` in `m_highMemoryProtectedPids`, and Kill,
+  Kill all and auto-kill skip it (`isHighMemoryProtected()`): PID 1, ForkMesh,
+  every ancestor of ForkMesh (an AppImage runtime, launcher, terminal or user
+  manager whose exit ends it), every process running the ForkMesh binary
+  (`/proc/<pid>/exe` against our own, `applicationFilePath()` and `APPIMAGE`),
+  and display servers and compositors (`SystemStats::isDisplayServer()`), whose
+  exit closes every window. Agent runs stay killable; they are descendants.
 - `m_highMemoryAutoKillPending` is set only by the automatic pop-up and cleared
   by `endHighMemoryAutoKill()`, so opening the window by hand never kills.
 
