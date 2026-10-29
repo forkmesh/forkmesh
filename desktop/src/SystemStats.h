@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QtGlobal>
 
@@ -72,5 +73,12 @@ int raiseOpenFileLimit();
 
 enum class Termination { Requested, AlreadyExited, PermissionDenied, Failed, Unsupported };
 Termination requestTermination(qint64 pid, QString *error = nullptr);
+
+QString executablePath(qint64 pid);
+bool isDisplayServer(const QString &name);
+QSet<qint64> killProtectedPids(qint64 selfPid, const QSet<QString> &selfExecutables,
+                               const QHash<qint64, qint64> &parentOf,
+                               const QHash<qint64, QString> &nameOf,
+                               const QHash<qint64, QString> &executableOf);
 
 } // namespace SystemStats

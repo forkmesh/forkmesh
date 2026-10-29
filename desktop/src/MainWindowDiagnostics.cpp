@@ -1922,8 +1922,9 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "that run in the Agent column, and “Stop agent” ends that run "
         "cleanly instead of killing one process out from under it. "
         "“Kill” requests a normal termination and “Kill all” does the "
-        "same for every listed process sharing that name; ForkMesh and PID 1 "
-        "are protected."));
+        "same for every listed process sharing that name. ForkMesh, its "
+        "helpers, whatever started it, the display server and PID 1 are "
+        "protected, since ending them would close ForkMesh too."));
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -1976,7 +1977,8 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "allowed to end. If host memory is still at 85% or more once that "
         "process exits (or after five seconds), it ends the next largest, and "
         "so on until memory drops below 85% or no listed process is left. "
-        "ForkMesh and PID 1 are never chosen. Opening the window yourself "
+        "ForkMesh, its helpers, whatever started it, the display server and "
+        "PID 1 are never chosen. Opening the window yourself "
         "never kills anything."));
     connect(autoKill, &QCheckBox::toggled, this, [this](bool enabled) {
         QSettings().setValue(kHighMemoryAutoKillSetting, enabled);
@@ -2005,6 +2007,7 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         m_highMemoryProcessStatus = nullptr;
         m_highMemoryProcessQuery = nullptr;
         m_highMemoryRssHistory.clear();
+        m_highMemoryProtectedPids.clear();
     });
     auto *autoRefresh = new QTimer(dialog);
     autoRefresh->setInterval(5000);
@@ -2113,6 +2116,28 @@ void MainWindow::refreshHighMemoryProcessTable()
                         rows.append({pid, owner, rssKb, percent.toDouble(),
                                      name, commandLine});
                 }
+
+                QSet<QString> selfExecutables;
+                for (const QString &path :
+                     {SystemStats::executablePath(
+                          QCoreApplication::applicationPid()),
+                      QCoreApplication::applicationFilePath(),
+                      QFileInfo(QCoreApplication::applicationFilePath())
+                          .canonicalFilePath(),
+                      qEnvironmentVariable("APPIMAGE")}) {
+                    if (!path.isEmpty())
+                        selfExecutables.insert(path);
+                }
+                QHash<qint64, QString> executableOf;
+                for (const ProcessRow &process : rows) {
+                    QString executable = SystemStats::executablePath(process.pid);
+                    if (executable.isEmpty())
+                        executable = process.commandLine.section(QLatin1Char(' '), 0, 0);
+                    executableOf.insert(process.pid, executable);
+                }
+                m_highMemoryProtectedPids = SystemStats::killProtectedPids(
+                    QCoreApplication::applicationPid(), selfExecutables,
+                    parentOf, nameOf, executableOf);
 
                 QHash<qint64, QVector<double>> history;
                 history.reserve(rows.size());
@@ -2306,12 +2331,12 @@ void MainWindow::refreshHighMemoryProcessTable()
                     auto *kill = new QPushButton(QStringLiteral("Kill"));
                     kill->setProperty("buttonSize", "sm");
                     const bool protectedProcess =
-                        process.pid == 1 ||
-                        process.pid == QCoreApplication::applicationPid();
+                        isHighMemoryProtected(process.pid);
                     kill->setEnabled(!protectedProcess);
                     kill->setToolTip(
                         protectedProcess
-                            ? QStringLiteral("This process is protected")
+                            ? QStringLiteral("This process is protected: "
+                                             "ending it would close ForkMesh")
                             : QStringLiteral("Request that %1 terminate")
                                   .arg(process.name));
                     connect(kill, &QPushButton::clicked, this,
@@ -2322,8 +2347,7 @@ void MainWindow::refreshHighMemoryProcessTable()
                     const QList<qint64> family = pidsByName.value(process.name);
                     QList<qint64> killable;
                     for (qint64 candidate : family) {
-                        if (candidate <= 1 ||
-                            candidate == QCoreApplication::applicationPid())
+                        if (isHighMemoryProtected(candidate))
                             continue;
                         killable.append(candidate);
                     }
@@ -2384,8 +2408,10 @@ void MainWindow::refreshHighMemoryProcessTable()
                             .toBool()) {
                         QList<QPair<qint64, QString>> candidates;
                         candidates.reserve(rows.size());
-                        for (const ProcessRow &process : rows)
-                            candidates.append({process.pid, process.name});
+                        for (const ProcessRow &process : rows) {
+                            if (!isHighMemoryProtected(process.pid))
+                                candidates.append({process.pid, process.name});
+                        }
                         QTimer::singleShot(0, this, [this, candidates] {
                             autoKillTopHighMemoryProcess(candidates);
                         });
@@ -2427,9 +2453,15 @@ void MainWindow::refreshHighMemoryProcessTable()
     });
 }
 
+bool MainWindow::isHighMemoryProtected(qint64 pid) const
+{
+    return pid <= 1 || pid == QCoreApplication::applicationPid() ||
+           m_highMemoryProtectedPids.contains(pid);
+}
+
 void MainWindow::killHighMemoryProcess(qint64 pid, const QString &name)
 {
-    if (pid <= 1 || pid == QCoreApplication::applicationPid())
+    if (isHighMemoryProtected(pid))
         return;
     const auto answer = QMessageBox::warning(
         m_highMemoryDialog ? static_cast<QWidget *>(m_highMemoryDialog.data())
@@ -2494,7 +2526,7 @@ void MainWindow::autoKillTopHighMemoryProcess(
 #if defined(Q_OS_UNIX)
     QStringList skipped;
     for (const auto &[pid, name] : candidates) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid() ||
+        if (isHighMemoryProtected(pid) ||
             m_highMemoryAutoKilledPids.contains(pid))
             continue;
         if (::kill(static_cast<pid_t>(pid), SIGTERM) == 0) {
@@ -2634,7 +2666,7 @@ void MainWindow::killAllHighMemoryProcesses(const QString &name,
 {
     QList<qint64> targets;
     for (qint64 pid : pids) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid())
+        if (isHighMemoryProtected(pid))
             continue;
         targets.append(pid);
     }
