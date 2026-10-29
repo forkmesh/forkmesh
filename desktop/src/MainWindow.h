@@ -8659,6 +8659,8 @@ private:
     // have no loader of their own — every skill entry point calls this.
     void loadShortcutsPanel();
     QString shortcutsDirPath() const; // <working tree>/.forkmesh/shortcuts, "" without one
+    QStringList missingStarterShortcuts() const;
+    void addStarterShortcuts();
     // Both take their path by value: they refresh the panel (which deleteLater()s
     // the very card whose closure owns the caller's string) and can pump the
     // event loop before they are done reading it.
@@ -12947,6 +12949,7 @@ private:
     QLabel *m_artifactsSummary = nullptr;
     QWidget *m_shortcutCardsHost = nullptr; // card rows, rebuilt by loadShortcutsPanel
     QLabel *m_shortcutsSummary = nullptr;
+    QPushButton *m_shortcutsStarterButton = nullptr;
     QPlainTextEdit *m_shortcutOutput = nullptr; // live output of the running shortcut
     QLabel *m_shortcutRunStatus = nullptr;
     QPushButton *m_shortcutStopButton = nullptr;

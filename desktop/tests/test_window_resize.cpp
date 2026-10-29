@@ -20783,6 +20783,58 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             shortcutPanelEntries();
         }
 
+        {
+            const auto reloadShortcuts = [&shortcutsFilter] {
+                if (!shortcutsFilter)
+                    return;
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("shortcuts")));
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("all")));
+            };
+            QPushButton *starterButton = nullptr;
+            for (QPushButton *button : window.findChildren<QPushButton *>())
+                if (button->text() == QLatin1String("Add starter shortcuts"))
+                    starterButton = button;
+            const QString shortcutsDir =
+                QDir(repository.path()).filePath(QStringLiteral(".forkmesh/shortcuts"));
+            const QString asideDir =
+                QDir(repository.path()).filePath(QStringLiteral(".forkmesh/shortcuts-aside"));
+            const bool hiddenWithShortcuts = starterButton && starterButton->isHidden();
+            const bool movedAside = QDir().rename(shortcutsDir, asideDir);
+            reloadShortcuts();
+            shortcutPanelEntries();
+            const bool shownWhenEmpty = starterButton && !starterButton->isHidden();
+            if (starterButton)
+                starterButton->click();
+            const QStringList starters =
+                QDir(QStringLiteral(":/starter-shortcuts")).entryList(QDir::Files);
+            bool copied = starters.size() == 5;
+            for (const QString &name : starters)
+                copied = copied && QFileInfo::exists(QDir(shortcutsDir).filePath(name));
+            const bool reviewCard =
+                shortcutCardNamed(QStringLiteral("Review my changes")) != nullptr;
+            const bool hiddenAfterAdding = starterButton && starterButton->isHidden();
+            for (const QString &name : starters)
+                QFile::remove(QDir(shortcutsDir).filePath(name));
+            QDir().rmdir(shortcutsDir);
+            const bool restored = movedAside && QDir().rename(asideDir, shortcutsDir);
+            reloadShortcuts();
+            shortcutPanelEntries();
+            check(starterButton && hiddenWithShortcuts && shownWhenEmpty && copied &&
+                      reviewCard && hiddenAfterAdding && restored,
+                  QString("a repository without shortcuts offers Add starter shortcuts, which "
+                          "copies the five starters in and then hides (found=%1 hiddenWith=%2 "
+                          "shownEmpty=%3 copied=%4 card=%5 hiddenAfter=%6 restored=%7)")
+                      .arg(starterButton != nullptr)
+                      .arg(hiddenWithShortcuts)
+                      .arg(shownWhenEmpty)
+                      .arg(copied)
+                      .arg(reviewCard)
+                      .arg(hiddenAfterAdding)
+                      .arg(restored));
+        }
+
         window.testChooseTeammateRepo(repositoryIndex);
         auto *teamBackend = new ServerNode(
             QStringLiteral("qa-tester"), QStringLiteral("qa-node"),
