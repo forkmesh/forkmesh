@@ -1612,7 +1612,8 @@ cmake --install "$build" --prefix "$build/install"
 [ -x "$build/install/bin/forkmesh.exe" ] || { echo "no forkmesh.exe was installed" >&2; exit 1; }
 # Windows binaries cannot run here, so prove the provenance stamp by content:
 # the header bakes the exact build commit into the executable as a literal.
-grep -q -a "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
+python3 -c 'import sys; c = sys.argv[1].lower(); d = open(sys.argv[2], "rb").read(); sys.exit(0 if c.encode() in d or c.encode("utf-16-le") in d else 1)' \
+  "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
   || { echo "forkmesh.exe does not carry build commit $FORKMESH_WIN_BUILD_COMMIT" >&2; exit 1; }
 export FORKMESH_REQUIRE_NATIVE_SIGNING=1
 export FORKMESH_WIN_CXX="$FORKMESH_WIN_MINGW_ROOT/usr/bin/x86_64-w64-mingw32-g++-posix"
