@@ -1245,9 +1245,8 @@ look like the desktop, with the list on the left and the detail on the right.
   bottom bar goes away. Upright, the bottom bar stays. The top bar spans both
   panes and always shows Search.
 - **Rotation.** `ForkMesh-Info.plist` lists portrait and both landscapes for
-  iPhone. The Duo scales a portrait-only app on its inner display: in a
-  simulator at the Duo's size, the portrait-only build drew a 440 pt phone
-  window with black bars. At run time `FmOrientationLock` keeps other iPhones in
+  iPhone, because Apple's Duo guidance says the inner display scales an app
+  that only supports portrait. At run time `FmOrientationLock` keeps other iPhones in
   portrait. `allowRoomy` unlocks every orientation except upside down while the
   window's shorter side is at least 600 pt. Folding back to the cover screen returns to portrait.
   Hosted pages are dropped when the panes go away (`ShellDetailHost.clearAll`).
@@ -1257,16 +1256,22 @@ look like the desktop, with the list on the left and the detail on the right.
   the iOS 27.1 SDK.
 - **App Store sizes.** The Duo's screenshot sizes are 2007 × 2853 or 2853 × 2007
   for the inner display and 1398 × 2034 or 2034 × 1398 for the cover screen.
-  Xcode 26 has no Duo simulator. The 2026-10-28 store shots came from
-  simulator profiles copied from the iPhone 17 Pro Max at exactly those pixel
-  sizes ("iPhone Duo Inner / Inner Landscape / Cover (ForkMesh sim)" in the Mac
-  build user's `~/Library/Developer/CoreSimulator/Profiles/DeviceTypes`).
+  Xcode 26 has no Duo simulator, and Duo-sized copies of the iPhone 17 Pro
+  Max profile do not stand in for one. On 2026-10-29 the iOS 26.5 runtime
+  kept every third-party app in a 440 pt window, with black bars, on such a
+  screen. That happened with landscape declared, with the binary marked as
+  SDK 27.0 and with the Duo's model identifier `iPhone19,4`. Apple's own apps
+  filled the screen. Store-ready Duo shots need Xcode 27.1's iPhone Duo
+  simulator.
 - **Store shots without taps.** In Debug builds `StoreScreenshotLaunch` reads
   launch arguments: `-FMStoreShots YES` skips the tour, the permissions intro
-  and the starter pack and enters guest mode. Then `-FMStoreRoute <link>` opens
+  and the starter pack, enters guest mode, and hides tips, the connection
+  banner, the spider, the aquarium and the status dots. Then `-FMStoreRoute <link>` opens
   a link's whole stack (even for a guest, unlike a normal deep link), and
-  `-FMStoreTab <agents|inbox|code|chat>` opens a tab. Release builds ignore all
-  three.
+  `-FMStoreTab <agents|inbox|code|chat>` opens a tab. `-FMStorePhoneLayout YES`
+  makes an iPad lay out as a phone (`StoreScreenshotLaunch.pad`), so the iPad
+  mini simulator (744 pt wide) shows the Duo's two panes for review. Release
+  builds ignore all of them.
 
 ## 8. Sitemap and routes
 

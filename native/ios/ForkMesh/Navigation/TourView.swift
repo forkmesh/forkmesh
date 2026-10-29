@@ -589,6 +589,9 @@ enum ShellTour {
     }
 
     static func configureTips() {
+        if StoreScreenshotLaunch.on {
+            Tips.hideAllTipsForTesting()
+        }
         try? Tips.configure([.displayFrequency(.daily)])
     }
 }

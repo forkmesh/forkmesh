@@ -101,7 +101,7 @@ struct HomeShell: View {
         self.push = Services.get(PushNotificationService.self)
         self.userStatus = Services.get(UserStatusService.self)
         self.identityKey = Services.get(DeviceIdentity.self)?.shortKey ?? ""
-        _page = State(initialValue: UIDevice.current.userInterfaceIdiom == .pad ? nil : .home)
+        _page = State(initialValue: StoreScreenshotLaunch.pad ? nil : .home)
         // Built once with the services (ComposerInstaller) so the composer
         // is ready the moment the prompt button is tapped.
         _composer = State(initialValue: Services.get(ShellComposer.self) ?? ComposerInstaller.makeComposer())
@@ -114,13 +114,13 @@ struct HomeShell: View {
     static let hubHeight: CGFloat = 640
 
     private var usesSplit: Bool {
-        sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad
+        sizeClass == .regular && StoreScreenshotLaunch.pad
     }
 
     private var panes: ShellPaneMetrics {
         ShellPanes.metrics(
             width: Double(windowSize.width), height: Double(windowSize.height),
-            pad: UIDevice.current.userInterfaceIdiom == .pad)
+            pad: StoreScreenshotLaunch.pad)
     }
 
     private func paneLayout(_ tab: AppTab) -> ShellPaneLayout {
@@ -711,7 +711,7 @@ struct HomeShell: View {
             if page != nil || inSplit || showsTopBar(router.selectedTab) {
                 topBar
             }
-            if settings?.project.hasInstance != false {
+            if settings?.project.hasInstance != false && !StoreScreenshotLaunch.on {
                 FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
             }
             if notice != nil {
@@ -856,7 +856,7 @@ struct HomeShell: View {
     }
 
     @ViewBuilder private func sized<Content: View>(_ content: Content) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .phone {
+        if !StoreScreenshotLaunch.pad {
             content.environment(\.horizontalSizeClass, panes.wide ? UserInterfaceSizeClass.regular : .compact)
         } else {
             content
@@ -907,16 +907,19 @@ struct HomeShell: View {
                     voice: voice, onType: { voiceToComposer(voice.heard) }, onCommands: { voiceToPalette() })
             }
             .overlay { ShellLaunchSparkles(flight: ShellLaunchFlight.shared) }
-            .overlay { AquariumLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor) }
             .overlay {
-                if !genie.spiderHidden {
+                AquariumLayer(
+                    hidden: composer.isOpen || keyboardUp || voice.isOpen || StoreScreenshotLaunch.on, floor: genieFloor)
+            }
+            .overlay {
+                if !genie.spiderHidden && !StoreScreenshotLaunch.on {
                     GenieSpiderLayer(
                         hidden: composer.isOpen || keyboardUp || voice.isOpen || router.currentRoute?.kind == .spiderRoom,
                         floor: genieFloor)
                 }
             }
             .overlay(alignment: .top) {
-                if diagnosticsEnabled {
+                if diagnosticsEnabled && !StoreScreenshotLaunch.on {
                     ShellIslandStatusDots(
                         lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
                         desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,

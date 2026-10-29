@@ -2,19 +2,25 @@ import FMAccount
 import FMApi
 import FMPackages
 import Foundation
+import UIKit
 
 @MainActor
 enum StoreScreenshotLaunch {
-    static let onKey = "FMStoreShots"
-    static let routeKey = "FMStoreRoute"
-    static let tabKey = "FMStoreTab"
+    nonisolated static let onKey = "FMStoreShots"
+    nonisolated static let routeKey = "FMStoreRoute"
+    nonisolated static let tabKey = "FMStoreTab"
+    nonisolated static let phoneLayoutKey = "FMStorePhoneLayout"
 
-    static var on: Bool {
+    nonisolated static var on: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: onKey)
         #else
         return false
         #endif
+    }
+
+    static var pad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && !(on && UserDefaults.standard.bool(forKey: phoneLayoutKey))
     }
 
     static func prepare(auth: AuthService, settings: SettingsService?) {
