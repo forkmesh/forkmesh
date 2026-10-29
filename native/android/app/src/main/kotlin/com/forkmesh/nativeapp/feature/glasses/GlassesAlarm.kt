@@ -35,8 +35,8 @@ internal class GlassesAlarm private constructor(private val context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             if (manager.getNotificationChannel(CHANNEL) != null) return
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Smart glasses nearby", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Rings like an alarm and vibrates when Glasses Alert finds Meta smart glasses near you."
+                NotificationChannel(CHANNEL, "Smart glasses or camera nearby", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Rings like an alarm and vibrates when Glasses Alert finds smart glasses or a camera near you."
                     setSound(null, null)
                     enableVibration(false)
                     setBypassDnd(true)
@@ -180,7 +180,7 @@ internal class GlassesAlarm private constructor(private val context: Context) {
         )
         return Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_ping)
-            .setContentTitle("Smart glasses nearby")
+            .setContentTitle(sighting.kind.title)
             .setContentText(GlassesSignatures.alertText(sighting))
             .setCategory(Notification.CATEGORY_ALARM)
             .setVisibility(Notification.VISIBILITY_PUBLIC)

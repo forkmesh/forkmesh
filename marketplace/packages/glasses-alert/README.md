@@ -1,13 +1,15 @@
 # Glasses Alert
 
 Glasses Alert is a free ForkMesh package for Android and iPhone. It tells you
-when someone near you wears Meta smart glasses (Ray-Ban Meta, Oakley Meta),
-which can film and record without the people around them noticing. The phone
+when someone near you wears Meta smart glasses (Ray-Ban Meta, Oakley Meta) or
+carries a camera with Bluetooth on (action, 360, mirrorless and compact
+cameras, body cameras, dash cams, security cameras and camera drones), which
+can film and record without the people around them noticing. The phone
 listens to Bluetooth adverts and rings a loud alarm with strong vibration
-when a new pair comes into range.
+when a new one comes into range.
 
 It only listens. It never connects to, pairs with or sends anything to the
-glasses, and no scan result leaves the phone. The package has no Worker, no
+glasses or cameras, and no scan result leaves the phone. The package has no Worker, no
 account data and no web or desktop page.
 
 Open it from **You → Personal → Glasses Alert**, from the Market's **Open**
@@ -40,6 +42,68 @@ Meta Quest headsets advertise the same Meta IDs, so a Quest nearby can set
 off the alarm too. The label says "glasses or headset" when only a Meta ID
 matched.
 
+## How it finds cameras
+
+Cameras with Bluetooth advertise all the time so their phone app can wake
+them, and most keep doing it while they record. Glasses Alert matches the
+company IDs of makers whose Bluetooth products are cameras, taken from the
+Bluetooth SIG's
+[assigned numbers](https://bitbucket.org/bluetooth-SIG/public/src/main/assigned_numbers/):
+
+| Company ID | Maker | Label shown |
+|---|---|---|
+| `0x02F2` | GoPro, Inc. | GoPro camera |
+| `0x10D7` | Arashi Vision Inc. (Insta360) | Insta360 camera |
+| `0x08AA` | SZ DJI Technology (Osmo, Action, drones) | DJI camera or drone |
+| `0x01A9` | Canon Inc. | Canon camera |
+| `0x0399` | Nikon Corporation | Nikon camera |
+| `0x04D8` | FUJIFILM Corporation | Fujifilm camera |
+| `0x04D0` | Olympus Corporation | Olympus camera |
+| `0x09F1` | OM Digital Solutions | OM System camera |
+| `0x065F` | Ricoh Company (Ricoh GR, Pentax, Theta) | Ricoh, Pentax or Theta camera |
+| `0x051A` | Leica Camera AG | Leica camera |
+| `0x10D4` | Victor Hasselblad AB | Hasselblad camera |
+| `0x02A0` | Impossible Camera GmbH (Polaroid) | Polaroid camera |
+| `0x04D7` | Blincam, Inc. (camera clipped to glasses) | Blincam wearable camera |
+| `0x0F30` | Opal Camera, Inc. | Opal webcam |
+| `0x0909` | 70mai Co., Ltd. | 70mai dash cam |
+| `0x0C19` | Arlo Technologies | Arlo security camera |
+| `0x0E25` | Hangzhou Hikvision | Hikvision security camera |
+| `0x060C` | Vuzix Corporation (camera glasses) | Vuzix camera glasses |
+
+Some cameras advertise a 16-bit service UUID their maker registered instead:
+
+| Service | Maker | Label shown |
+|---|---|---|
+| `0xFEA5`, `0xFEA6` | GoPro | GoPro camera |
+| `0xFC2D`–`0xFC30` | Arashi Vision (Insta360) | Insta360 camera |
+| `0xFC81` | Axon Enterprise (police body cameras) | Axon body camera |
+| `0xFD4D`, `0xFD4E` | 70mai | 70mai dash cam |
+| `0xFE45` | Snap (Spectacles camera glasses) | Snap Spectacles |
+
+Sony, Panasonic, Samsung, Xiaomi, Garmin, Amazon (Ring, Blink) and Wyze also
+make headphones, phones, watches and speakers under the same company ID, so
+their IDs alone would ring for every pair of earbuds. Their cameras match by
+name instead: a device whose name contains a camera word or model, such as
+`camera`, `webcam`, `dashcam`, `bodycam`, `gopro`, `insta360`, `osmo action`,
+`canon`, `eos r`, `nikon`, `coolpix`, `fujifilm`, `lumix`, `olympus`, `ricoh`,
+`pentax`, `theta`, `leica`, `ilce-` and `zv-e` (Sony Alpha and ZV), `fdr-x` and
+`hdr-as` (Sony action cams), `kodak`, `polaroid`, `akaso`, `sjcam`,
+`nextbase`, `viofo`, `blackvue`, `thinkware`, `vantrue`, `garmin dash`,
+`eufycam`, `wyze cam`, `spypoint`, `mavic`, `dji mini`, `avata`, `skydio`,
+`spectacles`, `vuzix` or `rokid`, matches and the name is shown. The full list
+is `CAMERA_KEYWORDS` in `GlassesWatch.kt` and `cameraKeywords` in
+`GlassesWatchModels.swift`.
+
+Canon, Fujifilm and Ricoh also make Bluetooth printers. A match whose name
+says `printer`, `pixma`, `maxify`, `selphy`, `imageclass` or `instax ... link`
+stays quiet and shows in the device grid instead.
+
+A camera only shows up while its Bluetooth is on. Many switch it off in
+airplane mode or when their app connection is turned off, and cheap hidden
+cameras often have no Bluetooth at all, so a quiet scan does not prove that
+nothing is filming.
+
 ## Range
 
 | Setting | Signal | Roughly |
@@ -50,15 +114,15 @@ matched.
 
 ## The alarm
 
-When a pair it has not seen in the last two minutes comes into range, the
-alarm rings for 30 seconds or until you press **Stop alarm**. After an alarm,
-new pairs stay quiet for 30 seconds so a group does not ring over and over.
+When glasses or a camera it has not seen in the last two minutes come into
+range, the alarm rings for 30 seconds or until you press **Stop alarm**. After an alarm,
+new ones stay quiet for 30 seconds so a group does not ring over and over.
 The **Nearby now** list shows every match with its distance, signal and maker.
 **Test alarm** rings it once so you know what it sounds and feels like.
 
 ## Finding the glasses
 
-While a pair is in range, a card under the status shows:
+While glasses or a camera are in range, a card under the status shows:
 
 - **An arrow** pointing where the glasses probably are. Bluetooth alone cannot
   tell direction, so the phone uses its compass: hold it in front of you and
@@ -72,7 +136,7 @@ While a pair is in range, a card under the status shows:
   *Getting closer*, *Moving away* or *Holding steady* over the last few
   seconds. *Signal lost* means nothing was heard for 8 seconds.
 
-It follows the strongest pair and sticks with it while it is still heard.
+It follows the strongest match and sticks with it while it is still heard.
 
 ## Other Bluetooth around you
 
@@ -83,7 +147,7 @@ distance band and colour-coded signal strength. The strongest devices stay at
 the top. RSSI
 is smoothed so small fluctuations do not constantly reorder the grid, and a
 device stays visible until it has gone unheard for 45 seconds. These devices
-are not smart glasses; they show that the scan is working.
+are not smart glasses or cameras; they show that the scan is working.
 
 ## The watching pill
 
