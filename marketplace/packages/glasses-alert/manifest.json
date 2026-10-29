@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Privacy",
-  "version": "1.2.0",
-  "summary": "Know when someone near you wears Meta smart glasses. Your phone scans Bluetooth for Ray-Ban Meta and Oakley Meta glasses, rings a loud alarm through silent mode, and points an arrow towards them. Nothing leaves the phone.",
+  "version": "1.3.0",
+  "summary": "Know when someone near you wears Meta smart glasses or carries a Bluetooth camera. Your phone scans Bluetooth, rings a loud alarm through silent mode, and points an arrow towards them. Nothing leaves the phone.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -42,7 +42,7 @@
     },
     {
       "id": "device.alarm.loud",
-      "label": "Ring at full alarm volume and vibrate, even on silent, when glasses are found",
+      "label": "Ring at full alarm volume and vibrate, even on silent, when glasses or a camera are found",
       "risk": "low"
     },
     {

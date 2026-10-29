@@ -12,9 +12,9 @@ class PocketTextTest {
     }
 
     fun testGlassesAndPingsCopy() {
-        assertEq("No smart glasses", PocketText.glassesTitle(0))
-        assertEq("Smart glasses nearby", PocketText.glassesTitle(1))
-        assertEq("3 smart glasses nearby", PocketText.glassesTitle(3))
+        assertEq("No smart glasses or cameras", PocketText.glassesTitle(0))
+        assertEq("Smart glasses or camera nearby", PocketText.glassesTitle(1))
+        assertEq("3 smart glasses or cameras nearby", PocketText.glassesTitle(3))
         assertEq("1 device heard", PocketText.devicesHeard(1))
         assertEq("4 devices heard", PocketText.devicesHeard(4))
         expect(PocketText.alarmed(true, 0), "ringing alarms")
