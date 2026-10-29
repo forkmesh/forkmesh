@@ -1,5 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
+const RETAINED_KEY_ADVERTISEMENTS = 1;
+
 
 test("ForkBot sends the model selected in the prompt area without storage", async ({
   page,
@@ -141,7 +143,7 @@ test("self-authored retained chat survives a page refresh", async ({ page }) => 
   await expect(page.locator("#chat-log")).toContainText(
     "My message must survive refresh",
   );
-  await expect.poll(() => retainedFrames.length).toBe(1);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 1);
 
   await page.reload();
 
@@ -205,7 +207,7 @@ test("a public chat message accepts and sends a thread reply", async ({ page }) 
   await page.locator("#chat-thread-input").fill(replyText);
   await page.locator("#chat-thread-send").click();
   await expect(page.locator("#chat-thread-replies")).toContainText(replyText);
-  await expect.poll(() => retainedFrames.length).toBe(2);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 2);
   await page.locator("#chat-thread-close").click();
   await expect(page.locator(".chat-thread-view")).toBeHidden();
 });
@@ -262,5 +264,5 @@ test("a confirmed delete removes and broadcasts a public chat message", async ({
   await expect(page.locator("#chat-delete-dialog")).toBeVisible();
   await page.locator("#chat-delete-confirm").click();
   await expect(page.locator("#chat-log")).not.toContainText(message);
-  await expect.poll(() => retainedFrames.length).toBe(2);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 2);
 });
