@@ -710,6 +710,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentGuardrails.cpp
     src/AgentResources.h
     src/AgentResources.cpp
+    src/AgentSummaryPreload.h
+    src/AgentSummaryPreloadScript.h
     src/AgentResourceGovernor.h
     src/AgentResourceGovernor.cpp
     src/CrashHandler.h
@@ -3950,6 +3952,15 @@ forkmesh_link_opengl(forkmesh-window-tests)
     target_link_libraries(forkmesh-agent-resources-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-agent-resources-tests PRIVATE src)
 
+    qt_add_executable(forkmesh-agent-summary-preload-tests
+        tests/test_agent_summary_preload.cpp
+        src/AgentSummaryPreload.h
+        src/AgentSummaryPreloadScript.h
+        src/AppPaths.h
+    )
+    target_link_libraries(forkmesh-agent-summary-preload-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-agent-summary-preload-tests PRIVATE src)
+
     # The projects layout: root resolution, the rename-only migration of legacy
     # locations, ssh_config rewriting, the storage map and the project registry,
     # all inside a temporary home folder.
@@ -4446,6 +4457,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-system-pressure-tests)
     add_test(NAME forkmesh-agent-resources-tests
              COMMAND forkmesh-agent-resources-tests)
+    add_test(NAME forkmesh-agent-summary-preload-tests
+             COMMAND forkmesh-agent-summary-preload-tests)
     add_test(NAME forkmesh-process-memory-tests
              COMMAND forkmesh-process-memory-tests)
     add_test(NAME forkmesh-app-paths-tests

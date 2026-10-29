@@ -6,6 +6,7 @@
 
 #include "AgentJail.h"
 #include "AgentScratch.h"
+#include "AgentSummaryPreload.h"
 #include "AgentResources.h"
 #include "AgentWorktree.h"
 #include "SafeDelete.h"
@@ -531,6 +532,8 @@ QProcessEnvironment AgentRunner::processEnvironment(Phase phase) const
     // never fail to exec a CLI the UI reported as present.
     forkmesh::agentcli::widenPath(env);
     if (phase == Phase::Agent) {
+        if (provider == QLatin1String("claude-code"))
+            forkmesh::agentsummary::applyEnvironment(env);
         for (const QString &kv : m_config.extraEnvironment) {
             const int eq = kv.indexOf(QLatin1Char('='));
             if (eq > 0)
