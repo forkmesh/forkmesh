@@ -208,6 +208,10 @@ cd app/host && ../../.venv/bin/python -m forkmesh_host serve --port 8080 --db sq
 .venv/bin/python -m pytest app/host/tests_rqlite app/host/tests_cluster app/host/tests_unit
 ```
 
+The requirements pin `uvicorn` with `uvloop`, `httptools` and `websockets`
+rather than `uvicorn[standard]`, whose `watchfiles` and `python-dotenv` the
+host never uses (`docs/engineering/third-party-dependencies.md`).
+
 `tests_rqlite` and `tests_cluster` start real rqlite processes and skip when
 `rqlited` is missing (`RQLITED=/path`). `python -m forkmesh_host rss` reports
 memory after importing everything.

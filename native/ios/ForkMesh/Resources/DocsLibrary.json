@@ -2335,21 +2335,6 @@
   },
   {
    "ecosystem": "python",
-   "name": "python-dotenv",
-   "title": "python-dotenv",
-   "version": "1.2.3",
-   "development": false,
-   "usedBy": [
-    "app/host/requirements.txt"
-   ],
-   "description": "",
-   "repository": "",
-   "authors": [],
-   "authorsNote": "",
-   "fetched": ""
-  },
-  {
-   "ecosystem": "python",
    "name": "PyYAML",
    "title": "PyYAML",
    "version": "6.0.3",
@@ -2399,21 +2384,6 @@
    "name": "uvloop",
    "title": "uvloop",
    "version": "0.22.1",
-   "development": false,
-   "usedBy": [
-    "app/host/requirements.txt"
-   ],
-   "description": "",
-   "repository": "",
-   "authors": [],
-   "authorsNote": "",
-   "fetched": ""
-  },
-  {
-   "ecosystem": "python",
-   "name": "watchfiles",
-   "title": "watchfiles",
-   "version": "1.3.0",
    "development": false,
    "usedBy": [
     "app/host/requirements.txt"
@@ -2568,21 +2538,6 @@
    "development": true,
    "usedBy": [
     "world/tools/package.json"
-   ],
-   "description": "",
-   "repository": "",
-   "authors": [],
-   "authorsNote": "",
-   "fetched": ""
-  },
-  {
-   "ecosystem": "npm",
-   "name": "three",
-   "title": "three",
-   "version": "0.184.0",
-   "development": true,
-   "usedBy": [
-    "world/browser_tests/package.json"
    ],
    "description": "",
    "repository": "",

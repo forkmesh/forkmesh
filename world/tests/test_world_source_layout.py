@@ -19,8 +19,7 @@ def test_world_source_tools_and_tests_are_owned_by_world():
     assert not list((APP / "tools").glob("*world*.py"))
 
 
-def test_three_browser_fixture_dependency_is_owned_by_world():
-    """The App test package was forked from World; don't copy its renderer fixture."""
+def test_browser_tests_load_the_vendored_three_not_an_npm_copy():
     app_browser_package = json.loads(
         (APP / "browser_tests/package.json").read_text(encoding="utf-8")
     )
@@ -35,8 +34,9 @@ def test_three_browser_fixture_dependency_is_owned_by_world():
     )
     assert "three" not in app_browser_package["devDependencies"]
     assert "node_modules/three" not in app_browser_lock["packages"]
-    assert "three" in world_browser_package["devDependencies"]
-    assert "node_modules/three" in world_browser_lock["packages"]
+    assert "three" not in world_browser_package["devDependencies"]
+    assert "node_modules/three" not in world_browser_lock["packages"]
+    assert (WORLD / "public/world/vendor/three-0.184.0/three.module.min.js").is_file()
 
 
 def test_app_reexports_world_durable_objects_without_shadowing_capacity():

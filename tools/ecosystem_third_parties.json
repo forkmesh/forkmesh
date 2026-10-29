@@ -8460,7 +8460,7 @@
     "repo": "https://github.com/MagicStack/httptools",
     "category": "libraries",
     "summary": "httptools provides Python bindings to the Node.js llhttp HTTP parser.",
-    "watching": "uvicorn[standard] dependency used by app/host's HTTP server.",
+    "watching": "uvicorn's HTTP parser in app/host's HTTP server, pinned in app/host/requirements.txt.",
     "tags": [
       "python"
     ],
@@ -8481,7 +8481,7 @@
       {
         "topic": "Role in ForkMesh",
         "project": "Parses HTTP for uvicorn's standard extras.",
-        "forkmesh": "Comes in with uvicorn[standard], which serves the Python app in the CPython app host on ForkMesh core nodes."
+        "forkmesh": "Pinned next to uvicorn, which serves the Python app in the CPython app host on ForkMesh core nodes."
       },
       {
         "topic": "License",
@@ -9623,7 +9623,7 @@
     "repo": "https://github.com/encode/uvicorn",
     "category": "libraries",
     "summary": "Uvicorn is a lightning-fast ASGI server implementation for Python.",
-    "watching": "app/host serves the relay's ASGI app with uvicorn[standard]==0.53.0 (app/host/requirements.txt).",
+    "watching": "app/host serves the relay's ASGI app with uvicorn==0.53.0 (app/host/requirements.txt).",
     "tags": [
       "python"
     ],
@@ -9644,7 +9644,7 @@
       {
         "topic": "Role in ForkMesh",
         "project": "Serves Python ASGI applications over HTTP.",
-        "forkmesh": "The CPython app host on ForkMesh core nodes serves the relay's ASGI app with uvicorn[standard]."
+        "forkmesh": "The CPython app host on ForkMesh core nodes serves the relay's ASGI app with uvicorn."
       },
       {
         "topic": "License",
@@ -9663,7 +9663,7 @@
     "repo": "https://github.com/MagicStack/uvloop",
     "category": "libraries",
     "summary": "uvloop is a drop-in replacement for the asyncio event loop implemented in Cython on top of libuv.",
-    "watching": "Pulled in by uvicorn[standard] and imported by app/host for the host's event loop.",
+    "watching": "Pinned in app/host/requirements.txt and imported by app/host for the host's event loop.",
     "tags": [
       "python"
     ],
@@ -9684,7 +9684,7 @@
       {
         "topic": "Role in ForkMesh",
         "project": "Runs the asyncio event loop for Python servers.",
-        "forkmesh": "Comes in with uvicorn[standard] and is imported by the CPython app host on ForkMesh core nodes for its event loop."
+        "forkmesh": "Pinned next to uvicorn and imported by the CPython app host on ForkMesh core nodes for its event loop."
       },
       {
         "topic": "License",
@@ -9703,7 +9703,7 @@
     "repo": "https://github.com/python-websockets/websockets",
     "category": "libraries",
     "summary": "websockets is a library for building WebSocket servers and clients in Python on asyncio.",
-    "watching": "app/host uses it (via uvicorn[standard]) for Durable Object-style WebSocket rooms and tests.",
+    "watching": "app/host uses it (through uvicorn) for Durable Object-style WebSocket rooms and tests.",
     "tags": [
       "python"
     ],
@@ -9724,7 +9724,7 @@
       {
         "topic": "Role in ForkMesh",
         "project": "Handles WebSocket connections in Python servers.",
-        "forkmesh": "The CPython app host on ForkMesh core nodes uses it, through uvicorn[standard], for its WebSocket rooms and in tests."
+        "forkmesh": "The CPython app host on ForkMesh core nodes uses it, through uvicorn, for its WebSocket rooms and in tests."
       },
       {
         "topic": "License",
