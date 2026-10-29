@@ -1642,7 +1642,7 @@ centred box up to 78% of the window high instead of a pillarboxed strip in a
 `app/tools/call_video_harness.cjs` drives the real modules in headless
 Chromium (`render`, `native`, `models`; `PLAYWRIGHT_DIR` names a Playwright
 install, `--gpu` uses the machine GPU). `app/tools/call_video_metrics.py`
-reports landmark jitter and output stability. Test footage is kept out of the
+reports landmark jitter and output stability; it needs only Pillow. Test footage is kept out of the
 repository.
 
 ## Tests
