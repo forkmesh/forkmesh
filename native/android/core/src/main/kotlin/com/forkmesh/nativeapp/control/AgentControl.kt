@@ -825,6 +825,24 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         refresh()
     }
 
+    fun questions(row: UnifiedAgentRow): List<AgentQuestion> {
+        if (!row.isDesktop || row.outside || row.localId <= 0) return emptyList()
+        return AgentQuestion.listFromJson(hub.request("agents.questions", mapOf("id" to row.localId), 20_000, row.desktopKey))
+    }
+
+    fun answer(row: UnifiedAgentRow, question: AgentQuestion, text: String) {
+        if (!row.isDesktop || row.outside || row.localId <= 0) throw LocalControlException("unsupported")
+        val answer = text.trim()
+        if (answer.isEmpty()) return
+        hub.request(
+            "agents.answer",
+            mapOf("id" to row.localId, "question" to question.id, "answer" to answer),
+            30_000,
+            row.desktopKey,
+        )
+        refresh()
+    }
+
     fun fixConflicts(row: UnifiedAgentRow, files: List<String> = emptyList()) {
         if (row.outside) throw LocalControlException("unsupported")
         prompt(row, ConflictResolution.sessionPrompt(row.baseBranch, files))
