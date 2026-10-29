@@ -109,13 +109,7 @@ void MainWindow::handleLocalControlWorkflowsRequest(int connectionId, int reques
                 server->respondError(connectionId, requestId, QStringLiteral("unknown_workflow"));
                 return;
             }
-            if (!repoWorkflowApproved(repoIndex, path, QString())) {
-                logSystem(QStringLiteral("Refused a workflow run from %1: %2 is not approved on this desktop.")
-                              .arg(who, subject));
-                server->respondError(connectionId, requestId, QStringLiteral("approval_required"),
-                                     QStringLiteral("Approve this workflow file on the desktop first."));
-                return;
-            }
+            approveRepoWorkflowFileFromPhone(repoIndex, path, QStringLiteral("Workflow %1").arg(subject), who);
         }
         QJsonObject payload;
         if (action == QLatin1String("run")) {
