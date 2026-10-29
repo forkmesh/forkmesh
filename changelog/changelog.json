@@ -12,6 +12,8 @@
  ],
  "notes": [
   {"date": "2026-10-29", "area": "Desktop", "text": "Shortcuts: a repository with no shortcuts now offers Add starter shortcuts, five ready-made prompts (review your changes, UX audit, stale-code cleanup, docs refresh, feature retirement) you can commit for everyone."},
+  {"date": "2026-10-29", "area": "Agents", "text": "Claude Code agents the desktop starts no longer spend tokens refreshing a hidden status line every 30 seconds."},
+  {"date": "2026-10-29", "area": "Desktop", "text": "The High memory usage window no longer ends ForkMesh by accident: whatever started it, its helpers and the display server can't be killed from there, by hand or automatically."},
   {"date": "2026-10-29", "area": "Desktop", "text": "Shortcuts and workflows you start from your phone run right away again: the tap counts as your approval, so nobody has to click Allow on the desktop."},
   {"date": "2026-10-29", "area": "Agents", "text": "On iPhone and Android, an agent's question now shows at the bottom of its transcript with tap-to-pick answers, and typing in the follow-up box answers it."},
   {"date": "2026-10-28", "area": "Desktop", "text": "Restart computer from your phone now works when another user is on the screen or nobody is logged in, once you turn on Settings, General, Let my phones restart this computer; until then the phone says which setting to turn on."},
