@@ -194,4 +194,11 @@
     <qresource prefix="/shortcuts">
         <file alias="scrub-term.sh">../../.forkmesh/shortcuts/scrub-term.sh</file>
     </qresource>
+    <qresource prefix="/starter-shortcuts">
+        <file alias="review-changes.md">../../marketplace/packages/shortcuts/content/shortcuts/review-changes.md</file>
+        <file alias="audit-user-experience.md">../../marketplace/packages/shortcuts/content/shortcuts/audit-user-experience.md</file>
+        <file alias="clean-up-stale-code.md">../../marketplace/packages/shortcuts/content/shortcuts/clean-up-stale-code.md</file>
+        <file alias="refresh-documentation.md">../../marketplace/packages/shortcuts/content/shortcuts/refresh-documentation.md</file>
+        <file alias="propose-feature-removal.md">../../marketplace/packages/shortcuts/content/shortcuts/propose-feature-removal.md</file>
+    </qresource>
 </RCC>
