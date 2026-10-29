@@ -13,12 +13,55 @@ class GlassesWatchTest {
         assertEq(null, GlassesSignatures.companyId(byteArrayOf(0x53)))
     }
 
-    fun testMatchesEveryMetaCompanyId() {
+    fun testMatchesEveryMakerByCompanyIdOrService() {
         for (maker in GlassesMaker.entries) {
-            val sighting = GlassesSignatures.match(advert(ids = intArrayOf(maker.companyId)), GlassesRange.ROOM, 5)
+            val id = maker.companyId
+            val sighting = if (id != null) {
+                GlassesSignatures.match(advert(ids = intArrayOf(id)), GlassesRange.ROOM, 5)
+            } else {
+                GlassesSignatures.match(GlassesAdvert("AA", null, -60, emptyList(), maker.services), GlassesRange.ROOM, 5)
+            }
             assertEq(maker, sighting?.maker)
+            assertEq(maker.kind, sighting?.kind)
+            assertEq(maker.shown, sighting?.label)
         }
-        assertEq(setOf(0x01AB, 0x058E, 0x0D53), GlassesSignatures.COMPANY_IDS)
+        expect(setOf(0x01AB, 0x058E, 0x0D53).all { it in GlassesSignatures.COMPANY_IDS }, "every Meta ID is watched")
+        expect(0x012D !in GlassesSignatures.COMPANY_IDS, "Sony's shared ID is not an alarm on its own")
+    }
+
+    fun testMatchesCamerasByCompanyId() {
+        val gopro = GlassesSignatures.match(advert(ids = intArrayOf(0x02F2)), GlassesRange.ROOM, 0)
+        assertEq(SightingKind.CAMERA, gopro?.kind)
+        assertEq("GoPro camera", gopro?.label)
+        assertEq("Camera nearby", gopro?.kind?.title)
+        assertEq(SightingKind.GLASSES, GlassesSignatures.match(advert(ids = intArrayOf(0x0D53)), GlassesRange.ROOM, 0)?.kind)
+    }
+
+    fun testMatchesCamerasByService() {
+        val axon = GlassesSignatures.match(GlassesAdvert("BB", null, -60, emptyList(), listOf(0xFC81)), GlassesRange.ROOM, 0)
+        assertEq(GlassesMaker.AXON, axon?.maker)
+        assertEq("Axon body camera", axon?.label)
+        expect(GlassesSignatures.watched(GlassesAdvert("BB", null, -60, emptyList(), listOf(0xFEA6))), "a GoPro service is watched")
+        expect(!GlassesSignatures.watched(GlassesAdvert("BB", null, -60, emptyList(), listOf(0x180D))), "heart rate is not watched")
+    }
+
+    fun testMatchesCameraNames() {
+        for (name in listOf("GoPro 1234", "Insta360 X4", "ILCE-7M4", "Canon EOS R6", "NIKON Z 6_2", "Nextbase 622GW", "OSMO ACTION 4", "Mavic 3")) {
+            assertEq(SightingKind.CAMERA, GlassesSignatures.nameKind(name))
+        }
+        val named = GlassesSignatures.match(advert(name = " ZV-E10 "), GlassesRange.ROOM, 0)
+        assertEq("ZV-E10", named?.label)
+        assertEq(SightingKind.CAMERA, named?.kind)
+        assertEq(SightingKind.GLASSES, GlassesSignatures.nameKind("Ray-Ban Meta"))
+        assertEq(null, GlassesSignatures.nameKind("Cosmo watch"))
+        assertEq(null, GlassesSignatures.nameKind("Carlos iPhone"))
+    }
+
+    fun testCameraMakerPrintersStayQuiet() {
+        assertEq(null, GlassesSignatures.match(advert(name = "Canon TS8300 series PIXMA", ids = intArrayOf(0x01A9)), GlassesRange.ROOM, 0))
+        assertEq(null, GlassesSignatures.match(advert(name = "INSTAX-Link 1234 instax mini Link"), GlassesRange.ROOM, 0))
+        assertEq(null, GlassesSignatures.kind(advert(name = "Canon SELPHY CP1500", ids = intArrayOf(0x01A9))))
+        assertEq(SightingKind.CAMERA, GlassesSignatures.kind(advert(name = "Canon EOS R5", ids = intArrayOf(0x01A9))))
     }
 
     fun testIgnoresOtherMakers() {

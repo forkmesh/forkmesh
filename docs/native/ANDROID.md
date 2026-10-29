@@ -517,8 +517,10 @@ signed with the v3 key (`native/android/README.md`); the default application id
 - **Timers** ring through `AlarmManager` (`TimerAlarmReceiver`, rescheduled
   after boot) with `SCHEDULE_EXACT_ALARM`; they are device-wide.
 - **Glasses Alert** (`feature/glasses/`, core `glasses/`) scans in a
-  `connectedDevice` foreground service with manufacturer-data filters (Android
-  pauses unfiltered scans with the screen off). The alarm uses `USAGE_ALARM`,
+  `connectedDevice` foreground service with manufacturer-data filters for every
+  watched company ID and service-UUID and service-data filters for every watched
+  16-bit service (Android pauses unfiltered scans with the screen off); camera
+  and glasses matches by name alone come from the foreground census scan. The alarm uses `USAGE_ALARM`,
   raises `STREAM_ALARM` while ringing and, with notification-policy access,
   allows alarms through DND. In the foreground an unfiltered census scan feeds
   the device grid (`GlassesCensus`); `GlassesHoming` and `GlassesCompass` drive
