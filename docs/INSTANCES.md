@@ -563,7 +563,8 @@ path:
 - Not leaked: `/api/instance` has no admin field; `robots.txt` and the
   sitemaps do not list it; only an admin's own account answer
   (`_account_public_payload`, sent to the signed-in account at login and
-  session refresh, and `POST /api/accounts/admin-session`) carries
+  session refresh, the `account` block of `GET /api/accounts/sessions`, and
+  `POST /api/accounts/admin-session`) carries
   `adminUrl`, which the dashboard shows as **Admin console** in the account
   menu and as the shield button. Error pages and refusals never name it.
 - The admin JSON APIs stay at `/api/admin/...` and `/api/accounts/admin-*`:
