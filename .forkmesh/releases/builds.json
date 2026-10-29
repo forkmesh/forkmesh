@@ -3,7 +3,7 @@
   "builds": {
     "android": 0,
     "linux": 1,
-    "macos": 0,
+    "macos": 1,
     "windows": 1
   }
 }
