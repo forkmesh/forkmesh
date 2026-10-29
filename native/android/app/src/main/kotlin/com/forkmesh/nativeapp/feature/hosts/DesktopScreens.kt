@@ -28,8 +28,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import com.forkmesh.nativeapp.control.DesktopChoice
+import com.forkmesh.nativeapp.control.DesktopPresence
 import com.forkmesh.nativeapp.control.LocalControlService
 import com.forkmesh.nativeapp.control.LocalControlStatus
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.code.DetailScaffold
 import com.forkmesh.nativeapp.feature.code.FmOutlinedButton
@@ -111,11 +124,22 @@ internal class DesktopsScreen : Screen() {
         val store = remember { DesktopRemoteFeature.diagnostics }
         val tick = rememberRemoteTick(store)
         val hub = DesktopRemoteFeature.hub
-        LaunchedEffect(store) { offMain { store.refreshHealth() } }
+        val haptics = FmHaptics.current
+        LaunchedEffect(store) {
+            offMain { hub.checkDesktops(force = true) }
+            offMain { store.refreshHealth() }
+        }
         DetailScaffold(title, navigator, actions = {
-            FmIconButton("refresh", "Refresh", onPressed = { Thread { store.refreshHealth() }.start() }, color = c.textPrimary)
+            FmIconButton("refresh", "Refresh", onPressed = {
+                Thread {
+                    store.refreshHealth()
+                    hub.checkDesktops(force = true)
+                }.start()
+            }, color = c.textPrimary)
         }) {
             tick.let { }
+            val current = hub.desktop?.key
+            val others = if (current == null) emptyList() else hub.choices.filter { it.id != current }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 val desktop = hub.desktop
                 if (desktop != null) {
@@ -135,6 +159,24 @@ internal class DesktopsScreen : Screen() {
                     }
                     if (store.unsupported) item { Text("Update ForkMesh on this desktop to see its health here.", style = Fm.text.bodySmall.copy(color = c.textSecondary)) }
                     else if (store.error.isNotEmpty() && hub.reach.isConnected) item { Text(store.error, style = Fm.text.bodySmall.copy(color = c.danger)) }
+                    if (others.isNotEmpty()) {
+                        item { FmSectionHeader("Other desktops") }
+                        items(others, key = { it.id }) { choice ->
+                            DesktopChoiceRow(choice) {
+                                haptics.selection()
+                                Thread {
+                                    hub.choose(choice.id)
+                                    store.refreshHealth()
+                                }.start()
+                            }
+                        }
+                        item {
+                            Text(
+                                "These desktops are signed in to the same account. Tap one to send prompts and read agents there instead.",
+                                style = Fm.text.bodySmall.copy(color = c.textSecondary),
+                            )
+                        }
+                    }
                 } else {
                     item { DesktopDiscoveryStatus(hub.local) }
                 }
@@ -144,6 +186,41 @@ internal class DesktopsScreen : Screen() {
             }
         }
     }
+}
+
+@Composable
+internal fun desktopPresenceColor(presence: DesktopPresence): Color = when (presence) {
+    DesktopPresence.Online -> Fm.colors.success
+    DesktopPresence.Offline -> Fm.colors.danger
+    DesktopPresence.Checking -> Fm.colors.warning
+    DesktopPresence.Unknown -> Fm.colors.textTertiary
+}
+
+@Composable
+private fun DesktopChoiceRow(choice: DesktopChoice, onUse: () -> Unit) {
+    val c = Fm.colors
+    val tint = desktopPresenceColor(choice.presence)
+    FmListRow(
+        choice.name,
+        modifier = Modifier
+            .clearAndSetSemantics {
+                contentDescription = "${choice.label}. Sends prompts to this desktop from now on"
+                role = Role.Button
+                onClick { onUse(); true }
+            }
+            .testTag("desktop-choice-row"),
+        subtitle = choice.presence.label,
+        leading = { FmIcon("desktop_windows", size = 22.dp, tint = tint) },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                Text("Use", style = Fm.text.labelMedium.copy(color = c.accent, fontWeight = FontWeight.SemiBold))
+                Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
+            }
+        },
+        onTap = onUse,
+        showChevron = false,
+        minHeight = 52.dp,
+    )
 }
 
 @Composable

@@ -476,6 +476,12 @@ class LocalMeshRoom(
     var bluetoothEnabled = true
 
     @Volatile
+    var waitsForRoom = false
+
+    @Volatile
+    var onFirstRoomOpen: (() -> Unit)? = null
+
+    @Volatile
     var listenAddress: InetAddress? = null
 
     val running: Boolean get() = loop.call { isRunning }
@@ -700,8 +706,17 @@ class LocalMeshRoom(
         notifyListeners()
     }
 
+    fun roomOpened(): Boolean {
+        if (waitsForRoom) {
+            waitsForRoom = false
+            onFirstRoomOpen?.invoke()
+        }
+        return start()
+    }
+
     fun start(): Boolean {
         if (loop.call { isRunning }) return true
+        if (waitsForRoom) return false
         val roomCrypto = RoomCrypto.shared(MESH_ROOM_NAME)
         val roomSeal = RoomSeal.loadOrCreate(
             MESH_ROOM_NAME,

@@ -283,7 +283,14 @@ object CiLog {
     }
 }
 
-data class CiPrompt(val repo: RepoRef, val pull: Int?, val text: String)
+data class CiPrompt(val repo: RepoRef, val pull: Int?, val text: String) {
+    val composeTarget: com.forkmesh.nativeapp.navigation.ComposeTarget
+        get() = com.forkmesh.nativeapp.navigation.ComposeTarget(
+            repo = com.forkmesh.nativeapp.navigation.RepoRef(repo.owner, repo.name),
+            pull = pull,
+            text = text,
+        )
+}
 
 object CiPrompts {
     fun fixFailedRun(run: ActionsRunSummary, repo: RepoRef): CiPrompt {

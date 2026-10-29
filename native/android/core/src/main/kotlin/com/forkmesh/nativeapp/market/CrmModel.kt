@@ -128,6 +128,11 @@ fun PackagesClient.revokeCrmDeckLink(organization: String, token: String) {
 }
 
 class CrmModel(private val client: PackagesClient, var organization: String = "", var flowId: String? = null) {
+    companion object {
+        fun newRequestId(): String = java.util.UUID.randomUUID().toString().replace("-", "").lowercase()
+    }
+
+
     var organizations: List<PackageOrganization> = emptyList()
         private set
     var data: CrmOrganizationData? = null
@@ -139,7 +144,11 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     var tab: CrmTab? = null
     var filter = CrmFilter()
     val nextSkipped = mutableSetOf<String>()
+    var existing: CrmContact? = null
+    var section: CrmSection = CrmSection.HOME
     var now: () -> Long = { System.currentTimeMillis() }
+    var retryDelays: List<Long> = listOf(400, 1_500)
+    var sleep: (Long) -> Unit = { Thread.sleep(it) }
     private val memory = HashMap<String, CrmOrganizationData>()
     private val listViewsRecorded = HashMap<String, Long>()
 
@@ -191,6 +200,21 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         data?.flowFor(next)?.let { flowId = it.id }
     }
 
+    val defaultTab: CrmTab get() = data?.contactTabs?.firstOrNull()?.tab ?: CrmTab.Activity
+
+    fun show(next: CrmSection) {
+        section = next
+        val data = data ?: return
+        when (next) {
+            CrmSection.CONTACTS -> if (!activeTab.isContacts) select(defaultTab)
+            CrmSection.PIPELINE -> if (activeFlow == null) data.contactTabs.firstOrNull { it.flow != null }?.let { select(it.tab) }
+            CrmSection.ACTIVITY -> if (activeTab.isContacts) select(CrmTab.Activity)
+            CrmSection.HOME, CrmSection.MORE -> Unit
+        }
+    }
+
+    val dashboard: CrmDashboard get() = CrmDashboard.of(data?.contacts.orEmpty(), now())
+
     fun recordListView(viewId: String) {
         val stamp = now()
         val last = listViewsRecorded[viewId]
@@ -236,6 +260,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
 
     fun clearError() {
         errorText = ""
+        existing = null
     }
 
     private fun remember(next: CrmOrganizationData?) {
@@ -253,22 +278,58 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         }
     }
 
-    fun save(edit: CrmContactEdit, original: CrmContact?, addTo: String? = null): CrmContact? {
+    fun save(edit: CrmContactEdit, original: CrmContact?, addTo: String? = null, requestId: String = ""): CrmContact? {
+        existing = null
         if (!edit.isValid || !PackagesText.isOrgName(organization)) {
             errorText = PackagesException.sentence("name_or_email_required")
             return null
         }
-        val saved = perform {
-            if (original != null) {
-                val changes = edit.changes(original)
-                if (changes.isEmpty()) original else client.updateCrmContact(CrmContactRef(organization, original.id), changes)
-            } else {
-                val fields = LinkedHashMap(edit.changes(null))
-                if (addTo != null && PackagesText.isHexId(addTo)) fields["views"] = listOf(addTo)
-                client.createCrmContact(organization, fields)
+        if (original != null) return update(original, edit.changes(original))
+        val org = organization
+        val fields = LinkedHashMap(edit.changes(null))
+        if (addTo != null && PackagesText.isHexId(addTo)) fields["views"] = listOf(addTo)
+        if (PackagesText.isHexId(requestId)) fields["requestId"] = requestId
+        var attempt = 0
+        while (true) {
+            try {
+                val saved = client.createCrmContact(org, fields)
+                errorText = ""
+                if (org != organization) return saved
+                remember(data?.replacing(saved))
+                return saved
+            } catch (thrown: Exception) {
+                val found = (thrown as? PackagesException)?.let(::duplicate)
+                if (found != null) {
+                    existing = found
+                    val label = found.name.ifEmpty { found.email }.ifEmpty { "A contact" }
+                    errorText = "$label already uses that email address, so they are already in the CRM."
+                    return null
+                }
+                if (!PackagesText.isHexId(requestId) || !PackagesException.isTransient(thrown) || attempt >= retryDelays.size) {
+                    errorText = PackagesException.describe(thrown)
+                    return null
+                }
+                sleep(retryDelays[attempt])
+                attempt++
             }
-        } ?: return null
-        remember(data?.replacing(saved))
+        }
+    }
+
+    private fun duplicate(error: PackagesException): CrmContact? {
+        val id = error.fields["contactId"].orEmpty()
+        if (error.code != "contact_email_exists" || !PackagesText.isHexId(id)) return null
+        return contact(id) ?: CrmContact(
+            id = id, organization = organization, name = error.fields["contactName"].orEmpty(), email = error.fields["contactEmail"].orEmpty(),
+        )
+    }
+
+    fun addDetails(edit: CrmContactEdit, found: CrmContact, addTo: String? = null): CrmContact? {
+        if (contact(found.id) == null) load()
+        val current = contact(found.id) ?: found
+        val changes = LinkedHashMap(edit.additions(current))
+        if (addTo != null && PackagesText.isHexId(addTo) && addTo !in current.views) changes["views"] = listOf(addTo)
+        val saved = update(current, changes)
+        if (saved != null) existing = null
         return saved
     }
 
@@ -399,8 +460,8 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         return sent
     }
 
-    fun nextContact(mode: CrmNextContact.Mode): CrmNextContact =
-        CrmNextContact.pick(mode, tabContacts, data?.activity.orEmpty(), nextSkipped.toSet(), now())
+    fun nextContact(mode: CrmNextContact.Mode, everyone: Boolean = false): CrmNextContact =
+        CrmNextContact.pick(mode, if (everyone) data?.contacts.orEmpty() else tabContacts, data?.activity.orEmpty(), nextSkipped.toSet(), now())
 
     val noteDrafts: List<CrmNoteDraft> get() = CrmNoteDraft.drafts(data?.contacts.orEmpty(), data?.activity.orEmpty())
 

@@ -256,9 +256,9 @@ The app is `com.forkmesh.forkmesh` (`APP_BUNDLE_ID` in
 - **One app on two platforms.** Keep behaviour, copy, endpoints, storage keys
   and signing formats identical to `native/android`; the relay and the desktop
   cannot tell the apps apart.
-- **Register what Android must match.** A change an iPhone user can see adds
-  a row to [`docs/native/SYNC.md`](../../docs/native/SYNC.md) in the same pull
-  request (`python3 tools/native_sync.py add <sha> "<sentence>" --area <Area>`).
+- **Change Android in the same pull request.** A change an iPhone user can
+  see is made in `native/android` too, so the two apps keep the same features
+  and look.
 - **Logic in the core, views in the app.** State, networking, parsing,
   validation and view models (`@Observable` classes) go in `ForkMeshCore`. A
   SwiftUI view binds to a view model and lays things out; it does not fetch,

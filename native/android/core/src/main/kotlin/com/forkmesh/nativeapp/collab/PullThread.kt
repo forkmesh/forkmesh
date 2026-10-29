@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.collab
 
 import com.forkmesh.nativeapp.api.DartException
+import com.forkmesh.nativeapp.code.agoLabel
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.PullEvent
 import com.forkmesh.nativeapp.model.PullRequest
@@ -18,6 +19,16 @@ object PullCard {
         "#${pull.number}" + if (pull.head.isNotEmpty() || pull.base.isNotEmpty()) " · ${pull.head} → ${pull.base}" else ""
 
     fun badge(pull: PublishedPull): String = if (pull.signed) "signed" else pull.status
+
+    fun author(pull: PublishedPull): String {
+        val name = pull.authorName.trim()
+        if (name.isNotEmpty()) return name
+        val key = pull.author.trim()
+        return if (key.length > 10) key.take(8) + "…" else key
+    }
+
+    fun age(pull: PublishedPull, nowMs: Long = System.currentTimeMillis()): String =
+        if (pull.createdMs > 0) agoLabel(PullTimeline.epochMs(pull.createdMs), nowMs) else ""
 }
 
 object PullDetail {
@@ -26,6 +37,22 @@ object PullDetail {
     const val REVIEW_ACTIONS_COPY =
         "Submit comments, approvals, or requested changes through the signed Worker pull inbox."
     const val TIMELINE_EMPTY = "No review or comment events have been published yet."
+    const val COMMITS_TITLE = "Commits"
+
+    fun commitsLine(count: Int): String = "$count ${if (count == 1) "commit" else "commits"}"
+
+    const val CONVERSATION_TITLE = "Conversation"
+    const val REVIEW_TITLE = "Review"
+    const val COMMENT_TITLE = "Comment"
+    const val REVIEW_COPY = "Approve, request changes or comment. Reviews are signed and sent to the pull inbox."
+    const val DONE_REVIEW_COPY =
+        "This pull request is no longer open, so it cannot be approved or merged. Comments still reach the pull inbox."
+
+    fun openedLine(pull: PublishedPull, nowMs: Long = System.currentTimeMillis()): String {
+        val age = PullCard.age(pull, nowMs)
+        val who = PullCard.author(pull).ifEmpty { "Someone" }
+        return "$who opened this pull request" + if (age.isEmpty()) "" else " · $age"
+    }
 
     fun canRequestMerge(pull: PublishedPull): Boolean = pull.status.trim().lowercase() == "open"
 
@@ -149,14 +176,84 @@ object DesktopCommand {
 object PullTimeline {
     fun tone(event: PullEvent): CollabTone = when (event.displayTitle) {
         "Approved" -> CollabTone.Success
-        "Requested changes" -> CollabTone.Danger
+        "Requested changes", "Closed" -> CollabTone.Danger
+        "Merged" -> CollabTone.AccentEdge
         else -> CollabTone.Tertiary
     }
 
     fun icon(event: PullEvent): String = when (event.displayTitle) {
         "Approved" -> "check_circle_outline"
         "Requested changes" -> "cancel_outlined"
+        "Merged" -> "call_merge"
+        "Closed" -> "archive_outlined"
+        "Reopened" -> "lock_open_outlined"
         else -> "rate_review_outlined"
+    }
+
+    fun epochMs(ts: Long): Long = if (ts > 0 && ts < 100_000_000_000L) ts * 1000 else ts
+
+    fun mergedEvent(pull: PublishedPull): PullEvent? {
+        if (pull.status.trim().lowercase() != "merged") return null
+        val by = pull.mergedBy.trim()
+        val name = if (by.isNotEmpty() && by == pull.author) pull.authorName else ""
+        val into = if (pull.base.isEmpty()) "" else " into ${pull.base}"
+        val head = if (pull.head.isEmpty()) "" else " ${pull.head}"
+        return PullEvent(type = "merged", body = "Merged$head$into.", author = by, authorName = name, state = pull.base, ts = pull.mergedMs)
+    }
+
+    fun events(pull: PublishedPull): List<PullEvent> {
+        val merged = mergedEvent(pull) ?: return pull.events
+        val rows = pull.events.filter { it.type != "merged" }.toMutableList()
+        val at = epochMs(merged.ts)
+        val index = if (at > 0) rows.indexOfFirst { epochMs(it.ts) > at } else -1
+        if (index >= 0) rows.add(index, merged) else rows.add(merged)
+        return rows
+    }
+
+    fun author(event: PullEvent): String {
+        if (event.authorName.isNotEmpty()) return event.authorName
+        val key = event.author.trim()
+        return if (key.length > 10) key.take(8) + "…" else key
+    }
+}
+
+enum class PullState(val raw: String, val label: String, val icon: String, val tone: CollabTone) {
+    Open("open", "Open", "call_split", CollabTone.Success),
+    Merged("merged", "Merged", "call_merge", CollabTone.AccentEdge),
+    Closed("closed", "Closed", "archive_outlined", CollabTone.Danger);
+
+    companion object {
+        const val MERGED_TITLE = "Pull request successfully merged and closed"
+        const val CLOSED_TITLE = "Closed with unmerged commits"
+        const val CLOSED_COPY = "This pull request was closed without merging. Reviews and merges are off until it is reopened."
+
+        fun of(pull: PublishedPull): PullState = when (pull.status.trim().lowercase()) {
+            "merged", "closed-merged" -> Merged
+            "open", "" -> Open
+            else -> Closed
+        }
+
+        fun summary(pull: PublishedPull, commits: Int, nowMs: Long = System.currentTimeMillis()): String {
+            val who = PullCard.author(pull).ifEmpty { "Someone" }
+            val count = if (commits > 0) "$commits ${if (commits == 1) "commit" else "commits"}" else "changes"
+            val branches = if (pull.base.isEmpty()) "" else " into ${pull.base}" + if (pull.head.isEmpty()) "" else " from ${pull.head}"
+            return when (of(pull)) {
+                Open -> "$who wants to merge $count$branches"
+                Merged -> {
+                    val whenText = if (pull.mergedMs > 0) " " + agoLabel(PullTimeline.epochMs(pull.mergedMs), nowMs) else ""
+                    "$who's $count merged$branches$whenText"
+                }
+                Closed -> "$who proposed $count$branches · closed without merging"
+            }
+        }
+
+        fun mergedCopy(pull: PublishedPull): String {
+            val into = pull.base.ifEmpty { "the base branch" }
+            val what = if (pull.head.isEmpty()) "These changes are" else "${pull.head} is"
+            return "$what in $into. Nothing more can be merged from this pull request; comments are still welcome."
+        }
+
+        fun reviewable(pull: PublishedPull): Boolean = of(pull) == Open
     }
 }
 

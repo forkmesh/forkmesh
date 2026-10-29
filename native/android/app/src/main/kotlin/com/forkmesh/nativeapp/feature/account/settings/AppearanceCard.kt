@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.platform.AppearanceStore
 import com.forkmesh.nativeapp.settings.AccentChoice
 import com.forkmesh.nativeapp.settings.AppTheme
+import com.forkmesh.nativeapp.settings.LayoutModeChoice
 import com.forkmesh.nativeapp.settings.ResolvedTheme
 import com.forkmesh.nativeapp.settings.ThemeModeChoice
 import com.forkmesh.nativeapp.settings.ThemeSurface
@@ -56,6 +57,11 @@ private fun ThemeModeChoice.icon(): String = when (this) {
     ThemeModeChoice.system -> "brightness_auto_outlined"
     ThemeModeChoice.light -> "light_mode_outlined"
     ThemeModeChoice.dark -> "dark_mode_outlined"
+}
+
+private fun LayoutModeChoice.icon(): String = when (this) {
+    LayoutModeChoice.controlTower -> "grid_view_outlined"
+    LayoutModeChoice.focus -> "view_agenda_outlined"
 }
 
 private val customWheel = Brush.sweepGradient(
@@ -77,6 +83,15 @@ fun AppearanceCard(navigator: Navigator) {
             haptics.selection()
             AppearanceStore.setThemeMode(it)
         }
+        Box(Modifier.height(FmSpace.x4))
+        Text("Layout", style = label)
+        Box(Modifier.height(FmSpace.x2))
+        LayoutModeTrack(appearance.layoutMode) {
+            haptics.selection()
+            AppearanceStore.setLayoutMode(it)
+        }
+        Box(Modifier.height(FmSpace.x1))
+        SettingsNote("${appearance.layoutMode.label}: ${appearance.layoutMode.note.lowercase()}. The CRM follows it; the desktop has the same two modes.")
         Box(Modifier.height(FmSpace.x3))
         SettingsSwitch(
             "Match the instance's theme",
@@ -142,6 +157,19 @@ internal fun ThemeModeTrack(selectedMode: ThemeModeChoice, onPick: (ThemeModeCho
         icon = { it.icon() },
         tag = { "appearance-theme-${it.name}" },
         description = { "${it.label} theme" },
+        onPick = onPick,
+    )
+}
+
+@Composable
+internal fun LayoutModeTrack(selectedMode: LayoutModeChoice, onPick: (LayoutModeChoice) -> Unit) {
+    ThemeSegmentTrack(
+        LayoutModeChoice.entries,
+        selectedMode,
+        label = { it.label },
+        icon = { it.icon() },
+        tag = { "appearance-layout-${it.name}" },
+        description = { "${it.label} layout" },
         onPick = onPick,
     )
 }

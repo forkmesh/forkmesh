@@ -76,6 +76,8 @@ import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.launch
+import com.forkmesh.nativeapp.collab.PullState
+import com.forkmesh.nativeapp.feature.code.collab.PullDoneCard
 
 internal class PullReviewScreen(private val repo: Repository, private val number: Int) : Screen() {
     private val session = PullReviewSession(repo.owner, repo.name, number, CodeServices.ledgerReader(), CodeServices.writer(repo))
@@ -381,8 +383,16 @@ internal fun PullWorkflowCards(repo: Repository, pull: PublishedPull, navigator:
             tick.bump()
         }
     }
+    val pullState = if (state == PullMergeState.Merged) PullState.Merged else PullState.of(pull)
     Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
-        InfoCard("Merge") {
+        if (pullState != PullState.Open) {
+            PullDoneCard(pull, pullState) {
+                Row(Modifier.padding(top = FmSpace.x2), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                    FmToneButton("Review files", onPressed = { navigator.push(PullReviewScreen(repo, pull.number)) }, icon = "rate_review_outlined")
+                }
+                FmInlineStatus(mergeStatus)
+            }
+        } else InfoCard("Merge") {
             FmStatusBadge(mergeStateLabel(state), toneOf(state.tone))
             Note(PullMergeRules.headline(state, pull.base))
             Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {

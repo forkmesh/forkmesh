@@ -157,6 +157,7 @@ internal class AgentsScreen : Screen() {
         val signal by AgentsFeature.listSignal.collectAsState()
         val center = AgentsFeature.control
         rememberCenterTick(center)
+        WatchDesktopTokens()
         LaunchedEffect(generation, request) {
             val token = rings.begin()
             center.refreshAsync()
@@ -478,7 +479,7 @@ internal class AgentsScreen : Screen() {
                         AgentReadMarks.open(repo.name, session)
                         navigator.push(AgentSessionDetailScreen(repo, session, AgentsFeature.ownerAccount(repo)))
                     },
-                    facts = AgentLineChips.facts(session),
+                    facts = AgentLineChips.facts(session, com.forkmesh.nativeapp.control.liveDesktopRow(AgentsFeature.control.rows, repo.name, session.id)),
                     unread = AgentReadMarks.unread(repo.name, session),
                     eagle = AgentEagleSource.Desktop(repo.name, session.id, session.isActive),
                 )
@@ -505,13 +506,24 @@ internal fun LazyListScope.liveDesktopItems(
             )
         }
     }
+    val otherNotes = AgentsFeature.control.otherDesktopNotes
+    if (otherNotes.isNotEmpty()) {
+        item(key = "other-desktop-notes") {
+            Text(
+                otherNotes.joinToString("\n"),
+                style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary),
+                modifier = Modifier.padding(top = FmSpace.x1),
+            )
+        }
+    }
     if (rows.isEmpty()) {
         if (AgentsFeature.control.supportsQueue) item(key = "live-desktop-queue") { DesktopQueueSummaryRow(navigator) }
         return
     }
     item(key = "live-desktop-header") {
         val c = Fm.colors
-        val desktop = rows.first().node.ifEmpty { "your desktop" }
+        val desktops = rows.map { it.node }.filter { it.isNotEmpty() }.distinct()
+        val desktop = if (desktops.size > 1) "your desktops" else rows.first().node.ifEmpty { "your desktop" }
         Row(Modifier.fillMaxWidth().padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "On $desktop",
@@ -561,7 +573,8 @@ internal fun liveDesktopDetail(row: UnifiedAgentRow): String {
     } else {
         listOf(row.repoLabel, row.provider)
     }
-    return parts.filter { it.isNotEmpty() }.joinToString(" · ")
+    val place = if (row.elsewhere) listOf(row.node) else emptyList()
+    return (place + parts).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
 @Composable
@@ -575,7 +588,7 @@ internal fun DesktopSessionRow(navigator: Navigator, repo: Repository, session: 
             AgentReadMarks.open(repo.name, session)
             navigator.push(AgentSessionDetailScreen(repo, session, AgentsFeature.ownerAccount(repo)))
         },
-        facts = AgentLineChips.facts(session),
+        facts = AgentLineChips.facts(session, com.forkmesh.nativeapp.control.liveDesktopRow(AgentsFeature.control.rows, repo.name, session.id)),
         unread = AgentReadMarks.unread(repo.name, session),
         eagle = AgentEagleSource.Desktop(repo.name, session.id, session.isActive),
     )

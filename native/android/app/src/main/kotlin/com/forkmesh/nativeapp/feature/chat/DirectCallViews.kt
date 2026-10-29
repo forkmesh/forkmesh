@@ -17,9 +17,23 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import com.forkmesh.nativeapp.chat.CallMiniLayout
+import com.forkmesh.nativeapp.chat.CallMiniSide
+import com.forkmesh.nativeapp.chat.CallMiniSpot
+import com.forkmesh.nativeapp.ui.theme.FmIcon
+import kotlinx.coroutines.delay
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.chat.CallControlsArrangement
 import com.forkmesh.nativeapp.chat.CallControlsLayout
@@ -89,6 +103,8 @@ private data class DirectCallView(
     val cameraOff: Boolean,
     val available: Boolean,
     val voice: String = "",
+    val reconnecting: Boolean = false,
+    val liveSince: Long? = null,
 )
 
 private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
@@ -101,6 +117,8 @@ private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
     cameraOff = cameraOff,
     available = available,
     voice = voice,
+    reconnecting = reconnecting,
+    liveSince = liveSince,
 )
 
 internal fun callPermissions(kind: DirectCallKind): Array<String> =
@@ -157,15 +175,38 @@ fun DirectCallButtons(conversation: String) {
 }
 
 @Composable
+private fun rememberAnswerGate(): (DirectCallInvite) -> Unit {
+    val context = LocalContext.current
+    var wanted by remember { mutableStateOf<DirectCallInvite?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+        val invite = wanted ?: return@rememberLauncherForActivityResult
+        wanted = null
+        DirectCallFeature.answer(invite.callId, invite.media, callPermitted(context, invite.media))
+    }
+    return { invite ->
+        if (callPermitted(context, invite.media)) {
+            DirectCallFeature.answer(invite.callId, invite.media, true)
+        } else {
+            DirectCallFeature.run { if (it.invite?.callId == invite.callId) it.holdInvite() }
+            wanted = invite
+            launcher.launch(callPermissions(invite.media))
+        }
+    }
+}
+
+@Composable
 fun DirectCallOverlay() {
     CallWindowEffect()
-    val (engine, state) = rememberCallView() ?: return
+    val (_, state) = rememberCallView() ?: return
     val precall by DirectCallFeature.precall.collectAsState()
+    val minimized by DirectCallFeature.minimized.collectAsState()
+    val answer = rememberAnswerGate()
     val pending = precall
     if (state.phase == null && pending != null) PreCallScreen(pending)
     when {
+        state.phase != null && minimized -> DirectCallMiniWindow(state)
         state.phase != null -> DirectCallScreen(state)
-        state.invite != null -> IncomingCallScreen(engine, state.invite)
+        state.invite != null -> key(state.invite.callId) { IncomingCallScreen(state.invite, answer) }
     }
 }
 
@@ -225,12 +266,9 @@ private fun LabeledCallButton(icon: String, label: String, background: Color, on
 }
 
 @Composable
-private fun IncomingCallScreen(engine: DirectCallEngine, invite: DirectCallInvite) {
+private fun IncomingCallScreen(invite: DirectCallInvite, onAccept: (DirectCallInvite) -> Unit) {
     val colors = Fm.colors
     val video = invite.media == DirectCallKind.VIDEO
-    val accept = rememberCallPermissionGate { _ ->
-        DirectCallFeature.run { if (it === engine && it.invite?.callId == invite.callId) it.acceptInvite() }
-    }
     BackHandler {}
     Box(
         Modifier
@@ -269,7 +307,7 @@ private fun IncomingCallScreen(engine: DirectCallEngine, invite: DirectCallInvit
                 DirectCallFeature.run { if (it.invite?.callId == invite.callId) it.declineInvite() }
             }
             LabeledCallButton(icon = if (video) "videocam" else "call", label = "Accept", background = colors.success) {
-                accept(invite.media)
+                onAccept(invite)
             }
         }
     }
@@ -285,6 +323,8 @@ private fun DirectCallScreen(state: DirectCallView) {
     val thumbs = peers?.backgrounds?.collectAsState()?.value
     val route = peers?.route?.collectAsState()?.value.orEmpty()
     val quality = peers?.quality?.collectAsState()?.value
+    val remoteVideo = peers?.remoteVideo?.collectAsState()?.value == true
+    val micLost = peers?.micLost?.collectAsState()?.value == true
     val video = state.media == DirectCallKind.VIDEO
     var headerBottom by remember { mutableStateOf(0f) }
     var controlsTop by remember { mutableStateOf(0f) }
@@ -292,7 +332,7 @@ private fun DirectCallScreen(state: DirectCallView) {
         hostView.keepScreenOn = true
         onDispose { hostView.keepScreenOn = false }
     }
-    BackHandler {}
+    BackHandler { DirectCallFeature.minimize() }
     Box(
         Modifier
             .fillMaxSize()
@@ -304,9 +344,23 @@ private fun DirectCallScreen(state: DirectCallView) {
                 AndroidView(factory = { context -> webView.adoptContext(context) }, modifier = Modifier.fillMaxSize())
             }
         }
-        if (!video || state.phase != DirectCallPhase.LIVE) {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                CallAvatar(state.partner)
+        if (!video || !remoteVideo) {
+            Column(
+                Modifier
+                    .align(Alignment.Center)
+                    .semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CallAvatar(state.partner, size = 110)
+                Spacer(Modifier.height(FmSpace.x3))
+                Text(
+                    "@${state.partner}",
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.headlineSmall.copy(fontWeight = FontWeight.SemiBold, shadow = CALL_TEXT_SHADOW),
+                    modifier = Modifier.padding(horizontal = FmSpace.x4),
+                )
             }
         }
         Column(
@@ -323,10 +377,15 @@ private fun DirectCallScreen(state: DirectCallView) {
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = Fm.text.titleLarge,
+                style = Fm.text.titleLarge.copy(shadow = CALL_TEXT_SHADOW),
+                modifier = Modifier.padding(horizontal = FmSpace.x8),
             )
             Spacer(Modifier.height(FmSpace.x1))
-            Text(state.status, color = Color.White.copy(alpha = .75f), style = Fm.text.bodyMedium)
+            Text(
+                state.status,
+                color = Color.White.copy(alpha = .75f),
+                style = Fm.text.bodyMedium.copy(shadow = CALL_TEXT_SHADOW),
+            )
             if (state.phase == DirectCallPhase.LIVE && route.isNotEmpty()) {
                 Text(
                     if (route == "relay") "Relayed · through a TURN relay server (third party)" else "Direct · peer-to-peer, no server in between",
@@ -343,10 +402,45 @@ private fun DirectCallScreen(state: DirectCallView) {
                 )
             }
             if (quality != null) {
-                CallQualityWidget(quality, video = video, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
+                CallQualityWidget(
+                    quality,
+                    video = video,
+                    sending = !state.cameraOff,
+                    finishOnLeave = false,
+                    modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2),
+                )
+            }
+            if (micLost) {
+                Text(
+                    "Your microphone stopped and could not restart. Check that no other app is using it.",
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    style = Fm.text.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier
+                        .padding(top = FmSpace.x2)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = .55f))
+                        .padding(horizontal = FmSpace.x3, vertical = 6.dp),
+                )
             }
         }
-        if (webView != null && video && state.phase == DirectCallPhase.LIVE && !state.cameraOff) {
+        Box(
+            Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(start = FmSpace.x3, top = FmSpace.x2)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = .35f))
+                .clickable(role = Role.Button, onClickLabel = "Keep the call going in a small window") {
+                    DirectCallFeature.minimize()
+                }
+                .semantics { contentDescription = "Back to chat" },
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon("keyboard_arrow_down", size = 26.dp, tint = Color.White)
+        }
+        if (webView != null && video && state.phase == DirectCallPhase.LIVE && !state.cameraOff && remoteVideo) {
             DraggableSelfView(webView, topClearance = headerBottom, bottomClearance = controlsTop)
         }
         DirectCallControls(
@@ -428,6 +522,188 @@ private fun DirectCallControls(
 
 private const val CALL_BUTTON_SIZE = 60
 private const val CALL_HANG_UP_SIZE = 64
+private val CALL_TEXT_SHADOW = Shadow(Color.Black.copy(alpha = .6f), blurRadius = 12f)
+private val MINI_SHAPE = RoundedCornerShape(14.dp)
+
+@Composable
+private fun DirectCallMiniWindow(state: DirectCallView) {
+    val density = LocalDensity.current
+    val prefs = remember { Services.get<PrefStore>() }
+    val peers = DirectCallFeature.peers
+    val webView = peers?.view?.collectAsState()?.value
+    val remoteVideo = peers?.remoteVideo?.collectAsState()?.value == true
+    val video = state.media == DirectCallKind.VIDEO
+    val tileWidth = if (video) CallMiniLayout.VIDEO_WIDTH else CallMiniLayout.VOICE_WIDTH
+    val tileHeight = if (video) CallMiniLayout.VIDEO_HEIGHT else CallMiniLayout.VOICE_HEIGHT
+    var spot by remember {
+        mutableStateOf(
+            CallMiniSpot(
+                CallMiniSide.from(prefs?.getString(CallMiniSide.SIDE_KEY)),
+                prefs?.getDouble(CallMiniSide.Y_KEY) ?: CallMiniLayout.DEFAULT_FRACTION,
+            ),
+        )
+    }
+    var drag by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    val status = rememberMiniStatus(state)
+    BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        val width = maxWidth.value
+        val height = maxHeight.value
+        val center = CallMiniLayout.center(spot, tileWidth, tileHeight, width, height)
+        val scale = if (dragging) 1.04f else 1f
+        val left = center.x + drag.x - tileWidth * scale / 2
+        val upper = center.y + drag.y - tileHeight * scale / 2
+        val tracker = remember { VelocityTracker() }
+        Box(
+            Modifier
+                .offset(left.dp, upper.dp)
+                .size((tileWidth * scale).dp, (tileHeight * scale).dp)
+                .shadow(10.dp, MINI_SHAPE)
+                .clip(MINI_SHAPE)
+                .background(Color.Black)
+                .border(1.dp, Color.White.copy(alpha = .3f), MINI_SHAPE)
+                .pointerInput(width, height, tileWidth, tileHeight) {
+                    var total = Offset.Zero
+                    detectDragGestures(
+                        onDragStart = {
+                            tracker.resetTracking()
+                            total = Offset.Zero
+                            dragging = true
+                        },
+                        onDragEnd = {
+                            val velocity = tracker.calculateVelocity()
+                            val next = CallMiniLayout.settle(
+                                spot,
+                                drag.x,
+                                drag.y,
+                                velocity.x / density.density,
+                                velocity.y / density.density,
+                                tileWidth,
+                                tileHeight,
+                                width,
+                                height,
+                            )
+                            spot = next
+                            prefs?.putString(CallMiniSide.SIDE_KEY, next.side.wire)
+                            prefs?.putDouble(CallMiniSide.Y_KEY, next.fraction)
+                            drag = Offset.Zero
+                            dragging = false
+                        },
+                        onDragCancel = {
+                            drag = Offset.Zero
+                            dragging = false
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        total += amount
+                        tracker.addPosition(change.uptimeMillis, total)
+                        drag = Offset(total.x / density.density, total.y / density.density)
+                    }
+                }
+                .clickable(role = Role.Button, onClickLabel = "Return to call") { DirectCallFeature.expand() }
+                .semantics {
+                    contentDescription = "Call with @${state.partner}, $status"
+                    stateDescription = "Drag to move it"
+                    customActions = listOf(
+                        CustomAccessibilityAction("Return to call") {
+                            DirectCallFeature.expand()
+                            true
+                        },
+                    )
+                },
+        ) {
+            if (webView != null) {
+                key(webView) {
+                    AndroidView(factory = { context -> webView.adoptContext(context) }, modifier = Modifier.fillMaxSize())
+                }
+            }
+            if (!video || !remoteVideo) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(Color(0xFF333333), Color(0xFF141414))))
+                        .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = if (video) 40.dp else 44.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    CallAvatar(state.partner, size = if (video) 44 else 34)
+                    if (video) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "@${state.partner}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        status,
+                        color = Color.White.copy(alpha = .85f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MiniCallButton(
+                    icon = if (state.muted) "mic_off" else "mic",
+                    label = if (state.muted) "Unmute" else "Mute",
+                    fill = if (state.muted) Color.White else Color.Black.copy(alpha = .55f),
+                    tint = if (state.muted) Color.Black else Color.White,
+                ) { DirectCallFeature.run { it.toggleMute() } }
+                MiniCallButton(icon = "call_end", label = "Hang up", fill = Fm.colors.danger, tint = Color.White) {
+                    DirectCallFeature.run { it.hangUp() }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberMiniStatus(state: DirectCallView): String {
+    val since = state.liveSince
+    val timed = state.phase == DirectCallPhase.LIVE && !state.reconnecting && since != null
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    if (timed) {
+        LaunchedEffect(since) {
+            while (true) {
+                now = System.currentTimeMillis()
+                delay(1000 - now % 1000)
+            }
+        }
+    }
+    return when {
+        timed && since != null -> CallMiniLayout.duration((now - since) / 1000)
+        state.reconnecting -> "Reconnecting…"
+        state.phase == DirectCallPhase.RINGING -> "Calling…"
+        else -> "Connecting…"
+    }
+}
+
+@Composable
+private fun MiniCallButton(icon: String, label: String, fill: Color, tint: Color, onPressed: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onPressed)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(30.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+            FmIcon(icon, size = 15.dp, tint = tint)
+        }
+    }
+}
 
 @Composable
 private fun DraggableSelfView(webView: WebView, topClearance: Float, bottomClearance: Float) {

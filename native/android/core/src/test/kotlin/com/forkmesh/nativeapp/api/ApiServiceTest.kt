@@ -648,6 +648,40 @@ class ApiServiceTest {
         assertEq(listOf(9, 7), api.publishedPulls("owner", "repo").map { it.number })
     }
 
+    fun testPullCommitsReadTheMboxBesideThePullRecord() {
+        val mbox = "From 0123456789abcdef0123456789abcdef01234567 Mon Sep 17 00:00:00 2001\nSubject: [PATCH] Fix\n"
+        val transport = routeByPath { path, query, _ ->
+            val p = query["path"] ?: ""
+            val ref = query["ref"] ?: ""
+            when {
+                path.endsWith("/tree") && p == ".forkmesh/pulls/7" && ref == "forkmesh/pulls" -> jsonResponse(
+                    mapOf(
+                        "entries" to listOf(
+                            mapOf("name" to "pull.md", "path" to ".forkmesh/pulls/7/pull.md", "type" to "file"),
+                            mapOf("name" to "commits.mbox", "path" to ".forkmesh/pulls/7/commits.mbox", "type" to "file"),
+                        ),
+                    ),
+                )
+                path.endsWith("/blob") && p == ".forkmesh/pulls/7/commits.mbox" && ref == "forkmesh/pulls" -> jsonResponse(mapOf("content" to mbox))
+                path.endsWith("/tree") && p == ".forkmesh/pulls/8" && ref == "forkmesh/pulls" -> jsonResponse(
+                    mapOf("entries" to listOf(mapOf("name" to "pull.md", "path" to ".forkmesh/pulls/8/pull.md", "type" to "file"))),
+                )
+                path.endsWith("/tree") && p == ".forkmesh/pulls/9" && ref == "forkmesh/pull/9" -> jsonResponse(
+                    mapOf("entries" to listOf(mapOf("name" to "commits.mbox", "path" to ".forkmesh/pulls/9/commits.mbox", "type" to "file"))),
+                )
+                path.endsWith("/blob") && p == ".forkmesh/pulls/9/commits.mbox" && ref == "forkmesh/pull/9" -> jsonResponse(mapOf("content" to "branch"))
+                else -> null
+            }
+        }
+        val api = api(transport)
+        assertEq(mbox, api.pullCommits("owner", "repo", 7))
+        assertEq(1, com.forkmesh.nativeapp.code.diff.parseFormatPatchSeries(api.pullCommits("owner", "repo", 7)).size)
+        assertEq("", api.pullCommits("owner", "repo", 8))
+        expect(transport.requests.none { it.query()["path"] == ".forkmesh/pulls/8/commits.mbox" })
+        assertEq("branch", api.pullCommits("owner", "repo", 9))
+        assertEq("", api.pullCommits("owner", "repo", 10))
+    }
+
     fun testPublishedPullFallsBackToThePullBranch() {
         val transport = routeByPath { path, query, _ ->
             val p = query["path"] ?: ""
