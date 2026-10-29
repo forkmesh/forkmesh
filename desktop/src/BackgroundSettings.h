@@ -23,10 +23,12 @@ private:
     void setStartAtBoot(bool on);
     void setKeepRunning(bool on);
     void setSleepDisabled(bool on);
+    void setRestartAllowed(bool on);
 
     QCheckBox *m_keepRunning = nullptr;
     QCheckBox *m_startAtBoot = nullptr;
     QCheckBox *m_noSleep = nullptr;
+    QCheckBox *m_allowRestart = nullptr;
     QLabel *m_status = nullptr;
     bool m_busy = false;
     QString m_sleepError;

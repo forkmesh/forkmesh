@@ -129,10 +129,8 @@ void MainWindow::restartComputer()
                     process->deleteLater();
                     return;
                 }
-                const QString detail = QString::fromUtf8(process->readAllStandardOutput()).simplified();
-                failed(detail.isEmpty()
-                           ? QStringLiteral("Could not request a computer restart (systemctl exited %1).").arg(exitCode)
-                           : QStringLiteral("Could not request a computer restart: %1").arg(detail));
+                failed(updatectl::computerRestartFailure(
+                    exitCode, QString::fromUtf8(process->readAllStandardOutput())));
             });
     process->start();
 }
