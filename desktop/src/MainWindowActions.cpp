@@ -1898,6 +1898,46 @@ bool MainWindow::testCancelledActionRunCleanup(bool expectDeleted)
     return expectDeleted ? deleted && !stillPresent
                          : !deleted && stillPresent;
 }
+
+bool MainWindow::testSupersedeKeepsOtherPullsHeld()
+{
+    if (!m_actionStore)
+        return false;
+
+    auto held = [this](int pullNumber, const QString &commit) {
+        ActionRun run;
+        run.owner = QStringLiteral("test-supersede");
+        run.name = QStringLiteral("held-pulls");
+        run.workflowPath = QStringLiteral(".forkmesh/ci.yml");
+        run.workflowName = QStringLiteral("CI tests");
+        run.commit = commit;
+        run.pullNumber = pullNumber;
+        run.status = ActionStatus::AwaitingApproval;
+        const ActionRun created = m_actionStore->createRun(run);
+        m_actionRuns.prepend(created);
+        cancelSupersededRuns(created);
+        return created;
+    };
+    auto stillHeld = [this](const ActionRun &run) {
+        for (const ActionRun &stored : m_actionStore->loadAllRuns())
+            if (stored.id == run.id)
+                return stored.status == ActionStatus::AwaitingApproval;
+        return false;
+    };
+
+    const ActionRun first = held(85, QStringLiteral("aaaa"));
+    const ActionRun other = held(90, QStringLiteral("bbbb"));
+    const bool otherPullKept = stillHeld(first) && stillHeld(other);
+    const ActionRun newer = held(85, QStringLiteral("cccc"));
+    const bool samePullReplaced =
+        !stillHeld(first) && stillHeld(other) && stillHeld(newer);
+
+    for (const ActionRun &run : m_actionStore->loadAllRuns())
+        if (run.owner == QLatin1String("test-supersede"))
+            m_actionStore->deleteRun(run);
+    m_actionRuns = m_actionStore->loadAllRuns();
+    return otherPullKept && samePullReplaced;
+}
 #endif
 
 namespace {
@@ -2924,7 +2964,8 @@ void MainWindow::cancelSupersededRuns(const ActionRun &newRun)
     QList<int> supersededIds;
     for (const ActionRun &run : m_actionRuns) {
         if (run.id == newRun.id || run.owner != newRun.owner ||
-            run.name != newRun.name || run.workflowPath != newRun.workflowPath)
+            run.name != newRun.name || run.workflowPath != newRun.workflowPath ||
+            run.pullNumber != newRun.pullNumber)
             continue;
         if (run.status == ActionStatus::Running ||
             run.status == ActionStatus::Queued ||

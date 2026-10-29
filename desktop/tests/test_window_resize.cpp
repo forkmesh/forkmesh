@@ -25218,6 +25218,10 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   QStringLiteral("Settings remembers opting out of automatic "
                                  "cancelled-run cleanup and deletes it when on"));
         }
+        check(window.testSupersedeKeepsOtherPullsHeld(),
+              QStringLiteral("a held run for one pull request does not cancel "
+                             "another pull request's held run, only its own "
+                             "older one"));
     }
 
     QApplication::processEvents();
