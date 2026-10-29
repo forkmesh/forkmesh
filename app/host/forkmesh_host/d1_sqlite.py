@@ -22,12 +22,17 @@ import time
 from pathlib import Path
 
 from . import d1_caller
+from . import read_only
 
-__all__ = ["D1Sqlite", "D1Error", "apply_app_schema", "apply_migrations",
-           "make_d1"]
+__all__ = ["D1Sqlite", "D1Error", "ReadOnlyError", "apply_app_schema",
+           "apply_migrations", "make_d1"]
 
 
 class D1Error(Exception):
+    pass
+
+
+class ReadOnlyError(D1Error):
     pass
 
 
@@ -121,6 +126,8 @@ class D1PreparedStatement:
                                    tuple(_param(a) for a in args))
 
     def _execute(self):
+        if self._db.read_only():
+            return self._db._gated(self._sql, self._args)
         return self._db._execute(self._sql, self._args)
 
     async def all(self):
@@ -167,6 +174,7 @@ class D1Sqlite:
             self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self.statements = 0
+        self.read_only_probe = None
 
     # -- D1 API --------------------------------------------------------
     def prepare(self, sql):
@@ -183,6 +191,12 @@ class D1Sqlite:
         statements = list(statements or [])
         if not statements:
             return []
+        if self.read_only():
+            results = [self._query_only(s._sql, s._args) for s in statements]
+            if any(r is None for r in results):
+                read_only.refuse(ReadOnlyError)
+                return [D1Result() for _ in statements]
+            return results
         conn = self._conn
         conn.execute("BEGIN")
         try:
@@ -195,6 +209,9 @@ class D1Sqlite:
         return results
 
     async def exec(self, sql):
+        if self.read_only():
+            read_only.refuse(ReadOnlyError)
+            return {"count": 0, "duration": 0}
         started = time.perf_counter()
         try:
             self._conn.executescript(str(sql))
@@ -210,7 +227,30 @@ class D1Sqlite:
     def close(self):
         self._conn.close()
 
+    def read_only(self):
+        probe = self.read_only_probe
+        return probe is not None and bool(probe())
+
     # -- internals -----------------------------------------------------
+    def _gated(self, sql, args):
+        result = self._query_only(sql, args)
+        if result is None:
+            read_only.refuse(ReadOnlyError)
+            return D1Result()
+        return result
+
+    def _query_only(self, sql, args):
+        conn = self._conn
+        conn.execute("PRAGMA query_only=1")
+        try:
+            return self._execute(sql, args)
+        except D1Error as error:
+            if "readonly" in str(error).lower():
+                return None
+            raise
+        finally:
+            conn.execute("PRAGMA query_only=0")
+
     def _execute(self, sql, args, in_tx=False):
         del in_tx
         started = time.perf_counter()

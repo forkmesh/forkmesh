@@ -129,7 +129,10 @@ user unit on the operator box and manages `app.forkmesh.com`,
 for members with IPv6).
 
 - Every 30 s it sends a TLS-verified `GET /readyz` to each core. A sealed,
-  quarantined or locked-down node fails.
+  quarantined or locked-down node fails. A read-only core (no rqlite leader,
+  503 with `"readOnly": true`) counts as healthy only while no core is fully
+  ready, so a lone survivor stays in DNS and serves reads
+  ([PLAN.md](PLAN.md#read-only-mode)).
 - A node leaves every name after 3 failed probes and returns after 2 minutes
   healthy. At most one change per 5 minutes. A set is never emptied.
 - A round in which every core fails is treated as an operator-box outage and

@@ -60,7 +60,7 @@ class LiveReleasesTest {
         val first = HashMap<String, Any?>()
         signed(
             first, "latest",
-            manifest("v1.2.8", "forkmesh-android-universal.apk" to 3, "forkmesh-linux-x86_64.AppImage" to 0, "forkmesh-macos-arm64.dmg" to 0),
+            manifest("v1.2.8", "forkmesh-android-universal.apk" to 3, "forkmesh-linux-x86_64.AppImage" to 1, "forkmesh-macos-arm64.dmg" to 0),
         )
         first[LiveReleases.VERSION_FILE] = mapOf("content" to "project(ForkMesh VERSION 1.2.9 LANGUAGES CXX)")
         val second = HashMap<String, Any?>()
@@ -86,6 +86,8 @@ class LiveReleasesTest {
         assertEq("v1.2.6", tiles.getValue("release-windows").value)
         assertEq("Installer · behind v1.2.8", tiles.getValue("release-windows").note)
         assertEq("v1.2.8", tiles.getValue("release-linux").value)
+        expect(tiles.getValue("release-linux").note.endsWith("build 1"))
+        expect("build" !in tiles.getValue("release-windows").note)
     }
 
     fun testMissingBuildsAndBadSignaturesAreNotOffered() {

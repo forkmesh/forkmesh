@@ -85,6 +85,17 @@ private class FakeBackend(
 
     override fun desktopName(): String = desktop
 
+    var desktops: List<String> = emptyList()
+    val chosenDesktops = ArrayList<String>()
+
+    override fun desktopNames(): List<String> = desktops.ifEmpty { super.desktopNames() }
+
+    override fun desktopDetail(name: String): String = if (desktops.isEmpty()) "" else "Running · $name"
+
+    override fun chooseDesktop(name: String) {
+        chosenDesktops.add(name)
+    }
+
     override fun startOnDesktop(
         owner: String,
         name: String,
@@ -375,6 +386,27 @@ class QuickLaunchTest {
         val again = QuickAgentLauncher(backend, prefs)
         again.prepare()
         assertEq(QuickLaunchDestination.Desktop("studio"), again.destination)
+    }
+
+    fun testEachDesktopIsADestinationAndSendingPicksIt() {
+        val backend = FakeBackend(listOf(node("fmnext-r1", listOf("claude-code"), true)))
+        backend.desktops = listOf("studio", "laptop")
+        val prefs = MemoryPrefStore()
+        val quick = QuickAgentLauncher(backend, prefs)
+        quick.prepare()
+        expect(QuickLaunchDestination.Desktop("studio") in quick.destinations)
+        expect(QuickLaunchDestination.Desktop("laptop") in quick.destinations)
+        assertEq("Your desktop, directly · Running · laptop", quick.detail(QuickLaunchDestination.Desktop("laptop")))
+        quick.choose(QuickLaunchDestination.Desktop("laptop"))
+        assertEq(QuickLaunchOutcome.Desktop("laptop", 7, "Started agent #7 on laptop."), quick.send("Go", emptyList()))
+        assertEq(listOf("laptop"), backend.chosenDesktops)
+        val again = QuickAgentLauncher(backend, prefs)
+        again.prepare()
+        assertEq(QuickLaunchDestination.Desktop("laptop"), again.destination)
+        backend.desktops = listOf("studio")
+        val gone = QuickAgentLauncher(backend, prefs)
+        gone.prepare()
+        assertEq(QuickLaunchDestination.Desktop("studio"), gone.destination)
     }
 
     fun testYoloAndNoWorktreeGoToTheDesktopOnly() {

@@ -911,8 +911,8 @@ for the vector tests.
    worker's and the verifier's keys for that peer, rotates, rekeys and
    commits. Leaving the call calls `close()`.
 7. **Code and media state in the UI.** As in "UI text" and the media state
-   table. iOS shows it first, and the change is registered in
-   `docs/native/SYNC.md` for Android.
+   table. iOS and Android both show it (Android: `GroupCallFmm.kt`,
+   `GroupCallViews.kt`).
 8. **No fallback.** Every client switches at once, as chat v3 did. A client
    that speaks call e2ee ignores `group-call-key` frames without `e2ee` and
    any message with another version, so nobody can be downgraded.

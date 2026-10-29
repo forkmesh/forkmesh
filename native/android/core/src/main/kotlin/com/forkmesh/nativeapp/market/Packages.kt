@@ -128,8 +128,20 @@ class PackagesException(val code: String, val status: Int = 0, val fields: Map<S
         }
 
         fun from(reply: ApiJsonResult): PackagesException {
-            val fields = reply.body.obj("fields").mapValues { jsonText(it.value) }
+            val fields = LinkedHashMap(reply.body.obj("fields").mapValues { jsonText(it.value) })
+            val contact = reply.body.obj("contact")
+            if (PackagesText.isHexId(contact.str("id"))) {
+                fields["contactId"] = contact.str("id")
+                fields["contactName"] = contact.str("name")
+                fields["contactEmail"] = contact.str("email")
+            }
             return PackagesException(reply.body.str("error"), reply.statusCode, fields)
+        }
+
+        fun isTransient(error: Throwable): Boolean = when (error) {
+            is PackagesException -> error.status == 408 || error.status == 425 || error.status >= 500
+            is IOException -> true
+            else -> false
         }
 
         fun describe(error: Throwable): String = when (error) {

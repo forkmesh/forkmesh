@@ -11,11 +11,11 @@ Android-specific decisions are in
 
 ## Keeping level with iOS
 
-Features and UI changes land on iOS first. What Android still has to match is
-listed in [`docs/native/SYNC.md`](../../docs/native/SYNC.md)
-(`python3 tools/native_sync.py status`); close a row with
-`python3 tools/native_sync.py mark <ID> --synced <sha>` when its Android
-change is on `main`.
+Android has every iOS feature and the same look. A pull request that changes
+something a phone user can see changes both apps; what cannot exist on
+Android is listed in
+[`docs/native/ANDROID.md`](../../docs/native/ANDROID.md), "Differences kept on
+purpose".
 
 ## Build, test, run
 

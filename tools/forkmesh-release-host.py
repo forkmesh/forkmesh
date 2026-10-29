@@ -686,6 +686,7 @@ def _fat_slices(buffer: bytes, at: int) -> list[tuple[int, int]] | None:
 def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
     fat, thin, slice_starts = [], {}, {}
     commit = build_commit.lower().encode("ascii")
+    commit_utf16 = build_commit.lower().encode("utf-16-le")
     carries_commit = False
     tail, tail_position = b"", None
 
@@ -705,7 +706,7 @@ def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
                 if cpu in (MACHO_CPU_X86_64, MACHO_CPU_ARM64) and filetype in MACHO_LOADABLE:
                     thin[base + at] = cpu
             at = buffer.find(MACHO_THIN_64, at + 1)
-        if not carries_commit and commit and commit in buffer:
+        if not carries_commit and commit and (commit in buffer or commit_utf16 in buffer):
             carries_commit = True
 
     for position, data in udif_chunks(path):
@@ -1071,7 +1072,7 @@ printf '%s\n' "$2" > "src-$1.commit"
 MAC_DESKTOP_BUILD_SCRIPT = r"""
 set -euo pipefail
 cd desktop-release
-FORKMESH_BUILD_COMMIT="$2" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
+FORKMESH_BUILD_COMMIT="$2" FORKMESH_VERSION="$1" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
 """
 
 MAC_IOS_FETCH_SCRIPT = r"""
@@ -1611,7 +1612,8 @@ cmake --install "$build" --prefix "$build/install"
 [ -x "$build/install/bin/forkmesh.exe" ] || { echo "no forkmesh.exe was installed" >&2; exit 1; }
 # Windows binaries cannot run here, so prove the provenance stamp by content:
 # the header bakes the exact build commit into the executable as a literal.
-grep -q -a "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
+python3 -c 'import sys; c = sys.argv[1].lower(); d = open(sys.argv[2], "rb").read(); sys.exit(0 if c.encode() in d or c.encode("utf-16-le") in d else 1)' \
+  "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
   || { echo "forkmesh.exe does not carry build commit $FORKMESH_WIN_BUILD_COMMIT" >&2; exit 1; }
 export FORKMESH_REQUIRE_NATIVE_SIGNING=1
 export FORKMESH_WIN_CXX="$FORKMESH_WIN_MINGW_ROOT/usr/bin/x86_64-w64-mingw32-g++-posix"

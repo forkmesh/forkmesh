@@ -5197,8 +5197,25 @@ void checkTranscriptCoverageIndicator()
     check(pill && pill->isHidden(),
           QStringLiteral("a transcript that draws every raw log entry has no "
                          "coverage pill"));
-    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started"})"));
-    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done"})"));
+    transcript.handleEvent(ev(R"({"type":"system","subtype":"dev_intent","kind":"ios_app","trigger":"ios_command"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started","command_uuid":"93c66aa5-4c31-4a8f-a5ce-cba3efef2609"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done","command_uuid":"93c66aa5-4c31-4a8f-a5ce-cba3efef2609"})"));
+    QString notices;
+    for (const QLabel *label : transcript.findChildren<QLabel *>()) {
+        QTextDocument doc;
+        doc.setHtml(label->text());
+        notices += doc.toPlainText() + QLatin1Char('\n');
+    }
+    check(notices.contains(QStringLiteral("Development intent: ios_app (trigger: ios_command)")) &&
+              notices.contains(QStringLiteral("Command started: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609")) &&
+              notices.contains(QStringLiteral("Command done: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609")),
+          QStringLiteral("development intent and command lifecycle draw notices (%1)")
+              .arg(notices.simplified().left(400)));
+    check(pill && pill->isHidden() && transcript.coverageGaps().isEmpty(),
+          QStringLiteral("development intent and command lifecycle leave no "
+                         "coverage gaps"));
+    transcript.handleEvent(ev(R"({"type":"unknown_event","state":"started"})"));
+    transcript.handleEvent(ev(R"({"type":"unknown_event","state":"done"})"));
     transcript.handleEvent(ev(R"({"type":"system","subtype":"permission_denied"})"));
     QApplication::processEvents();
     const QRect area = transcript.viewport()->geometry();

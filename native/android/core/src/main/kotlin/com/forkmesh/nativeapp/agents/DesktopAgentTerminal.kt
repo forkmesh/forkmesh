@@ -33,6 +33,7 @@ class DesktopAgentTerminal(
     private val inputFlushMs: Long = TERMINAL_INPUT_FLUSH_MS,
     private val notifyDelayMs: Long = 16,
     private val enterDelayMs: Long = DESKTOP_TERMINAL_ENTER_DELAY_MS,
+    val desktopKey: String = "",
 ) : AgentTerminalSession {
     private val lock = Any()
     private val worker = Executors.newSingleThreadScheduledExecutor { Thread(it, "DesktopAgentTerminal").apply { isDaemon = true } }
@@ -129,7 +130,7 @@ class DesktopAgentTerminal(
             this.cols = cols.coerceIn(20, 500)
             this.rows = rows.coerceIn(5, 200)
             screen = TerminalScreen(this.rows, this.cols)
-            tap = hub.addEventTap { event -> onEvent(event) }
+            tap = hub.addEventTap(desktopKey) { event -> onEvent(event) }
             linkToken = hub.addLinkListener { linkChanged() }
         }
         changed()
@@ -146,7 +147,7 @@ class DesktopAgentTerminal(
         }
         val starting = terminalId.isEmpty()
         try {
-            val link = hub.link()
+            val link = hub.link(desktopKey)
             val (sentCols, sentRows) = synchronized(lock) {
                 attachedLink = link
                 cols to rows
@@ -300,7 +301,7 @@ class DesktopAgentTerminal(
     private fun linkChanged() {
         val reattach = synchronized(lock) {
             if (!started || detached || gone || failed || awaiting || terminalId.isEmpty()) return
-            val current = hub.currentLink
+            val current = hub.openLink(desktopKey)
             if (current != null && current === attachedLink) return
             live = false
             current != null
@@ -380,7 +381,7 @@ class DesktopAgentTerminal(
         val id = terminalId
         if (id.isEmpty() || gone) return
         try {
-            hub.request("terminal.input", mapOf("terminal" to id, "data" to data), 10_000)
+            hub.request("terminal.input", mapOf("terminal" to id, "data" to data), 10_000, desktopKey)
         } catch (refusal: LocalControlException) {
             if (refusal.code == "unknown_terminal") {
                 markGone("This terminal has ended on the desktop.", TerminalStatusLevel.Error)
@@ -412,7 +413,7 @@ class DesktopAgentTerminal(
                 val id = terminalId
                 if (id.isEmpty() || gone || detached) return@execute
                 val (c, r) = synchronized(lock) { cols to rows }
-                runCatching { hub.request("terminal.resize", mapOf("terminal" to id, "cols" to c, "rows" to r), 10_000) }
+                runCatching { hub.request("terminal.resize", mapOf("terminal" to id, "cols" to c, "rows" to r), 10_000, desktopKey) }
             }
         }
     }
@@ -436,7 +437,7 @@ class DesktopAgentTerminal(
             linkToken?.let { hub.removeLinkListener(it) }
             tap = null
             linkToken = null
-            link = hub.currentLink
+            link = hub.openLink(desktopKey)
             id = terminalId
         }
         timer.cancel()
@@ -457,7 +458,7 @@ class DesktopAgentTerminal(
             inputTask = null
             flushInputLocked()
         }
-        val close = { hub.request("terminal.close", mapOf("terminal" to id), 20_000) }
+        val close = { hub.request("terminal.close", mapOf("terminal" to id), 20_000, desktopKey) }
         try {
             if (detached) close() else worker.submit<Map<String, Any?>> { close() }.get()
         } catch (failure: ExecutionException) {

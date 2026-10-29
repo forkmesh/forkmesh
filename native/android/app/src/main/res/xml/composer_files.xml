@@ -9,4 +9,5 @@
     <cache-path name="code-insight-share" path="code-insight-share/" />
     <cache-path name="nexus-share" path="nexus-share/" />
     <cache-path name="capture-copy" path="capture-copy/" />
+    <cache-path name="speech-share" path="speech-share/" />
 </paths>

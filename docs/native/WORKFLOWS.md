@@ -171,7 +171,7 @@ shows up as a failing phone case.
 | --- | --- | --- |
 | Engine host / port | `ForkMeshCore/Sources/FMWorkflows/WorkflowScript.swift`, `WorkflowEngine.swift` | `core/.../workflows/WorkflowEngine.kt`, `WorkflowPy.kt` |
 | Models, API, phone credentials | `WorkflowModels.swift`, `WorkflowsStore.swift` | `core/.../workflows/Workflows.kt` |
-| Desktop workflows, desktop steps | `DesktopWorkflows.swift`; screens `DesktopWorkflowScreens.swift` | not yet (`docs/native/SYNC.md`) |
+| Desktop workflows, desktop steps | `DesktopWorkflows.swift`; screens `DesktopWorkflowScreens.swift` | `core/.../workflows/DesktopWorkflows.kt`; screens `feature/workflows/DesktopWorkflowScreens.kt` |
 | Screens | `ForkMesh/Features/Workflows/` | `app/.../feature/workflows/` |
 | Route | `Route.workflows`, `RouteFallbacks.swift` | `Route.Workflows`, `WorkflowsFeature` |
 

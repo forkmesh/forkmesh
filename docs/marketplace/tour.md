@@ -33,5 +33,8 @@ The iPhone tour is described in
 [../native/NAVIGATION.md](../native/NAVIGATION.md#2022-the-tour): the same
 three tracks, each stop a live mock built from the shell's own components that
 you can try, with a button that opens the real place. The catalog is
-`TourCatalog` in `FMPackages`, tested by `TourCatalogTests`. Android follows the
-iOS row in [../native/SYNC.md](../native/SYNC.md).
+`TourCatalog` in `FMPackages`, tested by `TourCatalogTests`. Android has the
+same tracks, stops and mock screens: the catalog is `TourCatalog` in
+`native/android/core/.../navigation`, tested by `TourCatalogTest`, and the
+screens are `TourScreen`, `TourStage` and `TourScenes` in the app's
+`feature/navigation` ([../native/ANDROID.md](../native/ANDROID.md), section 27).

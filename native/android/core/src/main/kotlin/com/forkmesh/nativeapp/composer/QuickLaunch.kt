@@ -156,6 +156,12 @@ interface QuickLaunchBackend {
 
     fun desktopDetail(): String = ""
 
+    fun desktopNames(): List<String> = desktopName().let { if (it.isEmpty()) emptyList() else listOf(it) }
+
+    fun desktopDetail(name: String): String = desktopDetail()
+
+    fun chooseDesktop(name: String) {}
+
     fun startOnDesktop(
         owner: String,
         name: String,
@@ -313,7 +319,7 @@ class QuickAgentLauncher(
             val all = ArrayList<QuickLaunchDestination>()
             val options = plan?.options
             if (options?.canQueue == true) all.addAll(options.targets.map { QuickLaunchDestination.Node(it.node) })
-            desktop()?.let { all.add(it) }
+            all.addAll(desktops())
             if (repository?.canRunOnDevice == true) all.add(QuickLaunchDestination.Device)
             return all
         }
@@ -322,14 +328,14 @@ class QuickAgentLauncher(
         get() = (if (actions == null) emptyList() else QuickPromptAction.entries.map { it.choice }) +
             AgentModelCatalog.nodeChoices(plan?.options?.models ?: emptyMap())
 
-    private fun desktop(): QuickLaunchDestination.Desktop? {
-        if (repository?.isOnMesh != true) return null
-        val name = runCatching { backend.desktopName() }.getOrDefault("").trim()
-        return if (name.isEmpty()) null else QuickLaunchDestination.Desktop(name)
+    private fun desktops(): List<QuickLaunchDestination.Desktop> {
+        if (repository?.isOnMesh != true) return emptyList()
+        val names = runCatching { backend.desktopNames() }.getOrDefault(emptyList())
+        return names.map { it.trim() }.filter { it.isNotEmpty() }.distinct().map { QuickLaunchDestination.Desktop(it) }
     }
 
     fun detail(destination: QuickLaunchDestination): String = when (destination) {
-        is QuickLaunchDestination.Desktop -> listOf("Your desktop, directly", runCatching { backend.desktopDetail() }.getOrDefault(""))
+        is QuickLaunchDestination.Desktop -> listOf("Your desktop, directly", runCatching { backend.desktopDetail(destination.name) }.getOrDefault(""))
             .filter { it.isNotEmpty() }
             .joinToString(" · ")
         QuickLaunchDestination.Device -> when {
@@ -437,7 +443,7 @@ class QuickAgentLauncher(
         when (val remembered = memory.destination(target.key)) {
             is QuickLaunchDestination.Node -> if (canQueue && options?.targetNamed(remembered.name) != null) return remembered
             QuickLaunchDestination.Device -> if (target.canRunOnDevice) return remembered
-            is QuickLaunchDestination.Desktop -> desktop()?.let { return it }
+            is QuickLaunchDestination.Desktop -> desktops().let { linked -> (linked.firstOrNull { it == remembered } ?: linked.firstOrNull())?.let { return it } }
             null -> {}
         }
         if (canQueue) {
@@ -545,6 +551,9 @@ class QuickAgentLauncher(
             PromptAttachmentLimits.check(images)
         } catch (error: AgentLaunchException) {
             return QuickLaunchOutcome.Failed(error.message)
+        }
+        if (runCatching { backend.desktopNames() }.getOrDefault(emptyList()).contains(desktop)) {
+            runCatching { backend.chooseDesktop(desktop) }
         }
         val target = current.target
         val owners = listOf(target.publicOwner, target.owner).filter { it.isNotEmpty() }.distinct()

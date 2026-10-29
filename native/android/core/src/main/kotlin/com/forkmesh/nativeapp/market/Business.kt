@@ -176,6 +176,30 @@ data class CrmContactEdit(
         else -> ""
     }
 
+    fun additions(existing: CrmContact): Map<String, Any?> {
+        val body = LinkedHashMap<String, Any?>()
+        val before = of(existing)
+        for (key in TEXT_KEYS) {
+            if (key == "flow" || key == "stage" || key == "notes") continue
+            val trimmed = text(key).trim()
+            if (trimmed.isNotEmpty() && before.text(key).isEmpty()) body[key] = trimmed
+        }
+        val note = notes.trim()
+        if (note.isNotEmpty() && note !in existing.notes) body["notes"] = if (existing.notes.isEmpty()) note else existing.notes + "\n\n" + note
+        if (value > 0 && existing.value == 0L) body["value"] = value
+        if (lastContactedAt > existing.lastContactedAt) body["lastContactedAt"] = lastContactedAt
+        val known = existing.tags.map { it.lowercase() }.toSet()
+        val added = tagList.filter { it.lowercase() !in known }
+        if (added.isNotEmpty()) body["addTags"] = added
+        val custom = LinkedHashMap<String, Any?>()
+        for (key in fields.keys.sorted()) {
+            val next = fields[key].orEmpty().trim()
+            if (next.isNotEmpty() && existing.fields[key].isNullOrEmpty()) custom[key] = next
+        }
+        if (custom.isNotEmpty()) body["fields"] = custom
+        return body
+    }
+
     fun changes(original: CrmContact?): Map<String, Any?> {
         val body = LinkedHashMap<String, Any?>()
         val before = original?.let(::of)

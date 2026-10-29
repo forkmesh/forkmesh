@@ -87,6 +87,7 @@ class ChatThreadScreen(private val channel: String, private val rootId: String) 
                             onOpenThread = null,
                             onToggleSticker = { slug -> scope.launch(Dispatchers.IO) { hub.toggleSticker(rootRow.message, slug) } },
                         )
+                        ChatRowLinkPreviews(rootRow)
                     } else {
                         Text(
                             "The first message of this thread is not on this phone.",
@@ -115,6 +116,7 @@ class ChatThreadScreen(private val channel: String, private val rootId: String) 
                             onOpenThread = null,
                             onToggleSticker = { slug -> scope.launch(Dispatchers.IO) { hub.toggleSticker(row.message, slug) } },
                         )
+                        ChatRowLinkPreviews(row)
                     }
                 }
             }

@@ -132,10 +132,13 @@ operator_public_key = ""
 # Per-detector severity overrides ("info" | "alert" | "lockdown"), e.g.
 # listener_unexpected = "lockdown". Defaults: docs/IDS.md.
 severity = {}
-# Direct mail from the IDS itself (works when every app is sealed or down):
-# loads FMNEXT_IDS_MAIL_TOKEN (a Mailtrap sending token) and
-# FMNEXT_IDS_ALERT_EMAIL (the recipient) from secrets.env as credentials.
+# Direct mail from the IDS itself for lockdown, test and unrecorded
+# incidents (works when every app is sealed or down): it submits to the
+# node's own Postfix on 127.0.0.1:25; in a lockdown it posts to the Mailtrap
+# API as root with the token in /etc/postfix/sasl_passwd. mail_to is needed
+# when direct_mail = true; mail_from empty: founders@forkmesh.com.
 direct_mail = false
+mail_to = ""
 mail_from = ""
 # Optional signed webhook to the operator desktop (https only).
 webhook_url = ""

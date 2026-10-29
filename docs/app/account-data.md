@@ -158,4 +158,4 @@ when it comes back, but only sources whose SHA-256 differs from the last copy
 saved for that account (`accountSync/hash/<account>/<key>`). Restore is
 explicit and asks first; it replaces the layout, subscriptions (local feeds
 keep their articles and fetch state when the address matches) and settings.
-Android registers the same screens through `docs/native/SYNC.md`.
+Android has the same screens (`feature/account/settings/AccountDataScreens.kt`).

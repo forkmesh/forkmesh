@@ -7,7 +7,7 @@ object AgentSessionLookup {
         rows.firstOrNull { it.id == wanted }?.let { return it }
         val bare = wanted.substringAfter(':')
         val local = bare.toIntOrNull()
-        if (local != null && local > 0) rows.firstOrNull { it.isDesktop && it.localId == local }?.let { return it }
+        if (local != null && local > 0) rows.firstOrNull { it.isDesktop && !it.elsewhere && it.localId == local }?.let { return it }
         return rows.firstOrNull { !it.isDesktop && it.cloudSessionId == bare }
     }
 

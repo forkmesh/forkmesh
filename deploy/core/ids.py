@@ -44,7 +44,8 @@ Response (the ``Responder`` state machine; normal -> lockdown, sticky):
   ``security_incidents`` (local rqlite, else a peer's over WireGuard; the
   runner posts it, signed, to ``/api/runners/security-incident``); unsealed
   core apps page the admins (Pings/APNs + Mailtrap, forkmesh_host.ids_alerts);
-  optional direct Mailtrap mail and a signed webhook to the desktop;
+  optional direct mail (local Postfix; Mailtrap in a lockdown) and a
+  signed webhook to the desktop;
 * **lockdown** on a core: ``seal-restart`` over the unseal socket (DATA_KEY
   leaves memory and the process), the marker file (units carry
   ``ConditionPathExists=!`` on it, so nothing restarts, not even after a
@@ -70,6 +71,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import email.message
+import email.utils
 import fnmatch
 import hashlib
 import hmac
@@ -79,6 +82,7 @@ import os
 import pwd
 import re
 import select
+import smtplib
 import socket
 import stat
 import subprocess
@@ -1636,15 +1640,17 @@ def mask_address(address):
 
 class Alerter:
     """Fan-out of an incident: journal, rqlite (core) or the app API
-    (runner), direct Mailtrap mail and a signed webhook (both optional)."""
+    (runner), direct mail (Postfix or Mailtrap) and a signed webhook
+    (both optional)."""
 
     def __init__(self, cfg, rqlite=None, opener=None, credential=None,
-                 sign_request=None):
+                 sign_request=None, smtp=None):
         self.cfg = cfg
         self.rqlite = rqlite
         self.opener = opener or urllib.request.urlopen
         self.credential = credential or read_credential
         self.sign_request = sign_request
+        self.smtp = smtp or smtplib.SMTP
 
     def record(self, incident):
         if self.rqlite is None:
@@ -1686,39 +1692,100 @@ class Alerter:
         except (OSError, ValueError, urllib.error.URLError) as error:
             return False, type(error).__name__
 
-    def mail(self, incident):
-        mail = self.cfg.get("mail") or {}
+    def locked_down(self):
+        return os.path.exists(os.path.join(self.cfg.get("state_dir") or "",
+                                           "LOCKDOWN"))
+
+    def mail_token(self, mail):
         token = self.credential(mail.get("token_credential", ""))
-        to = self.credential(mail.get("to_credential", ""))
-        if not token or "@" not in to:
-            return False, "not configured"
-        subject = "[fmnext-ids %s] %s: %s" % (
-            incident["severity"], incident["node"], incident["summary"])
-        payload = {"from": {"email": mail.get("from") or
-                            "founders@forkmesh.com", "name": "ForkMesh IDS"},
-                   "to": [{"email": to}], "subject": subject[:200],
-                   "text": json.dumps(incident, indent=2, sort_keys=True,
-                                      default=str)[:6000],
-                   "category": "Security alert"}
+        path = mail.get("token_file") or ""
+        if token or not path:
+            return token
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    _relay, _, login = line.strip().partition(" ")
+                    user, _, secret = login.partition(":")
+                    if user == "api" and secret:
+                        return secret
+        except OSError:
+            pass
+        return ""
+
+    def mail_smtp(self, mail, sender, to, subject, text):
+        host, _, port = str(mail.get("smtp") or "").rpartition(":")
+        if host not in ("127.0.0.1", "::1", "localhost") or not port.isdigit():
+            return False, "no smtp"
+        domain = sender.rpartition("@")[2] or "localhost"
+        message = email.message.EmailMessage()
+        message["From"] = email.utils.formataddr(("ForkMesh IDS", sender))
+        message["To"] = to
+        message["Subject"] = subject
+        message["Date"] = email.utils.formatdate(usegmt=True)
+        message["Message-ID"] = email.utils.make_msgid(domain=domain)
+        message["Auto-Submitted"] = "auto-generated"
+        message["X-ForkMesh-Kind"] = "security_alert"
+        message["Feedback-ID"] = "security_alert:forkmesh"
+        message.set_content(text)
+        try:
+            with self.smtp(host, int(port), timeout=15) as client:
+                refused = client.send_message(
+                    message, from_addr="no-reply@%s" % domain, to_addrs=[to])
+        except (OSError, smtplib.SMTPException) as error:
+            return False, "smtp %s" % type(error).__name__
+        if refused:
+            return False, "smtp refused"
+        return True, "smtp %s" % message["Message-ID"]
+
+    def mail_api(self, mail, sender, to, subject, text):
+        token = self.mail_token(mail)
+        if not token:
+            return False, "no mailtrap token"
+        payload = {"from": {"email": sender, "name": "ForkMesh IDS"},
+                   "to": [{"email": to}], "subject": subject,
+                   "text": text, "category": "Security alert"}
         request = urllib.request.Request(
             mail.get("url") or MAIL_URL, data=json.dumps(payload).encode(),
             method="POST", headers={"content-type": "application/json",
                                     "authorization": "Bearer " + token})
-        note = {"kind": "ids_direct", "to": mask_address(to),
-                "subject": subject[:200], "body": payload["text"][:400],
-                "from": payload["from"]["email"]}
         try:
             with self.opener(request, timeout=15) as response:
-                ok = 200 <= response.status < 300
-                note.update(result="accepted" if ok else "rejected",
-                            status=response.status)
-                result = ok, "mail %d" % response.status
+                return (200 <= response.status < 300,
+                        "mail %d" % response.status)
         except urllib.error.HTTPError as error:
-            note.update(result="rejected", status=error.code)
-            result = False, "mail %d" % error.code
+            return False, "mail %d" % error.code
         except (OSError, urllib.error.URLError) as error:
-            note.update(result="failed", error=type(error).__name__)
-            result = False, type(error).__name__
+            return False, type(error).__name__
+
+    def mail(self, incident):
+        mail = self.cfg.get("mail") or {}
+        to = mail.get("to") or self.credential(mail.get("to_credential", ""))
+        if "@" not in to:
+            return False, "not configured"
+        sender = mail.get("from") or "founders@forkmesh.com"
+        subject = ("[fmnext-ids %s] %s: %s" % (
+            incident["severity"], incident["node"], incident["summary"]))[:200]
+        text = json.dumps(incident, indent=2, sort_keys=True,
+                          default=str)[:6000]
+        routes = [("postfix", self.mail_smtp), ("mailtrap", self.mail_api)]
+        if self.locked_down():
+            routes.reverse()
+        note = {"kind": "ids_direct", "to": mask_address(to),
+                "subject": subject, "body": text[:400], "from": sender}
+        tried = []
+        result = False, "not configured"
+        for name, send in routes:
+            ok, detail = send(mail, sender, to, subject, text)
+            if detail in ("no smtp", "no mailtrap token"):
+                continue
+            tried.append("%s: %s" % (name, detail))
+            result = ok, detail
+            if ok:
+                note["via"] = name
+                break
+        note["result"] = "accepted" if result[0] else (
+            "failed" if tried else "not configured")
+        note["tried"] = tried
         note["mailLog"] = self.mail_log(note, incident)
         return result
 

@@ -1454,6 +1454,12 @@ open class ApiService(
         jsonMaps(asList(getRepoRead(owner, name, "branches")))
             .map(RepoBranch::fromJson).filter { it.name.isNotEmpty() }
 
+    open fun remoteForks(owner: String, name: String): List<com.forkmesh.nativeapp.model.RemoteFork> =
+        com.forkmesh.nativeapp.model.RemoteFork.list(getRepoRead(owner, name, "remote-forks"))
+
+    open val instanceHost: String
+        get() = com.forkmesh.nativeapp.model.RemoteFork.instanceHost(settings.serverUrl)
+
     open fun mirrors(owner: String, name: String): List<RepoMirror> = mirrorSet(owner, name).mirrors
 
     open fun mirrorSet(owner: String, name: String): RepoMirrorSet {
@@ -1634,6 +1640,30 @@ open class ApiService(
         return null
     }
 
+    open fun pullCommits(owner: String, name: String, number: Int): String {
+        val folder = ".forkmesh/pulls/$number"
+        for (ref in listOf(PULL_LEDGER_REF, "forkmesh/pull/$number")) {
+            val listing = try {
+                tree(owner, name, path = folder, ref = ref)
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            val files = listing.entries.filter { !it.isDirectory }.map { it.name }.toSet()
+            if ("pull.md" !in files && "commits.mbox" !in files) continue
+            if ("commits.mbox" !in files) return ""
+            return try {
+                blob(owner, name, "$folder/commits.mbox", ref = ref).content
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ""
+            }
+        }
+        return ""
+    }
+
     private fun cachedPull(repoKey: String, number: Int): PublishedPull? {
         val entry = synchronized(pullsCache) { pullsCache[repoKey] } ?: return null
         if (clock() - entry.createdAt >= CACHE_TTL_MS) return null
@@ -1754,6 +1784,11 @@ open class ApiService(
             signed = (meta["sig"] ?: "").isNotEmpty(),
             events = events,
             branchBacked = meta["derive"] == "branch",
+            author = meta["author"] ?: "",
+            authorName = meta["authorName"] ?: "",
+            createdMs = dartIntTryParse(meta["ts"] ?: meta["createdAt"] ?: "") ?: 0L,
+            mergedMs = dartIntTryParse(meta["mergedAt"] ?: "") ?: 0L,
+            mergedBy = meta["mergedBy"] ?: "",
         )
     }
 

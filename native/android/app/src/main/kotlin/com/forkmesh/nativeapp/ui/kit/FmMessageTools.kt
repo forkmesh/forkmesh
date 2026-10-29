@@ -39,6 +39,11 @@ object FmMessageHandoff {
         if (open != null) open(target) else copy(context, target.text.orEmpty())
     }
 
+    fun compose(context: Context, target: ComposeTarget) {
+        val open = compose
+        if (open != null) open(target) else copy(context, target.text.orEmpty())
+    }
+
     fun copy(context: Context, text: String): Boolean {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
         clipboard.setPrimaryClip(ClipData.newPlainText("ForkMesh", MessageHandoff.cleaned(text)))
@@ -47,7 +52,7 @@ object FmMessageHandoff {
 }
 
 @Composable
-fun FmMessageTools(text: String?, modifier: Modifier = Modifier, color: Color? = null) {
+fun FmMessageTools(text: String?, modifier: Modifier = Modifier, color: Color? = null, handoff: ComposeTarget? = null) {
     val message = text.orEmpty()
     if (!MessageHandoff.canHandOff(message)) return
     val context = LocalContext.current
@@ -67,7 +72,7 @@ fun FmMessageTools(text: String?, modifier: Modifier = Modifier, color: Color? =
         }
         MessageTool("send_outlined", "Send to agent", tint) {
             haptics.tap()
-            FmMessageHandoff.send(context, message)
+            if (handoff != null) FmMessageHandoff.compose(context, handoff) else FmMessageHandoff.send(context, message)
         }
     }
 }

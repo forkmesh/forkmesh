@@ -213,17 +213,56 @@ def load_manifest(path=None) -> dict:
 
 
 def record_deploy(rev, commit="", signature="", fingerprint="", by="",
-                  path=None, clock=time.time) -> dict:
+                  path=None, clock=time.time, skipped=()) -> dict:
     path = Path(path or deploy_manifest_path())
     data = load_manifest(path)
     releases = data.get("releases") if isinstance(data.get("releases"), dict) else {}
     entry = {"rev": rev, "commit": commit, "signature": signature,
              "fingerprint": fingerprint, "by": by, "at": clock()}
+    if skipped:
+        entry["skipped"] = sorted(skipped)
     releases[rev] = entry
     data["releases"] = releases
     data["current"] = rev
     save_json(path, data)
     return entry
+
+
+def record_caught_up(rev, names, path=None, clock=time.time) -> list:
+    path = Path(path or deploy_manifest_path())
+    data = load_manifest(path)
+    entry = (data.get("releases") or {}).get(rev)
+    if not isinstance(entry, dict) or not entry.get("skipped"):
+        return []
+    caught = sorted(set(entry["skipped"]) & set(names))
+    if not caught:
+        return []
+    entry["skipped"] = sorted(set(entry["skipped"]) - set(caught))
+    if not entry["skipped"]:
+        del entry["skipped"]
+    entry.setdefault("caughtUp", {}).update({name: clock() for name in caught})
+    save_json(path, data)
+    return caught
+
+
+def deploy_quorum(cores: int) -> int:
+    return max(2, cores // 2 + 1)
+
+
+def dns_health_nodes(path=None) -> dict:
+    data = load_json(Path(path or config_dir() / "dns-health.json"), {}) or {}
+    nodes = data.get("nodes") if isinstance(data, dict) else None
+    return nodes if isinstance(nodes, dict) else {}
+
+
+def out_of_dns(entry) -> str:
+    if not isinstance(entry, dict) or not entry:
+        return ""
+    if entry.get("held"):
+        return "held out of DNS"
+    if not entry.get("in_dns"):
+        return "out of DNS"
+    return ""
 
 
 def read_env_file(path: Path) -> dict:

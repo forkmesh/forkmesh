@@ -166,6 +166,47 @@ static void testEvents()
     vcs.remove(QStringLiteral("kind"));
     check(systemNotice(vcs) == QStringLiteral("Version control state changed"),
           "a VCS state change without a kind still draws a notice");
+    QJsonObject intent = obj(
+        {{QStringLiteral("type"), QStringLiteral("system")},
+         {QStringLiteral("subtype"), QStringLiteral("dev_intent")},
+         {QStringLiteral("kind"), QStringLiteral("ios_app")},
+         {QStringLiteral("trigger"), QStringLiteral("ios_command")}});
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent: ios_app (trigger: ios_command)"),
+          "development intent announces the kind and trigger");
+    intent.insert(QStringLiteral("kind"), QStringLiteral("future_kind"));
+    intent.insert(QStringLiteral("trigger"), QStringLiteral("future_trigger"));
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent: future_kind (trigger: future_trigger)"),
+          "unfamiliar development intent details are preserved");
+    intent.remove(QStringLiteral("kind"));
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent (trigger: future_trigger)"),
+          "a development intent trigger is shown without a kind");
+    intent.remove(QStringLiteral("trigger"));
+    check(systemNotice(intent) == QStringLiteral("Development intent"),
+          "development intent without details still draws a notice");
+    intent.insert(QStringLiteral("kind"), QStringLiteral("ios_app"));
+    check(systemNotice(intent) == QStringLiteral("Development intent: ios_app"),
+          "development intent without a trigger still shows its kind");
+    QJsonObject command = obj(
+        {{QStringLiteral("type"), QStringLiteral("command_lifecycle")},
+         {QStringLiteral("state"), QStringLiteral("started")},
+         {QStringLiteral("command_uuid"),
+          QStringLiteral("93c66aa5-4c31-4a8f-a5ce-cba3efef2609")}});
+    check(commandLifecycleNotice(command) ==
+              QStringLiteral("Command started: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609"),
+          "a command lifecycle notice shows its state and identity");
+    command.remove(QStringLiteral("command_uuid"));
+    for (const QString &state : {QStringLiteral("done"), QStringLiteral("failed"),
+                                 QStringLiteral("future_state")}) {
+        command.insert(QStringLiteral("state"), state);
+        check(commandLifecycleNotice(command) == QStringLiteral("Command %1").arg(state),
+              "command lifecycle notices preserve every state without an identity");
+    }
+    command.remove(QStringLiteral("state"));
+    check(commandLifecycleNotice(command) == QStringLiteral("Command lifecycle update"),
+          "command lifecycle without details still draws a notice");
     check(systemNotice(obj({{QStringLiteral("type"), QStringLiteral("system")},
                             {QStringLiteral("subtype"), QStringLiteral("hook_response")}}))
               .isEmpty(),

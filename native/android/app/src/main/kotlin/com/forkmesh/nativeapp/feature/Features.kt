@@ -45,6 +45,7 @@ object Features {
     fun install(app: App) {
         AccountFeature.install(app)
         com.forkmesh.nativeapp.feature.market.PackageGateFeature.install(app)
+        com.forkmesh.nativeapp.feature.account.PermissionsIntro.install(com.forkmesh.nativeapp.feature.market.PackageGateFeature.needsStarterPack())
         LocalReposFeature.install(app)
         com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature.install(app)
         ChatFeature.install(app)
@@ -123,7 +124,10 @@ object Features {
         com.forkmesh.nativeapp.feature.account.settings.DataFolderAlert()
         AccountFeature.Gate {
             val starterPackPending by PackageGateFeature.starterPackPending.collectAsState()
-            if (starterPackPending) {
+            val permissionsIntroPending by com.forkmesh.nativeapp.feature.account.PermissionsIntro.pending.collectAsState()
+            if (permissionsIntroPending) {
+                com.forkmesh.nativeapp.feature.account.PermissionsIntroScreen()
+            } else if (starterPackPending) {
                 StarterPackScreen(onContinue = PackageGateFeature::chooseStarterPack)
             } else {
                 Box(Modifier.fillMaxSize(), propagateMinConstraints = true) {

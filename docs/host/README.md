@@ -20,6 +20,7 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
 | `request_tally.py` | per-route `/api` counts as `web-requests` journal lines |
 | `env.py`, `bindings.py` | `env` from `[vars]`, env file, `FORKMESH_VAR_<NAME>` and credentials; KV, Queue, Assets, AI |
 | `d1_rqlite.py`, `d1_sqlite.py` | D1-shaped `env.DB` on rqlite or local sqlite |
+| `read_only.py` | read-only mode without an rqlite leader: which requests skip or refuse writes, the 503 answer ([PLAN.md](../PLAN.md#read-only-mode)) |
 | `durable.py`, `durable_cluster.py`, `cluster.py` | Durable Objects: placement, mesh, replicated storage, alarms |
 | `dns_reconciler.py`, `dns_rules.py` | leaderless DNS health votes (rules shared with `tools/next_dns.py`) |
 | `vault.py`, `vault_crypto.py` | sealed start, unseal socket, `host_secrets` encryption ([VAULT.md](../VAULT.md)) |
@@ -48,6 +49,11 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   (`level=none` or read-only `sqlite3` on rqlite's file); reads after a write
   in the same request use `weak`; primary-first sessions are linearizable.
   Foreign keys are enforced.
+- **Read-only without a leader.** A node that has had no rqlite leader for
+  10 s serves reads from its own copy, skips the side writes of GET requests
+  and answers other writes with a 503 "read-only while servers recover";
+  `/readyz` stays 503 with `"readOnly": true`
+  ([PLAN.md](../PLAN.md#read-only-mode)).
 - **Durable Objects.** Rendezvous placement over live members; the cron
   coordinator and watchdog rotate each minute (hand-off 45 s in). Objects
   owned elsewhere are proxied over the mesh. Storage in `do_storage`, alarms
@@ -172,6 +178,8 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
 ## Interfaces
 
 - HTTP on `127.0.0.1:8080`: `/readyz`, `/health`, `/api/version` (`BUILD_REV`).
+  With `FORKMESH_HOST_DEBUG=1` (tests only) also `/_host/cluster`,
+  `/_host/scheduled` and `/_host/read-only?on=1|0|auto`.
 - Mesh listener on the WireGuard address, HMAC-SHA256 under
   `FORKMESH_MESH_SECRET`.
 - Unseal socket `/run/forkmesh-next/unseal.sock` (0600): `unseal`, `seal`,

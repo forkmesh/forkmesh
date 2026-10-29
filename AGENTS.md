@@ -107,15 +107,15 @@ comments or docstrings. Put the reason for a change in the matching
 lines, build tags and `//go:embed`, lint/type directives, license headers,
 build markers in templates, and user-facing help or UI text.
 
-## Phone apps: register iOS changes for Android
+## Phone apps: change iOS and Android together
 
-New phone features and UI changes land in `native/ios` first. A pull request
-that changes something an iPhone user can see (a feature, a UI change, a
-noticeable fix) also adds a row to `docs/native/SYNC.md` with
-`python3 tools/native_sync.py add <sha> "<one plain sentence>" --area <Area> --kind feature|ui|fix`.
-Android work takes `pending` rows, builds them to look and behave like iOS
-(the same Liquid Glass theme), and closes them with
-`python3 tools/native_sync.py mark <ID> --synced <android-sha>`.
+The iPhone app (`native/ios`) and the Android app (`native/android`) have the
+same features and the same look (the iOS Liquid Glass theme). A pull request
+that changes something a phone user can see (a feature, a UI change, a
+noticeable fix) makes the change in both apps, so they look and behave alike.
+Something that cannot exist on one platform (an Apple-only API such as ARKit,
+CallKit or MLX) is listed with the reason in `docs/native/ANDROID.md`,
+"Differences kept on purpose".
 
 ## One changelog
 

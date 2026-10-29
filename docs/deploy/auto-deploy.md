@@ -100,7 +100,9 @@ Ping names the stale-copy case and the `install` command, not only
    2026-10-18 the operator box lost its route for about three minutes while
    gate 1 was asking n2, the network was back by the time n3 and n4 were
    asked, and the deploy of `6b5522ccc12f` failed although n2 never stopped
-   serving the other cores. A core that answers with an HTTP error still
+   serving the other cores. A core still silent after those 5 minutes, or
+   one the DNS health loop holds or has taken out of DNS, is skipped (see
+   *Skipped cores*). A core in DNS that answers with an HTTP error still
    fails the gate at once.
 2. **Tests** from a clean `git archive` in a no-network sandbox with no home:
    a must-pass set (`app/tests/host/test_host_e2e.py`, `deploy/tests`, host
@@ -151,6 +153,58 @@ Ping names the stale-copy case and the `install` command, not only
 5. **Verify** on each node: `/readyz`, `/api/version`, the node name's
    `/readyz`, `/dashboard`, `/login`, and the World deploy marker, retrying up
    to 2 minutes.
+
+## Skipped cores
+
+Until 2026-10-28 gate 1 needed every core to answer, and `next_deploy`
+restarted every core, so while one core was down no fix could ship until
+someone ran `next_fleet remove-core` (user, 2026-10-28: "make sure our
+system is working in redundant fashion"). Now:
+
+- **Which cores are skipped.** A core whose entry in `dns-health.json` is
+  held (drained, a failed roll, joining) or out of DNS, without waiting for
+  it; and a core in DNS that gives no HTTP answer at all after the 5-minute
+  re-ask. An HTTP error from a core in DNS still fails the gate: the health
+  loop takes it out of DNS within a few probes, and the next deploy skips
+  it.
+- **Never below a majority.** The cores that get the release must be a
+  majority of `deploy/fleet.toml`'s cores and at least two
+  (`next_common.deploy_quorum`: 2 of 3, 3 of 5); otherwise gate 1 fails and
+  nothing is skipped.
+- **Everything else is unchanged** for the cores that get it: the tests,
+  the migration, one core at a time with the readiness and revision gate,
+  IDS expectations, verification (of those cores only).
+- **One decision per deploy.** The agent passes its list to every
+  `next_deploy` step in `FMNEXT_DEPLOY_SKIP` (empty when it skips nothing),
+  so `upload` and `restart` agree even if DNS changes meanwhile. A commit
+  whose `next_deploy.py` predates this (a rollback) cannot skip, and the
+  agent refuses rather than restart only some cores and stop at the down
+  one. By hand, `next_deploy.py upload|restart|all` finds the same cores
+  itself (DNS state, then an SSH probe), or takes `--skip nN`.
+- **Recorded.** The log, the run result and an admin Ping (`deploy-skipped`)
+  name the skipped cores and why; `deploy-manifest.json` gives the release
+  `skipped`; `state.json` keeps `behind`: `nodes` (release missed) and `roll`
+  (node roll missed). When a roll is needed it runs on the deployed cores
+  only (`next_fleet.py roll nA nB`), and the skipped ones go into
+  `behind.roll` so the advanced `lastRoll` does not lose them.
+- **Catch-up.** Every 5 minutes (`CATCH_UP_SECONDS`) while `behind` is not
+  empty, the idle agent takes the deploy lock (never waiting for it) and
+  asks every core's `/api/version`. When the other cores agree on one
+  revision and a behind core answers and is not held, it brings that core
+  alone to that revision from the pinned worktree: `build` only if the
+  tarball was pruned, `upload nN`, `restart nN`, then `next_fleet.py roll
+  nN` if it missed a roll (unless `manual-roll`), then the usual
+  verification of that core. A core that runs something that is not an
+  ancestor of the others' release is left for a human. Success Pings
+  (`core-caught-up`); a failure emails once per distinct error
+  (`core-catch-up-failed`) and is tried again. `next_deploy restart nN`
+  moves the core from `skipped` to `caughtUp` in the manifest.
+- **The gap.** A core the health loop re-adds to DNS before its catch-up
+  serves the previous release for up to 5 minutes. That is the same mix a
+  rolling restart has (migrations already allow the old release on the new
+  schema).
+- `status` shows `wouldSkip` when gate 1 would skip a core now, and
+  `state.behind`.
 
 ## Node rolls
 
@@ -248,7 +302,8 @@ a website failure never skips a roll.
   local firewall dropping one address does not block deploys; errors end with
   a concrete `Fix: …`.
 - `python3 tools/next_autodeploy.py status` prints the switch, lock holder,
-  last deploy and failure, pending rolls and live revisions.
+  last deploy and failure, pending rolls, live revisions, the cores gate 1
+  would skip (`wouldSkip`) and the cores still behind (`state.behind`).
 
 ## World deploy notice
 
@@ -262,7 +317,8 @@ while deploying and for 5 minutes after.
 | File | Written by |
 | --- | --- |
 | `<fleet config>/deploy.lock` | `next_deploy`, `next_fleet`, the agent |
-| `<fleet config>/deploy-manifest.json` | `next_deploy` after a full-fleet restart |
+| `<fleet config>/deploy-manifest.json` | `next_deploy` after a full-fleet restart (`skipped`), and a catch-up restart (`caughtUp`) |
+| `<fleet config>/dns-health.json` | `next_dns.py` (read by gate 1 and `next_deploy` to skip cores out of DNS) |
 | `<fleet config>/autodeploy/{armed,paused,manual-roll,state.json}` | `next_autodeploy.py` |
 | `<fleet logs>/autodeploy/*.log` | the agent and manual runs |
 | `~/projects/forkmesh/cache/node-deploy/` | test archives and venvs |

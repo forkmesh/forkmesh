@@ -72,6 +72,8 @@ ROLL_FILES = ("tools/mirror_gateway.py",)
 RUNNER_ROLL_PREFIXES = ("server/",)
 RUNNER_ROLL_RETRY_SECONDS = 600
 RUNNERS_BUSY_EXIT = 3
+CATCH_UP_SECONDS = 300
+DEPLOY_SKIP_ENV = "FMNEXT_DEPLOY_SKIP"
 TEST_DIRS = frozenset({"tests", "tests_rqlite", "tests_cluster", "browser_tests"})
 
 MUST_PASS = (
@@ -509,9 +511,13 @@ def unmerged_fleet_branches(git, main) -> list:
     return sorted(pending)
 
 
-def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
-              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
-              unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
+def live_fleet(hosts, run=subprocess.run, say=None, sleep=time.sleep,
+               clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
+               unreachable_wait=UNREACHABLE_WAIT_SECONDS, dns=None, skip=True):
+    dns = (common.dns_health_nodes() if dns is None else dns) if skip else {}
+    drained = {n["name"]: common.out_of_dns(dns.get(n["name"]))
+               for n in hosts["nodes"]}
+    drained = {name: why for name, why in drained.items() if why}
     deadline = clock() + offline_wait
     announced = False
     while True:
@@ -531,15 +537,36 @@ def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
         sleep(OFFLINE_POLL_SECONDS)
     if announced and say:
         say("gate 1: the network is back")
-    answers = reask_silent(hosts, answers, run=run, say=say, sleep=sleep, clock=clock,
-                           wait=unreachable_wait)
-    revs = {}
-    for name, code, rev in answers:
-        if not rev:
+    asked = [answer for answer in answers if answer[0] not in drained]
+    asked = reask_silent(dict(hosts, nodes=[n for n in hosts["nodes"]
+                                            if n["name"] not in drained]),
+                         asked, run=run, say=say, sleep=sleep, clock=clock,
+                         wait=unreachable_wait)
+    revs, skipped = {}, dict(drained)
+    for name, code, rev in asked:
+        if rev:
+            revs[name] = rev
+        elif skip and not code:
+            skipped[name] = "no answer to /api/version for %d min" % (
+                unreachable_wait // 60)
+        else:
             raise GuardError("%s did not answer /api/version (HTTP %s); the fleet "
                              "must be healthy before a deploy" % (name, code))
-        revs[name] = rev
-    return revs
+    need = common.deploy_quorum(len(hosts["nodes"]))
+    if skipped and len(revs) < need:
+        raise GuardError(
+            "only %d of %d cores are healthy (%s); a deploy needs %d, so no core "
+            "is skipped" % (len(revs), len(hosts["nodes"]), ", ".join(
+                "%s %s" % kv for kv in sorted(skipped.items())), need))
+    return revs, skipped
+
+
+def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
+              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
+              unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
+    return live_fleet(hosts, run=run, say=say, sleep=sleep, clock=clock,
+                      offline_wait=offline_wait, unreachable_wait=unreachable_wait,
+                      skip=False)[0]
 
 
 def verify_once(hosts, rev, run=subprocess.run) -> list:
@@ -925,6 +952,7 @@ class Pipeline:
         self.state_dir = state_dir
         self.lock_wait = lock_wait
         self.sleep = sleep
+        self.skip_env = ""
 
     def say(self, message):
         self.log.say(message)
@@ -1143,7 +1171,8 @@ class Pipeline:
             if line.startswith("next_deploy: "):
                 causes.append(line[len("next_deploy: "):].strip())
             self.say(line)
-        code = stream(command, say, cwd=worktree, env=lock.child_env(),
+        env = dict(lock.child_env(), **{DEPLOY_SKIP_ENV: self.skip_env})
+        code = stream(command, say, cwd=worktree, env=env,
                       timeout=timeout, pass_fds=(lock.fd,), popen=self.popen)
         if code != 0:
             raise ToolError("next_deploy %s exited %d%s" % (
@@ -1179,16 +1208,23 @@ class Pipeline:
                  "time" % target[:12])
         for path in result["roll"][:20]:
             self.say("  %s" % path)
+        names = list(result.get("deployedNodes") or []) if result.get("skipped") else []
+        if names:
+            self.say("roll: only %s; %s catch up when they are back" % (
+                ", ".join(names), ", ".join(sorted(result["skipped"]))))
         try:
             worktree = self.worktree(target)
-            self.say("$ python3 tools/next_fleet.py roll --execute")
-            code = stream([sys.executable, "tools/next_fleet.py", "roll", "--execute"],
+            self.say("$ python3 tools/next_fleet.py roll %s--execute" % "".join(
+                name + " " for name in names))
+            code = stream([sys.executable, "tools/next_fleet.py", "roll", *names,
+                           "--execute"],
                           self.say, cwd=worktree, env=lock.child_env(),
                           timeout=ROLL_TIMEOUT, pass_fds=(lock.fd,), popen=self.popen)
         except (ToolError, OSError, subprocess.SubprocessError) as error:
             code = str(error)
         if code == 0:
             result["rolled"] = True
+            result["rolledNodes"] = names or list(result.get("deployedNodes") or [])
             result["message"] += "; cores rolled"
             self.say("roll: every core rolled and back in DNS")
             if runner_roll_needed(result["roll"]):
@@ -1228,6 +1264,78 @@ class Pipeline:
         else:
             result["runnerRollError"] = "next_fleet roll-runners exited %s" % code
             self.say("roll: runners FAILED: %s" % result["runnerRollError"])
+
+    def catch_up(self, behind, lock, dns=None):
+        nodes, roll = set(behind.get("nodes") or []), set(behind.get("roll") or [])
+        names = nodes | roll
+        main = self.git.rev(MAIN_REF)
+        hosts = self.hosts(main)
+        known = {n["name"]: n for n in hosts["nodes"]}
+        gone = names - set(known)
+        outcome = {"released": sorted(gone & nodes), "rolled": sorted(gone & roll),
+                   "errors": {}, "rev": ""}
+        dns = common.dns_health_nodes() if dns is None else dns
+        answers = read_revs(hosts, run=self.run, sleep=self.sleep)
+        serving = sorted({rev for name, _code, rev in answers if name not in names and rev})
+        if len(serving) != 1:
+            self.say("catch-up: the other cores run %s; waiting for one revision" % (
+                ", ".join(serving) or "nothing that answers"))
+            return outcome
+        rev = outcome["rev"] = serving[0]
+        ready = [(name, node_rev) for name, _code, node_rev in answers
+                 if name in names and node_rev and not (dns.get(name) or {}).get("held")]
+        if not ready:
+            return outcome
+        try:
+            commit = resolve_commit(self.git, rev)
+        except ToolError as error:
+            outcome["errors"] = {name: str(error) for name, _rev in ready}
+            return outcome
+        manifest = common.load_manifest()
+        worktree = None
+        for name, node_rev in ready:
+            try:
+                if name in nodes and node_rev != rev:
+                    kind, _found = locate(node_rev, manifest, self.git, commit, main)
+                    if kind != "ancestor":
+                        raise GuardError("%s runs %s, which is not behind %s; catch it "
+                                         "up by hand" % (name, node_rev, rev))
+                    self.say("catch-up: %s answers again with %s; bringing it to %s"
+                             % (name, node_rev, rev))
+                    worktree = worktree or self.worktree(commit)
+                    if not tarball_path(rev).is_file():
+                        self.tool(worktree, lock, ["build", "--execute"], BUILD_TIMEOUT)
+                    self.tool(worktree, lock, ["upload", name, "--rev", rev, "--execute"],
+                              DEPLOY_TIMEOUT)
+                    self.tool(worktree, lock, ["restart", name, "--rev", rev,
+                                               "--execute"], DEPLOY_TIMEOUT)
+                rolled = False
+                if name in roll and auto_roll_enabled(self.state_dir):
+                    worktree = worktree or self.worktree(commit)
+                    self.say("$ python3 tools/next_fleet.py roll %s --execute" % name)
+                    code = stream([sys.executable, "tools/next_fleet.py", "roll", name,
+                                   "--execute"], self.say, cwd=worktree,
+                                  env=lock.child_env(), timeout=ROLL_TIMEOUT,
+                                  pass_fds=(lock.fd,), popen=self.popen)
+                    if code != 0:
+                        raise ToolError("next_fleet roll %s exited %s" % (name, code))
+                    rolled = True
+                elif name in roll:
+                    self.say("catch-up: manual-roll is set; %s still needs a node roll"
+                             % name)
+                if not verify(dict(hosts, nodes=[{"name": name,
+                                                  "ip": known[name]["ip"]}]),
+                              rev, self.say, run=self.run, sleep=self.sleep):
+                    raise ToolError("%s failed verification after catching up" % name)
+                if name in nodes:
+                    outcome["released"].append(name)
+                if rolled:
+                    outcome["rolled"].append(name)
+                self.say("catch-up: %s runs %s like the other cores" % (name, rev))
+            except (ToolError, OSError, subprocess.SubprocessError) as error:
+                outcome["errors"][name] = str(error)
+                self.say("catch-up: %s: FAILED: %s" % (name, error))
+        return outcome
 
     def website(self, target, result):
         try:
@@ -1282,7 +1390,8 @@ class Pipeline:
         hosts = self.hosts(target)
         self.say("gate 1: %s must be on main and fast-forward what the cores run" % rev)
         try:
-            live = live_revs(hosts, run=self.run, say=self.say, sleep=self.sleep)
+            live, skipped = live_fleet(hosts, run=self.run, say=self.say,
+                                       sleep=self.sleep)
         except GuardError as error:
             pending = unmerged_fleet_branches(self.git, main)
             if not pending:
@@ -1292,6 +1401,18 @@ class Pipeline:
                              "it and push main again" % (error, ", ".join(pending))
                              ) from error
         self.say("gate 1: live %s" % ", ".join("%s %s" % kv for kv in sorted(live.items())))
+        result["skipped"] = dict(skipped)
+        result["deployedNodes"] = sorted(live)
+        if skipped:
+            if DEPLOY_SKIP_ENV not in self.git.show(target, "tools/next_deploy.py"):
+                raise GuardError("%s is down and the next_deploy of %s cannot skip a "
+                                 "core; bring it back or run next_fleet remove-core" % (
+                                     ", ".join(sorted(skipped)), rev))
+            for name, why in sorted(skipped.items()):
+                self.say("gate 1: skipping %s (%s); it catches up when it is back"
+                         % (name, why))
+            hosts = dict(hosts, nodes=[n for n in hosts["nodes"] if n["name"] in live])
+        self.skip_env = ",".join(sorted(skipped))
         manifest = common.load_manifest()
         gate = fast_forward_gate(live, manifest, self.git, target, main, mode=self.mode)
         for note in gate["notes"]:
@@ -1304,7 +1425,8 @@ class Pipeline:
             changed = {"release": ["(unknown base)"], "roll": []}
         result["roll"] = changed["roll"]
         if all(r == rev for r in live.values()):
-            result.update(ok=True, message="%s already runs on every node" % rev)
+            result.update(ok=True, message="%s already runs on every %snode" % (
+                rev, "reachable " if skipped else ""))
             self.say("gate 1: " + result["message"])
             return result
         if not changed["release"] and self.mode == "auto":
@@ -1340,8 +1462,10 @@ class Pipeline:
         self.say("gate 5: post-deploy verification")
         if not verify(hosts, rev, self.say, run=self.run, sleep=self.sleep):
             raise ToolError("post-deploy verification failed for %s" % rev)
-        result.update(ok=True, message="deployed %s to %s" % (
-            rev, ", ".join(n["name"] for n in hosts["nodes"])))
+        result.update(ok=True, message="deployed %s to %s%s" % (
+            rev, ", ".join(n["name"] for n in hosts["nodes"]),
+            "; skipped %s" % ", ".join("%s (%s)" % kv for kv in sorted(skipped.items()))
+            if skipped else ""))
         return result
 
 
@@ -1370,9 +1494,20 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
     elif roll and result.get("nodesOk", result.get("ok")):
         state["roll"] = {"since": rev, "paths": roll[:50], "at": time.time(),
                          "error": result.get("rollError", "")}
+    if result.get("nodesOk", result.get("ok")) and "skipped" in result:
+        note_behind(state, result)
     save_state(state, state_dir)
     if notifier is None:
         return state
+    if result.get("nodesOk", result.get("ok")) and result.get("skipped"):
+        notifier.send("Deploy of %s skipped %s" % (rev, ", ".join(sorted(result["skipped"]))),
+                      "%s\n\nThe skipped core is caught up when it answers again and is "
+                      "not held out of DNS: the agent checks every %d s, rolls only that "
+                      "core to what the others run and Pings when it is done "
+                      "(docs/deploy/auto-deploy.md, \"Skipped cores\")." % (
+                          "\n".join("%s: %s" % kv for kv in sorted(result["skipped"].items())),
+                          CATCH_UP_SECONDS),
+                      "deploy-skipped:%s" % rev)
     if not result.get("ok"):
         email = state["failures"] >= EMAIL_AFTER_FAILURES and not state.get("emailed")
         notifier.send("Deploy of %s failed" % rev,
@@ -1407,6 +1542,81 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "docs/deploy/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
                       "node-roll:%s" % rev)
     return state
+
+
+def note_behind(state, result):
+    behind = state.get("behind") or {}
+    skipped = sorted(result.get("skipped") or {})
+    roll = set(behind.get("roll") or []) - set(result.get("rolledNodes") or [])
+    if result.get("rolled"):
+        roll |= set(skipped)
+    if not skipped and not roll:
+        state.pop("behind", None)
+        return
+    state["behind"] = {"nodes": skipped, "roll": sorted(roll), "at": time.time(),
+                       "notified": behind.get("notified") or {}}
+
+
+def tarball_path(rev) -> Path:
+    directory = os.environ.get("FMNEXT_DIST_DIR") or common.data_dir() / "dist"
+    return Path(directory) / ("fmnext-%s.tar.gz" % rev)
+
+
+def catch_up(repo, log, state_dir=None, notifier=None, layout=None,
+             pipeline_class=None, run=subprocess.run, dns=None):
+    behind = load_state(state_dir).get("behind") or {}
+    if not (behind.get("nodes") or behind.get("roll")):
+        return None
+    if switch_state(state_dir)[0] != "armed":
+        return None
+    lock = common.DeployLock(what="next_autodeploy catch-up %s" % ",".join(
+        sorted(set(behind.get("nodes") or []) | set(behind.get("roll") or []))))
+    try:
+        lock.acquire(wait=0)
+    except common.LockBusy:
+        return None
+    try:
+        pipeline = (pipeline_class or Pipeline)(repo, log, run=run, state_dir=state_dir,
+                                                notifier=notifier, layout=layout)
+        outcome = pipeline.catch_up(behind, lock, dns=dns)
+        state = load_state(state_dir)
+        current = state.get("behind") or {}
+        released, rolled = set(outcome["released"]), set(outcome["rolled"])
+        current["nodes"] = sorted(set(current.get("nodes") or []) - released)
+        current["roll"] = sorted(set(current.get("roll") or []) - rolled)
+        notified = dict(current.get("notified") or {})
+        fresh = {name: text for name, text in outcome["errors"].items()
+                 if notified.get(name) != text}
+        notified.update(fresh)
+        for name in released | rolled:
+            if name not in outcome["errors"]:
+                notified.pop(name, None)
+        current["notified"] = notified
+        if current["nodes"] or current["roll"]:
+            state["behind"] = current
+        else:
+            state.pop("behind", None)
+        save_state(state, state_dir)
+    finally:
+        lock.release()
+    if notifier is not None:
+        for name in sorted(released | rolled):
+            notifier.send("%s caught up" % name,
+                          "%s was skipped by a deploy while it was down and now runs %s "
+                          "like the other cores%s." % (
+                              name, outcome.get("rev", ""),
+                              " (node roll included)" if name in rolled else ""),
+                          "core-caught-up:%s:%s" % (name, outcome.get("rev", "")))
+        for name, text in sorted(fresh.items()):
+            notifier.send("%s cannot catch up" % name,
+                          "%s was skipped by a deploy and could not be brought to what "
+                          "the other cores run: %s\n\nThe agent tries again every %d s. "
+                          "By hand: python3 tools/next_deploy.py upload %s --rev <rev> "
+                          "--execute, then restart %s --rev <rev> --execute "
+                          "(docs/deploy/auto-deploy.md)." % (
+                              name, text, CATCH_UP_SECONDS, name, name),
+                          "core-catch-up-failed:%s" % name, email=True)
+    return outcome
 
 
 def note_runner_roll(state, result):
@@ -1518,6 +1728,8 @@ class Agent:
         self.idle_log = Log(echo=True, clock=clock)
         self.runner_worker = None
         self.runner_retry_at = clock() + RUNNER_ROLL_RETRY_SECONDS
+        self.catch_up_worker = None
+        self.catch_up_at = clock()
         self.run = run
         self.self_updater = self_updater or self_update
         self.self_update_seen = ""
@@ -1598,6 +1810,7 @@ class Agent:
             self.complete()
         if not self.pending:
             self.maybe_retry_runner_roll()
+            self.maybe_catch_up()
             self.maybe_self_update()
             return
         state, reason = switch_state(self.state_dir)
@@ -1673,11 +1886,33 @@ class Agent:
         self.runner_worker = threading.Thread(target=work, name="runner-roll", daemon=True)
         self.runner_worker.start()
 
+    def maybe_catch_up(self):
+        for worker in (self.catch_up_worker, self.runner_worker):
+            if worker is not None and worker.is_alive():
+                return
+        if self.clock() < self.catch_up_at:
+            return
+        self.catch_up_at = self.clock() + CATCH_UP_SECONDS
+        behind = load_state(self.state_dir).get("behind") or {}
+        if not (behind.get("nodes") or behind.get("roll")):
+            return
+
+        def work():
+            try:
+                catch_up(self.repo, self.idle_log, state_dir=self.state_dir,
+                         notifier=self.notifier, layout=self.layout)
+            except (ToolError, OSError, subprocess.SubprocessError, KeyError,
+                    ValueError) as error:
+                self.idle_log.say("catch-up failed: %s" % error)
+        self.catch_up_worker = threading.Thread(target=work, name="catch-up", daemon=True)
+        self.catch_up_worker.start()
+
     def maybe_self_update(self):
         if self.layout is None or self.worker is not None:
             return
-        if self.runner_worker is not None and self.runner_worker.is_alive():
-            return
+        for worker in (self.runner_worker, self.catch_up_worker):
+            if worker is not None and worker.is_alive():
+                return
         if self.clock() < self.self_update_retry_at:
             return
         candidate = (load_state(self.state_dir).get("tested") or {}).get("commit") or ""
@@ -2076,7 +2311,9 @@ def status_report(repo, layout=None) -> dict:
               "state": load_state(), "main": git.rev(MAIN_REF)[:12]}
     try:
         hosts = fleet_hosts(git.show(MAIN_REF, "deploy/fleet.toml"))
-        report["live"] = live_revs(hosts, offline_wait=0, unreachable_wait=0)
+        report["live"], skipped = live_fleet(hosts, offline_wait=0, unreachable_wait=0)
+        if skipped:
+            report["wouldSkip"] = skipped
     except (ToolError, ValueError, KeyError) as error:
         report["live"] = {"error": str(error)}
     return report
