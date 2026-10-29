@@ -376,6 +376,10 @@ Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
   lives in the readable application rules directory so an unprivileged
   desktop can verify its exact installed contents; it does not loosen the
   permissions on the administrator's `/etc/polkit-1/rules.d` directory.
+  **Let my phones restart this computer**, in the same box, installs a
+  second rule, `49-forkmesh-restart-<uid>.rules`, the same way; it grants
+  only `org.freedesktop.login1.reboot` and `reboot-multiple-sessions`
+  (`docs/native/DESKTOP_UPDATE.md`).
 - **Never let this computer go to sleep** (Settings → General → STARTUP).
   Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
   hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A
