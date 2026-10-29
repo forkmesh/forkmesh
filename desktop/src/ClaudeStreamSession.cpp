@@ -7,6 +7,7 @@
 
 #include "AgentJail.h"
 #include "AgentResources.h"
+#include "AgentSummaryPreload.h"
 #include "VirtualMachineRuntime.h"
 #include "TranscriptCoverage.h"
 
@@ -172,6 +173,7 @@ void ClaudeStreamSession::launch()
     m_proc->setWorkingDirectory(cwd);
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    forkmesh::agentsummary::applyEnvironment(env);
     for (const QString &kv : m_extraEnv) {
         const int eq = kv.indexOf(QLatin1Char('='));
         if (eq > 0)

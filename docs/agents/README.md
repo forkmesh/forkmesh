@@ -14,6 +14,7 @@ follows a run through every layer. The desktop UI for agents is described in
 | Desktop local runtimes | `desktop/src/AgentRuntimeRegistry.*`, `AgentRuntimeSession.*`, `ClaudeStreamSession.*` (Claude Code stream-json), `ClaudeControlProtocol.*` and `MainWindowAgentClaudeControl.cpp` (its control requests, names and sub-sessions), `ClaudeElicitationDialog.*`, `CodexAppServerSession.*` (Codex app-server), `AgentRunner.*` (legacy script providers) |
 | Desktop sessions and storage | `desktop/src/AgentStore.*`, `AgentWorktree.h`, `AgentScratch.h`, `MainWindowAgent*.cpp` |
 | Desktop memory and CPU containment | `desktop/src/AgentResources.*`, `AgentResourceGovernor.*` ([memory.md](memory.md)) |
+| Claude Code summary side query off | `desktop/src/AgentSummaryPreload.h`, `AgentSummaryPreloadScript.h` ([agent-summary-preload.md](agent-summary-preload.md)) |
 | Desktop sandboxing | `desktop/src/ProjectAgentAccess.*`, `MainWindowAgentAccess.cpp`, `AgentNetworkGate.*`, `AgentRunRules.*`, `CommandVariables.*`, `AgentJail.h`, `AgentGuardrails.*`, `AgentPermissionController.*`, `VirtualMachineRuntime.*` ([access-rules.md](access-rules.md)) |
 | Desktop claiming website jobs | `desktop/src/MainWindowAgentSync.cpp`, `OrgAgentJobAttachments.*` |
 | Desktop cloud rows and Move to cloud | `desktop/src/AgentCloudSessions.*`, `MainWindowAgentCloud.cpp`, `MainWindowAgentEvents.cpp` |
@@ -458,7 +459,9 @@ running jobs keep their binary. The update's exit status is unchanged.
   (`applyProjectAgentAccess`), take tool options from
   `agentRunLaunchOptions(sid, codex)` and the gate environment from
   `agentNetworkGateEnv(sid)`, and use the memory containment calls
-  (`applyEnvironment`, `wrapShellCommand`, `contain`).
+  (`applyEnvironment`, `wrapShellCommand`, `contain`). A new Claude Code
+  launch path also calls `forkmesh::agentsummary::applyEnvironment(env)`
+  ([agent-summary-preload.md](agent-summary-preload.md)).
 
 ## Related docs
 
