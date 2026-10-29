@@ -1,5 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
+const RETAINED_KEY_ADVERTISEMENTS = 1;
+
 
 test("admin manages a private channel while only invited users join", async ({ page }) => {
   const channelId = "a".repeat(32);
@@ -165,8 +167,8 @@ test("admin manages a private channel while only invited users join", async ({ p
   await page.locator("#chat-channel-settings-close").click();
   await page.locator("#chat-input").fill("Private release is ready");
   await page.locator("#chat-send").click();
-  await expect.poll(() => retainedPrivateFrames.length).toBe(1);
-  expect(retainedPrivateFrames[0]).not.toContain("Private release is ready");
+  await expect.poll(() => retainedPrivateFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 1);
+  expect(retainedPrivateFrames.join("\n")).not.toContain("Private release is ready");
 
   await page.evaluate((value) => {
     localStorage.setItem("forkmesh.session", JSON.stringify(value));

@@ -163,6 +163,95 @@ The sweep turned up three red workflows on `main`:
   [automation-and-cloudflare-bootstrap.md](../../www/docs/operations/automation-and-cloudflare-bootstrap.md))
   to turn the sync on.
 
+## The 2026-10-29 failures
+
+- **Quality gates, `security-guard-contracts`.** The security sweep added
+  three `app/tests/host/test_repo_fastpath.py` tests to
+  `tools/run_critical_tests.py`. They build an `httpx.AsyncClient`, and the
+  runner had no `httpx`. `tools/requirements-ci.txt` now pins `httpx` and its
+  dependencies (`anyio`, `certifi`, `h11`, `httpcore`, `idna`,
+  `typing_extensions`) at the `app/host/requirements.txt` versions. The Docs
+  package's dependency snapshot and the phones' Docs bundle were refreshed
+  with it (`marketplace/tools/docs_dependencies.py --offline`, then
+  `docs_mobile_bundle.py`).
+- **External dependency map.** The agent-summary preload script
+  (`desktop/src/AgentSummaryPreloadScript.h`) carries an MIT header naming
+  `flamerix.ai`. It is now a `documentation` reference in the manifest, and
+  the published map was re-rendered.
+- **World browser E2E never finished.** Every run was cancelled at the
+  20-minute limit inside the App browser step, and the cause was the test
+  server, not the runner. `run-browser-worker.sh` serves `app/dist` with
+  `pywrangler dev`, and `build_site_assets.py cutover` copies
+  `www/public/_redirects` into it. The www site's handoff rules (`/chat`,
+  `/dashboard/*`, `/login`, `/world/*` and the rest) 308 to
+  `https://app.forkmesh.com` and `https://world.forkmesh.com`, and wrangler
+  applies them. So every App spec that opened one of those pages tested the
+  production site, not the build, and the chat specs waited for a socket the
+  production page never opened through the test's mocks. Production never
+  applies `_redirects` (the Next host and its Caddy routes skip it,
+  [docs/host/README.md](../host/README.md)). In full-suite mode the launcher
+  now drops every rule that leaves the test server before `pywrangler dev`
+  starts. The browser-test wrangler config's `run_worker_first = "/*/*"`
+  also sent `/fmm/fmm-local.js` to the Worker, which answered with a
+  repository page, so `chat.js` failed to load as a module. `fmm`,
+  `dashboard-plugins` and `instance-themes` are now excluded, like the other
+  static folders. The full App suite takes about 10 minutes, so the job limit
+  is now 40 minutes.
+- **The App specs meet the real build.** The chat specs counted retained
+  frames from before the relay hardening of 2026-10-22. The transport also
+  retains the sealed key advertisement it sends with a room's first message,
+  because a reloaded page needs it to read the retained messages. The specs
+  now count it as `RETAINED_KEY_ADVERTISEMENTS`.
+
+With the browser on the local build, 39 App specs still fail (local run,
+2026-10-29). These were hidden while the suite tested production, and each
+needs a decision: is the spec stale, or did the page regress? Until they are
+fixed, World browser E2E stays red at its last step:
+
+- `dashboard-agent-session-detail` (256, 375, 410): no "waived" text and no
+  `[data-org-agent-compare]` link in the session detail.
+- `dashboard-agents-page` (100): the count reads "3 sessions · 1 working",
+  the spec expects "1 working · 3 total".
+- `dashboard-calendar-activity` (115, 160, 185): no repository history
+  requests, no "more" day cell, an empty grid.
+- `dashboard-desktop-agents` (213): the first confirm dialog is "Delete this
+  agent.", not the merge.
+- `dashboard-development-links` (119, 146): the issue's Development section
+  has no pull link; the posted links differ.
+- `dashboard-global-search-page-filter` (418): no `[data-org-agent-session]`
+  rows.
+- `dashboard-home` (119): `[data-composer-slot]` stays visible when the
+  composer does not mount.
+- `dashboard-insights-contributors` (14): the profile link has no title.
+- `dashboard-issue-avatar-image-markup` (114) and
+  `dashboard-issue-detail-description` (149, 212): the author appears twice in
+  the issue conversation.
+- `dashboard-issue-filters` (214, 287, 313, 495): sort options differ, the
+  Code tab and Pulls tab clicks time out, no issue skeleton.
+- `dashboard-new-repository` (76, 114, 247): the "New repository" button
+  click times out; the modal stays hidden.
+- `dashboard-org-repo` (28): no `forkmesh/forkmesh` heading.
+- `dashboard-pull-files-deep-link` (232): no inline thread toggle.
+- `dashboard-record-list-links` (130): middle-click opens a blank tab.
+- `dashboard-repo-activity-graph` (103, 134, 175): no
+  `[data-repo-activity-graph]`.
+- `dashboard-repo-branches` (536): the bulk update sends a different branch
+  list.
+- `dashboard-repo-forks` (12): no `[data-repo-fork-count]` in the about
+  actions.
+- `direct-messages` (70, 119): the sign-up helper finds no email field.
+- `network-relay-stats` (4): "No managed mirror hosts are reachable right
+  now." instead of "No desktop hosts …".
+- `node-origin-docs-blog-session` (24): one session read, not two.
+- `private-chat-channels` (6, 209, 464): the invited user's replay shows "No
+  messages"; `#chat-channel-manage` stays visible for a non-manager; the room
+  list reads "Worldshipping".
+- `site-footer-world-frame` (25): no World frame found.
+
+Run one spec against the local Worker with
+`CI=1 FORKMESH_BROWSER_FULL=1 npx playwright test tests/<spec> --retries=0`
+in `app/browser_tests`. On this box `pywrangler dev` started (2026-10-29).
+
 ## Reproducing the browser suites locally
 
 `npm run test:daily-interface` (App browser tests) starts the Python Worker
