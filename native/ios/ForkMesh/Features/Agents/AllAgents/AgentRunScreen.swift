@@ -92,18 +92,11 @@ struct AgentRunScreen: View {
             AgentPromptDeck(deck: PromptDeck(blocks: shownBlocks), accessibilityPrefix: "agent-run-prompt-deck")
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
-            TranscriptFollowScroll(tail: [follower.next, shownBlocks.count], pin: sent, accessibilityPrefix: "agent-run-transcript") {
+            TranscriptFollowScroll(tail: [follower.next, shownBlocks.count, questions.count], pin: sent, accessibilityPrefix: "agent-run-transcript") {
                 if !follower.attachments.isEmpty {
                     AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
-                }
-                if !questions.isEmpty {
-                    AgentQuestionCards(questions: questions, busy: busy) { question, answer in
-                        Task { await self.answer(question, answer) }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
                 }
                 if shownBlocks.isEmpty {
                     Text("No transcript yet.")
@@ -114,6 +107,13 @@ struct AgentRunScreen: View {
                     AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
                         .padding(.horizontal, 12)
                         .padding(.vertical, FmSpace.x2)
+                }
+                if !questions.isEmpty {
+                    AgentQuestionCards(questions: questions, busy: busy) { question, answer in
+                        Task { await self.answer(question, answer) }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
                 }
             }
             if !error.isEmpty {
@@ -136,7 +136,7 @@ struct AgentRunScreen: View {
             if live.canPrompt {
                 PromptComposer(
                     text: $prompt,
-                    hint: live.composerHint,
+                    hint: questions.isEmpty ? live.composerHint : AgentQuestion.composerHint,
                     attachments: row.outside ? nil : $photos,
                     modelLabel: modelChoices.isEmpty ? nil : modelLabel,
                     modelOptions: modelChoices.map(modelOption),
@@ -721,6 +721,14 @@ struct AgentRunScreen: View {
         let text = prompt
         let images = photos
         if text.dartTrimmed.isEmpty && images.isEmpty { return }
+        if images.isEmpty, let question = questions.first {
+            sent += 1
+            prompt = ""
+            notice = ""
+            await answer(question, text)
+            if !error.isEmpty, prompt.isEmpty { prompt = text }
+            return
+        }
         sent += 1
         prompt = ""
         photos = []

@@ -551,7 +551,7 @@ on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
 | --- | --- | --- | --- |
 | List, start, transcript, prompt, stop, continue | `agents.*` | `AgentRunScreen` | `UnifiedAgentScreen` |
 | Pending tool approvals | `agentops.approvals`, `agentops.prepare` + `agentops.answer` | `ApprovalScreen` | `ApprovalScreen` |
-| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | none |
+| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | `AgentQuestionCards` on `UnifiedAgentScreen` |
 | Changes (committed, uncommitted, untracked) | `agentops.diff` | `AgentDiffScreen` | `AgentDiffScreen` |
 | Changed images | `agentops.file` | `DiffImagePreview` | none |
 | Merge & clean up | `agentops.prepare` + `agentops.merge` | `MergeCleanupButton`, `MergeLandedScreen` | `MergeCleanupDialog` |
@@ -662,6 +662,23 @@ account's other devices (`UserActivityLog`, `UserActivitySync`,
 `/api/accounts/activity-today`, [activity-today.md](../app/activity-today.md)).
 Counts are stored as `user_activity_today` (`yyyy-MM-dd|n,n,…`), written at
 most once a minute.
+
+### Answering an agent's question (2026-10-29)
+
+- The cards for a pending `AskUserQuestion` sit at the end of the transcript,
+  just above the composer, on both phones. They used to sit above the
+  transcript on iOS, so on a long run the phone kept the view at the bottom
+  and you only saw the tool line, never the question. Android had no cards.
+- While a question waits, the composer hint reads "Type your answer for the
+  agent" and Send answers the newest question with the typed text (an "Other"
+  answer), not a follow-up. A follow-up would wait in the queue behind a turn
+  that cannot end until the question is answered. A message with photos still
+  goes as a follow-up.
+- The questions are fetched again each time the transcript grows, and again
+  after an answer.
+- `AgentLogText::toolLine` writes the question texts for `AskUserQuestion`.
+  Its JSON input was cut at 200 characters, so the phone could not read it
+  and showed raw, truncated JSON.
 
 ### Fix conflicts with the agent
 
@@ -881,6 +898,7 @@ The feed stays plain text, so older phones read every line:
 | `> <text>` (to a blank line) | the user's prompt |
 | `> ⟵ <name>: <text>` | a message sent into the session (`ForkMesh (phone)` for a phone steer) |
 | `[<Tool> <arg>]` | tool call (may span lines, closed by `…]` or `]` before a blank line; capped at 200 characters) |
+| `[AskUserQuestion <question> · <question>]` | an agent question: its question texts, not its JSON input |
 | `▸ <Tool>: <arg>` | a runner's tool call (`claudeToolSummary` in `server/agents.go`) |
 | `==> Task <status>: <summary>` then lines indented four spaces | task notification and its result |
 | anything else | the agent's markdown |

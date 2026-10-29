@@ -753,6 +753,16 @@ void MainWindow::approveRepoWorkflowFile(int repoIndex, const QString &path)
         m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(repository, checkout, path));
 }
 
+void MainWindow::approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                                  const QString &who)
+{
+    if (repoWorkflowFileApproved(repoIndex, path))
+        return;
+    approveRepoWorkflowFile(repoIndex, path);
+    if (repoWorkflowFileApproved(repoIndex, path))
+        logSystem(QStringLiteral("%1 approved on this desktop by a run from %2.").arg(label, who));
+}
+
 void MainWindow::reviewPendingRepoWorkflowApprovals()
 {
     if (m_repoWorkflowApprovalPrompt) {

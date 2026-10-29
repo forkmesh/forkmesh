@@ -4851,6 +4851,7 @@ private:
     void showHighMemoryProcessPanel(bool activate = true);
     void updateHighMemoryHeading();
     void refreshHighMemoryProcessTable();
+    bool isHighMemoryProtected(qint64 pid) const;
     void killHighMemoryProcess(qint64 pid, const QString &name);
     void killAllHighMemoryProcesses(const QString &name, const QList<qint64> &pids);
     void stopHighMemoryAgent(int sessionId, const QString &label);
@@ -8953,6 +8954,8 @@ private:
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
     bool repoWorkflowFileApproved(int repoIndex, const QString &path) const;
     void approveRepoWorkflowFile(int repoIndex, const QString &path);
+    void approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                          const QString &who);
     void reviewPendingRepoWorkflowApprovals();
     QList<forkmesh::repoworkflows::Pin> workflowPins() const;
     void saveWorkflowPins(const QList<forkmesh::repoworkflows::Pin> &pins);
@@ -12730,6 +12733,7 @@ private:
     bool m_highMemoryAlertArmed = true;
     bool m_highMemoryAutoKillPending = false;
     QSet<qint64> m_highMemoryAutoKilledPids;
+    QSet<qint64> m_highMemoryProtectedPids;
     QStringList m_highMemoryAutoKilledNames;
     QPointer<QDialog> m_highMemoryDialog;
     QLabel *m_highMemoryHeading = nullptr;

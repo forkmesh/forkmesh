@@ -118,6 +118,7 @@ public enum TeamErrorText {
         case "script_on_desktop": return "Script shortcuts run on the desktop itself."
         case "shortcut_running": return "Another shortcut is already running on the desktop."
         case "shortcut_not_started": return "The desktop could not start that shortcut."
+        case "approval_required": return "This desktop's ForkMesh still asks you to allow the file there first. Update ForkMesh on the desktop so runs from this phone count as your approval."
         case "empty_shortcut": return "That shortcut has no prompt."
         case "not_mirrored": return "This repository is not on this iPhone. Mirror it from Code first."
         case "unsupported_agent", "model_mismatch": return "The shortcut names an agent or model the desktop cannot run."
