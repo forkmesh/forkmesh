@@ -1478,6 +1478,160 @@ def test_failed_direct_mail_is_noted_too_and_runners_use_the_webhook(tmp_path):
     assert json.loads(hook.data)["to"] == "a***@b.co"
 
 
+class FakeSmtp:
+    def __init__(self, sent, fail=None, refused=None):
+        self.sent, self.fail, self.refused = sent, fail, refused or {}
+
+    def __call__(self, host, port, timeout=None):
+        if self.fail:
+            raise self.fail
+        self.sent.append({"host": host, "port": port})
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def send_message(self, message, from_addr=None, to_addrs=None):
+        self.sent[-1].update(message=message, from_addr=from_addr,
+                             to_addrs=to_addrs)
+        return self.refused
+
+
+def postfix_mail(tmp_path, token="mt-SECRET"):
+    path = tmp_path / "sasl_passwd"
+    path.write_text("[live.smtp.mailtrap.io]:587 api:%s\n" % token)
+    return {"to": "security@example.com", "from": "", "smtp": "127.0.0.1:25",
+            "token_file": str(path)}
+
+
+def lock_down(tmp_path):
+    state = tmp_path / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "LOCKDOWN").write_text("x")
+
+
+def test_direct_mail_goes_through_the_local_postfix(tmp_path, capsys):
+    sent, posted = [], []
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)), rq,
+                          opener=lambda request, timeout=None: posted.append(
+                              request), smtp=FakeSmtp(sent))
+    result = alerter.send(incident("lockdown"), key=KEY)
+    assert result["mail"][0] is True and posted == []
+    assert sent[0]["host"] == "127.0.0.1" and sent[0]["port"] == 25
+    message = sent[0]["message"]
+    assert message["From"] == "ForkMesh IDS <founders@forkmesh.com>"
+    assert message["Auto-Submitted"] == "auto-generated"
+    assert sent[0]["from_addr"] == "no-reply@forkmesh.com"
+    assert sent[0]["to_addrs"] == ["security@example.com"]
+    assert '"detector": "x"' in message.get_content()
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["via"] == "postfix" and note["result"] == "accepted"
+    assert "mt-SECRET" not in capsys.readouterr().out
+
+
+def test_direct_mail_uses_the_mailtrap_api_as_root_in_a_lockdown(tmp_path):
+    lock_down(tmp_path)
+    sent, posted = [], []
+
+    def opener(request, timeout=None):
+        posted.append(request)
+        return FakeResponse(status=200)
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)),
+                          FakeRqlite(), opener=opener, smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown"))[0] is True
+    assert sent == []
+    assert posted[0].full_url == ids.MAIL_URL
+    assert posted[0].headers["Authorization"] == "Bearer mt-SECRET"
+    body = json.loads(posted[0].data)
+    assert body["to"] == [{"email": "security@example.com"}]
+    assert body["from"]["email"] == "founders@forkmesh.com"
+
+
+def test_a_lockdown_mail_the_api_refuses_waits_in_the_postfix_queue(tmp_path):
+    lock_down(tmp_path)
+    sent = []
+
+    def opener(request, timeout=None):
+        raise OSError("no route")
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)), rq,
+                          opener=opener, smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown"))[0] is True
+    assert len(sent) == 1
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["via"] == "postfix"
+    assert note["tried"][0] == "mailtrap: OSError"
+
+
+def test_direct_mail_falls_back_to_the_api_when_postfix_is_down(tmp_path):
+    posted = []
+
+    def opener(request, timeout=None):
+        posted.append(request)
+        return FakeResponse(status=200)
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)),
+                          FakeRqlite(), opener=opener,
+                          smtp=FakeSmtp([], fail=ConnectionRefusedError()))
+    ok, detail = alerter.mail(incident("test"))
+    assert ok is True and detail == "mail 200" and len(posted) == 1
+
+
+def test_direct_mail_without_postfix_or_token_reports_failure(tmp_path):
+    mail = dict(postfix_mail(tmp_path), token_file=str(tmp_path / "none"))
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=mail), rq,
+                          opener=lambda request, timeout=None: None,
+                          smtp=FakeSmtp([], fail=ConnectionRefusedError()))
+    assert alerter.mail(incident("lockdown")) == (
+        False, "smtp ConnectionRefusedError")
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["result"] == "failed"
+    alerter = ids.Alerter(cfg(tmp_path, mail={"to": "",
+                                              "smtp": "127.0.0.1:25"}),
+                          FakeRqlite(), smtp=FakeSmtp([]))
+    assert alerter.mail(incident("lockdown")) == (False, "not configured")
+
+
+def test_direct_mail_never_submits_to_a_remote_smtp_host(tmp_path):
+    sent = []
+    mail = dict(postfix_mail(tmp_path), smtp="mail.example.com:25",
+                token_file="")
+    alerter = ids.Alerter(cfg(tmp_path, mail=mail), FakeRqlite(),
+                          smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown")) == (False, "not configured")
+    assert sent == []
+
+
+def test_production_fleet_renders_direct_mail_without_new_secrets(tmp_path):
+    import tomllib
+    with open(os.path.join(REPO, "deploy", "fleet.toml"), "rb") as handle:
+        production = tomllib.load(handle)["ids"]
+    fleet = render.load_fleet(os.path.join(REPO, "deploy",
+                                           "fleet.example.toml"),
+                              state_path=tmp_path / "none.json")
+    fleet["ids"] = dict(fleet["ids"], **production)
+    config = json.loads(render.ids_config(fleet, "n1", "core",
+                                          render.fleet_paths(fleet)))
+    assert config["mail"] == {"to": "security@forkmesh.com", "from": "",
+                              "smtp": "127.0.0.1:25",
+                              "token_file": "/etc/postfix/sasl_passwd"}
+    assert render.ids_credential_names(fleet, "core") == [
+        render.IDS_KEY_CREDENTIAL, "RQLITE_PASSWORD"]
+    broken = dict(fleet, ids=dict(fleet["ids"], mail_to=""))
+    with pytest.raises(render.RenderError, match="ids.mail_to"):
+        render.ids_settings(broken)
+    broken = dict(fleet, ids=dict(fleet["ids"], mail_from="founders"))
+    with pytest.raises(render.RenderError, match="ids.mail_from"):
+        render.ids_settings(broken)
+
+
 def test_context_redacts_secrets_in_command_lines():
     assert ids.redact(
         "git fetch https://bot:ghp_abc@github.com/x.git -c "

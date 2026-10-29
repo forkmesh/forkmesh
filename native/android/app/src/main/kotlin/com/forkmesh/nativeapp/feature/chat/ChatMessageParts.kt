@@ -73,6 +73,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.apps.AppsText
 import com.forkmesh.nativeapp.chat.ChatAttachment
+import com.forkmesh.nativeapp.chat.ChatMediaFile
 import com.forkmesh.nativeapp.chat.ChatAttachmentKind
 import com.forkmesh.nativeapp.chat.ChatProfileLink
 import com.forkmesh.nativeapp.chat.ChatRow
@@ -459,7 +460,7 @@ private fun AttachmentFileRow(attachment: ChatAttachment, icon: String, onSave: 
 
 private fun chatMediaFile(context: android.content.Context, attachment: ChatAttachment): File? = runCatching {
     val dir = File(context.cacheDir, "chat-media").apply { mkdirs() }
-    val file = File(dir, "${attachment.messageId.hashCode()}-${attachment.fileName.replace('/', '_')}")
+    val file = ChatMediaFile.file(attachment, dir) ?: return@runCatching null
     if (!file.exists()) file.writeBytes(attachment.data)
     file
 }.getOrNull()
@@ -557,10 +558,8 @@ private fun AudioAttachmentRow(attachment: ChatAttachment, onSave: () -> Unit) {
                     current.release()
                     player = null
                 } else {
-                    val dir = File(context.cacheDir, "chat-media").apply { mkdirs() }
-                    val file = File(dir, "${attachment.messageId.hashCode()}-${attachment.fileName.replace('/', '_')}")
                     runCatching {
-                        if (!file.exists()) file.writeBytes(attachment.data)
+                        val file = chatMediaFile(context, attachment) ?: return@runCatching
                         val next = MediaPlayer()
                         next.setDataSource(file.absolutePath)
                         next.setOnCompletionListener {

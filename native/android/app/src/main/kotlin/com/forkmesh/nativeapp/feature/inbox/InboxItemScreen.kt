@@ -25,11 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.account.INBOX_ITEM_BACK
 import com.forkmesh.nativeapp.account.pingDetailWhen
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.collab.ReferenceLinks
 import com.forkmesh.nativeapp.control.HubControlCalling
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.account.notifications.PingBackLink
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.code.rememberCopyText
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
@@ -126,6 +128,7 @@ class InboxItemScreen(private val item: InboxItem) : Screen() {
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
             ) {
+                PingBackLink(INBOX_ITEM_BACK, Modifier.padding(bottom = FmSpace.x1)) { navigator.pop() }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FmIconTile(item.icon, tint = c.accent, size = 40.dp, iconSize = 20.dp)
                     Spacer(Modifier.width(FmSpace.x3))

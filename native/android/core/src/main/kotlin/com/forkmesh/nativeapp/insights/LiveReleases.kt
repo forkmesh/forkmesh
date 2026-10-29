@@ -186,7 +186,7 @@ object LiveReleases {
         val note = listOf(
             platform.kind,
             archs,
-            if (build > 1) "build $build" else "",
+            if (build > 0) "build $build" else "",
             if (behind) "behind $latest" else "",
         ).filter { it.isNotEmpty() }.joinToString(" · ")
         return StatsTileData(tag, note, status = if (behind) StatsTone.Warning else StatsTone.Good)

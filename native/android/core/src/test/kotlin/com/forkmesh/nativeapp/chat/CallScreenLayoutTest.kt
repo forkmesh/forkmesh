@@ -42,4 +42,29 @@ class CallScreenLayoutTest {
         assertEq(CallControlsArrangement.OneRow(16f), CallControlsLayout.arrange(358f, List(3) { 60f }))
         assertEq(0f, CallControlsLayout.rowWidth(emptyList(), 16f))
     }
+
+    fun testTheMiniWindowSitsOnAnEdgeAtItsStoredHeight() {
+        val top = CallMiniLayout.center(CallMiniSpot(CallMiniSide.TRAILING, 0.0), 116f, 164f, 390f, 800f)
+        assertEq(CallPoint(320f, 94f), top)
+        val bottom = CallMiniLayout.center(CallMiniSpot(CallMiniSide.LEADING, 1.0), 116f, 164f, 390f, 800f)
+        assertEq(CallPoint(70f, 706f), bottom)
+        val clamped = CallMiniLayout.center(CallMiniSpot(CallMiniSide.LEADING, 3.0), 116f, 164f, 390f, 800f)
+        assertEq(bottom, clamped)
+    }
+
+    fun testReleasingTheMiniWindowSnapsToTheNearerEdgeAndCorners() {
+        assertEq(CallMiniSpot(CallMiniSide.LEADING, 0.5), CallMiniLayout.snap(CallPoint(150f, 400f), 116f, 164f, 390f, 800f))
+        assertEq(CallMiniSpot(CallMiniSide.TRAILING, 0.0), CallMiniLayout.snap(CallPoint(260f, 120f), 116f, 164f, 390f, 800f))
+        assertEq(CallMiniSpot(CallMiniSide.TRAILING, 1.0), CallMiniLayout.snap(CallPoint(260f, 690f), 116f, 164f, 390f, 800f))
+        val flicked = CallMiniLayout.settle(CallMiniSpot(CallMiniSide.TRAILING, 0.0), -20f, 0f, -2000f, 0f, 116f, 164f, 390f, 800f)
+        assertEq(CallMiniSide.LEADING, flicked.side)
+        assertEq(CallMiniSide.TRAILING, CallMiniSide.from("sideways"))
+        assertEq("fm.call.miniSide", CallMiniSide.SIDE_KEY)
+    }
+
+    fun testTheMiniWindowTimerReadsLikeAClock() {
+        assertEq("0:00", CallMiniLayout.duration(-3))
+        assertEq("1:05", CallMiniLayout.duration(65))
+        assertEq("1:00:09", CallMiniLayout.duration(3609))
+    }
 }

@@ -905,6 +905,13 @@ class RelayRoom(
 
     private fun verifiedOwner(node: String, claimed: String): String = owners?.verified(node, claimed).orEmpty()
 
+    private fun watchClaim(node: String, m: Map<String, Any?>) {
+        val known = owners ?: return
+        val claim = jsonText(m["ownerUser"] ?: m["owner"])
+        if (node.isEmpty() || node == nodeId || claim.isBlank()) return
+        if (known.verified(node, claim).isEmpty()) known.watch(node, claim)
+    }
+
     private fun noteSealMismatch(keyId: String) {
         if (!reportedSealKeyIds.add(keyId)) return
         if (keyId.isEmpty()) {
@@ -934,6 +941,7 @@ class RelayRoom(
         val person = !RelayFrames.isIntegration(m)
         if (person && senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
         if (RelayFrames.isPrivate(m)) return
+        if (person && (type == "chat" || type == "thread-reply")) watchClaim(senderId, m)
 
         when (type) {
             "hello" -> {

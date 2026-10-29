@@ -1,9 +1,11 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.crypto.Sha256
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatRetention
+import java.io.File
 import java.util.Base64
 
 enum class ChatAttachmentKind {
@@ -36,6 +38,21 @@ class ChatAttachment(val messageId: String, val fileName: String, val mime: Stri
             other.data.contentEquals(data)
 
     override fun hashCode(): Int = messageId.hashCode() * 31 + data.contentHashCode()
+}
+
+object ChatMediaFile {
+    fun name(attachment: ChatAttachment): String {
+        val digest = Sha256.hex(attachment.messageId.toByteArray(Charsets.UTF_8)).take(24)
+        val safe = attachment.fileName.replace("/", "_").replace("\\", "_").replace("..", "_").replace("\u0000", "_")
+        return "$digest-$safe"
+    }
+
+    fun file(attachment: ChatAttachment, directory: File): File? {
+        val folder = directory.toPath().toAbsolutePath().normalize()
+        val target = folder.resolve(name(attachment)).normalize()
+        if (target.parent != folder) return null
+        return target.toFile()
+    }
 }
 
 data class ChatThreadSummary(

@@ -43,6 +43,7 @@ import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
+import com.forkmesh.nativeapp.collab.PullDetail
 
 @Composable
 internal fun DiffViewer(diff: String) {
@@ -82,7 +83,7 @@ internal fun DiffViewer(diff: String) {
 }
 
 @Composable
-internal fun PatchFilesCard(patch: String) {
+internal fun PatchFilesCard(patch: String, commits: Int = 0) {
     val files = remember(patch) { parsePatchFiles(patch) }
     if (files.isEmpty()) return
     val colors = Fm.colors
@@ -94,11 +95,10 @@ internal fun PatchFilesCard(patch: String) {
                     .padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    changedFilesTitle(files.size),
-                    modifier = Modifier.weight(1f),
-                    style = Fm.text.titleMedium.copy(color = colors.textPrimary),
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(changedFilesTitle(files.size), style = Fm.text.titleMedium.copy(color = colors.textPrimary))
+                    if (commits > 0) Text(PullDetail.commitsLine(commits), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                }
                 if (files.size > 1) DiffStat(files.sumOf { it.adds }, files.sumOf { it.dels })
             }
             HorizontalDivider(thickness = 1.dp, color = colors.border)

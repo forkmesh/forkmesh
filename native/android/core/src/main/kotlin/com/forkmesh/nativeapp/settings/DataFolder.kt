@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.settings
 import com.forkmesh.nativeapp.account.projects.ProjectScope
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.crypto.B64
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.Ed25519
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.security.DeviceIdentity
@@ -335,7 +336,11 @@ object DataFolderIdentity {
         val seed = RecoveryKit.openSeed(kit, passphrase)
         try {
             val publicKey = B64.encodeUrlNoPadding(Ed25519.publicKey(seed))
+            val current = ChatDeviceKeys.storedSeed(secrets.read(namespace + Identity.SEED_KEY))
+            val changed = current == null || !current.contentEquals(seed)
+            current?.fill(0)
             secrets.write(namespace + Identity.SEED_KEY, B64.encode(seed))
+            if (changed) secrets.delete(namespace + ChatDeviceKeys.IDENTITY_STORE_KEY)
             return publicKey
         } finally {
             seed.fill(0)

@@ -194,10 +194,9 @@ ForkMesh are checked by the reviewer, so run it yourself if in doubt.
 - A change a user can notice adds one sentence to the changelog with
   `python3 tools/changelog.py add --area <Area> "<sentence>"`
   ([docs/changelog.md](docs/changelog.md)).
-- A change an iPhone user can see also registers itself for Android with
-  `python3 tools/native_sync.py add <sha> "<sentence>" --area <Area> --kind feature|ui|fix`
-  ([docs/native/SYNC.md](docs/native/SYNC.md)). New phone features land in
-  `native/ios` first.
+- A change a phone user can see is made in both `native/ios` and
+  `native/android` in the same pull request
+  ([docs/native/README.md](docs/native/README.md)).
 
 ### 6. Review and merge
 

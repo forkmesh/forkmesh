@@ -12,7 +12,7 @@ class DjJamTest {
                 "id" to "j1", "title" to "Friday", "owner" to "alice", "me" to "bob", "myStatus" to "joined", "now" to 10_000L,
                 "members" to listOf(mapOf("name" to "alice", "status" to "owner"), mapOf("name" to "bob", "status" to "joined"), mapOf("name" to "cara", "status" to "invited"), mapOf("status" to "x")),
                 "queue" to listOf(
-                    mapOf("id" to "q1", "videoId" to "dQw4w9WgXcQ", "title" to "Song", "author" to "Band", "addedBy" to "bob"),
+                    mapOf("id" to "q1", "videoId" to "dQw4w9WgXcQ", "title" to "Song", "author" to "Band", "addedBy" to "bob", "addedAt" to 1_792_000_000_000L),
                     mapOf("id" to "q2", "videoId" to "bad"),
                 ),
                 "decks" to mapOf(
@@ -27,7 +27,7 @@ class DjJamTest {
         expect(jam.joined)
         assertEq(listOf("alice", "bob", "cara"), jam.members.map { it.name })
         assertEq(listOf("alice", "bob"), jam.listeners.map { it.name })
-        assertEq(listOf(DjQueueItem.of("q1", "dQw4w9WgXcQ", "Song", "Band", "bob")), jam.queue)
+        assertEq(listOf(DjQueueItem.of("q1", "dQw4w9WgXcQ", "Song", "Band", "bob", 1_792_000_000_000L)), jam.queue)
         assertEq("9bZkp7q19f0", jam[DjDeckSide.A].videoId)
         near(32.2, jam[DjDeckSide.A].expectedPosition(jam.now), 1e-9)
         assertEq("", jam[DjDeckSide.B].videoId)
@@ -58,6 +58,26 @@ class DjJamTest {
         val items = listOf(mapOf("id" to "a", "videoId" to "dQw4w9WgXcQ", "title" to "Song"), mapOf("videoId" to "bad")).mapNotNull(DjQueueItem::parse)
         assertEq(listOf("dQw4w9WgXcQ"), items.map { it.videoId })
         expect(DjQueueItem.parse(mapOf("videoId" to "dQw4w9WgXcQ"))!!.id.isNotEmpty())
+        assertEq(0L, items.first().addedAt)
+        val saved = DjQueueItem.of("b", "dQw4w9WgXcQ", "Song", "Band", "bob", 42)
+        assertEq(saved, DjQueueItem.parse(saved.toJson()))
+    }
+
+    fun testQueueItemSaysWhoAddedItAndWhen() {
+        val zone = java.time.ZoneId.of("UTC")
+        val locale = java.util.Locale.US
+        val at = java.time.ZonedDateTime.of(2026, 10, 23, 15, 45, 0, 0, zone).toInstant().toEpochMilli()
+        val item = DjQueueItem.of("q", "dQw4w9WgXcQ", "Song", "Band", "bob", at)
+        val today = item.addedStamp(at + 60_000, zone, locale)!!
+        expect(today.startsWith("3:45") && today.endsWith("PM") && "Oct" !in today, today)
+        val earlier = item.addedStamp(at + 86_400_000L * 2, zone, locale)!!
+        expect(earlier.startsWith("Oct 23, 3:45"), earlier)
+        val line = item.addedLine(zone, locale)!!
+        expect(line.startsWith("Added by bob on Oct 23, 2026 at 3:45"), line)
+        assertEq("Added by bob", item.copy(addedAt = 0).addedLine(zone, locale))
+        expect(item.copy(addedBy = "").addedLine(zone, locale)!!.startsWith("Added on Oct 23, 2026"))
+        assertEq(null, item.copy(addedBy = "", addedAt = 0).addedLine(zone, locale))
+        assertEq(null, item.copy(addedAt = 0).addedStamp(at, zone, locale))
     }
 
     fun testThirtyDistinctReactionsCoverEveryStyle() {
@@ -145,6 +165,20 @@ class DjJamTest {
         assertEq(DjAutomixStep.Preload(a), DjAutomix.step(spent, early, b, true))
         assertEq(DjAutomixStep.Wait, DjAutomix.step(spent, empty, a, false))
         assertEq(DjAutomixStep.Wait, DjAutomix.step(early, ending, b, true))
+    }
+
+    fun testAQueuedSongPlaysAtOnceOnlyWhenNothingPlays() {
+        val empty = DjAutomixDeck(loaded = false)
+        val cued = DjAutomixDeck(loaded = true, duration = 200.0)
+        val live = DjAutomixDeck(loaded = true, playing = true, position = 20.0, duration = 200.0)
+        assertEq(null, DjAutomix.playNow(live, empty, 0.0))
+        assertEq(null, DjAutomix.playNow(cued, live, -1.0))
+        assertEq(DjDeckSide.A, DjAutomix.playNow(empty, empty, 0.0))
+        assertEq(DjDeckSide.B, DjAutomix.playNow(empty, empty, 0.4))
+        assertEq(DjDeckSide.B, DjAutomix.playNow(cued, empty, 0.0))
+        assertEq(DjDeckSide.A, DjAutomix.playNow(cued, empty, -1.0))
+        assertEq(DjDeckSide.A, DjAutomix.playNow(empty, cued, 0.2))
+        assertEq(DjDeckSide.B, DjAutomix.playNow(cued, cued, 0.8))
     }
 
     fun testAutomixNeverMixesOutOfARepeatingDeck() {

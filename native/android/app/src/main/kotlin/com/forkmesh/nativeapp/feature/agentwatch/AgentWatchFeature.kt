@@ -29,7 +29,7 @@ object AgentWatchFeature {
     private fun desktopKey(repoName: String, id: Int) = "${repoName.lowercase()}#$id"
 
     private fun listed(control: AgentControlCenter): Map<String, UnifiedAgentRow> =
-        control.rows.filter { it.isDesktop && !it.outside && it.localId > 0 }.associateBy { desktopKey(it.repoName, it.localId) }
+        control.rows.filter { it.isDesktop && !it.outside && !it.elsewhere && it.localId > 0 }.associateBy { desktopKey(it.repoName, it.localId) }
 
     fun relayScreen(title: String, targets: List<Pair<Repository, AgentSession>>): Screen? {
         val api = Services.get<ApiService>() ?: return null

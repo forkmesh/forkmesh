@@ -182,6 +182,7 @@ object RouteCodec {
             Route.Kind.SugarBreak -> Route.SugarBreak
             Route.Kind.Stretch -> Route.Stretch
             Route.Kind.FoodGuide -> Route.FoodGuide
+            Route.Kind.Speech -> Route.Speech
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
             Route.Kind.Ember -> Route.Ember(repo)
@@ -202,6 +203,8 @@ object RouteCodec {
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
+            Route.Kind.Logs -> Route.Logs
+            Route.Kind.Diagnostics -> Route.Diagnostics
             Route.Kind.Stats -> Route.Stats
             Route.Kind.Status -> Route.Status
             Route.Kind.Admin -> Route.Admin(s("section"))

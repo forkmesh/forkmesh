@@ -2,6 +2,11 @@ package com.forkmesh.nativeapp.djstudio
 
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.asJsonMap
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.floor
@@ -10,14 +15,48 @@ import kotlin.math.min
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
-data class DjQueueItem(val id: String, val videoId: String, val title: String, val author: String, val addedBy: String = "") {
+data class DjQueueItem(
+    val id: String,
+    val videoId: String,
+    val title: String,
+    val author: String,
+    val addedBy: String = "",
+    val addedAt: Long = 0,
+) {
     val thumbnail: String get() = DjStudio.thumbnailUrl(videoId, "mqdefault")
 
-    fun toJson(): Map<String, Any?> = linkedMapOf("id" to id, "videoId" to videoId, "title" to title, "author" to author, "addedBy" to addedBy)
+    fun toJson(): Map<String, Any?> =
+        linkedMapOf("id" to id, "videoId" to videoId, "title" to title, "author" to author, "addedBy" to addedBy, "addedAt" to addedAt)
+
+    fun addedStamp(nowMs: Long, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String? {
+        if (addedAt <= 0) return null
+        val added = Instant.ofEpochMilli(addedAt).atZone(zone)
+        val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).format(added)
+        if (added.toLocalDate() == Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()) return time
+        return DateTimeFormatter.ofPattern("MMM d", locale).format(added) + ", " + time
+    }
+
+    fun addedLine(zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String? {
+        val whenText = if (addedAt > 0) {
+            val added = Instant.ofEpochMilli(addedAt).atZone(zone)
+            DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).format(added) + " at " +
+                DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).format(added)
+        } else {
+            null
+        }
+        return when {
+            addedBy.isNotEmpty() && whenText != null -> "Added by $addedBy on $whenText"
+            addedBy.isNotEmpty() -> "Added by $addedBy"
+            whenText != null -> "Added on $whenText"
+            else -> null
+        }
+    }
 
     companion object {
-        fun of(id: String, videoId: String, title: String, author: String, addedBy: String = "") =
-            DjQueueItem(id.take(64), videoId, title.take(300), author.take(200), addedBy.take(64))
+        fun of(id: String, videoId: String, title: String, author: String, addedBy: String = "", addedAt: Long = 0) =
+            DjQueueItem(id.take(64), videoId, title.take(300), author.take(200), addedBy.take(64), max(0L, addedAt))
+
+        private fun stamp(value: Any?): Long = (value as? Number)?.toLong() ?: 0L
 
         fun parse(value: Any?): DjQueueItem? {
             val row = value as? Map<*, *> ?: return null
@@ -25,7 +64,7 @@ data class DjQueueItem(val id: String, val videoId: String, val title: String, v
             if (!DjStudio.isVideoId(videoId)) return null
             return of(
                 row["id"] as? String ?: UUID.randomUUID().toString(), videoId, row["title"] as? String ?: "",
-                row["author"] as? String ?: "", row["addedBy"] as? String ?: "",
+                row["author"] as? String ?: "", row["addedBy"] as? String ?: "", stamp(row["addedAt"]),
             )
         }
 
@@ -33,7 +72,7 @@ data class DjQueueItem(val id: String, val videoId: String, val title: String, v
             val videoId = row["videoId"] as? String ?: ""
             val id = row["id"] as? String ?: ""
             if (!DjStudio.isVideoId(videoId) || id.isEmpty()) return null
-            return of(id, videoId, row["title"] as? String ?: "", row["author"] as? String ?: "", row["addedBy"] as? String ?: "")
+            return of(id, videoId, row["title"] as? String ?: "", row["author"] as? String ?: "", row["addedBy"] as? String ?: "", stamp(row["addedAt"]))
         }
     }
 }
@@ -370,6 +409,14 @@ object DjAutomix {
         val remaining = outgoing.remaining ?: return DjAutomixStep.Wait
         if (remaining > DjStudio.AUTOMIX_SECONDS + LEAD) return DjAutomixStep.Wait
         return DjAutomixStep.Mix(live, other, max(2.0, min(DjStudio.AUTOMIX_SECONDS, remaining)))
+    }
+
+    fun playNow(a: DjAutomixDeck, b: DjAutomixDeck, crossfader: Double): DjDeckSide? {
+        if (a.playing || b.playing) return null
+        val favoured = if (crossfader <= 0) DjDeckSide.A else DjDeckSide.B
+        val decks = mapOf(DjDeckSide.A to a, DjDeckSide.B to b)
+        val open = decks[favoured]?.loaded == true && decks[favoured.other]?.loaded == false
+        return if (abs(crossfader) < 0.5 && open) favoured.other else favoured
     }
 
     fun next(library: List<DjPlayedSong>, loaded: Set<String>, playing: Set<String>, seed: Long): DjPlayedSong? {
