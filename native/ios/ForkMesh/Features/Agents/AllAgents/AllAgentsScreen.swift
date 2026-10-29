@@ -72,7 +72,7 @@ struct AllAgentsScreen: View {
                     Text("No agents yet.").foregroundStyle(.secondary)
                 }
                 ForEach(rows) { row in
-                    NavigationLink {
+                    ShellPaneLink {
                         AgentLazyPage {
                             AgentRunScreen(center: center, row: row)
                         }
@@ -118,7 +118,7 @@ struct AllAgentsScreen: View {
         .navigationTitle("All agents")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                NavigationLink {
+                ShellPaneLink {
                     MergeLeaderboardDestination()
                         .shellPageClearance()
                 } label: {

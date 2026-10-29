@@ -320,6 +320,14 @@ enum CodeCurrentRepo {
         guard let router = AppNavigator.shared?.router else { return }
         let route: Route = .repo(ref, section: nil)
         router.remember(route)
-        router.setPath(router.currentPath + [route], for: router.selectedTab)
+        let tab: AppTab = router.selectedTab
+        if ShellDetailHost.shared.active,
+            ShellPanes.layout(path: router.currentPath, tab: tab, wide: true) == .split(list: nil, detail: router.currentPath)
+        {
+            ShellDetailHost.shared.clear(tab)
+            router.setPath([route], for: tab)
+            return
+        }
+        router.setPath(router.currentPath + [route], for: tab)
     }
 }

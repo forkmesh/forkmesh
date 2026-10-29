@@ -135,7 +135,7 @@ struct AgentsScreen: View {
         .onChange(of: AgentLines.runnerCounts(shown), initial: true) { (_: [String: Int], counts: [String: Int]) in
             ShellCounts.shared.runnerAgents = counts
         }
-        .navigationDestination(item: $opened) { (target: AgentOpenedLine) in
+        .shellDetail(item: $opened) { (target: AgentOpenedLine) in
             page(target)
         }
         .agentOutsideDeleteConfirmation($confirmDelete) { delete($0) }
@@ -299,7 +299,7 @@ struct AgentsScreen: View {
                 }
             }
             if let center = HostsFeature.agents, center.hub.desktop != nil, desktopTerminals != false {
-                NavigationLink {
+                ShellPaneLink {
                     DesktopTerminalScreen(center: center)
                         .shellPageClearance()
                 } label: {
@@ -310,7 +310,7 @@ struct AgentsScreen: View {
                 .accessibilityIdentifier("agents-desktop-terminal")
             }
             if let client = AgentOpsFeature.client, HostsFeature.agents?.hub.desktop != nil {
-                NavigationLink {
+                ShellPaneLink {
                     RecycleBinScreen(client: client)
                         .shellPageClearance()
                 } label: {
@@ -322,7 +322,7 @@ struct AgentsScreen: View {
             }
             if let watch = AgentWatchScreen.forAgentsTab(
                 model.groups, center: HostsFeature.agents, ownerAccount: { model.ownerAccount(for: $0) }) {
-                NavigationLink {
+                ShellPaneLink {
                     watch
                         .shellPageClearance()
                 } label: {
@@ -333,7 +333,7 @@ struct AgentsScreen: View {
                 .accessibilityIdentifier("agents-watch")
             }
             if let local = Services.get(LocalModelManager.self), local.engineAvailability.isAvailable {
-                NavigationLink {
+                ShellPaneLink {
                     OnDeviceChatView(manager: local)
                         .shellPageClearance()
                 } label: {

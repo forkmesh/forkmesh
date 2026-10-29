@@ -1208,6 +1208,66 @@ with the same notes and celesta, rendered by the Agent Watch synth.
   in New Window" for repositories, PRs and agent sessions; each scene restores
   separately.
 
+### 7.1 iPhone Duo: the list beside the detail
+
+The operator asked on 2026-10-28 for the app on iPhone Duo's inner display to
+look like the desktop, with the list on the left and the detail on the right.
+
+- **What decides it.** The shell measures its window, not the device:
+  `ShellPanes.metrics` (FMApi) turns on the two panes on a phone whose window is
+  at least 600 pt wide and 480 pt tall. The Duo's inner display (669 × 951 pt
+  upright, 951 × 669 pt on its side) passes. The 466 pt cover screen, a 50/50
+  Split View and a landscape iPhone do not, so they keep the phone layout.
+  Apple's own guidance is to rely on size classes. But developers report that
+  the Duo says "regular" width on both displays, so the size class cannot tell
+  them apart. The shell therefore sets `horizontalSizeClass` itself on phones:
+  regular when wide, compact otherwise, and compact inside each pane. Screens
+  that branch on it (Chat's channel sidebar, the issue board, project
+  timelines) follow.
+- **Panes** (`HomeShell.tabPanes`, `ShellPanes.layout`). Each tab shows its list
+  (Agents, Inbox, Repos) in a column of 280–380 pt (40% of the width), a
+  hairline, then a `NavigationStack` for the detail. With nothing open, the
+  detail shows `ShellPanePlaceholder`. A list hub page (`ShellPanes.listKinds`:
+  Tasks, Notes, Settings, Hosts, Docs, Workflows and the like) takes the list
+  column itself, with a back button to the tab's list. Other hub pages
+  (Stats, World, packages) use the whole width. Chat keeps its own channel
+  sidebar at full width.
+- **Opening into the detail.** A route picked in the list replaces the detail
+  (`ShellPanes.picked`), as on the desktop. Picks made inside the detail push
+  as usual, with a back button. Screens whose rows push a view rather than a
+  route use `shellDetail(item:)`, `shellDetail(isPresented:)`, `ShellPaneLink`
+  or `shellPaneRowLink`. In the list column these hand the page to
+  `ShellDetailHost`, which shows it as the detail's root. Anywhere else they
+  behave exactly like `navigationDestination` and `NavigationLink`. A run
+  screen's leave action (`ShellChrome.leave`) closes a hosted page.
+- **Bars.** On its side the Duo shows `ShellSideRail`, a vertical Liquid Glass
+  rail on the left with the bottom bar's items, folders, menus and style. The
+  bottom bar goes away. Upright, the bottom bar stays. The top bar spans both
+  panes and always shows Search.
+- **Rotation.** `ForkMesh-Info.plist` lists portrait and both landscapes for
+  iPhone. The Duo scales a portrait-only app on its inner display: in a
+  simulator at the Duo's size, the portrait-only build drew a 440 pt phone
+  window with black bars. At run time `FmOrientationLock` keeps other iPhones in
+  portrait. `allowRoomy` unlocks every orientation except upside down while the
+  window's shorter side is at least 600 pt. Folding back to the cover screen returns to portrait.
+  Hosted pages are dropped when the panes go away (`ShellDetailHost.clearAll`).
+- **Build.** Until the app is built with Xcode 27 (the iOS 27 SDK; the office
+  Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode, and the
+  layout above does not show. Edge-to-edge and the system's vertical bars need
+  the iOS 27.1 SDK.
+- **App Store sizes.** The Duo's screenshot sizes are 2007 × 2853 or 2853 × 2007
+  for the inner display and 1398 × 2034 or 2034 × 1398 for the cover screen.
+  Xcode 26 has no Duo simulator. The 2026-10-28 store shots came from
+  simulator profiles copied from the iPhone 17 Pro Max at exactly those pixel
+  sizes ("iPhone Duo Inner / Inner Landscape / Cover (ForkMesh sim)" in the Mac
+  build user's `~/Library/Developer/CoreSimulator/Profiles/DeviceTypes`).
+- **Store shots without taps.** In Debug builds `StoreScreenshotLaunch` reads
+  launch arguments: `-FMStoreShots YES` skips the tour, the permissions intro
+  and the starter pack and enters guest mode. Then `-FMStoreRoute <link>` opens
+  a link's whole stack (even for a guest, unlike a normal deep link), and
+  `-FMStoreTab <agents|inbox|code|chat>` opens a tab. Release builds ignore all
+  three.
+
 ## 8. Sitemap and routes
 
 ### 8.1 Every destination

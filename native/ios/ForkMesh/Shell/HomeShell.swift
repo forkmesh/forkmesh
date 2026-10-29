@@ -75,6 +75,8 @@ struct HomeShell: View {
     @State var genieLater: [PaletteCommand] = []
     @State var genieDevice: AgentDeviceRun?
     @State var live: ThrottledSnapshot<ShellLiveCounts>?
+    @State var windowSize: CGSize = .zero
+    @State var detailHost: ShellDetailHost = ShellDetailHost.shared
 
     private let navigator: AppNavigator
     private let auth: AuthService?
@@ -115,6 +117,25 @@ struct HomeShell: View {
         sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad
     }
 
+    private var panes: ShellPaneMetrics {
+        ShellPanes.metrics(
+            width: Double(windowSize.width), height: Double(windowSize.height),
+            pad: UIDevice.current.userInterfaceIdiom == .pad)
+    }
+
+    private func paneLayout(_ tab: AppTab) -> ShellPaneLayout {
+        ShellPanes.layout(path: router.path(for: tab), tab: tab, wide: panes.wide)
+    }
+
+    private var inSplit: Bool {
+        if case .split = paneLayout(router.selectedTab) { return true }
+        return false
+    }
+
+    private var showsRail: Bool {
+        panes.rail && !usesSplit
+    }
+
     // MARK: Top bar
 
     private var barState: ShellTopBarState {
@@ -144,7 +165,7 @@ struct HomeShell: View {
             onNewAgent: newAgentAction,
             onPalette: { openPalette() },
             onVoice: voiceAction,
-            showsSearch: usesSplit,
+            showsSearch: usesSplit || panes.wide,
             showsSignIn: PackageGateSync.isInstalled(PhonePackages.signIn))
     }
 
@@ -425,7 +446,7 @@ struct HomeShell: View {
     }
 
     private var showsBar: Bool {
-        !pageKeyboardUp && !usesSplit && !ShellChrome.shared.isBare(router.selectedTab)
+        !pageKeyboardUp && !usesSplit && !showsRail && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
     }
 
     private var genieFloor: CGFloat? {
@@ -506,9 +527,8 @@ struct HomeShell: View {
         }
     }
 
-    private func tab(_ tab: AppTab) -> some View {
-        let selected: Bool = page == nil && tab == router.selectedTab
-        return NavigationStack(path: pathBinding(tab)) {
+    private func tabStack(_ tab: AppTab) -> some View {
+        NavigationStack(path: pathBinding(tab)) {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
@@ -520,6 +540,107 @@ struct HomeShell: View {
                         .shellPageClearance()
                 }
         }
+    }
+
+    private func listBinding(_ tab: AppTab, _ layout: ShellPaneLayout) -> Binding<[Route]> {
+        let router: AppRouter = self.router
+        return Binding<[Route]>(
+            get: { [] },
+            set: { (pushed: [Route]) in
+                guard let next = ShellPanes.picked(pushed, layout: layout) else { return }
+                ShellDetailHost.shared.clear(tab)
+                router.setPath(next, for: tab)
+            })
+    }
+
+    private func detailBinding(_ tab: AppTab, _ layout: ShellPaneLayout) -> Binding<[Route]> {
+        let router: AppRouter = self.router
+        return Binding<[Route]>(
+            get: {
+                if case let .split(_, detail) = layout { return detail }
+                return []
+            },
+            set: { (next: [Route]) in router.setPath(ShellPanes.detailPath(next, layout: layout), for: tab) })
+    }
+
+    private func closeList(_ tab: AppTab) {
+        ShellDetailHost.shared.clear(tab)
+        router.setPath([], for: tab)
+    }
+
+    @ViewBuilder private func listColumn(_ tab: AppTab, list: Route?, layout: ShellPaneLayout) -> some View {
+        NavigationStack(path: listBinding(tab, layout)) {
+            Group {
+                if let list {
+                    RouteDestinationView(route: list)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button {
+                                    closeList(tab)
+                                } label: {
+                                    Image(systemName: "chevron.backward")
+                                }
+                                .accessibilityLabel(Text("Back to \(tab.title)"))
+                                .accessibilityIdentifier("shell-pane-list-back")
+                            }
+                        }
+                } else {
+                    tabRoot(tab)
+                        .background { ShellRootBarHider(tab: tab) }
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+            }
+            .tabStackPage(tab, tops: stackTops)
+            .shellPageClearance()
+            .navigationDestination(for: Route.self) { (route: Route) in
+                RouteDestinationView(route: route)
+                    .shellPageClearance()
+            }
+        }
+        .id(list)
+        .environment(\.shellPaneRole, .list)
+    }
+
+    @ViewBuilder private func detailColumn(_ tab: AppTab, list: Route?, layout: ShellPaneLayout) -> some View {
+        NavigationStack(path: detailBinding(tab, layout)) {
+            Group {
+                if let hosted = detailHost.page(tab) {
+                    hosted.view
+                        .id(hosted.id)
+                } else {
+                    ShellPanePlaceholder(tab: tab, list: list)
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+            }
+            .navigationDestination(for: Route.self) { (route: Route) in
+                RouteDestinationView(route: route)
+                    .shellPageClearance()
+            }
+        }
+        .environment(\.shellPaneRole, .detail)
+    }
+
+    @ViewBuilder private func tabPanes(_ tab: AppTab) -> some View {
+        switch paneLayout(tab) {
+        case let .split(list, _):
+            let layout: ShellPaneLayout = paneLayout(tab)
+            HStack(spacing: 0) {
+                listColumn(tab, list: list, layout: layout)
+                    .frame(width: CGFloat(panes.list))
+                ShellPaneDivider()
+                detailColumn(tab, list: list, layout: layout)
+                    .frame(maxWidth: .infinity)
+            }
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.shellPanes, ShellPaneMetrics(rail: panes.rail, wide: false, list: panes.list))
+        case .stack, .full:
+            tabStack(tab)
+        }
+    }
+
+    private func tab(_ tab: AppTab) -> some View {
+        let selected: Bool = page == nil && tab == router.selectedTab
+        return tabPanes(tab)
         .scrollContentBackground(fm.wallpaper ? .hidden : .automatic)
         .environment(\.shellDock, docks[tab])
         .environment(\.shellStackTab, tab)
@@ -577,7 +698,8 @@ struct HomeShell: View {
     }
 
     private var floatsChrome: Bool {
-        page == nil && router.path(for: router.selectedTab).isEmpty && !stackTops.covered(router.selectedTab)
+        page == nil && !inSplit && router.path(for: router.selectedTab).isEmpty
+            && !stackTops.covered(router.selectedTab)
     }
 
     private var floatingTop: CGFloat {
@@ -586,7 +708,7 @@ struct HomeShell: View {
 
     private var topChrome: some View {
         VStack(spacing: 0) {
-            if page != nil || showsTopBar(router.selectedTab) {
+            if page != nil || inSplit || showsTopBar(router.selectedTab) {
                 topBar
             }
             if settings?.project.hasInstance != false {
@@ -717,13 +839,54 @@ struct HomeShell: View {
             } detail: {
                 shellColumn
             }
+        } else if showsRail {
+            HStack(spacing: 0) {
+                ShellSideRail(items: barGroups.flatMap(\.items), onPackage: { (id: String) in openPackage(id) })
+                    .opacity(composer.isOpen ? 0.35 : 1)
+                    .allowsHitTesting(!composer.isOpen)
+                shellColumn
+            }
         } else {
             shellColumn
         }
     }
 
     var body: some View {
-        appChanges(routeChanges(framed(sheets(overlays(layout)))))
+        appChanges(routeChanges(framed(sheets(overlays(paned(layout))))))
+    }
+
+    @ViewBuilder private func sized<Content: View>(_ content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            content.environment(\.horizontalSizeClass, panes.wide ? UserInterfaceSizeClass.regular : .compact)
+        } else {
+            content
+        }
+    }
+
+    private func paned<Content: View>(_ content: Content) -> some View {
+        sized(content)
+            .environment(\.shellPanes, panes)
+            .background {
+                Color.clear
+                    .ignoresSafeArea()
+                    .onGeometryChange(for: CGSize.self, of: { $0.size }) { (size: CGSize) in
+                        resize(size)
+                    }
+            }
+    }
+
+    private func resize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let wasWide: Bool = panes.wide
+        windowSize = size
+        let wide: Bool = panes.wide
+        if detailHost.active != wide {
+            detailHost.active = wide
+        }
+        if wasWide && !wide {
+            detailHost.clearAll()
+        }
+        FmOrientationLock.allowRoomy(ShellPanes.roomy(width: Double(size.width), height: Double(size.height)))
     }
 
     private func framed<Content: View>(_ content: Content) -> some View {
@@ -1114,6 +1277,10 @@ struct HomeShell: View {
         }
         if let target = router.takeComposeRequest() {
             openComposer(target)
+        }
+        if StoreScreenshotLaunch.open(router) {
+            page = nil
+            model.select(tab: router.selectedTab)
         }
         ShellQuickActions.refresh(recents: router.recents)
         if !ShellTour.seen && PackageGateSync.isInstalled(PhonePackages.tour) {

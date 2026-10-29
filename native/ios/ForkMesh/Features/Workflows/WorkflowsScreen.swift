@@ -87,15 +87,15 @@ private struct WorkflowsList: View {
                 }
                 .fmSheetStyle(fitsContent: false)
             }
-            .navigationDestination(item: $opening) { (target: WorkflowOpening) in
+            .shellDetail(item: $opening) { (target: WorkflowOpening) in
                 editor(target)
                     .shellPageClearance()
             }
-            .navigationDestination(isPresented: $credentialsOpen) {
+            .shellDetail(isPresented: $credentialsOpen) {
                 WorkflowCredentialsScreen(store: store)
                     .shellPageClearance()
             }
-            .navigationDestination(item: $desktopOpening) { (id: String) in
+            .shellDetail(item: $desktopOpening) { (id: String) in
                 if let desktop {
                     DesktopWorkflowScreen(store: desktop, rowId: id)
                         .shellPageClearance()

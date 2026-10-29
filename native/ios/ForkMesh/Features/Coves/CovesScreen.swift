@@ -51,7 +51,7 @@ struct CovesRepoPicker: View {
             }
             Section {
                 ForEach(filtered, id: \.fullName) { repo in
-                    NavigationLink {
+                    ShellPaneLink {
                         CovesScreen(repo: RepoRef(owner: repo.owner, name: repo.name))
                             .shellPageClearance()
                     } label: {
@@ -149,7 +149,7 @@ private struct CovesList: View {
             if !model.unlockedCoves.isEmpty {
                 Section("Open") {
                     ForEach(model.unlockedCoves) { cove in
-                        NavigationLink {
+                        ShellPaneLink {
                             CoveScreen(model: model, coveId: cove.id)
                                 .shellPageClearance()
                         } label: {
