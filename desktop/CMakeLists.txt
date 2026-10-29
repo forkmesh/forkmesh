@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ForkMesh VERSION 1.2.8 LANGUAGES CXX)
+project(ForkMesh VERSION 1.5.0 LANGUAGES CXX)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(FORKMESH_PLUGINS "default" CACHE STRING
