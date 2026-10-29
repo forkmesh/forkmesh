@@ -1029,6 +1029,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `musespark.ai` | documentation | Model documentation link in an agent package. |
 | `cwe.mitre.org` | documentation | CWE definitions linked from security findings. |
 | `unlicense.org` | documentation | Link inside the Unlicense license text. |
+| `flamerix.ai` | documentation | Copyright line in the MIT license header of the desktop's agent-summary preload script. |
 | `n8n.io` | link | Placeholder example in the workflow import field. |
 | `appstoreconnect.apple.com` | link | App Store Connect link printed by an operator tool. |
 | `codemagic.io` | link | Build link printed by an operator tool. |

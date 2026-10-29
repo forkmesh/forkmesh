@@ -1377,6 +1377,11 @@
       "why": "Link inside the Unlicense license text."
     },
     {
+      "host": "flamerix.ai",
+      "kind": "documentation",
+      "why": "Copyright line in the MIT license header of the desktop's agent-summary preload script."
+    },
+    {
       "host": "n8n.io",
       "kind": "link",
       "why": "Placeholder example in the workflow import field."
