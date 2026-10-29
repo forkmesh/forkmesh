@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-29", "area": "Server", "text": "The admin button is back in the dashboard header for admins who were signed in from another ForkMesh page."},
   {"date": "2026-10-29", "area": "Market", "text": "Glasses Alert on iPhone and Android now also rings for cameras with Bluetooth on nearby, such as GoPro, Insta360, DJI, Canon, Nikon and Sony cameras, body cameras, dash cams, security cameras and camera drones."},
   {"date": "2026-10-29", "area": "Desktop", "text": "Shortcuts: a repository with no shortcuts now offers Add starter shortcuts, five ready-made prompts (review your changes, UX audit, stale-code cleanup, docs refresh, feature retirement) you can commit for everyone."},
   {"date": "2026-10-29", "area": "Agents", "text": "Claude Code agents the desktop starts no longer spend tokens refreshing a hidden status line every 30 seconds."},
