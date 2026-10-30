@@ -3284,3 +3284,33 @@ async def test_persistent_reminder_toggle_and_self_assigned_tasks():
     await tasks_api.deliver_persistent_reminders(
         runtime, reminder["nextAt"] * 2)
     assert pings == ["alice"]
+
+
+def test_an_instance_office_is_its_own_organization():
+    import ast as _ast
+    import asyncio as _asyncio
+    import re as _re
+    from types import SimpleNamespace
+    source = (ROOT.parent / "world" / "src" / "world_office_routes.py").read_text(
+        encoding="utf-8")
+    method = next(
+        node for node in _ast.walk(_ast.parse(source))
+        if isinstance(node, _ast.AsyncFunctionDef) and node.name == "organization")
+    looked_up = []
+
+    async def _org_row(_env, name):
+        looked_up.append(name)
+        return ("bi-" + name, {"name": name}) if name else ("", None)
+
+    namespace = {"_org_row": _org_row,
+                 "valid_node_name": lambda name: bool(_re.fullmatch(r"[a-z0-9-]+", name))}
+    exec(compile(_ast.Module([method], []), "organization", "exec"), namespace)
+
+    def resolve(**env):
+        runtime = SimpleNamespace(bot_context=None, env=SimpleNamespace(**env))
+        return _asyncio.run(namespace["organization"](runtime))
+
+    assert resolve() == ("bi-forkmesh", {"name": "forkmesh"})
+    assert resolve(INSTANCE_OWNER="acme")[0] == "bi-acme"
+    assert resolve(INSTANCE_OWNER="acme", OFFICE_MARKETING_ORG="crew")[0] == "bi-crew"
+    assert looked_up == ["forkmesh", "acme", "crew"]

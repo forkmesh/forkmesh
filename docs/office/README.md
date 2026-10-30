@@ -345,7 +345,14 @@ certsync export (reloaded by `fmnext-turn-cert.path`).
 | `OFFICE_STUN_URLS` | `stun:stun.cloudflare.com:3478`; on the cores rendered from `[turn]` | Comma list of `stun:`/`stuns:` URLs |
 | `OFFICE_TURN_URLS` | unset; on the cores rendered from `[turn]` | Comma list of `turn:`/`turns:` URLs (4 at most); TURN is off while unset |
 | `OFFICE_TURN_SECRET` | unset | coturn `static-auth-secret`; vault secret, never sent to clients |
-| `OFFICE_MARKETING_ORG` | `forkmesh` | The org whose office shows the task board and agents |
+| `OFFICE_MARKETING_ORG` | `INSTANCE_OWNER`, else `forkmesh` | The org whose office shows the task board and agents |
+
+A self-hosted instance's office is its own organization. Without
+`OFFICE_MARKETING_ORG` the board used to default to `forkmesh`, an
+organization that exists only on ForkMesh's cores, so `GET /api/tasks`
+answered 503 `office_organization_unavailable` to every signed-in visitor on
+an instance. The default is now the instance's `INSTANCE_OWNER`, then
+`forkmesh`.
 
 `[turn]` in `deploy/fleet.toml`: `enabled`, `host`, `realm`, `port`,
 `tls_port`, `relay_min_port`/`relay_max_port` (at most 4096 ports inside
