@@ -10,6 +10,17 @@ DELIVERY_EVENTS = ("delivery", "soft bounce", "bounce", "reject")
 SUPPRESS_EVENTS = {"bounce": "bounce", "unsubscribe": "unsubscribe",
                    "spam": "spam", "reject": "reject"}
 DSN_RE = re.compile(r"^[245]\.\d{1,3}\.\d{1,3}$")
+SENDER_AUTH_DSN_RE = re.compile(r"^5\.7\.(2[0-7]|515)$")
+RECIPIENT_MISSING_RE = re.compile(
+    r"user unknown|unknown (user|recipient|mailbox)|"
+    r"no such (user|mailbox|recipient|address)|"
+    r"recipient not (found|available)|"
+    r"(user|mailbox|recipient|address|account)\b[^.;]{0,40}"
+    r"\b(does not|doesn't|did not) exist", re.I)
+POLICY_WORDS_RE = re.compile(
+    r"spam|block|blacklist|denylist|reputation|policy|spf|dkim|dmarc|rbl|"
+    r"\bauth", re.I)
+REPLY_NOISE_RE = re.compile(r"<[^>]{0,320}>|\bhost \S{1,260} said:", re.I)
 TOKEN_RE = re.compile(r"^([0-9a-f]{32}|[0-9a-f-]{36})\.([0-9a-f]{24})$")
 HREF_RE = re.compile(r"""href=(["'])(https?://[^"'\s<>]{1,2000})\1""", re.I)
 PIXEL = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
@@ -20,6 +31,19 @@ PIXEL = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
 def dsn(value):
     value = str(value or "").strip()
     return value if DSN_RE.match(value) else ""
+
+
+def bounce_cause(event, code, reason):
+    if str(event or "") not in ("bounce", "reject"):
+        return ""
+    if not dsn(code).startswith("5."):
+        return ""
+    if SENDER_AUTH_DSN_RE.match(dsn(code)):
+        return "sender"
+    text = REPLY_NOISE_RE.sub(" ", str(reason or "")[:600])
+    if RECIPIENT_MISSING_RE.search(text) and not POLICY_WORDS_RE.search(text):
+        return "recipient"
+    return ""
 
 
 def token(send_id, signature):

@@ -51,6 +51,7 @@
 #include <QFrame>
 #include <QShowEvent>
 #include <QSignalBlocker>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <limits>
@@ -73,6 +74,14 @@ bool paintWorkspaceSessionRow(QPainter *painter,
 using namespace forkmesh::ui;
 
 namespace {
+
+template <typename T>
+inline void releaseOffGuiThread(T &&value)
+{
+    using Held = std::decay_t<T>;
+    QThreadPool::globalInstance()->start(
+        [held = Held(std::forward<T>(value))]() mutable { Held drop = std::move(held); });
+}
 
 inline QString agentMergeBase(const AgentSession &s);
 
@@ -404,6 +413,24 @@ constexpr int kAgentFolderSummaryRole = Qt::UserRole + 51;
 constexpr int kAgentRowFolderRole = Qt::UserRole + 52;
 
 constexpr int kAgentTickerRole = Qt::UserRole + 53;
+constexpr int kAgentTitleBaseRole = Qt::UserRole + 54;
+constexpr int kAgentTaskProgressRole = Qt::UserRole + 55;
+
+inline void feedAgentTaskTracker(forkmesh::agenttasks::Tracker &tracker,
+                                 const QJsonObject &event)
+{
+    if (event.value(QStringLiteral("type")).toString() == QLatin1String("_local_user") &&
+        tracker.allCompleted())
+        tracker.clear();
+    else
+        tracker.ingest(event);
+}
+
+inline QString agentTitleWithProgress(const QString &title, const QString &progress)
+{
+    return progress.isEmpty() ? title
+                              : title + QString::fromUtf8("   \xC2\xB7  ") + progress;
+}
 
 inline QString agentTickerText(int sessionId, const QString &prose)
 {

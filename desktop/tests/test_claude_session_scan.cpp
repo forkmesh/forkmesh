@@ -1,8 +1,12 @@
+#include "ClaudeSessionImport.h"
 #include "ClaudeSessionScan.h"
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
@@ -60,6 +64,195 @@ static const ExternalClaudeSession *find(const QList<ExternalClaudeSession> &ses
         if (s.uuid == uuid)
             return &s;
     return nullptr;
+}
+
+static void writeLines(const QString &path, const QList<QJsonObject> &objects)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile f(path);
+    f.open(QIODevice::WriteOnly);
+    for (const QJsonObject &o : objects)
+        f.write(line(o));
+}
+
+static QJsonObject userLine(const QString &cwd, const QJsonValue &content,
+                            const QString &stamp = QStringLiteral("2026-10-01T08:14:20.456Z"))
+{
+    return QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                       {QStringLiteral("cwd"), cwd},
+                       {QStringLiteral("gitBranch"), QStringLiteral("main")},
+                       {QStringLiteral("timestamp"), stamp},
+                       {QStringLiteral("entrypoint"), QStringLiteral("cli")},
+                       {QStringLiteral("message"),
+                        QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                                    {QStringLiteral("content"), content}}}};
+}
+
+static QJsonObject assistantLine(const QString &text)
+{
+    return QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("assistant")},
+        {QStringLiteral("timestamp"), QStringLiteral("2026-10-01T08:15:00.000Z")},
+        {QStringLiteral("message"),
+         QJsonObject{{QStringLiteral("model"), QStringLiteral("claude-opus-5-5")},
+                     {QStringLiteral("role"), QStringLiteral("assistant")},
+                     {QStringLiteral("content"),
+                      QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                             {QStringLiteral("text"), text}}}}}}};
+}
+
+static void importTests(const QString &home, const QString &repo)
+{
+    const QString config = home + QStringLiteral("/.claude");
+    const QString key = ClaudeSessionScan::projectKey(repo);
+    check(key.size() == repo.size() && key.startsWith(QLatin1Char('-')) &&
+              !key.contains(QLatin1Char('/')) && !key.contains(QLatin1Char('.')),
+          "a project folder is the cwd with every non-alphanumeric turned into '-'");
+
+    const QString dir = config + QStringLiteral("/projects/") + key;
+    writeLines(dir + QStringLiteral("/renamed.jsonl"),
+               {userLine(repo, QStringLiteral("fix the login page")),
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("ai-title")},
+                            {QStringLiteral("aiTitle"), QStringLiteral("Login page fix")}},
+                assistantLine(QStringLiteral("Done.")),
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("custom-title")},
+                            {QStringLiteral("customTitle"), QStringLiteral("My login work")}}});
+    writeLines(dir + QStringLiteral("/titled.jsonl"),
+               {userLine(repo, QStringLiteral("add dark mode")),
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("ai-title")},
+                            {QStringLiteral("aiTitle"), QStringLiteral("Dark mode")}}});
+    writeLines(dir + QStringLiteral("/untitled.jsonl"),
+               {userLine(repo, QStringLiteral("<command-name>/clear</command-name>")),
+                userLine(repo, QStringLiteral("\n  please tidy the README and the docs folder, "
+                                              "then check every link still works across the "
+                                              "whole site\nsecond line"))});
+    writeLines(dir + QStringLiteral("/empty.jsonl"),
+               {QJsonObject{{QStringLiteral("type"), QStringLiteral("mode")},
+                            {QStringLiteral("cwd"), repo}}});
+    writeLines(dir + QStringLiteral("/desktop.jsonl"),
+               {userLine(repo, QStringLiteral("status update"))});
+    writeLines(config + QStringLiteral("/projects/-elsewhere/desktop.jsonl"),
+               {userLine(repo, QStringLiteral("status update")),
+                assistantLine(QStringLiteral("a longer copy in the wrong folder"))});
+    writeLines(config + QStringLiteral("/projects/-other/away.jsonl"),
+               {userLine(home + QStringLiteral("/other"), QStringLiteral("other repo"))});
+    QFile old(dir + QStringLiteral("/titled.jsonl"));
+    old.open(QIODevice::ReadWrite);
+    old.setFileTime(QDateTime::currentDateTime().addDays(-30),
+                    QFileDevice::FileModificationTime);
+    old.close();
+
+    const QString desktop = ClaudeSessionScan::desktopConfigRoot() +
+                            QStringLiteral("/claude-code-sessions/acct/org");
+    QDir().mkpath(desktop);
+    QFile record(desktop + QStringLiteral("/local_abc.json"));
+    record.open(QIODevice::WriteOnly);
+    record.write(QJsonDocument(QJsonObject{{QStringLiteral("cliSessionId"),
+                                            QStringLiteral("desktop")},
+                                           {QStringLiteral("title"),
+                                            QStringLiteral("[done] Status update")}})
+                     .toJson());
+    record.close();
+
+    const QList<ExternalClaudeSession> listed =
+        ClaudeSessionScan::listAll({config, config}, repo, false);
+    check(uuids(listed) == QStringList({QStringLiteral("desktop"), QStringLiteral("renamed"),
+                                        QStringLiteral("titled"), QStringLiteral("untitled")}),
+          "the import list has every session in the repo, old ones too, once each, "
+          "without empty ones or other folders");
+    const ExternalClaudeSession *renamed = find(listed, QStringLiteral("renamed"));
+    check(renamed && renamed->title == QStringLiteral("My login work"),
+          "a /rename title wins over the AI title");
+    check(renamed && renamed->model == QStringLiteral("claude-opus-5-5"),
+          "the model that answered is read from the transcript");
+    check(renamed && renamed->firstPrompt == QStringLiteral("fix the login page"),
+          "the first typed prompt is kept");
+    const ExternalClaudeSession *titled = find(listed, QStringLiteral("titled"));
+    check(titled && titled->title == QStringLiteral("Dark mode"), "the AI title names a session");
+    const ExternalClaudeSession *untitled = find(listed, QStringLiteral("untitled"));
+    check(untitled && untitled->title.startsWith(QStringLiteral("please tidy the README")) &&
+              untitled->title.size() <= 80 && !untitled->title.contains(QLatin1Char('\n')),
+          "an untitled session is named after its first real prompt, one short line");
+    const ExternalClaudeSession *fromDesktop = find(listed, QStringLiteral("desktop"));
+    check(fromDesktop && fromDesktop->title == QStringLiteral("[done] Status update"),
+          "Claude Desktop's own name for a session wins");
+    const QString agentTree = repo + QStringLiteral("/.worktrees/7-task");
+    writeLines(config + QStringLiteral("/projects/") + ClaudeSessionScan::projectKey(agentTree) +
+                   QStringLiteral("/agentrun.jsonl"),
+               {userLine(agentTree, QStringLiteral("agent task"))});
+    check(!uuids(ClaudeSessionScan::listAll({config}, repo, false,
+                                            {repo + QStringLiteral("/.worktrees")}))
+               .contains(QStringLiteral("agentrun")),
+          "sessions in agent worktrees are skipped when asked");
+    check(uuids(ClaudeSessionScan::listAll({config}, repo, false)).contains(QStringLiteral("agentrun")),
+          "sessions in agent worktrees are listed when not skipped");
+
+    const QList<ExternalClaudeSession> everywhere =
+        ClaudeSessionScan::listAll({config}, repo, true);
+    check(uuids(everywhere).contains(QStringLiteral("away")),
+          "every folder lists sessions outside the repository too");
+    check(uuids(everywhere).count(QStringLiteral("desktop")) == 1,
+          "a session copied into two project folders is listed once");
+    const ExternalClaudeSession *own = find(everywhere, QStringLiteral("desktop"));
+    check(own && QFileInfo(own->path).dir().dirName() == key,
+          "a session copied into two project folders is read from its own");
+
+    const QString big(20000, QLatin1Char('x'));
+    const QList<QJsonObject> lines{
+        userLine(repo, QStringLiteral("please fix it")),
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("isSidechain"), true},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"), QStringLiteral("subagent")}}}},
+        userLine(repo, QStringLiteral("<local-command-stdout>ok</local-command-stdout>")),
+        assistantLine(QStringLiteral("Fixed.")),
+        userLine(repo,
+                 QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("tool_result")},
+                                        {QStringLiteral("tool_use_id"), QStringLiteral("t1")},
+                                        {QStringLiteral("content"), big}}}),
+        userLine(repo, QStringLiteral("<cross-session-message from=\"x\" from-name=\"ForkMesh "
+                                      "(desktop)\">\nYour user typed this in the ForkMesh "
+                                      "desktop app, as their next message.\n\nship it\n"
+                                      "</cross-session-message>"))};
+    const ClaudeImportBatch batch = ClaudeSessionImport::convertLines(lines, QStringLiteral("s1"));
+    check(batch.events.size() == 4, "sidechains and command echoes are left out");
+    check(batch.events.value(3).value(QStringLiteral("text")).toString() ==
+              QStringLiteral("ship it"),
+          "a message ForkMesh sent through the peer inbox shows as the user's own words");
+    check(batch.events.value(0).value(QStringLiteral("type")).toString() ==
+                  QStringLiteral("_local_user") &&
+              batch.events.value(0).value(QStringLiteral("text")).toString() ==
+                  QStringLiteral("please fix it"),
+          "a typed prompt becomes the user's turn");
+    check(batch.events.value(1).value(QStringLiteral("session_id")).toString() ==
+              QStringLiteral("s1"),
+          "assistant turns carry the session id ForkMesh resumes");
+    const QString clipped = batch.events.value(2)
+                                .value(QStringLiteral("message")).toObject()
+                                .value(QStringLiteral("content")).toArray().first().toObject()
+                                .value(QStringLiteral("content")).toString();
+    check(clipped.size() < 17000 && clipped.contains(QStringLiteral("not imported")),
+          "a huge tool result is clipped");
+    check(batch.log.contains(QStringLiteral("please fix it")) &&
+              batch.log.contains(QStringLiteral("Fixed.")),
+          "the readable log keeps both sides of the conversation");
+    check(batch.lastMs > 0, "the last activity time is read");
+
+    const QString account = home + QStringLiteral("/account");
+    const QString source = dir + QStringLiteral("/renamed.jsonl");
+    QString why;
+    check(ClaudeSessionImport::stage(source, account, repo, QStringLiteral("renamed"), &why),
+          "an imported session is staged for another account");
+    const QString staged = ClaudeSessionImport::stagedPath(account, repo, QStringLiteral("renamed"));
+    QFile in(source);
+    QFile out(staged);
+    check(in.open(QIODevice::ReadOnly) && out.open(QIODevice::ReadOnly) &&
+              in.readAll() == out.readAll(),
+          "the staged transcript is a byte-for-byte copy where that account looks for it");
+    check(ClaudeSessionImport::stage(source, config, repo, QStringLiteral("renamed"), &why),
+          "staging into the folder the transcript already lives in is a no-op");
+    check(!ClaudeSessionImport::stage(source, account, repo, QStringLiteral("../x"), &why),
+          "a session id that is not a plain id is refused");
 }
 
 int main(int argc, char **argv)
@@ -133,6 +326,25 @@ int main(int argc, char **argv)
         find(withDetached, QStringLiteral("detached"));
     check(detached && detached->gitBranch.isEmpty(),
           "a detached checkout names no branch, so refs/heads/HEAD is never probed");
+
+    const QString account = home.path() + QStringLiteral("/accounts/claude/a1");
+    const QString merged = repo + QStringLiteral("/.worktrees/8-merged");
+    QDir().mkpath(merged);
+    writeTranscript(account + QStringLiteral("/projects"), QStringLiteral("merged-agent"),
+                    {merged});
+    QFile::link(account + QStringLiteral("/projects/p-merged-agent"),
+                projects + QStringLiteral("/p-merged-agent"));
+    check(uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window))
+              .contains(QStringLiteral("merged-agent")),
+          "a transcript linked into ~/.claude/projects is seen without the account list");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window, {account}))
+               .contains(QStringLiteral("merged-agent")),
+          "a ForkMesh agent's transcript linked in for the Claude app is never an external row");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>{merged}, window))
+               .contains(QStringLiteral("merged-agent")),
+          "a merged agent's worktree stays ForkMesh's own after its stream is gone");
+
+    importTests(home.path(), repo);
 
     if (failures == 0)
         std::cout << "claude session scan tests passed\n";

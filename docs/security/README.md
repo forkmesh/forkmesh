@@ -20,6 +20,7 @@ under `www/docs/security/`; report vulnerabilities as described in
 | Node ownership changes | `_account_link_grant` | [NODE_LINK_GRANT.md](NODE_LINK_GRANT.md) |
 | Signup bot check | `app/src/turnstile.py` | [OPERATIONS.md](../OPERATIONS.md) |
 | Front-door checks | `app/host/forkmesh_host/request_guard.py`, `request_policy.py` | [host/README.md](../host/README.md) |
+| Hidden Unicode in input | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicodeGuard.{h,cpp}`, `HiddenUnicode.swift`, `HiddenUnicode.kt`, `conformance/hidden-unicode/v1` | [hidden-unicode.md](hidden-unicode.md) |
 | Outbound request guard | `app/host/forkmesh_host/egress.py` | [host/README.md](../host/README.md) |
 | Host intrusion detection | `deploy/core/ids.py`, `tools/next_ids.py` | [IDS.md](../IDS.md) |
 | Node hardening | `deploy/core/render.py`, `deploy/core/certsync.py`, `tools/next_fleet.py` | [OPERATIONS.md](../OPERATIONS.md) |
@@ -32,6 +33,7 @@ under `www/docs/security/`; report vulnerabilities as described in
 | MCP server | `tools/forkmesh_mcp_server.py` | reads Git objects only |
 | Releases | `www/public/install.sh`, release tooling | [release/README.md](../release/README.md) |
 | Destructive actions | guarded delete helpers | [engineering/destructive-actions.md](../engineering/destructive-actions.md) |
+| Vulnerability reports | `security_report_handler` in `app/src/entry.py` | [sentinel.md](sentinel.md#reports-from-the-security-webhook) |
 | Protocol threat model | `conformance/protocol/v1/threats.json` | |
 
 ## Trust boundaries
@@ -67,6 +69,17 @@ added to the desktop's saved hosts.
 - `x-forkmesh-edge-client`: an HMAC-signed visitor address from the homepage
   Worker, verified before the app sees the request; direct requests have
   client-address headers replaced by the TCP peer.
+- ActivityPub inbox (`ap_inbox_handler`): after the HTTP signature verifies,
+  the key's actor (the document fetched from `keyId` without its fragment)
+  must be the activity's `actor`, or a path under it (GoToSocial publishes
+  `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`. A `keyId`
+  path with `.`/`..` segments or any percent-encoding is refused
+  (`key_actor_mismatch`): the fetch would normalise `victim/../attacker` to
+  another account's key while the prefix check still saw the victim.
+  A key from the same server is not enough: on a shared instance one account
+  could otherwise send Undo(Follow) or a self-Delete naming another account
+  and erase that account's follows. Lemmy moderators sign their own Remove,
+  so Remove needs no exception.
 - **Repository-bound event signatures.** The v1 strings
   `forkmesh-issue-event-v1`, `forkmesh-discussion-event-v1`,
   `forkmesh-pull-event-v1` and `forkmesh-pull-comment-v1` bind no
@@ -142,6 +155,21 @@ mostly one identical row per desktop status heartbeat.
   shows safety numbers. The server still knows which two accounts a DM joins.
 - The content security policy still allows inline scripts; a strict policy
   needs nonces.
+- The organization Discord OAuth callback must come from the browser that
+  started the connection. Each Connect sets its own transaction cookie,
+  `forkmesh_discord_oauth_<first 16 hex of the state>` (SameSite=Lax, path
+  `/api/integrations/discord/callback`, ten minutes), and the callback
+  finishes only when a cookie holds exactly the returned state
+  (`_oauth_callback_browser_bound` in `app/src/organization_discord.py`).
+  The one-time state, PKCE and the starter's stored session alone did not stop
+  an organization owner from sending the authorize link to another server's
+  admin and binding that server to their organization. The callback cannot
+  check the session instead: the account cookie is SameSite=Strict, so the
+  browser never sends it on the redirect back from discord.com. Two tabs or a
+  second Connect click both finish, because each flow keeps its own cookie. A
+  browser that dropped the cookie, or a different browser, gets
+  `invalid_context`, and the World Discord panel says nothing was connected
+  and to press Connect Discord server again.
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
   such branches on `main`. Since 2026-10-19 it also bans the owner's personal

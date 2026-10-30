@@ -9,8 +9,8 @@ them, and re-hashes everything every 6 hours.
 
 On an intrusion it **locks the node down**: the vault key leaves memory, the
 node is quarantined in rqlite, the firewall closes and services stop. It also
-pages the admins. Only the operator can end a lockdown
-(`tools/next_ids.py release`).
+pages the admins, and mails them itself (see *Direct mail*). Only the
+operator can end a lockdown (`tools/next_ids.py release`).
 
 ## Threat model
 
@@ -75,6 +75,55 @@ a name like `(caddy)`. Only that path, a parenthesised name and the user's own
 unit are skipped (n3, 2026-10-16, a Caddy restart); the executor anywhere
 else, or under another name, still alerts.
 
+### Process context and verdict
+
+Every process incident (`ptrace`, `exe_suspicious_path`,
+`job_user_outside_scope`, `service_user_outside_unit`, `service_user_shell`,
+`service_user_exe`) records, as soon as it is detected:
+
+| Key | What |
+|---|---|
+| `cmdline`, `cwd`, `ppid`, `started` | the process's own command line, working directory, parent and start time |
+| `parents` | up to six ancestors, nearest first: pid, exe, user, command line |
+| `children` | up to five child processes |
+| `environment` | only `SSH_CONNECTION`, `SSH_CLIENT`, `SSH_ORIGINAL_COMMAND`, `REMOTE_ADDR`, `REMOTE_PORT`, `HTTP_X_FORWARDED_FOR`, `HTTP_X_REAL_IP`, `HTTP_USER_AGENT`, `GIT_PROTOCOL`, `GIT_DIR`, `GIT_QUARANTINE_PATH`, `SUDO_USER`, `LOGNAME`, from the process or its nearest ancestor; never any other variable, so no secret leaves the node |
+| `connections` | inet sockets held by the process and its ancestors (read in each one's own network namespace), public peers first: this is where a remote IP shows |
+| `verdict` | what the IDS concluded, also appended to the summary (and so to the Ping title) |
+
+Command lines and environment values pass through `redact`: a URL's password, an `Authorization:` value, `token=`/`password=`/`secret=`/`key=` values and `--token`/`--password`/`--secret`/`--api-key` arguments become `***`.
+
+Verdicts:
+
+- **likely benign: ForkMesh's own `<hook>` hook during a git push**: the
+  shell runs a git receive hook, an ancestor is `git receive-pack`, and the
+  hook file carries `# Managed-By: ForkMesh` (the mirror-node `post-receive`
+  hook, `server/pushhook.go`; the operator-policy hook) or is the gateway's
+  push-rewrite `pre-receive` hook (`tools/mirror_gateway.py`).
+- **needs a look: a `<hook>` hook ForkMesh did not write**: the same, but the
+  file has no marker or is not a small regular file (never opened then, so a
+  FIFO cannot stall the IDS).
+- **likely benign: the Actions sandbox self-test**: `/bin/sh -c 'exit 0'` under
+  `bwrap` (`server/actions.go`, `probeBubblewrap`).
+- **probably an Actions job step**: any other process under `bwrap`.
+- **needs a look: git ran a shell command**: `sh -c` directly under git (an
+  ssh command, credential helper, alias or hook from config).
+- **unexplained**: the process exited before it could be read, or nothing
+  above matches.
+
+The verdict never changes the severity: a process can fake its command line,
+so benign verdicts say what matched and still ask for a cross-check in the
+unit's journal. The added context is trimmed (children, connections,
+environment, then the farthest parents) so the stored detail stays valid JSON
+under the 4000-character column cap. The Ping and email show the verdict
+under the summary and list each parent, child and connection on its own line.
+
+Why: the n5 alert of 2026-10-27 16:36:22 UTC (`elOxTOhzoyw9CziQ`, dash under
+`forkmesh-mirror-node.service`) recorded only pid, exe, name, unit and user.
+The process was gone before anyone looked, so its origin could not be
+established. The two pushes in that window landed at 16:36:45 and 16:37:01,
+after the alert, so the `post-receive` hook did not start it. A deploy of
+`b15f7e1c3b3e` was restarting `forkmesh-app` on n5 at the time.
+
 ## Lockdown on a core
 
 1. **Seal**: the app drops `DATA_KEY` and every vault value and exits.
@@ -105,7 +154,10 @@ the daemon.
 Every incident is logged to the journal and recorded in `security_incidents`
 (cores) or through the signed runner API. Unsealed core apps
 (`app/host/forkmesh_host/ids_alerts.py`, leaderless, compare-and-set claim)
-deliver them, so delivery works while the reporting node is down:
+deliver them, so delivery works while the reporting node is down. When no
+app is unsealed (every core sealed, locked down or stopped), the IDS's own
+direct mail still reaches the admins for lockdown, `test` and unrecorded
+incidents (*Direct mail* below); `alert` and `info` rows wait for an app:
 
 | Severity | Record | Ping (inbox, live clients, push) | Email |
 |---|---|---|---|
@@ -127,10 +179,46 @@ All platform mail shares one daily budget (`app/src/mail_budget.py`):
 verification, password and account mail. Set the limit to the provider's real
 daily limit.
 
-Optional, from the IDS process itself: direct mail with its own token
-(`[ids] direct_mail`, `FMNEXT_IDS_MAIL_TOKEN`, `FMNEXT_IDS_ALERT_EMAIL`) and a
-signed webhook (`[ids] webhook_url`, header
+From the IDS process itself, so an alert gets out when every app is sealed
+or down: direct mail (`[ids] direct_mail`, on since 2026-10-28) and an
+optional signed webhook (`[ids] webhook_url`, header
 `x-fmnext-ids-signature: v1:<ms>:<hex>`).
+
+### Direct mail
+
+Lockdown and `test` incidents, and any incident the IDS could not record
+(rqlite down), are mailed by the IDS to `[ids] mail_to`
+(`security@forkmesh.com`) from `mail_from` (empty: `founders@forkmesh.com`,
+`smtp_mail.SENDER`), envelope sender `no-reply@forkmesh.com`, as the app's
+mail. Before 2026-10-28 it was off: it needed a Mailtrap token and a
+recipient as two extra secrets that were never set, so a lockdown that
+sealed every app (or all apps down) left only the journal and the
+`security_incidents` row, and nobody was told.
+
+- **Normally** it submits over SMTP to the node's own Postfix on
+  `127.0.0.1:25`, so the same route as every other server mail applies:
+  OpenDKIM signing, the n4 relay for n3 and n5, and the Mailtrap fallback
+  relay when that route fails (docs/MAIL_LOG.md, "Sending from the cores").
+  Only a loopback address is accepted.
+- **In a lockdown** the IDS firewall lets only root send off the node, so
+  Postfix (user `postfix`) could queue the alert but not deliver it, and the
+  peers drop the node's WireGuard packets, so the n4 relay is gone too. The
+  IDS (root) then posts to the Mailtrap send API first, with the fallback
+  relay's own token read from `/etc/postfix/sasl_passwd` (root-only,
+  written by `next_mail.py install`). If that fails the mail goes into the
+  Postfix queue and leaves after the release. Opening the lockdown firewall
+  to Postfix was rejected: a service-user shell could then send mail out
+  through loopback while the node is locked down.
+- If Postfix does not answer outside a lockdown, the IDS tries the API the
+  same way.
+- No secret is pushed for it: the recipient is plain config and the token
+  is the one Postfix already holds. A core without the Mailtrap fallback
+  (no `MAILTRAP_API_TOKEN` at `next_mail.py install`) still mails normally,
+  but its lockdown mail waits for the release.
+- Each attempt leaves a masked note in #email-log (`kind: ids_direct`,
+  `via: postfix|mailtrap`, the routes tried).
+- Check it with `python3 tools/next_ids.py test-fire nN --execute`: the
+  `test` incident is mailed directly and through the app.
 
 ## Retention
 
@@ -187,16 +275,16 @@ contains everything the start step wrote.
 For a manual change, open a window first:
 
 ```sh
-python3 tools/next_ids.py expect n2 --path /etc/ssh --allow modules --execute
-python3 tools/next_ids.py expect n2 --allow ptrace --minutes 10 --execute
-python3 tools/next_ids.py baseline n2 --execute
+python3 tools/next_ids.py expect n3 --path /etc/ssh --allow modules --execute
+python3 tools/next_ids.py expect n3 --allow ptrace --minutes 10 --execute
+python3 tools/next_ids.py baseline n3 --execute
 ```
 
 ## Operator commands
 
 ```sh
 python3 tools/next_ids.py status [nN|rN ...]
-python3 tools/next_ids.py test-fire n1 --execute
+python3 tools/next_ids.py test-fire n3 --execute
 python3 tools/next_ids.py baseline nN --execute
 python3 tools/next_ids.py release nN --note "why" --execute
 python3 tools/next_vault.py seal nN --restart --execute

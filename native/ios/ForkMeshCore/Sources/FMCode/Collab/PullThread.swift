@@ -125,6 +125,15 @@ public enum PullDetail {
     public static let reviewChanges = "Review changes"
     public static let compareBranch = "Compare branches"
     public static let reviewTitle = "Review"
+    public static let conversationTitle = "Conversation"
+    public static let commentTitle = "Comment"
+    public static let doneReviewCopy =
+        "This pull request is no longer open, so it cannot be approved or merged. Comments still reach the pull inbox."
+
+    public static func openedLine(_ pull: PublishedPull, now: Date = Date()) -> String {
+        let age = PullCard.age(pull, now: now)
+        return "\(PullCard.author(pull)) opened this pull request" + (age.isEmpty ? "" : " · \(age)")
+    }
     public static let reviewCopy =
         "Approve, request changes or comment. Reviews are signed and sent to the pull inbox."
     public static let desktopTitle = "On the desktop"
@@ -281,7 +290,8 @@ public enum PullTimeline {
     public static func tone(_ event: PullEvent) -> CollabTone {
         switch event.displayTitle {
         case "Approved": return .success
-        case "Requested changes": return .danger
+        case "Requested changes", "Closed": return .danger
+        case "Merged": return .accentEdge
         default: return .tertiary
         }
     }
@@ -290,9 +300,104 @@ public enum PullTimeline {
         switch event.displayTitle {
         case "Approved": return "check_circle_outline"
         case "Requested changes": return "cancel_outlined"
+        case "Merged": return "call_merge"
+        case "Closed": return "archive_outlined"
+        case "Reopened": return "lock_open_outlined"
         default: return "rate_review_outlined"
         }
     }
+
+    public static func epochMs(_ ts: Int) -> Int { ts > 0 && ts < 100_000_000_000 ? ts * 1000 : ts }
+
+    public static func mergedEvent(_ pull: PublishedPull) -> PullEvent? {
+        guard pull.status.dartTrimmed.lowercased() == "merged" else { return nil }
+        let by = pull.mergedBy.dartTrimmed
+        let name = !by.isEmpty && by == pull.author ? pull.authorName : ""
+        let into = pull.base.isEmpty ? "" : " into \(pull.base)"
+        return PullEvent(
+            type: "merged", body: "Merged\(pull.head.isEmpty ? "" : " \(pull.head)")\(into).", author: by,
+            authorName: name, state: pull.base, ts: pull.mergedMs)
+    }
+
+    public static func events(_ pull: PublishedPull) -> [PullEvent] {
+        guard let merged = mergedEvent(pull) else { return pull.events }
+        var rows = pull.events.filter { $0.type != "merged" }
+        let at = epochMs(merged.ts)
+        if at > 0, let index = rows.firstIndex(where: { epochMs($0.ts) > at }) {
+            rows.insert(merged, at: index)
+        } else {
+            rows.append(merged)
+        }
+        return rows
+    }
+
+    public static func author(_ event: PullEvent) -> String {
+        if !event.authorName.isEmpty { return event.authorName }
+        let key = event.author.dartTrimmed
+        return key.count > 10 ? String(key.prefix(8)) + "…" : key
+    }
+}
+
+public enum PullState: String, Sendable {
+    case open, merged, closed
+
+    public init(_ pull: PublishedPull) {
+        switch pull.status.dartTrimmed.lowercased() {
+        case "merged", "closed-merged": self = .merged
+        case "open", "": self = .open
+        default: self = .closed
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .open: return "Open"
+        case .merged: return "Merged"
+        case .closed: return "Closed"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .open: return "call_split"
+        case .merged: return "call_merge"
+        case .closed: return "archive_outlined"
+        }
+    }
+
+    public var tone: CollabTone {
+        switch self {
+        case .open: return .success
+        case .merged: return .accentEdge
+        case .closed: return .danger
+        }
+    }
+
+    public static func summary(_ pull: PublishedPull, commits: Int) -> String {
+        let who = PullCard.author(pull)
+        let count = commits > 0 ? "\(commits) \(commits == 1 ? "commit" : "commits")" : "changes"
+        let branches = pull.base.isEmpty ? "" : " into \(pull.base)" + (pull.head.isEmpty ? "" : " from \(pull.head)")
+        switch PullState(pull) {
+        case .open: return "\(who) wants to merge \(count)\(branches)"
+        case .merged:
+            let when = pull.mergedMs > 0 ? " " + RepoDisplay.agoLabel(PullTimeline.epochMs(pull.mergedMs)) : ""
+            return "\(who)'s \(count) merged\(branches)\(when)"
+        case .closed: return "\(who) proposed \(count)\(branches) · closed without merging"
+        }
+    }
+
+    public static let mergedTitle = "Pull request successfully merged and closed"
+    public static let closedTitle = "Closed with unmerged commits"
+
+    public static func mergedCopy(_ pull: PublishedPull) -> String {
+        let into = pull.base.isEmpty ? "the base branch" : pull.base
+        return "\(pull.head.isEmpty ? "These changes are" : "\(pull.head) is") in \(into). Nothing more can be merged from this pull request; comments are still welcome."
+    }
+
+    public static let closedCopy =
+        "This pull request was closed without merging. Reviews and merges are off until it is reopened."
+
+    public static func reviewable(_ pull: PublishedPull) -> Bool { PullState(pull) == .open }
 }
 
 /// The pull actions sheets and the review composer.

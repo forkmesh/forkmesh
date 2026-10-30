@@ -21,7 +21,8 @@ tools/forkmesh_offline_sync.py verify /media/usb/export-1 --trusted-key <public 
 tools/forkmesh_offline_sync.py import /media/usb/export-1 ~/src/project --trusted-key <public key>
 ```
 
-Share the public key over a trusted channel. `export --since <earlier export>`
+Share the public key over a trusted channel. A key that starts with `-` goes
+after an equals sign: `--trusted-key=-Ab…`. `export --since <earlier export>`
 writes an incremental export listing its `prerequisites` and `previousExport`;
 import refuses it until the base has been imported.
 

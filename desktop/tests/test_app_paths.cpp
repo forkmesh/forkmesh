@@ -10,6 +10,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLockFile>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -687,6 +690,135 @@ void testProjectRegistry()
           "returning home is explicit, so an inherited environment cannot win");
 }
 
+void testAnInstanceBelongsToOneProject()
+{
+    namespace projects = forkmesh::projects;
+    check(projects::instanceKey("wss://Relay.Example.com:443/api/repo/x/ws") == "relay.example.com" &&
+              projects::instanceKey("relay.example.com") == "relay.example.com" &&
+              projects::instanceKey("http://192.168.1.20:8787") == "192.168.1.20:8787" &&
+              projects::instanceKey("forkmesh.com") == "app.forkmesh.com" &&
+              projects::instanceKey("wss://app.next.forkmesh.com/ws") == "app.forkmesh.com" &&
+              projects::instanceKey("").isEmpty(),
+          "an instance key is the origin, with production aliases folded");
+
+    QTemporaryDir tmp;
+    const QString home = tmp.path();
+    const Layout layout = resolve(environmentIn(home));
+    QString error;
+    projects::CreateRequest request;
+    request.shareIdentity = false;
+    projects::Project tea;
+    projects::Project coffee;
+    request.name = "Tea";
+    check(projects::create(layout, request, &tea, &error), "create Tea");
+    request.name = "Coffee";
+    check(projects::create(layout, request, &coffee, &error), "create Coffee");
+
+    QVector<projects::Project> all = projects::list(layout.projectsRoot, layout.homeDir);
+    check(!projects::instanceOwner(all, "wss://relay.example.com/ws", coffee.dir),
+          "a pending project owns no instance yet");
+
+    check(projects::recordInstances(tea.dir, {"wss://relay.example.com/api/repo/x/ws"}, &error),
+          "instances are recorded in project.json");
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    const projects::Project *owner =
+        projects::instanceOwner(all, "https://RELAY.example.com/", coffee.dir);
+    check(owner && owner->slug == "tea", "another project's instance is found by its origin");
+    check(!projects::instanceOwner(all, "relay.example.com", tea.dir),
+          "a project never conflicts with itself");
+    check(!projects::instanceOwner(all, "other.example.com", coffee.dir),
+          "an unused instance has no owner");
+
+    QSettings coffeeSettings(projects::settingsFilePath(coffee.dir), QSettings::IniFormat);
+    coffeeSettings.remove(projects::kInstancePendingSetting);
+    coffeeSettings.setValue("servers/items",
+                            "[{\"url\":\"wss://lab.example.com/api/repo/x/ws\"}]");
+    coffeeSettings.sync();
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    owner = projects::instanceOwner(all, "lab.example.com", tea.dir);
+    check(owner && owner->slug == "coffee",
+          "a project that has not recorded its instances is read from its settings");
+
+    check(projects::recordInstances(tea.dir, {}, &error), "clearing the instances");
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    check(!projects::instanceOwner(all, "relay.example.com", coffee.dir),
+          "a removed instance is free again");
+    QFile file(QDir(tea.dir).filePath("project.json"));
+    check(file.open(QIODevice::ReadOnly) &&
+              QJsonDocument::fromJson(file.readAll()).object().value("name").toString() == "Tea",
+          "recording instances keeps the rest of project.json");
+}
+
+void testNewProjectChoices()
+{
+    namespace projects = forkmesh::projects;
+    const QStringList available{"agents", "chat", "code", "crm", "inbox", "notes", "tour",
+                                "marketing", "code"};
+    check(projects::starterPackages(projects::StarterPack::Minimal, available) ==
+              QStringList{"code"},
+          "the minimal pack is just code");
+    check(projects::starterPackages(projects::StarterPack::Standard, available) ==
+              QStringList({"agents", "chat", "code", "inbox", "tour"}),
+          "the standard pack matches the phone's, in catalog order");
+    check(projects::starterPackages(projects::StarterPack::Everything, available) ==
+              QStringList({"agents", "chat", "code", "inbox", "notes", "tour"}),
+          "everything leaves out organization plugins and duplicates");
+    check(projects::starterPackages(projects::StarterPack::Empty, available).isEmpty(),
+          "the empty pack installs nothing");
+    check(projects::starterPackages(projects::StarterPack::Standard, {"notes"}).isEmpty(),
+          "a pack only names plugins the catalog offers");
+
+    const QJsonArray rows = QJsonDocument::fromJson(R"([
+        {"name": "Tea House", "url": "https://tea.example.com/", "listed": true,
+         "status": "online", "logo": "/api/start/instances/0123456789abcdef0123456789abcdef/logo?v=3"},
+        {"name": "", "url": "https://blank.example.com", "listed": true, "status": "checking",
+         "logo": "https://evil.example.com/logo.png"},
+        {"name": "Hidden", "url": "https://hidden.example.com/", "listed": false},
+        {"name": "Plain", "url": "http://plain.example.com/", "listed": true},
+        {"name": "Again", "url": "https://TEA.example.com/", "listed": true}
+    ])").array();
+    const QVector<projects::DirectoryInstance> found =
+        projects::directoryInstances(rows, "https://forkmesh.com");
+    check(found.size() == 2, "only listed https instances are offered, once each");
+    check(found.value(0).name == "Tea House" && found.value(0).host == "tea.example.com" &&
+              found.value(0).online &&
+              found.value(0).logoUrl ==
+                  "https://forkmesh.com/api/start/instances/0123456789abcdef0123456789abcdef/logo?v=3",
+          "a directory instance carries its project name, host and directory logo");
+    check(found.value(1).name == "blank.example.com" && !found.value(1).online &&
+              found.value(1).logoUrl.isEmpty(),
+          "an unnamed instance shows its host and a foreign logo is ignored");
+
+    const QJsonObject version{{"ok", true}, {"rev", "abc"}, {"worker", "app"}};
+    check(projects::isForkMeshVersionReply(200, false, version),
+          "the version reply identifies an instance");
+    check(projects::isForkMeshVersionReply(200, true, {}), "the worker header identifies one");
+    check(!projects::isForkMeshVersionReply(200, false, {{"ok", true}}),
+          "a generic ok reply is not an instance");
+    check(!projects::isForkMeshVersionReply(503, true, version), "an error status is not");
+
+    QTemporaryDir tmp;
+    const Layout layout = resolve(environmentIn(tmp.path()));
+    projects::CreateRequest request;
+    request.name = "Tea";
+    request.shareIdentity = false;
+    request.instances = {{"Other", "wss://other.example.com/room"}};
+    request.instance = {"Tea House", "wss://tea.example.com/room"};
+    projects::Project created;
+    QString error;
+    check(projects::create(layout, request, &created, &error), "create with a checked instance");
+    QSettings seed(projects::settingsFilePath(created.dir), QSettings::IniFormat);
+    check(seed.value(projects::kInstanceChosenSetting).toString() ==
+              "wss://tea.example.com/room",
+          "the checked instance is seeded for the project to connect to");
+    const QVector<projects::InstanceChoice> choices = projects::decodeInstanceChoices(
+        seed.value(projects::kInstanceChoicesSetting).toString());
+    check(choices.size() == 2 && choices.at(0).name == "Tea House",
+          "the checked instance is offered first, with its name");
+    check(!QFileInfo::exists(created.dir + "/data/core/identity/ed25519.pem"),
+          "an unshared identity is not copied");
+}
+
 // The build knows its sources only as the desktop/ CMake directory inside the
 // checkout. Crash and error-log repairs keep their checkpoint under the
 // repository that directory belongs to; an exact-path match never found it,
@@ -774,6 +906,8 @@ int main(int argc, char **argv)
     testOtherProjectIsIsolated();
     testStorageMap();
     testProjectRegistry();
+    testAnInstanceBelongsToOneProject();
+    testNewProjectChoices();
     testCheckoutContaining();
     testRegistrySettingsNameIsNotAFolder();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

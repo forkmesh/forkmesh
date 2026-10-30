@@ -83,6 +83,7 @@ public:
     bool ksmbdInstalled = false;
     bool ksmbdConfigMissing = false;
     bool ksmbdWritten = false;
+    bool configListHidesKsmbd = false;
     QStringList packageCommands;
     QStringList installedPackages;
 
@@ -192,7 +193,7 @@ private:
             return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   15000000 sda\n   8        1   14999000 sda1\n")}}};
         if (object == QStringLiteral("uci") && method == QStringLiteral("configs")) {
             QJsonArray configs{QStringLiteral("fstab"), QStringLiteral("network")};
-            if (ksmbdInstalled && !ksmbdConfigMissing)
+            if (ksmbdInstalled && !ksmbdConfigMissing && !configListHidesKsmbd)
                 configs.append(QStringLiteral("ksmbd"));
             return QJsonArray{0, QJsonObject{{QStringLiteral("configs"), configs}}};
         }
@@ -707,6 +708,7 @@ void testFeature()
         }
     });
     router.ksmbdConfigMissing = true;
+    router.configListHidesKsmbd = true;
     installSharing->click();
     check(waitFor([&] { return statusText().contains(QStringLiteral("Network sharing is installed")); }), QStringLiteral("installing network sharing finishes"));
     check(router.ksmbdWritten && router.lastCall(QStringLiteral("file"), QStringLiteral("write")).at(3).toObject().value(QStringLiteral("mode")).toInt() == 0600
@@ -718,7 +720,7 @@ void testFeature()
     check(log->toPlainText().contains(QStringLiteral("Checking whether luci-app-ksmbd got installed")) && !log->toPlainText().contains(QStringLiteral("failed")),
           QStringLiteral("a LuCI app whose install outlasts the router's ubus timeout is checked in the package list, not reported as failed"));
     check(waitFor([&] { return shares->topLevelItemCount() == 1 && installSharing->isHidden(); }),
-          QStringLiteral("the shares list appears and the install button goes away"));
+          QStringLiteral("the shares list appears and the install button goes away, read with uci get when uci configs leaves ksmbd out"));
     if (shares->topLevelItemCount() != 1)
         return;
     shares->setCurrentItem(shares->topLevelItem(0));

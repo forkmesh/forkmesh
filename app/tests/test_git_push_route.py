@@ -126,6 +126,7 @@ BASE_GLOBALS = {
     "Date": _Date,
     "LOGIN_MAX_SKEW_MS": SKEW_MS,
     "MAX_NODE_NAME": 64,
+    "CHAT_NODE_DEVICE_KIND": "chat_node",
 }
 
 
@@ -175,6 +176,7 @@ def _authorize_harness(
     devices=None,
     org_write_accounts=(),
     pubkey_accounts=None,
+    foreign_devices=None,
 ):
     """Build _git_push_authorize with account/device/org stubs."""
     devices = devices or {}
@@ -212,6 +214,8 @@ def _authorize_harness(
         return (("node-bi", record) if record else (None, None))
 
     async def d1_first(_env, sql, *args):
+        if "account_bi<>?" in sql and args[0] in (foreign_devices or {}):
+            return {"account_bi": foreign_devices[args[0]]}
         return None
 
     async def decrypt_row(_env, _data):
@@ -326,6 +330,18 @@ def test_org_write_member_is_authorized_with_their_own_key():
     assert audits[-1]["actor"] == "bob"
 
 
+def test_primary_key_proven_as_another_accounts_device_resolves_to_nobody():
+    namespace, audits = _authorize_harness(
+        org_write_accounts={("alice", "app", "bob")},
+        pubkey_accounts={MEMBER_PRIMARY_KEY: {"name": "bob"}},
+        foreign_devices={MEMBER_PRIMARY_KEY: "bi:carol"},
+    )
+    assert _run_authorize(namespace, _signed(MEMBER_PRIMARY_KEY)) == ""
+    assert audits[-1]["outcome"] == "denied"
+    assert asyncio.run(namespace["_git_push_account_for_pubkey"](
+        object(), MEMBER_PRIMARY_KEY)) == ""
+
+
 def test_member_without_org_write_is_denied():
     namespace, audits = _authorize_harness(
         pubkey_accounts={MEMBER_PRIMARY_KEY: {"name": "bob"}})
@@ -435,6 +451,7 @@ def _proxy_harness(
     router_ready=True,
     upstreams=None,
     basic_account="",
+    basic_prefix="",
     core_nodes=(),
     core_owners=(),
     alias_owner="",
@@ -447,6 +464,7 @@ def _proxy_harness(
     fetch_timeouts = []
     pinned = []
     pushers = []
+    forced_updates = []
     admitted = []
     candidate_pubkeys = []
     authorized_digests = []
@@ -511,18 +529,25 @@ def _proxy_harness(
         return str(header or "").lower().startswith("basic ")
 
     async def verify_hosted_push_credential(
-            _env, _owner, _repo, header, _method=""):
+            _env, _owner, _repo, header, _method="", request=None):
         return basic_account if has_hosted_push_credential(header) else ""
 
+    async def verify_hosted_push_access(
+            _env, _owner, _repo, header, _method="", alias="", request=None):
+        if not has_hosted_push_credential(header) or not basic_account:
+            return "", ""
+        return basic_account, basic_prefix
+
     async def record_hosted_push_state(_env, owner, repo, endpoint,
-                                       pusher=""):
+                                       pusher="", forced=None):
+        forced_updates.append(forced)
         pinned.append((owner, repo, endpoint["node"]))
         pushers.append(pusher)
         return "d" * 64
 
     namespace = _load(
         {"_https_mirror_push_proxy", "_https_mirror_push_send",
-         "_git_push_basic_challenge",
+         "_push_target_on_cores", "_git_push_basic_challenge",
          "_https_mirror_request_body_stream", "_ref_updates_from"}, {
         **BASE_GLOBALS,
         "json": __import__("json"),
@@ -565,6 +590,7 @@ def _proxy_harness(
         "JsResponse": _JsResponse,
         "has_hosted_push_credential": has_hosted_push_credential,
         "verify_hosted_push_credential": verify_hosted_push_credential,
+        "verify_hosted_push_access": verify_hosted_push_access,
         "record_hosted_push_state": record_hosted_push_state,
     })
     namespace["_pinned_states"] = pinned
@@ -1261,7 +1287,8 @@ def test_pending_tag_moves_ride_the_signed_capability_target():
     target = fetches[0][0]
     query = parse_qs(urlparse(target).query)
     assert query == {"tagMoves": [
-        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)]}
+        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)],
+        "rewrite": ["refs/heads/"]}
     signed_path = urlparse(target).path + "?" + urlparse(target).query
     assert signed_path in messages[0]
     assert namespace["_recorded_pushes"][0][5]["tag_moves"] == {
@@ -1309,6 +1336,26 @@ def test_ref_updates_header_is_validated_field_by_field():
     assert parse(_Up(raw)) == {"total": 5, "updates": [
         {"ref": "refs/heads/x", "old": "0" * 40, "new": "1" * 40,
          "commits": 2}], "actions": False}
+
+
+def test_ref_updates_keep_the_open_pulls_of_every_branch_update():
+    namespace, *_ = _proxy_harness()
+    parse = namespace["_ref_updates_from"]
+
+    class _Up:
+        def __init__(self, value):
+            self.headers = _Headers({"x-forkmesh-ref-updates": value})
+
+    raw = json.dumps({"total": 3, "updates": [
+        {"ref": "refs/heads/a", "old": "1" * 40, "new": "2" * 40,
+         "commits": 1, "pulls": [4, 3, 4, True, -1, "5"]},
+        {"ref": "refs/heads/b", "old": "1" * 40, "new": "2" * 40,
+         "commits": 1, "pulls": "3"},
+        {"ref": "refs/tags/c", "old": "0" * 40, "new": "2" * 40,
+         "pulls": [3]},
+    ]})
+    assert [update.get("pulls") for update in parse(_Up(raw))["updates"]] == [
+        [3, 4], None, None]
 
 
 def test_a_key_among_the_owners_signers_still_gets_the_org_write_check():
@@ -1438,3 +1485,64 @@ def test_core_endpoints_take_a_push_for_a_retired_core_owner():
     held = "fmnext-n1" in namespace["_core_push_nodes"](env)
     assert [e["node"] for e in _run_candidates(
         namespace, env, core_allowed=held)] == ["fmnext-n2", "fmnext-n3"]
+
+
+def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
+    # A contributor credential (hosted_git.verify_hosted_push_access) names
+    # refs/heads/pr/<account>/; the router-signed target carries it, the
+    # core organization-owner rule and tag moves do not apply, and the
+    # accepted push is recorded as a contributor's (no Actions).
+    namespace, messages, fetches = _proxy_harness(
+        candidates=[_endpoint()],
+        upstreams=[_Upstream()],
+        basic_account="bob",
+        basic_prefix="refs/heads/pr/bob/",
+        core_nodes=("alice",),
+        core_owners=(),
+        tag_moves={"refs/tags/v1": "1" * 40},
+    )
+    request = _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({"authorization": "Basic Ym9iOmNyZWRlbnRpYWw="}),
+        body=b"pack")
+    response = _run_proxy(namespace, request, is_info=False)
+    assert response["init"]["status"] == 200
+    target = fetches[0][0]
+    assert "pushPrefix=refs%2Fheads%2Fpr%2Fbob%2F" in target
+    assert "rewrite=refs%2Fheads%2Fpr%2Fbob%2F" in target
+    assert "tagMoves" not in target
+    assert any("pushPrefix=" in message for message in messages)
+    recorded = namespace["_recorded_pushes"][0]
+    assert recorded[3] == "bob"
+    assert recorded[5]["contributor"] is True
+    assert recorded[5]["credential"] == "contributor"
+    assert recorded[5]["tag_moves"] == {}
+
+    # Without a prefix the same account is an ordinary pusher and the core
+    # organization-owner rule still refuses it.
+    namespace, _messages, fetches = _proxy_harness(
+        candidates=[_endpoint()], upstreams=[_Upstream()],
+        basic_account="bob", core_nodes=("alice",), core_owners=())
+    refused = _run_proxy(namespace, _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({"authorization": "Basic Ym9iOmNyZWRlbnRpYWw="}),
+        body=b"pack"), is_info=False)
+    assert refused["status"] == 403
+    assert not fetches
+
+
+def test_force_push_grant_goes_only_to_repositories_the_cores_hold():
+    body = b"receive-pack-request-bytes"
+    namespace, _messages, fetches = _proxy_harness(
+        candidates=[_endpoint("core-1")], upstreams=[_Upstream()])
+
+    async def hosted_push_candidates(_env, owner, repo):
+        return [_endpoint("core-1")] if (owner, repo) == ("alice", "app") else None
+    namespace["hosted_push_candidates"] = hosted_push_candidates
+    request = _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({**_signed_headers(), "content-encoding": "gzip"}),
+        body=body)
+    _run_proxy(namespace, request, is_info=False)
+    assert fetches[0][0].endswith(
+        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")

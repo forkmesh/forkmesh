@@ -20,6 +20,7 @@ struct DesktopTerminalScreen: View {
     @State private var repo: String = ""
     @State private var provider: String = "claude-code"
     @State private var input: String = ""
+    @State private var ctrl: Bool = false
     @State private var notice: FmNotice?
     @State private var confirmEnd: Bool = false
     @State private var supported: Bool?
@@ -27,7 +28,7 @@ struct DesktopTerminalScreen: View {
     @State private var autoStarted: Bool = false
 
     init(
-        center: AgentControlCenter, terminal attach: String = "", provider: String = "",
+        center: AgentControlCenter, terminal attach: String = "", desktopKey: String = "", provider: String = "",
         account: String = "", accountLabel: String = ""
     ) {
         self.center = center
@@ -38,7 +39,8 @@ struct DesktopTerminalScreen: View {
         self.accountLabel = accountLabel
         self.fixedProvider = !provider.isEmpty
         _provider = State(initialValue: provider.isEmpty ? "claude-code" : provider)
-        _terminal = State(initialValue: attach.isEmpty ? nil : DesktopAgentTerminal(channel: center.hub, terminal: attach))
+        _terminal = State(initialValue: attach.isEmpty ? nil : DesktopAgentTerminal(
+            channel: center.hub.terminalChannel(for: desktopKey), terminal: attach))
     }
 
     init(center: AgentControlCenter, signIn mode: String, provider: String, account: String, accountLabel: String) {
@@ -63,7 +65,8 @@ struct DesktopTerminalScreen: View {
         self.fixedProvider = true
         self.session = row.localId
         _terminal = State(initialValue: DesktopAgentTerminal(
-            channel: center.hub, session: row.localId, owner: row.repoOwner, name: row.repoName,
+            channel: center.hub.terminalChannel(for: row.desktopKey), session: row.localId, owner: row.repoOwner,
+            name: row.repoName,
             provider: row.provider))
     }
 
@@ -156,7 +159,7 @@ struct DesktopTerminalScreen: View {
                 }
                 TerminalGridView(terminal: terminal)
                     .id(ObjectIdentifier(terminal))
-                TerminalKeyBar(terminal: terminal, onPaste: {
+                TerminalKeyBar(terminal: terminal, ctrl: $ctrl, onPaste: {
                     if let text = UIPasteboard.general.string, !text.isEmpty {
                         terminal.paste(text)
                     }
@@ -319,6 +322,7 @@ struct DesktopTerminalScreen: View {
                 .fmMono(size: FmType.small, color: fm.textPrimary)
                 .submitLabel(.send)
                 .onSubmit { submitLine() }
+                .terminalChords(text: $input, ctrl: $ctrl, terminal: terminal)
                 .accessibilityIdentifier("desktop-terminal-input")
             Button {
                 submitLine()

@@ -82,7 +82,7 @@ class GlassesAlertScreen : Screen() {
                 onDismiss = { picked = null },
             )
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Glasses Alert", navigator)
             LazyColumn(Modifier.fillMaxSize()) {
                 item {
@@ -168,7 +168,7 @@ class GlassesAlertScreen : Screen() {
                 if (state.nearby.isEmpty()) {
                     item {
                         Text(
-                            if (state.watching) "No Meta glasses in range." else "Start watching to scan for Meta glasses.",
+                            if (state.watching) "No smart glasses or cameras in range." else "Start watching to scan for smart glasses and cameras.",
                             style = Fm.text.bodyMedium,
                             color = Fm.colors.textSecondary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -202,8 +202,8 @@ private fun StatusCard(running: Boolean, watching: Boolean, ringing: Boolean, co
                 Column {
                     Text(
                         when {
-                            ringing -> "Smart glasses nearby"
-                            watching -> "Watching for smart glasses"
+                            ringing -> "Smart glasses or camera nearby"
+                            watching -> "Watching for smart glasses and cameras"
                             running -> "Waiting for Bluetooth"
                             else -> "Not watching"
                         },
@@ -246,7 +246,7 @@ private fun SightingRow(sighting: GlassesSighting) {
     FmListRow(
         sighting.label,
         subtitle = listOfNotNull(sighting.distance, "${sighting.rssi} dBm", sighting.maker?.label, "seen $seen").joinToString(" · "),
-        leading = { FmIcon("visibility", tint = if (sighting.rssi >= -70) Fm.colors.danger else Fm.colors.warning) },
+        leading = { FmIcon(sighting.kind.icon, tint = if (sighting.rssi >= -70) Fm.colors.danger else Fm.colors.warning) },
         showChevron = false,
     )
 }

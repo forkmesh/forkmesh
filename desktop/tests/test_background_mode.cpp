@@ -36,6 +36,9 @@ struct Recorder {
     QByteArray userState = "running\n";
     bool preparingForShutdown = false;
     QByteArray sleepStates = "static\nstatic\nstatic\nstatic\nstatic\n";
+    QByteArray unitShow = "UnitFileState=enabled\nActiveState=inactive\nSubState=dead\n"
+                          "Result=success\nMainPID=0\nNRestarts=0\nExecMainStatus=0\n";
+    QByteArray journal = "2026-10-20T08:00:00+0200 box forkmesh[42]: started\n";
 
     bg::CommandResult run(const QString &program, const QStringList &arguments)
     {
@@ -53,6 +56,10 @@ struct Recorder {
             result.output = sleepStates;
             result.ok = !sleepStates.startsWith("masked");
         }
+        if (arguments.value(1) == QLatin1String("show"))
+            result.output = unitShow;
+        if (program == QLatin1String("journalctl"))
+            result.output = journal;
         if (program == QLatin1String("busctl"))
             result.output = preparingForShutdown ? "b true\n" : "b false\n";
         if (program == QLatin1String("loginctl")) {
@@ -270,6 +277,57 @@ void testBootSleepPermission()
           "an unresolved account cannot install a permission");
 }
 
+void testRestartPermission()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    bg::StartManager m = manager(home.path(), &recorder);
+    int prompts = 0;
+    bool approve = false;
+    m.run = [&](const QString &program, const QStringList &arguments) {
+        if (program != QLatin1String("pkexec"))
+            return recorder.run(program, arguments);
+        ++prompts;
+        if (!approve)
+            return bg::CommandResult{false, "authentication dismissed"};
+        const QString target = arguments.size() == 7 ? arguments.value(5) : arguments.value(4);
+        check(target.startsWith(home.path()), "the restart policy file is inside the test home");
+        if (!target.startsWith(home.path()))
+            return bg::CommandResult{};
+        QProcess process;
+        process.start(arguments.first(), arguments.mid(1));
+        const bool finished = process.waitForFinished(5000);
+        return bg::CommandResult{finished && process.exitCode() == 0, process.readAllStandardError()};
+    };
+    check(!m.restartAllowed(), "an absent policy does not allow restarts");
+    check(m.allowRestart(false) && prompts == 0, "taking back an absent permission never prompts");
+    QString error;
+    check(!m.allowRestart(true, &error) && error.contains(QLatin1String("authentication")),
+          "dismissed authentication reports why the restart stays refused");
+    check(!m.restartAllowed(), "dismissed authentication installs no policy");
+    approve = true;
+    check(m.allowRestart(true) && m.restartAllowed() &&
+              m.status(QStringLiteral("forkmesh")).restartAllowed,
+          "approved authentication installs the restart permission");
+    check(manager(home.path(), &recorder).restartAllowed(), "the permission survives a restart");
+    check(m.allowRestart(true) && prompts == 2, "an installed policy never prompts again");
+    check(read(m.restartPolicyPath()) == m.restartPolicy(), "the policy text is installed unchanged");
+    check(m.restartPolicyPath() != m.bootSleepPolicyPath(), "restart and sleep policies are separate files");
+    check(m.restartPolicy().contains(QLatin1String("subject.user === \"forkmesh-test\"")) &&
+              m.restartPolicy().count(QLatin1String("action.id")) == 2 &&
+              m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot\"")) &&
+              m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot-multiple-sessions\"")) &&
+              !m.restartPolicy().contains(QLatin1String("power-off")) &&
+              !m.restartPolicy().contains(QLatin1String("ignore-inhibit")),
+          "only this account may restart, and nothing else is granted");
+    check(m.allowRestart(false) && !QFileInfo::exists(m.restartPolicyPath()) && !m.restartAllowed(),
+          "turning it off removes the policy");
+    m.uid = 502;
+    check(!m.restartAllowed(), "the permission does not apply to another account");
+    m.account.clear();
+    check(!m.allowRestart(true) && prompts == 3, "an unresolved account cannot install a permission");
+}
+
 void testRefreshUnit()
 {
     QTemporaryDir home;
@@ -349,6 +407,90 @@ void testSystemd()
     check(!m.enable(QStringLiteral("relative/forkmesh"), QStringLiteral("forkmesh"), &error),
           "a relative binary is refused");
     check(!m.enable(binary, QStringLiteral("../x"), &error), "an invalid project is refused");
+}
+
+void testDiagnostics()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    const bg::StartManager m = manager(home.path(), &recorder);
+    const QString project = QStringLiteral("forkmesh");
+    check(!bg::runnerBadge(m.diagnose(project)).visible, "no badge while nothing is registered");
+    check(!bg::canCloseToHeadless(m.diagnose(project)),
+          "no close-to-background offer while nothing is registered");
+    check(!bg::runnerReport(m.diagnose(project)).isEmpty(), "an unregistered report still explains");
+    QString error;
+    check(m.enable(fakeBinary(home.path()), project, &error), "enable succeeds");
+
+    bg::RunnerDiagnostics ready = m.diagnose(project);
+    check(ready.unit == QStringLiteral("forkmesh-headless-forkmesh.service") &&
+              ready.systemdReachable && ready.unitFileState == QStringLiteral("enabled") &&
+              ready.activeState == QStringLiteral("inactive") && ready.binaryExecutable,
+          "diagnose reads the unit state");
+    check(ready.journal.isEmpty() && !recorder.calls.filter(QStringLiteral("journalctl")).size(),
+          "the journal is read only when asked");
+    bg::RunnerBadge badge = bg::runnerBadge(ready);
+    check(badge.visible && badge.text == QStringLiteral("Background: Ready") &&
+              badge.severity == QStringLiteral("ok"),
+          "an enabled unit standing by is ready");
+    check(bg::canCloseToHeadless(ready), "a ready unit offers to close the window into it");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=active\nSubState=running\n"
+                        "MainPID=4242\nNRestarts=2\n";
+    const bg::RunnerDiagnostics running = m.diagnose(project);
+    badge = bg::runnerBadge(running);
+    check(running.mainPid == 4242 && running.restarts == 2 &&
+              badge.text == QStringLiteral("Background: Running") &&
+              badge.toolTip.contains(QStringLiteral("4242")),
+          "an active unit shows as running with its pid");
+    check(!bg::canCloseToHeadless(running), "a running unit does not offer a second hand-over");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=failed\nSubState=failed\n"
+                        "Result=exit-code\nExecMainStatus=3\n";
+    badge = bg::runnerBadge(m.diagnose(project));
+    check(badge.text == QStringLiteral("Background: Failed") &&
+              badge.severity == QStringLiteral("error") &&
+              badge.toolTip.contains(QStringLiteral("exit-code")),
+          "a failed unit is an error");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=activating\nSubState=auto-restart\n";
+    check(bg::runnerBadge(m.diagnose(project)).severity == QStringLiteral("warn"),
+          "a restarting unit is a warning");
+
+    recorder.unitShow = "UnitFileState=disabled\nActiveState=inactive\n";
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: Not enabled"),
+          "a unit file systemd does not start is reported");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=inactive\n";
+    recorder.linger = false;
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: At log-in"),
+          "without lingering it starts only at log-in");
+    recorder.linger = true;
+
+    bg::RunnerDiagnostics full = m.diagnose(project, 0, true);
+    full.keepRunning = true;
+    const QString report = bg::runnerReport(full);
+    check(full.journal.contains(QStringLiteral("started")) &&
+              report.contains(QStringLiteral("journalctl --user-unit=forkmesh-headless-forkmesh.service")) &&
+              report.contains(QStringLiteral("started")) &&
+              report.contains(QStringLiteral("Keep running after the window closes: yes")),
+          "the report carries the state and the recent log");
+
+    QFile::remove(ready.start.binary);
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: Broken"),
+          "a unit whose program is gone is broken");
+
+    recorder.calls.clear();
+    check(m.turnOff(project, &error), "turn off succeeds");
+    check(recorder.called(QStringLiteral("systemctl --user stop --no-block forkmesh-headless-forkmesh.service")) &&
+              recorder.called(QStringLiteral("systemctl --user reset-failed forkmesh-headless-forkmesh.service")) &&
+              recorder.called(QStringLiteral("systemctl --user disable forkmesh-headless-forkmesh.service")),
+          "turning off stops, clears and disables the unit");
+    check(!QFileInfo::exists(m.systemdUnitPath(project)) &&
+              !bg::runnerBadge(m.diagnose(project)).visible,
+          "the badge goes away once it is turned off");
+    check(!bg::headlessProcessRunning(0) && !bg::headlessProcessRunning(QCoreApplication::applicationPid()),
+          "only a --headless process counts as the windowless instance");
 }
 
 void testUserLinger()
@@ -475,12 +617,14 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
     testTexts();
     testSystemd();
+    testDiagnostics();
     testUserLinger();
     testXdg();
     testLogout();
     testShuttingDown();
     testSleepDisabled();
     testBootSleepPermission();
+    testRestartPermission();
     testRefreshUnit();
 #if defined(Q_OS_LINUX)
     testLegacyEngine();

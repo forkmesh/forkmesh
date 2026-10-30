@@ -284,7 +284,7 @@ test("an agent row opens the session detail and returns to the list", async ({ p
   await expect(detail).toContainText("15,000 total");
   await expect(detail).toContainText("48,000 / 200,000 (24%)");
   await expect(detail).toContainText("Opens on finish");
-  await expect(detail).toContainText("waived");
+  await expect(detail).not.toContainText("waived");
   await expect(detail).toContainText("The mirror is running this agent session.");
   await expect(detail.locator("[data-org-agent-transcript] > li")).toHaveCount(2);
   await expect(detail).toContainText("Rebuild the solver and keep the old API.");
@@ -387,11 +387,11 @@ test("a completed session shows its transcript first, links its branch diff, and
   const metaBox = await detail.locator("[data-org-agent-meta]").boundingBox();
   expect(transcriptBox.y).toBeLessThan(metaBox.y);
 
-  // The branch is readable in the web diff viewer from the toolbar and from
-  // its own row, before any pull request exists.
+  // The branch is readable before any pull request exists: the toolbar's
+  // Diff shows it in the pane, and its own row links the compare page.
   const compareHref = "/alpha/engine/compare/main...agent/web-39-add-123-to-the-readme";
-  await expect(detail.locator("[data-org-agent-compare]"))
-    .toHaveAttribute("href", compareHref);
+  await expect(detail.locator('[data-org-agent-action="diff"]')).toHaveCount(1);
+  await expect(detail.locator("[data-org-agent-compare]")).toHaveCount(0);
   await expect(detail.locator("[data-org-agent-branch-link]"))
     .toHaveAttribute("href", compareHref);
 
@@ -410,7 +410,7 @@ test("a completed session shows its transcript first, links its branch diff, and
 test("the branch diff link opens the compare page, which feeds the new-pull form", async ({ page }) => {
   await openAgentsTab(page);
   await page.locator('[data-org-agent-open="session-done"]').click();
-  await page.locator('[data-org-agent-detail="session-done"] [data-org-agent-compare]').click();
+  await page.locator('[data-org-agent-detail="session-done"] [data-org-agent-branch-link]').click();
 
   // /owner/repo/compare/base...head is its own page on the Pull requests tab.
   await expect(page).toHaveURL(/\/alpha\/engine\/compare\/main\.\.\.agent\/web-39-add-123-to-the-readme$/);
@@ -418,7 +418,7 @@ test("the branch diff link opens the compare page, which feeds the new-pull form
   await expect(compare).toHaveCount(1);
   await expect(page.locator('[data-dashboard-repo-tab="pulls"]'))
     .toHaveAttribute("aria-selected", "true");
-  await expect(compare).toContainText("Comparing changes");
+  await expect(compare).toContainText("Comparing");
   await expect(compare).toContainText("agent/web-39-add-123-to-the-readme");
   // The commit series and the patch, through the pull review's diff renderer.
   await expect(compare.locator("[data-repo-compare-commits]")).toContainText("add 123 to the readme");
@@ -441,15 +441,17 @@ test("the branch diff link opens the compare page, which feeds the new-pull form
   // one code column behind two line-number gutters.
   const splitRows = files.locator(".grid-cols-\\[3\\.5rem_minmax\\(0\\,1fr\\)_3\\.5rem_minmax\\(0\\,1fr\\)\\]");
   await expect(splitRows).toHaveCount(0);
+  await files.locator("[data-repo-diff-settings] > summary").click();
   await files.locator('[data-repo-pull-diff-mode="split"]').click();
   await expect(splitRows.first()).toBeVisible();
   await expect(files.locator('[data-repo-pull-diff-mode="split"]')).toHaveAttribute("aria-pressed", "true");
+  await files.locator("[data-repo-diff-settings] > summary").click();
   await files.locator('[data-repo-pull-diff-mode="unified"]').click();
   await expect(splitRows).toHaveCount(0);
   await expect(files.locator('[data-repo-pull-diff-mode="unified"]')).toHaveAttribute("aria-pressed", "true");
   await files.locator('[data-repo-pull-viewed="README.md"]').click();
   await expect(files.locator('[data-repo-pull-diff-file="README.md"]')).toHaveAttribute("data-viewed", "true");
-  await expect(files.locator("[data-repo-pull-viewed-summary]")).toHaveText("1 of 1 viewed");
+  await expect(files.locator("[data-repo-pull-viewed-summary]")).toHaveText("All 1 viewed");
   // The mark is keyed by the compared commits and survives a reload.
   await page.reload();
   await expect(page.locator('[data-repo-compare] [data-repo-pull-diff-file="README.md"]'))

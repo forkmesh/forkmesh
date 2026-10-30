@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.composer.PromptDraftStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -84,6 +85,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.forkmesh.nativeapp.control.PromptDeck
 
 internal class AgentScreen(
     private val record: LocalRepoRecord,
@@ -100,6 +102,7 @@ internal class AgentScreen(
     private var prBusy by mutableStateOf(false)
     private var moving by mutableStateOf(false)
     private var movedBranch by mutableStateOf<String?>(null)
+    private var sent by mutableIntStateOf(0)
     private val status = FmStatus()
     private var autoStarted = false
     private val prOpenedFor = HashSet<String>()
@@ -150,6 +153,7 @@ internal class AgentScreen(
                 return
             }
             val task = sessions.submit(record.name, text, images = images)
+            sent++
             prompt = ""
             attachments = emptyList()
             if (task == null) return
@@ -216,6 +220,10 @@ internal class AgentScreen(
                         }))
                     }
                 }
+                AgentPromptDeck(
+                    remember(events.size) { PromptDeck.said(events.filterIsInstance<AgentUserMessage>().map { it.text }) },
+                    Modifier.padding(horizontal = FmSpace.x4).padding(top = FmSpace.x2),
+                )
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
                         loading -> Text("Loading session…", Modifier.padding(FmSpace.x5), style = Fm.text.bodyMedium.copy(color = c.textSecondary))
@@ -256,7 +264,7 @@ internal class AgentScreen(
         val name = desktop.desktopName
         val body = (if (sessions.isRunning) "The agent stops here. " else "") +
             "Its work is committed and pushed, and the desktop picks it up on the same branch with the conversation so far."
-        if (!messenger.showConfirmDialog("Continue on $name?", body, confirmLabel = "Continue on desktop")) return
+        if (!messenger.confirmAction("Continue on $name?", "Continue on desktop", body, destructive = false)) return
         moving = true
         error = null
         status.clear()
@@ -351,14 +359,16 @@ internal class AgentScreen(
     @Composable
     private fun Transcript(events: List<AgentEvent>) {
         val list = rememberLazyListState()
-        LaunchedEffect(events.size) { if (events.isNotEmpty()) list.animateScrollToItem(events.size - 1) }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            state = list,
-            contentPadding = PaddingValues(FmSpace.x4),
-            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
-        ) {
-            itemsIndexed(events) { _, event -> EventTile(event) }
+        TranscriptFollowBox(list, tail = events.size, modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-transcript") {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = list,
+                contentPadding = PaddingValues(FmSpace.x4),
+                verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+            ) {
+                itemsIndexed(events) { _, event -> EventTile(event) }
+                transcriptEnd()
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "entry.py"
 sys.path.insert(0, str(ROOT / "src"))
 
+import instance_features  # noqa: E402
 import mail_providers  # noqa: E402
 
 
@@ -25,6 +26,7 @@ def _load(extra):
     namespace = {
         "mail_providers": mail_providers,
         "instance_name": lambda _env: "ForkMesh",
+        "instance_features": instance_features,
         "_instance_brand_email": lambda _env, text, html: (text, html),
     }
     namespace.update(extra)
@@ -48,6 +50,8 @@ def _run(env, to_email, smtp=True, details=None):
         return "3 of 150 sent today (UTC)"
 
     class Smtp:
+        SENDER = "founders@forkmesh.com"
+
         @staticmethod
         def enabled(_env):
             return smtp
@@ -79,7 +83,7 @@ def test_a_skipped_send_logs_sender_transport_body_and_budget():
     details = []
     _run(_Env(), "jett@next.forkmesh.com", details=details)
     assert details == [{
-        "sender": "no-reply@forkmesh.com", "via": "postfix", "node": "n1",
+        "sender": "founders@forkmesh.com", "via": "postfix", "node": "n1",
         "body": "hi", "body_html": None,
         "budget": "3 of 150 sent today (UTC)"}]
 
@@ -107,6 +111,8 @@ def test_local_mail_sends_skip_the_daily_budget_and_the_mailtrap_hold():
         return True
 
     class Smtp:
+        SENDER = "founders@forkmesh.com"
+
         @staticmethod
         def enabled(_env):
             return True

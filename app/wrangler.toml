@@ -114,8 +114,6 @@ run_worker_first = [
   "!/dashboard/repos/new/",
   "!/dashboard/network",
   "!/dashboard/network/",
-  "!/dashboard/chat",
-  "!/dashboard/chat/",
   "!/dashboard/ads",
   "!/dashboard/ads/",
   "!/dashboard/challenges",
@@ -186,7 +184,7 @@ RUNNER_POOL_TARGET_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
 HOSTED_GIT_CORE_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
 HOSTED_REPO_MAX_PER_ACCOUNT = "10"
 HOSTED_REPO_MAX_BYTES = "209715200"
-HOSTED_IMPORT_HOSTS = "github.com,gitlab.com,codeberg.org"
+HOSTED_IMPORT_HOSTS = "github.com,gitlab.com,codeberg.org,gitea.com"
 NODE_NAME = "forkmesh-mainnode"
 MAIL_LOG_OWNER = "jett"
 MAIL_TRANSPORT = "smtp"
@@ -197,6 +195,7 @@ API_ORIGIN = "https://app.forkmesh.com"
 APP_ORIGIN = "https://app.forkmesh.com"
 WWW_ORIGIN = "https://forkmesh.com"
 WORLD_ORIGIN = "https://world.forkmesh.com"
+WORLD_MESH_HEX_SLOTS = "0"
 CORS_ALLOWED_ORIGINS = "https://forkmesh.com,https://app.forkmesh.com,https://world.forkmesh.com"
 DISCORD_OAUTH_REDIRECT_URI = "https://app.forkmesh.com/api/integrations/discord/callback"
 # The bug channel this deployment watches, and the repository new reports are

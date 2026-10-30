@@ -1,4 +1,4 @@
-# Native apps (iOS and Android)
+# Native apps (iOS, watchOS and Android)
 
 `native/ios` (Swift + SwiftUI) and `native/android` (Kotlin + Jetpack Compose)
 are the ForkMesh phone apps. Each signs in to a ForkMesh instance, browses and
@@ -15,6 +15,12 @@ desktop cannot tell them apart.
   local builds default to `com.forkmesh.nativeapp`, which installs beside it
   ([ANDROID.md](ANDROID.md), section 4).
 
+- The Apple Watch app (`native/ios/ForkMeshWatch`) ships inside the iOS app
+  and works through the iPhone over WatchConnectivity; a standalone mode is
+  phase 2 ([PARITY.md](PARITY.md), section 4).
+
+User guide for all the apps: [`www/docs/apps.md`](../../www/docs/apps.md).
+
 Topic pages:
 
 | Page | Covers |
@@ -29,8 +35,10 @@ Topic pages:
 | [DIFF_REVIEW.md](DIFF_REVIEW.md) | The diff review stream |
 | [COMMIT_GRAPH.md](COMMIT_GRAPH.md) | The Commits screen's Graph tab |
 | [GENIE.md](GENIE.md) | The on-device voice assistant |
+| [opus.md](opus.md) | Opus built from a pinned Xiph commit with DRED, deep PLC and OSCE (`native/opus/`): the pin and model weights, `build.sh` for iOS, Android and the host, options, sizes, output layout, smoke tests and how the call engines link it |
 | [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md) | Sounds, listening, ducking and Bluetooth held back while another app's call is up |
 | [DESKTOP_PINGS.md](DESKTOP_PINGS.md), [PING_QUICK_FIXES.md](PING_QUICK_FIXES.md), [PUSH_ICONS.md](PUSH_ICONS.md) | Desktop pings, one-tap fixes, banner icons |
+| [PERMISSIONS.md](PERMISSIONS.md) | The permissions intro screen and when each system prompt comes up |
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
@@ -57,7 +65,7 @@ Siri user guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md).
 | `native/ios/docs/` | One API note per core module. |
 | `native/android/core/` | Pure Kotlin/JVM (no `android.*`), tested on the host JVM. |
 | `native/android/app/` | Android + Compose: platform, theme, navigation, kit, shell, one package per feature area. |
-| `native/changelog/notes.json` | Hand-written What's new notes per platform and build. |
+| `changelog/changelog.json` | The ForkMesh changelog the apps' What's new and forkmesh.com/changelog show ([../changelog.md](../changelog.md)). |
 
 Shortcuts (`.forkmesh/shortcuts/`):
 
@@ -68,6 +76,18 @@ Shortcuts (`.forkmesh/shortcuts/`):
 | `deploy-native-ios-ad-hoc-mac.sh`, `deploy-native-ios-app-store-mac.sh`, `build-desktop-macos-mac.sh` | The same builds on the office Mac ([MAC_BUILD.md](MAC_BUILD.md)) |
 | `ios-app-store-status.sh`, `testflight-feedback-to-tasks.sh` | Read-only App Store Connect report; TestFlight feedback to tasks ([IOS_RELEASE.md](IOS_RELEASE.md)) |
 | `task-mobile-app-store-deploy.sh`, `task-mobile-play-store-deploy.sh` | Create a signed reminder task with the version, tag, `main` head and the release steps for the App Store or the Play Store |
+
+The reminder goes to the release maintainer named by `FORKMESH_RELEASE_ASSIGNEE`
+or, when that is unset, by the one line in `release-assignee` in the core config
+folder (`~/projects/forkmesh/data/core/config/release-assignee`). The account is
+kept out of the public repository. With neither set the task is created
+unassigned and the shortcut says so; it used to stop with an error, which is all
+a shortcut run from the phone or desktop showed, because those runs do not
+export the variable.
+
+The Play Store path exists only as that reminder: no tool uploads to Google
+Play, and Android releases ship as the signed
+`forkmesh-android-universal.apk` in the release manifest.
 
 ## Architecture
 
@@ -89,7 +109,11 @@ Shortcuts (`.forkmesh/shortcuts/`):
   (session, node key, owner key, vault copy, local repositories, agent records,
   settings), usually attached to one ForkMesh instance whose origin is its id.
   The original project owns the unprefixed namespace; every other project uses
-  `p/<projectId>/`. A project made from a name alone has `hasInstance` false, a
+  `p/<projectId>/`. An instance belongs to one project (2026-10-21): adding or
+  attaching an instance another project already uses (compared by
+  `instanceId`, the instance's origin) opens that project or is
+  refused with "That instance already belongs to the project …", on iOS and
+  Android alike. A project made from a name alone has `hasInstance` false, a
   `local-<slug>-<random>` id and no server URL; it works on the device alone,
   and choosing an instance is offered, never required. A project row may name a
   `logo` file. The instance check also reads `GET /api/instance`: its `name`
@@ -105,6 +129,21 @@ Shortcuts (`.forkmesh/shortcuts/`):
   with no logo keeps the letter icon. Phones cannot draw SVG, which is why the
   brand tool keeps a PNG copy of an SVG logo (see
   [INSTANCES.md](../INSTANCES.md#white-label)).
+- **New project sheet (iOS, 2026-10-20).** Once "Check instance" passes, the
+  sheet fetches the instance's logo straight away and shows it as the project
+  image, so the user sees it before creating the project and can still change
+  or remove it. The candidates come from `AddProjectModel.logoCandidates`, in
+  order: the `logo` from `/api/instance`, the instance's logo in the ForkMesh
+  directory, then the two favicons (left out for a branded instance). A logo
+  the user picked is never replaced; one taken from the instance goes when the
+  host changes. Under the form, "Instances on ForkMesh" lists ForkMesh itself
+  plus every `listed` https entry of
+  `GET https://app.forkmesh.com/api/start/instances` (`FMChat/Relay/InstanceDirectory.swift`;
+  directory logos are only taken when they match the
+  `/api/start/instances/<id>/logo?v=<n>` shape). Its Add button fills the
+  instance in, checks it, loads its logo and creates the project in one tap; an
+  instance that is already a project shows "Added". If the directory cannot
+  be read, only ForkMesh is listed.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.
@@ -174,6 +213,21 @@ Shortcuts (`.forkmesh/shortcuts/`):
   to it until a later read succeeds, a file that does not parse is renamed
   `*.unreadable-<ms>` instead of being replaced, and a file from a newer or
   older build (`v` other than 1) is read field by field instead of discarded.
+- **Sign-ins survive a phone restart (iOS, 2026-10-25).** After a reboot iOS
+  wakes the app in the background (PushKit re-registers, a call push arrives)
+  before the user has unlocked the phone once. Until that first unlock the
+  Keychain answers `errSecInteractionNotAllowed` and UserDefaults reads empty.
+  So the launch saw a phone with no preferences, took it for a fresh install
+  and tried to erase the Keychain (`FreshInstallReset`). It also rewrote the
+  instance list as the built-in relay alone (`RelayDirectory.restore`) and let
+  the Keychain fall back to memory for the rest of the process
+  (`FallbackSecureStore`). When the user opened the app later it showed the
+  sign-in screen and had forgotten every instance. `AppBoot.start` now waits
+  until protected data is available or the Keychain stops answering locked
+  (`KeychainBackend.isLockedUntilFirstUnlock`). Only then does it build any
+  service. `FreshInstallReset` also refuses to erase anything while the
+  Keychain is locked. Incoming calls still ring meanwhile, because
+  `DirectCallKit` reports them to CallKit without the services.
 
 ## Protocols and interfaces
 
@@ -182,8 +236,10 @@ Shortcuts (`.forkmesh/shortcuts/`):
   [`www/docs/mobile/mobile-node-contract.md`](../../www/docs/mobile/mobile-node-contract.md);
   agents from the phone:
   [`www/docs/mobile/mobile-agent-access.md`](../../www/docs/mobile/mobile-agent-access.md).
-- Push: `app/src/apns.py` pushes the `pings`, `direct-messages`, chat and
-  `code-push` topics to iOS; every payload carries `origin` so a tap routes to
+- Push: `app/src/apns.py` pushes the `pings`, `direct-messages`, chat,
+  `code-push` and `calls` (an incoming call, sent as a PushKit VoIP push
+  when the phone registered a VoIP token, see
+  [chat-direct-calls.md](../app/chat-direct-calls.md)) topics to iOS; every payload carries `origin` so a tap routes to
   the right project. Android has no push transport (no FCM, by design): a
   foreground service keeps the account event socket open
   ([ANDROID.md](ANDROID.md), section 6). A desktop's pings reach its linked
@@ -196,6 +252,27 @@ Shortcuts (`.forkmesh/shortcuts/`):
   meeting; a phone outside that account needs a six-digit pairing code approved
   on the LAN. Frames are the twin of `desktop/src/LocalControl.{h,cpp}`, pinned
   by shared test vectors.
+- Owner-only families (hosts, agents, merge queue, ...) compare the account
+  name the desktop holds for the phone with its own account. A phone approved
+  by code keeps the name it had when approved, so a phone paired as a guest
+  used to be refused with "Only the account that owns this desktop can manage
+  its hosts" even after signing in to the owner's account. When a code-approved
+  phone now names an account its saved record lacks, the desktop asks
+  `devices/check`; only when the account lists the phone's key is the new name
+  recorded (the approval stays `code`, so signing out never forgets it). A
+  phone the account does not list keeps its old name, so a code-approved phone
+  cannot claim the owner's name on its own. The same holds at pairing time
+  (2026-10-28): the name a phone sends with its first hello is only a claim,
+  so the desktop's prompt reads "Guest phone (says it is alice)", and a code
+  approval drops a claimed name equal to the desktop's owner. Owner-only
+  families (and `hosts.*`) also require the device to be account-approved or
+  to have had its name confirmed by `devices/check` (`userConfirmed` in
+  `paired-devices.json`, `LocalControlServer::userVerified`). A record saved
+  before this change that names the owner without that confirmation is checked
+  with the account on its next connect and stays a guest until the account
+  lists its key. A guest still starts, steers and stops agents and sends
+  files, as the pairing prompt says; the phone shows the existing "Only the
+  account that owns this desktop ..." message for owner-only screens.
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
   desktop: [`native/ios/docs/FMCrypto.md`](../../native/ios/docs/FMCrypto.md).
 
@@ -269,7 +346,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - **Diagnostics.** "Send diagnostics" (the composer's "+" menu and
   `/diagnostics`) puts a performance report into the prompt; it trims its
   lowest-ranked sections to fit and lists crashes as the attributed thread's
-  top frames. The prompt sends the agent to
+  top frames. `PerformanceReport.text` runs `DiagnosticsBundle.scrub` on every
+  report (tokens, emails, message text, conversation, channel and room names),
+  so no path hands an agent an unscrubbed one. The prompt sends the agent to
   [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md) (how to read the bundle,
   every earlier check) and asks it to add its own check there.
 
@@ -277,6 +356,18 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 - Keys live in the Keychain (`native/ios/ForkMesh/Platform/KeychainStore.swift`)
   and the Android Keystore (`app/platform/SecureStore`).
+- iOS Keychain groups (2026-10-22, `FMAccount/KeychainPlacement.swift`): the
+  app lists `…forkmesh.private`, `…forkmesh.push` and `…forkmesh`, in that
+  order. The node key, owner key, sessions, vault copy and every other
+  secure-store item live in `private`, which no extension lists. The
+  notification service extension lists only `push`: it holds the push
+  session items, the room keys, the verified-names map and the chat keyring
+  (`chat/e2ee/…`: identity, prekeys, trust, ratchets), which it needs to open
+  sealed chat pushes. Share, Widgets and AutoFill keep `…forkmesh` for the
+  share drop, surface snapshot and AutoFill cache. Before, every item sat in
+  `…forkmesh` and every extension listed it, so any extension could read the
+  node key and sessions. `KeychainStore` moves old items out of `…forkmesh`
+  once per launch (add to the new group, then delete the old copy).
 - Ed25519 is never delegated to CryptoKit (randomised signatures would break
   the pinned deterministic vectors).
 - The iOS app shows no prices, plans or paid features and moves no money
@@ -339,7 +430,18 @@ avatar movement but does not silently change that saved feedback preference.
   what Home reads on each resume.
 - A scene-phase refresh runs on every inactive-to-active change (Control
   Center, Notification Center, a system alert), not only after the
-  background; gate it on age (`AccountPackagesStore.refreshIfStale`).
+  background; gate it on age (`AccountPackagesStore.refreshIfStale`) or on
+  a real return (`AppReturnGate`, used by chat).
+- Read and decode stored files off the main actor at launch, and restore a
+  list in one write: everything in `AppServices.start` after the identity
+  load runs on the main thread in one block. The chat history (megabytes
+  of messages) was read and decoded there, then put back one message at a
+  time, each insert copying its conversation and each direct message
+  rescheduling a save; `ChatHub.attachHistory(inBackground:)` and the
+  batched `restore`s replace that. Name every launch step
+  (`startup.<step>`) so the report says which one is slow.
+- Parse message text once per text, not once per redraw: `ChatLinkText` and
+  the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.
 - Do not let a ring cancel a load in flight, whatever started it; mark it and
   run one more load afterwards, or none when the load's reads had not gone out

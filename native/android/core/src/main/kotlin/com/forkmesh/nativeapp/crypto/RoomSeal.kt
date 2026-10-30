@@ -127,7 +127,7 @@ internal class RoomCounters private constructor(private val room: String, privat
         val target = store ?: return
         try {
             reserved = target.read(counterKey)?.trim()?.toLongOrNull() ?: 0L
-            next = reserved + 1
+            next = maxOf(reserved, ChatDeviceKeys.counterFloor(target)) + 1
         } catch (_: Exception) {
         }
         try {
@@ -184,6 +184,13 @@ class RoomSeal private constructor(
     var participants: Collection<String>? = null
 
     @Volatile
+    var nodeKey: ChatNodeKey? = null
+        set(value) {
+            field = value
+            if (value != null) node = value.node
+        }
+
+    @Volatile
     private var advertisedGeneration = -1
 
     val keyId: String get() = keys.kid
@@ -194,7 +201,8 @@ class RoomSeal private constructor(
 
     fun setIdentity(account: String, sender: String) {
         if (ChatV3.validAcct(account)) acct = account
-        if (ChatV3.validAcct(sender)) node = sender
+        val bound = nodeKey
+        if (bound != null) node = bound.node else if (ChatV3.validAcct(sender)) node = sender
     }
 
     val peerKeyIds: List<String>
@@ -208,7 +216,7 @@ class RoomSeal private constructor(
         val idk = keys.idkText
         if (ChatV3.validAcct(acct) && ChatV3.validAcct(node)) trust.ensureOwn(keys.kid, idk, acct, node, spk, now)
         val signature = keys.sign(ChatV3.bundleMessage(room, keys.kid, idk, acct, node, spk))
-        return linkedMapOf(
+        val frame = linkedMapOf<String, Any?>(
             "type" to ChatV3.KEY_TYPE,
             "v" to ChatV3.VERSION,
             "kid" to keys.kid,
@@ -218,6 +226,11 @@ class RoomSeal private constructor(
             "spk" to spk,
             "sig" to ChatV3.b64u(signature),
         )
+        val bound = nodeKey
+        if (policy == SealPolicy.OPEN && bound != null && bound.node == node) {
+            frame["nsig"] = ChatV3.b64u(bound.sign(ChatV3.nodeMessage(room, keys.kid, idk, acct)))
+        }
+        return frame
     }
 
     fun needsAdvertisement(): Boolean = advertisedGeneration != keys.generation
@@ -243,6 +256,7 @@ class RoomSeal private constructor(
 
     fun acceptKeyFrame(frame: Map<String, Any?>, now: Long = clock()): BundleOutcome? {
         if (!ChatV3.verifyBundle(frame, room, now)) return null
+        if (policy == SealPolicy.OPEN && !ChatV3.verifyNodeBinding(frame, room)) return null
         if (frame["kid"] == keys.kid && frame["idk"] != keys.idkText) return null
         return trust.accept(frame, policy, keys.kid, now, participants)
     }
@@ -804,6 +818,7 @@ class RoomSeal private constructor(
             secureStore: SecretStore,
             clock: () -> Long = System::currentTimeMillis,
             node: String = acct,
+            nodeKey: ChatNodeKey? = null,
         ): RoomSeal {
             val room = dartTrim(roomName)
             if (room.isEmpty()) throw IllegalArgumentException("A chat room is required.")
@@ -814,13 +829,13 @@ class RoomSeal private constructor(
                 policy,
                 acct,
                 node,
-                ChatDeviceKeys.forStore(secureStore),
+                ChatDeviceKeys.forStore(secureStore, clock()),
                 ChatTrust.forStore(secureStore, trustScope),
                 RoomCounters.forStore(secureStore, room),
                 RoomRatchets.forStore(secureStore, room),
                 secureStore,
                 clock,
-            )
+            ).also { if (nodeKey != null) it.nodeKey = nodeKey }
         }
 
         fun existing(
@@ -860,13 +875,14 @@ class RoomSeal private constructor(
             clock: () -> Long = System::currentTimeMillis,
             node: String = acct,
             version: Long = if (policy == SealPolicy.STRICT) ChatV4.VERSION else ChatV3.VERSION,
+            nodeKey: ChatNodeKey? = null,
         ): RoomSeal {
             val room = dartTrim(roomName)
             if (room.isEmpty()) throw IllegalArgumentException("A chat room is required.")
             return RoomSeal(
                 room, trust.scope, policy, acct, node, keys, trust, RoomCounters.forStore(null, room), RoomRatchets.forStore(null, room), null, clock,
                 version == ChatV4.VERSION,
-            )
+            ).also { if (nodeKey != null) it.nodeKey = nodeKey }
         }
 
         fun isKeyFrame(frame: Map<String, Any?>): Boolean =

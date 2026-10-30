@@ -27,3 +27,115 @@ QToolButton#settingsSectionToggle:hover { background-color: @surfaceRaised; }
 #suggestedAppStatusInProgress {
     color: @accentFg; background: @accentSubtle; border: 1px solid @accentSubtle;
 }
+
+#settingsSidebar { background: transparent; border: none; border-right: 1px solid @border; }
+#settingsSearchBand { background: transparent; }
+#settingsSidebarRule { background-color: @border; }
+QLineEdit#settingsSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 30px; max-height: 30px; padding: 0px 6px; font-size: 13px;
+}
+QLineEdit#settingsSearch:focus { border-color: @accent; }
+QListWidget#settingsNav {
+    background: transparent; border: none; padding: 8px;
+}
+#settingsMainColumn, #settingsFooterSlot { background: transparent; }
+#settingsSectionsContent QLabel#settingsSectionTitle {
+    color: @fg; font-size: 16px; font-weight: 600; background: transparent;
+    padding: 1px 6px; border-radius: 6px;
+}
+#settingsSectionsContent QLabel#settingsSectionIcon { background: transparent; }
+#settingsSectionsContent QToolButton#settingsSectionToggle { border-radius: 6px; }
+#settingsSectionsContent #settingsNoMatches { color: @fgMuted; font-size: 13px; padding: 24px 0px; }
+
+#settingsSectionsContent QLabel#sectionLabel {
+    color: @fgMuted; font-size: 11px; font-weight: 500; letter-spacing: 0.6px;
+    padding-top: 0px; background: transparent;
+}
+QWidget[sectionCard="true"][settingsGroupCard="true"] { border: none; background: transparent; }
+QWidget[settingsGroupCard="true"] > QLabel#statusLine,
+QWidget[settingsGroupCard="true"] > QLabel#modeHint {
+    color: @fgMuted; font-size: 12px; padding-left: 0px; background: transparent;
+}
+
+QFrame#settingsGroupBox {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#settingsGroupBox[empty="true"] { background: transparent; border: none; }
+QFrame[nextGroupBox="true"] .QWidget, QFrame[nextGroupBox="true"] QLabel,
+QFrame[nextGroupBox="true"] QCheckBox, QFrame[nextGroupBox="true"] QRadioButton {
+    background: transparent;
+}
+QWidget#settingsRowDivider { background-color: @border; }
+QFrame[nextGroupBox="true"] QCheckBox { color: @fg; font-size: 13px; }
+QFrame[nextGroupBox="true"] QLabel#statusLine, QFrame[nextGroupBox="true"] QLabel#modeHint {
+    color: @fgMuted; font-size: 12px; padding-left: 0px;
+}
+QWidget[sectionCard="true"][nextTableRow="true"] { border: none; background: transparent; }
+#settingsSectionsContent QFrame[nextGroupBox="true"] QLabel#sectionLabel {
+    color: @fg; font-size: 13px; font-weight: 500; letter-spacing: 0px;
+}
+QWidget[nextTableRow="true"] QPushButton {
+    min-height: 28px; max-height: 28px; padding: 0px 10px; font-size: 12px; border-radius: 8px;
+}
+QWidget[nextTableRow="true"] QPushButton#ghostButton {
+    background-color: @surface; border: 1px solid @border; color: @fg;
+}
+QWidget[nextTableRow="true"] QPushButton#ghostButton:hover { background-color: @surfaceRaised; }
+QWidget[nextTableRow="true"] #suggestedAppStatusFound,
+QWidget[nextTableRow="true"] #suggestedAppStatusMissing,
+QWidget[nextTableRow="true"] #suggestedAppStatusInProgress,
+QWidget[nextTableRow="true"] #suggestedAppStatusProblem {
+    padding: 1px 6px; font-size: 11px;
+}
+
+#settingsFooterSlot QLabel#modeHint { padding: 6px 24px; color: @fgMuted; font-size: 12px; }
+#settingsFooterBar { background-color: @bg; border: none; border-top: 1px solid @border; }
+#settingsFooterBar QPushButton {
+    min-height: 28px; max-height: 28px; padding: 0px 10px; font-size: 12px; border-radius: 8px;
+}
+#settingsFooterBar QPushButton#ghostButton {
+    background-color: @surface; border: 1px solid @border; color: @fg;
+}
+#settingsFooterBar QPushButton#ghostButton:hover { background-color: @surfaceRaised; border-color: @borderStrong; }
+#settingsFooterBar QPushButton#dangerButton {
+    background-color: @surface; border: 1px solid @border; color: @danger;
+}
+#settingsFooterBar QPushButton#dangerButton:hover {
+    background-color: @danger; border-color: @danger; color: @onAccent;
+}
+
+#settingsSectionsContent #nodeProfileContent { background: transparent; }
+#settingsSectionsContent #nodeProfileContent QLabel#profileName {
+    color: @fg; font-size: 15px; font-weight: 600;
+}
+#settingsSectionsContent #nodeProfileContent QLabel#profileCard,
+#settingsSectionsContent #nodeProfileContent QLabel#statTile,
+#settingsSectionsContent #nodeProfileContent QLabel#profileMono,
+#settingsSectionsContent #nodeProfileContent #profileUserCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px; color: @fg;
+}
+#settingsSectionsContent #nodeProfileContent QLabel#profileCard { padding: 12px 16px; }
+#settingsSectionsContent #nodeProfileContent QLabel#statTile { padding: 12px 8px; }
+#settingsSectionsContent #nodeProfileContent QLabel#profileMono { padding: 10px 16px; color: @fgMuted; }
+#settingsSectionsContent #nodeProfileContent #profileUserCard QLabel { background: transparent; }
+#settingsSectionsContent #nodeProfileContent QPushButton#profileActionButton {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; font-weight: 500;
+}
+#settingsSectionsContent #nodeProfileContent QPushButton#profileActionButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong;
+}
+#settingsSectionsContent #nodeProfileContent QListWidget#profileNodeList::item {
+    background-color: @bg; border: 1px solid @border; border-radius: 8px;
+}
+
+#settingsPackagePlaces { background: transparent; }
+QFrame[nextGroupBox="true"] QLabel#settingsPlacesCaption { color: @fgSubtle; font-size: 12px; }
+QFrame[nextGroupBox="true"] QLabel#settingsPlacesName { color: @fg; font-size: 13px; }
+
+#settingsSectionsContent QWidget QLabel#sectionLabel { padding: 1px 6px; border-radius: 4px; }
+#settingsSectionsContent QLabel#settingsSectionTitle[settingsLit="true"],
+#settingsSectionsContent QWidget QLabel#sectionLabel[settingsLit="true"] {
+    color: @accentFg; background-color: @accentSubtle;
+}

@@ -31,6 +31,8 @@ FANOUT_UNIT = "forkmesh-mirror-fanout.service"
 BRANCH_DELETE_UNIT = "forkmesh-mirror-branch-deletes.service"
 SYNC_REFSPECS = ("refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*")
 GATEWAY_REFSPECS = ("refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*")
+GITHUB_REFSPECS = ("refs/heads/main:refs/heads/main", "refs/tags/*:refs/tags/*")
+GITHUB_HOST = "github.com"
 PROTECTED_REFS = ("refs/heads/main", "refs/heads/forkmesh/pulls")
 PUSH_SIGNATURE_PREFIX = "forkmesh-git-push-v1"
 TAG_MOVE_PREFIX = "forkmesh-tag-move-v1"
@@ -46,6 +48,8 @@ BRANCH_DELETE_RETRYABLE = ("merge_status_pending", "merge_node_unavailable")
 UNDELETABLE_BRANCHES = ("main", "master", "HEAD")
 CORES_MAIN_REF = "refs/remotes/forkmesh-cores/main"
 CORES_MERGE_MESSAGE = "Merge pushes to main from the cores"
+LEDGER_REF = "refs/heads/forkmesh/pulls"
+LEDGER_GRACE_SECONDS = 600
 FLAGSHIP_REPOSITORY = "forkmesh/forkmesh"
 EMPTY_OBJECT = re.compile(r"object file \S*/objects/([0-9a-f]{2})/([0-9a-f]{38,62}) is empty")
 MIN_PASS_SPACING_SECONDS = 2
@@ -798,6 +802,57 @@ def push_gateway(bare: Path, gateway: dict, run=subprocess.run, opener=None,
     return result
 
 
+def read_github_mirrors(path: Path) -> list[dict]:
+    mirrors = []
+    try:
+        text = path.read_text("utf-8")
+    except OSError:
+        return mirrors
+    for raw in text.splitlines():
+        fields = raw.split()
+        if len(fields) < 2 or fields[0].startswith("#"):
+            continue
+        parsed = urlsplit(fields[1])
+        if parsed.scheme != "https" or parsed.hostname != GITHUB_HOST:
+            continue
+        key = (Path(os.path.expanduser(fields[2])) if len(fields) > 2
+               else path.parent / "github-token")
+        mirrors.append({"name": fields[0], "url": fields[1], "key": key})
+    return mirrors
+
+
+def push_github(bare: Path, mirror: dict, run=subprocess.run) -> dict:
+    result = {"name": mirror["name"], "url": mirror["url"], "ok": False,
+              "updated": [], "rejected": [], "error": ""}
+    try:
+        token = mirror["key"].read_text("utf-8").strip()
+    except OSError as error:
+        result["error"] = "token: %s" % error
+        return result
+    if not token or any(char.isspace() for char in token):
+        result["error"] = "token: %s is empty or malformed" % mirror["key"]
+        return result
+    credential = base64.b64encode(("x-access-token:" + token).encode()).decode()
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true",
+               GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.extraHeader",
+               GIT_CONFIG_VALUE_0="Authorization: Basic " + credential)
+    command = ["git", "--git-dir", str(bare), "-c", "credential.helper=",
+               "push", "--porcelain", mirror["url"], *GITHUB_REFSPECS]
+    try:
+        completed = run(command, capture_output=True, text=True, env=env,
+                        timeout=GATEWAY_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired:
+        result["error"] = "push timed out after %ds" % GATEWAY_TIMEOUT_SECONDS
+        return result
+    parsed = parse_push_porcelain(completed.stdout)
+    ok = completed.returncode == 0 and not parsed["rejected"] and not parsed["other"]
+    result.update({
+        "ok": ok, "updated": parsed["updated"], "rejected": parsed["rejected"],
+        "error": "" if ok else (completed.stderr or "").replace(token, "***").strip()[-600:],
+    })
+    return result
+
+
 def _checkout_git(source, args, timeout=900):
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true")
     return git(args, cwd=source, env=env, timeout=timeout)
@@ -817,6 +872,11 @@ def main_worktree(source: Path) -> str:
 def cores_hold(source: Path, pushed: str, cores: str) -> bool:
     return not pushed or bool(cores) and _checkout_git(
         source, ["merge-base", "--is-ancestor", pushed, cores]).returncode == 0
+
+
+def cores_lag(source: Path, pushed: str, outcome: dict) -> bool:
+    return outcome.get("reason") == "already contained" and not cores_hold(
+        source, pushed, outcome.get("cores", ""))
 
 
 def cores_ref_contained(source: Path, fetch_url: str, ref: str,
@@ -874,6 +934,9 @@ def absorb_cores(source: Path, fetch_url: str) -> dict:
         return {"absorbed": False, "reason": "main is missing"}
     if _checkout_git(source, ["merge-base", "--is-ancestor", cores, local]).returncode == 0:
         return {"absorbed": False, "reason": "already contained", "cores": cores}
+    agreed, why = cores_agreement(source, cores)
+    if not agreed:
+        return {"absorbed": False, "unconfirmed": True, "cores": cores, "reason": why}
     worktree = main_worktree(source)
     if not worktree:
         return absorb_without_worktree(source, local, cores)
@@ -909,6 +972,19 @@ def cores_main(url: str) -> str:
         if ref.strip() == "refs/heads/main" and re.fullmatch(r"[0-9a-f]{40,64}", oid):
             return oid
     return ""
+
+
+def cores_agreement(source: Path, oid: str) -> tuple:
+    cores = core_read_urls(source)
+    if not cores:
+        return True, ""
+    mains = {core["name"]: cores_main(core["url"]) for core in cores}
+    reachable = [name for name, main in mains.items() if main]
+    holding = [name for name in reachable if mains[name] == oid]
+    if len(holding) >= 2 or (holding and len(holding) == len(reachable)):
+        return True, ""
+    return False, "only %d of %d reachable cores serve main %s; waiting for a second core" % (
+        len(holding), len(reachable), oid[:12])
 
 
 def checkout_contains(source: Path, oid: str) -> bool:
@@ -948,7 +1024,9 @@ def take_core_main(paths, core: dict, oid: str, log=print) -> bool:
         log("%s: took main %s into the checkout (%s)" % (
             core["name"], oid[:12], outcome["mode"]))
         return True
-    if outcome.get("reason") != "already contained":
+    if outcome.get("unconfirmed"):
+        log("%s: not taking main %s: %s" % (core["name"], oid[:12], outcome["reason"]))
+    elif outcome.get("reason") != "already contained":
         log("%s DIVERGED: main %s is not in the checkout; %s" % (
             core["name"], oid[:12], outcome.get("reason")))
     return False
@@ -960,6 +1038,11 @@ def watch_cores(paths, run=subprocess.run, log=print) -> int:
     for core in core_read_urls(paths.source):
         oid = cores_main(core["url"])
         if not oid or checkout_contains(paths.source, oid) or seen.get(core["name"]) == oid:
+            continue
+        agreed, why = cores_agreement(paths.source, oid)
+        if not agreed:
+            log("%s: main moved to %s, which the checkout lacks; not taking it: %s" % (
+                core["name"], oid[:12], why))
             continue
         log("%s: main moved to %s, which the checkout lacks; taking it" % (
             core["name"], oid[:12]))
@@ -1027,7 +1110,8 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
             if attempt > 0 and digest == status.get("digest"):
                 break
             if attempt == 0 and if_changed and digest == status.get("digest") \
-                    and status.get("ok"):
+                    and status.get("ok") \
+                    and all(item.get("ok") for item in status.get("github") or []):
                 log("up to date: %s" % digest[:12])
                 break
             wait = MIN_PASS_SPACING_SECONDS - (clock() - float(status.get("startedAt", 0)))
@@ -1040,11 +1124,13 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                             paths.fanout_gateways, paths.identity_key)]
             for gateway in gateways:
                 if "refs/heads/main" in gateway.get("diverged", []):
+                    pushed = rev(paths.bare_mirror, "refs/heads/main")
                     outcome = absorb_cores(paths.source, gateway["url"])
+                    if cores_lag(paths.source, pushed, outcome):
+                        sleep(GATEWAY_RETRY_SECONDS)
+                        outcome = absorb_cores(paths.source, gateway["url"])
                     gateway["absorb"] = outcome
-                    if outcome.get("reason") == "already contained" and not cores_hold(
-                            paths.source, rev(paths.bare_mirror, "refs/heads/main"),
-                            outcome.get("cores", "")):
+                    if cores_lag(paths.source, pushed, outcome):
                         outcome.update(behind=True, reason="the cores are behind and "
                                        "refused main: %s" % refusal(gateway, "refs/heads/main"))
                     if outcome.get("reason") == "already contained":
@@ -1057,8 +1143,13 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                             if item.get("ref") != "refs/heads/main"]
                 for ref in [ref for ref in gateway.get("diverged", [])
                             if ref != "refs/heads/main"]:
-                    if cores_ref_contained(paths.source, gateway["url"], ref,
-                                           rev(paths.bare_mirror, ref)):
+                    pushed = rev(paths.bare_mirror, ref)
+                    contained = cores_ref_contained(paths.source, gateway["url"], ref, pushed)
+                    if not contained:
+                        sleep(GATEWAY_RETRY_SECONDS)
+                        contained = cores_ref_contained(
+                            paths.source, gateway["url"], ref, pushed)
+                    if contained:
                         gateway["outrun"] = True
                         gateway.setdefault("outrunRefs", []).append(ref)
                         gateway["diverged"] = [
@@ -1109,12 +1200,21 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                     log("gateway %s DIVERGED: %s rejected as non-fast-forward; the "
                         "cores hold commits the source lacks" % (
                             gateway["name"], ", ".join(gateway["diverged"])))
+            github = [push_github(paths.bare_mirror, mirror, run=run)
+                      for mirror in read_github_mirrors(paths.fanout_github)]
+            for mirror in github:
+                log("github %s: %s, %d ref(s) updated, %d rejected%s" % (
+                    mirror["name"], "ok" if mirror["ok"] else "FAILED",
+                    len(mirror["updated"]), len(mirror["rejected"]),
+                    (" (" + mirror["error"].splitlines()[-1] + ")")
+                    if mirror["error"] else ""))
             ok = (fanout["ok"] and all(gateway["ok"] for gateway in gateways)
                   and (synced["ok"] or bool(synced["rejected"])))
             status = {
                 "digest": digest, "ok": ok, "startedAt": started,
                 "finishedAt": clock(), "sourceMain": rev(paths.bare_mirror, "refs/heads/main"),
                 "sync": synced, "fanout": fanout, "gateways": gateways,
+                "github": github,
                 "flagshipActive": unit_state(SOURCE_UNIT, run=run) not in INACTIVE_STATES,
             }
             write_json(status_path, status)
@@ -1124,13 +1224,42 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
     return exit_code
 
 
+def gateway_failure_cause(gateway: dict) -> str:
+    refused = [item for item in gateway.get("rejected", []) if not stale_branch(item)]
+    if not refused:
+        return gateway.get("error") or "gateway push failed"
+    absorb = (gateway.get("absorb") or {}).get("reason")
+    return "the cores refused %s%s" % (
+        ", ".join("%s (%s)" % (item["ref"], item.get("reason") or "no reason given")
+                  for item in refused),
+        "; %s" % absorb if absorb else "")
+
+
+def ledger_only_refusal(gateway: dict) -> bool:
+    refused = [item for item in gateway.get("rejected", []) if not stale_branch(item)]
+    return bool(refused) and all(item["ref"] == LEDGER_REF for item in refused) \
+        and not gateway.get("other") and not gateway.get("loopbackBlocked")
+
+
 def notify_publish_failure(paths, status, log=print, opener=None, clock=time.time):
     alert_path = paths.publisher_state / "publish-alert.json"
     if status.get("ok"):
         write_json(alert_path, {})
         return
     failed = [item for item in status.get("gateways", []) if not item.get("ok")]
-    cause = "; ".join(item.get("error") or "gateway push failed" for item in failed)
+    previous = read_json(alert_path, {}) or {}
+    if failed and status.get("fanout", {}).get("ok", True) \
+            and all(ledger_only_refusal(item) for item in failed):
+        since = float(previous.get("ledgerSince") or clock())
+        if clock() - since < LEDGER_GRACE_SECONDS:
+            write_json(alert_path, dict(previous, ledgerSince=since))
+            log("gateway: the cores hold pull ledger records the source lacks; "
+                "waiting for the desktop to merge them (%ds of %ds grace)" % (
+                    int(clock() - since), LEDGER_GRACE_SECONDS))
+            return
+    else:
+        previous.pop("ledgerSince", None)
+    cause = "; ".join(gateway_failure_cause(item) for item in failed)
     cause = cause or status.get("sync", {}).get("error") or "mirror fan-out failed"
     fix = ("Allow local TCP to 127.0.0.1, ::1 or 127.0.0.2 in OpenSnitch or "
            "the local firewall; reinstall with python3 tools/source_publisher.py install. "
@@ -1141,7 +1270,6 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             "Check: python3 tools/source_publisher.py status; "
             "journalctl --user -u forkmesh-source-publish.service -n 50" % (cause, fix))
     log("ERROR: " + body)
-    previous = read_json(alert_path, {}) or {}
     stable_body = re.sub(r"last port \d+", "last port <local>", body)
     digest = hashlib.sha256(stable_body.encode()).hexdigest()
     if previous.get("digest") == digest and clock() - previous.get("at", 0) < 3600:
@@ -1166,7 +1294,7 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             headers={"Content-Type": "application/json"}, method="POST")
         with (opener or urllib.request.urlopen)(request, timeout=20) as response:
             reply = json.loads(response.read() or b"{}")
-        write_json(alert_path, {"digest": digest, "at": clock()})
+        write_json(alert_path, dict(previous, digest=digest, at=clock()))
         log("notify: %s operator Ping(s)" % reply.get("pings", 0))
     except (OSError, ValueError, PublishError, IndexError) as error:
         log("notify: publishing failure Ping could not be sent: %s" % error)
@@ -1286,6 +1414,9 @@ def status_report(paths, run=subprocess.run) -> dict:
         "gateways": [{"name": item.get("name"), "ok": item.get("ok"),
                       "diverged": item.get("diverged")}
                      for item in last.get("gateways") or []],
+        "github": [{"name": item.get("name"), "ok": item.get("ok"),
+                    "rejected": [entry.get("ref") for entry in item.get("rejected") or []]}
+                   for item in last.get("github") or []],
         "fanout": read_json(paths.home_root("state") / "fanout" / "status.json"),
         "flagship": unit_state(SOURCE_UNIT, run=run),
         "hold": active_hold(paths.publisher_state / "source-hold.json"),

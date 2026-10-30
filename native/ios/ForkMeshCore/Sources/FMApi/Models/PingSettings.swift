@@ -368,11 +368,13 @@ public struct PingSettings: Equatable, Sendable {
         PingKindGroup(key: "repositories", label: "Repositories", kinds: [
             PingKindOption(kind: "issue_opened", label: "New issues", email: true),
             PingKindOption(kind: "pull_submitted", label: "New pull requests", email: true),
+            PingKindOption(kind: "pull_attention", label: "Reviews and conflicts on your pull requests", email: true),
             PingKindOption(kind: "issue_assigned", label: "Issue assignments", email: true),
             PingKindOption(kind: "pending_inbox", label: "Inbox updates", email: true),
             PingKindOption(kind: "repo_activity", label: "Pushes and merges"),
             PingKindOption(kind: "release_published", label: "Releases", email: true),
             PingKindOption(kind: "repo_shared", label: "Repositories shared with you", email: true),
+            PingKindOption(kind: "security_advisory", label: "Security advisories", email: true),
             PingKindOption(kind: "mirror_request", label: "Mirror requests", email: true),
             PingKindOption(kind: "repository_hosted", label: "Imports finished hosting"),
         ]),

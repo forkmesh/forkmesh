@@ -20,6 +20,7 @@ data class ProbeResult(
     val instanceName: String = "",
     val logoUrl: String = "",
     val branded: Boolean = false,
+    val knownAs: Project? = null,
 ) {
     val ok: Boolean get() = status == ProbeStatus.ok
 
@@ -33,7 +34,12 @@ data class ProbeResult(
                 if (version.isEmpty()) "Connected to $name." else "Connected to $name $version."
             }
             ProbeStatus.invalidUrl -> "That does not look like a host. Enter something like “relay.example.com” or “192.168.1.20:8787”."
-            ProbeStatus.duplicate -> "This instance is already one of your projects."
+            ProbeStatus.duplicate ->
+                if (knownAs != null && knownAs.id != knownAs.instanceId) {
+                    "That instance already belongs to the project ${knownAs.label}. An instance can only be in one project."
+                } else {
+                    "This instance is already one of your projects."
+                }
             ProbeStatus.notHttps -> "Projects connect over https only. Enter the host, or an https:// address."
             ProbeStatus.unreachable -> "Could not reach that host. Check the address and your connection."
             ProbeStatus.timeout -> "That host did not answer in time. It may be offline, or behind a network this phone cannot see."
@@ -68,7 +74,9 @@ class ProjectProbe(
     fun check(input: String, existing: Collection<Project> = emptyList(), label: String = "", worldUrl: String = ""): ProbeResult {
         if (!isSecureInput(input) || !isSecureInput(worldUrl)) return ProbeResult(ProbeStatus.notHttps)
         val candidate = Project.tryParse(input, label, worldUrl, clock()) ?: return ProbeResult(ProbeStatus.invalidUrl)
-        if (existing.any { it.id == candidate.id }) return ProbeResult(ProbeStatus.duplicate)
+        val known = existing.firstOrNull { it.id == candidate.id }
+            ?: candidate.instanceId?.let { key -> existing.firstOrNull { it.instanceId == key } }
+        if (known != null) return ProbeResult(ProbeStatus.duplicate, knownAs = known)
         return verify(candidate)
     }
 
@@ -99,16 +107,18 @@ class ProjectProbe(
         if (!features.hasCore) return ProbeResult(ProbeStatus.missingCore, statusCode = response.status, features = features)
         val rev = (body["rev"] ?: "").toString()
         val instance = describe(candidate)
+        val instanceName = (instance["name"] as? String).orEmpty().trim()
+        val label = if (candidate.label == candidate.id && instanceName.isNotEmpty()) instanceName else candidate.label
         return ProbeResult(
             status = ProbeStatus.ok,
             statusCode = response.status,
             rev = rev,
             version = (body["version"] ?: "").toString(),
             features = features,
-            instanceName = (instance["name"] as? String).orEmpty().trim(),
+            instanceName = instanceName,
             logoUrl = logoUrl(candidate, instance),
             branded = instance["branded"] == true,
-            project = candidate.copy(verifiedAt = clock(), verifiedRev = rev, features = features),
+            project = candidate.copy(label = label, verifiedAt = clock(), verifiedRev = rev, features = features),
         )
     }
 

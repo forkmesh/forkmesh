@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.securedrive
 
 import android.graphics.BitmapFactory
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontFamily
 import com.forkmesh.nativeapp.securedrive.Drawing
 import com.forkmesh.nativeapp.securedrive.Sheet
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
@@ -159,7 +159,7 @@ internal fun SdTextEditor(bytes: ByteArray, editor: SdEditorState, readOnly: Boo
             readOnly = readOnly,
             minLines = 20,
             maxLines = Int.MAX_VALUE,
-            textStyle = Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            textStyle = Fm.text.bodyMedium.copy(fontFamily = FmType.mono),
         )
     }
 }

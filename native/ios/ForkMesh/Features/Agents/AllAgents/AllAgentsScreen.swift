@@ -33,7 +33,7 @@ struct AllAgentsScreen: View {
         let pending: AgentPendingDeletes = .shared
         return center.rows.filter { row in
             (filter == nil || row.badge == filter)
-                && !pending.isHidden(AgentLines.deletion(AgentLines.line(row))?.key ?? "")
+                && !pending.isHidden(AgentLines.deletionKey(AgentLines.line(row)) ?? "")
         }
     }
 
@@ -72,7 +72,7 @@ struct AllAgentsScreen: View {
                     Text("No agents yet.").foregroundStyle(.secondary)
                 }
                 ForEach(rows) { row in
-                    NavigationLink {
+                    ShellPaneLink {
                         AgentLazyPage {
                             AgentRunScreen(center: center, row: row)
                         }
@@ -118,7 +118,7 @@ struct AllAgentsScreen: View {
         .navigationTitle("All agents")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                NavigationLink {
+                ShellPaneLink {
                     MergeLeaderboardDestination()
                         .shellPageClearance()
                 } label: {

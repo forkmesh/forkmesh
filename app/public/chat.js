@@ -30,15 +30,49 @@ import {
 } from "./chat-issue-filing.js";
 import { createAccountEventChannel } from "./account-events.js";
 import { createChatRoomTransport } from "./chat-room-transport.js";
-import { createRoomSealStore } from "./chat-seal.js";
+import { FRAME_AUTH, createRoomSealStore } from "./chat-seal.js";
+import {
+  attributeFrame,
+  bindNodeKey,
+  botLine as botViaLine,
+  chatProfileFor,
+  createGuestRelabeler,
+  createNodeOwners,
+  forgetLegacySelfId,
+  guestLabel,
+  historyEntries,
+  isBotViaName,
+  isIntegrationSenderId,
+  isSealedPlain,
+  isServerPlain,
+  mayChangeMessage,
+} from "./chat-frame-auth.js";
+import { createFmmLocal } from "./fmm/fmm-local.js";
 import { moderateChatPlain, moderateChatText } from "./chat-moderation.js";
 import { celebrateNewMember, NEW_MEMBER_GREETING } from "./member-welcome.js";
+import {
+  GENIE_WELCOMES,
+  genieWelcomeIndex,
+  mountGenieWelcome,
+  pickGenieWelcome,
+} from "./chat-genie-welcome.js";
 import { createThreadStore } from "./chat-thread-model.js";
 import {
   CALL_FRAME_TYPES,
   callsSupported,
   createChatCalls,
 } from "./chat-calls.js";
+import {
+  GROUP_CALL_TYPES,
+  createGroupCalls,
+  groupCallEncryptionMode,
+} from "./chat-group-calls.js";
+import {
+  createCallQualityMeter,
+  fmmStatsReader,
+  mountCallQualityWidget,
+  rtcStatsReader,
+} from "./call-quality-meter.js";
 import {
   CHAT_RETENTION_ENDPOINT,
   CHAT_RETENTION_PRESETS,
@@ -71,9 +105,6 @@ import { installViewOnceFilters, viewOnceFilterChoices } from "./chat-view-once-
 // crypto (PBKDF2 + AES-256-GCM) and message envelope so the website can join
 // the public encrypted rooms and talk to connected clients. Frames are
 // ciphertext on the wire, but the relay derives the default shared passphrase.
-// Public channels intentionally stop at that controller-readable layer.
-// chat-seal.js automatically adds a second layer with signed, post-quantum device keys
-// for private channels and DMs; participants never configure a phrase.
 //
 // Layout: rooms on the left, conversation in the middle (ts-ordered, newest at
 // the bottom, avatars + timestamps + reactions), and people on the right.
@@ -96,6 +127,9 @@ const PUBLIC_WORLD_CHAT_WS_PATH =
 const PRIVATE_CHANNELS_ENDPOINT = "/api/chat/channels";
 const EVERYONE_CHANNEL_ORDER = Object.freeze(["general", "random", "welcome"]);
 const EVERYONE_MEMBERS_REFRESH_MS = 5 * 60 * 1000;
+const WELCOME_CHANNEL_NAME = "welcome";
+const GENIE_WELCOME_COOLDOWN_MS = 5000;
+const GENIE_WELCOME_AUTOPLAY_MS = 10 * 60 * 1000;
 const DIRECT_MESSAGES_ENDPOINT = "/api/chat/direct-messages";
 const CHAT_READS_ENDPOINT = "/api/chat/reads";
 const READ_MARK_KEY_RE =
@@ -106,6 +140,7 @@ const READ_MARK_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const CHAT_INVITES_ENDPOINT = "/api/chat/invites";
 const CHAT_INVITE_HASH_RE = /^#invite=([0-9a-f]{64})$/;
 const CHAT_ROOM_HASH_RE = /^#room=([0-9a-f]{32})$/;
+const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;
 const CALL_ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const FORKBOT_ENDPOINT = "/api/forkbot/chat";
 // Cloudflare Workers AI models ForkBot can be pointed at, plus the picked one.
@@ -115,6 +150,49 @@ const FORKBOT_MODELS_ENDPOINT = "/api/forkbot/models";
 const FORKBOT_MODEL_KEY = "forkmesh.forkbot.model";
 const FORKBOT_SENDER_ID = "forkbot";
 const FORKBOT_MENTION_RE = /(?:^|[^A-Za-z0-9_-])@?forkbot\b/i;
+const MEMBER_STATS_ENDPOINT = "/api/chat/member-stats";
+const MEMBER_STATS_BATCH = 50;
+const MEMBER_STATS_TTL_MS = 5 * 60 * 1000;
+const MEMBER_STATS_RETRY_MS = 60 * 1000;
+const MEMBER_STATS_DELAY_MS = 120;
+const MEMBER_STATS_AUTOMATED = Object.freeze([
+  FORKBOT_SENDER_ID, "claude", "codex", "agent",
+]);
+const MEMBER_STATS_ICONS = Object.freeze({
+  pulls: [
+    ["circle", { cx: 18, cy: 18, r: 3 }],
+    ["circle", { cx: 6, cy: 6, r: 3 }],
+    ["path", { d: "M13 6h3a2 2 0 0 1 2 2v7" }],
+    ["path", { d: "M6 9v12" }],
+  ],
+  commits: [
+    ["circle", { cx: 12, cy: 12, r: 3 }],
+    ["path", { d: "M3 12h6" }],
+    ["path", { d: "M15 12h6" }],
+  ],
+  issues: [
+    ["circle", { cx: 12, cy: 12, r: 10 }],
+    ["circle", { cx: 12, cy: 12, r: 1 }],
+  ],
+  reviews: [
+    ["path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" }],
+  ],
+  recent: [
+    ["circle", { cx: 12, cy: 12, r: 10 }],
+    ["path", { d: "M12 6v6l4 2" }],
+  ],
+});
+const MEMBER_STATS_LABELS = Object.freeze({
+  pulls: ["pull request opened", "pull requests opened"],
+  commits: ["commit", "commits"],
+  issues: ["issue opened", "issues opened"],
+  reviews: ["review", "reviews"],
+});
+const memberStats = new Map();
+const memberStatsWanted = new Set();
+let memberStatsTimer = 0;
+let memberStatsInflight = false;
+let memberStatsObserver = null;
 // Mainnode base host for the room WebSocket. Defaults to the origin that served
 // this page, so a self-hosted mainnode's own site talks to itself with zero
 // config. A separately-hosted static site can point at a different relay by
@@ -152,6 +230,17 @@ const PEER_STALE_MS = 180000;
 const VISITOR_IDLE_FORGET_MS = 10 * 60 * 1000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000; // same-sender messages collapse under one header
 const REACTION_EMOJI = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
+const STICKER_CATALOG = Object.freeze([
+  Object.freeze({ slug: "lgtm", text: "LGTM", color: "#8250df", tilt: -6, emoji: "\u2705" }),
+  Object.freeze({ slug: "ship-it", text: "Ship it", color: "#0969da", tilt: 5, emoji: "\u{1F680}" }),
+  Object.freeze({ slug: "nice", text: "Nice!", color: "#bf3989", tilt: -4, emoji: "\u{1F44D}" }),
+  Object.freeze({ slug: "thanks", text: "Thanks!", color: "#bc4c00", tilt: 6, emoji: "\u{1F64F}" }),
+  Object.freeze({ slug: "on-it", text: "On it", color: "#57606a", tilt: -5, emoji: "\u{1F440}" }),
+  Object.freeze({ slug: "wow", text: "Wow!", color: "#cf222e", tilt: 4, emoji: "\u{1F62E}" }),
+  Object.freeze({ slug: "love-it", text: "Love it", color: "#d6336c", tilt: -3, emoji: "\u2764\uFE0F" }),
+  Object.freeze({ slug: "party", text: "Party!", color: "#9a6700", tilt: 7, emoji: "\u{1F389}" }),
+]);
+const STICKERS_BY_SLUG = new Map(STICKER_CATALOG.map((sticker) => [sticker.slug, sticker]));
 const ACTIVE_CHANNEL_KEY = "forkmesh.chat.channel";
 const ACTIVE_DIRECT_KEY = "forkmesh.chat.direct";
 const ISSUE_REPOSITORY_KEY = "forkmesh.chat.issueRepository";
@@ -230,6 +319,7 @@ const channelVisibilityBadge = document.querySelector("#chat-channel-visibility-
 const directServerCopiesEl = document.querySelector("#chat-direct-server-copies");
 const channelCreateBtn = document.querySelector("#chat-channel-create");
 const channelManageBtn = document.querySelector("#chat-channel-manage");
+const genieWelcomeBtn = document.querySelector("#chat-genie-welcome");
 const chatRetentionSelect = document.querySelector("#chat-retention-select");
 const chatRetention = createChatRetention({
   request: (body) => privateChannelRequest(CHAT_RETENTION_ENDPOINT, {
@@ -286,6 +376,49 @@ const directDialogClose = document.querySelector("#chat-direct-dialog-close");
 const directAddBtn = document.querySelector("#chat-direct-add");
 const callAudioBtn = document.querySelector("#chat-call-audio");
 const callVideoBtn = document.querySelector("#chat-call-video");
+const groupCallBar = document.querySelector("#chat-group-call-bar");
+const groupCallBarText = document.querySelector("#chat-group-call-bar-text");
+const groupCallJoinAudio = document.querySelector("#chat-group-call-join-audio");
+const groupCallJoinVideo = document.querySelector("#chat-group-call-join-video");
+const groupCallPanel = document.querySelector("#chat-group-call-panel");
+const groupCallTitle = document.querySelector("#chat-group-call-title");
+const groupCallState = document.querySelector("#chat-group-call-state");
+const groupCallGrid = document.querySelector("#chat-group-call-grid");
+const groupCallMute = document.querySelector("#chat-group-call-mute");
+const groupCallCamera = document.querySelector("#chat-group-call-camera");
+const groupCallLeave = document.querySelector("#chat-group-call-leave");
+const groupCallVerify = document.querySelector("#chat-group-call-verify");
+const groupCallVerifyTitle = document.querySelector("#chat-group-call-verify-title");
+const groupCallVerifyEmoji = document.querySelector("#chat-group-call-verify-emoji");
+const groupCallVerifyDigits = document.querySelector("#chat-group-call-verify-digits");
+const groupCallVerifyNote = document.querySelector("#chat-group-call-verify-note");
+const groupCallVerifyActions = document.querySelector("#chat-group-call-verify-actions");
+const groupCallVerifyMatch = document.querySelector("#chat-group-call-verify-match");
+const groupCallVerifyMismatch = document.querySelector("#chat-group-call-verify-mismatch");
+const groupCalls = createGroupCalls({
+  sendFrame: sendGroupCallFrame,
+  fetchTicket: (channelId, body = {}) => privateChannelRequest(
+    PRIVATE_CHANNELS_ENDPOINT + "/" + channelId + "/call-ticket",
+    { method: "POST", body: JSON.stringify(body || {}) },
+  ),
+  accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
+  onChange: () => renderGroupCall(),
+  callSigner: groupCallSigner,
+  callAccount: () => roomSeals?.account() || "",
+  callId: (channelKey) => (roomTransport?.room?.scope === channelKey ? String(roomTransport?.access?.roomName || "") : ""),
+  prepareLocal: createFmmLocal({ avatarImage: ownAvatarImage }),
+});
+
+async function groupCallSigner() {
+  if (typeof roomSeals?.signCall !== "function") return null;
+  const identity = await roomSeals.identity();
+  const idk = b64urlToBytes(identity.idk);
+  if (!(idk instanceof Uint8Array) || idk.length !== 32) return null;
+  return { idk, sign: (bytes) => roomSeals.signCall(bytes) };
+}
+
+const groupCallVideos = new Map();
+
 const directSearch = document.querySelector("#chat-direct-search");
 const directOptions = document.querySelector("#chat-direct-options");
 const directEmpty = document.querySelector("#chat-direct-empty");
@@ -338,36 +471,80 @@ const composerControls = [...new Set([
 ].filter(Boolean))];
 
 const enc = new TextEncoder();
-// A stable per-browser chat id. The relay holds no roster — every participant
-// is reconstructed client-side from the senderId on decrypted frames — so a
-// fresh random id per page load made each reload/tab of the same person show up
-// as a brand-new "ghost" participant (the "lots of jett users" symptom).
-// Persisting it collapses reloads/tabs of the same browser into one entry;
-// signed-in users still display under their account name via displayName().
-const selfId = (() => {
-  const STORAGE_KEY = "forkmesh.chat.selfId";
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return saved;
-  } catch (_) {}
-  const fresh =
-    (crypto.randomUUID && crypto.randomUUID()) ||
-    String(Math.random()).slice(2) + Date.now();
-  try { localStorage.setItem(STORAGE_KEY, fresh); } catch (_) {}
-  return fresh;
-})();
+let selfId = "";
+forgetLegacySelfId();
+const nodeOwners = createNodeOwners();
+const guestLines = createGuestRelabeler({
+  owners: nodeOwners,
+  onConfirmed: (node, account, ids) => renameConfirmedGuest(node, account, ids),
+});
+const sealStores = new Map();
+let roomSeals = null;
 
 const roomPassphrases = new Map();
 const roomKeys = new Map();
-// One automatically generated device key plus public keys learned per room.
-// Private key material stays in this browser; only signed public bundles travel.
-const roomSeals = createRoomSealStore({
-  acct: () => userSession()?.nodeName || "",
-  node: selfId,
-});
 const trustNotices = new Map();
 const trustNoticeKeys = new Set();
-roomSeals.subscribe((event) => handleSealEvent(event));
+
+function sessionAccount() {
+  return String(userSession()?.nodeName || "").trim().toLowerCase();
+}
+
+function sealStoreForSession() {
+  const account = sessionAccount();
+  const profile = chatProfileFor(account);
+  let store = sealStores.get(profile);
+  if (!store) {
+    store = createRoomSealStore({ acct: account, profile });
+    store.subscribe((event) => handleSealEvent(event));
+    sealStores.set(profile, store);
+  }
+  return store;
+}
+
+async function activateChatIdentity() {
+  const store = sealStoreForSession();
+  const node = await store.ready();
+  roomSeals = store;
+  selfId = node;
+  const account = sessionAccount();
+  if (account) {
+    const token = String(userSession()?.sessionToken || "");
+    void bindNodeKey({
+      store,
+      account,
+      owners: nodeOwners,
+      headers: token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {},
+    }).catch(() => false);
+  }
+  return store;
+}
+
+let inboundPlains = Promise.resolve();
+
+function attributedPlains(plains, scope) {
+  return plains
+    .map((plain) => attributeFrame(plain, {
+      owners: nodeOwners,
+      selfNode: selfId,
+      selfAccount: sessionAccount(),
+      selfName: displayName(),
+      direct: isDirectMessageKey(scope),
+    }))
+    .filter(Boolean);
+}
+
+function receivePlains(plains, room, history) {
+  const scope = room?.scope || roomScopeForChannel();
+  inboundPlains = inboundPlains.then(async () => {
+    await nodeOwners.prefetch(plains, { selfNode: selfId });
+    const attributed = attributedPlains(plains, scope);
+    for (const plain of attributed) guestLines.note(plain);
+    if (history) handleHistory(attributed, room);
+    else for (const plain of attributed) handlePlain(plain, scope);
+  }).catch(() => {});
+  return inboundPlains;
+}
 // Per scope, why frames were dropped: sender ids whose content key was not
 // wrapped for this browser, and whether an unsealed frame was refused. Both
 // leave a reader staring at what looks like a broken relay.
@@ -401,6 +578,8 @@ const seen = new Set();
 // record's channel is the active one, so an edit or a (regular / admin) delete
 // can find and update or remove the right row.
 const rows = new Map();
+const playedGenieWelcomes = new Set();
+let lastGenieWelcome = null;
 const threads = createThreadStore();
 const threadRenderedRows = new Map();
 const threadDrafts = new Map();
@@ -425,6 +604,7 @@ let roomPreviewTimer = 0;
 // messageId -> Map(emoji -> Map(reactorId -> reactorName)); same shape as the
 // desktop's m_reactions so toggles converge across clients.
 const reactions = new Map();
+const stickers = new Map();
 // senderId -> { id, name, kind: "user"|"guest"|"bot"|"node", lastSeenMs } built from
 // every decrypted frame; drives the right-hand people pane.
 const roster = new Map();
@@ -460,6 +640,8 @@ let activeMentionAnchor = null;
 let mentionHideTimer = null;
 let emojiPickerEl = null;
 let emojiPickerTarget = null;
+let stickerPickerEl = null;
+let stickerPickerTarget = null;
 let pendingDeleteRecord = null;
 let pendingInviteToken = "";
 let pendingDeleteTrigger = null;
@@ -508,9 +690,6 @@ function roomScopeForChannel(channel = activeChannel) {
   return channel === "#general" ? "public-world-general" : channel;
 }
 
-// Public is an explicit channel policy, not something a relay frame can opt
-// into. Those channels use the controller-readable room layer so integrations
-// can participate; private channels and DMs require the automatic device seal.
 function controllerReadableScope(scope = roomScopeForChannel()) {
   if (scope === "public-world-general") return true;
   const record = isPrivateChannelKey(scope) ? privateChannelForKey(scope) : null;
@@ -563,6 +742,11 @@ function channelWireLabel(channel = activeChannel) {
 
 function isEveryoneChannel(record) {
   return record?.kind === "everyone";
+}
+
+function isWelcomeChannel(channel = activeChannel) {
+  const record = privateChannelForKey(channel);
+  return isEveryoneChannel(record) && record.name === WELCOME_CHANNEL_NAME;
 }
 
 function defaultChannelKey() {
@@ -881,8 +1065,7 @@ function unlockChatForUser() {
       nameInput.value = session.nodeName || "";
       nameInput.disabled = true;
     } else {
-      nameInput.value =
-        `World Guest ${String(selfId).replace(/[^A-Za-z0-9]/g, "").slice(0, 6)}`;
+      nameInput.value = guestLabel(selfId);
       nameInput.disabled = true;
     }
   }
@@ -914,6 +1097,10 @@ function avatarColor(name) {
 // the same tick it builds the row.
 const avatarPortraits = new Map();
 
+function ownAvatarImage() {
+  return avatarImageSource(userSession()?.avatarPng);
+}
+
 function avatarImageSource(png) {
   const value = String(png || "");
   if (!value) return "";
@@ -936,6 +1123,11 @@ const CHAT_ICON_PATHS = {
   hash: ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18"],
   lock: ["M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4"],
   thread: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"],
+  sticker: [
+    "M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z",
+    "M14 3v4a2 2 0 0 0 2 2h4", "M8 13h.01", "M16 13h.01",
+    "M10 16s.8 1 2 1c1.3 0 2-1 2-1",
+  ],
   react: [
     "M22 11v1a10 10 0 1 1-9-10", "M8 14s1.5 2 4 2 4-2 4-2",
     "M9 9h.01", "M15 9h.01", "M16 5h6", "M19 2v6",
@@ -1381,6 +1573,21 @@ function mentionCandidates(partial) {
     byName.set(key, {
       id: "account:" + key,
       name: person.name,
+      kind: "user",
+      lastSeenMs: 0,
+    });
+  }
+  const accounts = window.ForkMeshUsernames?.lookup(partial, () => {
+    if (input === document.activeElement &&
+        mentionTokenAtCaret()?.partial === partial) {
+      updateMentionSuggest();
+    }
+  }) || [];
+  for (const name of accounts) {
+    if (name === self || byName.has(name)) continue;
+    byName.set(name, {
+      id: "account:" + name,
+      name,
       kind: "user",
       lastSeenMs: 0,
     });
@@ -1907,6 +2114,7 @@ function updateChannelHeading() {
       : "";
   }
   renderDirectServerCopies();
+  if (genieWelcomeBtn) genieWelcomeBtn.hidden = !isWelcomeChannel() || !canJoinChannel();
 }
 
 function directServerCopiesText(stored, otherUser) {
@@ -1985,9 +2193,28 @@ function updateAdminChannelControls() {
   const direct = directMessageForKey(activeChannel);
   const directActions = Boolean(session && direct && !isOfficeEmbed);
   if (directAddBtn) directAddBtn.hidden = !directActions;
-  const callable = directActions && callsSupported();
-  if (callAudioBtn) callAudioBtn.hidden = !callable;
-  if (callVideoBtn) callVideoBtn.hidden = !callable;
+  const groupCallable = Boolean(
+    session && channel && channel.visibility === "private" && !isOfficeEmbed
+    && groupCallEncryptionMode()
+  );
+  const callable = (directActions && callsSupported()) || groupCallable;
+  if (callAudioBtn) {
+    callAudioBtn.hidden = !callable;
+    const label = groupCallable
+      ? "Start or join an end-to-end encrypted group audio call"
+      : "Start an encrypted peer-to-peer audio call";
+    callAudioBtn.title = label;
+    callAudioBtn.setAttribute("aria-label", label);
+  }
+  if (callVideoBtn) {
+    callVideoBtn.hidden = !callable;
+    const label = groupCallable
+      ? "Start or join an end-to-end encrypted group video call"
+      : "Start an encrypted peer-to-peer video call";
+    callVideoBtn.title = label;
+    callVideoBtn.setAttribute("aria-label", label);
+  }
+  renderGroupCall();
   if (viewOnceVideoBtn) {
     viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
   }
@@ -2068,6 +2295,7 @@ function pruneExpiredMessages() {
       revokeAttachmentUrl(record);
       rows.delete(record.id);
       reactions.delete(record.id);
+      stickers.delete(record.id);
       threads.deleteTarget(record.id);
       if (activeThreadRootId === record.id) closeThread({ restoreFocus: false });
     }
@@ -2154,6 +2382,7 @@ function releaseChannelMessages(channelKey) {
     revokeAttachmentUrl(record);
     rows.delete(record.id);
     reactions.delete(record.id);
+    stickers.delete(record.id);
   }
   channelMessages.delete(channelKey);
   channelSyncState.delete(channelKey);
@@ -2173,6 +2402,7 @@ function reconcilePrivateChannels(records, options = {}) {
       updatedAt: Number(value.updatedAt) || 0,
       keyVersion: Number(value.keyVersion) || 1,
       kind: value.kind === "everyone" ? "everyone" : "channel",
+      office: value.kind === "office",
       memberCount: Math.max(0, Number(value.memberCount) || 0),
       canManage: Boolean(value.canManage) && value.kind !== "everyone",
       visibility: value.visibility === "public" ? "public" : "private",
@@ -2189,6 +2419,13 @@ function reconcilePrivateChannels(records, options = {}) {
   }
   for (const id of previous.keys()) {
     if (!privateChannels.has(id)) releaseChannelMessages(privateChannelKey(id));
+  }
+  for (const [id, record] of privateChannels) {
+    const old = previous.get(id);
+    if (old && old.keyVersion !== record.keyVersion) {
+      void groupCalls.channelRekeyed(
+        privateChannelKey(id), `chat-channel:${id}:v${record.keyVersion}`).catch(() => {});
+    }
   }
 
   if (savedPrivateChannelId && !privateChannels.has(savedPrivateChannelId)) {
@@ -2371,7 +2608,7 @@ function startAccountEventChannel() {
   }
   accountEvents = createAccountEventChannel({
     sessionToken: () => userSession()?.sessionToken || "",
-    onTopic: (topic) => {
+    onTopic: (topic, frame) => {
       // A new message in a conversation this browser is not sitting in, or a
       // conversation/channel that appeared because somebody else invited or
       // messaged us. Both lists used to be re-read every 30s to find these.
@@ -2382,6 +2619,8 @@ function startAccountEventChannel() {
       } else if (topic === "chat-read") {
         refreshReadMarks();
         refreshDirectMessages({ preserve: true, selectSaved: false });
+      } else if (topic === "calls") {
+        openRingingConversation(frame);
       }
     },
     // One catch-up per RE-connect: a DM that arrived while the channel was
@@ -2399,6 +2638,19 @@ function startAccountEventChannel() {
     },
   });
   accountEvents.start();
+}
+
+function openRingingConversation(frame) {
+  const key = String(frame?.conversation || "");
+  if (!isDirectMessageKey(key) || activeChannel === key || !callsSupported() || chatCalls.active()) return;
+  const open = () => {
+    if (directMessageForKey(key) && activeChannel !== key && !chatCalls.active()) setActiveChannel(key);
+  };
+  if (directMessageForKey(key)) {
+    open();
+    return;
+  }
+  Promise.resolve(refreshDirectMessages({ preserve: true, selectSaved: false })).then(open, () => {});
 }
 
 function newestMessageTs(channel) {
@@ -2516,6 +2768,7 @@ function privateChannelErrorMessage(error) {
     channel_name_taken: "That channel name is already in use.",
     user_not_found: "That active registered user was not found.",
     too_many_channels: "This relay has reached its channel limit.",
+    too_many_own_channels: "You have reached your channel limit.",
     too_many_members: "This channel has reached its member limit.",
     invalid_visibility: "Choose Public or Private visibility.",
     invalid_members: "Choose registered users from the list.",
@@ -2557,6 +2810,12 @@ function renderChannelMembers(members) {
   if (!channelMembersEl) return;
   channelMembersEl.textContent = "";
   const list = Array.isArray(members) ? members : [];
+  if (channelUsernameInput) {
+    channelUsernameInput.dataset.usernameExclude = list
+      .map((member) => String(member?.username || "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(",");
+  }
   if (!list.length) {
     const empty = document.createElement("p");
     empty.textContent = "No invited members yet.";
@@ -2757,7 +3016,15 @@ async function openChatLinkFromHash() {
   const room = CHAT_ROOM_HASH_RE.exec(hash);
   if (room) {
     clearChatLinkHash();
+    if (!privateChannels.has(room[1]) && userSession()) await refreshPrivateChannels({ selectSaved: false });
     if (privateChannels.has(room[1])) setActiveChannel(privateChannelKey(room[1]));
+    return;
+  }
+  const direct = CHAT_DIRECT_HASH_RE.exec(hash);
+  if (direct) {
+    clearChatLinkHash();
+    if (!directMessages.has(direct[1]) && userSession()) await refreshDirectMessages();
+    if (directMessages.has(direct[1])) setActiveChannel(directMessageKey(direct[1]));
     return;
   }
   const invite = CHAT_INVITE_HASH_RE.exec(hash);
@@ -2770,7 +3037,10 @@ async function openChatLinkFromHash() {
   clearChatLinkHash();
   let preview;
   try {
-    preview = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/" + token);
+    preview = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/preview", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
   } catch (error) {
     showJoinDialog("Invite link not valid", chatInviteErrorMessage(error), false);
     return;
@@ -2796,9 +3066,9 @@ async function acceptPendingInvite() {
   pendingInviteToken = "";
   if (!token) return;
   try {
-    const data = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/" + token, {
+    const data = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/accept", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ token }),
     });
     await openJoinedChannel(String(data.channel?.id || ""));
   } catch (error) {
@@ -2808,7 +3078,7 @@ async function acceptPendingInvite() {
 
 function channelInviteeNames() {
   return [...new Set(String(channelInitialMembersInput?.value || "")
-    .split(",")
+    .split(/[\s,]+/)
     .map((value) => value.trim().replace(/^@/, "").toLowerCase())
     .filter(Boolean))];
 }
@@ -3061,13 +3331,15 @@ function populateChannelSettings() {
   if (channelMembersSection) {
     channelMembersSection.hidden = channel.visibility !== "private";
   }
-  // A webhook originates at the controller and therefore cannot author a
-  // recipient-sealed frame. Expose integrations only where the channel owner
-  // has deliberately chosen controller-readable Public visibility.
   if (channelWebhooksSection) {
-    channelWebhooksSection.hidden = channel.visibility !== "public";
+    channelWebhooksSection.hidden = !channelAcceptsWebhooks(channel);
   }
   resetChannelDeleteConfirm();
+}
+
+function channelAcceptsWebhooks(channel) {
+  return Boolean(channel) && !channel.serverVisible && !channel.office &&
+    channel.kind !== "everyone";
 }
 
 function openChannelSettings() {
@@ -3083,7 +3355,7 @@ function openChannelSettings() {
     refreshChannelMembers();
     refreshChannelInviteLink();
   }
-  if (channel.visibility === "public") refreshChannelWebhooks();
+  if (channelAcceptsWebhooks(channel)) refreshChannelWebhooks();
   channelSettingsName?.focus();
 }
 
@@ -3385,13 +3657,15 @@ function schedulePeopleRender() {
 
 function noteRoster(plain) {
   const id = plain && plain.senderId;
-  if (!id || String(id).startsWith("system:")) return;
+  if (!id || String(id).startsWith("system:") || plain.botVia) return;
   const name = String(plain.sender || "").trim().slice(0, MAX_NAME) || "peer";
-  const kind = plain.accountKind === "user"
-    ? (id === FORKBOT_SENDER_ID ? "bot" : "user")
-    : plain.accountKind === "guest"
-      ? "guest"
-      : "node";
+  const kind = plain.accountKind === "integration"
+    ? "bot"
+    : plain.accountKind === "user"
+      ? (id === FORKBOT_SENDER_ID ? "bot" : "user")
+      : plain.accountKind === "guest"
+        ? "guest"
+        : "node";
   // Use the frame's own timestamp (bounded by now): the relay replays retained
   // frames to a joining client, and a days-old replayed message must not paint
   // its author online. Never move lastSeen backwards either — a replayed old
@@ -3417,6 +3691,37 @@ function noteRoster(plain) {
     window.ForkMeshUserStatus?.remember(name, plain.userStatus, "frame");
   }
   schedulePeopleRender();
+}
+
+function renameConfirmedGuest(node, account, ids) {
+  const name = String(account).slice(0, MAX_NAME);
+  const channels = new Set();
+  const roots = new Set();
+  for (const id of ids) {
+    const rec = rows.get(id);
+    if (rec && rec.senderId === node && !rec.self) {
+      rec.sender = name;
+      threads.updateTarget(id, { sender: name });
+      channels.add(rec.channel);
+      continue;
+    }
+    const reply = threads.target(id);
+    if (reply?.rootId && reply.senderId === node && !reply.self) {
+      threads.updateTarget(id, { sender: name });
+      roots.add(reply.rootId);
+    }
+  }
+  const person = roster.get(node);
+  if (person && person.kind === "guest") {
+    roster.set(node, { ...person, name, kind: "user" });
+    schedulePeopleRender();
+  }
+  for (const channel of channels) {
+    repaintChannel(channel);
+    queueRoomPreview(channel);
+  }
+  for (const rootId of roots) renderThreadSummary(rootId);
+  if (activeThreadRootId && (channels.size || roots.size)) renderThread();
 }
 
 function noteSelfRoster() {
@@ -3513,6 +3818,7 @@ async function refreshUsersDirectory() {
     }
   }
   directorySeeded = true;
+  window.ForkMeshUsernames?.remember(registeredUsers.keys());
   renderDirectMessagePicker();
   schedulePeopleRender();
   if (input === document.activeElement && mentionTokenAtCaret()) {
@@ -3721,7 +4027,20 @@ function renderPeople() {
       const label = document.createElement("span");
       label.className = "chat-person-name";
       label.textContent = person.name;
-      row.append(label);
+      const text = document.createElement("span");
+      text.className = "chat-person-text";
+      text.append(label);
+      row.append(text);
+      if (hasProfile && !isAutomatedMemberName(person.name)) {
+        const stats = document.createElement("span");
+        stats.className = "chat-person-stats";
+        stats.dataset.memberStats = mentionName(person.name);
+        stats.hidden = true;
+        text.append(stats);
+        const cached = freshMemberStats(stats.dataset.memberStats);
+        if (cached) fillMemberStats(stats, cached.entry);
+        else observeMemberStats(row, stats.dataset.memberStats);
+      }
       const statusSlot = document.createElement("span");
       statusSlot.className = "chat-person-status";
       const personBadge = hasProfile ? userStatusBadge(person.name) : null;
@@ -3767,6 +4086,7 @@ function renderPeople() {
       }
     }
   };
+  memberStatsObserver?.disconnect();
   renderSection("Online", bySection.user.filter(personIsOnline));
   renderSection("Offline", bySection.user.filter((person) => !personIsOnline(person)));
   renderSection("World guests", bySection.guest);
@@ -3776,6 +4096,183 @@ function renderPeople() {
     empty.className = "chat-people-empty";
     empty.textContent = `No one matches “${query}”.`;
     peopleEl.append(empty);
+  }
+}
+
+function isAutomatedMemberName(name) {
+  const key = mentionName(name);
+  return MEMBER_STATS_AUTOMATED.includes(key) ||
+    /(?:^|-)(?:bot|agent|mirror)$/.test(key);
+}
+
+function freshMemberStats(name) {
+  const hit = memberStats.get(name);
+  return hit && hit.expires > Date.now() ? hit : null;
+}
+
+function compactMemberCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  if (count < 1000) return String(count);
+  if (count < 10000) {
+    return `${(Math.floor(count / 100) / 10).toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  return `${Math.floor(count / 1000)}k`;
+}
+
+function memberStatsAge(day) {
+  const then = Date.parse(`${day}T00:00:00Z`);
+  if (!Number.isFinite(then)) return null;
+  const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const days = Math.max(0, Math.round((today - then) / 86400000));
+  if (days === 0) return { short: "today", long: "today" };
+  if (days === 1) return { short: "1d", long: "yesterday" };
+  if (days < 30) return { short: `${days}d`, long: `${days} days ago` };
+  const months = Math.max(1, Math.floor(days / 30));
+  return {
+    short: `${months}mo`,
+    long: months === 1 ? "a month ago" : `${months} months ago`,
+  };
+}
+
+function memberStatsIcon(kind) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [name, value] of Object.entries({
+    width: 11, height: 11, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", "stroke-width": 2.2, "stroke-linecap": "round",
+    "stroke-linejoin": "round", "aria-hidden": "true",
+  })) svg.setAttribute(name, String(value));
+  for (const [tag, attrs] of MEMBER_STATS_ICONS[kind]) {
+    const shape = document.createElementNS(ns, tag);
+    for (const [name, value] of Object.entries(attrs)) {
+      shape.setAttribute(name, String(value));
+    }
+    svg.append(shape);
+  }
+  return svg;
+}
+
+function memberStatPart(kind, text) {
+  const part = document.createElement("span");
+  part.className = "chat-person-stat";
+  part.dataset.memberStat = kind;
+  part.append(memberStatsIcon(kind), text);
+  return part;
+}
+
+function fillMemberStats(stats, entry) {
+  if (!stats) return;
+  const parts = [];
+  const labels = [];
+  for (const kind of ["pulls", "commits", "issues", "reviews"]) {
+    const count = Math.max(0, Number(entry?.[kind]) || 0);
+    if (!count) continue;
+    parts.push(memberStatPart(kind, compactMemberCount(count)));
+    labels.push(
+      `${count.toLocaleString()} ${MEMBER_STATS_LABELS[kind][count === 1 ? 0 : 1]}`,
+    );
+  }
+  const age = entry?.lastActive ? memberStatsAge(entry.lastActive) : null;
+  if (age) {
+    parts.push(memberStatPart("recent", age.short));
+    const activeDays = Math.max(0, Number(entry.activeDays) || 0);
+    if (activeDays) {
+      labels.push(
+        `active on ${activeDays.toLocaleString()} ${activeDays === 1 ? "day" : "days"}`,
+      );
+    }
+    labels.push(`last contribution ${age.long}`);
+  }
+  if (!parts.length) {
+    stats.hidden = true;
+    stats.replaceChildren();
+    stats.removeAttribute("title");
+    return;
+  }
+  const summary = `Past year, public repositories: ${labels.join(", ")}`;
+  const visible = document.createElement("span");
+  visible.className = "chat-person-stats-figures";
+  visible.setAttribute("aria-hidden", "true");
+  visible.append(...parts);
+  const spoken = document.createElement("span");
+  spoken.className = "chat-visually-hidden";
+  spoken.textContent = summary;
+  stats.replaceChildren(visible, spoken);
+  stats.title = summary;
+  stats.hidden = false;
+}
+
+function applyMemberStats(name) {
+  const hit = freshMemberStats(name);
+  if (!hit || !peopleEl) return;
+  for (const stats of peopleEl.querySelectorAll(".chat-person-stats")) {
+    if (stats.dataset.memberStats === name) fillMemberStats(stats, hit.entry);
+  }
+}
+
+function wantMemberStats(name) {
+  if (!name || freshMemberStats(name)) return;
+  memberStatsWanted.add(name);
+  if (memberStatsTimer) return;
+  memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+}
+
+function observeMemberStats(row, name) {
+  if (!memberStatsObserver && peopleEl && "IntersectionObserver" in window) {
+    memberStatsObserver = new IntersectionObserver((records) => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue;
+        memberStatsObserver.unobserve(record.target);
+        wantMemberStats(record.target.dataset.memberStatsFor);
+      }
+    }, { root: peopleEl, rootMargin: "160px 0px" });
+  }
+  if (!memberStatsObserver) {
+    wantMemberStats(name);
+    return;
+  }
+  row.dataset.memberStatsFor = name;
+  memberStatsObserver.observe(row);
+}
+
+async function flushMemberStats() {
+  memberStatsTimer = 0;
+  if (memberStatsInflight) return;
+  const names = [...memberStatsWanted]
+    .filter((name) => !freshMemberStats(name))
+    .slice(0, MEMBER_STATS_BATCH)
+    .sort();
+  for (const name of names) memberStatsWanted.delete(name);
+  if (!names.length) {
+    memberStatsWanted.clear();
+    return;
+  }
+  memberStatsInflight = true;
+  let entries = null;
+  try {
+    const response = await fetch(
+      `${MEMBER_STATS_ENDPOINT}?names=${encodeURIComponent(names.join(","))}`,
+      { headers: { accept: "application/json" } },
+    );
+    const data = response.ok ? await response.json() : null;
+    if (data && Array.isArray(data.members)) entries = data.members;
+  } catch (_) {}
+  const now = Date.now();
+  const byName = new Map();
+  for (const entry of entries || []) {
+    const key = mentionName(entry?.name);
+    if (key) byName.set(key, entry);
+  }
+  for (const name of names) {
+    memberStats.set(name, {
+      entry: byName.get(name) || null,
+      expires: now + (entries ? MEMBER_STATS_TTL_MS : MEMBER_STATS_RETRY_MS),
+    });
+    applyMemberStats(name);
+  }
+  memberStatsInflight = false;
+  if (memberStatsWanted.size && !memberStatsTimer) {
+    memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
   }
 }
 
@@ -3871,6 +4368,11 @@ function reactionKey(plain) {
 }
 
 function applyReaction(plain) {
+  const sticker = STICKERS_BY_SLUG.get(String(plain.sticker || ""));
+  if (sticker) {
+    applySticker(plain, sticker);
+    return;
+  }
   const target = String(plain.target || "");
   const emoji = String(plain.emoji || "").slice(0, 8);
   const reactor = reactionKey(plain);
@@ -3880,7 +4382,7 @@ function applyReaction(plain) {
   const perEmoji = perMessage.get(emoji) || new Map();
   perMessage.set(emoji, perEmoji);
   if (plain.added) {
-    perEmoji.set(reactor, String(plain.reactorName || plain.sender || "peer"));
+    perEmoji.set(reactor, String((plain[FRAME_AUTH] ? plain.sender : plain.reactorName || plain.sender) || "peer"));
   } else {
     perEmoji.delete(reactor);
   }
@@ -3932,6 +4434,147 @@ function toggleReaction(messageId, emoji) {
   runWhenConnected(() => send(plain));
 }
 
+function applySticker(plain, sticker) {
+  const target = String(plain.target || "");
+  const reactor = reactionKey(plain);
+  if (!target || !reactor) return;
+  const perMessage = stickers.get(target) || new Map();
+  stickers.set(target, perMessage);
+  const placers = perMessage.get(sticker.slug) || new Map();
+  perMessage.set(sticker.slug, placers);
+  if (plain.added) {
+    placers.set(reactor, String((plain[FRAME_AUTH] ? plain.sender : plain.reactorName || plain.sender) || "peer"));
+  } else {
+    placers.delete(reactor);
+  }
+  if (!placers.size) perMessage.delete(sticker.slug);
+  if (!perMessage.size) stickers.delete(target);
+  renderStickers(target);
+}
+
+function stickerBadge(sticker, tag = "span") {
+  const badge = document.createElement(tag);
+  badge.className = "chat-sticker";
+  badge.dataset.sticker = sticker.slug;
+  badge.style.background = sticker.color;
+  badge.style.setProperty("--chat-sticker-tilt", `${sticker.tilt}deg`);
+  const label = document.createElement("span");
+  label.textContent = sticker.text;
+  badge.append(label);
+  return badge;
+}
+
+function renderStickers(messageId) {
+  const rec = rows.get(messageId) || threadRenderedRows.get(messageId);
+  if (!rec || !rec.stickersEl) return;
+  rec.stickersEl.textContent = "";
+  const perMessage = stickers.get(messageId);
+  rec.el?.classList.toggle("has-stickers", Boolean(perMessage?.size));
+  if (!perMessage) return;
+  for (const sticker of STICKER_CATALOG) {
+    const placers = perMessage.get(sticker.slug);
+    if (!placers?.size) continue;
+    const badge = stickerBadge(sticker, "button");
+    badge.type = "button";
+    const mine = placers.has(selfId);
+    badge.classList.toggle("is-mine", mine);
+    badge.setAttribute("aria-pressed", mine ? "true" : "false");
+    const names = [...placers.values()].join(", ");
+    badge.title = `${sticker.text} from ${names}`;
+    badge.setAttribute("aria-label", `${sticker.text} sticker from ${names}`);
+    if (placers.size > 1) {
+      const count = document.createElement("span");
+      count.className = "chat-sticker-count";
+      count.textContent = `\u00d7${placers.size}`;
+      badge.append(count);
+    }
+    badge.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSticker(messageId, sticker.slug);
+    });
+    rec.stickersEl.append(badge);
+  }
+}
+
+function toggleSticker(messageId, slug) {
+  const sticker = STICKERS_BY_SLUG.get(slug);
+  if (!sticker) return;
+  if (!canJoinChannel()) {
+    lockChatForNonUser();
+    return;
+  }
+  const rec = rows.get(messageId) || threadRenderedRows.get(messageId) ||
+    threads.target(messageId);
+  const mine = Boolean(stickers.get(messageId)?.get(slug)?.has(selfId));
+  const plain = makePlain("reaction", {
+    conversation: channelWireLabel((rec && rec.channel) || activeChannel),
+    target: messageId,
+    emoji: sticker.emoji,
+    sticker: sticker.slug,
+    reactorId: selfId,
+    reactorName: displayName(),
+    added: !mine,
+  });
+  seen.add(plain.id);
+  applyReaction(plain);
+  runWhenConnected(() => send(plain));
+}
+
+function ensureStickerPicker() {
+  if (stickerPickerEl) return stickerPickerEl;
+  stickerPickerEl = document.createElement("div");
+  stickerPickerEl.className = "chat-sticker-picker";
+  stickerPickerEl.setAttribute("role", "toolbar");
+  stickerPickerEl.setAttribute("aria-label", "Choose a sticker");
+  stickerPickerEl.hidden = true;
+  for (const sticker of STICKER_CATALOG) {
+    const btn = stickerBadge(sticker, "button");
+    btn.type = "button";
+    btn.setAttribute("aria-label", `Stick ${sticker.text}`);
+    btn.addEventListener("click", () => {
+      if (stickerPickerTarget) toggleSticker(stickerPickerTarget, sticker.slug);
+      hideStickerPicker();
+    });
+    stickerPickerEl.append(btn);
+  }
+  stickerPickerEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    hideStickerPicker();
+  });
+  document.body.append(stickerPickerEl);
+  document.addEventListener("click", (event) => {
+    if (!stickerPickerEl.hidden && !stickerPickerEl.contains(event.target)) hideStickerPicker();
+  }, true);
+  return stickerPickerEl;
+}
+
+function hideStickerPicker() {
+  if (stickerPickerEl) stickerPickerEl.hidden = true;
+  stickerPickerTarget = null;
+}
+
+function showStickerPicker(anchor, messageId) {
+  hideEmojiPicker();
+  const picker = ensureStickerPicker();
+  stickerPickerTarget = messageId;
+  const placed = stickers.get(messageId);
+  for (const btn of picker.querySelectorAll(".chat-sticker")) {
+    const mine = Boolean(placed?.get(btn.dataset.sticker)?.has(selfId));
+    btn.classList.toggle("is-mine", mine);
+    btn.setAttribute("aria-pressed", mine ? "true" : "false");
+  }
+  picker.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const width = picker.offsetWidth || 260;
+  const x = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
+  const y = Math.max(margin, rect.top - picker.offsetHeight - 6);
+  picker.style.left = `${x + window.scrollX}px`;
+  picker.style.top = `${y + window.scrollY}px`;
+  picker.querySelector("button")?.focus();
+}
+
 function ensureEmojiPicker() {
   if (emojiPickerEl) return emojiPickerEl;
   emojiPickerEl = document.createElement("div");
@@ -3960,6 +4603,7 @@ function hideEmojiPicker() {
 }
 
 function showEmojiPicker(anchor, messageId) {
+  hideStickerPicker();
   const picker = ensureEmojiPicker();
   emojiPickerTarget = messageId;
   picker.hidden = false;
@@ -4411,6 +5055,7 @@ function renderRecordBody(record) {
 const MESSAGE_ACTION_ICONS = {
   Reply: "thread",
   React: "react",
+  Sticker: "sticker",
   Issue: "issue",
   Copy: "copy",
   Edit: "edit",
@@ -4532,11 +5177,26 @@ function renderThreadSummary(rootId) {
 function threadMessageHeader(record) {
   const header = document.createElement("div");
   header.className = "chat-thread-message-head";
-  const avatar = makeAvatar(record.sender, record.senderId === FORKBOT_SENDER_ID ? "bot" : "user");
+  const isBot = record.senderId === FORKBOT_SENDER_ID || isIntegrationSenderId(record.senderId);
+  const avatar = makeAvatar(record.sender, isBot ? "bot" : "user");
   const meta = document.createElement("div");
   meta.className = "chat-thread-message-meta";
   const author = document.createElement("strong");
-  author.textContent = record.sender;
+  if (isBot) {
+    author.textContent = record.sender;
+  } else {
+    const authorLink = document.createElement("a");
+    authorLink.className = "chat-author";
+    authorLink.style.fontSize = "inherit";
+    authorLink.style.fontWeight = "inherit";
+    authorLink.textContent = record.sender;
+    authorLink.href = mentionProfilePath(record.sender);
+    authorLink.addEventListener("mouseenter", () => showMentionCard(authorLink, record.sender));
+    authorLink.addEventListener("focus", () => showMentionCard(authorLink, record.sender));
+    authorLink.addEventListener("mouseleave", hideMentionCardSoon);
+    authorLink.addEventListener("blur", hideMentionCardSoon);
+    author.append(authorLink);
+  }
   const time = document.createElement("span");
   time.textContent = fmtTime(record.ts);
   time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();
@@ -4610,9 +5270,13 @@ function buildThreadReply(sourceRecord) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
+  const stickersEl = document.createElement("div");
+  stickersEl.className = "chat-stickers";
+  row.append(stickersEl);
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
+  record.stickersEl = stickersEl;
   renderRecordBody(record);
 
   const actions = document.createElement("div");
@@ -4621,6 +5285,11 @@ function buildThreadReply(sourceRecord) {
     "Add reaction",
     "React",
     (button) => showEmojiPicker(button, record.id),
+  ));
+  actions.append(messageAction(
+    "Add sticker",
+    "Sticker",
+    (button) => showStickerPicker(button, record.id),
   ));
   if (record.self) {
     if (record.text) {
@@ -4641,6 +5310,7 @@ function buildThreadReply(sourceRecord) {
   bindTouchMessageActions(row);
   threadRenderedRows.set(record.id, record);
   renderReactions(record.id);
+  renderStickers(record.id);
   return row;
 }
 
@@ -5031,7 +5701,7 @@ function buildRow(record, prev) {
     sameLocalDate(prev.ts, record.ts) &&
     Number(record.ts) - Number(prev.ts) < GROUP_WINDOW_MS);
   const row = document.createElement("div");
-  const isBot = record.senderId === FORKBOT_SENDER_ID;
+  const isBot = record.senderId === FORKBOT_SENDER_ID || isIntegrationSenderId(record.senderId);
   row.className = "chat-msg" +
     (grouped ? " is-continuation" : " is-group-start") +
     (record.self ? " is-self" : "") +
@@ -5071,6 +5741,13 @@ function buildRow(record, prev) {
     time.textContent = fmtTime(record.ts);
     time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();
     head.append(author);
+    if (record.serverVisible) {
+      const marker = document.createElement("span");
+      marker.className = "chat-server-visible";
+      marker.textContent = "server-visible";
+      marker.title = "Posted through the server, which can read this message";
+      head.append(marker);
+    }
     const authorBadge = isBot ? null : userStatusBadge(record.sender);
     if (authorBadge) head.append(authorBadge);
     head.append(time);
@@ -5084,6 +5761,7 @@ function buildRow(record, prev) {
   }
   const attachment = renderAttachment(record);
   if (attachment) main.append(attachment);
+  if (record.genieWelcome !== null && !record.deleted) main.append(renderGenieWelcome(record));
   const viewOnceBubble = renderViewOnceBubble(record, { onOpen: openViewOnceRecord });
   if (viewOnceBubble) main.append(viewOnceBubble);
   const threadSummary = document.createElement("button");
@@ -5096,6 +5774,9 @@ function buildRow(record, prev) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
+  const stickersEl = document.createElement("div");
+  stickersEl.className = "chat-stickers";
+  row.append(stickersEl);
   const receipt = receiptState(record);
   if (receipt && isDirectMessageKey(record.channel)) {
     record.recipientsEl = null;
@@ -5108,6 +5789,7 @@ function buildRow(record, prev) {
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
+  record.stickersEl = stickersEl;
   record.threadSummaryEl = threadSummary;
   renderRecordBody(record);
   renderThreadSummary(record.id);
@@ -5123,6 +5805,11 @@ function buildRow(record, prev) {
       "Add reaction",
       "React",
       (button) => showEmojiPicker(button, record.id),
+    ));
+    actions.append(messageAction(
+      "Add sticker",
+      "Sticker",
+      (button) => showStickerPicker(button, record.id),
     ));
   }
   // Filing someone else's report is the common case, so this is not
@@ -5158,6 +5845,14 @@ function buildRow(record, prev) {
   row.append(actions);
   bindTouchMessageActions(row);
   return row;
+}
+
+function renderGenieWelcome(record) {
+  return mountGenieWelcome(record.genieWelcome, {
+    autoplay: !playedGenieWelcomes.has(record.id) &&
+      (record.self || Date.now() - Number(record.ts) < GENIE_WELCOME_AUTOPLAY_MS),
+    onPlay: () => playedGenieWelcomes.add(record.id),
+  });
 }
 
 function renderActiveChannel() {
@@ -5208,6 +5903,7 @@ function renderActiveChannel() {
     }
     fragment.append(buildRow(record, prev));
     renderReactions(record.id);
+    renderStickers(record.id);
     prev = record;
   }
   for (const notice of notices) fragment.append(buildTrustNotice(notice));
@@ -5256,6 +5952,7 @@ function insertMessage(record) {
       if (!groupedPrevious) logEl.append(buildDateDivider(record.ts));
       logEl.append(buildRow(record, groupedPrevious));
       renderReactions(record.id);
+      renderStickers(record.id);
       if (pinned || record.self) scrollLogToBottom();
     } else {
       renderActiveChannel();
@@ -5280,6 +5977,8 @@ function appendMessage(
   recipientNames = [],
   viewOnce = null,
   relayed = false,
+  serverVisible = false,
+  genieWelcome = null,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -5296,6 +5995,8 @@ function appendMessage(
     recipients: knownRecipientCount(recipients),
     recipientNames: knownRecipientNames(recipientNames),
     relayed: Boolean(relayed),
+    serverVisible: Boolean(serverVisible),
+    genieWelcome: genieWelcomeIndex(genieWelcome),
   };
   if (viewOnce) {
     record.viewOnce = viewOnce;
@@ -5316,6 +6017,7 @@ function removeMessage(id) {
     if (!reply?.rootId) return;
     threads.deleteTarget(id);
     reactions.delete(id);
+    stickers.delete(id);
     if (activeThreadRootId === reply.rootId) renderThread();
     renderThreadSummary(reply.rootId);
     return;
@@ -5327,6 +6029,7 @@ function removeMessage(id) {
     rec.attachment = null;
     rec.deleted = true;
     reactions.delete(id);
+    stickers.delete(id);
     threads.deleteTarget(id);
     repaintChannel(rec.channel);
     queueRoomPreview(rec.channel);
@@ -5335,6 +6038,7 @@ function removeMessage(id) {
   }
   rows.delete(id);
   reactions.delete(id);
+  stickers.delete(id);
   threads.deleteTarget(id);
   const list = channelMessages.get(rec.channel) || [];
   const index = list.indexOf(rec);
@@ -5443,9 +6147,8 @@ function watchUserStatuses() {
   });
 }
 
-function allowedChatAccountKind(value, scope = roomScopeForChannel()) {
-  return value === "user" ||
-    (scope === "public-world-general" && value === "guest");
+function allowedChatAccountKind(value) {
+  return value === "user" || value === "guest" || value === "integration";
 }
 
 function normalizedPublicWorldFrame(
@@ -5458,8 +6161,8 @@ function normalizedPublicWorldFrame(
   }
   return {
     ...plain,
-    accountKind: plain.accountKind === "user" ? "user" : "guest",
-    sender: publicWorldName(plain.sender),
+    accountKind: ["user", "integration"].includes(plain.accountKind) ? plain.accountKind : "guest",
+    sender: plain.botVia ? plain.sender : publicWorldName(plain.sender),
   };
 }
 
@@ -5474,7 +6177,7 @@ function frameMatchesScope(plain, scope) {
   if (plain.type === "history") return true;
   if (plain.type === "hello" || plain.type === "presence" ||
       plain.type === "bye") {
-    return allowedChatAccountKind(plain.accountKind, scope);
+    return allowedChatAccountKind(plain.accountKind);
   }
   return plain.channel === "#general" ||
     plain.conversation === "#general";
@@ -5493,7 +6196,8 @@ function renderChatEntry(
   recipients = null,
   recipientNames = [],
 ) {
-  if (!entry || !allowedChatAccountKind(entry.accountKind, scope)) return;
+  if (!entry || !allowedChatAccountKind(entry.accountKind)) return;
+  if (!isSealedPlain(entry) && !isServerPlain(entry)) return;
   entry = normalizedPublicWorldFrame(entry, scope);
   const channelKey = scope === "public-world-general" ? "#general" : scope;
   if (scope === "public-world-general" && entry.channel !== "#general") return;
@@ -5505,7 +6209,7 @@ function renderChatEntry(
   noteRoster(entry);
   if (!once(entry.id)) return;
   if (chatRetention.isExpired(entry.ts, channelKey)) return;
-  const who = (entry.sender || "peer").slice(0, MAX_NAME);
+  const who = entry.botVia ? entry.sender : (entry.sender || "peer").slice(0, MAX_NAME);
   const viewOnce = isDirectMessageKey(scope) ? viewOnceFromEntry(entry) : null;
   const text = viewOnce ? "" : entry.text || "";
   const attachment = viewOnce ? null : attachmentFromEntry(entry);
@@ -5528,11 +6232,14 @@ function renderChatEntry(
       recipientNames,
       viewOnce,
       true,
+      isServerPlain(entry) && entry.serverVisible === true,
+      viewOnce ? null : entry.genieWelcome,
     );
   }
 }
 
 function appMessageFromEntry(entry, channelKey) {
+  if (!isServerPlain(entry)) return null;
   const senderId = String(entry?.senderId || "");
   const notice = senderId.startsWith("system:");
   if (!senderId.startsWith("app:") && !notice) return null;
@@ -5552,7 +6259,7 @@ function renderThreadEntry(
   recipients = null,
   recipientNames = [],
 ) {
-  if (!entry || !allowedChatAccountKind(entry.accountKind, scope)) return;
+  if (!entry || !allowedChatAccountKind(entry.accountKind) || !isSealedPlain(entry)) return;
   entry = normalizedPublicWorldFrame(entry, scope);
   const channelKey = scope === "public-world-general" ? "#general" : scope;
   if (scope === "public-world-general" && entry.channel !== "#general") return;
@@ -5566,7 +6273,7 @@ function renderThreadEntry(
   const record = portableMessageRecord({
     ...entry,
     channel: channelKey,
-    sender: (entry.sender || "peer").slice(0, MAX_NAME),
+    sender: entry.botVia ? entry.sender : (entry.sender || "peer").slice(0, MAX_NAME),
     text,
     attachment,
     self: entry.senderId === selfId,
@@ -5662,12 +6369,11 @@ function targetMatchesScope(targetId, scope) {
 }
 
 function handlePlain(plain, scope = roomScopeForChannel()) {
+  if (!isSealedPlain(plain) && !isServerPlain(plain)) return;
   plain = botLine(plain);
   const type = plain.type;
   if (!frameMatchesScope(plain, scope)) return;
-  if (type !== "history" && !allowedChatAccountKind(plain.accountKind, scope)) {
-    return;
-  }
+  if (!allowedChatAccountKind(plain.accountKind)) return;
   plain = normalizedPublicWorldFrame(plain, scope);
   // Roster + channel discovery run for EVERY decrypted frame — desktop nodes
   // announce themselves (hello/presence) without accountKind, and the people
@@ -5702,7 +6408,7 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       plain, scope, plain.relayRecipients ?? null,
       plain.relayRecipientNames ?? []);
   } else if (type === "history") {
-    const entries = Array.isArray(plain.entries) ? plain.entries : [];
+    const entries = historyEntries(plain);
     for (const entry of entries) {
       if (entry?.type === "thread-reply") {
         renderThreadEntry(entry, scope);
@@ -5717,16 +6423,15 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       }
     }
   } else if (type === "reaction") {
-    if (targetMatchesScope(plain.target, scope) && once(plain.id)) {
+    if (isSealedPlain(plain) && targetMatchesScope(plain.target, scope) && once(plain.id)) {
       applyReaction(plain);
     }
   } else if (type === "edit") {
-    // The author edited their own message; only honour it from that author.
     if (!targetMatchesScope(plain.target, scope)) return;
     const rec = rows.get(plain.target);
     const reply = rec ? null : threads.target(plain.target);
     const target = rec || reply;
-    if (target && target.senderId === plain.senderId) {
+    if (target && mayChangeMessage(plain, target)) {
       const patch = {
         text: plain.text || "",
         richText: plain.richText || null,
@@ -5747,10 +6452,9 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       if (activeThreadRootId === rec.id) renderThread();
     }
   } else if (type === "delete") {
-    // A plain delete is only valid from the message's own author.
     if (!targetMatchesScope(plain.target, scope)) return;
     const rec = rows.get(plain.target) || threads.target(plain.target);
-    if (rec && rec.senderId === plain.senderId) removeMessage(plain.target);
+    if (rec && mayChangeMessage(plain, rec)) removeMessage(plain.target);
   } else if (type === "admin-delete") {
     // Moderation: remove any message once the admin signature checks out.
     if (!targetMatchesScope(plain.target, scope)) return;
@@ -5766,6 +6470,10 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
     appendSystem(sender + " left");
   } else if (CALL_FRAME_TYPES.has(type)) {
     if (isDirectMessageKey(scope)) void chatCalls.handleFrame(plain, scope);
+  } else if (GROUP_CALL_TYPES.has(type)) {
+    if (privateChannelForKey(scope)?.visibility === "private") {
+      groupCalls.handleFrame({ ...plain, sender: plain.sender || sender }, scope);
+    }
   }
   if (
     isDirectMessageKey(scope)
@@ -5891,6 +6599,184 @@ function sendCallSignal(channelKey, type, extra) {
   }));
 }
 
+function sendGroupCallFrame(channelKey, type, extra) {
+  if (
+    privateChannelForKey(channelKey)?.visibility !== "private" ||
+    roomScopeForChannel() !== channelKey ||
+    !roomTransport?.connected
+  ) {
+    return Promise.resolve(false);
+  }
+  return send(makePlain(type, {
+    channel: channelWireLabel(channelKey),
+    ...extra,
+  }));
+}
+
+const GROUP_CALL_FACE_LABEL = "Face stream";
+const GROUP_CALL_FACE_DETAIL = "Face stream. Animated from a recent photo while the connection is weak";
+
+function groupCallTileFor(key, stream, name, self, state = {}) {
+  let entry = groupCallVideos.get(key);
+  if (!entry) {
+    const tile = document.createElement("div");
+    tile.className = "chat-group-call-tile" + (self ? " is-self" : "");
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = self;
+    const label = document.createElement("span");
+    const badge = document.createElement("span");
+    badge.className = "chat-group-call-badge";
+    badge.setAttribute("role", "note");
+    badge.hidden = true;
+    const warning = document.createElement("span");
+    warning.className = "chat-group-call-warning";
+    warning.setAttribute("role", "alert");
+    warning.hidden = true;
+    tile.append(video, label, badge, warning);
+    entry = { tile, video, label, badge, warning };
+    groupCallVideos.set(key, entry);
+  }
+  if (entry.video.srcObject !== stream) entry.video.srcObject = stream;
+  entry.label.textContent = name;
+  const face = state.rep === "face";
+  entry.badge.hidden = !face;
+  entry.badge.textContent = face ? GROUP_CALL_FACE_LABEL : "";
+  entry.badge.title = face ? GROUP_CALL_FACE_DETAIL : "";
+  const auth = state.auth || "";
+  entry.tile.classList.toggle("is-auth-missing", auth === "missing");
+  entry.tile.classList.toggle("is-auth-forged", auth === "forged");
+  entry.warning.hidden = auth !== "missing" && auth !== "forged";
+  entry.warning.textContent = auth === "forged"
+    ? `${name}'s video failed a check. Someone in this call may be faking it.`
+    : auth === "missing" ? `Can't confirm this is ${name} right now` : "";
+  return entry.tile;
+}
+
+function groupCallNames(active, peers) {
+  const names = [];
+  for (const peer of peers || []) names.push(active.tiles.get(peer)?.name || "someone");
+  if (names.length <= 1) return names.join("");
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+}
+
+function renderGroupCallVerification(active) {
+  if (!groupCallVerify) return;
+  const view = active?.engine === "fmm" ? active.verification : null;
+  groupCallVerify.hidden = !view;
+  if (!view) return;
+  const code = view.code;
+  groupCallVerify.classList.toggle("is-mismatch", Boolean(view.mismatch));
+  groupCallVerifyTitle.textContent = code ? "Compare these with everyone in the call" : "Preparing a verification code…";
+  const glyphs = code ? code.emojiText.split(" ") : [];
+  const items = code ? code.emojiNames.map((name, i) => {
+    const figure = document.createElement("figure");
+    const glyph = document.createElement("span");
+    glyph.className = "glyph";
+    glyph.textContent = glyphs[i] || "";
+    glyph.setAttribute("aria-hidden", "true");
+    const caption = document.createElement("figcaption");
+    caption.textContent = name;
+    figure.append(glyph, caption);
+    return figure;
+  }) : [];
+  groupCallVerifyEmoji.replaceChildren(...items);
+  groupCallVerifyDigits.textContent = code ? "Or compare numbers: " + code.digits : "";
+  let note = "";
+  if (view.mismatch) note = "The codes don't match. Someone may be listening in: leave the call and tell the others another way.";
+  else if (view.waiting.length) note = `Waiting for ${groupCallNames(active, view.waiting)} to confirm…`;
+  else if (view.newcomers.length && view.peers.length) note = `${groupCallNames(active, view.newcomers)} ${view.newcomers.length === 1 ? "is" : "are"} not verified. Compare the new code to verify everyone.`;
+  else if (view.verified) note = "Everyone in this call is verified.";
+  else if (view.changedBy && code) note = `The verification code changed because ${groupCallNames(active, [view.changedBy])} joined`;
+  groupCallVerifyNote.textContent = note;
+  groupCallVerifyActions.hidden = !code || view.verified;
+}
+
+let groupCallQuality = null;
+
+function syncGroupCallQuality(active) {
+  if (groupCallQuality && groupCallQuality.call === active) return;
+  groupCallQuality?.widget?.destroy();
+  groupCallQuality?.meter.stop();
+  groupCallQuality = null;
+  const host = groupCallPanel?.querySelector(".chat-call-head");
+  if (!active || !host) return;
+  const current = () => groupCalls.active === active;
+  const rtc = rtcStatsReader(() => (current() && active.pc ? [active.pc] : []));
+  const fmm = fmmStatsReader(() => (current() ? active.fmm : null));
+  const meter = createCallQualityMeter({
+    readStats: () => (active.fmm ? fmm() : rtc()),
+    tracks: () => ({
+      mic: current() ? (active.outgoing?.stream || active.local)?.getAudioTracks?.()[0] || null : null,
+      peers: current() ? [...active.tiles.values()].flatMap((tile) => tile.stream?.getAudioTracks?.() || []) : [],
+    }),
+    face: () => (current() && active.outgoing?.stage?.face?.() ? active.outgoing.stage.stats || null : null),
+  });
+  const widget = mountCallQualityWidget(host, meter, {
+    video: () => current() && active.media === "video",
+    sending: () => current() && !active.cameraOff,
+    peerLabel: "Others",
+  });
+  groupCallQuality = { call: active, meter, widget };
+}
+
+function renderGroupCall() {
+  if (!groupCallBar || !groupCallPanel) return;
+  const active = groupCalls.active;
+  syncGroupCallQuality(active || null);
+  const channel = privateChannelForKey(activeChannel);
+  const roster = channel?.visibility === "private" ? groupCalls.roster(activeChannel) : [];
+  groupCallBar.hidden = Boolean(active) || roster.length === 0;
+  if (!groupCallBar.hidden) {
+    groupCallBarText.textContent = roster.length === 1
+      ? "A call is in progress here · 1 person"
+      : `A call is in progress here · ${roster.length} people`;
+  }
+  groupCallPanel.hidden = !active;
+  if (!active) {
+    for (const entry of groupCallVideos.values()) entry.video.srcObject = null;
+    groupCallVideos.clear();
+    if (groupCallGrid) groupCallGrid.replaceChildren();
+    return;
+  }
+  const label = privateChannelForKey(active.channelKey)?.name || "Group call";
+  groupCallTitle.textContent = "#" + String(label).replace(/^#/, "");
+  const count = active.tiles.size + 1;
+  groupCallState.textContent = active.state === "live"
+    ? `Connected · end-to-end encrypted · ${count} in call`
+    : active.state === "reconnecting" ? "Reconnecting…" : "Connecting…";
+  groupCallMute.textContent = active.muted ? "Unmute" : "Mute";
+  groupCallCamera.hidden = active.media !== "video";
+  groupCallCamera.textContent = active.cameraOff ? "Camera on" : "Camera off";
+  const tiles = [groupCallTileFor("self", active.outgoing?.stream || active.local, "You", true)];
+  const keep = new Set(["self"]);
+  for (const [peer, tile] of active.tiles) {
+    keep.add(peer);
+    tiles.push(groupCallTileFor(peer, tile.stream, tile.name, false, { auth: tile.auth, rep: tile.rep }));
+  }
+  renderGroupCallVerification(active);
+  for (const key of [...groupCallVideos.keys()]) {
+    if (!keep.has(key)) groupCallVideos.delete(key);
+  }
+  groupCallGrid.replaceChildren(...tiles);
+}
+
+async function startGroupCall(media) {
+  const channel = privateChannelForKey(activeChannel);
+  if (!channel || channel.visibility !== "private") return;
+  const result = await groupCalls.join(activeChannel, channel.id, media);
+  if (result?.error) appendSystem(result.error);
+}
+
+function startCall(media) {
+  if (directMessageForKey(activeChannel)) {
+    previewDirectCall(media);
+    return;
+  }
+  void startGroupCall(media);
+}
+
 function sendMissedCallLine(channelKey, media) {
   if (roomScopeForChannel() !== channelKey || !roomTransport?.connected) return;
   const plain = makePlain("chat", {
@@ -5907,12 +6793,13 @@ function sendMissedCallLine(channelKey, media) {
 
 const chatCalls = createChatCalls({
   iceServers: CALL_ICE_SERVERS,
-  selfId,
+  selfId: () => selfId,
   accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
   sendSignal: sendCallSignal,
   partnerFor: (channelKey) => directMessageForKey(channelKey)?.otherUser || "",
   onMissed: sendMissedCallLine,
   requestStart: (media) => startDirectCall(media),
+  avatarImage: ownAvatarImage,
 });
 
 function offerRequestedCall(partner) {
@@ -6149,9 +7036,7 @@ function makeForkbotPlain(text) {
 }
 
 function botLine(plain) {
-  const bot = String(plain?.bot || "").trim().toLowerCase();
-  if (!["forkbot", "claude", "codex"].includes(bot)) return plain;
-  return { ...plain, sender: bot, senderId: bot, postedBy: plain.senderId };
+  return botViaLine(plain, ["forkbot", "claude", "codex"]);
 }
 
 async function broadcastForkbotMessage(text) {
@@ -6241,7 +7126,7 @@ async function maybeAskForkbot(text) {
   // the room the mention happened in.
   const context = (recentContext.get(activeChannel) || [])
     .slice(0, -1)
-    .filter((m) => m.sender.toLowerCase() !== "forkbot")
+    .filter((m) => m.sender.toLowerCase() !== "forkbot" && !isBotViaName(m.sender))
     .slice(-12);
   try {
     const response = await fetch(FORKBOT_ENDPOINT, {
@@ -6308,6 +7193,8 @@ function handleTransportState(state, detail) {
       return;
     }
     if (!officeAuthorizationExpired) showOfficeFailure("");
+    void groupCalls.channelRekeyed(
+      scope, String(roomTransport?.access?.roomName || "")).catch(() => {});
     const connectedChannel = scope === "public-world-general" ? "#general" : scope;
     // An open socket is not a loaded channel: the relay's retained backlog is
     // still on the wire. Marking the channel ready here painted the empty
@@ -6392,7 +7279,7 @@ function renderSealControl() {
   sealBtn.title = serverNotices
     ? "Server notices written by ForkMesh itself; not end-to-end encrypted"
     : controllerReadable
-    ? "Controller-readable public channel — ForkBot, MCP, and webhooks can participate"
+    ? "Public channel: sealed to the devices here, but anyone can join, the server included. Apps and webhooks post through the server"
     : "Automatic device-to-device encryption — the controller key alone cannot read messages";
   renderSealState();
 }
@@ -6411,11 +7298,12 @@ function renderSealState() {
   }
   if (controllerReadableScope(scope)) {
     sealStateEl.textContent = unavailable
-      ? "This channel is public and controller-readable, so ForkBot, MCP, and " +
-        "webhooks can participate. Some older end-to-end encrypted history " +
-        "was not addressed to this device."
-      : "This channel is public and controller-readable, so ForkBot, MCP, and " +
-        "webhooks can participate.";
+      ? "This channel is public: messages are sealed to the devices here, but " +
+        "anyone can join and read them, the server included. Apps and webhooks " +
+        "post through the server. Some older history was not addressed to this device."
+      : "This channel is public: messages are sealed to the devices here, but " +
+        "anyone can join and read them, the server included. Apps and webhooks " +
+        "post through the server.";
     return;
   }
   sealStateEl.textContent = refusedUnsealed
@@ -6654,14 +7542,14 @@ function newRoomTransport() {
     isDirectRoom: (room) => isDirectMessageKey(room.scope),
     // Separate from authorize() on purpose: private E2EE identity material may
     // never come from the relay, so it is resolved from this browser only.
-    resolveSeal: (room, roomName) =>
-      roomSeals.resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope)),
+    resolveSeal: async (room, roomName) =>
+      (await activateChatIdentity()).resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope)),
     onSealed: (keyId, room) => noteSealMismatch(keyId, room.scope),
     onTrust: (event, room) => {
       if (room.scope === roomScopeForChannel()) renderTrustBanner();
     },
-    onPlain: (plain, room) => handlePlain(plain, room.scope),
-    onHistory: (plains, room) => handleHistory(plains, room),
+    onPlain: (plain, room) => receivePlains([plain], room, false),
+    onHistory: (plains, room) => receivePlains(plains, room, true),
     onRecipients: (id, count, _room, names) =>
       applyRecipientCount(id, count, names),
     onServerCopies: (stored, room) => applyDirectServerCopies(stored, room.scope),
@@ -7262,6 +8150,50 @@ async function sendCurrentMessage() {
   void sendAttachmentDraft();
 }
 
+function sendGenieWelcome() {
+  if (!canJoinChannel()) {
+    lockChatForNonUser();
+    return;
+  }
+  if (!isWelcomeChannel() || !genieWelcomeBtn || genieWelcomeBtn.disabled) return;
+  const index = pickGenieWelcome(lastGenieWelcome);
+  lastGenieWelcome = index;
+  genieWelcomeBtn.disabled = true;
+  setTimeout(() => {
+    genieWelcomeBtn.disabled = false;
+  }, GENIE_WELCOME_COOLDOWN_MS);
+  const channel = activeChannel;
+  const text = GENIE_WELCOMES[index].text;
+  runWhenConnected(() => {
+    if (channel !== activeChannel) return;
+    const plain = makePlain("chat", {
+      channel: channelWireLabel(channel),
+      text,
+      genieWelcome: index,
+    });
+    send(plain);
+    seen.add(plain.id);
+    appendMessage(
+      "self",
+      plain.sender,
+      text,
+      plain.id,
+      plain.senderId,
+      plain.ts,
+      channel,
+      null,
+      null,
+      null,
+      null,
+      [],
+      null,
+      false,
+      false,
+      index,
+    );
+  });
+}
+
 function suspendOfficeChat() {
   if (!isOfficeEmbed || chatSuspended) return;
   chatSuspended = true;
@@ -7289,10 +8221,25 @@ function wireChatControls() {
   if (chatControlsWired) return;
   chatControlsWired = true;
   sendBtn.addEventListener("click", sendCurrentMessage);
+  genieWelcomeBtn?.addEventListener("click", sendGenieWelcome);
   directCreateBtn?.addEventListener("click", () => openDirectMessageDialog("new"));
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
-  callAudioBtn?.addEventListener("click", () => previewDirectCall("audio"));
-  callVideoBtn?.addEventListener("click", () => previewDirectCall("video"));
+  callAudioBtn?.addEventListener("click", () => startCall("audio"));
+  callVideoBtn?.addEventListener("click", () => startCall("video"));
+  groupCallJoinAudio?.addEventListener("click", () => void startGroupCall("audio"));
+  groupCallJoinVideo?.addEventListener("click", () => void startGroupCall("video"));
+  groupCallMute?.addEventListener("click", () => groupCalls.toggleMute());
+  groupCallVerifyMatch?.addEventListener("click", () => void groupCalls.confirmCode(true).then(() => renderGroupCall()));
+  groupCallVerifyMismatch?.addEventListener("click", () => {
+    void groupCalls.confirmCode(false);
+    renderGroupCall();
+  });
+  groupCallCamera?.addEventListener("click", () => groupCalls.toggleCamera());
+  groupCallLeave?.addEventListener("click", () => {
+    groupCalls.leave();
+    if (groupCalls.lastError && groupCalls.lastError !== "The call ended.") appendSystem(groupCalls.lastError);
+  });
+  setInterval(renderGroupCall, 15000);
   viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
   viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);
@@ -7447,6 +8394,7 @@ async function initChat() {
   wireThreadControls();
   wireMessageActionControls();
   await hydrateUserSession();
+  await activateChatIdentity().catch(() => null);
   await loadOfficeOrganizationMembership();
   ensureChannel("#general");
   await refreshPrivateChannels({ connect: false });

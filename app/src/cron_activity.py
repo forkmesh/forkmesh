@@ -72,6 +72,9 @@ CRON_PHASE_CATALOG = (
      "Deliver queued repository webhooks to their owners' endpoints."),
     ("app-events", 5, (4,), "integrations",
      "Deliver queued ForkMesh Apps events to the apps' endpoints."),
+    ("pull-attention", 2, (0,), "notifications",
+     "Re-run the merge trial of up to two open pull requests whose base or "
+     "head moved, and ping each author once when theirs starts to conflict."),
     ("provider-mirror", 5, (4,), "integrations",
      "Sync repositories mirrored to GitHub or GitLab: send queued issues, "
      "comments and releases, and import new ones."),
@@ -103,6 +106,10 @@ CRON_PHASE_CATALOG = (
      "Purge catalog entries for blocked repositories."),
     ("central-fund", 15, (14,), "rewards",
      "Distribute the central reward fund."),
+    ("mirror-quota", 5, (3,), "integrations",
+     "Check a few registered repository mirrors with a bounded git ref "
+     "listing and record whether each matches the repository's recent "
+     "heads."),
     ("instance-health", 15, (11,), "nodes",
      "Ask listed instances for /readyz; hide offline ones and ping about "
      "deleting those offline for a day."),
@@ -141,6 +148,15 @@ CRON_PHASE_CATALOG = (
      "achievement badges."),
     ("workflow-schedules", 5, (3,), "platform",
      "Run up to three workflows whose schedule trigger is due."),
+    ("member-activity", 15, (6,), "platform",
+     "Refresh the chat member list's activity figures from up to six hosted "
+     "public repositories' Pulse ledgers."),
+    ("tip-verify", 5, (2,), "rewards",
+     "Look for the Solana transfers paying up to three pending comment "
+     "tips (read-only RPC; the forge never signs or holds funds)."),
+    ("ai-review", 5, (0,), "platform",
+     "Review at most one queued pull request with Cloudflare Workers AI "
+     "when an administrator turned AI review on."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

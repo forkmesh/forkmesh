@@ -1,3 +1,6 @@
+from hidden_unicode import clean_value as clean_hidden_unicode
+
+
 def _bind_runtime(runtime):
     namespace = globals()
     for name, value in runtime.items():
@@ -51,7 +54,7 @@ class _ProgramRuntime:
         if not str(raw or "").strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")

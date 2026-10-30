@@ -4,19 +4,21 @@ import json
 import re
 from urllib.parse import quote, urlparse
 
+import instance_features
+
 
 MARKER = "<!-- forkmesh-mirror -->"
 USER_AGENT = "ForkMesh-provider-mirror/1.0 (+https://forkmesh.com/docs)"
 GITHUB_API_VERSION = "2022-11-28"
 MAX_TOKEN_LENGTH = 512
-MAX_TITLE_LENGTH = 240
-MAX_BODY_LENGTH = 16000
-MAX_LABELS = 8
+MAX_TITLE_LENGTH = 256
+MAX_BODY_LENGTH = 262_144
+MAX_LABELS = 100
 MAX_HISTORY = 20
 MAX_CANDIDATES = 50
 MAX_IMPORT_PER_REQUEST = 25
-AUTO_IMPORT_PER_RUN = 10
-AUTO_COMMENTS_PER_RUN = 20
+AUTO_IMPORT_PER_RUN = 100
+AUTO_COMMENTS_PER_RUN = 500
 SYNC_INTERVAL_MS = 10 * 60 * 1000
 CRON_MIRRORS_PER_TICK = 3
 OUTBOX_DRAIN_IMMEDIATE = 2
@@ -25,6 +27,7 @@ OUTBOX_BASE_DELAY_MS = 60 * 1000
 OUTBOX_MAX_DELAY_MS = 60 * 60 * 1000
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_RESPONSE_CHARS = 2 * 1024 * 1024
+PUSH_REFS = ("all", "default")
 RETRY_STATUSES = frozenset({0, 408, 425, 429, 500, 502, 503, 504})
 
 PROVIDERS = {
@@ -141,6 +144,11 @@ def clean_token(value):
     return token
 
 
+def clean_push_refs(value):
+    value = str(value or "").strip().lower()
+    return value if value in PUSH_REFS else ""
+
+
 def token_hint(token):
     token = str(token or "")
     return ("…" + token[-4:]) if len(token) >= 8 else "…"
@@ -234,6 +242,7 @@ def public_view(row, record):
         "tokenHint": str(record.get("tokenHint") or ""),
         "active": int((row or {}).get("active") or 0) == 1,
         "prune": bool(record.get("prune")),
+        "refs": clean_push_refs(record.get("refs")) or "all",
         "resources": normalize_resources(
             record.get("resources"), provider) if provider else {},
         "createdAt": int((row or {}).get("created_at") or 0),
@@ -251,6 +260,24 @@ def public_view(row, record):
         },
         "history": list(record.get("history") or [])[:MAX_HISTORY],
     }
+
+
+def public_link(row, record):
+    record = record if isinstance(record, dict) else {}
+    provider = clean_provider(record.get("provider"))
+    remote = record.get("remote") if isinstance(
+        record.get("remote"), dict) else {}
+    status = record.get("status") if isinstance(
+        record.get("status"), dict) else {}
+    if (not provider or not remote.get("path")
+            or int((row or {}).get("active") or 0) != 1
+            or not pushes(normalize_resources(
+                record.get("resources"), provider), "code")
+            or not status.get("remoteExists")
+            or status.get("remotePrivate")):
+        return None
+    return {"provider": provider, "label": PROVIDERS[provider]["label"],
+            "url": remote_web_url(provider, remote), "role": "mirror"}
 
 
 def clean_title(value):
@@ -414,7 +441,8 @@ def backoff_ms(attempt):
 
 
 def api_headers(provider, token, graphql=False):
-    headers = {"accept": "application/json", "user-agent": USER_AGENT}
+    headers = {"accept": "application/json",
+               "user-agent": instance_features.user_agent(USER_AGENT, "provider-mirror")}
     if provider == "github":
         headers["accept"] = "application/vnd.github+json"
         headers["x-github-api-version"] = GITHUB_API_VERSION
@@ -663,6 +691,14 @@ async def _load(env, repo_bi):
     return row, record
 
 
+async def public_about_link(env, owner, repo):
+    try:
+        row, record = await _load(env, await _repo_bi(env, owner, repo))
+    except Exception:
+        return None
+    return public_link(row, record)
+
+
 async def _store(env, repo_bi, record, active=None, next_sync_at=None,
                  last_sync_at=None):
     now = _now()
@@ -771,7 +807,7 @@ async def _import_item(env, record, repo_bi, item):
         body = import_body(provider, item)
         replies = [c for c in item.get("comments") or []
                    if not is_mirrored_text(c.get("body"))]
-        for comment in replies[:20]:
+        for comment in replies:
             body += "\n\n> **@%s** replied:\n>\n%s" % (
                 comment["author"], "\n".join(
                     "> " + line for line in str(
@@ -1187,6 +1223,7 @@ async def push_config(env, owner, name, aliases=()):
                 "username": PROVIDERS[provider]["username"],
                 "token": record["token"],
                 "prune": bool(record.get("prune")),
+                "refs": clean_push_refs(record.get("refs")) or "all",
             }
     except Exception:
         return None
@@ -1290,6 +1327,12 @@ async def repo_provider_mirror_handler(env, request, owner, repo):
         remote = clean_remote(provider, data.get("remote"))
         if not remote:
             return json_response({"error": "invalid_remote"}, status=400)
+        if "refs" in data and data.get("refs") not in (None, ""):
+            refs = clean_push_refs(data.get("refs"))
+            if not refs:
+                return json_response({"error": "invalid_refs"}, status=400)
+        else:
+            refs = clean_push_refs((record or {}).get("refs")) or "all"
         token = clean_token(data.get("token"))
         if not token and record and record.get("provider") == provider:
             token = record.get("token", "")
@@ -1305,6 +1348,7 @@ async def repo_provider_mirror_handler(env, request, owner, repo):
                 data.get("resources"), provider,
                 previous.get("resources") if same_remote else None),
             "prune": bool(data.get("prune")),
+            "refs": refs,
             "createdBy": previous.get("createdBy") or clean_string(
                 data.get("ownerAccount", ""), MAX_NODE_NAME).lower(),
             "cursors": previous.get("cursors", {}) if same_remote else {},

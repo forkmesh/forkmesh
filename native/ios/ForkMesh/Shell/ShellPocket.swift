@@ -276,7 +276,7 @@ struct PocketLockScreen: View {
                 others: watcher.others, glasses: watcher.nearby, homing: watcher.homing, heading: watcher.heading)
             VStack(spacing: FmSpace.x2) {
                 GlassesRadar(blips: blips, color: alarmed ? fm.danger : fm.success, dot: Color.white.opacity(0.75), alert: fm.danger, size: 150)
-                Text(nearby == 0 ? "No smart glasses" : nearby == 1 ? "Smart glasses nearby" : "\(nearby) smart glasses nearby")
+                Text(nearby == 0 ? "No smart glasses or cameras" : nearby == 1 ? "Smart glasses or camera nearby" : "\(nearby) smart glasses or cameras nearby")
                     .font(.title2.weight(.bold))
                     .foregroundStyle(alarmed ? fm.danger : Color.white)
                 Text(heard == 1 ? "1 device heard" : "\(heard) devices heard")

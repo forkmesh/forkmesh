@@ -57,12 +57,6 @@ private struct ChatScreenBody: View {
                     hub.clearNotice()
                 }
             }
-            .onChange(of: hub.extras.inviteNotice) { _, posted in
-                if let posted = posted {
-                    notice = FmNotice(posted.text)
-                    hub.extras.clearInviteNotice()
-                }
-            }
             .onChange(of: hub.pendingIssue) { _, argument in
                 guard let argument = argument else { return }
                 hub.pendingIssue = nil
@@ -224,7 +218,6 @@ private struct ChatTranscript<Drawer: View>: View {
     @State private var sealInfo: Bool = false
     @State private var editing: ChatMessage?
     @State private var editText: String = ""
-    @State private var inviting: Bool = false
     @State private var managing: OfficeRoom?
     @State private var meshDebugShown: Bool = false
     @State private var channelInfo: Bool = false
@@ -260,7 +253,6 @@ private struct ChatTranscript<Drawer: View>: View {
             sharing = nil
             person = nil
             sealInfo = false
-            inviting = false
             managing = nil
             channelInfo = false
             broadcast = nil
@@ -282,9 +274,6 @@ private struct ChatTranscript<Drawer: View>: View {
             Button("Send to agent") { FmMessageHandoff.send(hub.sealSummary) }
         } message: {
             Text(hub.sealSummary)
-        }
-        .sheet(isPresented: $inviting) {
-            InviteToChannelSheet(hub: hub, channel: hub.currentConversation)
         }
         .sheet(item: $managing) { (room: OfficeRoom) in
             if let office = hub.office {
@@ -342,6 +331,15 @@ private struct ChatTranscript<Drawer: View>: View {
         VStack(spacing: 0) {
             if hub.inMesh && meshDebugShown {
                 MeshDebugBar(mesh: hub.mesh)
+            }
+            if !hub.meshNotice.isEmpty {
+                Label(hub.meshNotice, systemImage: "eye")
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x1)
+                    .accessibilityIdentifier("chat-mesh-readable-notice")
             }
             if let topic = hub.office?.room(for: hub.currentConversation)?.topic, !topic.isEmpty {
                 Text(topic)
@@ -496,8 +494,7 @@ private struct ChatTranscript<Drawer: View>: View {
             guard room.canManage, room.isPrivate else { return nil }
             return { managing = room }
         }
-        guard hub.extras.isPrivate(conversation) else { return nil }
-        return { inviting = true }
+        return nil
     }
 
     @ViewBuilder private var messages: some View {
@@ -566,6 +563,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let relayRoom: Bool = !hub.inMesh && !hub.isReadOnly(message.conversation)
         let channel: String = message.conversation
         var react: ((String) -> Void)? = nil
+        var sticker: ((String) -> Void)? = nil
         var thread: (() -> Void)? = nil
         var reply: (() -> Void)? = nil
         var edit: (() -> Void)? = nil
@@ -574,6 +572,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let ephemeral: Bool = message.app?.ephemeral == true
         if relayRoom && !ephemeral {
             react = { (value: String) in hub.toggleReaction(message, value: value) }
+            sticker = { (slug: String) in hub.toggleSticker(message, slug: slug) }
             if ChatHub.hasThreads(channel) {
                 thread = { onRoute(.thread(channel: channel, id: message.id)) }
             }
@@ -629,7 +628,8 @@ private struct ChatTranscript<Drawer: View>: View {
             onRemind: ephemeralNote ? nil : { (option: ChatReminderOption) in
                 let place: String = hub.conversationLabel(message.conversation)
                 Task { onNotice(await ChatReminders.schedule(option, message: message, text: text, place: place)) }
-            })
+            },
+            onSticker: sticker)
     }
 
     private func loadDraft(_ conversation: String) {
@@ -686,6 +686,7 @@ private struct ChatTranscript<Drawer: View>: View {
         Task {
             if await hub.sendChatText(text) {
                 draft = ""
+                if let push = Services.get(PushNotificationService.self) { await push.askWhenUseful() }
             }
         }
     }
@@ -799,6 +800,7 @@ struct ChatRowActions {
     var onShare: (() -> Void)? = nil
     var onReply: (() -> Void)? = nil
     var onRemind: ((ChatReminderOption) -> Void)? = nil
+    var onSticker: ((String) -> Void)? = nil
 }
 
 struct ChatDayDivider: View {
@@ -943,7 +945,7 @@ struct ChatMessageRow: View {
                 }
                 if !row.text.isEmpty {
                     ChatMessageBody(text: row.text)
-                    ChatLinkPreviews(text: row.text)
+                    ChatLinkPreviews(text: row.text, autoLoad: row.autoPreview)
                 }
                 if row.edited {
                     Text("(edited)").fmText(.labelSmall, color: fm.textTertiary)
@@ -964,7 +966,7 @@ struct ChatMessageRow: View {
                         .padding(.top, 2)
                 }
                 if let onReact = actions.onReact {
-                    ChatReactionBar(chips: row.reactions, onToggle: onReact)
+                    ChatReactionBar(chips: row.reactions, onToggle: onReact, onSticker: actions.onSticker)
                 }
                 if let summary = row.thread, let onThread = actions.onThread {
                     ChatThreadSummaryButton(summary: summary, onOpen: onThread)
@@ -977,6 +979,11 @@ struct ChatMessageRow: View {
                     ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
                         .padding(.top, 3)
                 }
+            }
+            .padding(.top, row.stickers.isEmpty ? 0 : 6)
+            .overlay(alignment: .topTrailing) {
+                ChatStickerStack(chips: row.stickers, onToggle: actions.onSticker)
+                    .offset(x: 4, y: -10)
             }
         }
         .padding(.horizontal, FmSpace.x3)
@@ -1023,6 +1030,9 @@ struct ChatMessageRow: View {
             }
             ChatReactionMenu(onPick: onReact)
         }
+        if let onSticker = actions.onSticker {
+            ChatStickerMenu(onPick: onSticker)
+        }
         if let onThread = actions.onThread {
             Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         }
@@ -1063,8 +1073,14 @@ struct ChatMessageRow: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(fm.textPrimary)
                 .lineLimit(1)
+                .onTapGesture { actions.onProfile?() }
+                .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
             if row.visitor {
                 Text(" visitor").fmText(.labelSmall, color: fm.textTertiary)
+            }
+            if message.serverVisible {
+                Text(" server-visible").fmText(.labelSmall, color: fm.textTertiary)
+                    .accessibilityLabel("Visible to the server")
             }
             if message.app?.ephemeral == true {
                 Text(" \(AppsChat.ephemeralNote)").fmText(.labelSmall, color: fm.textTertiary).lineLimit(1)
@@ -1323,8 +1339,10 @@ extension View {
     }
 
     func chatFollowsOwnSend(_ rows: [ChatRow], scroll: @escaping () -> Void) -> some View {
-        modifier(
-            ChatFollowsOwnSend(
-                newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll))
+        chatFollowsOwnSend(newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll)
+    }
+
+    func chatFollowsOwnSend(newest: Date, scroll: @escaping () -> Void) -> some View {
+        modifier(ChatFollowsOwnSend(newest: newest, scroll: scroll))
     }
 }

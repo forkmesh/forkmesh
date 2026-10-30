@@ -12,6 +12,7 @@ import ast
 import asyncio
 import html
 import re
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,9 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
+import og_card as real_card  # noqa: E402
 ENTRY = ROOT / "src" / "entry.py"
 ENTRY_TEXT = (
     # entry.py + its lazily-split domain modules
@@ -61,6 +65,7 @@ def _load_function(name, namespace):
         and node.name == name
     )
     scope = dict(namespace)
+    scope.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=[function], type_ignores=[])),
         str(ENTRY), "exec"), scope)
@@ -83,6 +88,7 @@ def _load_default_method(name, namespace):
         decorator_list=[],
     )
     scope = dict(namespace)
+    scope.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=[subject], type_ignores=[])),
         str(ENTRY), "exec"), scope)
@@ -176,7 +182,7 @@ def test_crawler_gets_alias_canonical_card_and_backing_catalog_metadata():
             lambda rec: rec.get("stateHash", "")
         ),
         "_html_escape": html.escape,
-        "og_card": SimpleNamespace(CARD_W=1200, CARD_H=630),
+        "og_card": SimpleNamespace(CARD_W=1200, CARD_H=630, CARD_REVISION="3"),
     })
     subject = page_class()
     subject.env = SimpleNamespace(ASSETS=_Assets())
@@ -200,12 +206,12 @@ def test_crawler_gets_alias_canonical_card_and_backing_catalog_metadata():
     assert (
         '<meta property="og:image" '
         'content="https://forkmesh.com/api/repo/forkmesh/forkmesh/card.png'
-        '?v=' + ("a" * 64) + '">'
+        '?v=' + ("a" * 64) + '.3">'
         in response.body)
     assert (
         '<meta name="twitter:image" '
         'content="https://forkmesh.com/api/repo/forkmesh/forkmesh/card.png'
-        '?v=' + ("a" * 64) + '">'
+        '?v=' + ("a" * 64) + '.3">'
         in response.body)
     assert "Current organization repository" in response.body
     assert "mirror2" not in response.body
@@ -336,10 +342,16 @@ class _Uint8Array:
         return value
 
 
-def test_alias_card_renders_public_identity_after_internal_route_rewrite():
-    """Card data comes from mirror2, but its visible title remains ForkMesh."""
+def _render_alias_card(counts):
+    """Run repo_card_handler for the forkmesh/forkmesh alias of mirror2 with
+    the given live counts; (response, rendered infos, cache puts, reads)."""
     rendered = []
     cache_puts = []
+    count_reads = []
+
+    async def repo_card_counts(_env, owner, repo):
+        count_reads.append((owner, repo))
+        return dict(counts)
 
     async def repo_is_private(_env, owner, repo):
         assert (owner, repo) == ("mirror2", "forkmesh")
@@ -358,10 +370,15 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
         return "mirror2"
 
     class Card:
+        counts_token = staticmethod(real_card.counts_token)
+
         @staticmethod
-        def render_repo_card(info, _now):
-            rendered.append(info)
+        def render_repo_card(info, _now, logo=None):
+            rendered.append(dict(info, logo=logo))
             return b"png"
+
+    async def public_path(_env, owner, repo):
+        return "/%s/%s" % (owner, repo)
 
     handler = _load_function("repo_card_handler", {
         "method_name": lambda request: request.method,
@@ -383,12 +400,20 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
         "decrypt_row": lambda _env, value: _async_value({
             "description": "Catalog from mirror2",
             "branch": "main",
+            "issueCount": "0",
+            "branchCount": "45",
         } if value == "encrypted" else {}),
+        "_repo_card_counts": repo_card_counts,
+        "_repo_card_accent": lambda _env: _async_value(""),
         "_ap_enabled": lambda _env: _async_value(False),
         "_decrypted_public_catalog": lambda *_args: _async_value([]),
         "repo_mirror_same_group": lambda *_args: False,
         "time": time,
         "og_card": Card,
+        "unquote": unquote,
+        "_repo_public_path": public_path,
+        "_repo_card_logo": lambda *_args: _async_value(None),
+        "instance_name": lambda _env: "ForkMesh",
         "JsResponse": _BinaryResponse,
         "Uint8Array": _Uint8Array,
         "_to_js": lambda value: value,
@@ -404,13 +429,42 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
         headers={"user-agent": "facebookexternalhit/1.1"},
     )
     response = _run(handler(None, request, "mirror2", "forkmesh"))
+    return response, rendered, cache_puts, count_reads
+
+
+def test_alias_card_renders_public_identity_after_internal_route_rewrite():
+    """Card data comes from mirror2, but its visible title remains ForkMesh."""
+    response, rendered, cache_puts, count_reads = _render_alias_card(
+        {"issues": None, "branches": None, "contributors": None})
 
     assert response.status == 200
+    # The counts are read from the backing repository, keyed by card version.
+    assert count_reads == [("mirror2", "forkmesh")]
     assert rendered[0]["owner"] == "forkmesh"
     assert rendered[0]["repo"] == "forkmesh"
     assert rendered[0]["description"] == "Catalog from mirror2"
+    assert rendered[0]["path"] == "/forkmesh/forkmesh"
     assert cache_puts[0][0] == (
-        "https://forkmesh.com/api/repo/forkmesh/forkmesh/card.png?v=test-rev")
+        "https://forkmesh.com/api/repo/forkmesh/forkmesh/card.png"
+        "?v=test-rev&n=i-.b-.c-")
+    # Unreadable live counts fall back to the catalog record.
+    assert rendered[0]["issues"] == "0" and rendered[0]["branches"] == "45"
+    assert rendered[0]["contributors"] == 0
+
+
+def test_card_counts_come_from_the_repository_not_the_catalog():
+    """The ledger's 39 open issues and the 2 current branches win over the
+    catalog's stale issueCount 0 / branchCount 45, and the cache key moves
+    with them."""
+    _, rendered, cache_puts, _ = _render_alias_card(
+        {"issues": 39, "branches": 2, "contributors": 273})
+    assert rendered[0]["issues"] == 39
+    assert rendered[0]["branches"] == 2
+    assert rendered[0]["contributors"] == 273
+    assert cache_puts[0][0].endswith("?v=test-rev&n=i39.b2.c273")
+    _, _, other_puts, _ = _render_alias_card(
+        {"issues": 40, "branches": 2, "contributors": 273})
+    assert other_puts[0][0] != cache_puts[0][0]
 
 
 def _alias_repo_profile(uploaded_logo=True):
@@ -653,13 +707,13 @@ def test_a_canonical_short_page_titles_the_repository_without_its_owner():
             rec.get("owner") == owner and rec.get("name") == repo),
         "_repository_social_version": lambda rec: rec.get("stateHash", ""),
         "_html_escape": html.escape,
-        "og_card": SimpleNamespace(CARD_W=1200, CARD_H=630),
+        "og_card": SimpleNamespace(CARD_W=1200, CARD_H=630, CARD_REVISION="3"),
         "repo_short_urls": repo_short_urls,
     })
 
-    def page(setting):
+    def page(setting, name=""):
         subject = page_class()
-        subject.env = SimpleNamespace(ASSETS=_Assets())
+        subject.env = SimpleNamespace(ASSETS=_Assets(), INSTANCE_NAME=name)
 
         async def short_setting():
             return setting
@@ -675,6 +729,20 @@ def test_a_canonical_short_page_titles_the_repository_without_its_owner():
     assert '<meta name="twitter:title" content="Bolt - ForkMesh">' in body
     assert 'content="Bolt on ForkMesh' in body
     assert '<link rel="canonical" href="https://git.example.org/Bolt">' in body
+    assert '<meta property="og:url" content="https://git.example.org/Bolt">' in body
+    assert ('<meta property="og:image" content="https://git.example.org/api/'
+            'repo/acme-bolt/Bolt/card.png?v=' + "a" * 64 + '.3">') in body
+    assert '<meta property="og:image:type" content="image/png">' in body
+    assert '<meta property="og:image:alt" content="Bolt - ForkMesh">' in body
+    assert '<meta name="twitter:image:alt" content="Bolt - ForkMesh">' in body
+    branded = page({"short": True, "owner": "acme-bolt", "canonical": True},
+                   "Acme <Code>")
+    assert ('<meta property="og:site_name" content="Acme &lt;Code&gt;">'
+            in branded)
+    assert ('<meta property="og:title" content="Bolt - Acme &lt;Code&gt;">'
+            in branded)
+    assert 'ForkMesh' not in branded.split("</head>", 1)[0].split(
+        '<link rel="canonical"', 1)[1]
     body = page({"short": True, "owner": "acme-bolt", "canonical": False})
     assert ('<meta property="og:title" content="acme-bolt/Bolt - ForkMesh">'
             in body)

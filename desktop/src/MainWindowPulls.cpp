@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "ProcessReaper.h"
+#include "PingSettings.h"
 #include "MainWindowInternal.h"
 #include "PullDecision.h"
 #include "SafeDelete.h"
@@ -14,6 +15,8 @@
 #include "PullBadgeWidget.h"
 
 #include <QTextTable>
+
+#include <limits>
 
 using namespace forkmesh::ui;
 
@@ -44,6 +47,7 @@ constexpr int kPullBaseBranchRole = Qt::UserRole + 41;
 // setPullConflictBadge() re-compose just that row's tooltip.
 constexpr int kPullTipPrefixRole = Qt::UserRole + 42;
 constexpr int kPullViewedFilesRole = Qt::UserRole + 43;
+constexpr int kPullCodeBranchRole = Qt::UserRole + 44;
 constexpr auto kPendingPullSubmissionsSetting = "pulls/pendingSubmissionsV1";
 constexpr qint64 kPullSubmissionRetryBaseMs = 5LL * 1000;
 constexpr qint64 kPullSubmissionRetryCapMs = 5LL * 60 * 1000;
@@ -306,7 +310,23 @@ struct PullHeadProbe {
     int number = 0;
     QString base;
     QString head;
+    bool branchBacked = false;
 };
+
+QStringList pullLocalBranchCandidates(int number, const QString &head,
+                                      bool branchBacked)
+{
+    const QString signedHead = head.section(QLatin1Char(':'), -1, -1).trimmed();
+    const QString canonical = QStringLiteral("pr/%1").arg(number);
+    QStringList candidates;
+    if (branchBacked)
+        candidates << signedHead << canonical;
+    else
+        candidates << canonical << signedHead;
+    candidates.removeAll(QString());
+    candidates.removeDuplicates();
+    return candidates;
+}
 
 // The hover lines that describe a pull's head branch, composed from the roles
 // the row already carries so the conflict probe can restate them for one row
@@ -350,6 +370,14 @@ QString pullBranchStatusTip(const QTableWidgetItem *item)
             lines << QStringLiteral("That worktree is clean");
     } else if (behind >= 0) {
         lines << QStringLiteral("No worktree has this branch checked out");
+    }
+    const QVariant codeBranch = item->data(kPullCodeBranchRole);
+    if (codeBranch.isValid()) {
+        lines << (codeBranch.toString().isEmpty()
+                      ? QStringLiteral("Code not on this machine: no local "
+                                       "branch holds this pull request")
+                      : QStringLiteral("Code on this machine: %1")
+                            .arg(codeBranch.toString()));
     }
     if (lines.isEmpty())
         return QString();
@@ -434,6 +462,9 @@ public:
         const bool conflicted = index.data(kPullConflictRole).toBool();
         const bool behind = index.data(kPullBehindRole).toInt() > 0;
         const QString worktree = index.data(kPullWorktreeRole).toString();
+        const QVariant codeBranch = index.data(kPullCodeBranchRole);
+        const bool codeMissing =
+            codeBranch.isValid() && codeBranch.toString().isEmpty();
         const QColor accent = Theme::nextOr(
             Theme::Role::Warning, QColor(dark ? "#e3742f" : "#bc4c00"));
         const QColor live = Theme::nextOr(
@@ -451,13 +482,22 @@ public:
         // The branch icon carries the summary the way the agents list's branch
         // button does: amber once the head needs base merged in, blue while a
         // checkout of it is still on disk, muted otherwise.
-        painter->drawPixmap(
-            fileIconLeft, branchIconTop,
-            tintedOcticonPixmap(QStringLiteral("git-branch"),
-                                (conflicted || behind)
-                                    ? accent
-                                    : (worktree.isEmpty() ? muted : live),
-                                kBranchIconSize));
+        if (codeMissing) {
+            painter->save();
+            painter->setOpacity(0.55);
+            painter->drawPixmap(fileIconLeft, branchIconTop,
+                                tintedOcticonPixmap(QStringLiteral("cloud"),
+                                                    muted, kBranchIconSize));
+            painter->restore();
+        } else {
+            painter->drawPixmap(
+                fileIconLeft, branchIconTop,
+                tintedOcticonPixmap(QStringLiteral("git-branch"),
+                                    (conflicted || behind)
+                                        ? accent
+                                        : (worktree.isEmpty() ? muted : live),
+                                    kBranchIconSize));
+        }
         if (index.data(kPullDirtyRole).toInt() > 0) {
             painter->setPen(QPen(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")), 1.5));
             painter->setBrush(QColor(dark ? "#d29922" : "#bf8700"));
@@ -583,15 +623,27 @@ void setPullChecksAttention(QPushButton *button, bool running)
         tile->setAttentionLight(running);
 }
 
+QSet<int> pullsWithRunningChecks(const QList<ActionRun> &runs,
+                                 const QString &owner, const QString &name)
+{
+    QSet<int> running;
+    for (const ActionRun &run : runs) {
+        if (run.status == ActionStatus::Running && run.pullNumber > 0 &&
+            run.owner == owner && run.name == name)
+            running.insert(run.pullNumber);
+    }
+    return running;
+}
+
 bool pullHasRunningChecks(const PullRequest &pull,
                           const QList<ActionRun> &runs,
                           const QString &owner, const QString &name)
 {
     return std::any_of(runs.cbegin(), runs.cend(),
                        [&pull, &owner, &name](const ActionRun &run) {
-                           return run.owner == owner && run.name == name &&
+                           return run.status == ActionStatus::Running &&
                                   run.pullNumber == pull.number &&
-                                  run.status == ActionStatus::Running;
+                                  run.owner == owner && run.name == name;
                        });
 }
 
@@ -749,7 +801,9 @@ QWidget *MainWindow::buildPullsTab()
     m_pullMeta->setTextInteractionFlags(Qt::TextSelectableByMouse |
                                         Qt::LinksAccessibleByMouse);
     connect(m_pullMeta, &QLabel::linkActivated, this, [this](const QString &href) {
-        if (href.startsWith(kAgentLinkScheme))
+        if (href.startsWith(kUserLinkScheme))
+            openBodyReference(href);
+        else if (href.startsWith(kAgentLinkScheme))
             switchToAgentsTab(href.mid(kAgentLinkScheme.size()).toInt());
         else if (href.startsWith(kBranchLinkScheme)) {
             const QString branch = QUrl::fromPercentEncoding(
@@ -2024,6 +2078,19 @@ bool MainWindow::accountOwnsPullRepositoryAt(int index)
         repository.owner, m_organizations);
 }
 
+void MainWindow::whenPullOwnershipKnown(int index, std::function<void()> next)
+{
+    if (m_organizationsKnown || accountOwnsPullRepositoryAt(index)) {
+        next();
+        return;
+    }
+    m_organizationsWaiters << std::move(next);
+    if (!m_organizationsLoading) {
+        m_organizationsLoaded = true;
+        refreshOrganizations();
+    }
+}
+
 QString MainWindow::pullPatchFingerprint(const QString &patch)
 {
     return QString::number(patch.size()) + QLatin1Char(':') +
@@ -2598,7 +2665,7 @@ void MainWindow::refreshPullBranchState()
             pull.base.isEmpty() || pull.head.isEmpty() ||
             pull.head == pull.base)
             continue;
-        heads.append({pull.number, pull.base, pull.head});
+        heads.append({pull.number, pull.base, pull.head, pull.branchBacked});
     }
     const quint64 gen = ++m_pullBranchStateGen;
     if (workTree.isEmpty() || heads.isEmpty()) {
@@ -2637,7 +2704,6 @@ void MainWindow::refreshPullBranchState()
             QHash<QString, int> dirtyByPath; // several pulls can share a checkout
             for (const PullHeadProbe &entry : heads) {
                 const QString &base = entry.base;
-                const QString &head = entry.head;
                 PullBranchState state;
                 QByteArray counts;
                 // Deliberately still a git spawn. repoHasLocalBranch() answers
@@ -2649,12 +2715,20 @@ void MainWindow::refreshPullBranchState()
                 // Changes row hidden with its "N↑" text already painted. It
                 // reproduced in 2 of 3 offscreen suite runs. Fix that ordering
                 // bug in refreshSourceControlOutgoing() before speeding this up.
-                if (runGitCapture(workTree,
-                                  {QStringLiteral("rev-parse"),
-                                   QStringLiteral("--verify"),
-                                   QStringLiteral("--quiet"),
-                                   QStringLiteral("refs/heads/%1").arg(head)},
-                                  nullptr, nullptr) &&
+                for (const QString &candidate : pullLocalBranchCandidates(
+                         entry.number, entry.head, entry.branchBacked)) {
+                    if (runGitCapture(workTree,
+                                      {QStringLiteral("rev-parse"),
+                                       QStringLiteral("--verify"),
+                                       QStringLiteral("--quiet"),
+                                       QStringLiteral("refs/heads/%1").arg(candidate)},
+                                      nullptr, nullptr)) {
+                        state.codeBranch = candidate;
+                        break;
+                    }
+                }
+                const QString &head = state.codeBranch;
+                if (!head.isEmpty() &&
                     runGitCapture(workTree,
                                   {QStringLiteral("rev-list"),
                                    QStringLiteral("--left-right"),
@@ -2692,8 +2766,7 @@ void MainWindow::refreshPullBranchState()
                         dirtyByPath.insert(path, state.dirty);
                     }
                 }
-                if (state.counted || !state.worktree.isEmpty())
-                    map.insert(entry.number, state);
+                map.insert(entry.number, state);
             }
             return map;
         },
@@ -2817,6 +2890,8 @@ void MainWindow::refreshPullList()
         repoOwner = m_repositories.at(m_repoDetailIndex).owner;
         repoName = m_repositories.at(m_repoDetailIndex).name;
     }
+    const QSet<int> runningCheckPulls =
+        pullsWithRunningChecks(m_actionRuns, repoOwner, repoName);
     for (int row = 0; row < visiblePulls.size(); ++row) {
         const PullRequest &pr = *visiblePulls.at(row);
         auto *num = new SortTableWidgetItem;
@@ -2846,9 +2921,10 @@ void MainWindow::refreshPullList()
         num->setData(kPullBehindRole, branchState.counted ? branchState.behind : -1);
         num->setData(kPullWorktreeRole, branchState.worktree);
         num->setData(kPullDirtyRole, branchState.dirty);
+        if (m_pullBranchState.contains(pr.number))
+            num->setData(kPullCodeBranchRole, branchState.codeBranch);
         const QString displayStatus = pullDisplayStatus(pr);
-        const bool checksRunning = pullHasRunningChecks(
-            pr, m_actionRuns, repoOwner, repoName);
+        const bool checksRunning = runningCheckPulls.contains(pr.number);
         // A spinner glyph gives an in-list progress signal without
         // displacing the PR state icon into another column. It changes only
         // while an executor is actively running, not while a run is queued or
@@ -3027,10 +3103,15 @@ void MainWindow::showPull(int number)
         m_pullComposer->setEnabled(!found->archivedOnCodeBranch);
         m_pullComposer->setMentionCandidates(mentionCandidateNames());
     }
-    for (QPushButton *b : {m_pullCommentButton, m_pullApproveButton,
-                           m_pullRequestChangesButton})
-        if (b)
-            b->setEnabled(!found->archivedOnCodeBranch);
+    const bool pullOpen = found->status == QLatin1String("open");
+    if (m_pullCommentButton)
+        m_pullCommentButton->setEnabled(!found->archivedOnCodeBranch);
+    for (QPushButton *b : {m_pullApproveButton, m_pullRequestChangesButton}) {
+        if (!b)
+            continue;
+        b->setVisible(pullOpen);
+        b->setEnabled(pullOpen && !found->archivedOnCodeBranch);
+    }
     const QString pullTitle =
         QStringLiteral("#%1  %2").arg(found->number).arg(found->title);
     m_pullTitle->setText(pullTitle);
@@ -3073,9 +3154,10 @@ void MainWindow::showPull(int number)
             .arg(branchLinkHtml(found->base), branchLinkHtml(found->head),
                  pullListStatusLabel(displayStatus), formatCount(found->filesChanged),
                  formatCount(found->additions), formatCount(found->deletions),
-                 (found->authorName.isEmpty() ? found->author.left(10)
-                                              : found->authorName)
-                     .toHtmlEscaped()));
+                 userProfileLinkHtml(found->authorName,
+                                     found->authorName.isEmpty()
+                                         ? found->author.left(10)
+                                         : found->authorName)));
     if (found->archivedOnCodeBranch) {
         m_pullMeta->setText(
             m_pullMeta->text() +
@@ -5214,6 +5296,10 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
     headerRow->setSpacing(8);
     auto *header = new QLabel(headerHtml);
     header->setTextFormat(Qt::RichText);
+    header->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    header->setOpenExternalLinks(false);
+    connect(header, &QLabel::linkActivated, this,
+            [this](const QString &href) { openBodyReference(href); });
     headerRow->addWidget(header);
     headerRow->addStretch();
     if (!copyLink.isEmpty() || !body.trimmed().isEmpty() || bool(onDelete) ||
@@ -5395,7 +5481,8 @@ void MainWindow::renderPullThread(const PullRequest &pr)
                  m_pullThreadLayout, opener,
                  QStringLiteral("<b>%1</b> <span style='color:#8b949e'>opened this "
                                 "pull request %2</span>")
-                     .arg(opener.toHtmlEscaped(), formatIssueRelativeTime(pr.ts)),
+                     .arg(userProfileLinkHtml(pr.authorName, opener),
+                          formatIssueRelativeTime(pr.ts)),
                  pr.description, QString(), pullLink + QStringLiteral("#open"),
                  pr.author);
          }});
@@ -5449,9 +5536,15 @@ void MainWindow::renderPullThread(const PullRequest &pr)
         }
     }
 
-    for (const PullEvent &ev : pr.events) {
+    QSet<QString> editedComments;
+    const QList<PullEvent> shownEvents =
+        PullStore::foldCommentChanges(pr.events, &editedComments);
+    const PullStore commentStore = pullStoreForCurrentRepo();
+    for (const PullEvent &ev : shownEvents) {
         const QString who = ev.authorName.isEmpty() ? ev.author.left(10) : ev.authorName;
-        const QString when = formatIssueRelativeTime(ev.ts);
+        QString when = formatIssueRelativeTime(ev.ts);
+        if (editedComments.contains(ev.id))
+            when += QStringLiteral(" · edited");
         QString verb = QStringLiteral("commented");
         QString accent;
         QString body = ev.body;
@@ -5478,6 +5571,12 @@ void MainWindow::renderPullThread(const PullRequest &pr)
             }
         } else if (ev.type == QLatin1String("thread-reply")) {
             verb = QStringLiteral("replied in a review thread");
+        } else if (ev.type == QLatin1String("revision")) {
+            verb = ev.state.isEmpty()
+                       ? QStringLiteral("updated the pull request")
+                       : QStringLiteral("updated the pull request to revision %1")
+                             .arg(ev.state.toHtmlEscaped());
+            accent = QStringLiteral("#58a6ff");
         } else if (ev.type == QLatin1String("thread-state")) {
             if (ev.state == QLatin1String("resolved")) {
                 verb = QStringLiteral("<span style='color:#3fb950'>resolved a "
@@ -5509,15 +5608,92 @@ void MainWindow::renderPullThread(const PullRequest &pr)
         const QString anchor =
             pullLink + QStringLiteral("#%1")
                            .arg(ev.id.isEmpty() ? QString::number(ev.ts) : ev.id);
+        const bool ownComment =
+            !ev.id.isEmpty() && pr.status == QLatin1String("open") &&
+            PullStore::isEditableComment(ev) && commentStore.authoredByThisNode(ev) &&
+            !(PullStore::reviewKeepsVerdict(ev) && ev.body.trimmed().isEmpty());
+        std::function<void()> onDelete;
+        QList<QPair<QString, std::function<void()>>> commentActions;
+        if (ownComment) {
+            const int number = pr.number;
+            const QString target = ev.id;
+            const QString original = ev.body;
+            commentActions.append(
+                {QStringLiteral("Edit comment"),
+                 [this, number, target, original] {
+                     editPullComment(number, target, original);
+                 }});
+            const QString question =
+                PullStore::reviewKeepsVerdict(ev)
+                    ? QStringLiteral("Delete this review's text? Your %1 stays on the "
+                                     "pull request, and its Git history remains "
+                                     "recoverable.")
+                          .arg(ev.state == QLatin1String("approved")
+                                   ? QStringLiteral("approval")
+                                   : QStringLiteral("change request"))
+                    : QStringLiteral("Delete this %1? Its Git history remains "
+                                     "recoverable.")
+                          .arg(ev.type == QLatin1String("review")
+                                   ? QStringLiteral("review")
+                                   : QStringLiteral("comment"));
+            onDelete = [this, number, target, question] {
+                deletePullComment(number, target, question);
+            };
+        }
         entries.append(
             {ev.ts, entryOrder++,
-             [this, who, verb, when, body, accent, anchor, author = ev.author] {
+             [this, who, verb, when, body, accent, anchor, author = ev.author,
+              authorName = ev.authorName, onDelete, commentActions] {
                  addConversationCard(
                      m_pullThreadLayout, who,
                      QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3"
                                     "</span>")
-                         .arg(who.toHtmlEscaped(), verb, when),
-                     body, accent, anchor, author);
+                         .arg(userProfileLinkHtml(authorName, who), verb, when),
+                     body, accent, anchor, author, onDelete, commentActions);
+             }});
+    }
+
+    if (pr.status == QLatin1String("merged")) {
+        const QString key = pr.mergedBy.trimmed();
+        QString merger;
+        if (!key.isEmpty() && key == m_profileIdentity.publicKey())
+            merger = m_accountName;
+        else if (!key.isEmpty() && key == pr.author)
+            merger = pr.authorName;
+        const bool named = !merger.isEmpty();
+        if (!named && !key.isEmpty())
+            merger = key.left(10);
+        const QString into =
+            pr.head.isEmpty()
+                ? QStringLiteral("into <code>%1</code>")
+                      .arg(headerToken(pr.base.isEmpty() ? QStringLiteral("main") : pr.base))
+                : QStringLiteral("<code>%1</code> into <code>%2</code>")
+                      .arg(headerToken(pr.head),
+                           headerToken(pr.base.isEmpty() ? QStringLiteral("main") : pr.base));
+        const QString accent =
+            Theme::nextOrHex(Theme::Role::Accent, QStringLiteral("#8957e5"));
+        const qint64 mergedAt = pr.mergedAt;
+        entries.append(
+            {mergedAt > 0 ? mergedAt : std::numeric_limits<qint64>::max(), entryOrder++,
+             [this, merger, named, into, accent, mergedAt, pullLink, key] {
+                 const QString when =
+                     mergedAt > 0 ? formatIssueRelativeTime(mergedAt) : QString();
+                 const QString verb =
+                     QStringLiteral("<span style='color:%1'><b>merged</b></span> %2")
+                         .arg(accent, into);
+                 addConversationCard(
+                     m_pullThreadLayout,
+                     merger.isEmpty() ? QStringLiteral("ForkMesh") : merger,
+                     merger.isEmpty()
+                         ? QStringLiteral("<span style='color:%1'><b>Merged</b></span> %2 "
+                                          "<span style='color:#8b949e'>%3</span>")
+                               .arg(accent, into, when)
+                         : QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3"
+                                          "</span>")
+                               .arg(named ? userProfileLinkHtml(merger)
+                                          : merger.toHtmlEscaped(),
+                                    verb, when),
+                     QString(), accent, pullLink + QStringLiteral("#merged"), key);
              }});
     }
 
@@ -6576,6 +6752,51 @@ void MainWindow::updatePullSubTabCounts(PullRequest pr)
                            pullHasRunningChecks(pr, m_actionRuns, owner, name));
 }
 
+void MainWindow::editPullComment(int number, const QString &target,
+                                 const QString &original)
+{
+    bool ok = false;
+    const QString body = QInputDialog::getMultiLineText(
+        this, QStringLiteral("Edit comment"), QString(), original, &ok).trimmed();
+    if (!ok || body.isEmpty() || body == original.trimmed())
+        return;
+    PullStore store = pullStoreForCurrentRepo();
+    QString error;
+    if (store.canWrite()) {
+        if (!store.editComment(number, target, body, &error)) {
+            QMessageBox::warning(this, QStringLiteral("Edit comment"), error);
+            return;
+        }
+    } else {
+        submitPullEventToInbox(number, store.makeCommentChange(number, target, body, false));
+    }
+    reloadPulls();
+    showPull(number);
+}
+
+void MainWindow::deletePullComment(int number, const QString &target,
+                                   const QString &question)
+{
+    if (QMessageBox::question(this, QStringLiteral("Delete comment"),
+                              question.isEmpty()
+                                  ? QStringLiteral("Delete this comment? Its Git "
+                                                   "history remains recoverable.")
+                                  : question) != QMessageBox::Yes)
+        return;
+    PullStore store = pullStoreForCurrentRepo();
+    QString error;
+    if (store.canWrite()) {
+        if (!store.deleteComment(number, target, &error)) {
+            QMessageBox::warning(this, QStringLiteral("Delete comment"), error);
+            return;
+        }
+    } else {
+        submitPullEventToInbox(number, store.makeCommentChange(number, target, QString(), true));
+    }
+    reloadPulls();
+    showPull(number);
+}
+
 void MainWindow::submitPullComment()
 {
     if (m_currentPullNumber < 0 || !m_pullComposer)
@@ -6967,6 +7188,27 @@ void MainWindow::updatePullActionState()
                             conflicted, reviewBlocks, independentChangesRequested,
                             changesRequestedBy, conflictFiles, base, behind,
                             behindCount);
+    if (m_pullMergeBlockers && have && !archived && (merged || closed)) {
+        const QString into = base.isEmpty() ? QStringLiteral("main") : base;
+        m_pullMergeBlockers->setText(
+            merged
+                ? QStringLiteral(
+                      "<b><span style='color:%1'>Pull request successfully merged and "
+                      "closed</span></b><br><span style='color:#8b949e'>%2 is in "
+                      "<code>%3</code>. Nothing more can be merged from this pull "
+                      "request; comments are still welcome.</span>")
+                      .arg(Theme::nextOrHex(Theme::Role::Accent, QStringLiteral("#8957e5")),
+                           head.isEmpty() ? QStringLiteral("This change")
+                                          : QStringLiteral("<code>%1</code>")
+                                                .arg(head.toHtmlEscaped()),
+                           into.toHtmlEscaped())
+                : QStringLiteral(
+                      "<b><span style='color:#f85149'>Closed with unmerged "
+                      "commits</span></b><br><span style='color:#8b949e'>This pull "
+                      "request was closed without merging. Reviews and merges are off "
+                      "until it is reopened.</span>"));
+        m_pullMergeBlockers->show();
+    }
     const bool aiFixBusy = m_aiFix && m_aiFix->number == m_currentPullNumber;
     const int conflictCount = conflicted ? conflictFiles.size() : 0;
     if (m_pullResolveButton) {
@@ -8297,22 +8539,44 @@ void MainWindow::reviewCurrentPullWithAi()
         return;
     }
 
-    // Provider: a configured API key wins (one request over the diff suffices
-    // and the reply is easiest to keep to strict JSON); without one, fall back
-    // to the Claude Code CLI, which authenticates through its local login.
     const QString claudeKey =
         QSettings().value(kClaudeApiKeySetting).toString().trimmed();
     const QString openAiKey =
         QSettings().value(kCodexApiKeySetting).toString().trimmed();
+    const QString composerProvider =
+        m_quickAddAgentProvider ? m_quickAddAgentProvider->currentData().toString()
+                                : QString();
     QString provider = QStringLiteral("claude-code");
     QString model;
-    if (!claudeKey.isEmpty()) {
+    if (!composerProvider.isEmpty() &&
+        !quickAddProviderIsPromptAction(composerProvider)) {
+        provider = composerProvider;
+        if (agentSelectorTakesModel(provider) && m_quickAddClaudeModel) {
+            const QString selected = selectedModelComboValue(m_quickAddClaudeModel);
+            model = (provider == QLatin1String("claude-code") ||
+                     agentIsCodexProvider(provider))
+                        ? codexChatGptModelId(selected)
+                        : selected.trimmed();
+            if (!agentModelMatchesProvider(provider, model))
+                model.clear();
+        }
+        if (agentIsClaudeProvider(provider) &&
+            provider != QLatin1String("claude-code") && !claudeKey.isEmpty())
+            model = QStringLiteral("claude-opus-5");
+        else if (provider == QLatin1String("openai") && !openAiKey.isEmpty())
+            model = QStringLiteral("gpt-4.1-mini");
+    } else if (!claudeKey.isEmpty()) {
         provider = QStringLiteral("claude");
         model = QStringLiteral("claude-opus-5");
     } else if (!openAiKey.isEmpty()) {
         provider = QStringLiteral("openai");
         model = QStringLiteral("gpt-4.1-mini");
     }
+    const bool claudeApi = agentIsClaudeProvider(provider) &&
+                           provider != QLatin1String("claude-code") &&
+                           !claudeKey.isEmpty();
+    const bool openAiApi =
+        provider == QLatin1String("openai") && !openAiKey.isEmpty();
 
     const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
     AgentSession session;
@@ -8357,12 +8621,12 @@ void MainWindow::reviewCurrentPullWithAi()
     const QString prompt =
         buildAiReviewPrompt(current.title, current.description, current.patch);
 
-    if (provider == QLatin1String("claude-code")) {
-        aiReviewRunClaudeCode(prompt);
+    if (!claudeApi && !openAiApi) {
+        aiReviewRunAgentCli(prompt);
         return;
     }
 
-    const bool claude = provider == QLatin1String("claude");
+    const bool claude = claudeApi;
     constexpr int kReviewOutTokens = 8000;
     QNetworkReply *reply = nullptr;
     if (claude) {
@@ -8430,14 +8694,15 @@ void MainWindow::reviewCurrentPullWithAi()
     });
 }
 
-void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
+void MainWindow::aiReviewRunAgentCli(const QString &prompt)
 {
     if (!m_aiReview)
         return;
-    const QString workTree =
+    const RepositoryRecord *repo =
         (m_aiReview->repoIndex >= 0 && m_aiReview->repoIndex < m_repositories.size())
-            ? writableRecordFor(m_repositories.at(m_aiReview->repoIndex)).localPath
-            : QString();
+            ? &m_repositories.at(m_aiReview->repoIndex)
+            : nullptr;
+    const QString workTree = repo ? writableRecordFor(*repo).localPath : QString();
     const QString promptPath = QDir::temp().filePath(
         QStringLiteral("forkmesh-review-%1.md").arg(m_aiReview->number));
     m_aiReview->promptFile = promptPath;
@@ -8452,14 +8717,36 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                         "JSON array as your final output.\n"));
     pf.close();
 
-    QString promptQuoted = promptPath;
-    promptQuoted.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
-    promptQuoted = QLatin1Char('\'') + promptQuoted + QLatin1Char('\'');
-    QString command = claudeCodeCommandSetting();
+    const QString provider = m_aiReview->provider;
+    AgentRunner::Config config =
+        agentConfigForProvider(provider, m_aiReview->model, repo);
+    if (!m_aiReview->model.isEmpty())
+        config.model = m_aiReview->model;
+    const auto quote = [](QString text) -> QString {
+        text.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
+        return QLatin1Char('\'') + text + QLatin1Char('\'');
+    };
+    const QString model = config.model.trimmed();
+    QString command = config.command.trimmed();
+    const bool modelPlaceholder = command.contains(QStringLiteral("{modelArg}")) ||
+                                  command.contains(QStringLiteral("{model}"));
+    command.replace(QStringLiteral("{modelArg}"),
+                    model.isEmpty() ? QString()
+                                    : QStringLiteral("-m %1").arg(quote(model)));
+    command.replace(QStringLiteral("{model}"), quote(model));
+    command.replace(QStringLiteral("{provider}"), quote(provider));
+    command.replace(QStringLiteral("{issueNumber}"), QStringLiteral("0"));
+    command.replace(QStringLiteral("{contextWindow}"),
+                    QString::number(config.contextWindow));
+    command.replace(QStringLiteral("{maxOutputTokens}"),
+                    QString::number(config.maxOutputTokens));
+    if (provider == QLatin1String("claude-code") && !modelPlaceholder &&
+        !model.isEmpty())
+        command += QStringLiteral(" --model ") + quote(model);
     if (command.contains(QStringLiteral("{promptFile}")))
-        command.replace(QStringLiteral("{promptFile}"), promptQuoted);
+        command.replace(QStringLiteral("{promptFile}"), quote(promptPath));
     else
-        command += QStringLiteral(" < ") + promptQuoted;
+        command += QStringLiteral(" < ") + quote(promptPath);
 
     auto *process = new QProcess(this);
     m_aiReview->process = process;
@@ -8467,7 +8754,40 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
     process->setWorkingDirectory(workTree.isEmpty() ? QDir::tempPath() : workTree);
     process->setStandardInputFile(QProcess::nullDevice());
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.remove(QStringLiteral("ANTHROPIC_API_KEY"));
+    for (const char *name :
+         {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_ADMIN_KEY",
+          "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "OPENAI_API_KEY",
+          "OPENAI_ACCESS_TOKEN", "OPENAI_ADMIN_KEY"})
+        env.remove(QString::fromLatin1(name));
+    if (!config.apiKeyName.isEmpty())
+        env.remove(config.apiKeyName);
+    if (!config.apiKeyName.isEmpty() && !config.apiKey.trimmed().isEmpty()) {
+        env.insert(config.apiKeyName, config.apiKey.trimmed());
+        if (provider == QLatin1String("openai") || agentIsCodexProvider(provider))
+            env.insert(QStringLiteral("OPENAI_API_KEY"), config.apiKey.trimmed());
+    }
+    if (config.preferApiKeyAuth && !config.isolatedHome.isEmpty()) {
+        QDir().mkpath(config.isolatedHome);
+        env.insert(QStringLiteral("CODEX_HOME"), config.isolatedHome);
+    }
+    if (!model.isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_MODEL"), model);
+    env.insert(QStringLiteral("FORKMESH_AGENT_PROVIDER"), provider);
+    if (!config.endpoint.trimmed().isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_ENDPOINT"),
+                   config.endpoint.trimmed());
+    if (!config.thinking.trimmed().isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_THINKING"),
+                   config.thinking.trimmed());
+    env.insert(QStringLiteral("FORKMESH_AGENT_CONTEXT_WINDOW"),
+               QString::number(config.contextWindow));
+    env.insert(QStringLiteral("FORKMESH_AGENT_MAX_OUTPUT_TOKENS"),
+               QString::number(config.maxOutputTokens));
+    for (const QString &kv : std::as_const(config.extraEnvironment)) {
+        const int eq = kv.indexOf(QLatin1Char('='));
+        if (eq > 0)
+            env.insert(kv.left(eq), kv.mid(eq + 1));
+    }
     forkmesh::agentcli::widenPath(env);
     process->setProcessEnvironment(env);
 
@@ -8487,8 +8807,9 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                     process->deleteLater();
                     QFile::remove(m_aiReview->promptFile);
                     aiReviewFail(QString::fromUtf8(
-                        "Could not start the `claude` CLI \xE2\x80\x94 install "
-                        "Claude Code or set its command in Settings."));
+                                     "Could not start %1 \xE2\x80\x94 install "
+                                     "it or set its command in Settings.")
+                                     .arg(agentProviderName(m_aiReview->provider)));
                 }
             });
     connect(process, &QProcess::finished, this,
@@ -8505,8 +8826,9 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                 QFile::remove(m_aiReview->promptFile);
                 if (exitCode != 0) {
                     aiReviewFail(QStringLiteral(
-                                     "Claude Code exited with code %1 before "
+                                     "%1 exited with code %2 before "
                                      "finishing the review.")
+                                     .arg(agentProviderName(m_aiReview->provider))
                                      .arg(exitCode));
                     return;
                 }
@@ -8514,7 +8836,8 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
             });
 
     aiReviewLog(QString::fromUtf8(
-        "==> Running Claude Code over the pull request diff\xE2\x80\xA6\n"));
+                    "==> Running %1 over the pull request diff\xE2\x80\xA6\n")
+                    .arg(agentProviderName(provider)));
     trackProcessActivity(process, QStringLiteral("review"),
                          QStringLiteral("AI review of the pull request diff"));
 #ifdef Q_OS_WIN
@@ -8985,18 +9308,9 @@ QString forkmesh::ui::localPullAgentBranch(const QString &gitDir,
 {
     if (gitDir.trimmed().isEmpty() || pull.number <= 0)
         return QString();
-    const auto resolves = [&gitDir](const QString &branch) {
-        return repoHasLocalBranch(gitDir, branch);
-    };
-    const QString head = pullHeadBranch(pull);
-    const QString canonical = QStringLiteral("pr/%1").arg(pull.number);
-    QStringList candidates;
-    if (pull.branchBacked)
-        candidates << head << canonical;
-    else
-        candidates << canonical << head;
-    for (const QString &candidate : std::as_const(candidates))
-        if (resolves(candidate))
+    for (const QString &candidate : pullLocalBranchCandidates(
+             pull.number, pull.head, pull.branchBacked))
+        if (repoHasLocalBranch(gitDir, candidate))
             return candidate;
     return QString();
 }
@@ -12335,10 +12649,8 @@ int MainWindow::testPullThreadUnmanagedVisibleRows() const
 
 void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
 {
-    // Serialized and GUI-thread only: every git call below pumps the event
-    // loop, so a second sweep entering mid-cherry-pick would corrupt the
-    // ledger checkout. Everything is taken by value past this point.
-    if (m_pullLedgerSweepInProgress)
+    if (m_pullLedgerSweepInProgress ||
+        m_pullsInboxApplyInFlight.contains(pullsInboxKey(repo)))
         return;
     const RepositoryRecord writable = writableRecordFor(repo);
     PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
@@ -12411,14 +12723,14 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
                         "/" +
                         repoSegment(repo.name, QStringLiteral("repository")));
     const QString relayRemoteUrl = relayRemote.toString();
-    // Remote discovery is a Git subprocess too. Keeping it on the GUI thread
-    // accumulated 96.8 seconds of ui-blocking waits across 13 sweeps (43.5
-    // seconds worst case), even though the network fetch below was already on
-    // a worker. Discover and fetch in one worker phase; the local adopt/flip
-    // mutations stay on the GUI thread where every other PullStore write lives.
     struct PullLedgerFetch {
         bool fetched = false;
         QString remoteUrl;
+        QList<int> adopted;
+        QString adoptError;
+        QList<int> flipped;
+        QList<int> rewarded;
+        QString flipError;
     };
     runOffThread<PullLedgerFetch>(
         [store, remoteConfigPath, activeHosts, relayRemoteUrl] {
@@ -12460,31 +12772,36 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
             }
             if (!remoteUrls.contains(relayRemoteUrl))
                 remoteUrls.append(relayRemoteUrl);
+            PullLedgerFetch fetch;
             for (const QString &remoteUrl : remoteUrls) {
                 PullStore fetcher = store;
-                if (fetcher.prefetchForeignLedger(remoteUrl))
-                    return PullLedgerFetch{true, remoteUrl};
+                if (fetcher.prefetchForeignLedger(remoteUrl)) {
+                    fetch.fetched = true;
+                    fetch.remoteUrl = remoteUrl;
+                    break;
+                }
             }
-            return PullLedgerFetch{};
-        },
-        [this, store, repo, key](PullLedgerFetch fetch) mutable {
-            const int repoIndexAtStart = m_repoDetailIndex;
-            QString adoptError;
-            QList<int> adopted;
+            PullStore writer = store;
             if (fetch.fetched)
-                adopted = store.adoptForeignPulls(fetch.remoteUrl, &adoptError,
-                                                  /*fetchFirst=*/false);
-            if (!adoptError.isEmpty())
+                fetch.adopted = writer.adoptForeignPulls(
+                    fetch.remoteUrl, &fetch.adoptError, /*fetchFirst=*/false);
+            fetch.flipped =
+                writer.reconcileMergedPulls(&fetch.flipError, &fetch.rewarded);
+            return fetch;
+        },
+        [this, repo, key](PullLedgerFetch fetch) {
+            const int repoIndexAtStart = m_repoDetailIndex;
+            const QList<int> &adopted = fetch.adopted;
+            const QList<int> &flipped = fetch.flipped;
+            const QList<int> &rewarded = fetch.rewarded;
+            if (!fetch.adoptError.isEmpty())
                 logSystem(QStringLiteral("Pull ledger sync for %1: %2")
-                              .arg(key, adoptError));
-            QString flipError;
-            QList<int> rewarded;
-            const QList<int> flipped =
-                store.reconcileMergedPulls(&flipError, &rewarded);
-            if (!flipError.isEmpty())
+                              .arg(key, fetch.adoptError));
+            if (!fetch.flipError.isEmpty())
                 logSystem(QStringLiteral("Pull merge reconcile for %1: %2")
-                              .arg(key, flipError));
+                              .arg(key, fetch.flipError));
             m_pullLedgerSweepInProgress = false;
+            startQueuedPullsInboxApplies();
 
             if (!fetch.fetched && adopted.isEmpty() && flipped.isEmpty() &&
                 rewarded.isEmpty())
@@ -12516,8 +12833,6 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
                               "estimate%4 queued for payout.")
                               .arg(plural, joined(rewarded), key, plural));
             }
-            // The pumped git waits above may have navigated the UI; only
-            // refresh the pulls view when the same repo detail is still open.
             if (repoIndexAtStart == m_repoDetailIndex && m_repoDetailIndex >= 0 &&
                 m_repoDetailIndex < m_repositories.size()) {
                 const RepositoryRecord &current =
@@ -12627,28 +12942,25 @@ void MainWindow::drainPullsInboxFor(RepositoryRecord repo, bool interactive,
     });
 }
 
-void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
-                                        const QJsonArray &pending,
-										bool interactive)
+QString MainWindow::pullsInboxKey(const RepositoryRecord &repo)
 {
-    if (!hasOwnerSigningCapability())
-        return;
-    if (pending.isEmpty()) {
-        if (interactive)
-            QMessageBox::information(this, "Sync inbox",
-                                     "No pending pull requests.");
-        return;
+    return repo.owner.trimmed().toLower() + QLatin1Char('/') +
+           repo.name.trimmed().toLower();
+}
+
+void MainWindow::mergePullsInboxPending(QJsonArray &into,
+                                        const QJsonArray &more)
+{
+    for (const QJsonValue &value : more) {
+        if (!into.contains(value))
+            into.append(value);
     }
-    const RepositoryRecord writable = writableRecordFor(repo);
-    PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
-                    m_userName);
-    if (!store.canWrite())
-        return;
-    int merged = 0;
-    bool branchReviewsChanged = false;
-    QStringList drainedIds;
-    QString lastAuthor;
-    QString lastTitle;
+}
+
+MainWindow::PullsInboxOutcome
+MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
+{
+    PullsInboxOutcome outcome;
     for (const QJsonValue &value : pending) {
         const QJsonObject obj = value.toObject();
         const QString inboxId =
@@ -12657,17 +12969,25 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
                       static_cast<qint64>(obj.value("id").toDouble()))
                 : QString();
         const QString reviewBranch = obj.value("branch").toString();
+        if (obj.value("revision").isObject()) {
+            const int number = obj.value("number").toInt();
+            const QJsonObject revisionJson = obj.value("revision").toObject();
+            const PullRequest revision = PullRequest::fromJson(revisionJson);
+            if (store.applyRemoteRevision(
+                    number, revision, revisionJson.value("revisionSig").toString())) {
+                if (!inboxId.isEmpty())
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
+            }
+            continue;
+        }
         if (obj.contains("event") && !reviewBranch.isEmpty()) {
             const PullEvent ev =
                 PullEvent::fromJson(obj.value("event").toObject());
             if (store.applyRemoteBranchEvent(reviewBranch, ev)) {
                 if (!inboxId.isEmpty())
-                    drainedIds << inboxId;
-                ++merged;
-                lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                     : ev.authorName;
-                lastTitle = QStringLiteral("review on %1").arg(reviewBranch);
-                branchReviewsChanged = true;
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
             }
             continue;
         }
@@ -12680,32 +13000,107 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
                                      : store.applyRemoteEvent(number, ev);
             if (applied) {
                 if (!inboxId.isEmpty())
-                    drainedIds << inboxId;
-                ++merged;
-                lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                     : ev.authorName;
-                lastTitle = QStringLiteral("review on #%1").arg(number);
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
             }
             continue;
         }
         const PullRequest pr =
             PullRequest::fromJson(obj.value("pull").toObject());
-        if (store.applyRemotePull(pr)) {
+        bool opened = false;
+        if (store.applyRemotePull(pr, nullptr, &opened)) {
             if (!inboxId.isEmpty())
-                drainedIds << inboxId;
-            ++merged;
-            lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
-                                                 : pr.authorName;
-            lastTitle = pr.title;
+                outcome.drainedIds << inboxId;
+            ++outcome.merged;
+            if (opened) {
+                ++outcome.opened;
+                outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
+                                                             : pr.authorName;
+                outcome.lastTitle = pr.title;
+            }
         }
     }
-    if (!drainedIds.isEmpty()) {
+    return outcome;
+}
+
+void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
+                                        const QJsonArray &pending,
+										bool interactive)
+{
+    if (!hasOwnerSigningCapability())
+        return;
+    if (pending.isEmpty()) {
+        if (interactive)
+            QMessageBox::information(this, "Sync inbox",
+                                     "No pending pull requests.");
+        return;
+    }
+    queuePullsInboxApply(PullsInboxApplyRequest{repo, pending, interactive});
+}
+
+void MainWindow::queuePullsInboxApply(PullsInboxApplyRequest request)
+{
+    const QString key = pullsInboxKey(request.repo);
+    if (m_pullsInboxApplyInFlight.contains(key) || m_pullLedgerSweepInProgress) {
+        auto it = m_pullsInboxApplyQueued.find(key);
+        if (it == m_pullsInboxApplyQueued.end()) {
+            m_pullsInboxApplyQueued.insert(key, std::move(request));
+        } else {
+            it->repo = request.repo;
+            mergePullsInboxPending(it->pending, request.pending);
+            it->interactive = it->interactive || request.interactive;
+        }
+        return;
+    }
+    const RepositoryRecord writable = writableRecordFor(request.repo);
+    PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
+                    m_userName);
+    if (!store.canWrite())
+        return;
+    m_pullsInboxApplyInFlight.insert(key);
+    const RepositoryRecord repo = request.repo;
+    const bool interactive = request.interactive;
+    runOffThread<PullsInboxOutcome>(
+        [store, pending = std::move(request.pending)] {
+            const forkmesh::BackgroundScope activity(
+                QStringLiteral("pulls"),
+                QStringLiteral("apply pull inbox"),
+                forkmesh::ActionTelemetry::Execution::Worker);
+            return applyPullsInboxEntries(store, pending);
+        },
+        [this, repo, key, interactive](PullsInboxOutcome outcome) {
+            m_pullsInboxApplyInFlight.remove(key);
+            finishPullsInboxApply(repo, outcome, interactive);
+            startQueuedPullsInboxApplies();
+        });
+}
+
+void MainWindow::startQueuedPullsInboxApplies()
+{
+    if (m_pullLedgerSweepInProgress)
+        return;
+    const QStringList keys = m_pullsInboxApplyQueued.keys();
+    for (const QString &key : keys) {
+        if (m_pullsInboxApplyInFlight.contains(key))
+            continue;
+        PullsInboxApplyRequest next = m_pullsInboxApplyQueued.take(key);
+        queuePullsInboxApply(std::move(next));
+    }
+}
+
+void MainWindow::finishPullsInboxApply(const RepositoryRecord &repo,
+                                       const PullsInboxOutcome &outcome,
+                                       bool interactive)
+{
+    const RepositoryRecord writable = writableRecordFor(repo);
+    const int merged = outcome.merged;
+    if (!outcome.drainedIds.isEmpty() && hasOwnerSigningCapability()) {
         QUrl ackUrl = pullsApiUrl(repo);
 		const QString ackSigner =
 			repoSegment(repo.owner, QStringLiteral("owner"));
         QUrlQuery query = signedInboxQuery(ackSigner);
         query.addQueryItem(QStringLiteral("ids"),
-                           drainedIds.join(QStringLiteral(",")));
+                           outcome.drainedIds.join(QStringLiteral(",")));
         ackUrl.setQuery(query);
         m_networkAccess->deleteResource(QNetworkRequest(ackUrl));
     }
@@ -12714,7 +13109,7 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
         m_repositories.at(m_repoDetailIndex).owner == repo.owner &&
         m_repositories.at(m_repoDetailIndex).name == repo.name;
     if (onThisRepo)
-        reloadPulls();
+        reloadPullsInBackground();
 	if (merged > 0) {
         propagateRepoUpdate(repoIndexFor(repo.owner, repo.name));
         scanRepoMentionsFor(writable);
@@ -12733,21 +13128,28 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
             this, "Sync inbox",
             QStringLiteral("Merged %1 pull request(s) into .forkmesh/pulls/.")
                 .arg(merged));
-    } else if (merged > 0) {
+    } else if (outcome.opened > 0) {
         const QString body =
-            merged == 1
+            outcome.opened == 1
                 ? QStringLiteral("%1 opened a pull request: %2")
-                      .arg(lastAuthor, lastTitle)
+                      .arg(outcome.lastAuthor, outcome.lastTitle)
                 : QStringLiteral("%1 new pull requests on %2/%3")
-                      .arg(merged)
+                      .arg(outcome.opened)
                       .arg(repo.owner, repo.name);
+        const QString where = repo.owner + QLatin1Char('/') + repo.name;
+        const QString alertTitle =
+            outcome.opened == 1
+                ? forkmesh::pings::alertLeadTitle(outcome.lastAuthor, where)
+                : where;
+        const QString alertBody =
+            outcome.opened == 1 && !outcome.lastTitle.trimmed().isEmpty()
+                ? forkmesh::pings::alertSnippet(outcome.lastTitle)
+                : QStringLiteral("%1 new pull requests").arg(outcome.opened);
         flashPingMessage(body);
         if (notifyEnabled(kPullAlertSetting))
-            notifyIfInactive(
-                QString::fromUtf8("ForkMesh \xE2\x80\x94 new pull request"), body);
+            notifyIfInactive(alertTitle, alertBody);
         if (notifyEnabled(kPullAlertSetting))
-            showPingTrayMessage(QStringLiteral("ForkMesh — new pull request"),
-                                body);
+            showPingTrayMessage(alertTitle, alertBody);
         if (onThisRepo)
             triggerTeammatesForEvent(QStringLiteral("new-pulls"), body);
     }

@@ -2,14 +2,17 @@
 
 `forkmesh-mirror-node --config … --execute-mirror-merge` performs
 owner-authorized web merges and pull-branch updates on a mirror, so an owner
-can merge while the source desktop is offline. Code: `server/merge.go`,
+can merge while the source desktop is offline. A merge needs an owner; an
+update needs only someone who may push the pull's head branch
+([app/pull-merge-box.md](../app/pull-merge-box.md#update-branch)). Code: `server/merge.go`,
 `server/checks.go`, `server/pull_metadata_refs.go`. Operator view:
 [mirror-node.md, "Owner-authorized web merges"](../../www/docs/operations/mirror-node.md#owner-authorized-web-merges).
 
 ## Flow
 
-1. The Worker authenticates an organization owner, signs the exact
-   request (expected base, head and ledger object ids), and sends it to one
+1. The relay (the app on the cores) authenticates the account (an owner
+   for a merge, anyone who may push the head branch for an update), signs
+   the exact request (expected base, head and ledger object ids), and sends it to one
    healthy mirror's gateway (`merge-preview`, `merge-pull`,
    `update-pull-branch`).
 2. The gateway (`tools/mirror_gateway.py`) runs this binary with one JSON
@@ -59,6 +62,40 @@ can merge while the source desktop is offline. Code: `server/merge.go`,
    pushes a `commits` event so the other mirrors converge. The event goes
    out even when the digest is not admitted, and it reaches every core
    (`docs/CORE_PUSH.md`, "Every core is woken at once").
+
+## Progress
+
+During `execute` the executor writes one line per phase change to stderr:
+`forkmesh-progress {"phase":"<phase>","at":<ms>}`. Phases, in order:
+`fetching` (read the ledger, base and head tips), `verifying` (review gate,
+or the branch tips for an update), `checking` (required checks and pull
+rules; merges only), `testing` (`merge-tree` conflict check, and replaying a
+patch-backed head), `committing` (ledger record or update commit), `pushing`
+(the `update-ref` transaction) and `publishing` (gateway generation and daemon
+wake). Nothing else goes on those lines: no paths, branch names or object ids.
+There is no `hooks` phase today because Git runs with hooks off; the name is
+reserved in the vocabulary so a node that adds one needs no relay change.
+
+The gateway runs `execute` through `ExternalMergeExecutor.stream`, which reads
+stderr on its own pipe as the helper runs (at most 64 lines of 256 bytes;
+unknown phases and other output are dropped) and records `claimed` when the
+job thread starts and `publishing` while it reloads and registers. Each
+`202 processing` answer carries `progress: {phase, startedAt, updatedAt,
+steps: [{phase, at}]}` for that request id. An executor object without
+`stream` (an older wrapper, the tests' fakes) still runs through `call` and
+reports only `claimed` and `publishing`.
+
+The relay (`_https_mirror_merge_result`) keeps only known phases and integer
+times (at most 18 steps), and `repository_pull_merge_handler` writes the
+latest record onto the in-flight `repo_merge_jobs` row's `result` column,
+`{"progress": ...}`, only when it changed and only while the row is
+`requested`. Every other reader of that column filters on a terminal status,
+and the terminal `UPDATE` replaces the record with the receipt, so no
+migration is needed. The browser gets `progress` with `state`, `node` (the
+selected mirror) and a fixed `message` on each 202; when that mirror drops out
+of the healthy set the `merge_node_unavailable` / `job_node_offline` answer
+carries the last stored record with `state: "waiting"`. All of this is behind
+the same owner check as the merge itself.
 
 ## Files
 
@@ -146,7 +183,9 @@ Further rules:
 
 - `branch` and `base` may be any Git-legal branch except `HEAD`, a bare
   `agent/` and anything under `forkmesh/`, and must differ
-  (`validManagedBranch`). **Update from the base** is a merge with the roles
+  (`validManagedBranch`). A delete accepts any branch name
+  `git check-ref-format --branch` accepts, except `agent/` and `forkmesh/...`
+  (`validDeletableBranch`). **Update from the base** is a merge with the roles
   swapped. The default branch is never deleted. Removed non-`agent/` branches
   are saved under `refs/forkmesh/trash/branch/<branch>/<token>`. An older core
   refuses non-`agent/` branches and the App queues the operation for the
@@ -155,6 +194,10 @@ Further rules:
   ([../HOSTED_REPOS.md](../HOSTED_REPOS.md)).
 - After `merged` with `generationReady`, the gateway adopts the generation
   with `reload_from_disk(prewarm=False)` and warms caches in the background.
+  The warmup waits until no job finished for 5 s and runs once at a lower
+  CPU priority (`_schedule_prewarm`), so a run of branch deletes costs one
+  warmup instead of one per branch; delete jobs themselves run at nice +10
+  ([../app/branch-ops.md](../app/branch-ops.md#how-the-job-runs)).
 - **Discard.** Deleting a runner run on the phone posts
   `{"action": "cleanup", "discard": true}` before the `DELETE`; the App
   (`agent_branches._cleanup`) sends `discard: true` to every core (request id

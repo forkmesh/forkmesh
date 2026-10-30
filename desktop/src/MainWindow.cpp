@@ -1,3 +1,4 @@
+#include "InstanceTheme.h"
 #include "ForkMeshVersion.h"
 #include "ActionStore.h"
 #include "HiddenTerms.h"
@@ -24,6 +25,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "SettingsSectionsView.h"
+#include "SettingsWrite.h"
 #include "SingleInstance.h"
 #include "BackgroundMode.h"
 #include "StatsDashboard.h"
@@ -39,6 +41,8 @@
 #include "WindowFade.h"
 #include "WindowFrameControl.h"
 #include "WorldSpeechBridge.h"
+
+#include <QNetworkProxyFactory>
 
 using namespace forkmesh::ui;
 
@@ -162,8 +166,15 @@ MainWindow::~MainWindow()
             QFile::exists(m_agentToolLedger->persistPath()))
             m_agentToolLedger->saveLater();
     }
+    if (m_agentPerformance) {
+        m_agentPerformance->changed = {};
+        if (!m_agentPerformance->isEmpty())
+            m_agentPerformance->saveLater();
+    }
     forkmesh::diskwrite::flush();
+    ActionStore::flushWrites();
     flushRepositorySyncTimes();
+    flushDeferredSettings();
 
     clearDesktopPackageExtensions();
 
@@ -600,6 +611,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
     });
     m_networkAccess = network;
+    initOrganizationTaskStore();
+    static bool proxyLookupWarmed = false;
+    if (!std::exchange(proxyLookupWarmed, true)) {
+        runOffThread<bool>(
+            [] {
+                QNetworkProxyFactory::systemProxyForQuery(
+                    QNetworkProxyQuery(QUrl(kDefaultServerUrl)));
+                return true;
+            },
+            [](bool) {});
+    }
     connect(m_networkAccess, &QNetworkAccessManager::finished, this,
             [this](QNetworkReply *reply) {
                 if (!reply)
@@ -803,6 +825,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (!applicationPage || !m_stack)
         return;
     m_stack->addWidget(applicationPage);
+#ifdef FORKMESH_WINDOW_TESTS
+    syncNativePackagePages();
+#else
+    m_nativePackagePagesDeferred = true;
+    logStartup(QStringLiteral(
+        "installed package pages deferred until after first paint"));
+#endif
     m_stack->setCurrentWidget(applicationPage);
     restoreAppViewMode();
     logStartup(QStringLiteral("chat/app page built"));
@@ -813,8 +842,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     logStartup(QStringLiteral(
         "repository detail shell, Code and Issues deferred until opened"));
     startupStep(QStringLiteral("Loading repositories"));
-    traceStep(QStringLiteral("initialise the world speech bridge"),
-              [this] { initializeWorldSpeechBridge(); });
     traceStep(QStringLiteral("read the repository records"),
               [this] {
                   loadRelayRepositoryLists();
@@ -831,20 +858,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     startupStep(QStringLiteral("Restoring actions and agent sessions"));
     // Only the store and its runners here; reading the run records off disk is
     // the expensive half and waits for warmDeferredStartupSurfaces().
+    traceStep(QStringLiteral("find the TMP disk"), [this] { initFastScratchDisk(); });
     traceStep(QStringLiteral("create the Actions store"),
               [this] { initActionStore(); });
     traceStep(QStringLiteral("restore agent sessions"), [this] { initAgents(); });
     // A bin whose window elapsed while ForkMesh was closed must not survive
     // the next launch, and a long-running session needs the sweep to keep
     // happening (issue #578).
-    purgeExpiredAgentRecycleBin();
     m_agentRecycleSweepTimer = new QTimer(this);
     connect(m_agentRecycleSweepTimer, &QTimer::timeout, this,
-            &MainWindow::purgeExpiredAgentRecycleBin);
-    m_agentRecycleSweepTimer->start(60 * 60 * 1000);
-#ifndef FORKMESH_WINDOW_TESTS
-    startAgentParityWatch();
-#endif
+            &MainWindow::purgeExpiredAgentRecycleBinInBackground);
     logStartup(QStringLiteral("actions + agents initialized"));
     if (!m_agentQueue.isEmpty())
         startupDetail(QStringLiteral("%1 agent session(s) queued to resume")
@@ -1030,19 +1053,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "  startup job scheduled: first relay latency probe in 2500ms"));
     traceStep(QStringLiteral("start operating-system reachability watch"),
               [this] { initRelayReachabilityWatch(); });
-    traceStep(QStringLiteral("restore cached organization task badge"),
-              [this] { restoreOrganizationTaskBadge(); });
-#ifndef FORKMESH_WINDOW_TESTS
-    QTimer::singleShot(25000, this, [this] {
-        forkmesh::StartupTraceStep step(
-            QStringLiteral("delayed startup: refresh organization task badge"));
-        const forkmesh::BackgroundRoutine routine(
-            QStringLiteral("delayed startup: refresh organization task badge"));
-        refreshOrganizationTaskBadge();
-    });
-#endif
-    logStartup(QStringLiteral(
-        "  startup job scheduled: organization task refresh in 25000ms"));
     // ForkMesh Ads: one very coarse 30-minute timer and a first ask 20s in. It
     // declines by itself in a window-test build or on an offscreen node.
     scheduleAdBanner();
@@ -1096,13 +1106,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
               [this] { refreshHostsTable(); });
     traceStep(QStringLiteral("probe relays for the Nodes page"),
               [this] { refreshRelayNodes(); });
-    // Every saved host's logs stream into the main log from here on.
-    QTimer::singleShot(15 * 1000, this, [this] {
-        m_hostLogFeedsArmed = true;
-        syncHostLogFeeds();
-        m_coreLogFeedsArmed = true;
-        syncCoreLogFeeds();
-        startDeployLogFollower();
+    traceStep(QStringLiteral("start the core services of installed packages"), [this] {
+        registerCorePackageServices();
+        syncCorePackageServices();
     });
     logStartup(QStringLiteral(
         "application shell and startup models initialized"));
@@ -1166,6 +1172,8 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // attach the real composer without showing an intermediate loader.
     QTimer::singleShot(100, this,
                        &MainWindow::initializeDeferredGlobalLogDock);
+    QTimer::singleShot(150, this,
+                       &MainWindow::buildDeferredNativePackagePages);
 }
 
 // Background state needed for automatic work after the interactive runway.
@@ -1188,6 +1196,7 @@ void MainWindow::runDeferredStartup()
     // Restore durable Actions state before resuming queued work. Repository
     // panels remain on-demand and are built by the exact restore/navigation.
     warmDeferredStartupSurfaces();
+    buildDeferredNativePackagePages();
     if (m_deferredStartupRun) {
         logStartup(QStringLiteral(
             "deferred startup requested again; ignored because it already ran"));
@@ -1296,6 +1305,8 @@ void MainWindow::runDeferredStartup()
         } else {
             logStartup(QStringLiteral(
                 "  repository restore skipped: no saved or available repository"));
+            if (m_sectionStack && m_sectionStack->currentIndex() == 0)
+                showSection(kHomeGridSectionIndex);
         }
     }
     m_pendingRestoreRepoIndex = -1;
@@ -1396,6 +1407,14 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
         settings.setValue(kThemeSetting, preference);
     }
 
+    if (marketTheme) {
+        forkmesh::instancetheme::apply({});
+    } else if (preference == kHalloweenTheme) {
+        const QMap<QString, QString> halloween = Theme::halloweenRoleColors();
+        Theme::setRoleOverrides(halloween, halloween);
+    } else {
+        forkmesh::instancetheme::applyStored();
+    }
     bool dark = true;
     QMap<QString, QString> palette;
     QString overlay;
@@ -1419,6 +1438,8 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
     Theme::setActiveDesign(design, dark);
     if (design == Theme::Design::Next)
         palette = Theme::nextPalette(dark);
+    else if (!marketTheme)
+        palette = Theme::overridePalette(design, dark);
     Theme::setActivePalette(palette);
     invalidateThemeIsDarkCache(); // the only place the answer can have moved
     qApp->setPalette(Theme::paletteForDesign(design, dark));
@@ -1428,9 +1449,15 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
     const QFont interfaceFont = Theme::interfaceFont(design, classicFont);
     if (qApp->font().families() != interfaceFont.families())
         qApp->setFont(interfaceFont);
-    qApp->setStyleSheet(design == Theme::Design::Next
-                            ? Theme::nextStyleSheet(dark)
-                            : Theme::styleSheetForPalette(dark, palette, overlay));
+    const QString styleSheet =
+        design == Theme::Design::Next
+            ? Theme::nextStyleSheet(dark)
+            : Theme::styleSheetForPalette(dark, palette, overlay);
+    if (qApp->styleSheet() != styleSheet) {
+        if (!qApp->styleSheet().isEmpty())
+            qApp->setStyleSheet(QString());
+        qApp->setStyleSheet(styleSheet);
+    }
     for (QWidget *widget : QApplication::topLevelWidgets()) {
         widget->setProperty("forkmeshTheme", activeThemeId);
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
@@ -1461,15 +1488,25 @@ void MainWindow::refreshThemedIcons()
     for (QTabWidget *tabs : tabWidgets)
         refreshTabOcticons(tabs);
     refreshSettingsSectionIcons();
+    refreshComposerIcons();
     refreshChatWorkspaceUser();
     if (m_chatMembersLayout) {
         m_chatMembersSignature.clear();
         refreshChatMembers();
     }
-    // The Tasks detail pane bakes its glyphs into rich text, so it has to be
-    // rebuilt rather than re-tinted in place.
-    if (m_organizationTaskDetail)
-        renderOrganizationTaskDetail();
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.widget)
+            page.widget->themeChanged();
+    }
+}
+
+void MainWindow::flushDeferredSettings()
+{
+    if (m_lastRepoDetailTabPending >= 0) {
+        forkmesh::settings::put(QSettings(), kLastRepoDetailTabSetting,
+                                m_lastRepoDetailTabPending);
+        m_lastRepoDetailTabPending = -1;
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -1496,6 +1533,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         QSettings().setValue(kWindowGeometrySetting, saveGeometry());
         savePromptOverlayPlacement();
     }
+    flushDeferredSettings();
     if (m_connectedAtMs > 0)
         QSettings().setValue(kConnectionTotalSetting,
                              m_totalConnectionMs +

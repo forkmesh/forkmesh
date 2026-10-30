@@ -11,10 +11,26 @@ the air during calls".
 
 `ForkMesh/Platform/OtherAppCall.swift` watches `CXCallObserver`, which lists
 cellular calls and every VoIP call an app reports through CallKit (Signal,
-WhatsApp, FaceTime). ForkMesh's own direct calls do not use CallKit, so the
-observer only ever sees other apps' calls. `OtherAppCall.inProgress` reads the
+WhatsApp, FaceTime). Since 2026-10-21 ForkMesh reports its own incoming
+direct calls through CallKit too (`DirectCallKit`, see
+`native/ios/docs/FMChat.md`), so the observer also sees a ForkMesh call while
+it rings or runs, and the rules below apply to it: interface sounds, chimes and
+the mesh stay quiet during our own call as well, which is what a call needs. `OtherAppCall.inProgress` reads the
 call list each time, and listeners registered with `onChange` hear the start
 and end.
+
+Since 2026-10-23 every ForkMesh call counts, not only the CallKit ones: our
+outgoing calls (and calls in the China region, where CallKit is off) never
+appear in `CXCallObserver`, so during them sounds and dictation could switch
+or deactivate the shared session and the other person heard silence.
+`DirectCallAudio` calls `OtherAppCall.shared.setOwnCall` while the call engine
+has a phase or a group call runs; `inProgress` and `onChange` include it.
+Because it is our own session the call needs, code that changes the session
+without checking `inProgress` (speech, voice messages, view-once voice,
+dictation, the DJ studio, the alarms' stop) skips its category change during
+our call and deactivates only through `OtherAppCall.deactivateSession()`,
+which does nothing then (`OtherAppCall.ownCall`). Details in
+`native/ios/docs/FMChat.md`, "Audio session during a call".
 
 While a call is up:
 
@@ -47,3 +63,20 @@ While a call is up:
 Things a person starts on purpose (playing a voice message, a DJ deck,
 dictating into the composer) still work during a call. Only their ducking
 changes.
+
+## Android
+
+`platform/OtherAppCall.kt` reads `AudioManager.mode` (a mode above normal
+means a call, cellular or VoIP), listening with `addOnModeChangedListener`
+on Android 12+ and polling every 2 s while the app is in the foreground
+below that; every check also reads the mode fresh. Since 2026-10-28
+ForkMesh's own direct or group call (`DirectCallFeature.engine.phase`,
+`GroupCallFeature.active`) counts too, as on iOS, and dictation does not
+start during it ([ANDROID.md](ANDROID.md#calls-ledger-s125-to-s133)). While a call is up
+(wired in `App.onCreate`): interface sounds are quietened
+(`FmSoundCues.quieten`), Agent Watch plays nothing, and Glasses Alert still
+notifies and vibrates but plays no ring; a ring already sounding stops and
+the alarm volume is restored. ForkMesh on Android never asks for audio focus
+for these sounds, so it already mixes instead of ducking. The diff scroll
+ratchet in `ui/kit/FmSoundCues.kt` does not check `quieten`; that kit file
+is owned by the design-layer work and is left as it is.

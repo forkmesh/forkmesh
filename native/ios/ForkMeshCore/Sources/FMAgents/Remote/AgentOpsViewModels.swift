@@ -17,6 +17,8 @@ public final class MergeCleanupModel {
     public private(set) var mergedBranch: String?
     public private(set) var mergeStats: MergeStats?
     public private(set) var conflicted = false
+    public private(set) var canSetAside = false
+    public private(set) var setAsideNote = ""
 
     @ObservationIgnored private let client: AgentOpsClient
 
@@ -44,14 +46,18 @@ public final class MergeCleanupModel {
     public var busy: Bool { preparing || running }
 
     @discardableResult
-    public func mergeNow() async -> Bool {
+    public func mergeNow(setAside: Bool = false) async -> Bool {
         guard !busy, mergedBranch == nil else { return false }
         await prepare()
-        return await run()
+        return await run(setAside: setAside)
+    }
+
+    public var outcome: MergeOutcome {
+        MergeOutcome(branch: mergedBranch ?? "", stats: mergeStats, setAsideNote: setAsideNote)
     }
 
     @discardableResult
-    public func run() async -> Bool {
+    public func run(setAside: Bool = false) async -> Bool {
         guard let confirmation, canRun else { return false }
         if confirmation.isExpired(nowMs: client.nowMs) {
             self.confirmation = nil
@@ -61,16 +67,20 @@ public final class MergeCleanupModel {
         running = true
         defer { running = false }
         do {
-            let outcome = try await client.merge(sessionId: sessionId, token: confirmation.token, typed: confirmation.typeToConfirm)
+            let outcome = try await client.merge(
+                sessionId: sessionId, token: confirmation.token, typed: confirmation.typeToConfirm, setAside: setAside)
             mergedBranch = outcome.branch.isEmpty ? confirmation.typeToConfirm : outcome.branch
             mergeStats = outcome.stats
+            setAsideNote = outcome.setAsideNote
             errorText = ""
             conflicted = false
+            canSetAside = false
             self.confirmation = nil
             return true
         } catch {
             self.confirmation = nil
             conflicted = AgentOpsClient.errorCode(error) == "conflicts"
+            canSetAside = AgentOpsClient.errorCode(error) == "checkout_dirty"
             errorText = AgentOpsClient.describe(error)
             return false
         }

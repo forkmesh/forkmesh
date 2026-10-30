@@ -45,6 +45,8 @@ PULLS_DIR = ".forkmesh/pulls"
 PULL_LEDGER = "forkmesh/pulls"
 PULL_BRANCH_PREFIX = "forkmesh/pull/"
 ISSUES_DIR = ".forkmesh/issues"
+COLLAB_SETTINGS_PATHS = (".forkmesh/issues.json", ".forkmesh/pulls.json",
+                         "AI_POLICY.md")
 DISCUSSIONS_DIR = ".forkmesh/discussions"
 BLOB_BATCH = 50           # 06-repo-content.js batches /blobs by 50
 GENERIC_LIST_LIMIT = 50   # loadRepoRecordsFromMirror: non-pull collections
@@ -58,9 +60,12 @@ MAX_BUNDLES = 64
 BUNDLE_FRESH_SECONDS = 5.0
 BUNDLE_STALE_SECONDS = 300.0
 PUBLIC_CHECK_SECONDS = 5.0
-MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+GONE_STATUSES = frozenset({403, 404, 410})
+MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
+MBOX_FROM = re.compile(r"^From [0-9a-f]{40} ", re.M)
+CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def read_key(operation, pairs):
@@ -180,6 +185,16 @@ async def _blobs(reader, paths, ref):
     return found
 
 
+def _record_author(values):
+    name = str(values.get("authorName") or "").strip()
+    if name:
+        return name
+    claimed = str(values.get("authorClaimedName") or "").strip().lower()
+    if CLAIMED_NAME.match(claimed):
+        return "%s (unverified)" % claimed
+    return values.get("author") or "unknown"
+
+
 def _record_row(number, values, body, kind):
     return {
         "number": number,
@@ -188,8 +203,7 @@ def _record_row(number, values, body, kind):
                 kind, "record"), number),
         "state": values.get("status") or values.get("state")
         or values.get("category") or "open",
-        "author": values.get("authorName") or values.get("author")
-        or "unknown",
+        "author": _record_author(values),
         "ts": values.get("updatedAt") or values.get("createdAt")
         or values.get("ts") or "",
         "base": values.get("base", ""),
@@ -205,6 +219,50 @@ def _stamp(row):
     except ValueError:
         return 0
     return value * 1000 if 0 < value < 10_000_000_000 else value
+
+
+def review_policy(reviews, pull_author=""):
+    """06-repo-content.js pullReviewPolicy over the listing's
+    [[reviewer, state], ...]: each reviewer's latest review counts, the
+    pull author's never does."""
+    author = str(pull_author or "").strip()
+    latest = {}
+    for entry in reviews if isinstance(reviews, list) else []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            continue
+        key = str(entry[0] or "").strip()
+        if not key or key == author:
+            continue
+        if entry[1] in ("approved", "changes_requested"):
+            latest[key] = entry[1]
+        else:
+            latest.pop(key, None)
+    approvals = sum(1 for value in latest.values() if value == "approved")
+    blockers = sum(1 for value in latest.values()
+                   if value == "changes_requested")
+    return {"approvals": approvals, "blockers": blockers,
+            "ready": approvals >= 1 and blockers == 0}
+
+
+def review_state(reviews, pull_author, status, draft=False):
+    """06-repo-content.js pullListReviewState."""
+    if not isinstance(reviews, list):
+        return None
+    policy = review_policy(reviews, pull_author)
+    is_open = str(status or "open").lower() == "open" and not draft
+    if policy["blockers"]:
+        return {"state": "changes_requested", "approvals": policy["approvals"],
+                "blockers": policy["blockers"]}
+    if policy["ready"]:
+        return {"state": "approved", "approvals": policy["approvals"],
+                "blockers": 0}
+    return ({"state": "review_required", "approvals": 0, "blockers": 0}
+            if is_open else None)
+
+
+def _is_draft(values):
+    return str(values.get("draft") or "").strip().lower() in (
+        "true", "yes", "1")
 
 
 async def plan_pulls(reader, branch):
@@ -225,6 +283,8 @@ async def plan_pulls(reader, branch):
         branch_only = [(name, str(refs[name]).strip()) for name in refs
                        if NUMBERED.match(name) and name not in names
                        and is_commit(refs[name])]
+        reviews = tree.get("pullReviews") if isinstance(
+            tree.get("pullReviews"), dict) else None
         paths = ["%s/%s/pull.md" % (PULLS_DIR, e["name"]) for e in listed]
         blobs, extra = await asyncio.gather(
             _blobs(reader, paths, commit),
@@ -235,8 +295,14 @@ async def plan_pulls(reader, branch):
             number = int(entry["name"])
             blob = blobs.get("%s/%d/pull.md" % (PULLS_DIR, number))
             if blob:
-                rows.append(_record_row(number, *parse_front_matter(
-                    blob_text(blob)), "pulls"))
+                values, body = parse_front_matter(blob_text(blob))
+                row = _record_row(number, values, body, "pulls")
+                if reviews is not None:
+                    row["review"] = review_state(
+                        reviews.get(str(number)) or [],
+                        values.get("author", ""), row["state"],
+                        _is_draft(values))
+                rows.append(row)
         for (name, _ref), blob in zip(branch_only, extra):
             if blob:
                 rows.append(_record_row(int(name), *parse_front_matter(
@@ -315,7 +381,7 @@ def issue_summary(text, number):
         "author": issue.get("authorName") or opened.get("authorName")
         or issue.get("author") or opened.get("author") or "unknown",
         "ts": issue.get("createdAt") or opened.get("ts") or "",
-        "labels": [str(label) for label in labels][:6],
+        "labels": [str(label) for label in labels][:20],
         "body": str(effective.get("body") or issue.get("body") or ""),
         "comments": [{"author": c.get("authorName") or c.get("author")
                       or "unknown", "ts": c.get("ts") or "",
@@ -328,6 +394,41 @@ async def _open_issue_index(reader, ref_pairs, path=ISSUES_DIR + "/open"):
     return tree
 
 
+def index_list_row(summary):
+    body = summary.get("body")
+    created = summary.get("createdAtMs")
+    return {
+        "number": int(summary.get("number") or 0),
+        "title": summary.get("title"),
+        "state": summary.get("status"),
+        "deleted": bool(summary.get("deleted")),
+        "author": summary.get("author"),
+        "ts": created or "",
+        "labels": [str(label) for label in summary.get("labels") or []][:20],
+        "body": ("" if body is None else str(body))[:300],
+        "commenters": [str(name) for name in summary.get("recentCommenters") or []
+                       if isinstance(name, str)][:4],
+    }
+
+
+def _indexed_issues(index):
+    if not isinstance(index, dict) or index.get("truncated") \
+            or not isinstance(index.get("issues"), list):
+        return None
+    rows = [index_list_row(item) for item in index["issues"]
+            if isinstance(item, dict) and item.get("location") in ("open", "")]
+    legacy = {int(item.get("number") or 0) for item in index["issues"]
+              if isinstance(item, dict) and item.get("location") == ""}
+    open_count = int(index.get("openFolders") or 0) + sum(
+        1 for row in rows if row["number"] in legacy
+        and row["state"] != "closed" and not row["deleted"])
+    return {"rows": rows, "open": open_count,
+            "closed": int(index.get("closedFolders") or 0),
+            "avatars": [name for name in index.get("forgeAvatars") or []
+                        if isinstance(name, str)],
+            "avatarCommit": str(index.get("commit") or "")}
+
+
 async def plan_issues(reader, branch):
     """loadRepoIssues: the folder listing, then the open issues."""
     root = asyncio.ensure_future(_root(reader, branch))
@@ -337,6 +438,11 @@ async def plan_issues(reader, branch):
     if tree:
         commit = str(tree.get("commit") or "")
         ref = commit if is_commit(commit) else branch
+        indexed = _indexed_issues(
+            await reader.get("issue-index", [("ref", ref)]))
+        if indexed is not None:
+            await root
+            return indexed
         entries = tree.get("entries") or []
         legacy = {int(e["name"]): issue_path(int(e["name"]))
                   for e in entries if e.get("type") == "tree"
@@ -374,12 +480,28 @@ async def plan_issues(reader, branch):
     return {"rows": rows, "open": open_count, "closed": closed_count}
 
 
+async def _issue_attachments(reader, branch, number):
+    from . import repo_ssr_issue
+    path = repo_ssr_issue.attachments_path(number)
+    blob = (await _blobs(reader, [path], branch)).get(path)
+    try:
+        doc = json.loads(blob_text(blob) or "null") if blob else None
+    except ValueError:
+        doc = None
+    return repo_ssr_issue.attachment_files(doc)
+
+
 async def plan_issue(reader, branch, number):
     """loadRepoRecordDetail for an issue, plus the open-issue index it reads
     for mentions and sub-issues (loadRepoIssueRelationIndex)."""
     root = asyncio.ensure_future(_root(reader, branch))
 
     async def relation_index():
+        for pairs in ([("ref", branch), ("related", number)],
+                      [("ref", branch)]):
+            indexed = await reader.get("issue-index", pairs)
+            if _indexed_issues(indexed) is not None:
+                return indexed
         tree = await reader.get("tree", [("path", ISSUES_DIR + "/open"),
                                          ("ref", branch)])
         if not tree:
@@ -389,15 +511,22 @@ async def plan_issue(reader, branch, number):
                           if e.get("type") == "tree"
                           and NUMBERED.match(str(e.get("name")))),
                          reverse=True)
-        await _blobs(reader, [issue_path(n, "open") for n in numbers],
-                     commit if is_commit(commit) else "")
+        return await _blobs(reader, [issue_path(n, "open") for n in numbers],
+                            commit if is_commit(commit) else "")
     index = asyncio.ensure_future(relation_index())
+    attachments = asyncio.ensure_future(_issue_attachments(reader, branch, number))
+    settings = asyncio.ensure_future(reader.get(
+        "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
+        + [("ref", branch)]))
     paths = [issue_path(number, subdir) for subdir in ("open", "closed", "")]
     blobs = await _blobs(reader, paths, branch)
     found = next((path for path in paths if blobs.get(path)), "")
     issue = issue_summary(blob_text(blobs[found]), number) if found else None
-    await asyncio.gather(root, index)
-    return {"issue": issue}
+    _root_done, open_issues, settings_data, attached = await asyncio.gather(
+        root, index, settings, attachments)
+    return {"issue": issue, "issueJson": blob_text(blobs[found]) if found else "",
+            "index": open_issues or {}, "attachments": attached,
+            "settings": (settings_data or {}).get("blobs") or {}}
 
 
 async def _pull_conversation(reader, number, commit):
@@ -418,11 +547,16 @@ async def _pull_conversation(reader, number, commit):
             continue
         values, body = parse_front_matter(blob_text(blob))
         events.append({"type": values.get("type") or "comment",
-                       "author": values.get("authorName")
-                       or values.get("author") or "unknown",
+                       "id": values.get("id", ""),
+                       "author": _record_author(values),
                        "ts": values.get("ts") or "", "state":
                        values.get("state", ""), "path": values.get("path", ""),
-                       "body": body})
+                       "body": body, "authorKey": values.get("author", ""),
+                       "authorName": values.get("authorName", ""),
+                       "target": values.get("target", ""),
+                       "line": values.get("line", ""),
+                       "lineStart": values.get("lineStart", ""),
+                       "lineEnd": values.get("lineEnd", "")})
     return events
 
 
@@ -450,15 +584,29 @@ async def plan_pull(reader, branch, number):
         return {"pull": None}
     values, body = parse_front_matter(blob_text(blob))
     is_open = str(values.get("status") or "open").lower() == "open"
+    settings = asyncio.ensure_future(reader.get(
+        "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
+        + [("ref", branch)])) if is_open else None
+    patch_ref = []
 
     async def patch():
         if not is_open:
             return ""
+        synced = str(values.get("syncedHeadOid") or "").strip().lower()
+        onto = str(values.get("headBaseOid") or "").strip().lower()
+        if (is_commit(synced) and is_commit(onto)
+                and synced == str(values.get("headOid") or "").strip().lower()):
+            data = await reader.get("compare", [("base", onto),
+                                                ("head", synced)])
+            if data and str(data.get("patch") or "").strip():
+                return str(data.get("patch") or "")
         data = await reader.get("blob", [
             ("path", "%s/%d/changes.patch" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
         text = blob_text(data)
         if text.strip():
+            if is_commit(commit):
+                patch_ref.append(commit)
             return text
         base, head = (str(values.get("creationBaseOid") or "").strip(),
                       str(values.get("creationHeadOid") or "").strip())
@@ -469,23 +617,27 @@ async def plan_pull(reader, branch, number):
         return ""
 
     async def commits():
-        await reader.get("blob", [
+        data = await reader.get("blob", [
             ("path", "%s/%d/commits.mbox" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
+        return len(MBOX_FROM.findall(blob_text(data)))
 
     # The branch list (repoPullBaseTip, merge base) is not in the bundle: on
     # a busy repository it is the gateway's most expensive listing (ahead and
     # behind for every branch) and only the merge controls need it.
-    diff, conversation, _c = await asyncio.gather(
+    diff, conversation, commit_count = await asyncio.gather(
         patch(), _pull_conversation(reader, number, commit), commits())
+    settings_data = await settings if settings is not None else None
     await root
-    return {"pull": {
+    return {"settings": (settings_data or {}).get("blobs") or {}, "pull": {
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
-        "author": values.get("authorName") or values.get("author")
-        or "unknown", "ts": values.get("ts") or values.get("createdAt") or "",
+        "author": _record_author(values), "authorKey": values.get("author", ""),
+        "draft": _is_draft(values), "commits": commit_count,
+        "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
-        "body": body, "conversation": conversation, "patch": diff}}
+        "body": body, "conversation": conversation, "patch": diff,
+        "patchRef": patch_ref[0] if patch_ref else ""}}
 
 
 async def plan_discussion(reader, branch, number):
@@ -507,7 +659,9 @@ async def plan_discussion(reader, branch, number):
             item = ((data or {}).get("blobs") or {}).get(path)
             if item:
                 values, body = parse_front_matter(blob_text(item))
-                replies.append({"author": values.get("authorName")
+                replies.append({"id": values.get("id", ""),
+                                "type": "comment",
+                                "author": values.get("authorName")
                                 or values.get("author") or "unknown",
                                 "ts": values.get("ts") or "", "body": body})
     await root
@@ -517,6 +671,8 @@ async def plan_discussion(reader, branch, number):
     return {"discussion": {
         "number": number, "title": values.get("title")
         or "discussion #%d" % number, "category": values.get("category", ""),
+        "status": values.get("status") if values.get("status") in (
+            "closed", "archived") else "open",
         "author": values.get("authorName") or values.get("author")
         or "unknown", "ts": values.get("ts") or values.get("createdAt") or "",
         "body": body, "replies": replies}}
@@ -595,7 +751,19 @@ async def still_public(fastpath, owner, repo):
     if len(_public) > 1024:
         _public.clear()
     _public[(owner, repo)] = (now, status == 200)
+    forget = getattr(fastpath, "forget_repository", None)
+    if status in GONE_STATUSES and forget is not None:
+        forget(owner, repo)
     return status == 200
+
+
+def recheck_public(owner, repo):
+    _public.pop((owner, repo), None)
+
+
+def known_not_public(owner, repo):
+    known = _public.get((owner, repo))
+    return known is not None and known[1] is False
 
 
 def _remember(bundle):
@@ -745,10 +913,18 @@ async def handle(fastpath, scope, send, owner, repo):
 LIST_PAGE_SIZE = 25  # REPO_COLLECTION_PAGE_SIZE
 MAX_DIFF_LINES = 1500
 MAX_DIFF_FILES = 60
-MAX_BODY_CHARS = 60_000
+MAX_BODY_CHARS = 262_144
 VIEW_PATH_RE = re.compile(
     r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
-    r"(pulls|issues|discussions)(?:/(\d{1,9})(?:/(files|commits|checks))?)?/?$")
+    r"(pulls|pull|issues|discussions)(?:/(\d{1,9})"
+    r"(?:/(files|commits|checks))?)?/?$")
+
+DIFF_PATH_RE = re.compile(
+    r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
+    r"pulls?/([1-9]\d{0,8})\.(diff|patch|txt)$")
+SHORT_DIFF_PATH_RE = re.compile(
+    r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/pulls?/([1-9]\d{0,8})"
+    r"\.(diff|patch|txt)$")
 
 VIEW_STYLE = """<style>
 .fm-ssr-tabs{display:flex;gap:4px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));margin:0 0 16px;overflow:hidden}
@@ -756,14 +932,18 @@ VIEW_STYLE = """<style>
 .fm-ssr-tabs a.on{color:rgb(var(--dashboard-foreground-rgb));border-bottom-color:#f78166;font-weight:600}
 .fm-ssr-item{padding:8px 16px;border-top:1px solid rgb(var(--dashboard-border-rgb))}.fm-ssr-item:first-child{border-top:0}
 .fm-ssr-item>a{font-weight:600;color:rgb(var(--dashboard-foreground-rgb));font-size:15px}.fm-ssr-item .m{color:rgb(var(--dashboard-muted-foreground-rgb));font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-ssr-item .m.fm-ssr-m-chip{display:flex;flex-wrap:wrap;align-items:center;column-gap:4px;white-space:normal}
 .fm-ssr-pill{display:inline-block;border-radius:2em;padding:2px 10px;font-size:12px;font-weight:600;color:#fff;background:#238636;margin-right:8px;vertical-align:middle}.fm-ssr-pill.closed{background:#8957e5}.fm-ssr-pill.merged{background:#8957e5}
+.fm-ssr-item .p{float:right;display:flex;margin-top:1px}.fm-ssr-item .p>*{margin-left:-6px;box-shadow:0 0 0 2px rgb(var(--dashboard-canvas-rgb))}
 .fm-ssr-label{display:inline-block;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:2em;padding:0 7px;font-size:11px;margin-left:6px;color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-h1{font-size:26px;font-weight:400;margin:0 0 8px;overflow-wrap:anywhere}.fm-ssr-h1 span{color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-sub{color:rgb(var(--dashboard-muted-foreground-rgb));margin:0 0 16px;overflow-wrap:anywhere}.fm-ssr-sub code{font-family:ui-monospace,monospace;font-size:12px}
 .fm-ssr-event{border:1px solid rgb(var(--dashboard-border-rgb));border-radius:6px;margin:0 0 16px;overflow:hidden;background:rgb(var(--dashboard-card-rgb))}
 .fm-ssr-event>div:first-child{padding:8px 16px;background:rgb(var(--dashboard-subtle-rgb,22 27 34));border-bottom:1px solid rgb(var(--dashboard-border-rgb));color:rgb(var(--dashboard-muted-foreground-rgb))}
+.fm-ssr-event>.fm-ssr-reactions{padding:0 24px 12px}
 .fm-ssr-diff{font-family:ui-monospace,monospace;font-size:12px;line-height:20px;overflow-x:auto}
 .fm-ssr-diff div{white-space:pre;padding:0 16px;min-width:max-content}.fm-ssr-diff .a{background:rgba(46,160,67,.15)}.fm-ssr-diff .d{background:rgba(248,81,73,.15)}.fm-ssr-diff .h{color:rgb(var(--dashboard-muted-foreground-rgb));background:rgba(56,139,253,.1)}
+.fm-ssr [data-repo-pull-review-prompt]{margin-bottom:16px}
 .fm-ssr-file{padding:8px 16px;font-family:ui-monospace,monospace;font-size:12px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));background:rgb(var(--dashboard-subtle-rgb,22 27 34))}
 </style>"""
 
@@ -784,14 +964,184 @@ def view_target(scope):
     if owner.lower() in RESERVED_OWNERS or repo in (".", "..") \
             or repo.endswith(".git"):
         return None
-    view = {"pulls": "pull", "issues": "issue",
+    if kind in ("pull", "pulls") and (kind == "pull") != bool(number):
+        return None
+    view = {"pull": "pull", "issues": "issue",
             "discussions": "discussion"}[kind] if number else kind
     return owner.lower(), repo, view, int(number or 0), section or ""
+
+
+def diff_target(scope):
+    if scope.get("method", "GET").upper() not in ("GET", "HEAD") or \
+            (scope.get("query_string") or b""):
+        return None
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    from .repo_ssr import RESERVED_OWNERS
+    match = DIFF_PATH_RE.match(path)
+    if match:
+        owner, repo, number, ext = match.groups()
+        if owner.lower() in RESERVED_OWNERS or repo in (".", "..") \
+                or repo.endswith(".git"):
+            return None
+        return owner.lower(), repo, int(number), ext == "txt"
+    match = SHORT_DIFF_PATH_RE.match(path)
+    if not match or match.group(1).lower() in RESERVED_OWNERS \
+            or match.group(1).endswith(".git"):
+        return None
+    return None, match.group(1), int(match.group(2)), match.group(3) == "txt"
+
+
+def pull_patch(bundle):
+    pull = (bundle.model or {}).get("pull") if bundle is not None else None
+    if not isinstance(pull, dict):
+        return ""
+    return str(pull.get("patch") or "")
+
+
+EDITABLE_PULL_EVENTS = frozenset({"comment", "review", "line-comment",
+                                  "thread-comment", "thread-reply"})
+
+
+def _timestamp(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number / 1000 if number > 10_000_000_000 else number
+
+
+def _same_author(change, target):
+    key = str(change.get("authorKey") or "")
+    if key and key == str(target.get("authorKey") or ""):
+        return True
+    name = str(change.get("authorName") or "").strip().lower()
+    return bool(name) and name == str(target.get("authorName") or "").strip().lower()
+
+
+def folded_conversation(events):
+    rows = [e for e in events or [] if isinstance(e, dict)]
+    by_id = {str(e["id"]): e for e in rows if e.get("id")}
+    edits, deleted, cleared = {}, set(), set()
+    for event in rows:
+        if event.get("type") not in ("comment-edit", "comment-delete"):
+            continue
+        target_id = str(event.get("target") or "")
+        target = by_id.get(target_id)
+        if not target or target.get("type") not in EDITABLE_PULL_EVENTS \
+                or not _same_author(event, target):
+            continue
+        if event["type"] == "comment-delete":
+            if target.get("type") == "review" and target.get("state") in (
+                    "approved", "changes_requested"):
+                cleared.add(target_id)
+            else:
+                deleted.add(target_id)
+        elif target_id not in edits or _timestamp(edits[target_id].get("ts")) \
+                <= _timestamp(event.get("ts")):
+            edits[target_id] = event
+    folded = []
+    for event in rows:
+        event_id = str(event.get("id") or "")
+        if event.get("type") in ("comment-edit", "comment-delete") \
+                or event_id in deleted:
+            continue
+        if event_id in cleared:
+            folded.append(dict(event, body=""))
+            continue
+        edit = edits.get(event_id)
+        folded.append(dict(event, body=edit.get("body", "")) if edit else event)
+    return folded
+
+
+def _text_date(value):
+    import datetime
+    number = _timestamp(value)
+    if number <= 0:
+        return str(value or "").strip()
+    try:
+        return datetime.datetime.fromtimestamp(
+            number, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def _text_anchor(event):
+    path = str(event.get("path") or "").strip()
+    if not path:
+        return ""
+    start = str(event.get("lineStart") or event.get("line") or "").strip()
+    end = str(event.get("lineEnd") or "").strip()
+    if start and end and end != start:
+        return "%s:%s-%s" % (path, start, end)
+    return "%s:%s" % (path, start) if start else path
+
+
+def _text_action(event):
+    kind = str(event.get("type") or "comment")
+    state = str(event.get("state") or "").strip().lower()
+    if kind == "review":
+        return {"approved": "approved", "changes_requested": "requested changes",
+                "commented": "reviewed"}.get(state, "reviewed")
+    if kind == "thread-reply":
+        return "replied"
+    if kind in ("thread-state", "suggestion-state"):
+        return "marked the thread %s" % (state.replace("_", " ") or "updated")
+    if kind in ("comment", "line-comment", "thread-comment"):
+        return "commented"
+    return kind.replace("-", " ")
+
+
+def pull_text(bundle):
+    pull = (bundle.model or {}).get("pull") if bundle is not None else None
+    if not isinstance(pull, dict):
+        return ""
+    number = int(pull.get("number") or 0)
+    lines = [
+        "Pull request #%d: %s" % (number, pull.get("title") or ""),
+        "Author: %s" % (pull.get("author") or "unknown"),
+        "Merges %s into %s" % (pull.get("head") or "?", pull.get("base") or "main"),
+        "State: %s" % (pull.get("state") or "open"),
+        "Opened: %s" % _text_date(pull.get("ts")),
+        "",
+        "## Description",
+        "",
+        str(pull.get("body") or "").strip() or "(no description)",
+        "",
+    ]
+    events = []
+    for event in folded_conversation(pull.get("conversation")):
+        body = str(event.get("body") or "").strip()
+        kind = str(event.get("type") or "comment")
+        if kind in ("commit", "agent") or (not body and kind != "review"):
+            continue
+        anchor = _text_anchor(event)
+        when = _text_date(event.get("ts"))
+        heading = "### %s %s%s%s" % (
+            event.get("author") or "unknown", _text_action(event),
+            " on %s" % anchor if anchor else "", ", %s" % when if when else "")
+        events.append(heading + ("\n\n" + body if body else ""))
+    lines.append("## Comments and reviews (%d)" % len(events))
+    lines.append("")
+    lines.append("\n\n".join(events) if events else "No comments yet.")
+    lines.append("")
+    patch = str(pull.get("patch") or "")
+    lines += ["## Diff", ""]
+    lines.append(patch.rstrip("\n") if patch.strip()
+                 else "No diff is available for this pull request.")
+    return "\n".join(lines) + "\n"
 
 
 def _esc(value):
     import html
     return html.escape(str(value or ""))
+
+
+def _person(name):
+    from .repo_ssr_issue import actor_is_bot, profile_href
+    text = str(name or "").strip()
+    href = "" if actor_is_bot(text) else profile_href(re.sub(r"^@", "", text).lower())
+    return '<a href="%s">%s</a>' % (_esc(href), _esc(text)) if href else _esc(text)
 
 
 def _date(value):
@@ -823,31 +1173,94 @@ def _md(text, base):
     return markdown_html(str(text or "")[:MAX_BODY_CHARS], base)
 
 
-def _frame(bundle, active, inner):
+def _frame(bundle, active, inner, link=None):
     owner, repo = bundle.owner, bundle.repo
-    base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
+    base = link or "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
     tabs = "".join('<a href="%s%s"%s>%s</a>' % (
         base, suffix, ' class="on"' if name == active else "", label)
         for name, suffix, label in (
             ("code", "", "Code"), ("issues", "/issues", "Issues"),
             ("pulls", "/pulls", "Pull requests"),
             ("discussions", "/discussions", "Discussions")))
+    title = '<a href="%s">%s</a>' % (_esc(base), _esc(repo))
+    if not link:
+        title = '<a href="/@%s">%s</a> / %s' % (
+            _esc(urllib.parse.quote(owner)), _esc(owner), title)
     return (
         '<div class="fm-ssr" data-repo-ssr>'
-        '<h1 class="fm-ssr-title"><a href="/%s">%s</a> / <a href="%s">%s</a>'
-        '</h1><nav class="fm-ssr-tabs">%s</nav>%s</div>' % (
-            _esc(urllib.parse.quote(owner)), _esc(owner), _esc(base),
-            _esc(repo), tabs, inner))
+        '<h1 class="fm-ssr-title">%s</h1><nav class="fm-ssr-tabs">%s</nav>%s'
+        '</div>' % (title, tabs, inner))
 
 
-def _list(bundle, kind, rows, open_count=None, closed_count=None):
-    base = "/%s/%s" % (urllib.parse.quote(bundle.owner),
-                       urllib.parse.quote(bundle.repo))
+REVIEW_CHIPS = {
+    "approved": ("check", "Approved", "border-success/40 text-success"),
+    "changes_requested": ("file-diff", "Changes requested",
+                          "border-destructive/40 text-destructive"),
+    "review_required": ("eye", "Review required",
+                        "border-border text-muted-foreground"),
+}
+REVIEW_ICONS = {
+    "check": '<path d="M20 6 9 17l-5-5"></path>',
+    "file-diff": (
+        '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z">'
+        '</path><path d="M9 10h6"></path><path d="M12 13V7"></path>'
+        '<path d="M9 17h6"></path>'),
+    "eye": (
+        '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 '
+        '1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path>'
+        '<circle cx="12" cy="12" r="3"></circle>'),
+}
+
+
+def _review_chip(review):
+    """06-repo-content.js pullListReviewChipHtml, with the icon drawn."""
+    chip = REVIEW_CHIPS.get((review or {}).get("state"))
+    if not chip:
+        return ""
+    name, label, tone = chip
+
+    def count(n):
+        return "%s reviewer%s" % ("{:,}".format(n), "" if n == 1 else "s")
+    if review["state"] == "approved":
+        title = "Approved by " + count(review.get("approvals") or 0)
+    elif review["state"] == "changes_requested":
+        title = "Changes requested by " + count(review.get("blockers") or 0)
+    else:
+        title = "Needs an approval from someone other than the author"
+    return ('<span data-repo-pull-review="%s" title="%s" class="inline-flex '
+            'shrink-0 items-center gap-1 rounded-full border px-1.5 '
+            'text-[11px] font-medium leading-4 %s"><svg xmlns="http://'
+            'www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
+            'fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round" class="lucide '
+            'lucide-%s h-3 w-3">%s</svg>%s</span>' % (
+                review["state"], _esc(title), tone, name, REVIEW_ICONS[name],
+                label))
+
+
+def _plugins_off():
+    from . import repo_ssr_issue
+    return repo_ssr_issue.plugins_off()
+
+
+def _created_ms(value):
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if number != number or number in (float("inf"), float("-inf")):
+        return 0
+    return number * 1000 if 0 < number < 10_000_000_000 else number
+
+
+def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
+    base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                               urllib.parse.quote(bundle.repo))
     if kind in ("pulls", "issues"):
         shown = [r for r in rows if str(r.get("state") or "open").lower()
                  == "open" and not r.get("deleted")]
-        if kind == "issues":
-            shown.sort(key=lambda r: -r["number"])
+        if kind == "issues" and "forum-list" not in _plugins_off():
+            shown.sort(key=lambda r: (-_created_ms(r.get("ts")), -r["number"]))
         if open_count is None:
             open_count = len(shown)
         if closed_count is None:
@@ -861,30 +1274,48 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
     items = []
     for index, row in enumerate(shown[:LIST_PAGE_SIZE]):
         number = row["number"]
-        meta = "#%d opened by %s" % (number, _esc(row.get("author")))
+        meta = "#%d opened by %s" % (number, _person(row.get("author")))
         when = _date(row.get("ts"))
         if when:
             meta += " &middot; " + when
-        if row.get("base") and row.get("head"):
-            meta += " &middot; %s &larr; %s" % (_esc(row["base"]),
-                                                  _esc(row["head"]))
         if row.get("category"):
             meta += " &middot; " + _esc(row["category"])
+        chip = _review_chip(row.get("review"))
+        if chip:
+            # The chip wraps under the line on a phone, as the dashboard's does.
+            meta = '<span>%s</span>%s' % (meta, chip)
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
                          for x in row.get("labels") or [])
+        faces = ""
+        if row.get("commenters") and "forum-list" not in _plugins_off():
+            from .repo_ssr_issue import avatar_html
+            faces = '<span class="p" data-repo-issue-row-commenters>%s</span>' % "".join(
+                avatar_html(name, name, "h-5 w-5", False, False)
+                for name in row["commenters"][:4])
         items.append(
-            '<div class="fm-ssr-item" data-ssr-record="%s"%s><a href="%s/%s/%d">'
-            '%s</a>%s<div class="m">%s</div></div>' % (
-                kind, " data-ssr-usable" if index == 0 else "", _esc(base),
-                kind, number, _esc(row.get("title")), labels, meta))
+            '<div class="fm-ssr-item" data-ssr-record="%s"%s>%s<a href="%s/%s/%d">'
+            '%s</a>%s<div class="m%s">%s</div></div>' % (
+                kind, " data-ssr-usable" if index == 0 else "", faces, _esc(base),
+                "pull" if kind == "pulls" else kind, number,
+                _esc(row.get("title")), labels,
+                " fm-ssr-m-chip" if chip else "", meta))
     if not items:
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
-    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>' % (
-        head, "".join(items)))
+    feeds = ('<p class="fm-ssr-sub" data-repo-issue-feeds><a href="%s/issues.atom" '
+             'type="application/atom+xml">Feed</a> &middot; <a href="%s/lite">Lite view</a>'
+             '</p>' % (_esc(base), _esc(base))) \
+        if kind == "issues" and "read-surfaces" not in _plugins_off() else ""
+    banner = ""
+    if kind == "issues" and "mirror-quota" not in _plugins_off():
+        from . import mirror_help, repo_ssr
+        banner = mirror_help.dashboard_banner_for(base, repo_ssr.cached_quota(
+            bundle.owner, bundle.repo))
+    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s%s</div>%s' % (
+        banner, head, "".join(items), feeds), link)
 
 
-def _diff(patch):
+def _diff(patch, href="", usable=True):
     files, lines, current = [], 0, None
     for line in patch.split("\n"):
         if line.startswith("diff --git "):
@@ -912,66 +1343,141 @@ def _diff(patch):
     for index, (name, rows) in enumerate(files):
         out.append('<div class="fm-ssr-box"><div class="fm-ssr-file">%s</div>'
                    '<div class="fm-ssr-diff"%s>%s</div></div>' % (
-                       _esc(name), " data-ssr-usable" if index == 0 else "",
+                       _esc(name), " data-ssr-usable" if usable and index == 0
+                       else "",
                        "".join(rows)))
     total = patch.count("\ndiff --git ") + (1 if patch.startswith(
         "diff --git ") else 0)
     if total > len(files) or lines >= MAX_DIFF_LINES:
         out.append('<p class="fm-ssr-sub">Showing %d of %d files; the full '
-                   'diff loads with the page.</p>' % (len(files), total))
-    return "".join(out) or '<p class="fm-ssr-sub" data-ssr-usable>' \
-        'No changes to show.</p>'
+                   'diff %s.</p>' % (len(files), total, (
+                       'is at <a href="%s">%s</a>' % (_esc(href), _esc(href)))
+                       if href else "loads with the page"))
+    return "".join(out) or '<p class="fm-ssr-sub"%s>No changes to show.</p>' % (
+        " data-ssr-usable" if usable else "")
 
 
-def _events(events, base):
+REACTION_EVENT_TYPES = ("comment", "review", "line-comment", "thread-comment",
+                        "thread-reply")
+
+
+def _reaction_bar(subject, comment, reactions, extra="fm-ssr-reactions"):
+    from . import repo_ssr_issue
+    return repo_ssr_issue.reaction_bar(subject, comment,
+                                       (reactions or {}).get(comment), None, extra)
+
+
+def _events(events, base, subject="", reactions=None):
     return "".join(
         '<div class="fm-ssr-event"><div><b>%s</b> %s &middot; %s</div>'
-        '<div class="fm-ssr-md">%s</div></div>' % (
-            _esc(e.get("author")), _esc(e.get("type") or "commented")
+        '<div class="fm-ssr-md">%s</div>%s</div>' % (
+            _person(e.get("author")), _esc(e.get("type") or "commented")
             if e.get("type") not in (None, "", "comment") else "commented",
-            _date(e.get("ts")), _md(e.get("body"), base))
+            _date(e.get("ts")), _md(e.get("body"), base),
+            _reaction_bar(subject, str(e.get("id") or ""), reactions)
+            if subject and e.get("id") and (e.get("type") or "comment")
+            in REACTION_EVENT_TYPES else "")
         for e in events if str(e.get("body") or "").strip())
 
 
-def render(bundle, section=""):
-    """HTML of the first view for a bundle, or None (kept per bundle)."""
-    if section not in bundle.rendered:
-        bundle.rendered[section] = _render(bundle, section)
-    return bundle.rendered[section]
+REACTION_VIEWS = {"pull": "pull", "issue": "issue", "discussion": "discussion"}
+RENDERED_PER_BUNDLE = 8
 
 
-def _render(bundle, section=""):
+def reaction_subject(bundle):
+    name = REACTION_VIEWS.get(bundle.view, "")
+    return "%s:%d" % (name, bundle.number) if name and bundle.number else ""
+
+
+def render(bundle, section="", reactions=None, link=None, reader=False, origin=""):
+    """HTML of the first view for a bundle, or None (kept per bundle and
+    reaction summary)."""
+    from .repo_ssr_issue import public_site_origin
+    origin = public_site_origin(origin)
+    key = (section, reactions_digest(reactions), link, reader, origin)
+    if key not in bundle.rendered:
+        if len(bundle.rendered) >= RENDERED_PER_BUNDLE:
+            bundle.rendered.clear()
+        bundle.rendered[key] = _render(bundle, section, reactions, link,
+                                       reader, origin)
+    return bundle.rendered[key]
+
+
+def reactions_digest(reactions):
+    if not reactions:
+        return ""
+    return hashlib.sha256(json.dumps(reactions, sort_keys=True, separators=(
+        ",", ":")).encode()).hexdigest()[:16]
+
+
+def _review_prompt(bundle, pull, origin, link):
+    from . import pull_review_prompt
+    if not pull_review_prompt.is_open(pull):
+        return ""
+    link = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                                urllib.parse.quote(bundle.repo))
+    patch = str(pull.get("patch") or "")
+    values = pull_review_prompt.fields(
+        origin, link, pull["number"], pull, bool(patch.strip()), patch)
+    return pull_review_prompt.render(
+        values, pull["number"], pull_review_prompt.template_from_blobs(
+            (bundle.model or {}).get("settings")))
+
+
+def _render(bundle, section="", reactions=None, link=None, reader=False, origin=""):
+    subject = reaction_subject(bundle)
     model = bundle.model or {}
-    base = "/%s/%s" % (urllib.parse.quote(bundle.owner),
-                       urllib.parse.quote(bundle.repo))
+    base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                               urllib.parse.quote(bundle.repo))
     if bundle.view in ("pulls", "discussions"):
-        return _list(bundle, bundle.view, model.get("rows") or [])
+        return _list(bundle, bundle.view, model.get("rows") or [], link=link)
     if bundle.view == "issues":
-        return _list(bundle, "issues", model.get("rows") or [],
-                     model.get("open"), model.get("closed"))
+        from . import repo_ssr_issue
+        ctx = repo_ssr_issue.Context(base, "/api/repo/%s/%s" % (
+            urllib.parse.quote(bundle.owner, safe=""),
+            urllib.parse.quote(bundle.repo, safe="")), str(bundle.ref or "main"))
+        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, repo_ssr_issue.AvatarSet(
+            (name.lower() for name in model.get("avatars") or []),
+            model.get("avatarCommit"))))
+        try:
+            return _list(bundle, "issues", model.get("rows") or [],
+                         model.get("open"), model.get("closed"), link)
+        finally:
+            repo_ssr_issue.FORGE_AVATARS.reset(token)
     if bundle.view == "pull" and model.get("pull"):
         pull = model["pull"]
-        tabs = "".join('<a href="%s/pulls/%d%s"%s>%s</a>' % (
+        tabs = "".join('<a href="%s/pull/%d%s"%s>%s</a>' % (
             _esc(base), pull["number"], suffix,
             ' class="on"' if suffix.strip("/") == section else "", label)
             for suffix, label in (("", "Conversation"), ("/commits", "Commits"),
                                   ("/files", "Files changed")))
+        patch = pull.get("patch") or ""
+        raw = "%s/pull/%d.diff" % (base, pull["number"]) if patch.strip() else ""
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub">%s<b>%s</b> wants to merge into '
-                '<code>%s</code> from <code>%s</code> &middot; %s</p>'
-                '<nav class="fm-ssr-tabs">%s</nav>' % (
+                '<code>%s</code> from <code>%s</code> &middot; %s%s</p>'
+                '%s<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
-                    _esc(pull["author"]), _esc(pull["base"]),
-                    _esc(pull["head"]), _date(pull["ts"]), tabs))
+                    _person(pull["author"]), _esc(pull["base"]),
+                    _esc(pull["head"]), _date(pull["ts"]),
+                    ' &middot; <a href="%s" data-pull-raw-diff>Raw diff</a>'
+                    % _esc(raw) if raw else "",
+                    _review_prompt(bundle, pull, origin, link), tabs))
         if section == "files":
-            body = _diff(pull.get("patch") or "")
+            body = _diff(patch, raw)
         else:
             body = ('<div class="fm-ssr-event"><div><b>%s</b> opened this '
                     'pull request</div><div class="fm-ssr-md" '
-                    'data-ssr-usable>%s</div></div>%s' % (
-                        _esc(pull["author"]), _md(pull["body"], base),
-                        _events(pull.get("conversation") or [], base)))
-        return _frame(bundle, "pulls", head + body)
+                    'data-ssr-usable>%s</div>%s</div>%s' % (
+                        _person(pull["author"]), _md(pull["body"], base),
+                        _reaction_bar(subject, "body", reactions)
+                        if str(pull.get("body") or "").strip() else "",
+                        _events(pull.get("conversation") or [], base,
+                                subject, reactions)))
+            if reader and patch.strip():
+                body += '<h3 class="fm-ssr-title">Files changed</h3>' + _diff(
+                    patch, raw, usable=False)
+        return _frame(bundle, "pulls", head + body, link)
     if bundle.view == "issue" and model.get("issue"):
         issue = model["issue"]
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
@@ -980,24 +1486,30 @@ def _render(bundle, section=""):
                 '<p class="fm-ssr-sub">%s<b>%s</b> opened this issue '
                 '&middot; %s%s</p>' % (
                     _esc(issue["title"]), issue["number"],
-                    _pill(issue["state"]), _esc(issue["author"]),
+                    _pill(issue["state"]), _person(issue["author"]),
                     _date(issue["ts"]), labels))
         body = ('<div class="fm-ssr-event"><div><b>%s</b></div>'
                 '<div class="fm-ssr-md" data-ssr-usable>%s</div></div>%s' % (
-                    _esc(issue["author"]), _md(issue["body"], base),
+                    _person(issue["author"]), _md(issue["body"], base),
                     _events(issue.get("comments") or [], base)))
-        return _frame(bundle, "issues", head + body)
+        return _frame(bundle, "issues", head + body, link)
     if bundle.view == "discussion" and model.get("discussion"):
         item = model["discussion"]
+        status = item.get("status") or "open"
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
-                '<p class="fm-ssr-sub"><b>%s</b> started this discussion '
+                '<p class="fm-ssr-sub">%s<b>%s</b> started this discussion '
                 '&middot; %s%s</p>' % (
-                    _esc(item["title"]), item["number"], _esc(item["author"]),
+                    _esc(item["title"]), item["number"],
+                    _pill(status) if status != "open" else "",
+                    _person(item["author"]),
                     _date(item["ts"]), (" &middot; " + _esc(item["category"]))
                     if item.get("category") else ""))
         body = ('<div class="fm-ssr-event"><div><b>%s</b></div>'
-                '<div class="fm-ssr-md" data-ssr-usable>%s</div></div>%s' % (
-                    _esc(item["author"]), _md(item["body"], base),
-                    _events(item.get("replies") or [], base)))
-        return _frame(bundle, "discussions", head + body)
+                '<div class="fm-ssr-md" data-ssr-usable>%s</div>%s</div>%s' % (
+                    _person(item["author"]), _md(item["body"], base),
+                    _reaction_bar(subject, "body", reactions)
+                    if str(item.get("body") or "").strip() else "",
+                    _events(item.get("replies") or [], base, subject,
+                            reactions)))
+        return _frame(bundle, "discussions", head + body, link)
     return None

@@ -37,6 +37,7 @@ const run = async () => {
       state: { session: item.session, linkedNodePresence: {} },
       $: (sel) => (sel === "[data-node-reconnect]" ? button : null),
       dashboardOnInstance: () => item.instance,
+      desktopBrand: () => (item.instance ? "" : "ForkMesh "),
       fetchJson: async (path) => {
         fetched.push(path);
         const name = decodeURIComponent(path.split("/").pop());

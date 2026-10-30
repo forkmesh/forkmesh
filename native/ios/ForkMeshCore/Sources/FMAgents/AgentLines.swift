@@ -38,12 +38,16 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
     public var attachments: [AgentAttachmentRef]
     public var provider: String
     public var runner: String = ""
+    public var desktop: String = ""
     public var priority = 50
     public var readKey = ""
     public var finishedAtMs = 0
     public var desktopSessionId = 0
     public var desktopUnread: Bool?
     public var unread = false
+    public var backgroundTasks = 0
+    public var tokensIn = 0
+    public var tokensOut = 0
 
     public var runnerBadge: String { runner.isEmpty ? "" : RunnerAgentText.badge(runner) }
 
@@ -90,6 +94,9 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
         if linesAdded > 0 || linesRemoved > 0 { parts.append("\(max(linesAdded, 0)) added, \(max(linesRemoved, 0)) removed") }
         if conflicted { parts.append("conflict") }
         if prNumber > 0 { parts.append("PR \(prNumber)") }
+        if backgroundTasks > 0 {
+            parts.append(backgroundTasks == 1 ? "1 background task" : "\(backgroundTasks) background tasks")
+        }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
@@ -241,6 +248,31 @@ public struct AgentLineChip: Equatable, Sendable {
     }
 }
 
+public enum AgentLineBadge: String, CaseIterable, Sendable {
+    case conflicted, behind, worktree, branch, ahead, pull, runner, cloud, outside
+
+    public static func of(_ line: AgentLine) -> [AgentLineBadge] {
+        var out: [AgentLineBadge] = []
+        if line.conflicted {
+            out.append(.conflicted)
+        } else if line.behind > 0 {
+            out.append(.behind)
+        }
+        if line.hasWorktree { out.append(.worktree) }
+        if !line.branch.isEmpty { out.append(.branch) }
+        if line.ahead > 0 { out.append(.ahead) }
+        if line.prNumber > 0 { out.append(.pull) }
+        if !line.runner.isEmpty {
+            out.append(.runner)
+        } else if line.cloud {
+            out.append(.cloud)
+        } else if line.outside {
+            out.append(.outside)
+        }
+        return out
+    }
+}
+
 public struct AgentFolderSection: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
@@ -351,7 +383,10 @@ public enum AgentLines {
         let provider = providerWord(line.provider)
         if !provider.isEmpty { chips.append(AgentLineChip(slot: .provider, word: provider)) }
         chips.append(AgentLineChip(
-            slot: .host, word: !line.runner.isEmpty ? runnerWord(line.runner) : line.cloud ? "Cloud" : line.outside ? "Outside" : "Desktop"))
+            slot: .host,
+            word: !line.runner.isEmpty ? runnerWord(line.runner)
+                : !line.desktop.isEmpty ? runnerWord(line.desktop)
+                : line.cloud ? "Cloud" : line.outside ? "Outside" : "Desktop"))
         let age = shortAge(ms: line.updatedAtMs, nowMs: nowMs)
         if !age.isEmpty { chips.append(AgentLineChip(slot: .age, word: age)) }
         if line.conflicted {
@@ -455,10 +490,14 @@ public enum AgentLines {
             prNumber: row.prNumber, cloud: !row.isDesktop, outside: row.outside, attachments: row.attachments,
             provider: row.provider)
         built.runner = row.runner
+        if row.elsewhere { built.desktop = row.node }
         built.priority = row.priority
         built.readKey = readKey(row)
         built.finishedAtMs = row.finishedAtMs
-        if row.isDesktop && !row.outside && row.localId > 0 {
+        built.backgroundTasks = row.backgroundTasks
+        built.tokensIn = row.tokensIn
+        built.tokensOut = row.tokensOut
+        if row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0 {
             built.desktopSessionId = row.localId
             built.desktopUnread = row.unread
         }
@@ -466,8 +505,9 @@ public enum AgentLines {
     }
 
     public static func readKey(_ row: UnifiedAgentRow) -> String {
-        if row.outside { return "outside:\(row.localId)" }
-        if row.isDesktop { return "desktop:\(row.repoName.lowercased())#\(row.localId)" }
+        let place = row.elsewhere ? "\(row.desktopKey):" : ""
+        if row.outside { return "outside:\(place)\(row.localId)" }
+        if row.isDesktop { return "desktop:\(place)\(row.repoName.lowercased())#\(row.localId)" }
         return row.cloudSessionId.isEmpty ? "control:\(row.id)" : "run:\(row.cloudSessionId)"
     }
 
@@ -493,6 +533,9 @@ public enum AgentLines {
             built.priority = live?.priority ?? session.priority
             built.readKey = "desktop:\(repo.name.lowercased())#\(session.id)"
             built.finishedAtMs = max(session.finishedAtMs, live?.finishedAtMs ?? 0)
+            built.backgroundTasks = live?.backgroundTasks ?? 0
+            built.tokensIn = max(live?.tokensIn ?? 0, session.promptTokens)
+            built.tokensOut = max(live?.tokensOut ?? 0, session.completionTokens)
             if let live, live.localId > 0 {
                 built.desktopSessionId = live.localId
                 built.desktopUnread = live.unread
@@ -527,7 +570,7 @@ public enum AgentLines {
     public static func merge(entries: [AgentEntry], rows: [UnifiedAgentRow], cover: DesktopListCover? = nil) -> [AgentLine] {
         var desktop: [String: UnifiedAgentRow] = [:]
         var cloud: [String: UnifiedAgentRow] = [:]
-        for row in rows where !row.outside {
+        for row in rows where !row.outside && !row.elsewhere {
             if row.isDesktop {
                 desktop["\(row.repoName.lowercased())#\(row.localId)"] = row
             } else if !row.cloudSessionId.isEmpty {
@@ -573,7 +616,7 @@ public enum AgentLines {
         case .entry(.launched(let repo, let session, _, _)):
             return session.sessionId.isEmpty ? nil : "\(repo.name.lowercased())#cloud:\(session.sessionId)"
         case .control(let row):
-            if row.outside { return nil }
+            if row.outside || row.elsewhere { return nil }
             if row.isDesktop { return row.localId > 0 ? "\(row.repoName.lowercased())#\(row.localId)" : nil }
             return row.cloudSessionId.isEmpty ? nil : "\(row.repoName.lowercased())#cloud:\(row.cloudSessionId)"
         }
@@ -639,11 +682,19 @@ public enum AgentLines {
             return ["control:\(row.id)"]
         case .entry(.desktop(let repo, let session)):
             let name = repo.name.lowercased()
-            let live = rows.filter { $0.isDesktop && !$0.outside && $0.repoName.lowercased() == name && $0.localId == session.id }
+            let live = rows.filter {
+                $0.isDesktop && !$0.outside && !$0.elsewhere && $0.repoName.lowercased() == name && $0.localId == session.id
+            }
             return live.map { "control:\($0.id)" } + ["relay:\(repo.fullName)#\(session.id)"]
         case .entry(.launched(_, let session, _, _)):
             return rows.filter { !$0.isDesktop && $0.cloudSessionId == session.sessionId }.map { "control:\($0.id)" }
         }
+    }
+
+    public static func deletionKey(_ line: AgentLine) -> String? {
+        guard let key = deletion(line)?.key else { return nil }
+        if case .control(let row) = line.source, row.elsewhere { return "\(row.desktopKey):\(key)" }
+        return key
     }
 
     public static func deletion(_ line: AgentLine) -> AgentLineDeletion? {

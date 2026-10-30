@@ -49,8 +49,9 @@ struct MessagesConversationView<Drawer: View>: View {
     var body: some View {
         let palette: MessagesColors = colors
         let conversation: String = hub.relay.currentConversation
+        let items: [ChatConversationItem] = hub.conversationItems
         ZStack(alignment: .leading) {
-            transcript(palette)
+            transcript(palette, items: items)
                 .overlay {
                     if drawing, let live = hub.live, hub.inDirect {
                         MessagesLiveTouchSurface(
@@ -97,7 +98,7 @@ struct MessagesConversationView<Drawer: View>: View {
             if let target = tapbackTarget {
                 tapbackOverlay(target)
             }
-            if let infoId, let bubble = infoBubble(infoId) {
+            if let infoId, let bubble = infoBubble(infoId, in: items) {
                 infoPage(bubble, palette: palette)
             }
             drawer
@@ -154,9 +155,7 @@ struct MessagesConversationView<Drawer: View>: View {
         .fullScreenCover(item: $viewOnceOpen) { (entry: ViewOnceEntry) in MessagesViewOnceViewer(hub: hub, entry: entry) }
     }
 
-    private func transcript(_ palette: MessagesColors) -> some View {
-        let items: [ChatConversationItem] = hub.conversationItems
-        let typing: [String] = hub.conversationTyping
+    private func transcript(_ palette: MessagesColors, items: [ChatConversationItem]) -> some View {
         let group: Bool = hub.inGroupConversation
         let known: Set<String> = Set(items.map(\.id))
         let lastOwn: ChatBubble? = lastOwnBubble(items)
@@ -173,11 +172,8 @@ struct MessagesConversationView<Drawer: View>: View {
                             MessagesReceiptLine(text: status, colors: palette, onTap: { openInfo(lastOwn.row.id) })
                         }
                     }
-                    if !typing.isEmpty {
-                        TimelineView(.periodic(from: Date(), by: 1)) { (_: TimelineViewDefaultContext) in
-                            let names: [String] = hub.conversationTyping
-                            if !names.isEmpty { MessagesTypingBubble(colors: palette, names: names) }
-                        }
+                    MessagesTypingRow(hub: hub, colors: palette) {
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) }
                     }
                     Color.clear.frame(height: 6).id(MessagesConversationView.endId)
                 }
@@ -190,11 +186,8 @@ struct MessagesConversationView<Drawer: View>: View {
             .onTapGesture(coordinateSpace: .local) { (location: CGPoint) in transcriptTapped(at: location) }
             .onAppear { scrollToEnd(proxy, items, animated: false) }
             .onChange(of: items.last?.id ?? "") { _, _ in scrollToEnd(proxy, items, animated: true) }
-            .chatFollowsOwnSend(hub.rows) {
+            .chatFollowsOwnSend(newest: lastOwn?.row.message.timestamp ?? .distantPast) {
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) }
-            }
-            .onChange(of: typing.isEmpty) { _, empty in
-                if !empty { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) } }
             }
             .chatKeepsEndInView(focused: focused) {
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) }
@@ -280,8 +273,8 @@ struct MessagesConversationView<Drawer: View>: View {
         return min(1, max(0, shown / pageWidth))
     }
 
-    private func infoBubble(_ id: String) -> ChatBubble? {
-        for item in hub.conversationItems {
+    private func infoBubble(_ id: String, in items: [ChatConversationItem]) -> ChatBubble? {
+        for item in items {
             if case .message(let bubble) = item, bubble.row.id == id { return bubble }
         }
         return nil
@@ -403,10 +396,16 @@ struct MessagesConversationView<Drawer: View>: View {
                     FmHaptics.tap()
                     closeTapback()
                 }
-                if !row.reactions.isEmpty {
+                if !row.reactions.isEmpty || !row.stickers.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(row.reactions) { (chip: ReactionChip) in
                             Text("\(chip.emoji)  \(chip.names.joined(separator: ", "))")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.white)
+                                .lineLimit(2)
+                        }
+                        ForEach(row.stickers) { (chip: StickerChip) in
+                            Text("\(chip.sticker.text)  \(chip.names.joined(separator: ", "))")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Color.white)
                                 .lineLimit(2)
@@ -519,6 +518,8 @@ struct MessagesConversationView<Drawer: View>: View {
             DirectLiveTouchButton(hub: hub, dark: palette.dark, drawing: $drawing, focused: $focused)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            GroupCallHeaderButtons(hub: hub, dark: palette.dark)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)
@@ -534,21 +535,43 @@ struct MessagesConversationView<Drawer: View>: View {
 
 struct MessagesOnlineLight: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim: Bool = false
     let color: Color
 
+    static let beat: TimeInterval = 0.7
+
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .shadow(color: color.opacity(dim ? 0 : 0.9), radius: dim ? 0 : 3)
-            .opacity(dim ? 0.2 : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { dim = true }
+        TimelineView(.periodic(from: Date(), by: MessagesOnlineLight.beat)) { (context: TimelineViewDefaultContext) in
+            let dim: Bool = !reduceMotion && Int(context.date.timeIntervalSinceReferenceDate / MessagesOnlineLight.beat) % 2 == 1
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+                .opacity(dim ? 0.3 : 1)
+                .animation(.easeInOut(duration: MessagesOnlineLight.beat), value: dim)
+        }
+        .shadow(color: color.opacity(0.6), radius: 2)
+        .accessibilityHidden(true)
+        .accessibilityIdentifier("chat-peer-online-light")
+    }
+}
+
+struct MessagesTypingRow: View {
+    let hub: ChatHub
+    let colors: MessagesColors
+    let onStart: () -> Void
+
+    var body: some View {
+        let typing: Bool = !hub.conversationTyping.isEmpty
+        VStack(spacing: 0) {
+            if typing {
+                TimelineView(.periodic(from: Date(), by: 1)) { (_: TimelineViewDefaultContext) in
+                    let names: [String] = hub.conversationTyping
+                    if !names.isEmpty { MessagesTypingBubble(colors: colors, names: names) }
+                }
             }
-            .accessibilityHidden(true)
-            .accessibilityIdentifier("chat-peer-online-light")
+        }
+        .onChange(of: typing) { _, now in
+            if now { onStart() }
+        }
     }
 }
 

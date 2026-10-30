@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.showActionSheet
+import com.forkmesh.nativeapp.ui.kit.FmSheetAction
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.chat.ChatProfileLink
@@ -141,48 +144,15 @@ suspend fun newChannelFlow(messenger: FmMessenger, hub: ChatHub?): String? {
     }
 }
 
-suspend fun inviteFlow(messenger: FmMessenger, channel: String) {
-    val chat = ChatDepth.hub ?: return
-    val people = withContext(Dispatchers.IO) {
-        chat.relay.roster().filter { !it.self && it.online && !ChatVisitorPresence.isTransientVisitor(name = it.name) }
-    }
-    messenger.showModalBottomSheet<Unit>(isScrollControlled = true) { close ->
-        var invited by remember { mutableStateOf(setOf<String>()) }
-        val scope = rememberCoroutineScope()
-        Text("Invite to $channel", modifier = Modifier.padding(FmSpace.x4), style = Fm.text.titleMedium)
-        if (people.isEmpty()) {
-            Text(
-                "Nobody else is online right now. Invitations go to devices that are connected.",
-                modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
-                style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
-            )
-        }
-        LazyColumn {
-            for (member in people) {
-                item(key = member.id) {
-                    FmListRow(
-                        title = member.owner.ifEmpty { member.name },
-                        subtitle = member.nodeName.ifEmpty { null },
-                        trailing = if (member.id in invited) ({ FmIcon("check", size = 18.dp, tint = Fm.colors.success) }) else null,
-                        showChevron = false,
-                        onTap = if (member.id in invited) null else ({
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) { chat.extras.invite(member.id, channel) }
-                                if (ok) invited = invited + member.id
-                            }
-                        }),
-                    )
-                }
-            }
-        }
-        FmListRow(title = "Done", onTap = { close(Unit) }, showChevron = false)
-        Spacer(Modifier.height(FmSpace.x2))
-    }
-}
-
 suspend fun pickReaction(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
     Text("React", modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1), style = Fm.text.titleMedium)
     ChatReactionPicker(Modifier.weight(1f, fill = false)) { close(it) }
+}
+
+suspend fun pickSticker(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
+    Text("Add sticker", modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1), style = Fm.text.titleMedium)
+    ChatStickerPicker { close(it) }
+    Spacer(Modifier.height(FmSpace.x2))
 }
 
 suspend fun pickEmoji(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
@@ -281,6 +251,7 @@ suspend fun messageActionsFlow(
     if (!relayRoom && copyText.isEmpty() && profileName == null && !deletable && !hideable) return
     val sections = listOf(
         listOfNotNull(
+            if (relayRoom && chat.canSticker(conversation)) MessageAction("sticker", "Add sticker", "sticky_note_2_outlined") else null,
             if (relayRoom && !inThread && chat.canReplyInThread(conversation)) MessageAction("thread", "Reply in thread", "forum_outlined") else null,
             if (relayRoom && row.editable) MessageAction("edit", "Edit message", "edit_outlined") else null,
             if (copyText.isNotEmpty()) MessageAction("copy", "Copy text", "copy_outlined") else null,
@@ -314,6 +285,10 @@ suspend fun messageActionsFlow(
         choice == "more" -> {
             val value = pickReaction(messenger) ?: return
             withContext(Dispatchers.IO) { chat?.toggleReaction(message, value) }
+        }
+        choice == "sticker" -> {
+            val slug = pickSticker(messenger) ?: return
+            withContext(Dispatchers.IO) { chat?.toggleSticker(message, slug) }
         }
         choice == "thread" -> navigator.push(ChatThreadScreen(conversation, message.id))
         choice == "copy" -> copyMessageText(context, copyText, status)
@@ -356,31 +331,16 @@ private fun MessageActionRow(action: MessageAction, onTap: () -> Unit) {
 
 private suspend fun deleteScopeFlow(messenger: FmMessenger, forEveryone: Boolean, forMe: Boolean): Boolean? {
     if (forEveryone && forMe) {
-        return messenger.showModalBottomSheet<Boolean> { close ->
-            Spacer(Modifier.height(FmSpace.x2))
-            Column {
-                FmListRow(
-                    title = "Delete for everyone",
-                    subtitle = "Removes it for anyone whose device syncs this room.",
-                    leading = { FmIconTile(icon = "delete_outline", tint = Fm.colors.danger) },
-                    onTap = { close(true) },
-                )
-                FmRowDivider()
-                FmListRow(
-                    title = "Delete for me",
-                    subtitle = "Removes it from this phone only.",
-                    leading = { FmIconTile(icon = "visibility_off_outlined") },
-                    onTap = { close(false) },
-                )
-            }
-            Spacer(Modifier.height(FmSpace.x2))
+        return when (messenger.showActionSheet("Delete message?", null, listOf(FmSheetAction("Delete for everyone", destructive = true), FmSheetAction("Delete for me", destructive = true)))) {
+            0 -> true
+            1 -> false
+            else -> null
         }
     }
-    val ok = messenger.showConfirmDialog(
-        title = "Delete message?",
-        body = if (forEveryone) "This removes it for anyone whose device syncs this room." else "It is removed from this phone only. Others still see it.",
-        confirmLabel = "Delete",
-        destructive = true,
+    val ok = messenger.confirmAction(
+        "Delete message?",
+        if (forEveryone) "Delete for everyone" else "Delete for me",
+        if (forEveryone) "This removes it for anyone whose device syncs this room." else "It is removed from this phone only. Others still see it.",
     )
     return if (ok) forEveryone else null
 }

@@ -453,6 +453,14 @@
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function webSessionAuthored(ev) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !ev) return false;
+    if (String(ev.authorName || "").trim().toLowerCase() === me) return true;
+    const pub = webIssueKeyPublic();
+    return Boolean(pub) && String(ev.author || "") === pub;
+  }
+
   async function getWebIssueKey() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null"); } catch (_) {}
@@ -857,7 +865,7 @@
   }
 
   async function loadWebIssueSubscription(repo, number) {
-    if (!state.session?.nodeName || !state.session?.sessionToken) return false;
+    if (!state.session?.nodeName || !state.session?.sessionToken) return { subscribed: false, reason: "" };
     const response = await fetch(`${repoApiBase(repo)}/subscribe`, {
       method: "POST",
       headers: {
@@ -873,8 +881,8 @@
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) return false;
-    return data.subscribed === true;
+    if (!response.ok || data.ok === false) return { subscribed: false, reason: "" };
+    return { subscribed: data.subscribed === true, reason: String(data.reason || (data.subscribed === true ? "subscribed" : "")) };
   }
 
   // Mirrors DiscussionStore::contentForSigning's "comment" case (just the
@@ -890,7 +898,7 @@
     const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
     const event = {
       type: "comment",
-      id: "comment-web-" + ts,
+      id: webDiscussionEventId("comment", ts),
       body: cleanBody,
       author: pub,
       authorName: state.session?.nodeName || "",
@@ -898,8 +906,101 @@
       sig,
     };
     const payload = { owner: repo.owner, repo: repo.name, number, event };
+    const data = await fetchRepoMutation(repo, "discussions", payload, { retryTransient: true });
+    return { ...data, event };
+  }
+
+  function webDiscussionEventId(type, ts) {
+    const suffix = new Uint32Array(1);
+    crypto.getRandomValues(suffix);
+    return `${type}-web-${ts}-${suffix[0].toString(36)}`;
+  }
+
+  const WEB_DISCUSSION_CATEGORIES = ["Announcements", "Ideas", "Q&A", "Show and tell", "Maintainer notes"];
+
+  async function signWebDiscussionOpenEvent(repo, title, body, category) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Date.now();
+    const cleanTitle = String(title || "").trim().slice(0, 240);
+    const cleanBody = String(body || "").replace(/^[\r\n]+|[\r\n]+$/g, "");
+    const cleanCategory = WEB_DISCUSSION_CATEGORIES.find(
+      (name) => name.toLowerCase() === String(category || "").trim().toLowerCase()) || "Ideas";
+    const NUL = String.fromCharCode(0);
+    const contentHash = await sha256HexLower(cleanTitle + NUL + cleanBody + NUL + cleanCategory);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}open\n0\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    return {
+      type: "open",
+      id: webDiscussionEventId("open", ts),
+      title: cleanTitle,
+      body: cleanBody,
+      category: cleanCategory,
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+  }
+
+  async function submitWebDiscussion(repo, { title, body, category } = {}, onProgress = null) {
+    onProgress?.({ phase: "signing" });
+    let event;
+    try {
+      event = await signWebDiscussionOpenEvent(repo, title, body, category);
+    } catch (cause) {
+      const error = new Error("signing_unavailable");
+      error.cause = cause;
+      throw error;
+    }
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number: 0,
+      titleIfNew: event.title,
+      event,
+    };
+    const data = await fetchRepoMutation(
+      repo, "discussions", payload, { onProgress, retryTransient: true });
+    onProgress?.({ phase: "accepted", number: Number(data?.number || 0) });
+    return { ...data, number: Number(data?.number || 0), event };
+  }
+
+  async function submitWebDiscussionModeration(repo, number, type, value) {
+    const discussionNumber = Number(number);
+    if (!Number.isInteger(discussionNumber) || discussionNumber <= 0) {
+      throw new Error("invalid_discussion_number");
+    }
+    if (type === "status" && !["open", "closed", "archived"].includes(value)) {
+      throw new Error("unsupported_discussion_action");
+    }
+    if (type !== "status" && (type !== "delete" || !String(value || ""))) {
+      throw new Error("unsupported_discussion_action");
+    }
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Math.floor(Date.now() / 1000);
+    const content = String(value || "");
+    const contentHash = await sha256HexLower(content);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}${type}\n${discussionNumber}\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    const event = {
+      type,
+      id: webDiscussionEventId(type, ts),
+      ...(type === "status" ? { status: content } : { target: content }),
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number: discussionNumber,
+      event,
+      ownerAccount: state.session?.nodeName || "",
+      sessionToken: state.session?.sessionToken || "",
+    };
     const data = await fetchRepoMutation(repo, "discussions", payload);
-    return data;
+    return { ...data, event };
   }
 
   async function submitWebDiscussionAnswer(repo, number, target) {
@@ -928,6 +1029,64 @@
     return fetchRepoMutation(repo, "discussions", payload);
   }
 
+  function webProjectEventContent(ev) {
+    const NUL = String.fromCharCode(0);
+    if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
+    if (ev.type === "title") return ev.title;
+    if (ev.type === "edit") return ev.body;
+    if (ev.type === "status") return ev.status;
+    if (ev.type === "dates") return `${Number(ev.startDate) || 0}${NUL}${Number(ev.endDate) || 0}`;
+    if (ev.type === "milestone") return ev.milestone;
+    if (ev.type === "issues") return [...new Set(ev.issues)].sort((a, b) => a - b).join(",");
+    if (ev.type === "delete") return ev.target;
+    throw new Error("unsupported_project_event");
+  }
+
+  async function signWebProjectEvents(number, specs) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const base = Date.now();
+    const events = [];
+    for (let index = 0; index < specs.length; index += 1) {
+      const ts = base + index;
+      const ev = {
+        ...specs[index],
+        id: webDiscussionEventId(specs[index].type, ts),
+        author: pub,
+        authorName: state.session?.nodeName || "",
+        ts,
+      };
+      if (ev.type === "issues") ev.issues = [...new Set(ev.issues.map(Number))].sort((a, b) => a - b);
+      const hash = await sha256HexLower(webProjectEventContent(ev));
+      const canonical = `forkmesh-project-event-v1\n${ev.type}\n${Number(number)}\n${pub}\n${ts}\n${hash}`;
+      ev.sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+      events.push(ev);
+    }
+    return events;
+  }
+
+  async function submitWebProjectEvents(repo, number, specs) {
+    const events = await signWebProjectEvents(number, specs);
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const response = await fetch(`${repoApiBase(repo)}/project-edit`, {
+      method: "POST", credentials: "same-origin", cache: "no-store", headers,
+      body: JSON.stringify({
+        branch: repoDefaultBranch(repo) || "main", number: Number(number), events,
+        ...(token && token !== "cookie" ? { sessionToken: token } : {}),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data?.error || "";
+      error.next = Number(data?.next || 0);
+      throw error;
+    }
+    return data;
+  }
+
   function webIssueKeyPublic() {
     try {
       return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");
@@ -942,7 +1101,7 @@
   // (verify_pull_comment_event/pull_comment_content in the worker). Covers
   // every conversation-shaped pull event; opening a brand new pull request is
   // a distinct signed shape (submitWebPullOpen, below).
-  async function submitWebPullEvent(repo, number, type, fields = {}) {
+  async function submitWebPullEvent(repo, number, type, fields = {}, delivery = {}) {
     const { privateKey, pub } = await getWebIssueKey();
     const ts = Math.floor(Date.now() / 1000);
     const randomId = typeof crypto.randomUUID === "function"
@@ -984,6 +1143,12 @@
       content = [fields.state || "", cleanBody].join(NUL);
     } else if (type === "delete") {
       content = cleanBody;
+    } else if (type === "comment-edit") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = [fields.target, cleanBody].join(NUL);
+    } else if (type === "comment-delete") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = String(fields.target);
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -999,12 +1164,20 @@
       ts,
       sig,
     };
-    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
+    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines", "target"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
-    const payload = { owner: repo.owner, repo: repo.name, number, event };
-    const data = await fetchRepoMutation(repo, "pulls", payload);
+    const payload = { owner: repo.owner, repo: repo.name, number, event, ...(delivery.extra || {}) };
+    const data = await fetchRepoMutation(repo, "pulls", payload, delivery.relayOnly ? { relayOnly: true } : {});
     return { ...data, event };
+  }
+
+  async function submitWebPullCommentEdit(repo, number, target, body) {
+    return submitWebPullEvent(repo, number, "comment-edit", { target, body });
+  }
+
+  async function submitWebPullCommentDelete(repo, number, target) {
+    return submitWebPullEvent(repo, number, "comment-delete", { target });
   }
 
   async function submitWebPullComment(repo, number, body) {
@@ -1047,13 +1220,13 @@
   // resulting portable binary patch + commit series. For a fork, comparison
   // happens on the fork's mirror while the signed, self-contained proposal is
   // delivered to the parent's durable inbox; the parent node can be offline.
-  async function submitWebPullOpen(repo, title, body, base, head) {
+  async function submitWebPullOpen(repo, title, body, base, head, aiModel = "") {
     const targetRepo = pullRequestTargetRepo(repo);
     const parent = pullRequestParent(repo);
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = await signWebPull(repo, targetRepo, title, body, base, head, signedHead);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -1061,14 +1234,19 @@
     } catch (error) {
       if (targetRepo === repo || String(error?.code || error?.message || "") !== "read_only_mirror") throw error;
     }
-    const ownPull = await signWebPull(repo, repo, title, body, base, head, head);
+    const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
-    return { ...data, pull: ownPull, targetRepo: repo };
+    return { ...data, pull: ownPull, targetRepo: repo, refusedBy: targetRepo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
+  function withPullAiModel(pull, aiModel) {
+    const model = cleanAiModel(String(aiModel || ""));
+    return model ? { ...pull, aiModel: model } : pull;
+  }
+
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "", aiModel = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -1076,7 +1254,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
+    const pull = withPullAiModel(await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase), aiModel);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {
@@ -1220,6 +1398,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -1325,6 +1511,34 @@
     }
   }
 
+  function syncWebIssueListClaim(number, event) {
+    if (!event) return;
+    const rows = new Set([state.issuesView?.items, state.issueRelationIndex?.items]
+      .map((items) => (Array.isArray(items) ? items.find((issue) => Number(issue.number) === Number(number)) : null))
+      .filter(Boolean));
+    rows.forEach((row) => {
+      row.events = Array.isArray(row.events) ? row.events.slice() : [];
+      row.events.push(event);
+    });
+  }
+
+  async function webIssueClaimBlockers(repo, number) {
+    try {
+      const settings = await loadRepoCollabSettings(repo);
+      const limit = Number(settings?.assignmentLimit) || 0;
+      if (!limit) return [];
+      const [issues, pulls] = await Promise.all([
+        loadRepoIssueRelationIndex(repo),
+        loadRepoDevelopmentPulls(repo),
+      ]);
+      if (!Array.isArray(pulls)) return [];
+      const held = issueAssignmentsWithoutPull(state.session?.nodeName, issues, pulls, number);
+      return held.length >= limit ? held : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   // The Issues list, its Open/Closed filter and the tab badge are all served
   // from the cached rows in state, and the mirror only learns about the signed
   // status event once the owner node drains its inbox. Move the row here so
@@ -1378,13 +1592,14 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -1394,6 +1609,10 @@
     // the account session behind it is gone, not that the viewer lacks a role.
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
+    }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
+    if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
+      return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }
     return ({
       not_authorized: "Only the repository owner or an organization admin can do that.",
@@ -1444,6 +1663,54 @@
       .filter(Boolean))].slice(0, 20);
   }
 
+  async function handleWebPullCommentAction(action, target) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number || !target) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const original = foldPullCommentChanges(parsed.pullConversation)
+      .find((ev) => String(ev.id || "") === String(target));
+    if (!original) return;
+    let result;
+    try {
+      if (action === "delete") {
+        const verdict = pullReviewKeepsVerdict(original);
+        if (!await confirmAccountAction(verdict ? {
+          title: "Delete this review's text?",
+          body: `Your ${original.state === "approved" ? "approval" : "change request"} stays on the pull request. Its Git history remains recoverable.`,
+          confirmLabel: "Delete text",
+        } : {
+          title: original.type === "review" ? "Delete this review?" : "Delete this comment?",
+          body: "Its Git history remains recoverable.",
+          confirmLabel: original.type === "review" ? "Delete review" : "Delete comment",
+        })) return;
+        result = await submitWebPullCommentDelete(repo, number, target);
+      } else {
+        const nextBody = await openIssueCommentEditor(
+          target, original.body || "",
+          "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+        if (nextBody === null) return;
+        const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+        if (!trimmed.trim() || trimmed === String(original.body || "").replace(/[\r\n]+$/, "")) return;
+        result = await submitWebPullCommentEdit(repo, number, target, trimmed);
+      }
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, action === "delete" ? "delete-comment" : "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    refreshPullConversationProjection();
+    refreshRepoPullDiff();
+    if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+  }
+
   async function handleWebIssueAction(action, target = "") {
     const detail = state.repoRecordDetail;
     const repo = detail?.repo;
@@ -1460,6 +1727,7 @@
       try {
         await setWebIssueSubscription(repo, number, action === "subscribe");
         detail.parsed.issueSubscribed = action === "subscribe";
+        detail.parsed.issueSubscriptionReason = action === "subscribe" ? "subscribed" : "muted";
         renderCurrentWebIssueDetail();
       } catch (error) {
         showErrorNotice(webIssueActionError(error));
@@ -1467,6 +1735,13 @@
       return;
     }
     if (action === "vote") type = "vote";
+    if (action === "claim" && !detail.parsed?.issueMutationAuthorized) {
+      const held = await webIssueClaimBlockers(repo, number);
+      if (held.length) {
+        showErrorNotice(issueAssignmentLimitMessage(held));
+        return;
+      }
+    }
     if (action === "claim" || action === "release") {
       type = "claim";
       fields = {
@@ -1505,7 +1780,7 @@
       const latest = events.filter(
         (event) => event?.type === "edit" && event.target === target,
       ).at(-1);
-      const nextBody = window.prompt("Edit comment", latest?.body ?? original.body ?? "");
+      const nextBody = await openIssueCommentEditor(target, latest?.body ?? original.body ?? "");
       if (nextBody === null) return;
       type = "edit";
       fields = { target, body: nextBody, attachments: latest?.attachments || original.attachments || [] };
@@ -1515,6 +1790,7 @@
       const result = await submitWebIssueEvent(repo, number, type, fields);
       optimisticWebIssueEvent(result.event);
       if (type === "status") syncWebIssueListStatus(number, fields.status);
+      if (type === "claim") syncWebIssueListClaim(number, result.event);
       if (action === "delete-issue") {
         state.issuesView.items = (state.issuesView.items || []).filter(
           (issue) => Number(issue.number) !== number,
@@ -1525,6 +1801,7 @@
         return;
       }
       renderCurrentWebIssueDetail();
+      if (action === "edit-comment") restoreCommentEditFocus(target);
     } catch (error) {
       showErrorNotice(webIssueActionError(error, action));
     }
@@ -2149,11 +2426,193 @@
       const code = String(error?.message || "");
       setHint(
         code === "inbox_full" ? "Reply delivery is temporarily full. Try again later."
+          : code === "discussion_locked" ? "This discussion was closed, so it no longer takes replies."
           : code === "author_quota" ? "You've reached the submission limit for this repository."
           : code === "discussion_too_large" ? "The reply is too large - please shorten it."
           : code === "bad_signature" ? "Could not verify the reply's signature."
           : "Could not send the reply. Please try again.",
         "bad");
+    }
+  }
+
+  function webDiscussionSubmitErrorText(error) {
+    const code = String(error?.message || error?.code || "");
+    const status = Number(error?.status || 0);
+    if (code === "signing_unavailable") return "This browser cannot sign discussions (Ed25519 is unsupported). Update your browser and try again.";
+    if (code === "bad_signature") return "The discussion's signature was rejected. Reload the page and try again.";
+    if (code === "discussion_too_large") return "The discussion is too large (64 KB at most) - please shorten it.";
+    if (code === "inbox_full") return "This repository's discussion inbox is full right now. Try again later.";
+    if (code === "author_quota") return "You have too many discussion posts waiting for this repository. Try again once they are published.";
+    if (code === "feature_disabled") return "Discussions are turned off for this repository.";
+    if (code === "not_authorized") return "Only the repository owner can do that.";
+    if (code === "discussion_locked") return "This discussion was closed, so it no longer takes replies.";
+    if (code === "not_found" || status === 404) return "This repository is not available to your account. It may be private, or not published yet.";
+    if (code === "network_error") return `Could not reach ${platformName()} - check your connection.`;
+    if (code === "timeout") return "The repository did not answer in time. The discussion may still arrive - check the list before sending it again.";
+    return `Could not send the discussion (${code || `HTTP ${status || "error"}`}). Please try again.`;
+  }
+
+  async function handleDiscussionComposeSubmit(repo, form) {
+    if (!repo || !form) return;
+    const titleInput = form.querySelector("[data-repo-discussion-title]");
+    const bodyInput = form.querySelector("[data-repo-discussion-body]");
+    const submit = form.querySelector("[data-repo-discussion-submit]");
+    const spinner = form.querySelector("[data-repo-discussion-spinner]");
+    const hint = form.querySelector("[data-repo-discussion-hint]");
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[12px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    const title = String(titleInput?.value || "").trim();
+    const body = String(bodyInput?.value || "");
+    const category = String(form.querySelector("[data-repo-discussion-category-input]:checked")?.value || "Ideas");
+    if (!state.session?.nodeName) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    if (!title) {
+      setHint("Enter a title for the discussion.", true);
+      titleInput?.focus();
+      return;
+    }
+    if (submit) submit.disabled = true;
+    if (spinner) spinner.hidden = false;
+    const progress = ({ phase, route, retry } = {}) => {
+      if (phase === "signing") setHint("Signing your discussion in this browser…");
+      else if (phase === "delivering" && route === "mirror") setHint(retry ? "Trying another mirror…" : "Sending it to a mirror of this repository…");
+      else if (phase === "delivering") setHint(retry ? "Retrying the same signed discussion…" : "Sending it to the repository…");
+    };
+    try {
+      const result = await submitWebDiscussion(repo, { title, body, category }, progress);
+      const event = result.event;
+      if (spinner) spinner.hidden = true;
+      if (submit) submit.disabled = false;
+      const number = Number(result.number || 0);
+      if (Number.isInteger(number) && number > 0) {
+        rememberOptimisticRepoRecord(repo, "discussions", number, {
+          values: {
+            title: event.title,
+            category: event.category,
+            status: "open",
+            author: event.author,
+            authorName: event.authorName,
+            ts: event.ts,
+            createdAt: event.ts,
+          },
+          body: event.body,
+          discussionConversation: [],
+          discussionAnswer: null,
+        });
+        const items = state.repoCollectionItems.discussions;
+        if (Array.isArray(items) && !items.some((item) => Number(item.number) === number)) {
+          items.unshift({
+            number, title: event.title, category: event.category, state: "open",
+            author: event.authorName || state.session?.nodeName || "", authorKey: event.author,
+            createdAtMs: event.ts, updatedAtMs: event.ts,
+          });
+        }
+        navigateHistory(repoRecordUrl(repo, "discussions", number, "conversation"));
+        await loadRepoRecordDetail(repo, "discussions", number);
+        return;
+      }
+      if (titleInput) titleInput.value = "";
+      if (bodyInput) bodyInput.value = "";
+      renderRepoDiscussions();
+      const container = $("[data-repo-discussions]");
+      container?.insertAdjacentHTML("afterbegin", `<div data-repo-discussion-pending role="status" class="flex items-start gap-2 border-b border-border bg-[color-mix(in_srgb,var(--dashboard-link)_8%,transparent)] px-4 py-3 text-[14px] text-foreground"><i data-lucide="clock" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i><span><span class="font-semibold">${escapeHtml(event.title)}</span> was accepted. It appears here, numbered, as soon as a mirror of this repository records it.</span></div>`);
+      window.lucide?.createIcons();
+    } catch (error) {
+      if (spinner) spinner.hidden = true;
+      if (submit) submit.disabled = false;
+      console.error("[forkmesh] discussion submission failed", error);
+      setHint(`${webDiscussionSubmitErrorText(error)} Your draft is still here.`, true);
+    }
+  }
+
+  async function handleDiscussionStatusClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionStatusNumber || 0);
+    const status = String(button.dataset.repoDiscussionStatus || "");
+    const bar = button.closest("[data-repo-discussion-moderation]");
+    const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
+    if (!number || !status) return;
+    bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+    if (hint) {
+      hint.className = "mr-auto text-[12px] text-muted-foreground";
+      hint.textContent = "Signing and sending…";
+    }
+    try {
+      const result = await submitWebDiscussionModeration(repo, number, "status", status);
+      rememberPendingDiscussionState(repo, number, result.event);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
+        detail.parsed.values = { ...(detail.parsed.values || {}), status };
+        rememberOptimisticRepoRecord(repo, "discussions", number, detail.parsed);
+        const container = $("[data-repo-discussions]");
+        if (container) {
+          container.innerHTML = renderRepoRecordDetail(repo, "discussions", number, detail.parsed);
+          window.lucide?.createIcons();
+        }
+      }
+      const items = state.repoCollectionItems.discussions;
+      const row = Array.isArray(items) ? items.find((item) => Number(item.number) === number) : null;
+      if (row) row.state = status;
+    } catch (error) {
+      bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+      if (hint) {
+        hint.className = "mr-auto text-[12px] text-destructive";
+        hint.textContent = webDiscussionSubmitErrorText(error);
+      }
+    }
+  }
+
+  async function handleDiscussionRemoveClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionRemove || 0);
+    if (!number) return;
+    if (!window.confirm(`Delete discussion #${number} and all its replies? This cannot be undone.`)) return;
+    const bar = button.closest("[data-repo-discussion-moderation]");
+    const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
+    bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+    try {
+      const result = await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      rememberPendingDiscussionState(repo, number, result.event);
+      forgetOptimisticRepoRecord(repo, "discussions", number);
+      const items = state.repoCollectionItems.discussions;
+      if (Array.isArray(items)) {
+        state.repoCollectionItems.discussions = items.filter((item) => Number(item.number) !== number);
+      }
+      navigateHistory(`${repoLinkUrl(repo)}/discussions`);
+      renderRepoDiscussions();
+    } catch (error) {
+      bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+      if (hint) {
+        hint.className = "mr-auto text-[12px] text-destructive";
+        hint.textContent = webDiscussionSubmitErrorText(error);
+      }
+    }
+  }
+
+  async function handleDiscussionDeleteClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionDeleteNumber || 0);
+    const target = String(button.dataset.repoDiscussionDelete || "");
+    if (!number || !target) return;
+    if (!window.confirm("Delete this reply? It is removed from the repository for everyone.")) return;
+    button.disabled = true;
+    const reply = button.closest("[data-repo-discussion-reply]");
+    try {
+      await submitWebDiscussionModeration(repo, number, "delete", target);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
+        detail.parsed.discussionConversation = (detail.parsed.discussionConversation || [])
+          .filter((ev) => ev.id !== target);
+      }
+      reply?.remove();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(webDiscussionSubmitErrorText(error));
     }
   }
 
@@ -2252,7 +2711,7 @@
 
   function applyAvatar(container, session) {
     if (!container) return;
-    const name = session?.nodeName || session?.email || "ForkMesh";
+    const name = session?.nodeName || session?.email || platformName();
     const initial = (name[0] || "F").toUpperCase();
     const avatarPng = session?.avatarPng || "";
     const image = container.querySelector("img");
@@ -2266,6 +2725,7 @@
         image.alt = "";
       }
       image.classList.toggle("hidden", !avatarPng);
+      image.hidden = !avatarPng;
     }
     if (initialEl) {
       initialEl.textContent = initial;
@@ -2274,6 +2734,113 @@
       container.textContent = initial;
     }
     container.classList.toggle("font-mono", !avatarPng);
+    const handle = profileAvatarHandle(session);
+    if (container.dataset.profileAvatarFor !== handle
+      || ["image", "bot"].includes(container.dataset.profileAvatarState)) {
+      delete container.dataset.profileAvatarState;
+      delete container.dataset.profileAvatarTried;
+    }
+    if (avatarPng || !handle || !image) {
+      delete container.dataset.profileAvatarFor;
+      return;
+    }
+    container.dataset.profileAvatarFor = handle;
+    hydrateProfileAvatar(container);
+  }
+
+  const PROFILE_AVATAR_ROSTER_REPOS = 4;
+
+  function profileAvatarHandle(session) {
+    const handle = String(session?.nodeName || "").trim().replace(/^@/, "").toLowerCase();
+    return session?.kind !== "organization" && validNodeName(handle) ? handle : "";
+  }
+
+  function profileAvatarRosterRepos(handle) {
+    const seen = new Set();
+    const own = [];
+    const others = [];
+    (Array.isArray(state.repositories) ? state.repositories : []).forEach((repo) => {
+      if (!repo?.name || repo.isPrivate) return;
+      const key = repositoryViewKey(repo);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const owners = [repo.owner, repoPublicOwner(repo)].map((value) => String(value || "").toLowerCase());
+      (owners.includes(handle) ? own : others).push(repo);
+    });
+    const parents = [];
+    own.forEach((repo) => {
+      const parentKey = repoForkParent(repo)?.key;
+      const parent = parentKey ? findRepository(parentKey) : null;
+      if (!parent || parent.isPrivate || parents.includes(parent)) return;
+      parents.push(parent);
+    });
+    const ordered = [];
+    own.concat(parents, others).forEach((repo) => {
+      if (!ordered.includes(repo)) ordered.push(repo);
+    });
+    return ordered.slice(0, PROFILE_AVATAR_ROSTER_REPOS);
+  }
+
+  async function profileAvatarPicture(handle, repos) {
+    const account = await issueActorAccount(handle);
+    if (account?.png) return `data:image/png;base64,${account.png}`;
+    if (typeof repoPeopleRosterMatch !== "function") return "";
+    for (const repo of repos) {
+      const person = await repoPeopleRosterMatch(repo, handle).catch(() => null);
+      if (person?.avatarUrl) return person.avatarUrl;
+    }
+    return "";
+  }
+
+  function showProfileAvatarPicture(container, src) {
+    const image = container.querySelector("img");
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!image || !src) return;
+    image.addEventListener("error", () => {
+      image.removeAttribute("src");
+      image.classList.add("hidden");
+      image.hidden = true;
+      initialEl?.classList.remove("hidden");
+      container.dataset.profileAvatarState = "initial";
+    }, { once: true });
+    image.referrerPolicy = "no-referrer";
+    image.src = src;
+    image.alt = `${container.dataset.profileAvatarFor} profile picture`;
+    image.classList.remove("hidden");
+    image.hidden = false;
+    initialEl?.classList.add("hidden");
+    container.classList.remove("font-mono");
+  }
+
+  function showProfileAvatarBot(container) {
+    const kind = botAvatarKind(container.dataset.profileAvatarFor);
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!kind || !initialEl) return;
+    initialEl.innerHTML = botAvatarSvg(kind, "h-auto w-1/2");
+    initialEl.classList.add("flex", "h-full", "w-full", "items-center", "justify-center");
+    container.dataset.profileAvatarState = "bot";
+  }
+
+  function hydrateProfileAvatar(container) {
+    const handle = container?.dataset?.profileAvatarFor;
+    if (!handle) return;
+    const repos = profileAvatarRosterRepos(handle);
+    const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
+    const known = container.dataset.profileAvatarState;
+    if (known === "image" || known === "loading" || known === "bot"
+      || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
+    container.dataset.profileAvatarState = "loading";
+    container.dataset.profileAvatarTried = tried;
+    void profileAvatarPicture(handle, repos).then((src) => {
+      if (container.dataset.profileAvatarFor !== handle) return;
+      container.dataset.profileAvatarState = src ? "image" : "initial";
+      if (src) showProfileAvatarPicture(container, src);
+      else showProfileAvatarBot(container);
+    });
+  }
+
+  function hydrateProfileAvatars() {
+    document.querySelectorAll("[data-profile-avatar-for]").forEach(hydrateProfileAvatar);
   }
 
   async function refreshPublicProfile(session = state.session, options = {}) {
@@ -2318,3 +2885,303 @@
       return session;
     }
   }
+
+  async function backfillAdminUrl(session) {
+    if (!session?.isAdmin || session.adminUrl || session.adminUrlCheckedAt) return session;
+    try {
+      const token = String(session.sessionToken || "");
+      const response = await fetch("/api/accounts/sessions", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          ...(token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) return session;
+      const account = (await response.json().catch(() => null))?.account;
+      const current = state.session || session;
+      if (!account || account.isAdmin !== true ||
+          String(account.nodeName || "").toLowerCase() !== String(current?.nodeName || "").toLowerCase()) {
+        return session;
+      }
+      const nextSession = {
+        ...current,
+        isAdmin: true,
+        adminUrl: String(account.adminUrl || ""),
+        adminUrlCheckedAt: Date.now(),
+      };
+      writeSession(nextSession);
+      renderProfile(nextSession);
+      return nextSession;
+    } catch (_) {
+      return session;
+    }
+  }
+
+  const MARKDOWN_VIDEO_TEXTAREAS = [
+    "[data-repo-issue-body]", "[data-repo-pull-body]",
+    "[data-repo-issue-comment-body]", "[data-repo-issue-comment-edit-body]",
+    "[data-repo-pull-review-body]", "[data-repo-issue-description-input]",
+    "[data-repo-discussion-reply-body]",
+  ].join(",");
+  const MARKDOWN_VIDEO_TYPES = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" };
+  const MARKDOWN_VIDEO_EXTENSIONS = { mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
+  const MARKDOWN_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+  const MARKDOWN_VIDEO_PART_BYTES = 512 * 1024;
+
+  function markdownVideoButtonHtml() {
+    return '<button type="button" data-markdown-video-attach class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary"><i data-lucide="video" class="h-3.5 w-3.5 text-muted-foreground"></i>Attach video</button>';
+  }
+
+  function markdownVideoMime(file) {
+    const type = String(file?.type || "").toLowerCase();
+    if (MARKDOWN_VIDEO_TYPES[type]) return type;
+    const extension = String(file?.name || "").split(".").pop().toLowerCase();
+    return MARKDOWN_VIDEO_EXTENSIONS[extension] || "";
+  }
+
+  function markdownVideoFiles(list) {
+    return Array.from(list || []).filter((file) => markdownVideoMime(file));
+  }
+
+  function markdownVideoError(code) {
+    return ({
+      unsupported_media_type: "Attach an MP4, WebM or MOV video.",
+      media_type_mismatch: "That file is not the video type its name says.",
+      media_too_large: `Videos can be at most ${formatSize(MARKDOWN_VIDEO_MAX_BYTES)}.`,
+      media_quota_count: "You have uploaded the most videos allowed today. Try again tomorrow.",
+      media_quota_bytes: "You have used today's video upload allowance. Try again tomorrow.",
+      email_unverified: "Verify your email address before uploading videos.",
+      repository_unavailable: "Videos can only be attached on public repositories.",
+      invalid_session: "Sign in to attach a video.",
+    })[code] || "The video could not be uploaded. Please try again.";
+  }
+
+  function readFileSliceBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || "").replace(/^data:[^,]*,/, ""));
+      reader.onerror = () => reject(reader.error || new Error("read_failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function markdownVideoRequest(url, method, payload) {
+    const response = await fetch(url, {
+      method,
+      credentials: "include",
+      cache: "no-store",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      const error = new Error(String(data.error || `HTTP ${response.status}`));
+      error.code = String(data.error || "");
+      throw error;
+    }
+    return data;
+  }
+
+  async function uploadMarkdownVideo(repo, file, onProgress) {
+    const mime = markdownVideoMime(file);
+    if (!mime) throw Object.assign(new Error("unsupported_media_type"), { code: "unsupported_media_type" });
+    if (file.size > MARKDOWN_VIDEO_MAX_BYTES) throw Object.assign(new Error("media_too_large"), { code: "media_too_large" });
+    const base = `${repoApiBase(repo)}/media`;
+    const parts = Math.ceil(file.size / MARKDOWN_VIDEO_PART_BYTES);
+    const created = await markdownVideoRequest(base, "POST", { name: file.name || "", mime, size: file.size, parts });
+    const media = created.media || {};
+    for (let index = 0; index < parts; index += 1) {
+      const slice = file.slice(index * MARKDOWN_VIDEO_PART_BYTES, (index + 1) * MARKDOWN_VIDEO_PART_BYTES);
+      const data = await readFileSliceBase64(slice);
+      await markdownVideoRequest(`${base}/${media.id}/parts/${index}`, "PUT", { data });
+      onProgress?.((index + 1) / parts);
+    }
+    const finished = await markdownVideoRequest(`${base}/${media.id}/finish`, "POST", {});
+    return String(finished.media?.url || media.url || "");
+  }
+
+  function replaceInTextarea(textarea, from, to) {
+    const index = textarea.value.indexOf(from);
+    if (index < 0) return false;
+    textarea.value = textarea.value.slice(0, index) + to + textarea.value.slice(index + from.length);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
+  async function insertMarkdownVideo(textarea, file) {
+    const repo = state.repoRecordDetail?.repo || state.selectedRepo;
+    if (!repo || !textarea) return;
+    if (!state.session?.nodeName) {
+      showErrorNotice(markdownVideoError("invalid_session"));
+      return;
+    }
+    const name = String(file.name || "video").replace(/[\[\]()<>]/g, "_");
+    const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    let placeholder = `![Uploading ${name} ${token}…]()`;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const insertion = `\n${placeholder}\n`;
+    textarea.value = textarea.value.slice(0, start) + insertion + textarea.value.slice(end);
+    textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    try {
+      const url = await uploadMarkdownVideo(repo, file, (fraction) => {
+        const next = `![Uploading ${name} ${token} ${Math.round(fraction * 100)}%…]()`;
+        if (replaceInTextarea(textarea, placeholder, next)) placeholder = next;
+      });
+      if (!url) throw new Error("upload_failed");
+      replaceInTextarea(textarea, placeholder, `![${name}](${url})`);
+    } catch (error) {
+      replaceInTextarea(textarea, `\n${placeholder}\n`, "\n") || replaceInTextarea(textarea, placeholder, "");
+      showErrorNotice(markdownVideoError(error?.code || error?.message));
+    }
+  }
+
+  document.addEventListener("paste", (event) => {
+    const textarea = event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS);
+    const files = markdownVideoFiles(event.clipboardData?.files);
+    if (!textarea || !files.length) return;
+    event.preventDefault();
+    files.forEach((file) => void insertMarkdownVideo(textarea, file));
+  });
+
+  document.addEventListener("dragover", (event) => {
+    if (!event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS)) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+
+  document.addEventListener("drop", (event) => {
+    const textarea = event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS);
+    const files = markdownVideoFiles(event.dataTransfer?.files);
+    if (!textarea || !files.length) return;
+    event.preventDefault();
+    files.forEach((file) => void insertMarkdownVideo(textarea, file));
+  });
+
+  document.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-markdown-video-attach]");
+    if (!button) return;
+    const textarea = button.closest("form")?.querySelector(MARKDOWN_VIDEO_TEXTAREAS);
+    if (!textarea) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov";
+    input.multiple = true;
+    input.addEventListener("change", () => {
+      markdownVideoFiles(input.files).forEach((file) => void insertMarkdownVideo(textarea, file));
+    });
+    input.click();
+  });
+
+  function pullRevisionSource(values) {
+    const head = String(values?.head || "").trim();
+    if (!head) return null;
+    const colon = head.lastIndexOf(":");
+    if (colon < 0) return { owner: "", branch: head };
+    const prefix = head.slice(0, colon);
+    if (!prefix || prefix.includes("/")) return null;
+    return { owner: prefix, branch: head.slice(colon + 1) };
+  }
+
+  function pullRevisionAllowed(parsed) {
+    const values = parsed?.values || {};
+    return String(values.status || "open").trim().toLowerCase() === "open"
+      && values.derive !== "branch"
+      && webSessionAuthored({ author: values.author, authorName: values.authorName })
+      && Boolean(pullRevisionSource(values));
+  }
+
+  async function submitWebPullRevision(repo, number, values, branch) {
+    const source = pullRevisionSource(values);
+    if (!source || !branch) throw new Error("revision_unsupported");
+    const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
+    const base = String(values.base || "");
+    let comparison;
+    try {
+      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+    } catch (_) {
+      throw new Error("comparison_unavailable");
+    }
+    const patch = String(comparison.patch || "");
+    const commits = String(comparison.commits || "");
+    const baseOid = String(comparison.baseOid || "").toLowerCase();
+    const headOid = String(comparison.headOid || "").toLowerCase();
+    const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
+    if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
+    if (!patch.trim()) throw new Error("no_changes");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
+    const revision = await signWebPullContent(
+      repo, String(values.title || ""), "", base, signedHead, patch, commits);
+    delete revision.description;
+    revision.creationBaseOid = baseOid;
+    revision.creationHeadOid = headOid;
+    const { privateKey } = await getWebIssueKey();
+    const binding = `${Number(number)}\n${revision.author}\n${revision.ts}\n${revision.sig}`;
+    revision.revisionSig = bytesToB64url(await crypto.subtle.sign(
+      { name: "Ed25519" }, privateKey,
+      ISSUE_TEXT_ENCODER.encode(`${webEventSigningPrefix("pull-revision", repo)}${binding}`)));
+    const data = await fetchRepoMutation(repo, "pulls", {
+      owner: repo.owner, repo: repo.name, number: Number(number), revision,
+    });
+    return { ...data, revision };
+  }
+
+  function pullRevisionError(code) {
+    return ({
+      comparison_unavailable: "That branch is not on the serving mirror yet. A branch you just pushed can take a moment to arrive.",
+      invalid_comparison: "That branch could not be compared with the base branch.",
+      no_changes: "That branch has no changes against the base branch.",
+      no_new_commits: "This pull request already shows that branch's latest commit.",
+      revision_stale: "A newer version of this pull request is already waiting.",
+      pull_not_open: "Only an open pull request can be updated.",
+      pull_follows_branch: "This pull request already follows its branch.",
+      not_authorized: "Only the pull request's author can update it.",
+      pull_too_large: "That change is too large to send.",
+      revision_unsupported: "This pull request came from another instance; update it there.",
+      author_mismatch: "Sign in with the account that opened this pull request.",
+    })[code] || "The pull request could not be updated. Please try again.";
+  }
+
+  function renderPullRevisionPanel(number, parsed) {
+    if (!pullRevisionAllowed(parsed)) return "";
+    const branch = pullRevisionSource(parsed.values)?.branch || "";
+    return `
+      <form data-repo-pull-revision-form data-repo-pull-revision-number="${escapeHtml(number)}" class="flex flex-wrap items-center gap-2 rounded-md border border-border px-4 py-3 text-[14px] sm:ml-14">
+        <span class="min-w-0 flex-1 text-muted-foreground">Pushed more commits, or rewrote the branch? Update this pull request from a branch. No force push is needed.</span>
+        <input data-repo-pull-revision-branch value="${escapeHtml(branch)}" aria-label="Source branch" spellcheck="false" class="h-control-sm w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-[var(--dashboard-link)]" />
+        <button type="submit" data-repo-pull-revision-submit class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-control font-medium text-foreground hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Update pull request</button>
+        <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
+      </form>`;
+  }
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-revision-form]");
+    if (!form) return;
+    event.preventDefault();
+    const detail = state.repoRecordDetail;
+    const number = Number(form.dataset.repoPullRevisionNumber || 0);
+    if (!detail?.repo || detail.kind !== "pulls" || Number(detail.number) !== number) return;
+    const hint = form.querySelector("[data-repo-pull-revision-hint]");
+    const submit = form.querySelector("[data-repo-pull-revision-submit]");
+    const branch = String(form.querySelector("[data-repo-pull-revision-branch]")?.value || "").trim();
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `w-full text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, number, detail.parsed?.values || {}, branch);
+      setHint("Sent. The pull request shows the new version once the repository's node takes it in.");
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });

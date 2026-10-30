@@ -1,0 +1,66 @@
+QWidget[usersNextPage="true"] QLabel#sectionTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+QWidget[usersNextPage="true"] QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+QWidget#usersSignupReferralCodePanel {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#usersSignupReferralCodePanel QLabel { background: transparent; font-size: 13px; }
+QWidget#usersSignupReferralCodePanel QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }
+QLineEdit#usersSignupReferralCode {
+    min-height: 28px; max-height: 28px; border-radius: 8px; padding: 0px 8px;
+}
+
+QTabWidget#usersTabs::pane { border: none; border-top: 1px solid @border; padding-top: 12px; }
+QTabWidget#usersTabs > QTabBar::tab {
+    padding: 8px 2px; margin-right: 18px; font-size: 13px; font-weight: 500;
+}
+QWidget#usersNextToolbar { background: transparent; }
+QLineEdit#usersNextSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 28px; max-height: 28px; padding: 0px 8px 0px 2px; font-size: 13px;
+}
+QLineEdit#usersNextSearch:hover { border-color: @borderStrong; }
+QLineEdit#usersNextSearch:focus { border-color: @accent; }
+QComboBox#usersNextRoleFilter {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 28px; max-height: 28px; padding: 0px 8px; font-size: 13px;
+}
+QComboBox#usersNextRoleFilter:hover { border-color: @borderStrong; }
+QComboBox#usersNextRoleFilter:focus { border-color: @accent; }
+QLabel#usersNextShown {
+    color: @fgSubtle; font-size: 12px; padding-left: 4px; background: transparent;
+}
+
+QTableWidget#usersTable, QTableWidget#usersQuarantineTable {
+    border-radius: 12px;
+}
+
+QFrame#usersDetailPanel {
+    background-color: @bg; border: none; border-left: 1px solid @border;
+}
+QWidget#usersDetailHeader { background: transparent; border-bottom: 1px solid @border; }
+QLabel#usersDetailTitle { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+QPushButton#usersDetailClose {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+QPushButton#usersDetailClose:hover { background-color: @surfaceRaised; }
+QPushButton#usersDetailClose:pressed { background-color: @surfaceActive; }
+QScrollArea#usersDetailScroll { background: transparent; border: none; }
+QScrollArea#usersDetailScroll > QWidget#qt_scrollarea_viewport { background: transparent; }
+QWidget#usersDetailContent { background: transparent; }
+QLabel#usersDetailAvatar { background: transparent; }
+QLabel#usersDetailName { color: @fg; font-size: 16px; font-weight: 600; background: transparent; }
+QLabel#usersDetailHandle { color: @fgMuted; font-size: 13px; background: transparent; }
+QLabel#usersDetailStatus { color: @fgSecondary; font-size: 13px; background: transparent; }
+QLabel#usersDetailBadge {
+    color: @fgSecondary; background-color: @surfaceActive; border-radius: 5px;
+    padding: 1px 6px; font-size: 11px; font-weight: 500;
+}
+QLabel#usersDetailSection {
+    color: @fgSubtle; font-size: 11px; font-weight: 600; background: transparent;
+}
+QLabel#usersDetailKey { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#usersDetailValue { color: @fg; font-size: 12px; background: transparent; }

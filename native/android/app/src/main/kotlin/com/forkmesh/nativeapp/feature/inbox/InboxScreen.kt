@@ -4,8 +4,6 @@ import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,11 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -39,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,7 +45,6 @@ import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.navigation.RoutePage
 import com.forkmesh.nativeapp.inbox.InboxItem
 import com.forkmesh.nativeapp.inbox.InboxSyncState
-import com.forkmesh.nativeapp.inbox.PingPauseChoice
 import com.forkmesh.nativeapp.navigation.InboxFilter
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.navigation.emptyMessage
@@ -60,7 +53,6 @@ import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
-import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -74,6 +66,12 @@ import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
+import com.forkmesh.nativeapp.feature.account.projects.ProjectIcon
+import com.forkmesh.nativeapp.inbox.InboxSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.platform.testTag
 
 class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
     override val extendsUnderTabBar: Boolean get() = true
@@ -81,7 +79,6 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
     override val title: String get() = "Inbox"
     private var loading by mutableStateOf(false)
     private var unreadOnly by mutableStateOf(false)
-    private var menuOpen by mutableStateOf(false)
     private val status = FmStatus()
 
     @Composable
@@ -140,77 +137,40 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
         }
 
         Column(Modifier.fillMaxSize().background(c.bgBase)) {
-            Row(
-                Modifier.fillMaxWidth().padding(start = FmSpace.x3, end = FmSpace.x1, top = FmSpace.x2),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-                    InboxFilter.entries.forEach { option ->
-                        val count = counts[option] ?: 0
-                        FilterChip(
-                            selected = option == filter,
-                            onClick = { if (pinnedFilter == null) InboxFeature.setFilter(option) },
-                            label = { Text(if (count > 0) "${option.label} $count" else option.label) },
-                        )
-                    }
-                }
-                FmIconButton(
-                    "delete_sweep",
-                    "Delete all pings",
-                    onPressed = if (model.canDeleteAllPings) {
-                        {
-                            scope.launch {
-                                status.clear()
-                                val failure = withContext(Dispatchers.IO) { model.deleteAllPings() }
-                                if (failure != null) status.error(failure) else status.show("Pings deleted")
-                                InboxFeature.publish()
-                            }
+            InboxFilterBar(
+                model,
+                filter,
+                unreadOnly,
+                InboxBarActions(
+                    onFilter = { if (pinnedFilter == null) InboxFeature.setFilter(it) },
+                    onMarkAllRead = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { model.markAllRead() }
+                            InboxFeature.publish()
                         }
-                    } else {
-                        null
                     },
-                    modifier = Modifier.testTag("inbox-delete-all"),
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = c.danger, disabledContentColor = c.textDisabled),
-                )
-                Box {
-                    FmIconButton("more_vert", "Inbox options", onPressed = { menuOpen = true }, color = c.textPrimary)
-                    FmDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        FmDropdownMenuItem(text = if (unreadOnly) "Show all" else "Unread only", onClick = {
-                            menuOpen = false
-                            unreadOnly = !unreadOnly
-                        })
-                        FmDropdownMenuItem(text = "Mark all read", onClick = {
-                            menuOpen = false
-                            scope.launch {
-                                withContext(Dispatchers.IO) { model.markAllRead() }
-                                InboxFeature.publish()
-                            }
-                        })
-                        if (model.isPaused) {
-                            FmDropdownMenuItem(text = "Resume pings", onClick = {
-                                menuOpen = false
-                                scope.launch {
-                                    withContext(Dispatchers.IO) { model.pause(null) }?.let { status.error(it) }
-                                    InboxFeature.publish()
-                                }
-                            })
+                    onToggleUnread = { unreadOnly = !unreadOnly },
+                    onPause = { choice ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) { model.pause(choice) }?.let { status.error(it) }
+                            InboxFeature.publish()
                         }
-                        PingPauseChoice.entries.forEach { choice ->
-                            FmDropdownMenuItem(text = "Pause pings ${choice.label.replaceFirstChar { it.lowercase() }}", onClick = {
-                                menuOpen = false
-                                scope.launch {
-                                    withContext(Dispatchers.IO) { model.pause(choice) }?.let { status.error(it) }
-                                    InboxFeature.publish()
-                                }
-                            })
+                    },
+                    onDiscardFailed = {
+                        model.syncQueue.discardFailed()
+                        reload()
+                    },
+                    onSettings = { NavigationFeature.open(Route.PingSettings) },
+                    onDeleteAll = {
+                        scope.launch {
+                            status.clear()
+                            val failure = withContext(Dispatchers.IO) { model.deleteAllPings() }
+                            if (failure != null) status.error(failure) else status.show("Pings deleted")
+                            InboxFeature.publish()
                         }
-                        FmDropdownMenuItem(text = "Ping settings", onClick = {
-                            menuOpen = false
-                            NavigationFeature.open(Route.PingSettings)
-                        })
-                    }
-                }
-            }
+                    },
+                ),
+            )
             if (model.isPaused) {
                 Text(model.pauseLabel, Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1), style = Fm.text.bodySmall.copy(color = c.warning))
             }
@@ -270,6 +230,8 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
 private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, onDelete: () -> Unit, onPrompt: () -> Unit, onMarkRead: () -> Unit) {
     val c = Fm.colors
     var menu by remember { mutableStateOf(false) }
+    val activeProject = Services.get<ProjectsService>()?.active?.collectAsState()?.value
+    val instance = if (item.source == InboxSource.Local) null else activeProject
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
         if (value == SwipeToDismissBoxValue.EndToStart) {
             FmSoundCues.play(SoundCue.DELETE)
@@ -302,11 +264,17 @@ private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, on
                             append(if (item.unread) "Unread. " else "Read. ")
                             append("${item.kindLabel}. ${item.title}")
                             if (item.repo.isNotEmpty()) append(", ${item.repo}")
+                            if (instance != null) append(". From ${instance.label}")
                         }
                     },
                 verticalAlignment = Alignment.Top,
             ) {
-                FmIcon(item.icon, size = 22.dp, tint = if (item.unread) c.accent else c.textTertiary)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+                    FmIcon(item.icon, size = 22.dp, tint = if (item.unread) c.accent else c.textTertiary)
+                    if (instance != null) {
+                        Box(Modifier.testTag("inbox-row-instance-logo")) { ProjectIcon(instance, size = 16.dp) }
+                    }
+                }
                 Spacer(Modifier.width(FmSpace.x3))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

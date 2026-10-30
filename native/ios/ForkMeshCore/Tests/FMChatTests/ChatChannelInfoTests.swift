@@ -91,9 +91,9 @@ final class ChatChannelInfoTests: XCTestCase {
         try await h.sendProtected([
             "type": "presence", "id": "p1", "senderId": "peer-1", "sender": "Pat", "ownerUser": "pat", "ts": .int(Date().epochMillis),
         ])
-        _ = await waitUntil { h.relay.roster().contains { $0.id == "peer-1" } }
+        _ = await waitUntil { h.relay.roster().contains { $0.id == h.node("peer-1") } }
         for (index, sender) in ["Sam", "Pat", "forkbot", "Sam"].enumerated() {
-            try h.sendPlain([
+            try await h.sendProtected([
                 "type": "chat", "id": .string("m\(index)"), "senderId": .string(sender == "Pat" ? "peer-1" : sender.lowercased()),
                 "sender": .string(sender), "ts": .int(Date().epochMillis + Int64(index)), "channel": "#general", "text": "hello",
             ])
@@ -121,7 +121,7 @@ final class ChatChannelInfoTests: XCTestCase {
     func testBigChannelsAskBeforeABroadcast() async throws {
         let (hub, h) = try await hub()
         for index in 0..<8 {
-            try h.sendPlain([
+            try await h.sendProtected([
                 "type": "chat", "id": .string("b\(index)"), "senderId": .string("n\(index)"), "sender": .string("Person \(index)"),
                 "ts": .int(Date().epochMillis + Int64(index)), "channel": "#general", "text": "hi",
             ])
@@ -141,7 +141,7 @@ final class ChatChannelInfoTests: XCTestCase {
         hub.workspace = ChatWorkspace(store: InMemoryKeyValueStore(), scope: "t")
         hub.select("#random")
         for (index, text) in ["one", "two", "@everyone three"].enumerated() {
-            try h.sendPlain([
+            try await h.sendProtected([
                 "type": "chat", "id": .string("u\(index)"), "senderId": "sam", "sender": "Sam", "ts": .int(Date().epochMillis + Int64(index)),
                 "channel": "#general", "text": .string(text),
             ])
@@ -155,7 +155,7 @@ final class ChatChannelInfoTests: XCTestCase {
         XCTAssertEqual(hub.rows.first?.mentionsYou, false)
         hub.select("#random")
         XCTAssertNil(hub.unreadStart["#general"])
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "u9", "senderId": "sam", "sender": "Sam", "ts": .int(Date().epochMillis + 50), "channel": "#general", "text": "plain",
         ])
         _ = await waitUntil { h.relay.unreadCountFor("#general") == 1 }

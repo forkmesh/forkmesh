@@ -131,6 +131,7 @@ const scope = {
   desktopControlHub: async () => hub, escapeHtml: (value) => String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`),
   fetchJson, fetchRepoJson: async () => ({}), formatTimeAgo: () => "an hour ago", state,
   sendTextToPrompt: (text) => { prompts.push(text); return true; },
+  platformName: () => "ForkMesh", desktopBrand: () => "ForkMesh ",
 };
 
 vm.runInThisContext(fs.readFileSync(chunkPath, "utf8"));

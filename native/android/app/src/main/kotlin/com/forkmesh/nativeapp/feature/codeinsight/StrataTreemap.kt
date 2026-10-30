@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.codeinsight
 
 import androidx.compose.foundation.Canvas
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -90,8 +91,8 @@ internal fun StrataTreemapView(model: StrataModel, state: StrataPageState) {
     val measurer = rememberTextMeasurer(cacheSize = 512)
     val fileLabels = remember(model) { HashMap<Int, TextLayoutResult>() }
     val moduleLabels = remember(model) { HashMap<Int, TextLayoutResult>() }
-    val fileStyle = TextStyle(fontSize = 10.sp)
-    val moduleStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
+    val fileStyle = TextStyle(fontFamily = FmType.ui, fontSize = 10.sp)
+    val moduleStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
     val selectedFile = (state.selection as? StrataFocus.File)?.index ?: -1
     val selectedModule = (state.selection as? StrataFocus.Module)?.index ?: -1
     fun toWorld(p: Offset) = Offset((p.x - offset.x) / scale, (p.y - offset.y) / scale)

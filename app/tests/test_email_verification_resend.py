@@ -31,6 +31,7 @@ FUNCS = {
     "_record_account_email",
     "_notify_admins_account_email",
     "_account_resend_verification",
+    "_verification_resend_refusal",
 }
 ASSIGNS = {
     "ACCOUNT_EMAIL_STATUS_DELIVERED",
@@ -73,6 +74,7 @@ def _harness(rec=None, admins=(), sent=True, now=NOW):
     queued = []
     pings = []
     sends = []
+    claims = set()
 
     class _DateStub:
         @staticmethod
@@ -97,6 +99,7 @@ def _harness(rec=None, admins=(), sent=True, now=NOW):
 
     async def _send_verification_email(env, _request, name, email):
         sends.append((name, email))
+        await asyncio.sleep(0)
         await namespace["_record_account_email"](env, name, "verification", sent)
         return sent
 
@@ -118,6 +121,15 @@ def _harness(rec=None, admins=(), sent=True, now=NOW):
     async def bounded_json_request(_request):
         return {}
 
+    async def blind_index(_env, value):
+        return "bi:" + value
+
+    async def d1_run(_env, sql, key, _created_at):
+        assert "INSERT OR IGNORE INTO notification_email_sends" in sql
+        changes = 0 if key in claims else 1
+        claims.add(key)
+        return SimpleNamespace(meta=SimpleNamespace(changes=changes))
+
     namespace = _load({
         "Date": _DateStub,
         "MAX_NODE_NAME": 63,
@@ -133,11 +145,14 @@ def _harness(rec=None, admins=(), sent=True, now=NOW):
         "enqueue_notification": enqueue_notification,
         "d1_all": d1_all,
         "decrypt_row": decrypt_row,
+        "blind_index": blind_index,
+        "d1_run": d1_run,
     })
     namespace["_saved"] = saved
     namespace["_queued"] = queued
     namespace["_pings"] = pings
     namespace["_sends"] = sends
+    namespace["_claims"] = claims
     return namespace
 
 
@@ -209,6 +224,34 @@ def test_a_second_send_inside_the_cooldown_is_refused():
     assert response["status"] == 429
     assert response["body"]["error"] == "resend_too_soon"
     assert response["body"]["retryAfterMs"] == MINUTE - 5_000
+    assert namespace["_sends"] == []
+
+
+def test_parallel_resends_send_one_email():
+    namespace = _harness(_account())
+
+    async def burst():
+        return await asyncio.gather(*[
+            namespace["_account_resend_verification"](
+                object(), SimpleNamespace(method="POST", headers={}))
+            for _ in range(20)])
+
+    responses = asyncio.run(burst())
+    assert [r["status"] for r in responses].count(200) == 1
+    assert {r["body"]["error"] for r in responses if r["status"] == 429} == {
+        "resend_too_soon"}
+    assert namespace["_sends"] == [("alice", "alice@example.com")]
+
+
+def test_resend_is_refused_when_the_claim_cannot_be_written():
+    namespace = _harness(_account())
+
+    async def down(*_args):
+        raise RuntimeError("d1 down")
+
+    namespace["d1_run"] = down
+    response = _resend(namespace)
+    assert response["status"] == 429
     assert namespace["_sends"] == []
 
 
@@ -307,6 +350,15 @@ def test_route_and_notification_kind_are_registered():
     assert ('if url.path == "/api/accounts/resend-verification" '
             'and method == "POST":') in TEXT
     assert "return await _account_resend_verification(env, request)" in TEXT
+
+
+def test_profile_resend_goes_through_the_same_limit():
+    start = TEXT.index('if data.get("resendVerification")')
+    block = TEXT[start:TEXT.index("new_name = clean_string", start)]
+    assert block.index("_verification_resend_refusal(") < block.index(
+        "_send_verification_email(")
+    assert "if verification_refusal is None:" in block
+    assert 'payload["verificationError"]' in TEXT
     assert '"account_email_sent",' in TEXT
 
 

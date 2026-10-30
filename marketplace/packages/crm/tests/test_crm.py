@@ -945,6 +945,34 @@ def test_a_split_csv_import_pings_start_and_finish_and_explains_skipped_rows():
         "CRM import started: one.csv", "CRM import finished: one.csv"]
 
 
+def test_a_full_crm_skips_new_import_rows_and_still_updates_known_ones():
+    runtime = Runtime()
+    call(runtime.use("POST", body={"name": "Ada", "email": "ada@example.com"}),
+         "/api/crm/acme/contacts")
+    runtime.db.executemany(
+        "INSERT INTO crm_contacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        [("filler%04d" % index, "org:acme", "acme", "", "", "", "", "", 1, 1,
+          'sealed:{"name":"x"}') for index in range(crm.MAX_CONTACTS - 1)])
+    imported = call(runtime.use("POST", body={
+        "fileName": "leads.csv",
+        "csv": "name,email,company\nAda,ada@example.com,Engines\n"
+               "Bob,bob@example.com,Looms\n",
+    }), "/api/crm/acme/contacts/import")
+    assert imported["status"] == 200
+    data = imported["data"]
+    assert (data["created"], data["updated"], data["skipped"]) == (0, 1, 1)
+    assert data["errors"] == [{
+        "row": 3, "error": "crm_full",
+        "message": "Row 3 was not added because the CRM already holds %d contacts."
+                   % crm.MAX_CONTACTS}]
+    assert runtime.pings[-1]["title"] == (
+        "CRM import finished with 1 skipped row: leads.csv")
+
+    created = call(runtime.use("POST", body={"name": "Grace"}),
+                   "/api/crm/acme/contacts")
+    assert (created["status"], created["data"]) == (409, {"error": "crm_full"})
+
+
 def test_an_abandoned_split_import_pings_failure_and_drops_its_empty_sheet():
     runtime = Runtime()
     envelope = {"id": "import-0002", "parts": 3, "rows": 250}
@@ -974,6 +1002,31 @@ def test_an_abandoned_split_import_pings_failure_and_drops_its_empty_sheet():
     assert (over["status"], over["data"]["error"]) == (413, "too_many_csv_rows")
     assert runtime.pings[-1]["title"] == "CRM import failed: huge.csv"
     assert runtime.pings[-1]["body"].startswith("The file has more than 2000 rows.")
+
+
+def test_an_import_past_the_contact_cap_skips_the_rows_that_do_not_fit():
+    runtime = Runtime()
+    call(runtime.use("GET"), "/api/crm/acme")
+    triggers = {row[0] for row in runtime.db.execute(
+        "SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert "trg_crm_contact_limit_5000" in triggers
+    assert "trg_crm_contact_limit" not in triggers
+    runtime.db.executemany(
+        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
+        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
+        "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        [("seed%028d" % index, "org:acme", "acme", "", "", "alice", "", "alice",
+          1, 1, "{}") for index in range(crm.MAX_CONTACTS - 1)])
+    result = call(runtime.use("POST", body={
+        "fileName": "late.csv",
+        "csv": "name,email\nAda,ada@example.com\nBob,bob@example.com\n",
+    }), "/api/crm/acme/contacts/import")
+    assert result["status"] == 200
+    data = result["data"]
+    assert (data["created"], data["skipped"]) == (1, 1)
+    assert data["errors"] == [{
+        "row": 3, "error": "crm_full",
+        "message": "Row 3 was not added because the CRM already holds 5000 contacts."}]
 
 
 def test_sheets_are_renamed_reordered_and_shared_within_the_organization():
@@ -1701,6 +1754,74 @@ def test_share_names_are_checked_against_accounts_when_the_host_can():
     assert call(empty.use("GET"), "/api/crm/-/shared/" + "0" * 32)["status"] == 404
 
 
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts["dave"] = "bi:dave"
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    created = call(runtime.use("POST", body={"name": "Ada Lovelace", "email": "ada@example.com"}),
+                   "/api/crm/acme/contacts")
+    assert created["status"] == 201
+    contact_id = created["data"]["contact"]["id"]
+    for path in ("/api/crm/acme", "/api/crm/acme/contacts", "/api/crm/acme/contacts/export"):
+        guest = call(runtime.use("GET", "bob"), path)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("DELETE", "bob"),
+                f"/api/crm/acme/contacts/{contact_id}")["status"] == 404
+    assert call(runtime.use("GET", "dave"), "/api/crm/acme/contacts")["status"] == 200
+    for method, path, body in (
+            ("POST", "/api/crm/acme/contacts", {"name": "Mallory"}),
+            ("PATCH", f"/api/crm/acme/contacts/{contact_id}", {"company": "x"}),
+            ("DELETE", f"/api/crm/acme/contacts/{contact_id}", {}),
+            ("POST", "/api/crm/acme/emails/send",
+             {"to": "v@example.com", "subject": "Hi", "text": "Hi"})):
+        refused = call(runtime.use(method, "dave", body), path)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
+    assert runtime.db.execute("SELECT COUNT(*) FROM crm_contacts").fetchone()[0] == 1
+
+
+def test_one_off_send_is_gated_like_outreach_and_capped_per_sender():
+    runtime = Runtime()
+    assert call(runtime.use("PUT", body={
+        "fromEmail": "hello@acme.example", "fromName": "Acme Team",
+    }), "/api/crm/acme/settings")["status"] == 200
+    phish = {"to": "victim@example.com", "subject": "Reset your password",
+             "html": "<a href=https://evil.example>reset</a>",
+             "fromEmail": "security@forkmesh.com", "fromName": "ForkMesh Security"}
+    refused = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert (refused["status"], refused["data"]["error"]) == (403, "outreach_forbidden")
+    assert runtime.mailtrap_calls == []
+
+    assert call(runtime.use("POST", body={"action": "add", "name": "charlie"}),
+                "/api/crm/acme/outreach/team")["status"] in (200, 201)
+    sent = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert sent["status"] == 201
+    assert runtime.mailtrap_calls[-1][1]["from"] == {
+        "email": "hello@acme.example", "name": "Acme Team"}
+    assert (runtime.mailtrap_calls[-1][1]["organization"],
+            runtime.mailtrap_calls[-1][1]["account"]) == ("org:acme", "bi:charlie")
+
+    chosen = call(runtime.use("POST", body=dict(
+        phish, fromEmail="founder@acme.example", fromName="Founder")),
+        "/api/crm/acme/emails/send")
+    assert chosen["status"] == 201
+    assert runtime.mailtrap_calls[-1][1]["from"] == {
+        "email": "founder@acme.example", "name": "Founder"}
+
+    for index in range(crm.OUTREACH_DAILY_LIMIT - 1):
+        runtime.db.execute(
+            "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,sender_bi,"
+            "sender_name,transport,status,external_id,created_at,sent_at,status_at,data) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"seed{index:028x}", "org:acme", "acme", "", "bi:charlie", "charlie",
+             "mailtrap", "accepted", "", runtime.now(), runtime.now(), runtime.now(),
+             "sealed:{}"))
+    calls = len(runtime.mailtrap_calls)
+    capped = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert (capped["status"], capped["data"]["error"]) == (429, "daily_limit_reached")
+    assert len(runtime.mailtrap_calls) == calls
+
+
 def _outreach_send(runtime, actor="alice", **overrides):
     body = {"to": "sponsor@example.com", "subject": "Sponsoring ForkMesh",
             "body": "Hi Sam, would Acme sponsor the relays?", "template": "sponsorship"}
@@ -1778,6 +1899,7 @@ def test_outreach_is_gated_by_role_or_roster_and_sends_from_the_org_sender():
     assert payload["from"] == {"email": "founders@acme.example", "name": "Acme Founders"}
     assert payload["to"] == [{"email": "sponsor@example.com"}]
     assert payload["category"] == "CRM outreach"
+    assert (payload["organization"], payload["account"]) == ("org:acme", "bi:charlie")
     assert "html" not in payload or not payload["html"]
     assert runtime.audits[-1][0][1] == "crm.outreach.send"
     # The recipient and subject only exist inside the sealed envelope.
@@ -2945,6 +3067,10 @@ def test_crm_activity_pings_the_member_and_the_organization_managers(monkeypatch
     assert [ping["push"] for ping in runtime.pings] == [True, True, False, False]
     assert len({ping["dedupe"] for ping in runtime.pings}) == 1
 
+    assert call(runtime.use("PUT", body={"fromEmail": "hello@acme.example"}),
+                "/api/crm/acme/settings")["status"] == 200
+    assert call(runtime.use("POST", body={"action": "add", "name": "charlie"}),
+                "/api/crm/acme/outreach/team")["status"] in (200, 201)
     runtime.pings.clear()
     sent = call(runtime.use("POST", "charlie", {
         "to": "linus@example.com", "subject": "Hello",

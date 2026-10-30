@@ -209,7 +209,7 @@ def test_issue_detail_names_the_opening_author_once():
     assert "issueActorAvatarHtml(author" not in hero
     assert "escapeHtml(author)" not in hero
     assert opening.count("issueActorAvatarHtml(author") == 1
-    assert opening.count("userNameHtml(author)") == 1
+    assert opening.count("issueCardAuthorHtml(author") == 1
 
 
 def test_issue_detail_keeps_an_empty_description_compact():
@@ -297,10 +297,14 @@ def test_subscription_can_be_set_and_reloaded_with_account_session():
     )
     assert 'action == "status"' in backend
     assert "session_authorized" in backend
-    assert '"subscribed": bool(subscription' in backend
+    assert '"subscribed": reason in ("subscribed", "owner"),' in backend
+    assert '"reason": reason,' in backend
+    assert "await _account_owns_node(env, node, owner)" in backend
     assert "async function loadWebIssueSubscription" in ISSUE_IO
     assert "loadWebIssueSubscription(repo, number)," in REPO_UI
-    assert "[parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;" in REPO_UI
+    assert "const [mutationAuthorized, subscription] = await issueAccess;" in REPO_UI
+    assert "parsed.issueSubscriptionReason = subscription?.reason" in REPO_UI
+    assert "because you own this repository." in REPO_UI
 
 
 def test_worker_accepts_only_known_qt_issue_events_and_matches_agent_signing():
@@ -333,24 +337,27 @@ def test_web_issue_thread_draws_reactions_instead_of_activity_lines():
     # fold those events into chips; left as activity rows they would bury the
     # conversation they were meant to acknowledge.
     assert "function foldIssueReactions(events)" in REPO_UI
-    assert "function renderIssueReactionChips(tallies)" in REPO_UI
-    timeline = _slice(REPO_UI, "function renderIssueTimeline(events)",
-                      "function projectJsonPath(number)")
+    assert "function renderCommentReactionBar(subject, comment, ledger = null, extraClass = \"\")" in REPO_UI
+    timeline = _slice(REPO_UI, "function issueTimelineEntries(events)",
+                      "const ISSUE_TIMELINE_FIRST")
     assert 'if (ev.type === "reaction") continue;' in timeline
     assert 'reactionIds.has(String(ev.target))) continue;' in timeline
-    assert "_reactions: renderIssueReactionChips(" in timeline
+    assert "renderCommentReactionBar(commentReactionSubject(\"issues\", options.number)" in timeline
+    assert "reactionsByTarget.get(String(comment.id))" in timeline
     assert "eyes: " in REPO_UI
 
 
 def test_issue_timeline_draws_activity_on_a_rail_and_comments_as_cards():
     timeline = _slice(
         REPO_UI,
-        "function renderIssueTimeline(events)",
-        "function projectJsonPath(number)",
+        "function issueTimelineEntries(events)",
+        "const ISSUE_TIMELINE_FIRST",
     )
-    # Every non-comment event, mentions included, is one line on the rail.
-    assert timeline.count("renderIssueTimelineEvent(") == 2
-    assert "renderIssueTimelineComment(ev)" in timeline
+    # Every non-comment event, mentions and pull request links included, is
+    # one line on the rail.
+    assert timeline.count("renderIssueTimelineEvent(") == 3
+    assert "ISSUE_PULL_LINK_LINE.test(line)" in timeline
+    assert "html: () => renderIssueTimelineComment({" in timeline
     event = _slice(
         REPO_UI,
         "function renderIssueTimelineEvent(",
@@ -386,7 +393,9 @@ def test_issue_sidebar_edits_through_pickers_that_submit_the_metadata_form():
     for field in ("assignees", "labels", "fields", "milestone"):
         assert f'sidebarSection("' in detail and f', "{field}")' in detail
     assert 'data-repo-issue-picker-open="${picker}"' in detail
-    assert "picker && canManage" in detail
+    assert 'picker = "", editable = canManage' in detail
+    assert "picker && editable" in detail
+    assert 'sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))' in detail
 
     pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountIssueStickyHeader(container)")
     assert "form.requestSubmit();" in pickers
@@ -403,7 +412,10 @@ def test_an_issue_opens_onto_its_page_frame_instead_of_a_loading_line():
         "async function loadRepoRecordDetail(repo, kind, number, preferMirror = false)",
         "function setRepoTabCount(tab, count)",
     )
-    assert 'kind === "issues"\n        ? renderRepoIssueDetailSkeleton(repo, number)' in loader
+    assert 'kind === "issues"\n          ? renderRepoIssueDetailSkeleton(repo, number)' in loader
+    # Unless the node sent the issue drawn already (repo_ssr_issue.py).
+    assert loader.index("takeRepoFirstViewIssue(repo, number)") < loader.index(
+        "renderRepoIssueDetailSkeleton(repo, number)")
     skeleton = _slice(
         REPO_UI,
         "function renderRepoIssueDetailSkeleton(repo, number)",

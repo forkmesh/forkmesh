@@ -42,6 +42,12 @@ struct ChatPersonSheet: View {
         return account.isEmpty ? person.name : account
     }
 
+    private var messageAccount: String {
+        if !person.account.isEmpty { return person.account }
+        if let owner = group?.account, !owner.isEmpty { return owner }
+        return model?.profile?.name ?? ""
+    }
+
     private var group: MemberGroup? {
         let key: String = person.name.lowercased()
         return hub.memberGroups.first { $0.name.lowercased() == key || (!person.account.isEmpty && $0.account == person.account) }
@@ -166,7 +172,7 @@ struct ChatPersonSheet: View {
 
     private var actions: some View {
         VStack(spacing: FmSpace.x2) {
-            if !isSelf && !blocked {
+            if !isSelf && !blocked && !messageAccount.isEmpty {
                 Button(action: message) {
                     Label("Message", systemImage: "bubble.left.fill")
                         .font(.system(size: 17, weight: .semibold))
@@ -209,7 +215,8 @@ struct ChatPersonSheet: View {
 
     private func message() {
         var recipient: ChatRecipient = group.map { ChatHub.recipient(for: $0) } ?? ChatRecipient.person(person.name)
-        if recipient.account.isEmpty { recipient.account = handle.lowercased() }
+        if recipient.account.isEmpty { recipient.account = messageAccount.lowercased() }
+        if recipient.account.isEmpty { return }
         dismiss()
         onMessage(recipient)
     }
@@ -328,7 +335,7 @@ struct ChatOnlineSheet: View {
                             .fmText(.labelSmall, color: blocked ? fm.danger : (away ? fm.warning : fm.textTertiary))
                     }
                     Spacer(minLength: 0)
-                    if !group.isSelf && !visitor && !blocked {
+                    if !group.isSelf && !visitor && !blocked && !group.account.isEmpty {
                         Image(systemName: "bubble.left")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(fm.accent)
@@ -338,8 +345,9 @@ struct ChatOnlineSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(group.isSelf || visitor || blocked)
-            .accessibilityHint(group.isSelf || visitor || blocked ? "" : "Opens your direct messages with \(group.name)")
+            .disabled(group.isSelf || visitor || blocked || group.account.isEmpty)
+            .accessibilityHint(
+                group.isSelf || visitor || blocked || group.account.isEmpty ? "" : "Opens your direct messages with \(group.name)")
         }
         .padding(.vertical, FmSpace.x1)
     }

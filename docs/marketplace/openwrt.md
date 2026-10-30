@@ -228,6 +228,21 @@ signed-in account has.
   existing settings are never overwritten. If the router refuses the write,
   the message says so and asks for ksmbd-server to be removed and installed
   again, which creates the file.
+- **A share config `uci configs` leaves out is read directly**: a phone was
+  seen creating `/etc/config/ksmbd`, reading it back with `uci get ksmbd`, and
+  then still finding no `ksmbd` in `uci configs`, so the page said "ForkMesh
+  created /etc/config/ksmbd, but this sign-in cannot see it yet. Sign out and
+  sign in again." (Current rpcd's `uci configs` lists every file in
+  `/etc/config` without an ACL check, so the cause is on the router side and
+  was not pinned down.) The share config is now
+  found the way that call proved works: when `uci configs` names neither
+  `ksmbd` nor `samba4` but `ksmbd-server` / `luci-app-ksmbd` (or
+  `samba4-server` / `luci-app-samba4`) is installed, the client asks
+  `uci get` for that config and treats a successful answer as present
+  (`shareConfigCandidates`; phones in `loadSnapshot`, desktop in
+  `probeShareConfig` after `loadAdvancedConfigs`). The probe runs only while
+  a share package is installed and no share config is listed, so routers
+  without network sharing make no extra calls.
 - **Backup, restore, firmware, reset**: the same calls LuCI's System pages
   make, so LuCI's `luci-mod-system` ACL allows them: `cgi-backup`;
   `cgi-upload` to `/tmp/backup.tar.gz` then `sysupgrade --restore-backup` and

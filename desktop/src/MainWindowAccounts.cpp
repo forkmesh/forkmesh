@@ -81,6 +81,8 @@ void MainWindow::logout()
     // account-scoped worker APIs see, so leaving it alive would keep this
     // machine "signed in" on the site after a desktop logout.
     revokeAccountSession();
+    if (m_officeChannelMirror)
+        m_officeChannelMirror->stop();
     m_accountSessionCache.clear();
     setDesktopCapability(m_accountName, false);
     m_accountAuthenticated = false;
@@ -90,8 +92,8 @@ void MainWindow::logout()
     updateAdminCrownBadge();
     m_seenPendingUsers.clear();
     // Drop the cached catalog: the next account pulls its own on first open.
-    m_organizationTasksLoaded = false;
-    m_organizationTasksStartupPayload = QJsonObject();
+    if (m_organizationTaskStore)
+        m_organizationTaskStore->reset();
     m_adminPendingPolled = false;
     m_accountName.clear();
     m_accountEmail.clear();
@@ -350,14 +352,20 @@ void saveRecentUserInstance(const QString &accountName,
         AccountCapability::normalizedAccount(accountName);
     if (!isValidNodeName(account) || serverUrl.trimmed().isEmpty())
         return;
-    QJsonObject instances = recentUserInstances();
-    instances.insert(account, accountInstanceUrl(serverUrl));
-    QSettings().setValue(
-        kRecentUserInstancesSetting,
-        QJsonDocument(instances).toJson(QJsonDocument::Compact));
-
     const QString instanceUrl = accountInstanceUrl(serverUrl);
+    QJsonObject instances = recentUserInstances();
+    if (instances.value(account).toString() != instanceUrl) {
+        instances.insert(account, instanceUrl);
+        QSettings().setValue(
+            kRecentUserInstancesSetting,
+            QJsonDocument(instances).toJson(QJsonDocument::Compact));
+    }
+
     QList<RecentUserIdentity> identities = recentUserIdentities();
+    if (!identities.isEmpty() && identities.first().account == account &&
+        identities.first().instanceUrl == instanceUrl &&
+        identities.first().instanceId == instanceId.trimmed())
+        return;
     identities.removeIf(
         [&account, &instanceId,
          &instanceUrl](const RecentUserIdentity &candidate) {
@@ -600,14 +608,62 @@ bool MainWindow::restoreCachedAccountSession(const QString &accountName,
         return false;
     }
 
+    const QString localKey = m_profileIdentity.publicKey().trimmed();
+    const QString primaryKey =
+        payload.value(QStringLiteral("pubkey")).toString();
+    const QStringList accountDesktopKeys =
+        session.desktopCapable && !localKey.isEmpty() &&
+                primaryKey.trimmed() != localKey
+            ? accountDesktopKeysForSession(session)
+            : QStringList();
     const bool ownsDesktopKey =
         forkmesh::accounts::SessionCache::mayRestoreDesktopCapability(
-            session, m_profileIdentity.publicKey(),
-            payload.value(QStringLiteral("pubkey")).toString());
+            session, localKey, primaryKey, accountDesktopKeys);
     activateAccountSession(payload, account, ownsDesktopKey,
                            canonicalInstance);
     session.clearSensitive();
     return true;
+}
+
+QStringList MainWindow::accountDesktopKeysForSession(
+    const forkmesh::accounts::CachedSession &session)
+{
+    QStringList keys;
+    const QUrl url = accountApiUrlForInstance(session.instanceUrl,
+                                              QStringLiteral("desktops"));
+    if (!m_networkAccess || session.token.isEmpty() ||
+        !forkmesh::accounts::SessionCache::maySendTo(session, url)) {
+        return keys;
+    }
+    QNetworkRequest request(url);
+    request.setTransferTimeout(15000);
+    request.setRawHeader(
+        QByteArrayLiteral("Authorization"),
+        QByteArrayLiteral("Bearer ") + session.token.toUtf8());
+    QNetworkReply *reply = m_networkAccess->get(request);
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool ok = reply->error() == QNetworkReply::NoError && status == 200;
+    const QJsonObject payload =
+        QJsonDocument::fromJson(reply->read(256 * 1024)).object();
+    reply->deleteLater();
+    if (!ok || !payload.value(QStringLiteral("ok")).toBool() ||
+        AccountCapability::normalizedAccount(
+            payload.value(QStringLiteral("account")).toString()) !=
+            AccountCapability::normalizedAccount(session.account)) {
+        return keys;
+    }
+    for (const QJsonValue &value :
+         payload.value(QStringLiteral("desktops")).toArray()) {
+        const QString key =
+            value.toObject().value(QStringLiteral("key")).toString().trimmed();
+        if (!key.isEmpty() && !keys.contains(key))
+            keys.append(key);
+    }
+    return keys;
 }
 
 void MainWindow::clearAccountSessionMemory()
@@ -623,6 +679,8 @@ void MainWindow::isolateAccountForServerSwitch(const QString &accountName)
     // Keep other instances' sessions in the in-memory exact-origin cache, but
     // drop every active capability before selecting/restoring the destination.
     // Nothing account-scoped may remain logically active during the handoff.
+    if (m_officeChannelMirror)
+        m_officeChannelMirror->stop();
     m_accountSessionToken.fill(QChar(u'\0'));
     m_accountSessionToken.clear();
     m_accountSessionInstanceUrl.clear();
@@ -636,8 +694,8 @@ void MainWindow::isolateAccountForServerSwitch(const QString &accountName)
     m_profileLinkedNodes.clear();
     m_nodeOwnerUser.clear();
     m_seenPendingUsers.clear();
-    m_organizationTasksLoaded = false;
-    m_organizationTasksStartupPayload = QJsonObject();
+    if (m_organizationTaskStore)
+        m_organizationTaskStore->reset();
     m_adminPendingPolled = false;
     forgetOwnUserStatus();
     forgetUserActivitySync();
@@ -767,6 +825,12 @@ bool MainWindow::switchToUserAccount(const QString &accountName,
             QStringLiteral("Choose a valid ws:// or wss:// ForkMesh instance."));
         return false;
     }
+    if (std::none_of(m_servers.cbegin(), m_servers.cend(),
+                     [&targetServer](const ServerConfig &server) {
+                         return accountInstanceUrl(server.url) == targetServer;
+                     }) &&
+        refuseInstanceOfAnotherProject(targetServer))
+        return false;
 
     if (hasActiveAccountSession() &&
         AccountCapability::normalizedAccount(m_accountName) == account &&
@@ -851,10 +915,16 @@ bool MainWindow::switchToUserAccount(const QString &accountName,
     refreshRepositoryList();
     QMessageBox::information(
         this, QStringLiteral("Account switched"),
-        QStringLiteral("Signed in as %1. This instance now uses that "
-                       "account session on %2; owner-signed actions remain disabled "
-                       "when its desktop key belongs to another instance.")
-            .arg(m_accountName, serverHost(targetServer)));
+        hasOwnerSigningCapability()
+            ? QStringLiteral("Signed in as %1 on %2. This desktop is one of "
+                             "the account's desktops, so owner-signed actions "
+                             "work here too.")
+                  .arg(m_accountName, serverHost(targetServer))
+            : QStringLiteral("Signed in as %1 on %2. Owner-signed actions "
+                             "stay off on this desktop until you sign in to "
+                             "the account again from here, which adds this "
+                             "desktop's key to the account.")
+                  .arg(m_accountName, serverHost(targetServer)));
     return true;
 }
 
@@ -946,10 +1016,40 @@ void MainWindow::showUserAccountMenu()
         menu.addAction(QStringLiteral("Sign in on another instance…"));
     QAction *logoutAction = menu.addAction(QStringLiteral("Log out"));
 
-    QAction *chosen = menu.exec(topBarMenuAnchor(m_accountSwitcherButton));
+    QAction *settingsAction = nullptr;
+    QAction *offlineAction = nullptr;
+    if (Theme::isNext()) {
+        QAction *first = menu.actions().value(1);
+        settingsAction = new QAction(QStringLiteral("Settings"), &menu);
+        offlineAction = new QAction(QStringLiteral("Offline mode"), &menu);
+        offlineAction->setCheckable(true);
+        offlineAction->setChecked(m_offlineMode);
+        auto *version = new QAction(
+            QStringLiteral("ForkMesh %1").arg(QCoreApplication::applicationVersion()),
+            &menu);
+        version->setEnabled(false);
+        menu.insertSeparator(first);
+        menu.insertAction(first, settingsAction);
+        menu.insertAction(first, offlineAction);
+        menu.insertAction(first, version);
+    }
+    QPoint anchor = topBarMenuAnchor(m_accountSwitcherButton);
+    if (property("accountMenuAt").isValid())
+        anchor = property("accountMenuAt").toPoint();
+    if (property("accountMenuAbove").isValid())
+        anchor = property("accountMenuAbove").toPoint() -
+                 QPoint(0, menu.sizeHint().height());
+    setProperty("accountMenuAt", QVariant());
+    setProperty("accountMenuAbove", QVariant());
+    QAction *chosen = menu.exec(anchor);
     if (!chosen)
         return;
-    if (awayAction && chosen == awayAction) {
+    if (settingsAction && chosen == settingsAction) {
+        if (m_settingsNavButton)
+            m_settingsNavButton->click();
+    } else if (offlineAction && chosen == offlineAction) {
+        setOfflineMode(!m_offlineMode);
+    } else if (awayAction && chosen == awayAction) {
         const bool away = !(m_ownUserStatusKnown && m_ownUserStatus.away);
         postOwnUserStatus(
             QJsonObject{{QStringLiteral("away"), away}},
@@ -1365,8 +1465,12 @@ void MainWindow::loginToUserAccount()
         dialog.setWindowTitle(QStringLiteral("Sign in to a ForkMesh instance"));
         auto *form = new QFormLayout(&dialog);
         auto *intro = new QLabel(
-            QStringLiteral("Use an account from this or another ForkMesh instance. "
-                           "The instance is saved with the account for quick switching."));
+            QStringLiteral("Use the same account you use on the ForkMesh website. "
+                           "Your username is the name on your profile, not your email; "
+                           "change it below if the suggested one is not yours. The "
+                           "instance is the ForkMesh server that holds your account: "
+                           "leave it as it is unless someone gave you a different one. "
+                           "Continue only signs you in; it does not create anything."));
         intro->setWordWrap(true);
         form->addRow(intro);
         auto *accountEdit = new QLineEdit(suggested, &dialog);

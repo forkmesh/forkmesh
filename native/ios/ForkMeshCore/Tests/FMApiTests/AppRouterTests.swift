@@ -20,6 +20,17 @@ final class AppRouterTests: XCTestCase {
         XCTAssertEqual(router.screenTitle, "Inbox > forkmesh/app > Shortcuts")
     }
 
+    @MainActor func testACoverNamesTheScreenInsteadOfTheTabUnderIt() async {
+        let router = AppRouter()
+        router.cover = "Launch"
+        XCTAssertEqual(router.screenTitle, "Launch")
+        router.cover = "Home"
+        router.setPath([.repo(repo, section: nil)], for: .agents)
+        XCTAssertEqual(router.screenTitle, "Home")
+        router.cover = nil
+        XCTAssertEqual(router.screenTitle, "Agents > forkmesh/app")
+    }
+
     @MainActor func testReselectPopsThenScrollsToTop() async {
         let router = AppRouter()
         router.select(.code)
@@ -236,6 +247,17 @@ final class AppRouterTests: XCTestCase {
         router.open(.agent(id: "1"))
         XCTAssertTrue(router.back())
         XCTAssertTrue(router.currentPath.isEmpty)
+    }
+
+    @MainActor func testRemoveDropsARouteFromEveryTabAndKeepsTheRest() async {
+        let router = AppRouter()
+        router.setPath([.videoMixDjStudio, .repo(repo, section: nil)], for: .agents)
+        router.setPath([.shortcuts(nil), .videoMixDjStudio], for: .inbox)
+        router.focus(.inbox)
+        router.remove(.videoMixDjStudio)
+        XCTAssertEqual(router.path(for: .agents), [.repo(repo, section: nil)])
+        XCTAssertEqual(router.path(for: .inbox), [.shortcuts(nil)])
+        XCTAssertEqual(router.selectedTab, .inbox)
     }
 
     @MainActor func testInterceptTakesRoutes() async {

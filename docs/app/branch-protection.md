@@ -9,7 +9,7 @@ A repository can protect its default branch. The default branch then changes
 only by merging a pull request that an organization owner or admin approved,
 and that approver must not be the author. The rule exists for repositories
 whose default branch deploys somewhere, for example an instance that builds
-itself from its own repository.
+itself from its own repository ([../INSTANCES.md](../INSTANCES.md#building-the-instance-from-its-own-repository)).
 Before this, ForkMesh had no protected branches: pull rules
 ([../server/pull-rules.md](../server/pull-rules.md)) check a pull request's
 content, the node operator policy blocks only deletes and force pushes, and an
@@ -36,6 +36,10 @@ to `issues`, `pulls` and `discussions` (`REPO_FEATURE_DEFAULTS` in
   repository no longer needs the owner to have a desktop key
   (`settings_only`): the `account_required` check exists because About text
   is delivered to the owner's desktop, which hosted repositories do not have.
+  An organization's repository never needs one, for any About save
+  (description, logo, banner): an organization has no node key, so every
+  save answered `account_required` even for its owner. The repository admin
+  check decides who may edit (`app/tests/test_org_repo_admin.py`).
 - **Operator:** `python -m forkmesh_host instance-repo ...
   --protect-default-branch | --no-protect-default-branch` and
   `--actions on|off` ([../INSTANCES.md](../INSTANCES.md#importing-a-repository-on-the-server-instance_repopy)).
@@ -58,7 +62,8 @@ review file that names an owner as the approver.
 | `git push` over HTTPS, web file edits, docs edits (`_https_mirror_push_send`) | the app signs the protected refs into the receive-pack target (`?protect=refs/heads/main refs/heads/forkmesh/`); the gateway (`mirror_gateway.enforce_protected_refs`) refuses any command on them. The query is part of the signed capability, so a client cannot drop it. |
 | `git push` over SSH (`ssh_gateway_routes`) | the authorize call does not see refs, so receive-pack is refused for the whole repository; push over HTTPS |
 | Branches page create/update/delete/merge (`repository_branch_ops_handler`, `agent_branches.core_branch_op`) | refused when the moved branch, or a merge's base, is protected; a resumed core op is checked again because it carries its own base |
-| Agent branch merge (`agent_branches._merge`) | refused when the merge base is protected |
+| Agent branch merge (`agent_branches._merge`) | refused when the merge base is protected; only owners may merge at all (`merge_allowed`) |
+| Pull request Update branch (`repository_pull_merge_handler`, mutation `update`) | refused when the pull's head branch is protected |
 | Pull request merge (`repository_pull_merge_handler`) | `merge_refusal` before the job is queued (below) |
 | Actions (`runner_actions.lease`) | a job on a protected branch gets no `actions-push` grant; it still runs, with its token and secrets, but cannot push |
 | Operator `instance-repo` | not checked: the root shell on the server is the authority, and it never counts as a merge |
@@ -85,8 +90,11 @@ check in the app:
     pull's signing key) nor its `authorName`;
   - a `changes_requested` from an owner or admin blocks until approved or
     dismissed.
-- The merging account must still be an organization owner, and the node's
-  own review gate, required checks and pull rules still apply.
+- The merging account must be an owner of the organization (for an
+  organization's repository) or the repository's owner (for a personal
+  repository, `_repository_owner_can_merge_repo`), and the node's own review
+  gate, required checks, pull rules and exact-commit mergeability check
+  still apply.
 
 An approval is not tied to the head commit: new commits pushed to the pull
 request's branch after an approval keep it. The owner who merges sees the

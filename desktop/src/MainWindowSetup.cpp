@@ -16,10 +16,13 @@
 #include "MainWindowNextAccess.h"
 #include "NetworkReplyError.h"
 #include "NodeEventSocket.h"
+#include "OwnerOnlyFile.h"
 #include "SafeDelete.h"
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
 #include "PrivateMirrorStore.h"
+#include "ReleaseTrust.h"
+#include "RestartTiming.h"
 #include "SourceTreeWatch.h"
 #include "UserAvatarStore.h"
 #include "SettingsWrite.h"
@@ -29,6 +32,7 @@
 #include <QItemSelectionModel>
 #include <QNetworkInformation>
 #include <QProcessEnvironment>
+#include <QThreadPool>
 #include <QtConcurrent/QtConcurrentRun>
 
 #ifndef Q_OS_WIN
@@ -131,7 +135,7 @@ void MainWindow::loadCachedAvatars()
         refreshVisibleRowAvatars();
         refreshChatMembers();
         refreshIssueAvatars();
-        refreshOrganizationTaskPeopleFaces();
+        notifyPackagesAccountPicturesChanged();
     });
     watcher->setFuture(QtConcurrent::run([dir] {
         const forkmesh::BackgroundScope activity(
@@ -158,14 +162,29 @@ void MainWindow::loadCachedAvatars()
     }));
 }
 
-void MainWindow::saveChatHistory()
-{
-    const QString path = chatHistoryPath();
-    if (path.isEmpty())
-        return;
+namespace {
 
+QThreadPool &chatHistoryWriter()
+{
+    static QThreadPool *pool = [] {
+        auto *made = new QThreadPool;
+        made->setMaxThreadCount(1);
+        if (QCoreApplication *app = QCoreApplication::instance())
+            QObject::connect(app, &QCoreApplication::aboutToQuit, app,
+                             [made] { made->waitForDone(); });
+        return made;
+    }();
+    return *pool;
+}
+
+QByteArray chatHistoryBytes(const QHash<QString, QList<ChatMessage>> &history,
+                            const QStringList &openDmPeers,
+                            const QHash<QString, QString> &dmNameMap,
+                            const QHash<QString, int> &unreadCounts,
+                            const QString &current)
+{
     QJsonObject conversations;
-    for (auto it = m_history.constBegin(); it != m_history.constEnd(); ++it) {
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         QJsonArray arr;
         const QList<ChatMessage> &msgs = it.value();
         const int first = std::max(0, int(msgs.size()) - 1000);
@@ -203,29 +222,44 @@ void MainWindow::saveChatHistory()
     }
 
     QJsonArray openDms;
-    for (const QString &peer : std::as_const(m_openDms))
+    for (const QString &peer : openDmPeers)
         openDms.append(peer);
     QJsonObject dmNames;
-    for (auto it = m_dmNames.constBegin(); it != m_dmNames.constEnd(); ++it)
+    for (auto it = dmNameMap.constBegin(); it != dmNameMap.constEnd(); ++it)
         dmNames.insert(it.key(), it.value());
 
     QJsonObject unreadObj;
-    for (auto it = m_unreadCounts.constBegin(); it != m_unreadCounts.constEnd(); ++it)
+    for (auto it = unreadCounts.constBegin(); it != unreadCounts.constEnd(); ++it)
         unreadObj.insert(it.key(), it.value());
 
-    const QJsonObject root{{"current", m_currentConversation},
+    const QJsonObject root{{"current", current},
                            {"openDms", openDms},
                            {"dmNames", dmNames},
                            {"unread", unreadObj},
                            {"conversations", conversations}};
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile file(path);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
+} // namespace
+
+void MainWindow::saveChatHistory()
+{
+    const QString path = chatHistoryPath();
+    if (path.isEmpty())
+        return;
+    chatHistoryWriter().start(
+        [path, history = m_history, openDms = m_openDms, dmNames = m_dmNames,
+         unread = m_unreadCounts, current = m_currentConversation] {
+            forkmesh::ownerfile::write(
+                path, chatHistoryBytes(history, openDms, dmNames, unread, current));
+        });
+    if (m_closingDown)
+        chatHistoryWriter().waitForDone();
 }
 
 void MainWindow::loadChatHistory()
 {
+    chatHistoryWriter().waitForDone();
     QString path = chatHistoryPath();
     bool migrated = false;
     if (!path.isEmpty() && !QFileInfo::exists(path)) {
@@ -242,7 +276,11 @@ void MainWindow::loadChatHistory()
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return;
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    int purged = 0;
+    const QJsonObject root = forkmesh::relayrules::purgedChatHistory(
+        QJsonDocument::fromJson(file.readAll()).object(), m_relayPrivatePurged, &purged);
+    if (purged > 0)
+        migrated = true;
 
     const qint64 loadedAtMs = QDateTime::currentMSecsSinceEpoch();
 
@@ -1417,6 +1455,24 @@ void MainWindow::testSetRunnersPayload(const QJsonObject &payload)
     setRunnerAttention(forkmesh::runners::runnerAttentionFromRunners(m_runners));
 }
 
+void MainWindow::testSetDirectoryInstances(const QJsonArray &instances)
+{
+    m_directoryInstances = instances;
+    m_directoryInstancesFetchedMs = QDateTime::currentMSecsSinceEpoch();
+}
+
+QStringList MainWindow::testNodeDirectoryVisualCaptions() const
+{
+    QStringList captions;
+    if (!m_nodesTable)
+        return captions;
+    const QHeaderView *header = m_nodesTable->horizontalHeader();
+    for (int visual = 0; visual < header->count(); ++visual)
+        if (QTableWidgetItem *item = m_nodesTable->horizontalHeaderItem(header->logicalIndex(visual)))
+            captions.append(item->text());
+    return captions;
+}
+
 QStringList MainWindow::testRelayRowNames() const
 {
     QStringList names;
@@ -2295,8 +2351,10 @@ void MainWindow::startSession()
     m_history.clear();
     m_historyIds.clear();
     m_visibleRows.clear();
+    m_transcriptRenderBatches = 1;
     m_reactions.clear();
     m_avatars.clear();
+    m_chatDirectoryAvatarDigests.clear();
     m_dmNames.clear();
     m_openDms.clear();
     m_unread.clear();
@@ -2314,12 +2372,17 @@ void MainWindow::startSession()
     forkmesh::settings::put(QSettings(), kRoomNameSetting, kDefaultRoomName);
     persistEditsToActiveServer();
     const QUrl url(fullServerUrl);
-    auto *server = new ServerNode(chatDisplayName(), machineNodeName(),
+    auto *server = new ServerNode(chatDisplayName(), sharedNodeName(),
                                   nodeOwnerDisplayName(),
                                   m_profileIdentity.publicKey(), url,
                                   kDefaultRoomName,
-                                  payoutAddress,
+                                  sharedTipAddress(),
                                   m_roomPassphrase, this);
+    server->setNodeSigner([this](const QByteArray &message) {
+        return forkmesh::chatv3::fromB64u(m_profileIdentity.signData(message));
+    });
+    ensureChatTrust();
+    server->setOwnerVerifier(m_chatNodeOwners);
     server->setConnectionAuthorizer([this](const QUrl &endpoint) {
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
@@ -2371,7 +2434,7 @@ void MainWindow::startSession()
                   m_profileIdentity.shortPublicKey() + " (" +
                   QString::number(profileBytes.toUtf8().size()) + " bytes).");
         m_stack->setCurrentIndex(1);
-        showSection(0); // land on the Home overview after connecting
+        showSection(startupLandingSection());
         updateBreadcrumb();
         updateSolanaNotice();
         loadCachedAvatars();
@@ -3077,13 +3140,17 @@ void MainWindow::fetchRoomPassphrase()
 void MainWindow::startOfficeChannelMirror()
 {
     const QString node = accountOwner();
-    if (node.isEmpty() || !hasOwnerSigningCapability(node) ||
-        !m_profileIdentity.isValid())
+    if (node.isEmpty() || !m_profileIdentity.isValid() ||
+        (!hasOwnerSigningCapability(node) &&
+         accountSessionTokenForUrl(catalogApiUrl()).isEmpty()))
         return;
     if (!m_officeChannelMirror) {
         m_officeChannelMirror = new OfficeChannelMirror(m_networkAccess, this);
         m_officeChannelMirror->setSigner([this](const QByteArray &canonical) {
             return m_profileIdentity.signData(canonical);
+        });
+        m_officeChannelMirror->setSessionProvider([this](const QUrl &url) {
+            return accountSessionTokenForUrl(url);
         });
         m_officeChannelMirror->setConnectionAuthorizer(
             [this](const QUrl &endpoint) {
@@ -3304,28 +3371,66 @@ void MainWindow::startOfficeChannelMirror()
                 });
     }
     m_officeChannelMirror->setApiBase(catalogApiUrl());
+    ensureChatTrust();
+    m_officeChannelMirror->setOwnerVerifier(m_chatNodeOwners);
     m_officeChannelMirror->setIdentity(node, m_profileIdentity.publicKey(),
                                        chatDisplayName());
     m_officeChannelMirror->start();
+    syncChatBlocks();
     wireDirectMesh();
     refreshDirectFocus();
 }
 
+void MainWindow::stopLocalMesh()
+{
+    if (!m_localMesh)
+        return;
+    LocalMeshNode *mesh = m_localMesh;
+    m_localMesh = nullptr;
+    QObject::disconnect(mesh, nullptr, this, nullptr);
+    mesh->stop();
+    mesh->deleteLater();
+    setChannels(m_channels);
+    refreshMeshDebugBar();
+    refreshLocalControlTab();
+}
+
 void MainWindow::startLocalMesh()
 {
+    if (!corePackageServiceRunning(QStringLiteral("local-mesh")))
+        return;
     if (m_localMesh) {
         m_localMesh->setUserName(chatDisplayName());
-        m_localMesh->setNodeIdentity(machineNodeName(), nodeOwnerDisplayName());
+        m_localMesh->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());
         m_localMesh->announceNow();
         startLocalControl();
+        return;
+    }
+    if (m_localMeshKeyState != 2) {
+        if (m_localMeshKeyState == 1)
+            return;
+        m_localMeshKeyState = 1;
+        QThread *warm = QThread::create([room = forkmesh::localmesh::roomName()] {
+            RoomCrypto::warmDefaultKey(room);
+        });
+        connect(warm, &QThread::finished, warm, &QObject::deleteLater);
+        connect(warm, &QThread::finished, this, [this] {
+            m_localMeshKeyState = 2;
+            if (!m_closingDown)
+                startLocalMesh();
+        });
+        warm->start();
         return;
     }
     // Deliberately not gated on offline mode, an account, or a sign-in: the
     // mesh is local-only, and offline mode is switched on automatically when
     // the internet drops — which is exactly when this room matters.
-    m_localMesh = new LocalMeshNode(chatDisplayName(), machineNodeName(),
+    m_localMesh = new LocalMeshNode(chatDisplayName(), sharedNodeName(),
                                     nodeOwnerDisplayName(),
                                     m_profileIdentity.publicKey(), this);
+    m_localMesh->setNodeSigner([this](const QByteArray &message) {
+        return forkmesh::chatv3::fromB64u(m_profileIdentity.signData(message));
+    });
     // The room's history, and the messages still waiting for a device, live
     // with this identity, so a restart neither loses nor strands them.
     m_localMesh->setHistoryFile(
@@ -3337,7 +3442,6 @@ void MainWindow::startLocalMesh()
                 .toHex()
                 .left(16)) +
         QStringLiteral(".json"));
-    m_localMesh->setControlNode(m_profileIdentity.publicKey());
     connect(m_localMesh, &LocalMeshNode::messageArrived, this,
             &MainWindow::onMessage);
     connect(m_localMesh, &LocalMeshNode::queuedChanged, this,
@@ -4520,6 +4624,20 @@ QString MainWindow::machineNodeName() const
     return accountOwner();
 }
 
+QString MainWindow::sharedNodeName() const
+{
+    return accountNameFromInput(QSettings().value(kMachineNodeNameSetting).toString(),
+                                QString());
+}
+
+QString MainWindow::sharedTipAddress() const
+{
+    if (!QSettings().value(kShareTipAddressSetting, false).toBool())
+        return QString();
+    const QString address = savedSolanaAddress().trimmed();
+    return forkmesh::control::isValidSolanaPublicAddress(address) ? address : QString();
+}
+
 void MainWindow::saveMachineNodeName(const QString &name)
 {
     const QString clean = accountNameFromInput(name, QString());
@@ -4543,7 +4661,9 @@ void MainWindow::updateChatIdentity()
         m_backend->setUserName(name);
         m_lastChatDisplayName = name;
     }
-    m_backend->setNodeIdentity(machineNodeName(), nodeOwnerDisplayName());
+    m_backend->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());
+    if (auto *server = qobject_cast<ServerNode *>(m_backend))
+        server->setTipAddress(sharedTipAddress());
     const QByteArray avatar = effectiveUserAvatar();
     if (avatar != m_lastChatAvatar) {
         m_backend->setAvatar(avatar);
@@ -5127,6 +5247,7 @@ void MainWindow::activateAccountSession(const QJsonObject &payload,
     m_accountPackagesReadMs = 0;
     QTimer::singleShot(0, this, [this] { refreshAccountPackages(true); });
     QTimer::singleShot(0, this, [this] { preparePackagePages(); });
+    QTimer::singleShot(0, this, [this] { startOfficeChannelMirror(); });
 }
 
 bool MainWindow::verifyTotpLogin(const QString &email,
@@ -5137,10 +5258,8 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         *fatal = false;
     const QString requestedAccount =
         AccountCapability::normalizedAccount(accountName);
-    QJsonObject loginRequest{{"nodeName", requestedAccount},
-                             {"email", email},
-                             {"password", password},
-                             {"totp", totp}};
+    QJsonObject loginRequest =
+        AccountCapability::passwordLoginRequest(email, password, totp);
     const QString publicKey = m_profileIdentity.publicKey();
     if (!publicKey.isEmpty()) {
         const QString deviceTs =
@@ -5195,9 +5314,10 @@ bool MainWindow::verifyTotpLogin(const QString &email,
                           "The selected instance returned an invalid account "
                           "session. No account was switched.")
                     : QStringLiteral(
-                          "Those credentials belong to @%1, not the selected "
-                          "@%2 account. Choose @%1 in the instance dialog, or "
-                          "enter credentials for @%2.")
+                          "That email and password are correct, but they "
+                          "belong to the account @%1, not @%2. Go back, "
+                          "enter %1 as your ForkMesh username, and log in "
+                          "again.")
                           .arg(returnedAccount, requestedAccount);
             if (!forkmesh::ui::NextAccess::accountNotice(
                     *this, QStringLiteral("Log in"), rejectedText, true)) {
@@ -5239,10 +5359,7 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         int webStatus = 0;
         const QJsonObject webResp = postAccountSyncForInstance(
             loginInstance, QStringLiteral("login"),
-            QJsonObject{{"nodeName", requestedAccount},
-                        {"email", email},
-                        {"password", password},
-                        {"totp", totp}},
+            AccountCapability::passwordLoginRequest(email, password, totp),
             &webStatus);
         if (webStatus == 200 && webResp.value("ok").toBool()) {
             if (!accountLoginResponseAccepted(requestedAccount, webResp)) {
@@ -5287,10 +5404,14 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         err == "bad_totp"
             ? "Incorrect authenticator code."
         : err == "invalid_credentials"
-            ? "Incorrect email or password."
+            ? AccountCapability::incorrectPasswordMessage(
+                  accountApiUrlForInstance(loginInstance,
+                                           QStringLiteral("login"))
+                      .host())
         : err == "too_many_attempts"
-            ? "Too many failed attempts. Wait a few minutes "
-              "and try again."
+            ? AccountCapability::loginLockoutMessage(
+                  qint64(resp.value(QStringLiteral("retryAfterMs"))
+                             .toDouble()))
         : err == "pubkey_mismatch"
             ? "This account is already bound to another "
               "desktop key, and password-only fallback also "
@@ -5330,11 +5451,16 @@ bool MainWindow::runLoginFlow(const QString &accountName)
     QDialog dialog(this);
     dialog.setWindowTitle("Log in to " + accountName);
     auto *form = new QFormLayout(&dialog);
-    form->addRow(new QLabel("Log in with your email and password to join the network."));
+    auto *intro = new QLabel("Use the email and password you use on the "
+                             "ForkMesh website. There is no separate desktop "
+                             "password.");
+    intro->setWordWrap(true);
+    form->addRow(intro);
     auto *emailEdit = new QLineEdit;
     emailEdit->setPlaceholderText("you@example.com");
     auto *passEdit = new QLineEdit;
     passEdit->setEchoMode(QLineEdit::Password);
+    forkmesh::ui::kit::addPasswordReveal(passEdit);
     auto *totpEdit = new QLineEdit;
     totpEdit->setPlaceholderText("6-digit code (only if you enabled 2FA)");
     totpEdit->setMaxLength(6);
@@ -5810,12 +5936,17 @@ void MainWindow::flushFooterLogLines()
 {
     if (m_footerLogFlushTimer)
         m_footerLogFlushTimer->stop();
-    const auto appendLines = [this](QTextEdit *view, const QStringList &lines,
+    const auto appendLines = [this](QTextEdit *view, QStringList lines,
                                     int keep, int slack) {
         QTextDocument *doc = view->document();
         QTextCursor batch(doc);
         batch.beginEditBlock();
-        for (const QString &clean : lines) {
+        if (keep > 0 && lines.size() >= keep) {
+            lines = lines.mid(lines.size() - keep);
+            batch.select(QTextCursor::Document);
+            batch.removeSelectedText();
+        }
+        for (const QString &clean : std::as_const(lines)) {
             view->append(footerLogLineHtml(clean, view));
             if (QTextBlock last = doc->lastBlock(); last.isValid())
                 last.setUserData(new FooterLogLineData(clean));
@@ -6192,6 +6323,24 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
             m_buildButton->setEnabled(true);
         return;
     }
+    const QString cacheHome =
+        QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation);
+    QMap<QString, QString> buildEnv =
+        asUser.isEmpty()
+            ? forkmesh::restarttiming::ccacheEnvironment(
+                  qEnvironmentVariable("CCACHE_DIR"),
+                  forkmesh::fastdisk::ccacheDir(forkmesh::fastdisk::activeRoot()),
+                  cacheHome, freeBytesForPath(cacheHome))
+            : QMap<QString, QString>();
+    if (buildEnv.contains(QStringLiteral("CCACHE_DIR"))) {
+        QDir().mkpath(buildEnv.value(QStringLiteral("CCACHE_DIR")));
+        logRestart(QStringLiteral("compile cache: %1 (up to %2)")
+                       .arg(buildEnv.value(QStringLiteral("CCACHE_DIR")),
+                            buildEnv.value(QStringLiteral("CCACHE_MAXSIZE"))));
+    }
+    const QString cacheStats = scratchDir + QStringLiteral("/ccache-stats.log");
+    buildEnv.insert(QStringLiteral("TMPDIR"), scratchDir);
+    buildEnv.insert(QStringLiteral("CCACHE_STATSLOG"), cacheStats);
     // The build reads the checkout this app keeps merging into. A session
     // that finishes while the compiler runs lands its branch here, and a
     // header changed between the precompiled header and a source that uses it
@@ -6202,10 +6351,12 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
     // that finished on an unchanged tree installs. Bounded, so a tree that
     // will not sit still cannot keep the restart spinning forever.
     auto build = std::make_shared<std::function<void(int)>>();
+    auto compiled = std::make_shared<QStringList>();
     // Held weakly by its own body: the in-flight step callbacks own the strong
     // references, so the chain frees itself once the restart ends either way.
     std::weak_ptr<std::function<void(int)>> weakBuild = build;
-    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild](int pass) {
+    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild,
+              compiled, buildEnv, cacheStats](int pass) {
         constexpr int kMaxBuildPasses = 3;
         auto build = weakBuild.lock();
         if (!build)
@@ -6230,7 +6381,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 return head;
             },
             [this, clientDir, buildDir, scratchDir, appPath, build, pass,
-             jobs](QString headBefore) {
+             jobs, compiled, buildEnv, cacheStats](QString headBefore) {
                 logRestart(QStringLiteral("build pass %1: %2 parallel jobs, HEAD %3")
                                .arg(pass)
                                .arg(jobs)
@@ -6239,8 +6390,16 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 const int logStart =
                     m_updateLog ? m_updateLog->document()->characterCount() : 0;
                 auto settle = [this, clientDir, buildDir, appPath, build, pass,
-                               headBefore, logStart](bool ok, const QString &changed,
-                                                     const QString &headAfter) {
+                               headBefore, logStart, compiled,
+                               cacheStats](bool ok, const QString &changed,
+                                         const QString &headAfter) {
+                    const QString output =
+                        m_updateLog ? m_updateLog->toPlainText().mid(logStart)
+                                    : QString();
+                    for (const QString &source :
+                         forkmesh::restarttiming::compiledSources(output))
+                        if (!compiled->contains(source))
+                            compiled->append(source);
                     if (!changed.isEmpty()) {
                         const QString note =
                             QStringLiteral("the sources changed while build pass %1 ran "
@@ -6262,9 +6421,6 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                                               : QStringLiteral("; out of passes")));
                     }
                     if (!ok) {
-                        const QString output =
-                            m_updateLog ? m_updateLog->toPlainText().mid(logStart)
-                                        : QString();
                         stopRefreshSpin();
                         stopRestartSpin();
                         // Out of passes on a tree that kept moving: the error is most
@@ -6287,6 +6443,23 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                             m_buildButton->setEnabled(true);
                         return;
                     }
+                    QFile statsFile(cacheStats);
+                    const QString stats =
+                        statsFile.open(QIODevice::ReadOnly | QIODevice::Text)
+                            ? QString::fromUtf8(statsFile.readAll())
+                            : QString();
+                    const QString summary =
+                        forkmesh::restarttiming::withCcacheSummary(
+                            forkmesh::restarttiming::rebuiltSummary(*compiled),
+                            forkmesh::restarttiming::ccacheCounts(stats));
+                    logRestart(summary);
+                    appendUpdateLog(QStringLiteral("\n==> %1\n").arg(summary));
+                    if (compiled->size() > 1)
+                        appendUpdateLog(QStringLiteral("    %1\n").arg(
+                            compiled->join(QStringLiteral("\n    "))));
+                    logSystem(QStringLiteral("Rebuild & restart: %1").arg(summary));
+                    QSettings().setValue(QStringLiteral("restartTiming/pendingSummary"),
+                                         summary);
                     buildMirrorNodeCompanion(clientDir, buildDir,
                                              [this, buildDir, appPath] {
                         const QString built = builtExecutablePath(buildDir);
@@ -6310,8 +6483,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 runUpdateStepUser("cmake",
                                   {"--build", buildDir, "-j", QString::number(jobs)},
                                   buildDir, [finished] { finished(true); },
-                                  [finished] { finished(false); },
-                                  {{QStringLiteral("TMPDIR"), scratchDir}});
+                                  [finished] { finished(false); }, buildEnv);
             });
     };
     auto configure = [this, clientDir, buildDir, buildType, configured,
@@ -6661,6 +6833,8 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     // upstream branch, where promoted metadata lands.
     const QString wantedTagCommit = tagCommit.trimmed().toLower();
     bool publishesManifests = false;
+    QString rejectedBecause;
+    QString verifiedTagCommit;
     auto manifestForTag = [&](const QString &revision) -> QJsonObject {
         QByteArray out;
         if (!runGitCapture(clientDir,
@@ -6685,11 +6859,36 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
                             wantedTagCommit},
                            nullptr, nullptr))
             return {};
-        return candidate;
+        QByteArray signature;
+        runGitCapture(clientDir,
+                      {QStringLiteral("show"),
+                       revision + QStringLiteral(
+                                      ":.forkmesh/releases/latest/release.json.sig")},
+                      &signature, nullptr);
+        const forkmesh::releasetrust::Verdict verdict =
+            forkmesh::releasetrust::checkManifest(
+                out, signature, tag, QStringLiteral(FORKMESH_VERSION));
+        if (!verdict.ok) {
+            rejectedBecause = verdict.reason;
+            return {};
+        }
+        verifiedTagCommit = verdict.tagCommit;
+        return verdict.manifest;
     };
     QJsonObject manifest = manifestForTag(wantedTagCommit);
     if (manifest.isEmpty())
         manifest = manifestForTag(QStringLiteral("@{upstream}"));
+    if (manifest.isEmpty() && !rejectedBecause.isEmpty()) {
+        static QString rejectedLoggedFor;
+        if (rejectedLoggedFor != tag + rejectedBecause) {
+            rejectedLoggedFor = tag + rejectedBecause;
+            logSystem(QStringLiteral("Auto-update: release %1 was not "
+                                     "installed because %2. Nothing was "
+                                     "changed.")
+                          .arg(tag, rejectedBecause));
+        }
+        return true;
+    }
     if (manifest.isEmpty()) {
         if (publishesManifests) {
             // This repository ships signed prebuilts; the release's own set is
@@ -6705,10 +6904,16 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
             }
             return true;
         }
-        logSystem(QStringLiteral("Auto-update: release %1 publishes no "
-                                 "artifact manifest; building from source.")
-                      .arg(tag));
-        return false;
+        static QString unsignedLoggedFor;
+        if (unsignedLoggedFor != tag) {
+            unsignedLoggedFor = tag;
+            logSystem(QStringLiteral("Auto-update: release %1 publishes no "
+                                     "signed release manifest, so it is not "
+                                     "installed automatically. Use Update to "
+                                     "build it by hand.")
+                          .arg(tag));
+        }
+        return true;
     }
     static const QRegularExpression sha256Re(
         QStringLiteral("\\A[0-9a-f]{64}\\z"));
@@ -6746,9 +6951,11 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     const int slash = manifestRepo.indexOf(QLatin1Char('/'));
     if (assetHash.isEmpty() || slash <= 0) {
         logSystem(QStringLiteral("Auto-update: release %1 has no prebuilt "
-                                 "artifact for %2/%3; building from source.")
+                                 "artifact for %2/%3; building its signed "
+                                 "commit from source.")
                       .arg(tag, wantOs, wantArch));
-        return false;
+        autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
+        return true;
     }
     const QString owner = manifestRepo.left(slash);
     const QString name = manifestRepo.mid(slash + 1);
@@ -6799,7 +7006,7 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
     });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, tmp, hasher, staging, assetHash, tag, owner, name,
-             companionHash] {
+             companionHash, verifiedTagCommit] {
                 const QByteArray rest = reply->readAll();
                 tmp->write(rest);
                 hasher->addData(rest);
@@ -6814,16 +7021,16 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
                     logSystem(
                         QStringLiteral(
                             "Auto-update: artifact download for %1 failed "
-                            "(%2); falling back to a source build.")
+                            "(%2); building its signed commit from source.")
                             .arg(tag, ok ? QStringLiteral("checksum mismatch")
                                          : netError));
-                    updateRebuildRestart();
+                    autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
                     return;
                 }
                 QFile::remove(staging);
                 if (!QFile::rename(tmp->fileName(), staging)) {
                     QFile::remove(tmp->fileName());
-                    updateRebuildRestart();
+                    autoUpdateFromVerifiedSource(tag, verifiedTagCommit);
                     return;
                 }
                 installMirrorCompanionThenRelaunch(staging, tag, owner, name,
@@ -6943,10 +7150,10 @@ void MainWindow::installPrebuiltAndRelaunch(const QString &artifactPath,
         QFile::remove(staged);
         if (!QFile::copy(artifactPath, staged)) {
             logSystem(QStringLiteral("Auto-update: could not stage the %1 "
-                                     "artifact; falling back to a source "
-                                     "build.")
+                                     "artifact; nothing was changed and the "
+                                     "next check tries again.")
                           .arg(tag));
-            updateRebuildRestart();
+            stopRestartCautionFlash();
             return;
         }
     }
@@ -6957,6 +7164,77 @@ void MainWindow::installPrebuiltAndRelaunch(const QString &artifactPath,
     logRestart(QStringLiteral("prebuilt update to %1 staged").arg(tag));
     m_updateAsUser.clear();
     installAndRelaunch(staged, runningClientExecutable());
+}
+
+void MainWindow::autoUpdateFromVerifiedSource(const QString &tag,
+                                              const QString &verifiedCommit)
+{
+    const QString clientDir = runningClientDir();
+    const QString repoDir = QFileInfo(clientDir).absolutePath();
+    if (!forkmesh::releasetrust::isCommitId(verifiedCommit)
+        || !QDir(repoDir).exists(QStringLiteral(".git"))
+        || !QDir(clientDir).exists(QStringLiteral("CMakeLists.txt"))) {
+        logSystem(QStringLiteral("Auto-update: release %1 cannot be built "
+                                 "from its signed commit here; nothing was "
+                                 "changed. Use Update to update by hand.")
+                      .arg(tag));
+        return;
+    }
+    startRestartCautionFlash();
+    beginRestartLog();
+    showUpdateLog();
+    logRestart(QStringLiteral("auto-update to %1 from signed commit %2 started")
+                   .arg(tag, verifiedCommit));
+    m_buildButton = m_rebuildButton;
+    m_buildStatusLabel = m_rebuildStatus;
+    m_updateAsUser.clear();
+    if (m_rebuildButton)
+        m_rebuildButton->setEnabled(false);
+    setRestartPhase(QStringLiteral("moving to the signed release commit"));
+    setRestartSpinProgress(20);
+    setUpdateStatus(QStringLiteral("Moving the checkout to release %1 (%2)...")
+                        .arg(tag, verifiedCommit.left(12)));
+    runUpdateStepUser(
+        QStringLiteral("git"),
+        {QStringLiteral("-C"), repoDir, QStringLiteral("merge"),
+         QStringLiteral("--ff-only"), verifiedCommit},
+        repoDir,
+        [this, clientDir, repoDir, tag, verifiedCommit] {
+            QString head;
+            if (!gitOutput(repoDir, {QStringLiteral("rev-parse"),
+                                     QStringLiteral("HEAD")},
+                           &head)
+                || head.trimmed().toLower() != verifiedCommit) {
+                logRestart(QStringLiteral("auto-update stopped: HEAD is not "
+                                          "the signed commit of %1")
+                               .arg(tag));
+                setUpdateStatus(QStringLiteral("Auto-update stopped: the "
+                                               "checkout is not at the signed "
+                                               "commit of %1.")
+                                    .arg(tag),
+                                true);
+                stopRestartSpin();
+                stopRestartCautionFlash();
+                if (m_rebuildButton)
+                    m_rebuildButton->setEnabled(true);
+                return;
+            }
+            buildAndRelaunch(clientDir);
+        },
+        [this, repoDir, tag] {
+            logRestart(QStringLiteral("auto-update stopped; %1 left untouched")
+                           .arg(repoDir));
+            setUpdateStatus(QStringLiteral("Auto-update to %1 stopped: the "
+                                           "checkout cannot fast-forward to "
+                                           "its signed commit. Nothing in %2 "
+                                           "was changed.")
+                                .arg(tag, repoDir),
+                            true);
+            stopRestartSpin();
+            stopRestartCautionFlash();
+            if (m_rebuildButton)
+                m_rebuildButton->setEnabled(true);
+        });
 }
 
 void MainWindow::updateRebuildRestart()

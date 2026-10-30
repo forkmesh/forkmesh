@@ -51,6 +51,12 @@ def provider(env, smtp=False):
     return "mailtrap" if configured(env, "mailtrap") else ""
 
 
+def fallback(env):
+    if _env(env, "MAIL_PROVIDER").lower() == "none":
+        return ""
+    return "mailtrap" if configured(env, "mailtrap") else ""
+
+
 def _mailtrap(env, message):
     payload = {
         "from": {"email": message["sender"], "name": message["senderName"]},

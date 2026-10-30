@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -29,6 +30,7 @@ struct PullEvent {
     int lineEnd = 0;
     QString suggestionPatch;
     QString targetPath;
+    QString target;
     QString appliedCommit;
     // Patchset anchor for line-anchored events (line-comment, thread-comment).
     // `patchset` is the head commit the reviewer's diff was cut against (empty
@@ -83,6 +85,7 @@ struct PullRequest {
     // following the mutable base/head branch names.
     QString creationBaseOid;
     QString creationHeadOid;
+    int revision = 0;
     QString headBaseOid;
     QString headOid;
     QString mergeBase;
@@ -97,6 +100,7 @@ struct PullRequest {
     // not erase the marker the microjob payout check reads.
     QString client;
     QString clientSig;
+    QString aiModel;
     // Owner-authored merge reward estimate. It is intentionally outside the
     // contributor's immutable PR signature, like status and merge metadata.
     qint64 rewardEstimateLamports = 0;
@@ -193,6 +197,10 @@ QString identityOf(const PullRequest &pr);
 // merged pull request in `history` under the same identity.
 bool isEstablished(const PullRequest &pr, const QList<PullRequest> &history,
                    const QStringList &trusted);
+
+int pullOrdinal(const PullRequest &pr, const QList<PullRequest> &history);
+
+QString ordinal(int n);
 
 } // namespace PullAuthorTrust
 
@@ -324,7 +332,10 @@ public:
     static QString syntheticMbox(const PullRequest &pr);
 
     // Merge a signed PR received from the relay inbox into.forkmesh/pulls/.
-    bool applyRemotePull(const PullRequest &pr, QString *error = nullptr);
+    bool applyRemotePull(const PullRequest &pr, QString *error = nullptr,
+                         bool *opened = nullptr);
+    bool applyRemoteRevision(int number, const PullRequest &revision,
+                             const QString &revisionSig, QString *error = nullptr);
 
     bool checkoutForReview(const PullRequest &pr, const QString &dir,
                            PullReviewCheckout *out, QString *error = nullptr) const;
@@ -379,6 +390,18 @@ public:
     // Merge a signed event received from the relay inbox into.forkmesh/pulls/<N>/. The
     // event must already be signed and verified by the caller.
     bool applyRemoteEvent(int number, const PullEvent &ev, QString *error = nullptr);
+    bool editComment(int number, const QString &target, const QString &body,
+                     QString *error = nullptr);
+    bool deleteComment(int number, const QString &target, QString *error = nullptr);
+    PullEvent makeCommentChange(int number, const QString &target,
+                                const QString &body, bool remove) const;
+    static bool isCommentChangeEvent(const PullEvent &ev);
+    static bool isEditableComment(const PullEvent &ev);
+    static bool reviewKeepsVerdict(const PullEvent &ev);
+    static bool commentChangeApplies(const PullEvent &change, const PullEvent &target);
+    static QList<PullEvent> foldCommentChanges(const QList<PullEvent> &events,
+                                               QSet<QString> *edited = nullptr);
+    bool authoredByThisNode(const PullEvent &ev) const;
     static bool isLifecycleEvent(const PullEvent &ev);
     bool applyRemoteLifecycleEvent(int number, const PullEvent &ev, QString *error = nullptr);
 

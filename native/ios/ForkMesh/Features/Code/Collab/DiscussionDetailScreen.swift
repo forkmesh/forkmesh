@@ -104,7 +104,8 @@ struct DiscussionDetailScreen: View {
             title: isAnswer ? DiscussionDetail.answerTitle : DiscussionDetail.eventTitle,
             author: event.displayAuthor,
             text: event.body,
-            repo: RepoRef(owner: model.repo.owner, name: model.repo.name))
+            repo: RepoRef(owner: model.repo.owner, name: model.repo.name),
+            profile: event.authorName)
     }
 
     private func canMarkAnswer(_ discussion: RepoDiscussion) -> Bool {

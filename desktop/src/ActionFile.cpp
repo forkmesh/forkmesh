@@ -192,17 +192,21 @@ QStringList scalarOrList(const Node *node)
     return out;
 }
 
-static bool wildcardPathMatches(const QString &pattern, const QString &path)
+static QList<QRegularExpression> compiledPathPatterns(const QStringList &patterns)
 {
-    const QString normalized = pattern.trimmed();
-    if (normalized.isEmpty())
-        return false;
-
-    const QRegularExpression re(
-        QRegularExpression::wildcardToRegularExpression(normalized));
-    if (!re.isValid())
-        return false;
-    return re.match(path).hasMatch();
+    QList<QRegularExpression> compiled;
+    for (const QString &pattern : patterns) {
+        const QString normalized = pattern.trimmed();
+        if (normalized.isEmpty())
+            continue;
+        QRegularExpression re(
+            QRegularExpression::wildcardToRegularExpression(normalized));
+        if (!re.isValid())
+            continue;
+        re.optimize();
+        compiled.append(re);
+    }
+    return compiled;
 }
 
 // `on:` accepts three shapes. The scalar and sequence forms are just event
@@ -229,7 +233,23 @@ QStringList eventNames(const Node *node)
     return out;
 }
 
-void collectSteps(const Node *stepsNode, QList<ActionStep> &steps)
+constexpr int kMaxWorkflowMinutes = 1440;
+
+bool workflowMinutes(const Node *node, int *minutes)
+{
+    *minutes = 0;
+    const QString text = node ? node->scalar.trimmed() : QString();
+    if (text.isEmpty())
+        return true;
+    bool ok = false;
+    const int value = text.toInt(&ok);
+    if (!ok || value < 1 || value > kMaxWorkflowMinutes)
+        return false;
+    *minutes = value;
+    return true;
+}
+
+void collectSteps(const Node *stepsNode, QList<ActionStep> &steps, bool *badTimeout)
 {
     if (!stepsNode || stepsNode->type != Node::Seq)
         return;
@@ -241,6 +261,9 @@ void collectSteps(const Node *stepsNode, QList<ActionStep> &steps)
             step.name = n->scalar.trimmed();
         if (const Node *r = item.child(QStringLiteral("run")))
             step.run = r->scalar;
+        if (!workflowMinutes(item.child(QStringLiteral("timeout-minutes")),
+                             &step.timeoutMinutes))
+            *badTimeout = true;
         if (!step.run.isEmpty())
             steps.append(step);
     }
@@ -257,9 +280,11 @@ bool ActionWorkflow::matchesPushChangedPaths(const QStringList &changedPaths) co
     if (changedPaths.isEmpty())
         return false;
 
+    const QList<QRegularExpression> patterns =
+        compiledPathPatterns(pushChangedPaths);
     for (const QString &changedPath : changedPaths)
-        for (const QString &pattern : pushChangedPaths)
-            if (wildcardPathMatches(pattern, changedPath))
+        for (const QRegularExpression &pattern : patterns)
+            if (pattern.match(changedPath).hasMatch())
                 return true;
 
     return false;
@@ -452,15 +477,21 @@ ActionWorkflow ActionFile::parse(const QString &relPath, const QString &content)
             for (auto it = env->map.constBegin(); it != env->map.constEnd(); ++it)
                 wf.env.insert(it.key(), it.value().scalar);
 
-    collectSteps(root.child(QStringLiteral("steps")), wf.steps);
+    bool badTimeout = false;
+    collectSteps(root.child(QStringLiteral("steps")), wf.steps, &badTimeout);
     if (const Node *jobs = root.child(QStringLiteral("jobs")))
         if (jobs->type == Node::Map)
             for (auto it = jobs->map.constBegin(); it != jobs->map.constEnd(); ++it) {
                 addRunsOn(it.value().child(QStringLiteral("runs-on")));
                 addNeeds(it.value().child(QStringLiteral("needs")));
-                collectSteps(it.value().child(QStringLiteral("steps")), wf.steps);
+                collectSteps(it.value().child(QStringLiteral("steps")), wf.steps,
+                             &badTimeout);
             }
 
+    if (badTimeout) {
+        wf.error = QStringLiteral("workflow timeout-minutes is not a whole number of minutes");
+        return wf;
+    }
     if (wf.steps.isEmpty()) {
         wf.error = QStringLiteral("workflow has no runnable steps");
         return wf;

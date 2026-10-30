@@ -1,4 +1,5 @@
 #include "CrashHandler.h"
+#include "DesktopBuildCommit.h"
 #include "BackgroundMode.h"
 #include "KeepAwake.h"
 #include "MessageBoxClicks.h"
@@ -7,19 +8,23 @@
 #include "AgentCliLocator.h"
 #include "AgentResourceGovernor.h"
 #include "AppPaths.h"
+#include "BrowserPrivacy.h"
 #include "ControlNode.h"
 #include "DirectorySizeScan.h"
 #include "DesktopDisplayReadiness.h"
+#include "DesktopLauncherIcon.h"
 #if defined(FORKMESH_HAVE_TERM)
 #include "ForkMeshTerm.h"
 #endif
 #include "ForkMeshIdentity.h"
+#include "HiddenUnicodeGuard.h"
 #include "MainWindow.h"
 #include "MirrorActionsConfiguration.h"
 #include "NoteTools.h"
 #include "PlatformLogFilter.h"
 #include "PublicMirrorRuntime.h"
 #include "QtRuntimeDiagnostics.h"
+#include "SessionBusGuard.h"
 #include "SingleInstance.h"
 #include "TrayMode.h"
 #include "SystemOpenFolder.h"
@@ -35,14 +40,8 @@
 #if __has_include("ForkMeshVersion.h")
 #include "ForkMeshVersion.h"
 #endif
-#if __has_include("ForkMeshBuildCommit.h")
-#include "ForkMeshBuildCommit.h"
-#endif
 #ifndef FORKMESH_VERSION
 #define FORKMESH_VERSION "dev"
-#endif
-#ifndef FORKMESH_BUILD_COMMIT
-#define FORKMESH_BUILD_COMMIT "unknown"
 #endif
 
 #include <QApplication>
@@ -652,10 +651,11 @@ int main(int argc, char *argv[])
         if (qstrcmp(argv[i], "--wait-for-lock") == 0)
             forkmesh::setBackgroundLockWait(forkmesh::background::kLockWaitMs);
         if (qstrcmp(argv[i], "--build-commit") == 0) {
-            std::printf("%s\n", FORKMESH_BUILD_COMMIT);
+            const QString buildCommit = forkmesh::desktopBuildCommit();
+            std::printf("%s\n", qPrintable(buildCommit));
             static const QRegularExpression exactCommit(
                 QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
-            return exactCommit.match(QStringLiteral(FORKMESH_BUILD_COMMIT))
+            return exactCommit.match(buildCommit)
                        .hasMatch()
                        ? 0
                        : 1;
@@ -756,8 +756,9 @@ int main(int argc, char *argv[])
     forkmesh::installPlatformLogFilter();
     forkmesh::logStartupTrace(QStringLiteral("Qt platform log filter installed"));
 
-#ifdef FORKMESH_HAVE_WEBENGINE
+#ifdef FORKMESH_WEB_ENGINE_BUILT
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    forkmesh::browser::installUngoogledChromiumFlags();
 #endif
     forkmesh::logStartupTrace(QStringLiteral("BEGIN construct QApplication"));
     QElapsedTimer applicationConstruction;
@@ -766,6 +767,9 @@ int main(int argc, char *argv[])
     forkmesh::logStartupTrace(
         QStringLiteral("DONE  construct QApplication (%1ms)")
             .arg(applicationConstruction.elapsed()));
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    forkmesh::sessionbus::keepRunningWhenBusCloses();
+#endif
     forkmesh::market::modules::install();
     {
         forkmesh::StartupTraceStep applicationSetup(
@@ -775,6 +779,7 @@ int main(int argc, char *argv[])
         QGuiApplication::setDesktopFileName(QStringLiteral("forkmesh"));
         app.setStyle(QStyleFactory::create("Fusion"));
         forkmesh::ui::SplitterHairline::install(&app);
+        forkmesh::hiddenunicode::installInputGuard(&app);
     }
 
     {
@@ -799,7 +804,7 @@ int main(int argc, char *argv[])
                 forkmesh::logStartupTrace(QStringLiteral(
                     "ForkMesh runs without a window; asked it to hand over"));
                 forkmesh::ui::showStartupSplash(QStringLiteral(FORKMESH_VERSION),
-                                                QStringLiteral(FORKMESH_BUILD_COMMIT));
+                                                forkmesh::desktopBuildCommit());
                 forkmesh::ui::startupStep(QStringLiteral(
                     "Taking over from ForkMesh running without a window"));
             }
@@ -816,7 +821,7 @@ int main(int argc, char *argv[])
     {
         forkmesh::StartupTraceStep step(QStringLiteral("show startup splash"));
         forkmesh::ui::showStartupSplash(QStringLiteral(FORKMESH_VERSION),
-                                        QStringLiteral(FORKMESH_BUILD_COMMIT));
+                                        forkmesh::desktopBuildCommit());
     }
 
     // A project folder that is itself a git checkout would have application
@@ -988,10 +993,7 @@ int main(int argc, char *argv[])
                      [](Qt::ColorScheme) { MainWindow::applyTheme(); });
 #endif
 
-    QElapsedTimer startup;
-    startup.start();
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] constructing MainWindow")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("constructing MainWindow"));
     forkmesh::ui::startupStep(QStringLiteral("Starting the application window"));
     auto *window = new MainWindow;
     const auto openLocalAction = [window](const QString &target) {
@@ -1013,8 +1015,7 @@ int main(int argc, char *argv[])
     };
     app.setLocalLinkHandler(openLocalAction);
     forkmesh::ui::attachStartupSplashTo(window);
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] MainWindow constructed")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("MainWindow constructed"));
     forkmesh::onSingleInstanceActivation([window, openLocalAction](
                                              const QString &target) {
         openLocalAction(target);
@@ -1043,6 +1044,7 @@ int main(int argc, char *argv[])
             forkmesh::background::migrateLegacyEngine();
             forkmesh::background::syncLogoutHandOver();
             forkmesh::background::refreshStartUnit();
+            forkmesh::launchericon::refreshInstalled();
         });
     });
     forkmesh::keepawake::holdWhileRunning(window);
@@ -1054,8 +1056,7 @@ int main(int argc, char *argv[])
                                openLocalAction(localActionLink);
                            });
     }
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] window shown; entering event loop")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("window shown; entering event loop"));
     // Logged before the sink swap below: once the app log sink owns qInfo(),
     // startup lines stop reaching stdout, so this is the last pre-event-loop
     // marker a launch harness can read from the console.

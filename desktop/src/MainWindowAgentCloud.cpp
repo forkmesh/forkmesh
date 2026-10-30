@@ -1916,14 +1916,20 @@ void MainWindow::renderCloudAgentTranscript(int sessionId)
         m_renderedCloudStreamEvents == streamed &&
         m_renderedExternalSession == sessionId)
         return;
+    const bool redraw = m_renderedCloudSession == sessionId &&
+                        m_renderedExternalSession == sessionId;
     ++m_agentTranscriptRenderGeneration;
     m_agentTranscriptRenderSession = -1;
-    m_agentTranscriptRenderEvents.clear();
     ++m_externalTranscriptRenderGeneration;
     m_externalTranscriptRenderSession = -1;
     m_externalTranscriptRenderEvents.clear();
+    if (redraw) {
+        m_agentTranscript->setBatchHoldsFrame(true, false);
+        m_agentTranscript->setBulkPopulate(true);
+    }
     m_agentTranscript->clear();
-    m_agentTranscript->setBulkPopulate(false);
+    if (!redraw)
+        m_agentTranscript->setBulkPopulate(false);
     m_renderedTranscriptSession = -1;
     // The shared view now holds a row from the external band; the same marker
     // the external renderer sets tells every other path the view is not theirs.
@@ -1947,7 +1953,10 @@ void MainWindow::renderCloudAgentTranscript(int sessionId)
         m_agentTranscript->handleEvent(m_cloudAgentStreamEvents.at(i),
                                        /*countStats=*/false);
     m_renderedCloudStreamEvents = streamed;
-    m_agentTranscript->jumpToBottom();
+    if (redraw)
+        m_agentTranscript->setBulkPopulate(false);
+    else
+        m_agentTranscript->jumpToBottom();
 }
 
 int MainWindow::cloudAgentStreamShownEvents(int sessionId) const

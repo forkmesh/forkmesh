@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.usage
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -195,11 +196,10 @@ internal class UsageScreen : Screen() {
 
         fun delete(provider: UsageProviderMeter, account: UsageAccount) {
             scope.launch {
-                val confirmed = messenger.showConfirmDialog(
-                    "Delete ${account.name}?",
-                    "The desktop forgets this ${provider.label} account and its sign-in. Agents already running keep going.",
-                    confirmLabel = "Delete",
-                    destructive = true,
+                val confirmed = messenger.confirmAction(
+                    "Delete the ${provider.label} account \"${account.name}\"?",
+                    "Delete account",
+                    "The desktop forgets the account and signs it out. Agents running as it stop being able to sign in. Its agent history stays on the desktop.",
                 )
                 if (confirmed) opsIo { model.deleteAccount(provider.id, account.id) }
             }

@@ -91,6 +91,7 @@ import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
 import com.forkmesh.nativeapp.ui.kit.FmNavBar
 import com.forkmesh.nativeapp.ui.kit.FmPanelHeader
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
 import com.forkmesh.nativeapp.ui.kit.FmStatus
@@ -169,7 +170,7 @@ class NotesScreen : Screen() {
         }
         val top = navigator.top
         LaunchedEffect(top) { if (top === this@NotesScreen) generation++ }
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Notes", navigator) {
                     FmIconButton("refresh", "Refresh", onPressed = { generation++ }, color = Fm.colors.textPrimary)
@@ -400,7 +401,7 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         val existing = id != null
         val owner = NotesLogic.role(note) == "owner"
         val public = note?.get("visibility") == "public"
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase).imePadding()) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas).imePadding()) {
             val plugin = rememberScreenPluginMenu()
             FmNavBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", onBack = { navigator.handleBack() }) {
                 if (!loading && error.isEmpty()) {
@@ -740,7 +741,7 @@ private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> U
     val style = Fm.mono(size = Fm.text.bodyMedium.fontSize).copy(color = c.textPrimary)
     BasicTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = FmSafeInput.text(onChange),
         readOnly = readOnly,
         textStyle = style,
         cursorBrush = SolidColor(c.accent),

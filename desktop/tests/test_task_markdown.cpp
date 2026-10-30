@@ -64,6 +64,26 @@ void testLinks()
           "mailto link kept");
 }
 
+void testMentions()
+{
+    const QString html = toHtml(QStringLiteral(
+        "Ask @AliceSmith or @bob. Not `@carol`, ops@forkmesh.com, "
+        "https://x.social/@dave, @claude[bot] or [@erin](forkmesh-user:mallory)."));
+    check(html.contains(QLatin1String("href=\"forkmesh-user:alicesmith\"")) &&
+              html.contains(QLatin1String(">@AliceSmith<")),
+          "mention links to the lowercase account and keeps its casing");
+    check(html.contains(QLatin1String("href=\"forkmesh-user:bob\"")),
+          "mention before punctuation links");
+    check(!html.contains(QLatin1String("forkmesh-user:carol")), "code mention stays text");
+    check(!html.contains(QLatin1String("forkmesh-user:forkmesh")), "email stays text");
+    check(!html.contains(QLatin1String("forkmesh-user:dave")), "URL path stays text");
+    check(!html.contains(QLatin1String("forkmesh-user:claude")), "bot stays text");
+    check(!html.contains(QLatin1String("forkmesh-user:mallory")),
+          "a typed profile link is dropped");
+    check(html.contains(QLatin1String("href=\"forkmesh-user:erin\"")),
+          "the dropped link's @label still links to its own account");
+}
+
 void testUnsafeInputIsNeutralised()
 {
     const QString html = toHtml(QStringLiteral(
@@ -178,6 +198,7 @@ int main(int argc, char **argv)
     testTablesHeadingsAndLists();
     testCode();
     testLinks();
+    testMentions();
     testUnsafeInputIsNeutralised();
     testSafeLinkPolicy();
     testEmpty();

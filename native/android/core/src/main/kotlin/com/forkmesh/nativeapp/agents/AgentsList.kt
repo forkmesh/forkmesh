@@ -4,6 +4,7 @@ import com.forkmesh.nativeapp.localrepos.LocalRepoRecord
 import com.forkmesh.nativeapp.model.AgentSession
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.navigation.RepoRef
 
 data class AgentRepoGroup(
     val repo: Repository,
@@ -111,7 +112,7 @@ object AgentsList {
         cover: com.forkmesh.nativeapp.control.DesktopListCover?,
     ): List<AgentRepoGroup> {
         if (cover == null) return groups
-        val live = rows.filter { it.isDesktop && !it.outside }.map { "${it.repoName.lowercase()}#${it.localId}" }.toSet()
+        val live = rows.filter { it.isDesktop && !it.outside && !it.elsewhere }.map { "${it.repoName.lowercase()}#${it.localId}" }.toSet()
         return visible(
             groups.map { g ->
                 g.copy(sessions = g.sessions.filter { "${g.repo.name.lowercase()}#${it.id}" in live || !cover.covers(it.createdAtMs) })
@@ -232,6 +233,8 @@ data class AgentStartTarget(val repo: Repository? = null, val record: LocalRepoR
     val name: String get() = repo?.name ?: publishedParts.second
     val isOnMesh: Boolean get() = owner.isNotEmpty() && name.isNotEmpty()
     val isMirrored: Boolean get() = record != null
+
+    val ref: RepoRef? get() = if (isOnMesh) RepoRef(owner, name) else null
 
     val label: String get() = if (isOnMesh) repo?.fullName ?: "$owner/$name" else record?.name ?: ""
 

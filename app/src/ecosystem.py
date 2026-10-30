@@ -4,6 +4,7 @@ import html
 import json
 import re
 from urllib.parse import parse_qs, urlparse
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -21,6 +22,7 @@ CATEGORIES = (
     ("issue-tracking", "Issue tracking"),
     ("code-review", "Code review"),
     ("chat", "Chat & discussions"),
+    ("work-management", "Work & client management"),
     ("software-factories", "Software factories"),
     ("agent-workspaces", "Agent workspaces"),
     ("agent-infrastructure", "Agent infrastructure"),
@@ -68,7 +70,7 @@ INTEGRATION_LABELS = dict(INTEGRATION)
 PUBLIC_FIELDS = (
     "name", "tagline", "summary", "watching", "url", "repo", "tags",
     "openSource", "license", "gitNative", "maker", "compatibility",
-    "integration", "integrations", "reviewed")
+    "integration", "integrations", "comparison", "reviewed")
 FIELDS = ("slug",) + PUBLIC_FIELDS + (
     "category", "published", "featured", "position", "internal")
 REQUIRED = ("name", "tagline", "url", "category")
@@ -79,6 +81,8 @@ URL_LIMIT = 400
 MAX_TAGS = 8
 MAX_INTEGRATIONS = 8
 INTEGRATION_LIMIT = 100
+MAX_COMPARISON_ROWS = 6
+COMPARISON_LIMITS = {"topic": 40, "project": 200, "forkmesh": 200}
 MAX_POSITION = 1_000_000
 POSITION_STEP = 10
 MAX_PROJECTS = 1000
@@ -222,7 +226,8 @@ def defaults(now_ms, position):
         "summary": "", "watching": "", "repo": None, "tags": [],
         "openSource": None, "license": None, "gitNative": False,
         "maker": None, "compatibility": "unknown", "integration": "watching",
-        "integrations": [], "reviewed": _month(now_ms), "published": False,
+        "integrations": [], "comparison": [], "reviewed": _month(now_ms),
+        "published": False,
         "featured": False, "position": position, "internal": {}}
 
 
@@ -301,6 +306,34 @@ def _clean_integrations(value):
     if len(items) > MAX_INTEGRATIONS:
         return None, "at most %d integrations" % MAX_INTEGRATIONS
     return items, None
+
+
+def _clean_comparison(value):
+    if value is None:
+        return [], None
+    message = ("comparison must be a list of at most %d rows, each "
+               '{"topic", "project", "forkmesh"} with text of at most %d, '
+               "%d and %d characters" % (
+                   MAX_COMPARISON_ROWS, COMPARISON_LIMITS["topic"],
+                   COMPARISON_LIMITS["project"],
+                   COMPARISON_LIMITS["forkmesh"]))
+    if not isinstance(value, list) or len(value) > MAX_COMPARISON_ROWS:
+        return None, message
+    rows = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != set(COMPARISON_LIMITS):
+            return None, message
+        row = {}
+        for key, limit in COMPARISON_LIMITS.items():
+            text = item[key]
+            if not isinstance(text, str):
+                return None, message
+            text = " ".join(text.split())
+            if not text or len(text) > limit:
+                return None, message
+            row[key] = text
+        rows.append(row)
+    return rows, None
 
 
 def _clean_bool(field, value, nullable=False):
@@ -418,6 +451,8 @@ def _clean_field(field, value, base, now_ms):
         return _clean_tags(value)
     if field == "integrations":
         return _clean_integrations(value)
+    if field == "comparison":
+        return _clean_comparison(value)
     if field == "openSource":
         return _clean_bool(field, value, nullable=True)
     if field in ("gitNative", "published", "featured"):
@@ -602,6 +637,7 @@ def public_project(entry):
         "integration": entry["integration"],
         "integrationLabel": INTEGRATION_LABELS.get(entry["integration"], ""),
         "integrations": list(entry["integrations"] or []),
+        "comparison": [dict(row) for row in entry["comparison"] or []],
         "reviewed": entry["reviewed"],
         "reviewedLabel": reviewed_label(entry["reviewed"]),
         "featured": bool(entry["featured"]),
@@ -741,7 +777,7 @@ async def _handle_post(env, request, params, csrf_field, admin_query, account,
                 "smaller batches."], status=413)
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or ""), keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or ""), keep_blank_values=True))
     if not _admin_csrf_ok(env, form):
         return _redirect(_location(env, admin_query, notice="csrf"))
     action = _first(form, "action")
@@ -1020,6 +1056,12 @@ def _reference_html():
                          "such as \"Import issues\", or, for a project "
                          "ForkMesh uses, where it uses it, such as "
                          "\"Desktop app: SSH to hosts\"." % MAX_INTEGRATIONS),
+        ("comparison", "Up to %d rows comparing it with ForkMesh, each "
+                       "{\"topic\", \"project\", \"forkmesh\"}: a topic of "
+                       "up to %d characters and two cells of up to %d. "
+                       "Facts side by side, no verdicts." % (
+                           MAX_COMPARISON_ROWS, COMPARISON_LIMITS["topic"],
+                           COMPARISON_LIMITS["project"])),
         ("reviewed", "\"2026-09\" or \"2026-09-25\". Defaults to this month."),
         ("published", "true to show it publicly. New projects are drafts."),
         ("featured", "true to show it in the landing page section."),
@@ -1168,6 +1210,10 @@ async def _edit_page(env, request, params, csrf_field, admin_query, account,
             ("Integration", _esc(INTEGRATION_LABELS.get(
                 entry["integration"], "—"))),
             ("Integrations", _text_or_dash(entry["integrations"])),
+            ("Comparison", _text_or_dash("; ".join(
+                "%s: %s / %s" % (row["topic"], row["project"],
+                                 row["forkmesh"])
+                for row in entry["comparison"] or []))),
             ("Last reviewed", _esc(reviewed_label(entry["reviewed"]) or "—")),
         ]), title="Public card",
         description="What visitors see on /ecosystem/%s." % slug)

@@ -5,11 +5,13 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   const el = (name) => root.querySelector(`[data-vmdj="${name}"]`);
   const key = "forkmesh.videoMixDjStudio.v1";
   const decks = {
-    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
-    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
+    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
+    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
   };
   const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "", savedAt: 0, leaving: false, autoDj: false, autoDjSeed: "", autoDjAt: 0, autoDjChoices: [], autoDjBusy: false, autoDjPlayed: [], autoDjHeard: [], autoDjEnded: "", autoDjMix: null };
   const autoDjNoise = new Set(["official", "video", "audio", "music", "lyrics", "lyric", "visualizer", "visualiser", "hd", "hq", "4k", "mv", "remastered", "remaster", "explicit", "clean", "version", "full", "feat", "ft", "featuring", "topic"]);
+  const autoDjNotSongs = ["got talent", "agt", "bgt", "x factor", "xfactor", "the voice", "american idol", "pop idol", "idols", "golden buzzer", "audition", "auditions", "judges", "simon cowell", "reaction", "reactions", "reacts", "reacting", "first time hearing", "first time listening", "vocal coach", "cover by", "covered by", "cover of", "acoustic cover", "piano cover", "guitar cover", "drum cover", "bass cover", "karaoke", "backing track", "sing along", "tutorial", "lesson", "how to play", "how to sing", "remix", "mashup", "nightcore", "sped up", "slowed", "reverb", "8d", "bass boosted", "parody", "medley", "interview", "trailer", "episode", "compilation", "highlights", "rehearsal", "behind the scenes", "documentary", "podcast", "live at", "live from", "live performance", "full performance", "concert", "tiny desk", "sings", "performs", "tribute"];
+  const autoDjNotOriginal = ["live", "cover", "covers", "acoustic", "unplugged", "instrumental", "karaoke", "remix", "session", "sessions", "demo"];
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -34,6 +36,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
         decks[name].level = safeNumber(value.level, 100, 0, 100);
         decks[name].rate = safeNumber(value.rate, 1, 0.25, 2);
         decks[name].loop = value.loop === true;
+        decks[name].repeat = value.repeat === true;
         decks[name].start = safeNumber(value.position, decks[name].cue, 0, 864000);
         decks[name].resume = value.playing === true && Boolean(decks[name].id);
       }
@@ -44,7 +47,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     const saved = { crossfader: state.crossfader, autoDj: state.autoDj, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
     for (const name of ["a", "b"]) {
       const deck = decks[name];
-      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, position: deck.time, playing: deck.playing || deck.resume };
+      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, repeat: deck.repeat, position: deck.time, playing: deck.playing || deck.resume };
     }
     state.savedAt = Date.now();
     try { localStorage.setItem(key, JSON.stringify(saved)); } catch (_) {}
@@ -205,6 +208,35 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     return keyWords(parts.length > 1 && keyWords(tail) ? tail : name);
   }
 
+  function spaced(text) {
+    return ` ${String(text || "").toLowerCase().replace(/[^\p{L}\p{N}&]+/gu, " ").trim()} `;
+  }
+
+  function qualifiers(title) {
+    const parts = [...String(title || "").matchAll(/\(([^)]*)\)|\[([^\]]*)\]|\{([^}]*)\}/g)].map((match) => match[1] ?? match[2] ?? match[3]);
+    const piped = String(title || "").split(" | ");
+    const dashed = piped[0].replace(/ [–—] /g, " - ").split(" - ");
+    return parts.concat(piped.slice(1), dashed.slice(2)).map(spaced);
+  }
+
+  function isSong(item) {
+    const text = spaced(`${item.title} ${item.author}`);
+    if (autoDjNotSongs.some((phrase) => text.includes(` ${phrase} `))) return false;
+    const last = spaced(item.title).trim().split(" ").pop();
+    if (["cover", "covers", "karaoke", "instrumental"].includes(last)) return false;
+    return !qualifiers(item.title).some((part) => autoDjNotOriginal.some((word) => part.includes(` ${word} `)));
+  }
+
+  function isOriginal(item) {
+    const author = spaced(item.author);
+    if (author.endsWith(" topic ") || author.includes("vevo")) return true;
+    const title = spaced(item.title);
+    if ([" official ", " remastered ", " remaster ", " original "].some((word) => title.includes(word))) return true;
+    const parts = String(item.title || "").replace(/ [–—|] /g, " - ").split(" - ");
+    const artist = keyWords(item.author);
+    return parts.length > 1 && artist !== "" && keyWords(parts[0]) === artist;
+  }
+
   function viewCount(row) {
     if (Number(row.viewCount) > 0) return Number(row.viewCount);
     const match = String(row.viewCountText || "").toLowerCase().replace(/,/g, "").match(/([0-9]+(?:\.[0-9]+)?)\s*([kmb]?)/);
@@ -223,12 +255,15 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       const rank = seen.size - 1;
       const seconds = Number(row.lengthSeconds) || 0;
       if (avoid.has(id) || seconds < 60 || seconds > 720) continue;
-      const key = songKey(row.title);
-      if (key && keys.has(key)) continue;
-      if (key) keys.add(key);
-      found.push({ id, title: String(row.title || "Untitled video"), author: String(row.author || ""), views: viewCount(row), likes: null, rank });
+      const item = { id, title: String(row.title || "Untitled video"), author: String(row.author || ""), views: viewCount(row), likes: null, rank };
+      if (isSong(item)) found.push(item);
     }
-    return found;
+    return found.filter(isOriginal).concat(found.filter((item) => !isOriginal(item))).filter((item) => {
+      const key = songKey(item.title);
+      if (key && keys.has(key)) return false;
+      if (key) keys.add(key);
+      return true;
+    });
   }
 
   function autoDjRanked(found) {
@@ -239,7 +274,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       const ratio = item.likes !== null && item.views > 0 ? Math.min(0.1, likes / item.views) * 10 : 0;
       return Math.log10(1 + Math.max(0, likes)) + ratio + related * 2;
     };
-    return found.map((item, index) => ({ item, index, score: score(item) })).sort((left, right) => right.score - left.score || left.index - right.index).map(({ item }) => item);
+    return found.map((item, index) => ({ item, index, original: isOriginal(item), score: score(item) })).sort((left, right) => right.original - left.original || right.score - left.score || left.index - right.index).map(({ item }) => item);
   }
 
   async function findAutoDj(name) {
@@ -289,7 +324,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (!state.autoDj || state.autoDjMix) return;
     const live = liveDeck() || state.autoDjEnded;
     const deck = live && decks[live];
-    if (!deck?.id) return;
+    if (!deck?.id || deck.repeat) return;
     if (state.autoDjSeed !== deck.id || (!state.autoDjBusy && !state.autoDjChoices.length && Date.now() - state.autoDjAt > 30000)) findAutoDj(live);
     const left = deck.duration ? (deck.duration - deck.time) / deck.rate : Infinity;
     if ((left <= 10 || state.autoDjEnded === live) && state.autoDjSeed === deck.id && state.autoDjChoices.length) startAutoDjMix(live);
@@ -359,7 +394,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   function destroyDeck(name) {
     const deck = decks[name];
     if (deck.player) deck.player.src = "about:blank";
-    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false });
+    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false });
   }
 
   function volumeMix() {
@@ -582,6 +617,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       el(`loop-${name}`).disabled = !deck.player;
       el(`capture-${name}`).disabled = !deck.player || !deck.duration;
       el(`loop-${name}`).setAttribute("aria-pressed", deck.loop ? "true" : "false");
+      el(`repeat-${name}`).setAttribute("aria-pressed", deck.repeat ? "true" : "false");
       el(`seek-${name}`).disabled = !deck.player || !deck.duration;
       el(`seek-${name}`).value = String(deck.duration ? Math.round(deck.time / deck.duration * 1000) : 0);
       el(`time-${name}`).textContent = formatTime(deck.time);
@@ -645,7 +681,12 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (data.event === "onStateChange") {
       const playerState = Number(data.info);
       deck.playing = playerState === 1;
-      if (playerState === 0 && state.autoDj) state.autoDjEnded = name;
+      if (playerState === 0 && deck.repeat) {
+        deck.time = 0;
+        command(deck, "seekTo", [0, true]);
+        command(deck, "playVideo");
+        status(`Deck ${name.toUpperCase()} repeats its song.`);
+      } else if (playerState === 0 && state.autoDj) state.autoDjEnded = name;
       if (playerState === 1 || playerState === 0 || (playerState === 2 && !state.leaving)) deck.resume = false;
       if (!state.leaving) persist();
     }
@@ -673,6 +714,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     el(`cue-${name}`).addEventListener("click", () => cue(name));
     el(`set-cue-${name}`).addEventListener("click", () => { decks[name].cue = decks[name].time; status(`Deck ${name.toUpperCase()} cue set at ${formatTime(decks[name].cue)}.`); persist(); render(); });
     el(`loop-${name}`).addEventListener("click", () => { decks[name].loop = !decks[name].loop; status(decks[name].loop ? `Deck ${name.toUpperCase()} loops eight seconds from its cue.` : `Deck ${name.toUpperCase()} loop is off.`); persist(); render(); });
+    el(`repeat-${name}`).addEventListener("click", () => { decks[name].repeat = !decks[name].repeat; status(decks[name].repeat ? `Deck ${name.toUpperCase()} repeats its song when it ends.` : `Deck ${name.toUpperCase()} repeat is off.`); persist(); render(); });
     el(`capture-${name}`).addEventListener("click", () => captureSection(name));
     el(`seek-${name}`).addEventListener("input", (event) => { const deck = decks[name]; if (!deck.duration) return; deck.time = deck.duration * Number(event.target.value) / 1000; render(); });
     el(`seek-${name}`).addEventListener("change", () => command(decks[name], "seekTo", [decks[name].time, true]));

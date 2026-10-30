@@ -2,11 +2,13 @@
 
 #include "AppPaths.h"
 #include "BackgroundMode.h"
+#include "BackgroundRunnerBadge.h"
 
 #include <QCheckBox>
 #include <QFutureWatcher>
 #include <QLabel>
 #include <QProcess>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -19,10 +21,18 @@ struct Outcome {
     QString error;
 };
 
+QSet<BackgroundSettings *> &boxes()
+{
+    static QSet<BackgroundSettings *> all;
+    return all;
+}
+
 }
 
 BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
 {
+    setObjectName(QStringLiteral("backgroundSettings"));
+    boxes().insert(this);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_keepRunning = new QCheckBox(QStringLiteral("Keep ForkMesh running without a window after I close it"));
@@ -43,6 +53,13 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
         "screen, which on GNOME suspends after 15 minutes, cannot put it to sleep while "
         "ForkMesh runs without a window. Asks for an administrator password. While ForkMesh "
         "runs without a window it also blocks sleep on its own whenever the system allows it."));
+    m_allowRestart = new QCheckBox(QStringLiteral("Let my phones restart this computer"));
+    m_allowRestart->setToolTip(QStringLiteral(
+        "Restart computer on a paired phone works on its own only while your login is the "
+        "one on the screen. This lets your account restart the computer when you are logged "
+        "out, switched away to another user, or another user is logged in too; their "
+        "unsaved work is lost. Applies to every program you run, agents included. Asks for "
+        "an administrator password."));
     m_status = new QLabel;
     m_status->setObjectName(QStringLiteral("modeHint"));
     m_status->setWordWrap(true);
@@ -50,12 +67,14 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     layout->addWidget(m_keepRunning);
     layout->addWidget(m_startAtBoot);
     layout->addWidget(m_noSleep);
+    layout->addWidget(m_allowRestart);
     layout->addWidget(m_status);
 
     if (!forkmesh::background::supported()) {
         m_keepRunning->setEnabled(false);
         m_startAtBoot->setEnabled(false);
         m_noSleep->setEnabled(false);
+        m_allowRestart->setEnabled(false);
 #if defined(Q_OS_LINUX)
         m_status->setText(QStringLiteral(
             "Running without a window is available only for a project's own state folder."));
@@ -69,7 +88,21 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     connect(m_keepRunning, &QCheckBox::toggled, this, [this](bool on) { setKeepRunning(on); });
     connect(m_startAtBoot, &QCheckBox::toggled, this, [this](bool on) { setStartAtBoot(on); });
     connect(m_noSleep, &QCheckBox::toggled, this, [this](bool on) { setSleepDisabled(on); });
+    connect(m_allowRestart, &QCheckBox::toggled, this, [this](bool on) { setRestartAllowed(on); });
     refresh();
+}
+
+BackgroundSettings::~BackgroundSettings()
+{
+    boxes().remove(this);
+}
+
+void BackgroundSettings::refreshAll()
+{
+    for (BackgroundSettings *box : std::as_const(boxes())) {
+        if (forkmesh::background::supported() && !box->m_busy)
+            box->refresh();
+    }
 }
 
 void BackgroundSettings::refresh()
@@ -77,6 +110,7 @@ void BackgroundSettings::refresh()
     m_busy = true;
     m_startAtBoot->setEnabled(false);
     m_noSleep->setEnabled(false);
+    m_allowRestart->setEnabled(false);
     const QString project = forkmesh::paths::projectSlug();
     auto *watcher = new QFutureWatcher<Outcome>(this);
     connect(watcher, &QFutureWatcher<Outcome>::finished, this, [this, watcher] {
@@ -157,6 +191,7 @@ void BackgroundSettings::setSleepDisabled(bool on)
     m_busy = true;
     m_startAtBoot->setEnabled(false);
     m_noSleep->setEnabled(false);
+    m_allowRestart->setEnabled(false);
     m_status->setText(on ? QStringLiteral("Turning sleep off for this computer…")
                          : QStringLiteral("Letting this computer sleep again…"));
     auto *process = new QProcess(this);
@@ -183,6 +218,33 @@ void BackgroundSettings::setSleepDisabled(bool on)
     process->start(pkexec, command);
 }
 
+void BackgroundSettings::setRestartAllowed(bool on)
+{
+    if (m_busy)
+        return;
+    m_busy = true;
+    m_startAtBoot->setEnabled(false);
+    m_noSleep->setEnabled(false);
+    m_allowRestart->setEnabled(false);
+    m_status->setText(on ? QStringLiteral("Letting your phones restart this computer…")
+                         : QStringLiteral("Taking back the restart permission…"));
+    const QString project = forkmesh::paths::projectSlug();
+    auto *watcher = new QFutureWatcher<Outcome>(this);
+    connect(watcher, &QFutureWatcher<Outcome>::finished, this, [this, watcher] {
+        const Outcome outcome = watcher->result();
+        watcher->deleteLater();
+        applyStatus(outcome.status, outcome.error);
+    });
+    watcher->setFuture(QtConcurrent::run([project, on] {
+        const forkmesh::background::StartManager manager =
+            forkmesh::background::StartManager::system();
+        Outcome outcome;
+        manager.allowRestart(on, &outcome.error);
+        outcome.status = manager.status(project);
+        return outcome;
+    }));
+}
+
 void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &status,
                                      const QString &error)
 {
@@ -197,6 +259,11 @@ void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &st
         m_noSleep->setChecked(status.sleepDisabled);
     }
     m_noSleep->setEnabled(true);
+    {
+        const QSignalBlocker block(m_allowRestart);
+        m_allowRestart->setChecked(status.restartAllowed);
+    }
+    m_allowRestart->setEnabled(true);
     QStringList lines;
     if (status.enabled) {
         if (status.mechanism.startsWith(QLatin1String("systemd")))
@@ -235,4 +302,5 @@ void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &st
     if (!error.isEmpty())
         lines << QStringLiteral("Failed: %1").arg(error);
     m_status->setText(lines.join(QLatin1Char('\n')));
+    BackgroundRunnerBadge::refreshAll();
 }

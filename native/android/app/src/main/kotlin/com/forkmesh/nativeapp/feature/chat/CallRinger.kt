@@ -82,6 +82,7 @@ internal class CallRinger(private val context: Context, private val engine: Dire
         val phase = engine.phase
         if (phase == DirectCallPhase.RINGING) startRingback() else stopRingback()
         val incoming = if (phase == null) engine.invite else null
+        if (incoming != null || phase != null || AppLifecycle.foreground.value) IncomingCallNotifier.cancelRing(context)
         if (incoming == null) stopIncoming() else ringIncoming(incoming)
         windowState.value = CallWindow(showWhenLocked = incoming != null || phase != null, turnScreenOn = incoming != null)
     }

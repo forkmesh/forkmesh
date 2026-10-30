@@ -13,6 +13,8 @@
 #include <functional>
 #include <memory>
 
+class QObject;
+
 namespace forkmesh::chatv3 {
 
 constexpr qint64 kDayMs = 24ll * 60 * 60 * 1000;
@@ -55,6 +57,7 @@ bool mlkemEncapsulate(const QByteArray &publicKey, QByteArray *ciphertext,
 QByteArray mlkemDecapsulate(const QByteArray &seed, const QByteArray &ciphertext);
 
 QString storedStateFile();
+QString storedStateKeyFile(const QString &key);
 bool migrateStoredState();
 QVariant storedSetting(const QString &key);
 void clearStoredState();
@@ -76,6 +79,10 @@ QByteArray bundleMessage(const QString &room, const QString &kid,
                          const QString &idk, const QString &acct,
                          const QString &node, const QJsonObject &spk);
 bool verifyBundle(const QJsonObject &bundle, const QString &room, qint64 now);
+QByteArray nodeBindingMessage(const QString &room, const QString &kid,
+                              const QString &idk, const QString &acct);
+bool isNodeKey(const QString &node);
+bool verifyNodeBinding(const QJsonObject &bundle, const QString &room);
 QByteArray kek(const QString &room, const QString &sender,
                const QString &recipient, const QString &spkId,
                const QByteArray &ephPub, const QByteArray &ciphertext,
@@ -232,6 +239,11 @@ public:
     void unsubscribe(int token);
 
     void flush();
+    quint64 writeTicket() const { return m_ticket; }
+    static bool isWritten(quint64 ticket);
+    static void whenWritten(quint64 ticket, QObject *context,
+                            std::function<void()> callback);
+    static void waitForWrites();
 
 private:
     struct Scope {
@@ -251,6 +263,7 @@ private:
         bool loaded = false;
         qint64 counter = 0;
         qint64 reserved = 0;
+        quint64 reserveTicket = 0;
         bool seenLoaded = false;
         QHash<QString, Seen> seen;
         bool ratchetsLoaded = false;
@@ -268,6 +281,8 @@ private:
     void loadRatchets(const QString &room, Room &state);
     void saveScope(const QString &scope, bool now);
     void saveSeen(const QString &room);
+    void persist(const QString &key, std::function<std::function<QVariant()>()> snapshot,
+                 bool immediately);
     void refreshSafety(const QString &scope);
     void notify(Event event, const QString &scope, const QString &kid);
 
@@ -282,6 +297,31 @@ private:
     QHash<QString, qint64> m_sessionResets;
     QHash<int, Listener> m_listeners;
     int m_nextToken = 1;
+    quint64 m_ticket = 0;
+};
+
+class SendGate
+{
+public:
+    explicit SendGate(QObject *owner) : m_owner(owner) {}
+    bool send(quint64 ticket, const void *tag, std::function<bool()> write);
+    void release();
+    void releaseAll();
+    void drop(const void *tag);
+    void clear();
+    bool isEmpty() const { return m_entries.isEmpty(); }
+
+private:
+    struct Entry {
+        quint64 ticket = 0;
+        const void *tag = nullptr;
+        std::function<bool()> write;
+    };
+    void arm();
+
+    QObject *m_owner = nullptr;
+    QList<Entry> m_entries;
+    bool m_waiting = false;
 };
 
 } // namespace forkmesh::chatv3
@@ -335,6 +375,7 @@ public:
     };
     static void useSignedTime(QJsonObject &plain, const Opened &opened);
     using BundleResult = forkmesh::chatv3::ChatDevice::BundleResult;
+    using NodeSigner = std::function<QByteArray(const QByteArray &)>;
 
     RoomSeal() = default;
     RoomSeal(const QString &roomName, const QString &trustScope, Policy policy,
@@ -358,6 +399,8 @@ public:
     void setParticipants(const QStringList &participants);
     Policy policy() const { return m_policy; }
     std::shared_ptr<forkmesh::chatv3::ChatDevice> device() const { return m_device; }
+    void setNodeSigner(NodeSigner signer) { m_nodeSigner = std::move(signer); }
+    bool hasNodeSigner() const { return bool(m_nodeSigner); }
 
     QJsonObject keyFrame() const;
     BundleResult acceptKeyFrame(const QJsonObject &frame, bool *changed = nullptr) const;
@@ -406,4 +449,5 @@ private:
     bool m_ratchet = false;
     QString m_error;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    NodeSigner m_nodeSigner;
 };

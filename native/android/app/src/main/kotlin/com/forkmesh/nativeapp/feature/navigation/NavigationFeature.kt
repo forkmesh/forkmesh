@@ -9,6 +9,7 @@ import android.os.Build
 import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFeature
 import com.forkmesh.nativeapp.feature.account.AuthService
@@ -50,6 +51,7 @@ import com.forkmesh.nativeapp.navigation.ShellQuickAction
 import com.forkmesh.nativeapp.navigation.SurfaceLink
 import com.forkmesh.nativeapp.navigation.UpdateRequirement
 import com.forkmesh.nativeapp.navigation.root
+import com.forkmesh.nativeapp.navigation.title
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.shell.HomeShell
@@ -123,6 +125,7 @@ object NavigationFeature {
 
     fun install(app: App) {
         this.app = app
+        com.forkmesh.nativeapp.ui.kit.FmMessageHandoff.compose = { target -> compose(target) }
         if (!defaultsInstalled) {
             defaultsInstalled = true
             registerDefaults()
@@ -171,6 +174,14 @@ object NavigationFeature {
     }
 
     fun shell(): HomeShell? = AppNavigation.navigator.stack.firstOrNull() as? HomeShell
+
+    fun screenTitle(): String {
+        val global = AppNavigation.navigator.stack.toList()
+        val shell = global.firstOrNull() as? HomeShell ?: return global.lastOrNull()?.title ?: ""
+        val tab = shell.selected
+        val path = shell.navigator(tab).stack.toList().drop(1).map { it.title }
+        return (listOf(tab.title) + path + global.drop(1).map { it.title }).filter { it.isNotEmpty() }.joinToString(" > ")
+    }
 
     fun open(route: Route, placement: RoutePlacement = RoutePlacement.Automatic) {
         show(RouteParser.stack(route), placement)
@@ -233,7 +244,7 @@ object NavigationFeature {
             is Route.Channel, is Route.Dm, is Route.Thread -> {
                 val conversation = when (route) {
                     is Route.Channel -> route.id
-                    is Route.Dm -> "@${route.user}"
+                    is Route.Dm -> if (route.user.startsWith("@") || DirectMessageFrames.isDirect(route.user)) route.user else "@${route.user}"
                     is Route.Thread -> route.channel
                     else -> ""
                 }

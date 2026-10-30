@@ -1,11 +1,12 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.crypto.Sha256
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatRetention
+import java.io.File
 import java.util.Base64
-import java.util.UUID
 
 enum class ChatAttachmentKind {
     IMAGE, AUDIO, VIDEO, FILE;
@@ -39,6 +40,21 @@ class ChatAttachment(val messageId: String, val fileName: String, val mime: Stri
     override fun hashCode(): Int = messageId.hashCode() * 31 + data.contentHashCode()
 }
 
+object ChatMediaFile {
+    fun name(attachment: ChatAttachment): String {
+        val digest = Sha256.hex(attachment.messageId.toByteArray(Charsets.UTF_8)).take(24)
+        val safe = attachment.fileName.replace("/", "_").replace("\\", "_").replace("..", "_").replace("\u0000", "_")
+        return "$digest-$safe"
+    }
+
+    fun file(attachment: ChatAttachment, directory: File): File? {
+        val folder = directory.toPath().toAbsolutePath().normalize()
+        val target = folder.resolve(name(attachment)).normalize()
+        if (target.parent != folder) return null
+        return target.toFile()
+    }
+}
+
 data class ChatThreadSummary(
     val rootId: String,
     val replyCount: Int,
@@ -52,6 +68,12 @@ data class ChatThreadSummary(
 data class ReactionChip(val value: String, val count: Int, val names: List<String>, val mine: Boolean) {
     val emoji: String get() = ReactionCatalog.emoji(value)
     val label: String get() = ReactionCatalog.label(value)
+}
+
+data class StickerChip(val slug: String, val count: Int, val names: List<String>, val mine: Boolean) {
+    val entry: StickerEntry? get() = StickerCatalog.entry(slug)
+    val text: String get() = entry?.text ?: slug
+    val label: String get() = if (count > 1) "$text \u00d7$count" else text
 }
 
 data class ChatTypingPeer(val name: String, val untilMs: Long)
@@ -91,6 +113,9 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     var authorOf: ((String, String) -> String?)? = null
 
     @Volatile
+    var botAccount: ((String) -> String)? = null
+
+    @Volatile
     var onChannelJoined: ((String) -> Unit)? = null
 
     @Volatile
@@ -104,14 +129,13 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     private val lastTypingSent = HashMap<String, Long>()
     private var revisionValue = 0
-    private val privateSet = LinkedHashSet<String>()
     private val hiddenSet = LinkedHashSet<String>()
-    private var notice: String? = null
     private val replies = HashMap<String, List<ChatMessage>>()
     private val replyRoot = HashMap<String, String>()
     private val rootChannel = HashMap<String, String>()
     private val reactionState = HashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>()
     private val reactionOrder = HashMap<String, List<String>>()
+    private val stickerState = HashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>()
     private val editedText = HashMap<String, String>()
     private val typingState = HashMap<String, LinkedHashMap<String, ChatTypingPeer>>()
     private val files = HashMap<String, ChatAttachment>()
@@ -123,11 +147,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     val revision: Int get() = synchronized(lock) { revisionValue }
 
-    val privateChannels: Set<String> get() = synchronized(lock) { LinkedHashSet(privateSet) }
-
     val hiddenChannels: Set<String> get() = synchronized(lock) { LinkedHashSet(hiddenSet) }
-
-    val inviteNotice: String? get() = synchronized(lock) { notice }
 
     private inner class Batch {
         var changed = false
@@ -149,8 +169,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (b.changed) onChange?.invoke()
         return result
     }
-
-    fun clearInviteNotice() = synchronized(lock) { notice = null }
 
     fun replies(rootId: String): List<ChatMessage> = synchronized(lock) { replies[rootId].orEmpty() }
 
@@ -189,6 +207,22 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         return me.isNotEmpty() && synchronized(lock) { reactionState[messageId]?.get(value)?.containsKey(me) == true }
     }
 
+    fun hasStuck(messageId: String, slug: String): Boolean {
+        val me = selfId
+        return me.isNotEmpty() && synchronized(lock) { stickerState[messageId]?.get(slug)?.containsKey(me) == true }
+    }
+
+    fun stickers(messageId: String): List<StickerChip> = synchronized(lock) {
+        val state = stickerState[messageId] ?: return@synchronized emptyList()
+        val me = selfId
+        state.keys.sortedBy(StickerCatalog::index).mapNotNull { slug ->
+            val placers = state[slug]
+            if (placers.isNullOrEmpty()) return@mapNotNull null
+            val names = placers.keys.sorted().map { placers[it] ?: "" }.filter { it.isNotEmpty() }
+            StickerChip(slug, placers.size, names, placers.containsKey(me))
+        }
+    }
+
     fun text(message: ChatMessage): String = synchronized(lock) { editedText[message.id] ?: message.text }
 
     fun isEdited(id: String): Boolean = synchronized(lock) { editedText.containsKey(id) }
@@ -218,7 +252,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         names
     }
 
-    fun isPrivate(channel: String): Boolean = synchronized(lock) { channel in privateSet }
+    fun isHiddenChannel(channel: String): Boolean = synchronized(lock) { channel in hiddenSet }
 
     fun apply(frame: Map<String, Any?>) {
         val type = jsonText(frame["type"])
@@ -226,18 +260,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val conversation = ChatFrameText.conversation(frame)
         if (conversation == "#team") return
         when (type) {
-            "chat", "dm" -> batch {
-                rememberFile(frame)
-                if (frame["private"] == true && conversation.startsWith("#") && conversation !in hiddenSet) {
-                    if (privateSet.add(conversation)) changed()
-                }
-            }
+            "chat", "dm" -> batch { rememberFile(frame) }
             "thread-reply" -> batch { applyReply(frame, senderId) }
             "reaction" -> batch { applyReaction(frame, senderId) }
             "edit" -> applyEdit(frame, senderId, conversation)
             "delete" -> applyDelete(frame, senderId)
             "typing" -> batch { applyTyping(frame, senderId, conversation) }
-            "invite" -> batch { applyInvite(frame) }
             "channel" -> {
                 val name = normalizedChannel(jsonText(frame["name"]))
                 val joined = synchronized(lock) { name.isNotEmpty() && name != "#team" && name !in hiddenSet }
@@ -257,14 +285,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val ts = frame["ts"]
         val millis = if (ts is Number) ts.toLong() else now()
         if (retention?.isExpired(millis, channel, now()) == true) return
+        val shown = RelayFrames.shownSender(frame)
         val message = ChatMessage(
             id = id,
             conversation = channel,
-            senderId = senderId,
-            senderName = ChatFrameText.bounded(frame["sender"], ChatLimits.MAX_DISPLAY_NAME_CHARS),
+            senderId = shown,
+            senderName = RelayFrames.shownName(frame) { botAccount?.invoke(it).orEmpty() }
+                .let { if (RelayFrames.botName(frame).isEmpty()) it.take(ChatLimits.MAX_DISPLAY_NAME_CHARS) else it },
             text = ChatFrameText.bounded(frame["text"], ChatLimits.MAX_TEXT_CHARS),
             timestamp = millis,
-            self = senderId.isNotEmpty() && senderId == selfId,
+            self = shown.isNotEmpty() && shown == selfId,
             fileName = ChatFrameText.bounded(frame["fileName"], ChatLimits.MAX_FILE_NAME_CHARS),
         )
         val list = insertSorted(replies[rootId].orEmpty(), message)
@@ -275,7 +305,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         replies[rootId] = list
         replyRoot[id] = rootId
         rootChannel[rootId] = channel
-        if (frame["private"] == true) privateSet.add(channel)
         rememberFile(frame)
         changed()
     }
@@ -284,10 +313,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val target = jsonText(frame["target"])
         val raw = jsonText(frame["emoji"])
         val reactorId = frame["reactorId"]?.let(::jsonText) ?: senderId
-        if (target.isEmpty() || raw.isEmpty() || raw.codePointCount(0, raw.length) > 16 || reactorId.isEmpty()) return
+        if (target.isEmpty() || reactorId.isEmpty()) return
         if (senderId.isNotEmpty() && reactorId != senderId) return
-        val value = ReactionCatalog.valueForEmoji(raw)
         val name = (frame["reactorName"] ?: frame["sender"])?.let(::jsonText).orEmpty().take(ChatLimits.MAX_DISPLAY_NAME_CHARS)
+        val sticker = jsonText(frame["sticker"])
+        if (StickerCatalog.isKnown(sticker)) {
+            applySticker(target, sticker, reactorId, name, frame["added"] == true)
+            return
+        }
+        if (raw.isEmpty() || raw.codePointCount(0, raw.length) > 16) return
+        val value = ReactionCatalog.valueForEmoji(raw)
         val state = reactionState[target] ?: LinkedHashMap()
         val order = ArrayList(reactionOrder[target].orEmpty())
         val reactors = state[value] ?: LinkedHashMap()
@@ -304,6 +339,20 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val kept = order.filter { state.containsKey(it) }
         if (state.isEmpty()) reactionState.remove(target) else reactionState[target] = state
         if (kept.isEmpty()) reactionOrder.remove(target) else reactionOrder[target] = kept
+        changed()
+    }
+
+    private fun Batch.applySticker(target: String, slug: String, reactorId: String, name: String, added: Boolean) {
+        val state = stickerState[target] ?: LinkedHashMap()
+        val placers = state[slug] ?: LinkedHashMap()
+        if (added) {
+            if (placers.containsKey(reactorId) || placers.size >= MAX_REACTORS_PER_REACTION) return
+            placers[reactorId] = name
+        } else if (placers.remove(reactorId) == null) {
+            return
+        }
+        if (placers.isEmpty()) state.remove(slug) else state[slug] = placers
+        if (state.isEmpty()) stickerState.remove(target) else stickerState[target] = state
         changed()
     }
 
@@ -332,11 +381,11 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     private fun applyDelete(frame: Map<String, Any?>, senderId: String) {
         val target = jsonText(frame["target"])
-        if (target.isEmpty()) return
+        if (target.isEmpty() || senderId.isEmpty()) return
         val (isReply, replyAuthor) = replyAuthor(target)
         if (!isReply) {
-            val author = authorOf?.invoke(ChatFrameText.conversation(frame), target)
-            if (author != null && author != senderId) return
+            val author = authorOf?.invoke(ChatFrameText.conversation(frame), target) ?: return
+            if (author != senderId) return
         } else if (replyAuthor != senderId) {
             return
         }
@@ -356,6 +405,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         editedText.remove(id)
         reactionState.remove(id)
         reactionOrder.remove(id)
+        stickerState.remove(id)
         val file = files.remove(id)
         if (file != null) {
             fileBytes -= file.data.size
@@ -377,29 +427,20 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         changed()
     }
 
-    private fun Batch.applyInvite(frame: Map<String, Any?>) {
-        val me = selfId
-        if (jsonText(frame["to"]) != me || me.isEmpty()) return
-        val channel = normalizedChannel(jsonText(frame["channel"]).take(120))
-        if (channel.isEmpty() || channel == "#team" || channel in hiddenSet) return
-        privateSet.add(channel)
-        after.add { onChannelJoined?.invoke(channel) }
-        val sender = frame["sender"]?.let(::jsonText) ?: "Someone"
-        notice = "$sender invited you to private room $channel."
-        changed()
-    }
-
     private fun applyHistory(frame: Map<String, Any?>) {
         val to = jsonText(frame["to"])
         if (to.isNotEmpty() && to != selfId) return
         val target = sink ?: return
+        val sender = jsonText(frame["senderId"])
+        if (sender.isEmpty() || !RelayFrames.actsForPerson(frame)) return
         val accepted = synchronized(lock) {
             jsonMaps(frame["entries"]).take(ChatLimits.HISTORY_ENTRIES_PER_CHANNEL).filter { entry ->
+                if (jsonText(entry["senderId"]) != sender || jsonText(entry["bot"]).isNotEmpty()) return@filter false
                 val type = jsonText(entry["type"])
                 if (type != "chat" && type != "thread-reply") return@filter false
                 val channel = jsonText(entry["channel"])
                 if (!channel.startsWith("#") || channel == "#team" || channel in hiddenSet) return@filter false
-                !(entry["private"] == true && channel !in privateSet)
+                !RelayFrames.isPrivate(entry)
             }
         }
         for (entry in accepted) target.applyFrame(entry)
@@ -435,18 +476,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun store(attachment: ChatAttachment) = batch { storeLocked(attachment) }
 
-    fun createPrivateChannel(raw: String): String? {
-        if (!validChannelName(raw)) return null
-        val name = normalizedChannel(raw).lowercase()
-        return batch {
-            hiddenSet.remove(name)
-            privateSet.add(name)
-            after.add { onChannelJoined?.invoke(name) }
-            changed()
-            name
-        }
-    }
-
     fun addPublicChannel(raw: String): String? {
         val target = sink ?: return null
         if (!validChannelName(raw)) return null
@@ -467,7 +496,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (channel == "#general") return
         batch {
             hiddenSet.add(channel)
-            privateSet.remove(channel)
             for ((root, owner) in HashMap(rootChannel)) {
                 if (owner != channel) continue
                 for (reply in replies[root].orEmpty()) replyRoot.remove(reply.id)
@@ -479,24 +507,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         }
     }
 
-    fun restoreChannels(privateChannels: List<String>, hiddenChannels: List<String>) = batch {
+    fun restoreChannels(hiddenChannels: List<String>) = batch {
         hiddenSet.addAll(hiddenChannels)
-        for (channel in privateChannels) {
-            if (channel in hiddenSet) continue
-            privateSet.add(channel)
-            after.add { onChannelJoined?.invoke(channel) }
-        }
         changed()
     }
 
-    private fun routed(frame: LinkedHashMap<String, Any?>, conversation: String, persist: Boolean, private: Boolean) {
+    private fun routed(frame: LinkedHashMap<String, Any?>, conversation: String, persist: Boolean) {
         frame["conversation"] = conversation
         if (conversation.startsWith("#")) {
             frame["channel"] = conversation
-            if (private) frame["private"] = true
             if (persist) frame["persist"] = true
-        } else if (conversation.startsWith("@")) {
-            frame["to"] = conversation.drop(1)
         }
     }
 
@@ -507,22 +527,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         target.applyFrame(undo)
     }
 
-    fun sendPrivateChat(channel: String, text: String): Boolean {
-        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
-        val target = sink ?: return false
-        if (body.isEmpty() || !channel.startsWith("#")) return false
-        val frame = target.makeFrame("chat")
-        frame["text"] = body
-        routed(frame, channel, persist = true, private = true)
-        frame["private"] = true
-        target.applyFrame(frame)
-        if (target.sendFrame(frame)) return true
-        takeBack(target, jsonText(frame["id"]), channel)
-        return false
-    }
-
     fun sendText(conversation: String, text: String): Boolean {
-        if (isPrivate(conversation)) return sendPrivateChat(conversation, text)
         val target = sink ?: return false
         return target.sendMessage(text.take(ChatLimits.MAX_TEXT_CHARS), conversation)
     }
@@ -530,18 +535,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     fun sendBotReply(channel: String, rootId: String, text: String): Boolean {
         val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
         val target = sink ?: return false
-        if (body.isEmpty() || !channel.startsWith("#") || isPrivate(channel)) return false
+        if (body.isEmpty() || !channel.startsWith("#")) return false
         val root = rootId.take(ChatLimits.MAX_ROOT_ID_CHARS)
-        val frame = linkedMapOf<String, Any?>(
-            "type" to if (root.isEmpty()) "chat" else "thread-reply",
-            "id" to UUID.randomUUID().toString().lowercase(),
-            "senderId" to "forkbot",
-            "sender" to "forkbot",
-            "accountKind" to "user",
-            "ts" to now(),
-            "channel" to channel,
-            "text" to body,
-        )
+        val frame = target.makeFrame(if (root.isEmpty()) "chat" else "thread-reply")
+        frame["bot"] = "forkbot"
+        frame["text"] = body
+        routed(frame, channel, persist = true)
         if (root.isNotEmpty()) frame["rootId"] = root
         target.applyFrame(frame)
         return target.sendFrame(frame)
@@ -555,7 +554,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val frame = target.makeFrame("thread-reply")
         frame["rootId"] = root
         frame["text"] = body
-        routed(frame, channel, persist = true, private = isPrivate(channel))
+        routed(frame, channel, persist = true)
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
         takeBack(target, jsonText(frame["id"]), channel)
@@ -573,7 +572,30 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         frame["reactorId"] = me
         frame["reactorName"] = jsonText(frame["sender"])
         frame["added"] = added
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
+        target.applyFrame(frame)
+        if (target.sendFrame(frame)) return true
+        val undo = target.makeFrame("reaction")
+        for ((key, v) in frame) if (key != "id" && key != "ts") undo[key] = v
+        undo["added"] = !added
+        target.applyFrame(undo)
+        return false
+    }
+
+    fun toggleSticker(conversation: String, messageId: String, slug: String): Boolean {
+        val target = sink ?: return false
+        val entry = StickerCatalog.entry(slug) ?: return false
+        if (messageId.isEmpty()) return false
+        val me = target.selfId
+        val added = synchronized(lock) { stickerState[messageId]?.get(slug)?.containsKey(me) != true }
+        val frame = target.makeFrame("reaction")
+        frame["target"] = messageId
+        frame["emoji"] = entry.fallback
+        frame["sticker"] = slug
+        frame["reactorId"] = me
+        frame["reactorName"] = jsonText(frame["sender"])
+        frame["added"] = added
+        routed(frame, conversation, persist = true)
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
         val undo = target.makeFrame("reaction")
@@ -592,7 +614,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val frame = target.makeFrame("edit")
         frame["target"] = messageId
         frame["text"] = body
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         val previous = synchronized(lock) { editedText[messageId] }
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
@@ -608,14 +630,14 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (reply.senderId != target.selfId || !isThreadReply(reply.id)) return false
         val frame = target.makeFrame("delete")
         frame["target"] = reply.id
-        routed(frame, reply.conversation, persist = true, private = isPrivate(reply.conversation))
+        routed(frame, reply.conversation, persist = true)
         target.applyFrame(frame)
         return target.sendFrame(frame)
     }
 
     fun sendTyping(conversation: String, active: Boolean): Boolean {
         val target = sink ?: return false
-        if (!(conversation.startsWith("#") || conversation.startsWith("@"))) return false
+        if (!conversation.startsWith("#")) return false
         val at = now()
         val proceed = synchronized(lock) {
             if (active) {
@@ -630,17 +652,8 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (!proceed) return false
         val frame = target.makeFrame("typing")
         frame["active"] = active
-        routed(frame, conversation, persist = false, private = isPrivate(conversation))
+        routed(frame, conversation, persist = false)
         frame.remove("channel")
-        return target.sendFrame(frame)
-    }
-
-    fun invite(peerId: String, channel: String): Boolean {
-        val target = sink ?: return false
-        if (peerId.isEmpty() || peerId == target.selfId || !isPrivate(channel) || channel == "#team") return false
-        val frame = target.makeFrame("invite")
-        frame["to"] = peerId
-        frame["channel"] = channel
         return target.sendFrame(frame)
     }
 
@@ -648,11 +661,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val name = fileName.trim().take(ChatLimits.MAX_FILE_NAME_CHARS)
         val target = sink ?: return false
         if (name.isEmpty() || data.isEmpty() || data.size > ChatLimits.MAX_SEND_FILE_BYTES) return false
-        val frame = target.makeFrame(if (conversation.startsWith("@")) "dm" else "chat")
+        if (!conversation.startsWith("#")) return false
+        val frame = target.makeFrame("chat")
         frame["fileName"] = name
         frame["fileMime"] = mime.take(ChatLimits.MAX_MIME_CHARS)
         frame["file"] = Base64.getEncoder().encodeToString(data)
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         if (frame["channel"] == null) frame.remove("persist")
         val id = jsonText(frame["id"])
         store(ChatAttachment(id, name, mime, data))
@@ -664,6 +678,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
             changed()
         }
         return false
+    }
+
+    fun relabelBots() = batch {
+        for ((root, list) in HashMap(replies)) {
+            val next = list.map { RelayFrames.relabel(it) { node -> botAccount?.invoke(node).orEmpty() } }
+            if (next != list) {
+                replies[root] = next
+                changed()
+            }
+        }
     }
 
     fun snapshotThreads(): List<ChatMessage> = synchronized(lock) { replies.values.flatten() }
@@ -692,6 +716,10 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun snapshotReactionOrder(): Map<String, List<String>> = synchronized(lock) { HashMap(reactionOrder) }
 
+    fun snapshotStickers(): Map<String, Map<String, Map<String, String>>> = synchronized(lock) {
+        stickerState.mapValues { (_, state) -> state.mapValues { LinkedHashMap(it.value) } }
+    }
+
     fun snapshotEdits(): Map<String, String> = synchronized(lock) { HashMap(editedText) }
 
     fun restore(
@@ -700,6 +728,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         reactions: Map<String, Map<String, Map<String, String>>>,
         order: Map<String, List<String>>,
         edits: Map<String, String>,
+        stickers: Map<String, Map<String, Map<String, String>>> = emptyMap(),
     ) = batch {
         for (reply in replies) {
             val root = roots[reply.id] ?: continue
@@ -714,6 +743,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
             for ((value, reactors) in state) copy[value] = LinkedHashMap(reactors)
             reactionState[id] = copy
             reactionOrder[id] = (order[id] ?: state.keys.sorted()).filter { copy.containsKey(it) }
+        }
+        for ((id, state) in stickers) {
+            if (stickerState.containsKey(id)) continue
+            val copy = LinkedHashMap<String, LinkedHashMap<String, String>>()
+            for ((slug, placers) in state) if (StickerCatalog.isKnown(slug) && placers.isNotEmpty()) copy[slug] = LinkedHashMap(placers)
+            if (copy.isNotEmpty()) stickerState[id] = copy
         }
         for ((id, text) in edits) if (!editedText.containsKey(id)) editedText[id] = text
         changed()

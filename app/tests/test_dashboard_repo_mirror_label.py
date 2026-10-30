@@ -78,6 +78,7 @@ const mirror = {
   upstreamCommit: "0123456789abcdef",
 };
 console.log(JSON.stringify({
+  titleMirror: repoProvenanceHtml(mirror, { forkButton: false }),
   plain: repoProvenanceHtml(plain),
   fork: repoProvenanceHtml(fork),
   mirror: repoProvenanceHtml(mirror),
@@ -118,17 +119,21 @@ console.log(JSON.stringify({ before, changed, unchanged, after: repoBranchManage
     assert "data-repo-mirror-fork" in mirror and 'data-lucide="git-fork"' in mirror
     assert "fm-btn fm-btn-sm" in mirror and "fm-btn-cta" not in mirror and "bg-cta" not in mirror
     assert "data-repo-mirror-fork" not in fork and "synced" not in fork
+    assert "data-repo-mirror-fork" not in first["titleMirror"]
+    assert "data-repo-mirror-notice" in first["titleMirror"]
     assert second == {"before": True, "changed": True, "unchanged": False, "after": False, "lazy": True}
 
 
-def test_provenance_sits_above_the_latest_commit_row_not_in_the_header():
+def test_provenance_sits_under_the_title_row_name_not_above_the_file_table():
     header = _slice(DETAIL, "<div data-repo-github-header", 'role="tablist"')
-    assert "repoProvenanceHtml(repo)" not in header
     assert "data-repo-provenance" not in header
+    title = _slice(DETAIL, "function renderRepoTitleRow(", "function startRepoForkFromTitle(")
+    assert "repoProvenanceHtml(repo, { forkButton: false })" in title
+    assert title.index("data-repo-title-name") < title.index("<div data-repo-provenance") < title.index("data-repo-title-actions")
     code = _slice(DETAIL, "<div data-repo-code-main", "<div data-repo-commit-summary")
-    assert "repoProvenanceHtml(repo)" in code
-    assert "<div data-repo-provenance" in code
-    assert code.index("data-repo-provenance") < code.index("data-repo-tree-panel")
+    assert "data-repo-provenance" not in code
+    render = _slice(DETAIL, "function renderRepoDetail(", "function renderRepoTitleRow(")
+    assert render.index("data-repo-github-header") < render.index("${renderRepoTitleRow(repo)}") < render.index("data-repo-content-grid")
 
 
 def test_about_response_marks_the_mirror_and_regates_rendered_controls():
@@ -136,7 +141,7 @@ def test_about_response_marks_the_mirror_and_regates_rendered_controls():
     assert "rememberRepoMirrorAbout(item, body)" in about
     assert "applyRepoReadOnlyMirror(state.selectedRepo)" in about
     apply = _slice(DETAIL, "function applyRepoReadOnlyMirror(", "function renderRepoDetail(")
-    assert "repoProvenanceHtml(repo)" in apply
+    assert "repoProvenanceHtml(repo, { forkButton: false })" in apply
     assert '[data-repo-file-action="edit"]' in apply
     assert "[data-repo-pull-new], [data-repo-compare-pull]" in apply
     assert "renderRepoBranchesList(repo)" in apply
@@ -223,4 +228,31 @@ console.log(JSON.stringify({
         "plain": "",
     }
     assert 'repoDescriptionText(repo, origin) || "No description published."' in EXPLORER
-    assert 'repoDescriptionText(repo) || "No description published."' in DETAIL
+    assert "${repoAboutDescriptionHtml(repo)}</p>" in DETAIL
+    assert "el.innerHTML = repoAboutDescriptionHtml(repo);" in CONTENT
+
+
+def test_the_about_description_links_its_urls_and_upstream():
+    output = _run(
+        "repoAboutDescriptionHtml",
+        """
+const { repoAboutDescriptionHtml } = global.__dashboardExports;
+const mirror = { owner: "node", name: "platform", mirrorOf: "https://app.example.test/acme/platform" };
+console.log(JSON.stringify({
+  mirror: repoAboutDescriptionHtml(mirror),
+  text: repoAboutDescriptionHtml({ description: "Docs at https://docs.example.test/a?b=1&c=2. <b>x</b>" }),
+  unsafe: repoAboutDescriptionHtml({ description: "javascript:alert(1) and https://x.test/\\"onmouseover=" }),
+  plain: repoAboutDescriptionHtml({ owner: "a", name: "b" }),
+}));
+""",
+    )
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result["mirror"].startswith("Read-only mirror of <a href=\"https://app.example.test/acme/platform\"")
+    assert ">example.test/acme/platform</a>" in result["mirror"]
+    assert result["text"].startswith("Docs at <a href=\"https://docs.example.test/a?b=1&amp;c=2\"")
+    assert 'target="_blank" rel="noopener noreferrer nofollow ugc"' in result["text"]
+    assert ">https://docs.example.test/a?b=1&amp;c=2</a>. &lt;b&gt;x&lt;/b&gt;" in result["text"]
+    assert result["unsafe"].count("<a ") == 1
+    assert 'href="https://x.test/"' in result["unsafe"]
+    assert "javascript:alert(1) and" in result["unsafe"]
+    assert result["plain"] == "No description published."

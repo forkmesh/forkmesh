@@ -420,6 +420,8 @@ async def _account_finalize(env, request):
                 and await ed25519_verify(pubkey, signature, canonical)):
             return json_response({"error": "bad_signature"}, status=401)
         rec["pubkey"] = pubkey
+    if await _account_key_revoked(env, name_bi, rec["pubkey"]):
+        return json_response({"error": "device_revoked"}, status=401)
     # Finalize can never introduce a new name — it 404s above unless the
     # reservation already exists — so the name was moderated when it was
     # reserved. Only the deterministic filter re-runs here; re-asking the AI
@@ -480,11 +482,7 @@ async def _account_finalize(env, request):
     # Send a verification email (Mailtrap). If delivery is unavailable, retain
     # the account in the support queue for resend/follow-up; administrators can
     # no longer mark the address verified on the recipient's behalf.
-    if rec.get("email") and not rec["email_verified"]:
-        sent = await _send_verification_email(
-            env, request, name, rec["email"], rec=rec)
-        if not sent:
-            await _enqueue_verification(env, name_bi, name, rec["email"])
+    await _send_signup_verification(env, request, name_bi, name, rec)
     # Redeem the code read above: if the installing desktop's signed offer
     # already arrived the node is linked to that user right now; otherwise the
     # node's half is parked until the offer lands (see
@@ -900,14 +898,22 @@ async def record_core_mail_event(env, event, now=None):
         event["message_id"] = row.get("message_id") or ""
         if str(event.get("event") or "") in mail_tracking.DELIVERY_EVENTS:
             await d1_run(
-                env, "UPDATE mail_sends SET status=?,status_at=?,dsn=? "
-                "WHERE send_id=?", str(event.get("event")), now,
-                mail_tracking.dsn(event.get("dsn")), row.get("send_id") or "")
+                env, "UPDATE mail_sends SET status=?,status_at=?,dsn=?,"
+                "cause=? WHERE send_id=?", str(event.get("event")), now,
+                mail_tracking.dsn(event.get("dsn")),
+                mail_tracking.bounce_cause(
+                    event.get("event"), event.get("dsn"),
+                    event.get("reason")),
+                row.get("send_id") or "")
         reason = mail_tracking.SUPPRESS_EVENTS.get(
             str(event.get("event") or ""))
         if reason == "unsubscribe" and mail_budget.is_marketing_kind(
                 row.get("kind")):
             reason = "marketing_unsubscribe"
+        if mail_tracking.bounce_cause(
+                event.get("event"), event.get("dsn"),
+                event.get("reason")) == "sender":
+            reason = ""
         if reason and row.get("recipient_bi"):
             await d1_run(
                 env, "INSERT INTO mail_suppressions"
@@ -931,12 +937,16 @@ async def _mail_token_ok(env, send_id, signature):
     return hmac.compare_digest(expected, str(signature or ""))
 
 
-def _mail_page(text, status=200):
-    return Response(
+def _mail_page(text, status=200, env=None):
+    page = (
         "<!doctype html><meta charset=utf-8><meta name=viewport "
         "content='width=device-width'><title>ForkMesh</title>"
         "<body style='font:16px system-ui;margin:40px auto;max-width:520px'>"
-        + text + "</body>", status=status,
+        + text + "</body>")
+    if env is not None:
+        page = instance_features.rename_html(env, page)
+    return Response(
+        page, status=status,
         headers={"content-type": "text/html; charset=utf-8",
                  "cache-control": "no-store", "x-robots-tag": "noindex"})
 
@@ -992,7 +1002,7 @@ async def mail_tracking_handler(env, request, action, value):
     if not await _mail_token_ok(env, send_id, signature):
         if action == "l":
             return _mail_logo_response()
-        return _mail_page("This link is not valid.", 404)
+        return _mail_page("This link is not valid.", 404, env)
     now = int(Date.now())
     minute = str(now // 60000)
     method = method_name(request)
@@ -1014,7 +1024,7 @@ async def mail_tracking_handler(env, request, action, value):
             env, "mail-click:%s:%s" % (send_id, target)))[:24]
         if not target or not hmac.compare_digest(
                 expected, str(url.searchParams.get("s") or "")):
-            return _mail_page("This link is not valid.", 404)
+            return _mail_page("This link is not valid.", 404, env)
         await record_core_mail_event(env, {
             "event_id": "click:%s:%s" % (send_id, minute), "event": "click",
             "send_id": send_id}, now)
@@ -1025,12 +1035,12 @@ async def mail_tracking_handler(env, request, action, value):
         await record_core_mail_event(env, {
             "event_id": "unsubscribe:" + send_id, "event": "unsubscribe",
             "send_id": send_id}, now)
-        return _mail_page("You are unsubscribed from these ForkMesh emails.")
+        return _mail_page("You are unsubscribed from these ForkMesh emails.", env=env)
     if action == "u":
         return _mail_page(
             "<form method=post><p>Stop these ForkMesh emails?</p>"
-            "<button type=submit>Unsubscribe</button></form>")
-    return _mail_page("Not found.", 404)
+            "<button type=submit>Unsubscribe</button></form>", env=env)
+    return _mail_page("Not found.", 404, env)
 
 
 async def mailtrap_webhook_handler(env, request):
@@ -2333,6 +2343,7 @@ async def org_agent_bots_handler(
                 sessions.append(_org_agent_hide_private_runner(
                     _org_agent_session_projection(row, record), row, record,
                     context["actor"]))
+        import agent_branches
         targets = await _org_agent_session_targets(env, context)
         return json_response({
             "ok": True,
@@ -2345,6 +2356,7 @@ async def org_agent_bots_handler(
             "canQueueAgent": True,
             "canViewAgentSessions": True,
             "canDeleteAgentSessions": True,
+            "canMergeAgentBranches": agent_branches.merge_allowed(context),
             "accessBasis": context["accessBasis"],
             "accessReason": (
                 "Owner access to agent-capable repository nodes."
@@ -2688,6 +2700,7 @@ async def org_agent_bots_handler(
             f"Saved for {shown_node}. It will run after ForkMesh reconnects "
             "and the required security preflight approves it."
         )
+        queue_message = instance_features.rename(env, queue_message)
     else:
         queue_message = (
             f"Sent to {shown_node}. It will start as soon as the node claims "
@@ -3051,12 +3064,26 @@ async def _agent_handoff_signer(env, request, owner, repo):
     return (signer, key) if key else ("", "")
 
 
+async def _agent_handoff_desktops(env, account, from_key):
+    account_bi, record = await _account_row(env, account)
+    if not account_bi or not record:
+        return []
+    return [
+        item for item in await _account_desktops(env, account_bi, record)
+        if item.get("key") and item.get("key") != from_key
+    ]
+
+
 async def agent_handoff_handler(env, request, owner, repo, agent_id):
     await ensure_schema(env)
-    if method_name(request) != "POST":
+    method = method_name(request)
+    if method not in ("GET", "POST"):
         return _org_agent_error(
             "method_not_allowed",
-            "Use POST to move an agent session into the cloud.",
+            (
+                "Use POST to move an agent session into the cloud, or GET to "
+                "list the desktops it can be sent to."
+            ),
             405,
         )
     # The exact device key that signed, not just "somebody who may sign for
@@ -3081,6 +3108,20 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "The requested repository was not found.",
             404,
         )
+    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
+    if method == "GET":
+        desktops = await _agent_handoff_desktops(env, signer, from_key)
+        return json_response({
+            "ok": True,
+            "desktops": [
+                {
+                    "key": item["key"],
+                    "node": item["node"],
+                    "lastSeen": item["lastSeen"],
+                }
+                for item in desktops
+            ],
+        }, cache_control="no-store")
     try:
         data = await bounded_json_request(request)
     except Exception:
@@ -3154,14 +3195,33 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         data.get("title") or prompt.split("\n", 1)[0],
         _AGENT_HANDOFF_MAX_TITLE).strip()
     create_pr = data.get("createPr") is True
+    to_key = clean_string(data.get("toKey"), 120).strip()
+    to_desktop = None
+    if to_key:
+        to_desktop = next((
+            item for item in await _agent_handoff_desktops(
+                env, signer, from_key)
+            if item["key"] == to_key), None)
+        if not to_desktop:
+            return _org_agent_error(
+                "unknown_desktop",
+                (
+                    "That desktop is no longer linked to this account. "
+                    "Refresh the list of desktops and try again."
+                ),
+                409,
+                required_action="select_desktop",
+            )
+    to_device = to_desktop["node"] if to_desktop else ""
     # Queue for an owned mirror node when there is one, so the session carries
     # on in the cloud; otherwise the account namespace, which the owner's
     # other desktops drain.
-    mirror_node, mirror_online = await _agent_handoff_mirror_target(
-        env, owner, repo, provider, from_device)
+    mirror_node, mirror_online = (
+        ("", False) if to_desktop else
+        await _agent_handoff_mirror_target(
+            env, owner, repo, provider, from_device))
     target_node = mirror_node or owner
     account_bi = str(await blind_index(env, owner))
-    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
     signer_bi = (
         account_bi if signer == owner
         else str(await blind_index(env, signer)))
@@ -3195,6 +3255,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "baseRef": base_ref,
             "fromDevice": from_device,
             "fromKey": from_key,
+            "toDevice": to_device,
+            "toKey": to_key,
             "sourceAgentId": clean_string(agent_id, 40),
         },
         "history": [{
@@ -3225,6 +3287,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         "title": title,
         "fromDevice": from_device,
         "fromKey": from_key,
+        "toDevice": to_device,
+        "toKey": to_key,
         "sourceAgentId": clean_string(agent_id, 40),
     }
     try:
@@ -3273,10 +3337,23 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "model": model or "provider-default",
             "branch": branch,
             "fromDevice": from_device,
+            "toDevice": to_device,
             "targetNode": target_node,
         })
     await notify_repo_host(env, target_node, repo, "org-agents")
     await _ring_cloud_agent_readers(env, record)
+    if to_desktop:
+        return json_response({
+            "ok": True,
+            "sessionId": session_id,
+            "queueState": "ready_for_claim",
+            "branch": branch,
+            "targetDevice": to_device,
+            "message": (
+                "Sent to " + to_device + ". It continues the session on "
+                + branch + " as soon as it is online."
+            ),
+        }, status=202, cache_control="no-store")
     if mirror_node:
         return json_response({
             "ok": True,
@@ -4314,14 +4391,84 @@ async def _pull_mutation_node(env, context, candidates, operation):
         len(candidates), rejected)
 
 
+async def _pull_update_head(env, context, pull_number):
+    record = await _pull_lifecycle_record(
+        env, context["owner"], context["repo"], int(pull_number))
+    if (
+        str(record.get("status") or "open").strip().lower() != "open"
+        or str(record.get("derive") or "").strip() != "branch"
+    ):
+        return ""
+    head = str(record.get("head") or "").strip()
+    if not head or ":" in head or not _branch_protection.valid_branch(head):
+        return ""
+    return head
+
+
+async def _account_may_write_branch(env, request, context, branch, actor):
+    if not branch or not actor:
+        return False
+    if await _account_owns_node(env, actor, context["owner"]):
+        return True
+    if await _org_write_allowed(env, context["owner"], context["repo"], actor):
+        return True
+    prefix = _hosted_git.contributor_ref_prefix(actor)
+    if not prefix or not ("refs/heads/" + branch).startswith(prefix):
+        return False
+    try:
+        match = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+    except Exception:
+        match = None
+    alias = (safe_segment(match.group(1)) or "") if match else ""
+    return await _hosted_git.contributor_push_allowed(
+        env, context["owner"], context["repo"], actor, alias=alias)
+
+PULL_MUTATION_PROGRESS_MESSAGES = {
+    "queued": "Waiting for an online mirror to take this job.",
+    "claimed": "A mirror took the job.",
+    "fetching": "Reading the base and head commits.",
+    "verifying": "Verifying the reviewed commits.",
+    "checking": "Checking branch protection and required checks.",
+    "testing": "Test-merging to check for conflicts.",
+    "committing": "Creating the merge commit.",
+    "hooks": "Running pre-merge hooks.",
+    "pushing": "Moving the branch to the new commit.",
+    "publishing": "Publishing to the mirrors and the catalog.",
+}
+
+
+def _pull_mutation_progress(progress, node, state):
+    progress = dict(progress or {})
+    phase = str(progress.get("phase") or ("claimed" if node else "queued"))
+    progress.update({
+        "state": state,
+        "phase": phase,
+        "message": PULL_MUTATION_PROGRESS_MESSAGES.get(phase, ""),
+        "node": node,
+    })
+    progress.setdefault("steps", [])
+    return progress
+
+
+def _pull_mutation_stored_progress(row):
+    if not row or row.get("status") != "requested":
+        return {}
+    try:
+        stored = json.loads(str(row.get("result") or ""))
+    except Exception:
+        return {}
+    return stored.get("progress") if isinstance(stored, dict) and isinstance(
+        stored.get("progress"), dict) else {}
+
+
 async def repository_pull_merge_handler(
         env, request, owner, repo, pull_number, mutation="merge"):
     """Authorize, pin, dispatch, and durably reconcile one pull mutation job.
 
     ``mutation`` selects between merging the pull request into the base branch
     and merging the base branch into the pull request's own head branch. Both
-    are exact-OID, idempotent-by-request-id, owner-only, and audited; they share
-    this handler so neither can drift away from those four properties.
+    are exact-OID, idempotent-by-request-id, and audited; a merge is owner-only,
+    and an update is open to anyone who may push to the head branch.
     """
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
     if method_name(request) != "POST":
@@ -4358,10 +4505,19 @@ async def repository_pull_merge_handler(
     if not actor:
         return json_response({"error": "invalid_session"}, status=401)
     try:
-        authorized = await _organization_owner_can_merge_repo(
+        authorized = await _repository_owner_can_merge_repo(
             env, request, context["owner"], context["repo"], actor)
     except Exception:
         authorized = False
+    update_head = ""
+    if mutation == "update":
+        try:
+            update_head = await _pull_update_head(env, context, pull_number)
+            if not authorized:
+                authorized = await _account_may_write_branch(
+                    env, request, context, update_head, actor)
+        except Exception:
+            authorized = False
     target = context["owner"] + "/" + context["repo"]
     # An owner may merge without the independent-review gate. Only the owner
     # check above stands between a caller and that waiver, so every audit line
@@ -4439,6 +4595,15 @@ async def repository_pull_merge_handler(
                            "reason": protection[1].get("error", "")})
             return json_response(
                 protection[1], status=protection[0], cache_control="no-store")
+    if row is None and mutation == "update" and update_head:
+        refused = await _branch_protection.branch_refusal(
+            env, context["owner"], context["repo"], [update_head])
+        if refused is not None:
+            await _audit_sensitive_action(
+                env, actor, profile["action"], "repository", target,
+                "denied", {"pullNumber": int(pull_number),
+                           "reason": "branch_protected"})
+            return refused
     if row is None:
         if not await _repo_merge_jobs_make_room(
                 env, context["repoBi"], now):
@@ -4529,7 +4694,10 @@ async def repository_pull_merge_handler(
         # The node this job was dispatched to has dropped out of the healthy
         # set for now. Only it may answer for the job, so the browser waits.
         return json_response(
-            {"error": "merge_node_unavailable", "reason": "job_node_offline"},
+            {"error": "merge_node_unavailable", "reason": "job_node_offline",
+             "progress": _pull_mutation_progress(
+                 _pull_mutation_stored_progress(row), selected_node,
+                 "waiting")},
             status=503, cache_control="no-store",
             extra_headers=EXPECTED_DEGRADED_HEADERS)
     upstream_status, result = await _https_mirror_merge_proxy(
@@ -4547,6 +4715,21 @@ async def repository_pull_merge_handler(
                 env, actor, profile["action"], "repository", target,
                 "requested", {"pullNumber": int(pull_number),
                               "overrideReview": override_review})
+        progress = result.get("progress")
+        if progress and progress != _pull_mutation_stored_progress(row):
+            try:
+                await d1_run(
+                    env,
+                    """UPDATE repo_merge_jobs SET result=?,updated_at=?
+                         WHERE request_id=? AND status='requested'""",
+                    json.dumps({"progress": progress}, sort_keys=True,
+                               separators=(",", ":")),
+                    int(Date.now()), node_request["requestId"],
+                )
+            except Exception:
+                pass
+        result = dict(result, progress=_pull_mutation_progress(
+            progress, selected_node, "processing"))
         return _https_mirror_merge_response(result, mutation)
     terminal = (
         "succeeded" if result["status"] == profile["terminal"] else "failed")
@@ -4625,6 +4808,16 @@ async def repository_pull_merge_handler(
         # its mesh converge fast-forwards its checkout onto the merge.
         await notify_repo_host(
             env, context["owner"], context["repo"], "mirror_merge")
+        try:
+            if mutation == "merge":
+                await pull_attention_merged(
+                    env, context["owner"], context["repo"], int(pull_number))
+            else:
+                await pull_attention_watch(
+                    env, context["owner"], context["repo"], int(pull_number),
+                    due=True)
+        except Exception:
+            pass
         # Outbound webhooks (adhoc #207): only the merge mutation announces a
         # merged pull request, and only once the node reported the result
         # published — a queued build must never point at refs no mirror serves.
@@ -4636,6 +4829,12 @@ async def repository_pull_merge_handler(
                                      actor_bi, override_review)
                 except Exception:
                     pass
+            try:
+                await _self_update.on_merge(
+                    env, context["owner"], context["repo"], int(pull_number),
+                    actor, result)
+            except Exception:
+                pass
             await queue_repo_webhook_event(
                 env, context["owner"], context["repo"], "pull.merged",
                 {
@@ -4662,6 +4861,15 @@ async def repository_pull_merge_handler(
                     meta={"number": int(pull_number)})
             except Exception:
                 pass
+        elif mutation == "update":
+            queue_ai_review = globals().get("ai_review_enqueue")
+            if queue_ai_review is not None:
+                try:
+                    await queue_ai_review(
+                        env, context["owner"], context["repo"],
+                        int(pull_number), "updated", actor)
+                except Exception:
+                    pass
     return _https_mirror_merge_response(result, mutation)
 
 
@@ -5163,6 +5371,479 @@ async def repository_branch_ops_handler(env, request, owner, repo):
         "ops": await _branch_ops_pending(env, repo_bi),
         "limit": MAX_PENDING_BRANCH_OPS,
     }, cache_control="no-store")
+
+
+MAX_BRANCH_DELETES = 200
+BRANCH_DELETE_AUDIT_OUTCOMES = {
+    "deleted": "success", "queued": "requested", "pending": "requested",
+    "refused": "denied", "failed": "failed",
+}
+BRANCH_DELETE_JOBS_KEPT = 10
+BRANCH_DELETE_LEASE_MS = 60 * 1000
+BRANCH_DELETE_YIELD_SECONDS = 0.25
+BRANCH_DELETE_BACKOFF_SECONDS = (1, 2, 3, 5, 8)
+BRANCH_DELETE_WORKER_KEY = "branch-delete-worker"
+BRANCH_DELETE_ITEM_FIELDS = ("branch", "status", "error", "message")
+
+
+def _branch_delete_refusal(branch, error, message):
+    return {"branch": branch, "status": "refused", "error": error,
+            "message": message}
+
+
+def _branch_delete_wanted(items, name_of):
+    wanted, refused, seen = [], [], set()
+    for item in items:
+        if isinstance(item, dict):
+            raw = item.get("name", item.get("branch", ""))
+            expected = item.get("expectedOid", "")
+        else:
+            raw, expected = item, ""
+        label = clean_string(raw if isinstance(raw, str) else "", 255).strip()
+        name = name_of(raw)
+        if name and name in seen:
+            continue
+        seen.add(name or label)
+        expected = clean_string(
+            expected if isinstance(expected, str) else "", 64).strip().lower()
+        if not name:
+            refused.append(_branch_delete_refusal(
+                label, "invalid_branch", "That is not a branch name Git can "
+                "use."))
+        elif name.startswith("forkmesh/") or name == "agent/":
+            refused.append(_branch_delete_refusal(
+                name, "reserved_branch", name + " belongs to ForkMesh and "
+                "cannot be deleted here."))
+        elif expected and not re.fullmatch(BRANCH_OP_OID_PATTERN, expected):
+            refused.append(_branch_delete_refusal(
+                name, "invalid_commit", "The tip sent for " + name
+                + " is not a commit id."))
+        else:
+            wanted.append((name, expected))
+    return wanted, refused
+
+
+def _branch_delete_screen(name, expected, default, protected, tips=None):
+    if name == default:
+        return _branch_delete_refusal(
+            name, "default_branch", "The default branch cannot be deleted.")
+    if protected and _branch_protection.branch_is_protected(name, protected):
+        return _branch_delete_refusal(
+            name, "branch_protected", name + " is protected: it changes only "
+            "by merging an approved pull request.")
+    if tips is not None and name not in tips:
+        return _branch_delete_refusal(
+            name, "branch_not_found", name + " is not on this repository.")
+    if tips is not None and expected and tips[name] != expected:
+        return _branch_delete_refusal(
+            name, "stale_head", name + " moved since the page read it, so it "
+            "was kept. Refresh and try again.")
+    if tips is None and not expected:
+        return _branch_delete_refusal(
+            name, "invalid_commit", "Deleting " + name + " needs the tip the "
+            "page showed.")
+    return None
+
+
+async def _branch_delete_hosted(env, owner, repo):
+    record = await _repo_catalog_record(env, owner, repo)
+    return isinstance(record, dict) and record.get("source") == "hosted-web"
+
+
+async def _branch_delete_queue(env, request, owner, repo, repo_bi, records):
+    pending = await _branch_ops_pending(env, repo_bi)
+    waiting = {(op["op"], op["branch"]) for op in pending}
+    room = MAX_PENDING_BRANCH_OPS - len(pending)
+    outcomes, queued = {}, 0
+    for record in records:
+        if ("delete", record["branch"]) in waiting:
+            outcomes[record["branch"]] = "queued"
+            continue
+        if room <= 0:
+            outcomes[record["branch"]] = "queue_full"
+            continue
+        try:
+            await d1_run(
+                env,
+                "INSERT INTO branch_op_inbox (repo_bi, data, queued_at) "
+                "VALUES (?,?,?)",
+                repo_bi, await encrypt_row(env, record), record["queuedAt"],
+            )
+        except Exception:
+            outcomes[record["branch"]] = "queue_full"
+            room = 0
+            continue
+        waiting.add(("delete", record["branch"]))
+        room -= 1
+        queued += 1
+        outcomes[record["branch"]] = "queued"
+    if queued:
+        await _branch_ops_wake(env, request, owner, repo)
+    return outcomes
+
+
+async def _branch_delete_via_node(env, request, owner, repo, repo_bi, wanted,
+                                  actor):
+    node = await _branch_protection.storage_owner(env, owner, repo)
+    if await _branch_delete_hosted(env, node, repo):
+        return None, "branch_delete_unavailable", ""
+    default = await _branch_protection.default_branch(env, node, repo)
+    if not default:
+        return None, "default_branch_unknown", ""
+    protected, problem = await _branch_protection.push_protection(
+        env, owner, repo)
+    if problem:
+        return None, problem, default
+    results, records = {}, []
+    now = int(Date.now())
+    for name, expected in wanted:
+        refusal = _branch_delete_screen(name, expected, default, protected)
+        if refusal is not None:
+            results[name] = refusal
+            continue
+        records.append({"op": "delete", "branch": name,
+                        "expectedOid": expected, "requestedBy": actor,
+                        "queuedAt": now, "source": "web"})
+    outcomes = await _branch_delete_queue(
+        env, request, owner, repo, repo_bi, records)
+    for name, outcome in outcomes.items():
+        results[name] = {
+            "branch": name, "status": "queued", "error": "",
+            "message": "Queued the deletion of " + name + " for this "
+                       "repository's node."} if outcome == "queued" else {
+            "branch": name, "status": "failed", "error": "queue_full",
+            "message": "The node's queue is full, so " + name
+                       + " was not queued."}
+    return results, "", default
+
+
+def _branch_delete_projection(row_id, job):
+    items = job.get("items") or []
+    counts = {status: 0 for status in BRANCH_DELETE_AUDIT_OUTCOMES}
+    counts["waiting"] = 0
+    for item in items:
+        counts[item.get("status", "waiting")] = counts.get(
+            item.get("status", "waiting"), 0) + 1
+    return {
+        "id": int(row_id or 0),
+        "state": str(job.get("state") or ""),
+        "defaultBranch": str(job.get("default") or ""),
+        "total": len(items),
+        "done": len(items) - counts["waiting"],
+        "current": str(job.get("current") or "")
+        if job.get("state") == "running" else "",
+        "counts": counts,
+        "results": [{field: str(item.get(field) or "")
+                     for field in BRANCH_DELETE_ITEM_FIELDS}
+                    for item in items],
+        "createdAt": int(job.get("createdAt") or 0),
+        "updatedAt": int(job.get("updatedAt") or 0),
+        "finishedAt": int(job.get("finishedAt") or 0),
+        "limit": MAX_BRANCH_DELETES,
+    }
+
+
+def _d1_changes(result):
+    try:
+        return int(result.meta.changes)
+    except Exception:
+        try:
+            converted = result.to_py() if hasattr(result, "to_py") else result
+            return int((converted.get("meta") or {}).get("changes") or 0)
+        except Exception:
+            return 0
+
+
+async def _branch_delete_job_row(env, repo_bi, job_id=0):
+    if job_id:
+        row = await d1_first(
+            env, "SELECT id, data FROM branch_delete_jobs "
+            "WHERE id=? AND repo_bi=?", job_id, repo_bi)
+    else:
+        row = await d1_first(
+            env, "SELECT id, data FROM branch_delete_jobs WHERE repo_bi=? "
+            "ORDER BY id DESC LIMIT 1", repo_bi)
+    if not row:
+        return 0, None
+    job = await decrypt_row(env, row.get("data"))
+    return (int(row.get("id") or 0), job) if isinstance(job, dict) else (0, None)
+
+
+async def _branch_delete_job_load(env, job_id):
+    row = await d1_first(
+        env, "SELECT id, repo_bi, data FROM branch_delete_jobs WHERE id=?",
+        job_id)
+    if not row:
+        return None
+    job = await decrypt_row(env, row.get("data"))
+    return job if isinstance(job, dict) else None
+
+
+async def _branch_delete_job_save(env, job_id, job, lease_until=None):
+    now = int(Date.now())
+    job["updatedAt"] = now
+    if lease_until is None:
+        await d1_run(
+            env, "UPDATE branch_delete_jobs SET state=?, data=?, updated_at=? "
+            "WHERE id=?", job["state"], await encrypt_row(env, job), now,
+            job_id)
+    else:
+        await d1_run(
+            env, "UPDATE branch_delete_jobs SET state=?, data=?, updated_at=?, "
+            "lease_until=? WHERE id=?", job["state"],
+            await encrypt_row(env, job), now, lease_until, job_id)
+
+
+async def _branch_delete_audit(env, job, items):
+    for item in items:
+        await _audit_sensitive_action(
+            env, job.get("actor", ""), "repository.branch_delete",
+            "repository", job["owner"] + "/" + job["repo"],
+            BRANCH_DELETE_AUDIT_OUTCOMES.get(item["status"], "failed"),
+            {"branch": item["branch"], "op": "delete",
+             "status": item["status"], "error": item.get("error", ""),
+             "batch": len(job.get("items") or []),
+             "cleanupPending": len(item.get("cleanupPending") or [])})
+
+
+async def _branch_delete_job_finish(env, request, job, cache, agent_branches):
+    await agent_branches.branch_delete_job_publish(
+        env, request, job, cache, job.get("actor", ""))
+    deleted = [item for item in job["items"] if item["status"] == "deleted"]
+    if deleted and not job.get("hosted"):
+        now = int(Date.now())
+        await _branch_delete_queue(
+            env, request, job["owner"], job["repo"], job["repoBi"], [{
+                "op": "delete", "branch": item["branch"],
+                "expectedOid": item["tip"], "requestedBy": job.get("actor", ""),
+                "queuedAt": now, "source": "cores",
+            } for item in deleted])
+    job["state"] = "done"
+    job["current"] = ""
+    job["finishedAt"] = int(Date.now())
+
+
+async def _branch_delete_job_drain(env, request, job_id, sleep=None,
+                                   budget=None, lease_ms=BRANCH_DELETE_LEASE_MS):
+    import agent_branches
+    agent_branches._bind_runtime(globals())
+    if sleep is None:
+        import asyncio
+        sleep = asyncio.sleep
+    cache, backoff, steps = {}, 0, 0
+    while True:
+        job = await _branch_delete_job_load(env, job_id)
+        if job is None or job.get("state") != "running":
+            return
+        outcome, finished = await agent_branches.branch_delete_job_step(
+            env, request, job, cache)
+        if finished is not None:
+            await _branch_delete_audit(env, job, [finished])
+        if outcome == "done":
+            await _branch_delete_job_finish(
+                env, request, job, cache, agent_branches)
+        await _branch_delete_job_save(
+            env, job_id, job, int(Date.now()) + lease_ms)
+        if outcome == "done":
+            return
+        steps += 1
+        if budget is not None and steps >= budget:
+            return
+        if outcome == "wait":
+            await sleep(BRANCH_DELETE_BACKOFF_SECONDS[
+                min(backoff, len(BRANCH_DELETE_BACKOFF_SECONDS) - 1)])
+            backoff += 1
+        else:
+            backoff = 0
+            await sleep(BRANCH_DELETE_YIELD_SECONDS)
+
+
+async def _branch_delete_claim(env, job_id=0):
+    now = int(Date.now())
+    if job_id:
+        row = {"id": job_id}
+    else:
+        row = await d1_first(
+            env, "SELECT id FROM branch_delete_jobs WHERE state='running' "
+            "AND lease_until<? ORDER BY id LIMIT 1", now)
+    if not row:
+        return 0
+    claimed = await d1_run(
+        env, "UPDATE branch_delete_jobs SET lease_until=? WHERE id=? "
+        "AND state='running' AND lease_until<?",
+        now + BRANCH_DELETE_LEASE_MS, row["id"], now)
+    return int(row["id"]) if _d1_changes(claimed) else 0
+
+
+async def _branch_delete_worker(env, request, sleep=None):
+    idle = 0
+    while idle < 3:
+        job_id = await _branch_delete_claim(env)
+        if not job_id:
+            remaining = await d1_first(
+                env, "SELECT id FROM branch_delete_jobs WHERE "
+                "state='running' LIMIT 1")
+            if not remaining:
+                return
+            idle += 1
+            continue
+        idle = 0
+        await _branch_delete_job_drain(env, request, job_id, sleep=sleep)
+
+
+def _branch_delete_kick(env, request):
+    return _host_background(
+        env, BRANCH_DELETE_WORKER_KEY,
+        lambda: _branch_delete_worker(env, request))
+
+
+async def _branch_delete_status(env, request, repo_bi):
+    try:
+        job_id = int(parse_qs(urlparse(str(request.url)).query).get(
+            "job", ["0"])[0] or 0)
+    except (TypeError, ValueError, OverflowError):
+        job_id = 0
+    row_id, job = await _branch_delete_job_row(env, repo_bi, max(job_id, 0))
+    if job is None:
+        return json_response({"ok": True, "job": None},
+                             cache_control="no-store")
+    if job.get("state") == "running" and not _branch_delete_kick(
+            env, request):
+        if await _branch_delete_claim(env, row_id):
+            await _branch_delete_job_drain(
+                env, request, row_id, budget=1, lease_ms=0)
+            row_id, job = await _branch_delete_job_row(env, repo_bi, row_id)
+    return json_response({
+        "ok": True, "job": _branch_delete_projection(row_id, job),
+        "ops": await _branch_ops_pending(env, repo_bi),
+    }, cache_control="no-store")
+
+
+async def _branch_delete_create(env, request, owner, repo, repo_bi, data,
+                                actor):
+    import agent_branches
+    agent_branches._bind_runtime(globals())
+    items = data.get("branches")
+    if not isinstance(items, list) or not items:
+        return json_response({"error": "branches_required"}, status=400)
+    if len(items) > MAX_BRANCH_DELETES:
+        return json_response(
+            {"error": "too_many_branches", "limit": MAX_BRANCH_DELETES},
+            status=400)
+    row_id, running = await _branch_delete_job_row(env, repo_bi)
+    if running is not None and running.get("state") == "running":
+        _branch_delete_kick(env, request)
+        return json_response({
+            "error": "delete_running",
+            "message": "Branches of this repository are being deleted "
+                       "already; wait for that to finish.",
+            "job": _branch_delete_projection(row_id, running)},
+            status=409, cache_control="no-store")
+    wanted, refused = _branch_delete_wanted(
+        items, agent_branches.git_branch_name)
+    try:
+        await recent_push_forget(env, repo_bi, [name for name, _ in wanted])
+    except Exception:
+        pass
+    now = int(Date.now())
+    job = {"owner": owner, "repo": repo, "repoBi": repo_bi, "actor": actor,
+           "state": "running", "items": list(refused), "createdAt": now,
+           "default": "", "hosted": True, "branchCount": 0}
+    if wanted:
+        target, reason = await agent_branches.branch_delete_target(
+            env, request, owner, repo)
+        if target is not None:
+            mirror = target["mirror"]
+            job.update({
+                "default": target["default"],
+                "node": target["endpoint"]["node"],
+                "branchCount": len(target["tips"]),
+                "hosted": await _branch_delete_hosted(
+                    env, mirror["owner"], mirror["repo"]),
+            })
+            for name, expected in wanted:
+                refusal = _branch_delete_screen(
+                    name, expected, target["default"], target["protected"],
+                    target["tips"])
+                job["items"].append(refusal or {
+                    "branch": name, "status": "waiting", "error": "",
+                    "message": "Waiting to be deleted.", "phase": "primary",
+                    "tip": target["tips"][name], "requestId": "",
+                    "polls": 0, "tries": 0})
+        elif reason == "not_served":
+            results, reason, default = await _branch_delete_via_node(
+                env, request, owner, repo, repo_bi, wanted, actor)
+            if results is None:
+                target = None
+            else:
+                job.update({"default": default, "hosted": False})
+                job["items"] += [results[name] for name, _ in wanted
+                                 if name in results]
+                reason = ""
+        if target is None and reason:
+            await _audit_sensitive_action(
+                env, actor, "repository.branch_delete", "repository",
+                owner + "/" + repo, "failed",
+                {"reason": reason, "count": len(wanted)})
+            return json_response({
+                "ok": False, "error": reason, "retryable": True,
+                "message": "Branches cannot be deleted right now: the "
+                           "repository's copies could not be checked. "
+                           "Nothing was deleted; try again shortly."},
+                status=503, cache_control="no-store",
+                extra_headers=EXPECTED_DEGRADED_HEADERS)
+    await _branch_delete_audit(env, job, [
+        item for item in job["items"] if item["status"] != "waiting"])
+    if not any(item["status"] == "waiting" for item in job["items"]):
+        job.update({"state": "done", "finishedAt": now})
+    job["updatedAt"] = now
+    inserted = await d1_first(
+        env, "INSERT INTO branch_delete_jobs (repo_bi, state, data, "
+        "created_at, updated_at, lease_until) VALUES (?,?,?,?,?,0) "
+        "RETURNING id", repo_bi, job["state"], await encrypt_row(env, job),
+        now, now)
+    job_id = int((inserted or {}).get("id") or 0)
+    await d1_run(
+        env, "DELETE FROM branch_delete_jobs WHERE repo_bi=? AND "
+        "state!='running' AND id NOT IN (SELECT id FROM branch_delete_jobs "
+        "WHERE repo_bi=? ORDER BY id DESC LIMIT ?)",
+        repo_bi, repo_bi, BRANCH_DELETE_JOBS_KEPT)
+    if job["state"] == "running" and not _branch_delete_kick(env, request):
+        if await _branch_delete_claim(env, job_id):
+            await _branch_delete_job_drain(
+                env, request, job_id, budget=1, lease_ms=0)
+            job = await _branch_delete_job_load(env, job_id) or job
+    return json_response({
+        "ok": True, "job": _branch_delete_projection(job_id, job),
+        "ops": await _branch_ops_pending(env, repo_bi),
+    }, status=202 if job["state"] == "running" else 200,
+        cache_control="no-store")
+
+
+async def repository_branch_delete_handler(env, request, owner, repo):
+    """Queue, and report on, a serial deletion job for the owner."""
+    await ensure_schema(env)
+    method = method_name(request)
+    if method not in ("GET", "POST"):
+        return json_response({"error": "method_not_allowed"}, status=405)
+    try:
+        data = await bounded_json_request(request) if method == "POST" else {}
+    except Exception:
+        return json_response({"error": "invalid_json"}, status=400)
+    if not isinstance(data, dict):
+        return json_response({"error": "invalid_json"}, status=400)
+    authorized, denial = await _authorize_issue_manager(
+        env, owner, data, request)
+    if not authorized:
+        return denial
+    _, actor_record = await _account_session_record(env, request, data)
+    actor = clean_string(
+        (actor_record or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    repo_bi = await blind_index(env, owner + "/" + repo)
+    if method == "GET":
+        return await _branch_delete_status(env, request, repo_bi)
+    return await _branch_delete_create(
+        env, request, owner, repo, repo_bi, data, actor)
 
 
 PROFILE_CONTRIBUTION_VIEW_FRESH_MS = 60 * 1000

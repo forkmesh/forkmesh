@@ -1,6 +1,11 @@
 package com.forkmesh.nativeapp.feature.composer
 
 import androidx.compose.foundation.background
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +45,7 @@ import com.forkmesh.nativeapp.composer.QuickLaunchDestination
 import com.forkmesh.nativeapp.composer.QuickLaunchFix
 import com.forkmesh.nativeapp.composer.QuickLaunchOutcome
 import com.forkmesh.nativeapp.composer.QuickLaunchRunOptions
+import com.forkmesh.nativeapp.composer.QuickPromptAction
 import com.forkmesh.nativeapp.ui.kit.FmMessenger
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
@@ -64,6 +70,12 @@ class QuickSendState internal constructor(internal val launcher: QuickAgentLaunc
 
     val contextLine: String get() = version.let { launcher.contextLine }
     val model: AgentModelChoice get() = version.let { launcher.model }
+    val chip: AgentModelChoice get() = version.let { launcher.chip }
+    val action: QuickPromptAction? get() = version.let { launcher.action }
+    val taskAssignee: String get() = version.let { launcher.taskAssignee }
+    val taskAssignees: List<String> get() = version.let { launcher.taskAssignees }
+    val taskPeopleLoaded: Boolean get() = version.let { launcher.taskPeople != null }
+    val loadingTaskPeople: Boolean get() = version.let { launcher.loadingTaskPeople }
     val targets: List<AgentStartTarget> get() = version.let { launcher.targets ?: emptyList() }
     val repository: AgentStartTarget? get() = version.let { launcher.repository }
     val destination: QuickLaunchDestination? get() = version.let { launcher.destination }
@@ -74,6 +86,12 @@ class QuickSendState internal constructor(internal val launcher: QuickAgentLaunc
     val takesNoWorktree: Boolean get() = version.let { launcher.takesNoWorktree }
 
     fun detail(destination: QuickLaunchDestination): String = version.let { launcher.detail(destination) }
+
+    fun assigneeLabel(name: String): String = version.let { launcher.taskAssigneeLabel(name) }
+
+    suspend fun chooseAssignee(name: String) = run { chooseAssignee(name) }
+
+    suspend fun loadTaskPeople() = run { loadTaskPeople() }
 
     private suspend fun <T> run(block: QuickAgentLauncher.() -> T): T {
         val result = lock.withLock { withContext(Dispatchers.IO) { launcher.block() } }
@@ -109,12 +127,12 @@ class QuickSendState internal constructor(internal val launcher: QuickAgentLaunc
         message = null
     }
 
-    suspend fun send(prompt: String, images: List<PromptAttachment>): QuickLaunchOutcome {
+    suspend fun send(prompt: String, images: List<PromptAttachment>, agentOnly: Boolean = false): QuickLaunchOutcome {
         if (sending) return QuickLaunchOutcome.Ignored
         sending = true
         clearFix()
         try {
-            val outcome = run { send(prompt, images) }
+            val outcome = run { if (agentOnly) sendAgent(prompt, images) else send(prompt, images) }
             when (outcome) {
                 is QuickLaunchOutcome.NeedsFix -> {
                     fix = outcome.fix
@@ -135,18 +153,19 @@ internal fun QuickContextLine(state: QuickSendState, onOpenPicker: () -> Unit, o
     val c = Fm.colors
     Column(Modifier.fillMaxWidth().padding(bottom = FmSpace.x2)) {
         if (state.takesRunOptions) QuickRunOptions(state)
+        if (state.action == QuickPromptAction.Task) QuickAssigneeMenu(state)
         Row(
             Modifier
                 .clip(RoundedCornerShape(FmRadius.full))
                 .clickable(onClick = onOpenPicker)
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Runs on ${state.contextLine}. Change"
+                    contentDescription = if (state.action == null) "Runs on ${state.contextLine}. Change" else "${state.contextLine}. Change"
                 }
                 .padding(horizontal = FmSpace.x2, vertical = FmSpace.x1),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FmIcon("smart_toy_outlined", size = 16.dp, tint = c.textTertiary)
+            FmIcon(state.action?.icon ?: "smart_toy_outlined", size = 16.dp, tint = c.textTertiary)
             Spacer(Modifier.width(FmSpace.x1))
             Text(
                 state.contextLine,
@@ -180,6 +199,59 @@ internal fun QuickContextLine(state: QuickSendState, onOpenPicker: () -> Unit, o
         }
     }
 }
+
+@Composable
+private fun QuickAssigneeMenu(state: QuickSendState) {
+    val c = Fm.colors
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (!state.taskPeopleLoaded) state.loadTaskPeople() }
+    Box {
+        Row(
+            Modifier
+                .heightIn(min = 32.dp)
+                .clip(RoundedCornerShape(FmRadius.full))
+                .clickable { open = true }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Assign the task to ${state.assigneeLabel(state.taskAssignee)}"
+                }
+                .padding(horizontal = FmSpace.x2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FmIcon("account_circle_outlined", size = 16.dp, tint = c.accent)
+            Spacer(Modifier.width(FmSpace.x1))
+            Text(
+                "Assign to ${state.assigneeLabel(state.taskAssignee)}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = Fm.text.bodySmall.copy(color = c.accent),
+            )
+            FmIcon("keyboard_arrow_down_rounded", size = 16.dp, tint = c.accent)
+        }
+        FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (name in state.taskAssignees) {
+                FmDropdownMenuItem(
+                    text = state.assigneeLabel(name),
+                    icon = if (name == state.taskAssignee) "check" else null,
+                    onClick = {
+                        open = false
+                        scope.launch { state.chooseAssignee(name) }
+                    },
+                )
+            }
+        }
+    }
+}
+
+internal val QuickPromptAction.icon: String
+    get() = when (this) {
+        QuickPromptAction.BugReport -> "bug_report_outlined"
+        QuickPromptAction.Task -> "task_alt"
+        QuickPromptAction.Issue -> "error_outline"
+        QuickPromptAction.ActivityPub -> "campaign"
+        QuickPromptAction.Note -> "sticky_note_2_outlined"
+    }
 
 @Composable
 private fun QuickRunOptions(state: QuickSendState) {
@@ -236,13 +308,26 @@ private fun RunOptionToggle(title: String, icon: String, on: Boolean, enabled: B
 internal sealed class QuickPick {
     data class Repo(val target: AgentStartTarget) : QuickPick()
     data class Where(val destination: QuickLaunchDestination) : QuickPick()
+    data class Assignee(val name: String) : QuickPick()
 }
 
 internal suspend fun pickQuickContext(messenger: FmMessenger, state: QuickSendState): QuickPick? =
     messenger.showModalBottomSheet(isScrollControlled = true) { close ->
         val c = Fm.colors
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = FmSpace.x5)) {
-            val destinations = state.destinations
+            val action = state.action
+            if (action == QuickPromptAction.Task) {
+                SheetHeading("Assign to")
+                if (state.loadingTaskPeople && !state.taskPeopleLoaded) {
+                    Text("Loading members…", Modifier.padding(horizontal = FmSpace.x4), style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                }
+                for (name in state.taskAssignees) {
+                    SheetOption(state.assigneeLabel(name), if (name.isEmpty()) "On the General board" else "", name == state.taskAssignee) {
+                        close(QuickPick.Assignee(name))
+                    }
+                }
+            }
+            val destinations = if (action == null) state.destinations else emptyList()
             if (destinations.isNotEmpty()) {
                 SheetHeading("Runs on")
                 for (destination in destinations) {
@@ -256,6 +341,7 @@ internal suspend fun pickQuickContext(messenger: FmMessenger, state: QuickSendSt
                     }
                 }
             }
+            if (action != null && !action.needsRepository) return@Column
             SheetHeading("Repository")
             val targets = state.targets
             if (targets.isEmpty()) {

@@ -66,15 +66,10 @@ export async function openViewOnceCapture(kind, {
   let voiceStage = null;
   let videoTrack = raw.getVideoTracks()[0] || null;
   let audioTrack = raw.getAudioTracks()[0] || null;
+  let failing = "";
   try {
-    if (kind === "video" && videoTrack && filters.face && filterStages.face) {
-      const stage = await filterStages.face(raw, filters.face);
-      if (stage?.track) {
-        stages.push(stage);
-        videoTrack = stage.track;
-      }
-    }
     if (audioTrack && filters.voice && filterStages.voice) {
+      failing = "voice";
       const stage = await filterStages.voice(audioTrack, filters.voice);
       if (stage?.track) {
         stages.push(stage);
@@ -82,7 +77,16 @@ export async function openViewOnceCapture(kind, {
         audioTrack = stage.track;
       }
     }
+    if (kind === "video" && videoTrack && filters.face && filterStages.face) {
+      failing = "face";
+      const stage = await filterStages.face(raw, filters.face);
+      if (stage?.track) {
+        stages.push(stage);
+        videoTrack = stage.track;
+      }
+    }
   } catch (error) {
+    if (error && typeof error === "object" && !error.stage) error.stage = failing;
     for (const stage of stages) {
       try { stage.stop?.(); } catch (_) {}
     }
@@ -380,7 +384,10 @@ export function openViewOnceRecorder({
   let stopWhenStarted = false;
   let sending = false;
 
-  function unavailableText() {
+  function unavailableText(error) {
+    if (error?.stage === "voice" && activeFilters.voice) {
+      return "The voice changer could not start here. Choose \u201cYour own voice\u201d or try again.";
+    }
     if (activeFilters.face) {
       return "The face or background could not start here. Choose \u201cYour own face\u201d and \u201cNo background\u201d, or try again.";
     }
@@ -396,7 +403,7 @@ export function openViewOnceRecorder({
     ensureCapture().then(() => {
       if (!closed) status.textContent = "It disappears after it is watched once.";
     }).catch((error) => {
-      if (!closed && !error?.superseded) status.textContent = unavailableText();
+      if (!closed && !error?.superseded) status.textContent = unavailableText(error);
     });
   }
 
@@ -460,12 +467,17 @@ export function openViewOnceRecorder({
     status.textContent = activeFilters.face
       ? "Starting the camera and loading the face and background…"
       : kind === "video" ? "Starting the camera…" : "Starting the microphone…";
-    const opened = await openViewOnceCapture(kind, { filters: { ...activeFilters } });
-    if (closed || generation !== captureGeneration) {
+    const stale = () => closed || generation !== captureGeneration;
+    const superseded = () => Object.assign(new Error("superseded"), { superseded: true });
+    let opened;
+    try {
+      opened = await openViewOnceCapture(kind, { filters: { ...activeFilters } });
+    } catch (error) {
+      throw stale() ? superseded() : error;
+    }
+    if (stale()) {
       opened.stop();
-      const error = new Error("superseded");
-      error.superseded = true;
-      throw error;
+      throw superseded();
     }
     capture = opened;
     if (monitorBox?.checked) capture.voiceStage?.monitor?.(true);
@@ -552,7 +564,7 @@ export function openViewOnceRecorder({
       for (const select of selects) select.disabled = false;
       releaseCapture();
       if (closed) return;
-      status.textContent = unavailableText();
+      status.textContent = unavailableText(error);
       record.hidden = false;
       stopButton.hidden = true;
     }

@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -43,7 +44,7 @@ void testBudget()
           "one agent is throttled at 60% of the slice");
     check(b.agentMaxBytes == b.sliceHighBytes * 4 / 5,
           "one agent is capped at 80% of the slice");
-    check(b.jobsPerAgent == 4, "about 3 GB per build job");
+    check(b.jobsPerAgent == 9, "about 1.5 GB per build job");
 
     const ar::Budget small = ar::computeBudget(4 * kGiB, 4, 20);
     check(small.reserveBytes == 2 * kGiB, "at least 2 GB is kept back");
@@ -315,6 +316,48 @@ QList<ar::UnitSample> units(std::initializer_list<ar::UnitSample> list)
     return QList<ar::UnitSample>(list);
 }
 
+void testRetargetCpu()
+{
+    const ar::Budget budget = ar::computeBudget(32 * kGiB, 16, 20);
+    ar::GovernorState state;
+    check(ar::retargetCpuQuota(budget, state) == budget.sliceCpuQuota,
+          "with nothing measured yet a new budget starts at its ceiling");
+    state.otherCores = 2.0;
+    check(ar::retargetCpuQuota(budget, state) == budget.sliceCpuQuota - 200,
+          "a new budget leaves room for what other programs use now");
+    state.otherCores = 15.0;
+    check(ar::retargetCpuQuota(budget, state) == budget.sliceCpuFloor,
+          "a new budget never drops below its floor");
+    check(ar::retargetCpuQuota(ar::Budget{}, state) == 0, "no budget, no cap");
+
+    const QStringList scopes = ar::agentScopes(
+        units({{QStringLiteral("forkmesh-agent-claude-1-2.scope")},
+               {QStringLiteral("forkmesh-agent-probe-1-1.scope")},
+               {QStringLiteral("forkmesh-action-build-1.scope")},
+               {QStringLiteral("run-u12.service")}}));
+    check(scopes == QStringList{QStringLiteral("forkmesh-agent-claude-1-2.scope")},
+          "only running agent scopes get the new per-agent limits");
+}
+
+void testReserveSettings()
+{
+    QTemporaryDir home;
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, home.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, home.path());
+    const ar::Status changed = ar::setReservePercents(35, 99);
+    const QSettings saved;
+    check(saved.value(ar::kReservePercentSetting).toInt() == 35 &&
+              saved.value(ar::kCpuReservePercentSetting).toInt() == ar::kMaxReservePercent,
+          "the sliders save both reserve percents, clamped");
+    check(changed.budget.totalBytes == ar::budgetFor(35, 99).totalBytes &&
+              changed.budget.sliceCpuQuota == ar::budgetFor(35, 99).sliceCpuQuota &&
+              ar::status().budget.sliceHighBytes == ar::budgetFor(35, 99).sliceHighBytes,
+          "new agents get the new budget at once");
+    check(ar::currentBudget().reserveBytes == ar::budgetFor(35, 60).reserveBytes,
+          "the saved percents are read back on the next start");
+    ar::applyBudget();
+}
+
 void testPolicy()
 {
     check(!ar::freezable(QStringLiteral("forkmesh-agent-claude-1-1-1.scope")),
@@ -530,6 +573,8 @@ int main(int argc, char **argv)
     testSliceReader();
     testSliceCounters();
     testFreezeCandidate();
+    testRetargetCpu();
+    testReserveSettings();
     if (g_failures) {
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);
         return 1;

@@ -66,7 +66,33 @@ test("ecosystem project pages are served by the ecosystem document", async () =>
 });
 
 
-test("plugin share links are served by the market document", async () => {
+test("unknown plugin ids fall back to the market document", async () => {
+  const requested = [];
+  const env = environment({
+    ASSETS: {
+      async fetch(request) {
+        const path = new URL(request.url).pathname;
+        requested.push(path);
+        if (path === "/market") {
+          return new Response("<h1>ForkMesh Market</h1>", {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        return new Response("missing", { status: 404 });
+      },
+    },
+  });
+  const response = await worker.fetch(
+    new Request("https://forkmesh.com/market/not-a-package", { headers: { dnt: "1" } }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "<h1>ForkMesh Market</h1>");
+  assert.deepEqual(requested, ["/market/not-a-package", "/market"]);
+});
+
+
+test("plugin share links are served by their package page", async () => {
   const requested = [];
   const env = environment({
     ASSETS: {
@@ -86,7 +112,7 @@ test("plugin share links are served by the market document", async () => {
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "<h1>ForkMesh Market</h1>");
   }
-  assert.deepEqual(requested, ["/market", "/market"]);
+  assert.deepEqual(requested, ["/market/crm", "/market/nemotron-3.5-lightning"]);
 
   const preview = await worker.fetch(
     new Request("https://forkmesh.com/market/previews/packages/notes/preview/market.webp"),

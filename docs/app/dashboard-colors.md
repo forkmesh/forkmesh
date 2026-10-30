@@ -21,6 +21,12 @@ roles and a compact control size. Both live in one file,
 - `roles` and `rules`: what each colour is for, in words an agent can follow.
   `AGENTS.md` points agents at this file.
 
+Which of the two sets a page shows is the visitor's Settings, Appearance
+choice (System, Dark or Light), else the instance's colour mode (dark unless
+its theme says light or system); see
+[Colour mode](../INSTANCES.md#colour-mode). The light values here are also
+what a script-less visitor gets on a system-mode instance.
+
 ## Why `primary` is blue
 
 In October 2026 the user asked why every new page came out with green inputs,
@@ -50,6 +56,16 @@ the shell after `apply_theme` has filled the markers (the raw `shell.html`
 only holds the markers), and that each one has a dark and a light value in
 `theme.json`.
 
+## Text on solid `primary`
+
+White text on the dark-theme blue (`#4493f8`) reaches only 3.1:1, below the
+4.5:1 text minimum in
+`www/docs/engineering/daily-interface-budgets.json`, and the daily-interface
+browser check failed on it. In the dark theme, `primary-foreground` is now the
+page background (`1 4 9`), which gives 6.6:1 and keeps the blue unchanged for
+links, focus and selection. The light theme keeps white text on `#0969da`
+(5.2:1).
+
 ## Header search focus
 
 The header search box (`data-global-search-shell` in
@@ -78,3 +94,12 @@ since it loads after `tailwind.css` and its `.fm-cal-day` border would win
 over a utility), an accent weekday label and an accent date pill. Both carry
 `aria-current="date"`. Calendar list dots keep their per-calendar colours,
 and New event and Save event stay green as create actions.
+
+## Seasons
+
+`theme.json` also has `seasons`: colours that replace a role while a seasonal
+theme is on. `seasons.halloween` turns `cta` and `success` orange; the shell's
+`/*#season halloween dark*/` and `/*#season halloween light*/` markers receive
+them inside `[data-season="halloween"]` rules. Pages keep using the roles
+(`bg-cta`, `success`), never a seasonal colour directly. See
+[seasonal-theme](seasonal-theme.md).

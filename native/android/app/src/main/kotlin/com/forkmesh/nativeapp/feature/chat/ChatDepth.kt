@@ -9,9 +9,13 @@ import com.forkmesh.nativeapp.apps.AppsApi
 import com.forkmesh.nativeapp.apps.ChatApps
 import com.forkmesh.nativeapp.chat.ChannelGroupsStore
 import com.forkmesh.nativeapp.chat.ChatAccountCalling
+import com.forkmesh.nativeapp.chat.ChatBlocks
+import com.forkmesh.nativeapp.chat.NodeOwners
 import com.forkmesh.nativeapp.chat.ChatHistoryCodec
 import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.chat.ChatHub
+import com.forkmesh.nativeapp.chat.ChatLinkPreviewService
+import com.forkmesh.nativeapp.chat.ChatLinkUrlConnectionHttp
 import com.forkmesh.nativeapp.chat.ChatReadMarks
 import com.forkmesh.nativeapp.chat.ChatWelcomeAnnouncer
 import com.forkmesh.nativeapp.chat.DirectMeshLinks
@@ -37,6 +41,7 @@ import com.forkmesh.nativeapp.feature.account.SettingsService
 import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
+import com.forkmesh.nativeapp.push.CallRings
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
 import com.forkmesh.nativeapp.security.SecretStore
 import java.io.File
@@ -61,10 +66,12 @@ object ChatDepth {
     private val revisionState = MutableStateFlow(0)
     private val noticeFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
     private val pendingIssueState = MutableStateFlow<String?>(null)
+    private val revealState = MutableStateFlow(0)
 
     val revision: StateFlow<Int> = revisionState.asStateFlow()
     val notices: SharedFlow<String> = noticeFlow.asSharedFlow()
     val pendingIssue: StateFlow<String?> = pendingIssueState.asStateFlow()
+    val revealRequests: StateFlow<Int> = revealState.asStateFlow()
 
     @Volatile
     var hub: ChatHub? = null
@@ -90,6 +97,10 @@ object ChatDepth {
 
     @Volatile
     var apps: ChatApps? = null
+        private set
+
+    @Volatile
+    var linkPreviews: ChatLinkPreviewService? = null
         private set
 
     @Volatile
@@ -158,6 +169,7 @@ object ChatDepth {
             if (conversation.isNotEmpty()) prefs?.putString(lastKey, conversation)
         }
         chat.onNotice = { post(it) }
+        chat.onReveal = { revealState.value = revealState.value + 1 }
         chat.selfName = { auth?.session?.value?.nodeName ?: room.persona.name }
         chat.extras.onChange = {
             bump()
@@ -166,10 +178,27 @@ object ChatDepth {
         auth?.let { chat.setRetention(it.chatRetention.value) }
         hub = chat
 
-        val historyScope = { ChatHistoryCodec.scopeName(settings.core.serverUrl, settings.core.room) }
+        val historyScope = {
+            ChatHistoryCodec.projectScope(scopeInfo.projectId.ifEmpty { settings.core.serverUrl }, settings.core.room)
+        }
+        val formerScopes = { ChatHistoryCodec.formerScopes(settings.core.serverUrl, settings.core.room) }
         val historyDir = File(AppFiles.projectSupportDir(app, scopeInfo), "chat-history")
-        chat.attachHistory(ChatHistoryStore(historyDir), historyScope)
+        chat.attachHistory(ChatHistoryStore(historyDir), formerScopes, historyScope)
         room.addListener { scheduleSave() }
+        val previewProject = scopeInfo.projectId.ifEmpty { settings.core.serverUrl }
+        val previews = ChatLinkPreviewService(
+            http = ChatLinkUrlConnectionHttp(),
+            prefs = prefs,
+            fileSource = { File(app.cacheDir, ChatLinkPreviewService.fileName(previewProject)) },
+            saveLater = { task ->
+                ProjectLifecycle.scope.launch(Dispatchers.IO) {
+                    delay(SAVE_DELAY_MS)
+                    task.run()
+                }
+            },
+        )
+        ChatLinkPreviewUi.bind(previews)
+        linkPreviews = previews
         if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)
 
         if (api != null && secrets != null) {
@@ -182,10 +211,16 @@ object ChatDepth {
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
+                nodeKey = { room.nodeKey },
+                owners = { room.owners },
             )
-            service.addListener { bump() }
+            service.addListener {
+                bump()
+                scheduleSave()
+            }
             office = service
             chat.office = service
+            GroupCallFeature.install(app, service) { auth?.session?.value?.nodeName.orEmpty() }
             val directService = DirectMessageService(
                 api = calling,
                 connector = WebSocketOfficeConnector,
@@ -195,7 +230,10 @@ object ChatDepth {
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
             )
-            directService.addListener { bump() }
+            directService.addListener {
+                bump()
+                scheduleSave()
+            }
             directService.mesh = object : DirectMeshLinks {
                 private fun room(): LocalMeshRoom? = Services.get<LocalMeshRoom>()
 
@@ -205,12 +243,13 @@ object ChatDepth {
 
                 override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = room()?.sendDirect(kid, frame) == true
 
-                override fun setFocus(channel: String, on: Boolean) {
-                    room()?.setFocus(channel, on)
+                override fun setFocus(channel: String, on: Boolean, kids: Set<String>) {
+                    room()?.setFocus(channel, on, kids)
                 }
             }
             direct = directService
             chat.direct = directService
+            DirectLiveFeature.install(app, chat, directService)
             chat.calls = DirectCallFeature.install(
                 context = app,
                 direct = directService,
@@ -226,7 +265,15 @@ object ChatDepth {
                     if (topic == DIRECT_MESSAGES_TOPIC && direct === directService) {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
                     } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
-                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks(force = true) }
+                    }
+                }
+                val previousEvent = channel.onEvent
+                channel.onEvent = { topic, frame ->
+                    previousEvent?.invoke(topic, frame)
+                    val ringing = CallRings.conversation(frame)
+                    if (ringing != null && direct === directService) {
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { runCatching { directService.openRinging(ringing) } }
                     }
                 }
                 val previousConnected = channel.onConnected
@@ -236,6 +283,15 @@ object ChatDepth {
                 }
             }
             chat.forkbot = calling
+            val owners = NodeOwners(calling)
+            owners.addListener {
+                chat.extras.relabelBots()
+                service.relabelBots()
+            }
+            room.owners = owners
+            val blocks = ChatBlocks(calling, prefs)
+            blocks.onChange = { bump() }
+            chat.blocks = blocks
             val appsService = ChatApps(AppsApi(api))
             appsService.onChange = { bump() }
             appsService.onNotice = { post(it) }
@@ -247,12 +303,17 @@ object ChatDepth {
         ProjectLifecycle.onClose {
             withContext(Dispatchers.IO) {
                 chat.calls?.let { DirectCallFeature.uninstall(it, direct) }
+                DirectLiveFeature.uninstall(chat)
                 runCatching { chat.saveHistory() }
                 office?.closeAll()
                 direct?.closeAll()
                 discordBridge?.stopWatching()
+                previews.leaveProject()
             }
+            if (linkPreviews === previews) linkPreviews = null
+            ChatLinkPreviewUi.clear()
             room.frameObserver = null
+            room.owners = null
             chat.calls = null
             if (hub === chat) hub = null
             office = null
@@ -274,8 +335,19 @@ object ChatDepth {
                     withContext(Dispatchers.IO) {
                         if (changed) apps?.reset()
                         office?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
-                        direct?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
-                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                        direct?.let {
+                            if (token.isEmpty()) {
+                                chat.directSessionChanged("")
+                                chat.live?.clear()
+                                it.clear()
+                            } else {
+                                chat.directSessionChanged(auth.session.value?.nodeName.orEmpty())
+                                it.refresh()
+                            }
+                        }
+                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks(force = true)
+                        room.owners?.clear()
+                        chat.blocks?.let { if (token.isEmpty()) it.clear() else it.signedIn() }
                     }
                 }
             }

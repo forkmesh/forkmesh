@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.localrepos
 
+import com.forkmesh.nativeapp.ui.kit.FmSheetAction
+import com.forkmesh.nativeapp.ui.kit.showActionSheet
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -183,24 +185,13 @@ internal fun LocalReposSectionContent(store: LocalRepoStore, navigator: Navigato
 
     fun import() = scope.launch {
         if (!requireAccount("import a repository")) return@launch
-        val choice = messenger.showModalBottomSheet<String> { close ->
-            Spacer(Modifier.height(FmSpace.x2))
-            FmListRow(
-                title = "Folder",
-                subtitle = "Copy a folder from Files into a new repository",
-                leading = { FmIconTile("folder_open_outlined", tint = c.accent) },
-                onTap = { close("folder") },
-            )
-            FmRowDivider()
-            FmListRow(
-                title = "Zip archive",
-                subtitle = "Extract a .zip into a new repository",
-                leading = { FmIconTile("folder_zip_outlined", tint = c.accent) },
-                onTap = { close("zip") },
-            )
-            Spacer(Modifier.height(FmSpace.x2))
-        } ?: return@launch
-        if (choice == "folder") {
+        val choice = messenger.showActionSheet(
+            actions = listOf(
+                FmSheetAction("Folder — copy a folder from Files into a new repository"),
+                FmSheetAction("Zip archive — extract a .zip into a new repository"),
+            ),
+        ) ?: return@launch
+        if (choice == 0) {
             folderPicker.launch(null)
         } else {
             zipPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
@@ -256,7 +247,7 @@ internal fun LocalReposSectionContent(store: LocalRepoStore, navigator: Navigato
             }
             FmToneButton(label = "New repository", onPressed = if (busy) null else ({ create() }), icon = "add", tone = FmTone.Accent)
             FmToneButton(label = "Import from Files", onPressed = if (busy) null else ({ import() }), icon = "drive_folder_upload_outlined")
-            FmToneButton(label = "Mirror from GitHub/GitLab/Codeberg", onPressed = if (busy) null else mirrorFromProvider, icon = "cloud_sync_outlined")
+            FmToneButton(label = "Mirror from GitHub/GitLab/Codeberg/Gitea", onPressed = if (busy) null else mirrorFromProvider, icon = "cloud_sync_outlined")
         }
         HorizontalDivider(thickness = 1.dp, color = c.border)
         FmSectionHeader(

@@ -406,6 +406,13 @@ async def office_attendance_handler(env, request):
             extra_headers={"x-content-type-options": "nosniff"},
         )
 
+    if (world_bearer_visitor(env, request)
+            if "world_bearer_visitor" in globals() else None):
+        return json_response(
+            {"ok": True, "recorded": False, "visitor": True},
+            cache_control="no-store, max-age=0, must-revalidate",
+            extra_headers={"x-content-type-options": "nosniff"},
+        )
     try:
         data = await bounded_json_request(request)
     except Exception:
@@ -589,6 +596,14 @@ async def office_general_entry_handler(env, request):
             cache_control="no-store, max-age=0, must-revalidate",
             extra_headers={"allow": "POST"},
         )
+    if (world_bearer_visitor(env, request)
+            if "world_bearer_visitor" in globals() else None):
+        return json_response(
+            {"ok": False, "error": "members_only", "visitor": True},
+            status=403,
+            cache_control="no-store, max-age=0, must-revalidate",
+            extra_headers={"x-content-type-options": "nosniff"},
+        )
     if not _request_origin_allowed(env, request):
         return json_response(
             {"error": "origin_not_allowed"},
@@ -661,6 +676,22 @@ async def office_floor_access_handler(env, request):
         account_bi, account = await _account_session_record(env, request)
     except Exception:
         account_bi, account = "", None
+    visitor = None if account else (
+        world_bearer_visitor(env, request)
+        if "world_bearer_visitor" in globals() else None)
+    if visitor:
+        return json_response(
+            {
+                "authenticated": True,
+                "visitor": True,
+                "account": "%s@%s" % (visitor["name"], visitor["home"]),
+                "allowedFloorIds": ["lobby", "rooftop"],
+                "teams": [],
+                "organizationRole": "",
+            },
+            cache_control="private, no-store, max-age=0, must-revalidate",
+            extra_headers={"x-content-type-options": "nosniff"},
+        )
     if (
         not re.fullmatch(r"[0-9a-f]{64}", str(account_bi or ""))
         or not account

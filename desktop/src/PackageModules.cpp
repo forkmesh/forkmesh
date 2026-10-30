@@ -2,6 +2,7 @@
 
 #include "DesktopPackageExtension.h"
 #include "NativePackageExtension.h"
+#include "WebEngine.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -149,6 +150,16 @@ void install()
     setDesktopPackageExtensionModules(
         [](const QString &entrypoint) { return providesEntrypoint(entrypoint); },
         [](const QString &entrypoint) { return loadForEntrypoint(entrypoint); });
+    web::setEngineModule(
+        [] {
+            QMutexLocker locker(&lock());
+            for (const Module &module : std::as_const(registry())) {
+                if (module.entrypoints.contains(web::kModuleEntrypoint))
+                    return module.error.isEmpty();
+            }
+            return false;
+        },
+        [] { return loadForEntrypoint(web::kModuleEntrypoint); });
 }
 
 bool providesEntrypoint(const QString &entrypoint)
@@ -214,6 +225,57 @@ QList<Module> modules()
 {
     QMutexLocker locker(&lock());
     return registry();
+}
+
+std::optional<Module> moduleForPackage(const QString &packageId)
+{
+    QMutexLocker locker(&lock());
+    for (const Module &module : std::as_const(registry()))
+        if (module.id == packageId)
+            return module;
+    return std::nullopt;
+}
+
+QHash<QString, qint64> residentBytesIn(const QString &smaps, const QHash<QString, QString> &packageByFile)
+{
+    static const QRegularExpression mapping(QStringLiteral("^[0-9a-f]+-[0-9a-f]+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\d+\\s*(.*)$"));
+    QHash<QString, qint64> out;
+    QString current;
+    for (const QStringView line : QStringView(smaps).split(QLatin1Char('\n'))) {
+        if (line.startsWith(QLatin1String("Rss:"))) {
+            if (current.isEmpty())
+                continue;
+            const QStringView amount = line.mid(4).trimmed();
+            const qsizetype space = amount.indexOf(QLatin1Char(' '));
+            out[current] += (space < 0 ? amount : amount.left(space)).toLongLong() * 1024;
+            continue;
+        }
+        const QRegularExpressionMatch match = mapping.matchView(line);
+        if (match.hasMatch()) {
+            QString file = match.captured(1).trimmed();
+            if (file.endsWith(QLatin1String(" (deleted)")))
+                file.chop(10);
+            current = packageByFile.value(file);
+        }
+    }
+    return out;
+}
+
+QHash<QString, qint64> residentBytesByPackage()
+{
+    QHash<QString, QString> packageByFile;
+    for (const Module &module : modules()) {
+        if (!module.loaded)
+            continue;
+        const QString canonical = QFileInfo(module.path).canonicalFilePath();
+        packageByFile.insert(canonical.isEmpty() ? module.path : canonical, module.id);
+    }
+    if (packageByFile.isEmpty())
+        return {};
+    QFile file(QStringLiteral("/proc/self/smaps"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    return residentBytesIn(QString::fromUtf8(file.readAll()), packageByFile);
 }
 
 QString installedDirectoryFor(const QString &appPath)

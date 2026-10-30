@@ -317,7 +317,7 @@ def test_push_topics_exclude_the_refresh_hints(apns):
     # worth a buzz raise a ping, which pushes with the actual text.
     # "code-push" is a ping under its own name (kind code_push), not a hint.
     assert set(apns.APNS_PUSH_TOPICS) == {
-        "pings", "direct-messages", "chat", "code-push"}
+        "pings", "direct-messages", "chat", "code-push", "calls"}
 
 
 def test_only_the_sealed_topics_are_marked(apns):
@@ -498,6 +498,88 @@ def test_an_alert_outlives_a_night_in_flight_mode(apns):
     _send(apns, fetch_impl)
     expiration = int(fetch_impl.calls[0][1]["headers"]["apns-expiration"])
     assert expiration == 1_700_000_000 + apns.APNS_EXPIRATION_SECONDS
+
+
+def test_a_call_push_rings_the_conversation_without_naming_the_caller(apns):
+    alert = apns.direct_call_alert(conversation_id="A" * 32)
+    assert alert["conversation"] == "direct:" + "a" * 32
+    assert alert["body"] == "Incoming call"
+    assert "caller" not in alert
+    assert "Incoming call" in alert["title"]
+    payload = json.loads(apns.alert_payload(alert, "calls"))
+    assert payload["topic"] == "calls"
+    assert payload["conversation"] == "direct:" + "a" * 32
+    assert payload["aps"]["sound"] == apns.APNS_CALL_SOUND
+    assert payload["aps"]["interruption-level"] == "time-sensitive"
+    assert "mutable-content" not in payload["aps"]
+    assert apns.collapse_id_for("calls", alert["conversation"]) == (
+        "call-direct:" + "a" * 32)
+    unnamed = apns.direct_call_alert(conversation_id="nothex")
+    assert "conversation" not in unnamed
+    assert unnamed["body"] == "Incoming call"
+
+
+def test_a_call_push_expires_with_the_ring(apns):
+    fetch_impl = _fetch(_Response(200))
+    asyncio.run(apns.send_one(
+        types.SimpleNamespace(), fetch_impl, "jwt", "ab" * 32, "development",
+        apns.direct_call_alert(conversation_id="a" * 32),
+        topic="calls"))
+    expiration = int(fetch_impl.calls[0][1]["headers"]["apns-expiration"])
+    assert expiration == 1_700_000_000 + apns.APNS_CALL_EXPIRATION_SECONDS
+    assert apns.APNS_CALL_EXPIRATION_SECONDS <= 120
+
+
+def test_a_call_event_reaches_the_socket_with_its_conversation():
+    runtime = _account_event_runtime()
+    runtime.notify("alice", "calls", {
+        "title": "t", "conversation": "direct:" + "a" * 32})
+    assert runtime.frames == ["calls&conversation=direct:" + "a" * 32]
+    assert runtime.pushes == [("alice", "calls")]
+
+
+def test_every_client_rings_with_the_same_topic_and_sound(apns):
+    repo = ROOT.parent
+    swift_calls = (repo / "native/ios/ForkMeshCore/Sources/FMChat/Direct"
+                   / "DirectCalls.swift").read_text()
+    assert 'ringTopic = "' + apns.APNS_CALL_TOPIC + '"' in swift_calls
+    assert 'ringSound = "' + apns.APNS_CALL_SOUND + '"' in swift_calls
+    kotlin_calls = (repo / "native/android/core/src/main/kotlin/com/forkmesh"
+                    / "nativeapp/chat/DirectCalls.kt").read_text()
+    assert 'RING_TOPIC = "' + apns.APNS_CALL_TOPIC + '"' in kotlin_calls
+    swift_direct = (repo / "native/ios/ForkMeshCore/Sources/FMChat/Direct"
+                    / "DirectMessages.swift").read_text()
+    assert 'envelope["ring"] = true\n                if let call = extra["call"]' in (
+        swift_direct)
+    kotlin_direct = (repo / "native/android/core/src/main/kotlin/com/forkmesh"
+                     / "nativeapp/chat/DirectMessages.kt").read_text()
+    assert ('if (type == DirectCallEngine.CALL_INVITE_TYPE) {\n'
+            '                envelope["ring"] = true\n'
+            '                extra["call"]?.let { envelope["call"] = it }'
+            ) in kotlin_direct
+    transport = (ROOT / "public" / "chat-room-transport.js").read_text()
+    assert ('if (!persist && plain?.type === "call-invite" '
+            '&& isDirectRoom(room)) {\n        envelope.ring = true;\n'
+            '        if (plain.call) envelope.call = String(plain.call);'
+            ) in transport
+
+
+def test_the_iphone_reports_every_voip_push_to_callkit():
+    ios = ROOT.parent / "native" / "ios"
+    plist = (ios / "Config" / "ForkMesh-Info.plist").read_text()
+    modes = plist[plist.index("<key>UIBackgroundModes</key>"):]
+    assert "<string>voip</string>" in modes[:modes.index("</array>")]
+    delegate = (ios / "ForkMesh" / "App" / "AppDelegate.swift").read_text()
+    assert "DirectCallKit.shared.start()" in delegate
+    bridge = (ios / "ForkMesh" / "Features" / "Chat" / "Calls"
+              / "DirectCallKit.swift").read_text()
+    incoming = bridge[bridge.index("didReceiveIncomingPushWith payload"):]
+    assert "received(fields, completion: completion)" in incoming
+    received = bridge[bridge.index("private func received("):]
+    received = received[:received.index("\n    }\n")]
+    assert received.count("apply(") == 2
+    assert ".report(id: id" in received
+    assert "provider.reportNewIncomingCall(" in bridge
 
 
 def test_host_follows_the_tokens_build_environment(apns):
@@ -966,7 +1048,8 @@ def test_registration_reply_carries_the_relays_push_readiness():
         return "alice"
 
     async def register_apns_device_token(env, account, token, environment,
-                                         device_bi="", bundle_id=""):
+                                         device_bi="", bundle_id="",
+                                         voip_token=""):
         registered.append((account, token, environment, device_bi, bundle_id))
         return True
 
@@ -1032,7 +1115,7 @@ def test_token_lookup_lowercases_and_validates_before_touching_d1():
     assert indexed == ["alice"]
     assert queries[0][1] == ("bi:alice", 8)
     assert rows == [{"token_bi": "bi", "account_bi": "", "token": "ab" * 32,
-                     "environment": "development",
+                     "voip_token": "", "environment": "development",
                      "bundle_id": "com.forkmesh.nativeapp"}]
     # The lookup reads the stored app id alongside the token.
     assert "bundle_id" in queries[0][0]
@@ -1072,7 +1155,8 @@ def _account_event_runtime(now=9_000_000):
     for name in ("ACCOUNT_EVENT_PUSH_COALESCE_MS",
                  "ACCOUNT_EVENT_PUSH_MEMO_MAX",
                  "ACCOUNT_EVENT_PUSH_EVERY_TOPICS",
-                 "ACCOUNT_EVENT_SOCKET_EVERY_TOPICS"):
+                 "ACCOUNT_EVENT_SOCKET_EVERY_TOPICS",
+                 "ACCOUNT_EVENT_CONVERSATION_TOPICS"):
         namespace[name] = _entry_constant(name)
     exec(_entry_function("_account_event_query"), namespace)
     exec(_entry_function("notify_account_event"), namespace)
@@ -1109,6 +1193,13 @@ def test_other_topics_still_share_the_socket_coalescing_window():
     runtime.notify("alice", "issues")
     assert runtime.pushes[-1] == ("alice", "issues")
     assert len(runtime.pushes) == 2
+
+
+def test_every_package_doorbell_reaches_the_socket():
+    runtime = _account_event_runtime()
+    runtime.notify("alice", "package:poker")
+    runtime.notify("alice", "package:poker")
+    assert runtime.frames == ["package:poker", "package:poker"]
 
 
 def test_every_direct_message_rings_the_socket_and_the_phone():
@@ -1162,8 +1253,20 @@ def test_the_event_socket_relays_the_direct_message_handles():
     text = (SRC / "entry.py").read_text()
     notify = text[text.index('            if path.endswith("/notify"):'):]
     notify = notify[:notify.index("frame = json.dumps(frame_data)")]
-    assert 'if frame_data["topic"] == "direct-messages":' in notify
+    assert (
+        'if frame_data["topic"] in ACCOUNT_EVENT_CONVERSATION_TOPICS:'
+        in notify)
     assert "_account_event_direct_fields(query)" in notify
+
+
+def test_a_second_call_inside_the_window_still_rings_the_phone():
+    runtime = _account_event_runtime()
+    first = {"title": "t", "conversation": "direct:" + "a" * 32}
+    runtime.notify("alice", "calls", first)
+    runtime.notify("alice", "calls", first)
+    assert runtime.pushes == [("alice", "calls")] * 2
+    assert runtime.frames == [
+        "calls&conversation=direct:" + "a" * 32] * 2
 
 
 def test_every_chat_read_rings_the_socket_and_never_the_phone():
@@ -1302,16 +1405,34 @@ def test_a_channel_that_cannot_be_read_wakes_nobody():
 
 
 def test_chat_pushes_coalesce_per_room_and_reuse_the_device_table():
-    runtime = _chat_push_runtime()
-    runtime.push("room-a")
-    runtime.push("room-a")
-    runtime.push("room-b")
+    runtime = _chat_push_runtime(
+        channel={"data": {"visibility": "public"},
+                 "created_by_bi": "bi-alice"})
+    world = "repo:mainnode/forkmesh:room:world-general"
+    runtime.push(world)
+    runtime.push(world)
+    runtime.push("chat-channel:c2:v1", channel_id="c2")
     # One buzz per room per window, and one device-table read for all of it.
     assert [topic for _, topic in runtime.sent] == ["chat", "chat"]
-    assert len(runtime.reads) == 1
+    assert sum("apns_device_tokens" in sql for sql in runtime.reads) == 1
     runtime.clock["now"] += _entry_constant("CHAT_ROOM_PUSH_COALESCE_MS")
-    runtime.push("room-a")
+    runtime.push(world)
     assert len(runtime.sent) == 3
+
+
+def test_a_legacy_room_wakes_nobody():
+    runtime = _chat_push_runtime()
+    assert runtime.push("legacy:room:anything") == 0
+    assert runtime.sent == [] and runtime.reads == []
+
+
+def test_a_repository_room_other_than_the_world_room_wakes_nobody():
+    runtime = _chat_push_runtime()
+    for room in ("repo:someone/project:room:general",
+                 "repo:mainnode/forkmesh:room:general",
+                 "repo:mainnode/forkmesh:room:world-general-2"):
+        assert runtime.push(room) == 0
+    assert runtime.sent == [] and runtime.reads == []
 
 
 def test_chat_pushes_are_a_no_op_without_usable_credentials():
@@ -1420,7 +1541,8 @@ def _register_runtime(apns):
         return "bi:" + value
 
     async def encrypt_row(env, record):
-        return "sealed:" + record["token"]
+        voip = record.get("voipToken")
+        return "sealed:" + record["token"] + ("|" + voip if voip else "")
 
     async def ensure_schema(env):
         return None
@@ -1467,12 +1589,29 @@ def test_registration_stores_the_allowlisted_app_per_token(apns):
     assert runs[0][1][4] == ""
 
 
+def test_registration_keeps_the_voip_token_in_the_encrypted_row(apns):
+    register, runs = _register_runtime(apns)
+    assert asyncio.run(register(
+        types.SimpleNamespace(), "alice", "cd" * 32, "production",
+        voip_token="EF" * 32))
+    assert runs[0][1][5] == "sealed:" + "cd" * 32 + "|" + "ef" * 32
+    for bad in ("", "zz" * 32, "ef"):
+        runs.clear()
+        assert asyncio.run(register(
+            types.SimpleNamespace(), "alice", "cd" * 32, "production",
+            voip_token=bad))
+        assert runs[0][1][5] == "sealed:" + "cd" * 32
+
+
 def test_the_registration_route_forwards_the_apps_bundle_id():
     registered = []
+    voip = []
 
     async def register_apns_device_token(env, account, token, environment,
-                                         device_bi="", bundle_id=""):
+                                         device_bi="", bundle_id="",
+                                         voip_token=""):
         registered.append(bundle_id)
+        voip.append(voip_token)
         return True
 
     async def _authed(env, request, data=None):
@@ -1499,6 +1638,127 @@ def test_the_registration_route_forwards_the_apps_bundle_id():
         types.SimpleNamespace(),
         _Request(body={"deviceToken": "cd" * 32, "bundleId": NATIVE})))
     assert registered == [NATIVE]
+    asyncio.run(namespace["register_device_handler"](
+        types.SimpleNamespace(),
+        _Request(body={"deviceToken": "cd" * 32, "voipToken": "ef" * 32})))
+    assert voip == ["", "ef" * 32]
+
+
+_CALL_ID = "0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"
+
+
+def test_a_voip_call_push_names_the_call_for_callkit(apns):
+    alert = apns.direct_call_alert(
+        conversation_id="a" * 32, call_id=_CALL_ID.upper())
+    assert alert["callId"] == _CALL_ID
+    payload = json.loads(apns.voip_payload(
+        {**alert, "caller": "bob"}, "https://app.example"))
+    assert payload == {
+        "topic": "calls", "conversation": "direct:" + "a" * 32,
+        "callId": _CALL_ID, "origin": "https://app.example"}
+    assert apns.voip_payload({"callId": _CALL_ID}) == ""
+    assert "callId" not in apns.direct_call_alert(
+        conversation_id="a" * 32, call_id="not-a-uuid")
+
+
+def test_a_voip_push_goes_to_the_voip_topic_now_or_never(apns):
+    fetch_impl = _fetch(_Response(200))
+    result = asyncio.run(apns.send_voip(
+        types.SimpleNamespace(), fetch_impl, "jwt", "ab" * 32, "production",
+        apns.direct_call_alert(conversation_id="a" * 32, call_id=_CALL_ID),
+        bundle_id=NATIVE))
+    assert result == (True, False, 200, "")
+    url, request = fetch_impl.calls[0][0], fetch_impl.calls[0][1]
+    assert url == apns.APNS_HOST_PRODUCTION + "/3/device/" + "ab" * 32
+    headers = request["headers"]
+    assert headers["apns-topic"] == NATIVE + ".voip"
+    assert headers["apns-push-type"] == "voip"
+    assert headers["apns-priority"] == "10"
+    assert headers["apns-expiration"] == "0"
+    assert json.loads(request["body"])["callId"] == _CALL_ID
+
+
+def _call_fan_out(voip_results):
+    sent = []
+    forgotten = []
+
+    async def send_one(env, fetch_impl, jwt, token, environment, alert,
+                       collapse_id="", topic="", bundle_id=""):
+        sent.append(("alert", token, topic, collapse_id))
+        return True, False, 200, ""
+
+    async def send_voip(env, fetch_impl, jwt, token, environment, alert,
+                        bundle_id=""):
+        sent.append(("voip", token, alert.get("callId", "")))
+        return voip_results.pop(0) if voip_results else (
+            True, False, 200, "")
+
+    async def provider_token(env):
+        return "jwt"
+
+    async def forget(env, entry):
+        forgotten.append(entry["token_bi"])
+
+    namespace = {
+        "_apns_module": lambda: types.SimpleNamespace(
+            provider_token=provider_token, send_one=send_one,
+            send_voip=send_voip, APNS_PUSH_BUDGET_MS=3000,
+            APNS_CALL_TOPIC="calls",
+            collapse_id_for=lambda topic, conversation="": "call-" + conversation),
+        "Date": types.SimpleNamespace(now=lambda: 0),
+        "js_fetch_with_timeout": object(),
+        "_apns_prune_token": None,
+        "_apns_forget_voip_token": forget,
+        "_APNS_BROADCAST_MEMO": {},
+        "_APNS_VOIP_CALL_MEMO": {},
+        "APNS_VOIP_CALL_MEMO_MS": 120_000,
+        "APNS_VOIP_CALL_MEMO_MAX": 256,
+    }
+    exec(_entry_function("_apns_send_call"), namespace)
+
+    def ring(tokens, alert):
+        return asyncio.run(namespace["_apns_send_call"](
+            types.SimpleNamespace(), tokens, alert))
+
+    return ring, sent, forgotten
+
+
+def test_call_rings_use_voip_where_the_phone_has_a_token():
+    ring, sent, _forgotten = _call_fan_out([])
+    tokens = [
+        {"token_bi": "a", "token": "aa", "voip_token": "va",
+         "environment": "production"},
+        {"token_bi": "b", "token": "bb", "voip_token": "",
+         "environment": "production"},
+    ]
+    alert = {"title": "t", "conversation": "direct:" + "c" * 32,
+             "callId": _CALL_ID}
+    assert ring(tokens, alert) == 2
+    assert sent == [
+        ("voip", "va", _CALL_ID),
+        ("alert", "bb", "calls", "call-direct:" + "c" * 32)]
+    sent.clear()
+    assert ring(tokens, alert) == 1
+    assert sent == [("alert", "bb", "calls", "call-direct:" + "c" * 32)]
+    sent.clear()
+    ring(tokens, dict(alert, callId="1" + _CALL_ID[1:]))
+    assert sent[0] == ("voip", "va", "1" + _CALL_ID[1:])
+
+
+def test_a_failed_voip_push_falls_back_to_the_alert():
+    ring, sent, forgotten = _call_fan_out([
+        (False, True, 400, "BadDeviceToken"), (False, False, 0, "")])
+    tokens = [{"token_bi": "a", "token": "aa", "voip_token": "va",
+               "environment": "production"}]
+    alert = {"title": "t", "conversation": "direct:" + "c" * 32,
+             "callId": _CALL_ID}
+    ring(tokens, alert)
+    assert [entry[0] for entry in sent] == ["voip", "alert"]
+    assert forgotten == ["a"]
+    sent.clear()
+    ring(tokens, dict(alert, callId="2" + _CALL_ID[1:]))
+    assert [entry[0] for entry in sent] == ["voip", "alert"]
+    assert forgotten == ["a"]
 
 
 def test_the_fan_out_addresses_every_token_as_its_own_app():

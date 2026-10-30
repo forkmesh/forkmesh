@@ -23,7 +23,8 @@ developer home for how the pieces fit.
 | `marketplace/tools/generate_desktop_packages.py` | Desktop: turns the listed plugins' `content/desktop/build.json` descriptors into `marketplace.qrc`, one `plugins/<id>.qrc` per module plugin, `packages.cmake` and the build's own `catalog.json`, `packs.json` and `guides.json` under the build dir. Run by `desktop/CMakeLists.txt` at configure time with `FORKMESH_PLUGINS`. |
 | `marketplace/tools/generate_world_packages.py` | World: writes `world/public/world/world-marketplace-packages.js`. |
 | `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their Worker modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
-| `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog. |
+| `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog, and stages one page per package at `/market/<id>` at build time ([Share links and package pages](#share-links-and-package-pages)). |
+| `www/templates/layouts/market-package.html`, `www/public/market-package.{css,js}` | The package page layout, its styles, and its rating, usage and share script. |
 | `app/src/plugin_data.py`, `app/src/plugin_registry.py` | Organization install/uninstall engine, account install state for `install.sync: "account"` packages (`/api/plugins/@account`, dependencies, declared settings), reminder and account-purge hooks. |
 | `app/src/entry.py` (`_PluginApiRuntime`) | The least-privilege runtime handed to a package's Worker module. |
 | `app/src/marketplace_runtime.py`, `app/src/marketplace_governance.py` | `/market` publication review and the public catalog route. |
@@ -85,11 +86,21 @@ own Usage page with this desktop's Claude Code and Codex accounts and their
 controls, which the Usage package embeds
 ([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
-done)` and `findLogins(url, asker, done)` (see **Login store** below).
+done)` and `findLogins(url, asker, done)` (see **Login store** below), and
+for packages declaring `desktop.workflows.run`, `repositoryWorkflows()` and
+`repositoryWorkflowAction(repo, id, action, payload, done)`: the workflows in
+the desktop's repositories (special agents among them), run, edited and
+pinned to a rail on this desktop
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents));
+the repository key `@account/workflows` pins the account's own workflows
+(`pin`, `unpin`, `sync`).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
-the [Runners](runners.md) page). `request` waits out the
+the [Runners](runners.md) page), and `publicPageUrl(path)`, the same path as a
+URL to share: `https://forkmesh.com` for the official hosts, the active host
+otherwise (`nativePackagePublicPageUrl`, used by [Feed](instance-feed.md)).
+`request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
@@ -99,8 +110,17 @@ no timers), `navigationBadge()` / `prepareNavigationBadge()`,
 `setHostSearchQuery()`, `searchHits()` / `activateSearchHit()` /
 `prepareSearch()` (answered from memory on the GUI thread), `exportData()`
 (offered on removal), `hostPromptTarget()` / `submitHostPrompt()` (the page
-takes over the footer prompt box while visible), `userDirectoryChanged()`
-and `repositoryChanged()` (the user opened another repository).
+takes over the footer prompt box while visible), `userDirectoryChanged()`,
+`repositoryChanged()` (the user opened another repository) and
+`repositoryWorkflowsChanged()` (a desktop workflow was saved, ran or was
+pinned).
+
+**Reading another package's API.** `request` only reaches the package's own
+`apiPrefix`. A page that needs one more API lists its prefix in
+`accountPaths` and its request proof in `resourceProofs`, then signs that
+request itself, as Calendar does and as the CRM contact card does for
+[Invoicing](invoices.md#crm-links). There is no host call for one package to
+open another package's desktop page; link to the web page instead.
 
 **Login store.** A package can hand a password it was given to the user's
 password manager and ask for it back, without the host knowing which package
@@ -182,6 +202,16 @@ mail sending. Desktop callers sign with a per-package `REQUEST_PROOF` string.
 files a ping; `push=False` updates the inbox row without a phone banner, which
 the CRM and Marketing activity pings use to fold a burst into one ring.
 
+**Organization roles.** `organization(name, account_bi)` returns the
+caller's role only for organization insiders (owner, admin, maintainer,
+member, auditor); a guest gets the same empty role as an outsider, so every
+package that checks `if not role` fails closed. `organization_member_emails`
+answers insiders only. The CRM, Marketing, Analytics and Competitor packages
+also refuse guests themselves and answer auditors' writes with 403
+`read_only_role` (Analytics still lets them run read-only `query` requests).
+Why: guests are outside collaborators added for a few repositories and must
+not read an organization's customer, marketing or analytics records.
+
 **Data lifecycle.** `dataLifecycle.scope` is `organization` (installs go
 through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,
 `DATA_SCHEMA_DOWN`, `org_has_data`, `export_org_data`, `purge_org_data`),
@@ -226,21 +256,44 @@ affiliate program).
   reported and does not stop the rest. forkmesh.com/market links to
   `app.forkmesh.com/dashboard/apps?installAll=1`, which opens that
   confirmation; the other apps are reached from the Market screen.
+  `?install=<id>` (from a package page) asks to install that one
+  account-synced package, or says it can't be installed there.
 - **Category shortcuts.** The desktop Market filters the All list with
   Virtual goods (`virtual.*`), Agents (`agent`), Services (`service.*`) and
   Themes (`theme`) buttons. Clicking the selected button again clears it;
   search terms apply with the selected category.
 
-## Share links
+## Share links and package pages
 
 Every catalog package has one public link, `https://forkmesh.com/market/<id>`
-(only the official `forkmesh` market has public pages). There is no separate
-page per package. The www Worker (`MARKET_PACKAGE` in `www/worker.js`) and the
-App (`static_routes.is_market_package_path`) serve the `/market` document for
-that path. The page script then outlines the package's card, scrolls to it and
-puts its name in the title. `/market/previews/*` stays a static asset path:
-`previews` is never read as a package id, and every `run_worker_first` list
-pairs `/market/*` with `!/market/previews/*`.
+(only the official `forkmesh` market has public pages), and that link is the
+package's own page (since 2026-10-22). `build_market_catalog.stage_package_pages`
+writes `market/<id>.html` into the staged site at build time (`stage_www` and
+`stage_cutover` in `app/tools/build_site_assets.py`), from the manifest, the
+package README and `www/templates/layouts/market-package.html`; nothing is
+committed, so a manifest or README change reaches the page on the next deploy.
+The pages are in the sitemap with that link as canonical.
+
+A page shows the type, shelf, category and price, the live rating and usage
+(`www/public/market-package.js`, from the same `/api/market/installs` and
+`/api/market/reviews/summary` as the list), an install box chosen by
+`install_place` (account-synced packages link to
+`app.forkmesh.com/dashboard/apps?install=<id>`; organization, desktop, phone,
+editor and World packages say where to install them), Share and Copy link,
+screenshots, the README (links resolved to the public repository, headings
+shifted one level down), the facts and permissions, the parent, nested,
+required and requiring packages, the packs it is in, and up to six others in
+its category. Every card on `/market` has the anchor `#package-<id>` and links
+to its page.
+
+The www Worker (`MARKET_PACKAGE` in `www/worker.js`) serves the page asset for
+that path, and the `/market` document when no page exists (an id that is not in
+the catalog). The App (`static_routes.is_market_package_path`,
+`site_document_asset_path`) does the same on a self-hosted instance. The
+`/market` script still outlines a card when the document is served for a
+package path. `/market/previews/*` stays a static asset path: `previews` is
+never read as a package id, and every `run_worker_first` list pairs
+`/market/*` with `!/market/previews/*`.
 
 - **forkmesh.com/market:** each card gets **Share** and **Copy link** buttons,
   written by `build_market_catalog.render_share`. Share opens the system
@@ -264,7 +317,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Core features as plugins** (account-synced on/off switches for built-in
   features): see [core-plugins.md](core-plugins.md).
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
-  `competitor`, `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
+  `competitor`, `invoices` (CRM-linked invoices emailed with open, view and
+  payment tracking, [invoices.md](invoices.md)), `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
   `secure-drive` (an end-to-end encrypted shared drive kept as one file on a
   router's USB drive or any network share, suite `fmsd1`, on the desktop,
   iPhone and Android; [secure-drive.md](secure-drive.md)),
@@ -303,20 +357,26 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
-  `tour`, `people` ([people.md](people.md)), `aquarium`
+  `tour` (three depths on both apps; [tour.md](tour.md)), `people`
+  ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).
-- **Face and voice:** `face-changer` (web page, a desktop rail link, and a
+- **Face and voice:** `face-changer` (web page, a native desktop page that
+  feeds a "ForkMesh Camera" other apps pick on Linux
+  ([face-changer-desktop.md](face-changer-desktop.md)), and a
   native Face Changer screen in the phone apps whose face, background and voice
   choices video calls use) and
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
-  loop, tempo and crossfader controls on responsive web, mobile and desktop
-  surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
+  loop, tempo and crossfader controls on responsive web and mobile surfaces,
+  and a native four-deck desktop studio with EQ, effects and hot cues; [details](video-mix-dj-studio.md), iOS performance checks in
   [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
+- **Games:** `poker` (no-limit Texas Hold'em between ForkMesh users for
+  virtual chips, with a dealer, bots, side pots, turn clocks and synthesized
+  sounds, on the web, the desktop, iPhone and Android; [poker.md](poker.md)).
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
   `feed`, shown as Network Feed, and `mastodon`
@@ -443,9 +503,18 @@ catalog fails the configure with "Marketplace package discovery failed".
 - **Desktop.** `MainWindow::marketPreviewPixmap` reads each preview once with
   `QImageReader::setScaledSize` at the 240×135 card size and caches it in
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
-  Market never re-renders SVGs on the GUI thread. A package whose manifest
-  lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
-  qtimageformats plugin.
+  Market never re-renders SVGs on the GUI thread. The first read runs on a
+  worker (`QtConcurrent`): the card shows an empty frame, and
+  `applyMarketPreview` fills every card and details pane whose `previewKey`
+  matches when the image lands. Diagnostic report #15 (2026-10-24) caught the
+  first Market open decoding every preview inline, ~4 s under memory pressure,
+  in `QImageReader::read`. WebP needs Qt's optional qtimageformats plugin,
+  which many Linux installs lack, so when Qt cannot read a preview whose bytes
+  are WebP, the worker decodes it with the libwebp the app already links
+  (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at most 16 MB. Seven
+  packages (App Store Status, RSS Reader, Code Map, Size Map, Strata, Ember,
+  Synapse) ship only `.webp` previews and showed "Preview unavailable" on such
+  machines until 2026-10-25. PNG and SVG previews still need no plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a
@@ -458,5 +527,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

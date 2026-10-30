@@ -13,15 +13,9 @@ APP = (WORLD / "world.js").read_text(encoding="utf-8")
 STYLES = (WORLD / "world.css").read_text(encoding="utf-8")
 
 
-def test_avatar_reactions_live_inside_the_embedded_chat():
-    chat = (
-        ROOT / "public" / "dashboard" / "chat" / "index.html"
-    ).read_text(encoding="utf-8")
-    assert 'data-dashboard-chat-emote="wave"' in chat
-    assert 'data-dashboard-chat-emote="jump"' in chat
-    assert 'data-dashboard-chat-emote="spin"' in chat
-    assert 'data-dashboard-chat-emote="backflip"' in chat
-    assert 'data-dashboard-chat-emote="dance"' in chat
+def test_avatar_reactions_live_in_the_world_chat_dock():
+    for emote in ("wave", "jump", "spin", "backflip", "dance"):
+        assert f'data-dashboard-chat-emote="{emote}"' in APP
     assert "data-world-wave" not in APP
 
 

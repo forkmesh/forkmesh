@@ -2,10 +2,8 @@
 // Keeps the current dashboard UI, but uses the same encrypted room protocol as
 // the production chat from app/public/chat.js.
 const chatModerationPromise = import("./chat-moderation.js").catch(() => null);
-// The room key below is derived by the relay from its own DATA_KEY. Authenticated
-// rooms add automatic device-to-device encryption; public World #general
-// remains controller-readable so ForkBot and MCP can participate.
 const chatSealPromise = import("./chat-seal.js").catch(() => null);
+const chatFrameAuthPromise = import("./chat-frame-auth.js").catch(() => null);
 const chatRetentionPromise = import("./chat-retention.js").catch(() => null);
 
 function mountForkMeshDashboardChat(options = {}) {
@@ -112,6 +110,19 @@ function mountForkMeshDashboardChat(options = {}) {
     },
   ]);
   const REACTION_EMOJI = Object.freeze(["👍", "❤️", "😂", "🎉", "👀", "🚀"]);
+  const STICKER_CATALOG = Object.freeze([
+    Object.freeze({ slug: "lgtm", text: "LGTM", color: "#8250df", tilt: -6, emoji: "\u2705" }),
+    Object.freeze({ slug: "ship-it", text: "Ship it", color: "#0969da", tilt: 5, emoji: "\u{1F680}" }),
+    Object.freeze({ slug: "nice", text: "Nice!", color: "#bf3989", tilt: -4, emoji: "\u{1F44D}" }),
+    Object.freeze({ slug: "thanks", text: "Thanks!", color: "#bc4c00", tilt: 6, emoji: "\u{1F64F}" }),
+    Object.freeze({ slug: "on-it", text: "On it", color: "#57606a", tilt: -5, emoji: "\u{1F440}" }),
+    Object.freeze({ slug: "wow", text: "Wow!", color: "#cf222e", tilt: 4, emoji: "\u{1F62E}" }),
+    Object.freeze({ slug: "love-it", text: "Love it", color: "#d6336c", tilt: -3, emoji: "\u2764\uFE0F" }),
+    Object.freeze({ slug: "party", text: "Party!", color: "#9a6700", tilt: 7, emoji: "\u{1F389}" }),
+  ]);
+  const STICKERS_BY_SLUG = new Map(
+    STICKER_CATALOG.map((sticker) => [sticker.slug, sticker]),
+  );
   const CHAT_MENTION_RE = /(^|[^A-Za-z0-9_-])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)\b/gi;
 
   const fullLog = document.querySelector("#fullChatMessages");
@@ -169,12 +180,35 @@ function mountForkMeshDashboardChat(options = {}) {
   const MEMBER_LIST_LIMIT = 200;
   const MEMBER_AVATAR_FETCH_LIMIT = 24;
   const MEMBER_LIST_HIDDEN_KEY = "forkmesh.dashboard.chat.membersHidden";
+  const MEMBER_STATS_ENDPOINT = "/api/chat/member-stats";
+  const MEMBER_STATS_BATCH = 50;
+  const MEMBER_STATS_TTL_MS = 5 * 60 * 1000;
+  const MEMBER_STATS_RETRY_MS = 60 * 1000;
+  const MEMBER_STATS_DELAY_MS = 120;
+  const MEMBER_STATS_ICONS = Object.freeze({
+    pulls: '<circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M6 9v12"></path>',
+    commits: '<circle cx="12" cy="12" r="3"></circle><path d="M3 12h6"></path><path d="M15 12h6"></path>',
+    issues: '<circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="1"></circle>',
+    reviews: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
+    recent: '<circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path>',
+  });
+  const MEMBER_STATS_LABELS = Object.freeze({
+    pulls: ["pull request opened", "pull requests opened"],
+    commits: ["commit", "commits"],
+    issues: ["issue opened", "issues opened"],
+    reviews: ["review", "reviews"],
+  });
   const COMPOSER_EMOJI = Object.freeze([
     "😀", "😂", "😊", "😍", "🤔", "😎", "😢", "😮", "👍",
     "👎", "👏", "🙏", "🎉", "🔥", "🚀", "❤️", "👀", "✅",
   ]);
   let fullLogRegroupPending = false;
   let memberListPending = false;
+  const memberStats = new Map();
+  const memberStatsWanted = new Set();
+  let memberStatsTimer = 0;
+  let memberStatsInflight = false;
+  let memberStatsObserver = null;
   let chatUserPanelName = "";
   let chatUserOnline = false;
   let composerEmojiPicker = null;
@@ -400,22 +434,7 @@ function mountForkMeshDashboardChat(options = {}) {
 
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  // Stable per-browser chat id, shared with the full chat page (same storage
-  // key): the relay keeps no roster, so a fresh random id per load made every
-  // reload/tab of the same person a new "ghost" participant. Persisting it
-  // collapses them into one identity.
-  const selfId = (() => {
-    const STORAGE_KEY = "forkmesh.chat.selfId";
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return saved;
-    } catch (_) {}
-    const fresh =
-      (crypto.randomUUID && crypto.randomUUID()) ||
-      `${Math.random()}`.slice(2) + Date.now();
-    try { localStorage.setItem(STORAGE_KEY, fresh); } catch (_) {}
-    return fresh;
-  })();
+  let selfId = "";
 
   // Baseline behind the site-header chat badge, shared with chat.js and
   // site-header.js. Every retained #general line this browser contributes
@@ -441,8 +460,10 @@ function mountForkMeshDashboardChat(options = {}) {
   let roomSeal = null;
   let sealModule = null;
   let sealStore = null;
-  // Missing E2EE support fails closed in protected rooms. Public World
-  // #general deliberately uses the controller-readable room layer.
+  let frameAuth = null;
+  let nodeOwners = null;
+  let guestLines = null;
+  const sealStores = new Map();
   let sealUnavailable = false;
   // Sender ids of frames not addressed to this browser. An encrypted room
   // would otherwise just look quiet.
@@ -503,6 +524,7 @@ function mountForkMeshDashboardChat(options = {}) {
   // messageId -> Map(emoji -> Map(reactorId -> reactorName)); identical to
   // the full web/Qt protocol shape so reactions converge across every client.
   const reactions = new Map();
+  const stickers = new Map();
   const sideEntries = [];
   const attachmentControls = [];
   const attachmentUrls = new Set();
@@ -724,26 +746,115 @@ function mountForkMeshDashboardChat(options = {}) {
     );
   }
 
+  function sessionAccount() {
+    return String(userSession()?.nodeName || "").trim().toLowerCase();
+  }
+
+  function sealStoreForSession() {
+    const account = sessionAccount();
+    const profile = frameAuth.chatProfileFor(account);
+    let store = sealStores.get(profile);
+    if (!store) {
+      store = sealModule.createRoomSealStore({ acct: account, profile });
+      sealStores.set(profile, store);
+    }
+    return store;
+  }
+
+  async function activateChatIdentity() {
+    const store = sealStoreForSession();
+    selfId = await store.ready();
+    sealStore = store;
+    const account = sessionAccount();
+    if (account) {
+      const token = String(userSession()?.sessionToken || "");
+      void frameAuth.bindNodeKey({
+        store,
+        account,
+        owners: nodeOwners,
+        headers: token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {},
+      }).catch(() => false);
+    }
+    return store;
+  }
+
   async function loadRoomSeal() {
     sealModule = sealModule || (await chatSealPromise);
-    if (!sealModule) {
+    frameAuth = frameAuth || (await chatFrameAuthPromise);
+    if (!sealModule || !frameAuth) {
       roomSeal = null;
       sealUnavailable = !PUBLIC_WORLD_GENERAL;
       return null;
     }
+    frameAuth.forgetLegacySelfId();
+    nodeOwners = nodeOwners || frameAuth.createNodeOwners();
+    guestLines = guestLines || frameAuth.createGuestRelabeler({
+      owners: nodeOwners,
+      onConfirmed: (node, account, ids) => renameConfirmedGuest(node, account, ids),
+    });
     sealUnavailable = false;
     try {
-      sealStore = sealStore || sealModule.createRoomSealStore({
-        acct: () => userSession()?.nodeName || "",
-        node: selfId,
-      });
-      roomSeal = await sealStore.resolve(SEAL_SCOPE, ACTIVE_ROOM, RELAY_HOST);
+      const store = await activateChatIdentity();
+      roomSeal = await store.resolve(SEAL_SCOPE, ACTIVE_ROOM, RELAY_HOST);
     } catch (error) {
       roomSeal = null;
       sealUnavailable = !PUBLIC_WORLD_GENERAL;
       if (!PUBLIC_WORLD_GENERAL) throw error;
     }
     return roomSeal;
+  }
+
+  async function attributedPlains(plains) {
+    if (!frameAuth || !nodeOwners) return [];
+    const list = plains.filter(Boolean);
+    await nodeOwners.prefetch(list, { selfNode: selfId });
+    const attributed = list
+      .map((plain) => frameAuth.attributeFrame(plain, {
+        owners: nodeOwners,
+        selfNode: selfId,
+        selfAccount: sessionAccount(),
+        selfName: displayName(),
+      }))
+      .filter(Boolean);
+    for (const plain of attributed) guestLines?.note(plain);
+    return attributed;
+  }
+
+  function renameConfirmedGuest(node, account, ids) {
+    const name = String(account).slice(0, MAX_NAME);
+    let side = false;
+    let thread = false;
+    for (const id of ids) {
+      const record = rows.get(id) || threadRepliesById.get(id);
+      if (record && record.senderId === node && !record.self) {
+        record.who = name;
+        record.accountKind = "user";
+        if (record.rootId) thread = true;
+        const author = record.el?.querySelector(".chat-message-author");
+        if (author) {
+          const holder = document.createElement("div");
+          holder.innerHTML = authorElementHtml(record, author.className);
+          const next = holder.firstElementChild;
+          if (next) {
+            author.replaceWith(next);
+            bindAuthorProfileCard(next);
+          }
+          hydrateChatAvatar(record.avatarEl, name);
+        }
+      }
+      const entry = sideEntries.find((item) => item.id === id);
+      if (entry && entry.senderId === node && entry.kind !== "self") {
+        entry.who = name;
+        entry.accountKind = "user";
+        side = true;
+      }
+    }
+    if (side) renderSideMessages();
+    if (thread || ids.includes(activeThreadRootId)) renderThreadDialog();
+  }
+
+  function isAuthenticatedPlain(plain) {
+    return Boolean(frameAuth && (frameAuth.isSealedPlain(plain) || frameAuth.isServerPlain(plain)));
   }
 
   async function encryptRoomObject(framed) {
@@ -767,7 +878,9 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   async function encryptObject(obj) {
-    if (PUBLIC_WORLD_GENERAL) return encryptRoomObject(obj);
+    if (frameAuth?.isPrivateRelayFrame(obj)) {
+      throw new Error("Private frames do not go through a relay room.");
+    }
     if (!roomSeal || !sealModule) {
       throw new Error("End-to-end chat encryption is unavailable.");
     }
@@ -800,11 +913,14 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   async function deliverReleasedSealFrames(results) {
+    const plains = [];
     for (const result of results || []) {
       const plain = sealModule.authenticatedPlain(result);
-      const moderated = plain ? await moderateDashboardPlain(plain) : null;
-      if (moderated) handlePlain(moderated, true);
+      if (!plain || frameAuth?.isPrivateRelayFrame(plain)) continue;
+      const moderated = await moderateDashboardPlain(plain);
+      if (moderated) plains.push(moderated);
     }
+    for (const plain of await attributedPlains(plains)) handlePlain(plain, true);
     if (results?.length) finishHistoryReplay();
   }
 
@@ -836,8 +952,10 @@ function mountForkMeshDashboardChat(options = {}) {
       if (framed?.type === "sealed" || framed?.type === "e2ee-key") {
         if (!sealModule?.isSealedFrame(framed)) return null;
       } else {
-        if (PUBLIC_WORLD_GENERAL) return framed;
-        // A protected room accepts no controller-authored application frame.
+        if (envelope.srv === true && frameAuth) {
+          const injected = frameAuth.serverPlain(framed);
+          return injected && !frameAuth.isPrivateRelayFrame(injected) ? injected : null;
+        }
         noteUnreadableSealedFrame("");
         return null;
       }
@@ -845,9 +963,10 @@ function mountForkMeshDashboardChat(options = {}) {
         ? await sealModule.unsealFrame(framed, roomSeal, ACTIVE_ROOM, { history })
         : { status: "notForMe" };
       if (result.status === "notForMe") noteUnreadableSealedFrame(framed.kid);
-      return result.status === "opened"
+      const opened = result.status === "opened"
         ? sealModule.authenticatedPlain(result)
         : null;
+      return opened && !frameAuth?.isPrivateRelayFrame(opened) ? opened : null;
     } catch (_) {
       return null;
     }
@@ -856,6 +975,7 @@ function mountForkMeshDashboardChat(options = {}) {
   // Empty means an unencrypted/controller-authored frame was refused; a key id
   // means retained ciphertext was not addressed to this device.
   function noteUnreadableSealedFrame(keyId) {
+    if (PUBLIC_WORLD_GENERAL && !keyId) return;
     if (unreadableSealKeyIds.has(keyId)) return;
     unreadableSealKeyIds.add(keyId);
     setStatus(
@@ -1095,6 +1215,7 @@ function mountForkMeshDashboardChat(options = {}) {
     try {
       const sources = await discoverDiscordSources();
       const messages = [];
+      let refreshFailed = false;
       // Discord applies rate limits across related connector routes. Fetching
       // every channel concurrently turns one provider-wide 429 into a burst
       // of identical failures, so read channels serially and stop immediately
@@ -1119,6 +1240,7 @@ function mountForkMeshDashboardChat(options = {}) {
           );
         } catch (error) {
           if (error?.status === 429 || error?.status >= 500) throw error;
+          refreshFailed = true;
           // A missing channel is isolated; continue with the remaining
           // configured channels without putting the whole connector on ice.
         }
@@ -1282,6 +1404,34 @@ function mountForkMeshDashboardChat(options = {}) {
     ]).has(location.hostname.toLowerCase());
     const origin = official ? "https://forkmesh.com" : location.origin;
     return origin + "/@" + encodeURIComponent(key);
+  }
+
+  function authorProfileName(record) {
+    if (!record || record.external || record.accountKind !== "user") return "";
+    const name = mentionName(record.who).replace(/^@/, "");
+    if (!/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) return "";
+    const bots = [FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID];
+    const ids = [name, mentionName(record.senderId)];
+    return ids.some((id) => bots.includes(id)) ? "" : name;
+  }
+
+  function authorElementHtml(record, className, statusName = true) {
+    const name = authorProfileName(record);
+    const label = escapeHtml(record.who);
+    const status = statusName && !["guest", "integration"].includes(record.accountKind)
+      ? `data-user-status-name="${label}"`
+      : "";
+    if (!name) return `<span class="${className}" ${status}>${label}</span>`;
+    return `<a class="${className} hover:underline" href="${escapeHtml(mentionProfilePath(name))}" data-chat-author-profile="${escapeHtml(name)}" ${status}>${label}</a>`;
+  }
+
+  function bindAuthorProfileCard(element) {
+    const name = element?.dataset?.chatAuthorProfile;
+    if (!name) return;
+    element.addEventListener("mouseenter", () => showMentionCard(element, name));
+    element.addEventListener("focus", () => showMentionCard(element, name));
+    element.addEventListener("mouseleave", hideMentionCardSoon);
+    element.addEventListener("blur", hideMentionCardSoon);
   }
 
   async function fetchMentionProfile(name) {
@@ -1526,6 +1676,7 @@ function mountForkMeshDashboardChat(options = {}) {
   const MENTIONABLE_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
   function rememberMentionPerson(name, tsMs) {
+    if (frameAuth?.isBotViaName(name)) return;
     const key = mentionName(name);
     if (!key || !MENTIONABLE_NAME_RE.test(key)) return;
     const seenMs = Number(tsMs) || 0;
@@ -1595,9 +1746,20 @@ function mountForkMeshDashboardChat(options = {}) {
     return Date.now() - (person.lastSeenMs || 0) < MENTION_STALE_MS;
   }
 
-  function mentionCandidates(partial) {
+  function mentionCandidates(partial, inputEl) {
     const self = mentionName(displayName());
     const byName = new Map();
+    const accounts = window.ForkMeshUsernames?.lookup(partial, () => {
+      if (inputEl && inputEl === document.activeElement &&
+          mentionTokenAtCaret(inputEl)?.partial === partial) {
+        showMentionSuggest(inputEl);
+      }
+    }) || [];
+    for (const name of accounts) {
+      if (MENTIONABLE_NAME_RE.test(name)) {
+        byName.set(name, { name, kind: "user", lastSeenMs: 0 });
+      }
+    }
     for (const person of mentionDirectory.values()) byName.set(person.name, person);
     // Room presence wins over the directory entry: it carries a lastSeenMs.
     for (const person of mentionPeople.values()) byName.set(person.name, person);
@@ -1870,7 +2032,7 @@ function mountForkMeshDashboardChat(options = {}) {
       closeMentionSuggest();
       return;
     }
-    const items = mentionCandidates(token.partial);
+    const items = mentionCandidates(token.partial, inputEl);
     if (!items.length) {
       closeMentionSuggest();
       return;
@@ -1928,11 +2090,11 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function fullEmptyHtml() {
-    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
+    return `<div class="fm-blankslate" data-chat-empty><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
   }
 
   function sideEmptyHtml() {
-    return `<div class="px-3 py-2 text-xs text-muted-foreground">Type to join ${escapeHtml(CHANNEL)}.</div>`;
+    return `<div class="px-3 py-2 text-xs text-muted-foreground" data-chat-empty>Type to join ${escapeHtml(CHANNEL)}.</div>`;
   }
 
   function fullUserOnlyHtml() {
@@ -1973,9 +2135,11 @@ function mountForkMeshDashboardChat(options = {}) {
   function clearEmptyState() {
     [fullLog, sideLog].forEach((log) => {
       if (!log) return;
-      const text = log.textContent || "";
-      if (text.includes("Type below to join") || text.includes("Type to join")) {
-        log.textContent = "";
+      for (const child of log.children) {
+        if (child.hasAttribute("data-chat-empty")) {
+          log.textContent = "";
+          return;
+        }
       }
     });
   }
@@ -2245,11 +2409,12 @@ function mountForkMeshDashboardChat(options = {}) {
       <span class="chat-message-avatar avatar flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border text-base ${record.self ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-secondary text-foreground"}"></span>
       <div class="chat-message-bubble min-w-0 flex-1">
         <div class="chat-message-head mb-0.5 flex items-baseline gap-2">
-          <span class="chat-message-author text-xs font-semibold ${record.self ? "text-primary" : "text-foreground"}" data-user-status-name="${escapeHtml(record.who)}">${escapeHtml(record.who)}</span>${record.external ? "" : userStatusBadgeHtml(record.who)}
+          ${authorElementHtml(record, `chat-message-author text-xs font-semibold ${record.self ? "text-primary" : "text-foreground"}`)}${record.external ? "" : userStatusBadgeHtml(record.who)}
           <span class="chat-message-time text-[10px] text-muted-foreground/50 font-mono" title="${escapeHtml(fmtChatFullDate(record.tsMs))}">${escapeHtml(discordLayout ? fmtChatStamp(record.tsMs) : fmtChatTime(record.tsMs))}</span>
         </div>
         <p class="chat-message-text text-sm text-muted-foreground leading-relaxed break-words"></p>
       </div>`;
+    bindAuthorProfileCard(row.querySelector(".chat-message-author"));
     const avatarEl = row.querySelector(".chat-message-avatar");
     if (record.external && record.avatarUrl) {
       const image = document.createElement("img");
@@ -2285,6 +2450,9 @@ function mountForkMeshDashboardChat(options = {}) {
     const reactionsEl = document.createElement("div");
     reactionsEl.className = "chat-reactions";
     content?.append(reactionsEl);
+    const stickersEl = document.createElement("div");
+    stickersEl.className = "chat-stickers";
+    row.append(stickersEl);
     const threadSummary = document.createElement("button");
     threadSummary.type = "button";
     threadSummary.className =
@@ -2296,6 +2464,7 @@ function mountForkMeshDashboardChat(options = {}) {
     record.textEl = textEl?.parentNode ? textEl : null;
     record.contentEl = content;
     record.reactionsEl = reactionsEl;
+    record.stickersEl = stickersEl;
     record.threadSummaryEl = threadSummary;
     if (record.history && !simpleWorldComposer) {
       insertHistoryRow(record);
@@ -2312,6 +2481,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (record.id && !record.external) {
       content?.append(buildMessageActions(record));
       renderReactions(record.id);
+      renderStickers(record.id);
       if (record.editedAt) markEdited(record, record.editedAt);
     }
     renderThreadSummary(record.id);
@@ -2479,6 +2649,7 @@ function mountForkMeshDashboardChat(options = {}) {
       self,
       history: Boolean(deferHistory),
       external: Boolean(metadata?.external),
+      accountKind: String(metadata?.accountKind || (self ? chatAccountKind() : "")),
       sourceLabel: String(metadata?.sourceLabel || ""),
       avatarUrl: String(metadata?.avatarUrl || ""),
     };
@@ -2540,9 +2711,16 @@ function mountForkMeshDashboardChat(options = {}) {
       (root ? " ring-1 ring-primary/20" : "");
     const head = document.createElement("div");
     head.className = "mb-1 flex items-baseline gap-2";
-    const author = document.createElement("strong");
+    const profileName = authorProfileName(record);
+    const author = document.createElement(profileName ? "a" : "strong");
     author.className = "text-xs text-foreground";
     author.textContent = record.who;
+    if (profileName) {
+      author.className += " font-semibold hover:underline";
+      author.href = mentionProfilePath(profileName);
+      author.dataset.chatAuthorProfile = profileName;
+      bindAuthorProfileCard(author);
+    }
     const time = document.createElement("span");
     time.className = "text-[10px] text-muted-foreground";
     time.textContent = fmtChatTime(record.tsMs);
@@ -2655,18 +2833,20 @@ function mountForkMeshDashboardChat(options = {}) {
 
   function renderThreadEntry(entry, kind = "peer", live = false) {
     if (!entry || !allowedChatAccountKind(entry.accountKind)) return;
+    if (kind !== "self" && !frameAuth?.isSealedPlain(entry)) return;
     entry = normalizedPublicWorldFrame(entry);
     const rootId = String(entry.rootId || "").slice(0, 96);
     if (!rootId || entry.channel !== CHANNEL || !once(entry.id)) return;
     const record = {
       id: entry.id,
       rootId,
-      who: String(entry.sender || "peer").slice(0, MAX_NAME),
+      who: entry.botVia ? String(entry.sender) : String(entry.sender || "peer").slice(0, MAX_NAME),
       senderId: String(entry.senderId || ""),
       tsMs: Number(entry.ts) || Date.now(),
       text: String(entry.text || "").slice(0, MAX_TEXT),
       attachment: attachmentFromEntry(entry),
       self: entry.senderId === selfId || kind === "self",
+      accountKind: String(entry.accountKind || ""),
     };
     threadRepliesById.set(record.id, record);
     const ids = threadReplyIdsByRoot.get(rootId) || new Set();
@@ -2714,6 +2894,12 @@ function mountForkMeshDashboardChat(options = {}) {
         ariaLabel: "Add reaction",
       }),
     );
+    actions.append(
+      messageActionButton("Sticker", (event) =>
+        showStickerPicker(record, event.currentTarget), {
+        ariaLabel: "Add sticker",
+      }),
+    );
     // Anyone can turn any message into a repository issue — the useful case is
     // filing someone else's bug report, so this is deliberately not author-only
     // (the issue itself is signed by, and attributed to, whoever files it).
@@ -2743,6 +2929,11 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function applyReaction(plain) {
+    const sticker = STICKERS_BY_SLUG.get(String(plain.sticker || ""));
+    if (sticker) {
+      applySticker(plain, sticker);
+      return;
+    }
     const target = String(plain.target || "");
     const emoji = String(plain.emoji || "").slice(0, 8);
     const reactor = reactionKey(plain);
@@ -2754,7 +2945,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (plain.added) {
       perEmoji.set(
         reactor,
-        String(plain.reactorName || plain.sender || "peer").slice(0, MAX_NAME),
+        String((frameAuth?.frameAuth(plain) ? plain.sender : plain.reactorName || plain.sender) || "peer").slice(0, MAX_NAME),
       );
     } else {
       perEmoji.delete(reactor);
@@ -2822,6 +3013,120 @@ function mountForkMeshDashboardChat(options = {}) {
     seen.add(plain.id);
     applyReaction(plain);
     runWhenConnected(() => send(plain));
+  }
+
+  function applySticker(plain, sticker) {
+    const target = String(plain.target || "");
+    const reactor = reactionKey(plain);
+    if (!target || !reactor) return;
+    const perMessage = stickers.get(target) || new Map();
+    stickers.set(target, perMessage);
+    const placers = perMessage.get(sticker.slug) || new Map();
+    perMessage.set(sticker.slug, placers);
+    if (plain.added) {
+      placers.set(
+        reactor,
+        String((frameAuth?.frameAuth(plain) ? plain.sender : plain.reactorName || plain.sender) || "peer").slice(0, MAX_NAME),
+      );
+    } else {
+      placers.delete(reactor);
+    }
+    if (!placers.size) perMessage.delete(sticker.slug);
+    if (!perMessage.size) stickers.delete(target);
+    renderStickers(target);
+  }
+
+  function stickerBadge(sticker) {
+    const badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "chat-sticker";
+    badge.dataset.sticker = sticker.slug;
+    badge.style.background = sticker.color;
+    badge.style.setProperty("--chat-sticker-tilt", `${sticker.tilt}deg`);
+    const label = document.createElement("span");
+    label.textContent = sticker.text;
+    badge.append(label);
+    return badge;
+  }
+
+  function renderStickers(messageId) {
+    const record = rows.get(messageId);
+    if (!record?.stickersEl) return;
+    record.stickersEl.textContent = "";
+    const perMessage = record.external ? null : stickers.get(messageId);
+    record.el?.classList.toggle("has-stickers", Boolean(perMessage?.size));
+    if (!perMessage) return;
+    for (const sticker of STICKER_CATALOG) {
+      const placers = perMessage.get(sticker.slug);
+      if (!placers?.size) continue;
+      const badge = stickerBadge(sticker);
+      const mine = placers.has(selfId);
+      badge.classList.toggle("is-mine", mine);
+      badge.setAttribute("aria-pressed", mine ? "true" : "false");
+      const names = [...placers.values()].join(", ");
+      badge.title = `${sticker.text} from ${names}`;
+      badge.setAttribute("aria-label", `${sticker.text} sticker from ${names}`);
+      if (placers.size > 1) {
+        const count = document.createElement("span");
+        count.className = "chat-sticker-count";
+        count.textContent = `\u00d7${placers.size}`;
+        badge.append(count);
+      }
+      badge.addEventListener("click", () => toggleSticker(messageId, sticker.slug));
+      record.stickersEl.append(badge);
+    }
+  }
+
+  function toggleSticker(messageId, slug) {
+    const sticker = STICKERS_BY_SLUG.get(slug);
+    if (!sticker || rows.get(messageId)?.external) return;
+    if (!canJoinChat()) {
+      showUserOnlyState();
+      return;
+    }
+    const mine = Boolean(stickers.get(messageId)?.get(slug)?.has(selfId));
+    const plain = makePlain("reaction", {
+      conversation: CHANNEL_LABEL,
+      target: messageId,
+      emoji: sticker.emoji,
+      sticker: sticker.slug,
+      reactorId: selfId,
+      reactorName: displayName(),
+      added: !mine,
+    });
+    seen.add(plain.id);
+    applyReaction(plain);
+    runWhenConnected(() => send(plain));
+  }
+
+  function showStickerPicker(record, trigger) {
+    if (!record?.id || !record.contentEl || record.external) return;
+    closeReactionPicker();
+    const picker = document.createElement("div");
+    picker.className = "chat-sticker-picker";
+    picker.setAttribute("role", "toolbar");
+    picker.setAttribute("aria-label", "Choose a sticker");
+    const placed = stickers.get(record.id);
+    STICKER_CATALOG.forEach((sticker) => {
+      const button = stickerBadge(sticker);
+      const mine = Boolean(placed?.get(sticker.slug)?.has(selfId));
+      button.classList.toggle("is-mine", mine);
+      button.setAttribute("aria-pressed", mine ? "true" : "false");
+      button.setAttribute("aria-label", `Stick ${sticker.text}`);
+      button.addEventListener("click", () => {
+        toggleSticker(record.id, sticker.slug);
+        closeReactionPicker();
+      });
+      picker.append(button);
+    });
+    picker.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeReactionPicker({ restoreFocus: true });
+    });
+    record.contentEl.append(picker);
+    activeReactionPicker = { element: picker, trigger };
+    picker.querySelector("button")?.focus();
   }
 
   function closeReactionPicker({ restoreFocus = false } = {}) {
@@ -3149,11 +3454,12 @@ function mountForkMeshDashboardChat(options = {}) {
         <span class="chat-message-avatar avatar flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border text-sm ${self ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-secondary text-foreground"}"></span>
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline gap-1.5">
-            <span class="text-[11px] font-semibold ${self ? "text-primary" : "text-foreground"}">${escapeHtml(message.who)}</span>${message.external ? "" : userStatusBadgeHtml(message.who)}
+            ${authorElementHtml(message, `chat-side-message-author text-[11px] font-semibold ${self ? "text-primary" : "text-foreground"}`, false)}${message.external ? "" : userStatusBadgeHtml(message.who)}
             <span class="text-[9px] text-muted-foreground/50 font-mono">${escapeHtml(fmtChatTime(message.tsMs))}</span>
           </div>
           <p class="text-xs text-muted-foreground leading-relaxed break-words"></p>
         </div>`;
+      bindAuthorProfileCard(row.querySelector(".chat-side-message-author"));
       const avatar = row.querySelector(".chat-message-avatar");
       if (message.external) {
         avatar.textContent = "D";
@@ -3202,6 +3508,7 @@ function mountForkMeshDashboardChat(options = {}) {
       tsMs: Number(tsMs) || Date.now(),
       attachment,
       external: Boolean(metadata?.external),
+      accountKind: String(metadata?.accountKind || (kind === "self" ? chatAccountKind() : "")),
       sourceLabel: String(metadata?.sourceLabel || ""),
     };
     let index = sideEntries.length;
@@ -3219,10 +3526,12 @@ function mountForkMeshDashboardChat(options = {}) {
     tsMs,
     attachment = null,
     deferHistory = false,
+    accountKind = "",
   ) {
     if (orgAgentIdentity(who, senderId) && !orgAgentConversationAccess) return;
     const channelMetadata = {
       sourceLabel: CHANNEL.startsWith("#") ? CHANNEL : `#${CHANNEL}`,
+      accountKind,
     };
     appendFullMessage(
       kind,
@@ -3306,6 +3615,7 @@ function mountForkMeshDashboardChat(options = {}) {
       if (ids && !ids.size) threadReplyIdsByRoot.delete(threadReply.rootId);
       if (threadReply.attachment) releaseAttachment(threadReply.attachment);
       reactions.delete(id);
+      stickers.delete(id);
       renderThreadSummary(threadReply.rootId);
       if (activeThreadRootId === threadReply.rootId) renderThreadDialog();
       return;
@@ -3328,6 +3638,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const liveIndex = liveRowIds.indexOf(id);
     if (liveIndex >= 0) liveRowIds.splice(liveIndex, 1);
     reactions.delete(id);
+    stickers.delete(id);
     if (!deferRender) {
       renderSideMessages();
       if (historyIndex >= 0) {
@@ -3454,9 +3765,13 @@ function mountForkMeshDashboardChat(options = {}) {
     const payload = {
           type: "forkmesh:world-chat",
           id: String(meta?.id || "").slice(0, 96),
-          sender: String(sender || "").slice(0, MAX_NAME),
+          sender: String(sender || "").slice(0, meta?.via === true ? 96 : MAX_NAME),
           self: senderId === selfId,
           own: isOwnChatLine(sender, senderId),
+          account: meta?.account === true,
+          bot: meta?.bot === true && meta?.via !== true,
+          via: meta?.via === true,
+          integration: meta?.integration === true,
           text: line,
           ts: Number(meta?.ts) || Date.now(),
           attachmentName: attachmentName === "file" ? "" : attachmentName,
@@ -3495,7 +3810,7 @@ function mountForkMeshDashboardChat(options = {}) {
       entry.senderId,
       entry.text,
       true,
-      entry,
+      { ...entry, account: false, bot: false, integration: false },
     );
   }
 
@@ -3521,7 +3836,7 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function allowedChatAccountKind(value) {
-    return value === "user" || (PUBLIC_WORLD_GENERAL && value === "guest");
+    return value === "user" || value === "guest" || value === "integration";
   }
 
   function normalizedPublicWorldFrame(entry) {
@@ -3530,13 +3845,13 @@ function mountForkMeshDashboardChat(options = {}) {
     }
     return {
       ...entry,
-      accountKind: entry.accountKind === "user" ? "user" : "guest",
-      sender: publicWorldName(entry.sender),
+      accountKind: ["user", "integration"].includes(entry.accountKind) ? entry.accountKind : "guest",
+      sender: entry.botVia ? entry.sender : publicWorldName(entry.sender),
     };
   }
 
   function renderChatEntry(entry, kind, live = false) {
-    if (!entry || !allowedChatAccountKind(entry.accountKind)) return;
+    if (!entry || !allowedChatAccountKind(entry.accountKind) || !isAuthenticatedPlain(entry)) return;
     entry = normalizedPublicWorldFrame(botLine(entry));
     if (
       orgAgentIdentity(entry.sender, entry.senderId) &&
@@ -3546,7 +3861,7 @@ function mountForkMeshDashboardChat(options = {}) {
     }
     if (!once(entry.id)) return;
     if (chatRetention?.isExpired(entry.ts, CHANNEL)) return;
-    const who = String(entry.sender || "peer").slice(0, MAX_NAME);
+    const who = entry.botVia ? String(entry.sender) : String(entry.sender || "peer").slice(0, MAX_NAME);
     const text = entry.text || "";
     const attachment = attachmentFromEntry(entry);
     if (!text && !attachment) return;
@@ -3565,6 +3880,7 @@ function mountForkMeshDashboardChat(options = {}) {
       Number(entry.ts) || Date.now(),
       attachment,
       !live,
+      String(entry.accountKind || ""),
     );
     if (live) {
       newestHistoryTs = Math.max(newestHistoryTs, Number(entry.ts) || 0);
@@ -3573,6 +3889,9 @@ function mountForkMeshDashboardChat(options = {}) {
         ts: entry.ts,
         attachment,
         reactionCount: entry.reactionCount,
+        account: entry.accountKind === "user" && Boolean(entry.verifiedAccount) && !entry.postedBy,
+        via: Boolean(entry.botVia),
+        integration: entry.accountKind === "integration",
       });
     }
   }
@@ -3610,6 +3929,7 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function handlePlain(plain, historyReplay = false) {
+    if (!isAuthenticatedPlain(plain)) return;
     plain = botLine(plain);
     const type = plain.type;
     // Mirror-mesh signals ride the same encrypted room as chat: a source node
@@ -3633,7 +3953,7 @@ function mountForkMeshDashboardChat(options = {}) {
       } catch (_) {}
       return;
     }
-    if (type !== "history" && !allowedChatAccountKind(plain.accountKind)) return;
+    if (!allowedChatAccountKind(plain.accountKind)) return;
     plain = normalizedPublicWorldFrame(plain);
     const sender = String(plain.sender || "peer").slice(0, MAX_NAME);
     // "hello"/"presence" frames are the only sign of someone who is here but
@@ -3659,7 +3979,7 @@ function mountForkMeshDashboardChat(options = {}) {
     } else if (type === "thread-reply") {
       renderThreadEntry(plain, "peer", !historyReplay);
     } else if (type === "history") {
-      const entries = Array.isArray(plain.entries) ? plain.entries : [];
+      const entries = frameAuth.historyEntries(plain);
       for (const entry of entries) {
         if (
           entry &&
@@ -3677,10 +3997,10 @@ function mountForkMeshDashboardChat(options = {}) {
       }
       if (!historyReplay) finishHistoryReplay();
     } else if (type === "reaction") {
-      if (once(plain.id)) applyReaction(plain);
+      if (frameAuth.isSealedPlain(plain) && once(plain.id)) applyReaction(plain);
     } else if (type === "edit") {
       const rec = rows.get(plain.target) || threadRepliesById.get(plain.target);
-      if (rec && rec.senderId === plain.senderId) {
+      if (rec && frameAuth.mayChangeMessage(plain, rec)) {
         rec.text = plain.text || "";
         rec.editedAt = plain.editedAt || plain.ts;
         if (rec.rootId) {
@@ -3697,7 +4017,7 @@ function mountForkMeshDashboardChat(options = {}) {
       }
     } else if (type === "delete") {
       const rec = rows.get(plain.target) || threadRepliesById.get(plain.target);
-      if (rec && rec.senderId === plain.senderId) {
+      if (rec && frameAuth.mayChangeMessage(plain, rec)) {
         removeMessage(plain.target, { deferRender: historyReplay });
       }
     } else if (type === "admin-delete") {
@@ -3728,7 +4048,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const frames = await Promise.all(
       envelopes.map((envelope) => decryptObject(envelope, true)),
     );
-    const decoded = frames.filter(Boolean);
+    const decoded = await attributedPlains(frames);
     // D1 ties frames stored in the same millisecond by opaque cipher hash, so
     // an edit/delete can replay before its original chat. Register every chat
     // record first, then apply mutations in the received order.
@@ -3794,7 +4114,8 @@ function mountForkMeshDashboardChat(options = {}) {
     }
     const plain = await moderateDashboardPlain(await decryptObject(envelope));
     if (!plain) return;
-    handlePlain(plain);
+    const [attributed] = await attributedPlains([plain]);
+    if (attributed) handlePlain(attributed);
   }
 
   async function onFrame(event) {
@@ -3864,7 +4185,7 @@ function mountForkMeshDashboardChat(options = {}) {
         setStatus("Chat filter unavailable · message not sent");
         return null;
       }
-      return encryptObject(moderated);
+      return encryptObject(moderated).catch(() => null);
     }).then((envelope) => {
       if (!envelope) return;
       if (DURABLE_TYPES.has(plain && plain.type)) envelope.persist = true;
@@ -4015,6 +4336,7 @@ function mountForkMeshDashboardChat(options = {}) {
     seen.clear();
     rows.clear();
     reactions.clear();
+    stickers.clear();
     threadRepliesById.clear();
     threadReplyIdsByRoot.clear();
     activeThreadRootId = "";
@@ -4151,11 +4473,8 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function botLine(entry) {
-    const bot = String(entry?.bot || "").trim().toLowerCase();
-    if (![FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID].includes(bot)) {
-      return entry;
-    }
-    return { ...entry, sender: bot, senderId: bot, postedBy: entry.senderId };
+    if (!frameAuth) return entry;
+    return frameAuth.botLine(entry, [FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID]);
   }
 
   async function broadcastBotMessage(text, sender = FORKBOT_SENDER_ID) {
@@ -4170,7 +4489,7 @@ function mountForkMeshDashboardChat(options = {}) {
     appendMessage("peer", plain.bot, plain.text, plain.id, plain.bot, plain.ts);
     // The asking client appends directly (not via renderChatEntry), so mirror
     // the reply to the World embed here too.
-    emitWorldChatBubble(plain.bot, plain.bot, plain.text);
+    emitWorldChatBubble(plain.bot, plain.bot, plain.text, false, { bot: true });
   }
 
   async function maybeAskForkbot(text) {
@@ -4189,7 +4508,7 @@ function mountForkMeshDashboardChat(options = {}) {
     // replies, and cap the rest so ForkBot sees the lead-up conversation.
     const context = recentContext
       .slice(0, -1)
-      .filter((m) => m.sender.toLowerCase() !== "forkbot")
+      .filter((m) => m.sender.toLowerCase() !== "forkbot" && !frameAuth?.isBotViaName(m.sender))
       .slice(-12);
     try {
       const response = await fetch(FORKBOT_ENDPOINT, {
@@ -5883,7 +6202,24 @@ function mountForkMeshDashboardChat(options = {}) {
     const label = document.createElement("span");
     label.dataset.dashboardChatMemberName = "";
     label.textContent = person.name;
-    row.append(wrap, label);
+    const text = document.createElement("span");
+    text.dataset.dashboardChatMemberText = "";
+    text.append(label);
+    row.append(wrap, text);
+    if (linkable && !isAutomatedMemberName(person.name)) {
+      const stats = document.createElement("span");
+      stats.dataset.dashboardChatMemberStats = "";
+      stats.hidden = true;
+      text.append(stats);
+      const cached = freshMemberStats(person.name);
+      if (cached) {
+        fillMemberStats(stats, cached.entry);
+      } else if (memberStatsObserver) {
+        memberStatsObserver.observe(row);
+      } else {
+        wantMemberStats(person.name);
+      }
+    }
     if (person.kind === "bot") {
       const tag = document.createElement("span");
       tag.dataset.dashboardChatMemberTag = "";
@@ -5894,8 +6230,147 @@ function mountForkMeshDashboardChat(options = {}) {
     return item;
   }
 
+  function isAutomatedMemberName(name) {
+    return [
+      FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID,
+    ].includes(name) || /(?:^|-)(?:bot|agent|mirror)$/.test(name);
+  }
+
+  function freshMemberStats(name) {
+    const hit = memberStats.get(name);
+    return hit && hit.expires > Date.now() ? hit : null;
+  }
+
+  function compactMemberCount(value) {
+    const count = Math.max(0, Number(value) || 0);
+    if (count < 1000) return String(count);
+    if (count < 10000) return `${(Math.floor(count / 100) / 10).toFixed(1).replace(/\.0$/, "")}k`;
+    return `${Math.floor(count / 1000)}k`;
+  }
+
+  function memberStatsAge(day) {
+    const then = Date.parse(`${day}T00:00:00Z`);
+    if (!Number.isFinite(then)) return null;
+    const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const days = Math.max(0, Math.round((today - then) / 86400000));
+    if (days === 0) return { short: "today", long: "today" };
+    if (days === 1) return { short: "1d", long: "yesterday" };
+    if (days < 30) return { short: `${days}d`, long: `${days} days ago` };
+    const months = Math.max(1, Math.floor(days / 30));
+    return {
+      short: `${months}mo`,
+      long: months === 1 ? "a month ago" : `${months} months ago`,
+    };
+  }
+
+  function memberStatsIcon(kind) {
+    return `<svg aria-hidden="true" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${MEMBER_STATS_ICONS[kind]}</svg>`;
+  }
+
+  function fillMemberStats(stats, entry) {
+    if (!stats) return;
+    const parts = [];
+    const labels = [];
+    for (const kind of ["pulls", "commits", "issues", "reviews"]) {
+      const count = Math.max(0, Number(entry?.[kind]) || 0);
+      if (!count) continue;
+      parts.push(`<span data-member-stat="${kind}">${memberStatsIcon(kind)}${escapeHtml(compactMemberCount(count))}</span>`);
+      labels.push(`${count.toLocaleString()} ${MEMBER_STATS_LABELS[kind][count === 1 ? 0 : 1]}`);
+    }
+    const age = entry?.lastActive ? memberStatsAge(entry.lastActive) : null;
+    if (age) {
+      parts.push(`<span data-member-stat="recent">${memberStatsIcon("recent")}${escapeHtml(age.short)}</span>`);
+      const activeDays = Math.max(0, Number(entry.activeDays) || 0);
+      if (activeDays) {
+        labels.push(`active on ${activeDays.toLocaleString()} ${activeDays === 1 ? "day" : "days"}`);
+      }
+      labels.push(`last contribution ${age.long}`);
+    }
+    if (!parts.length) {
+      stats.hidden = true;
+      stats.replaceChildren();
+      stats.removeAttribute("title");
+      return;
+    }
+    const summary = `Past year, public repositories: ${labels.join(", ")}`;
+    stats.innerHTML = `<span data-member-stats-visible aria-hidden="true">${parts.join("")}</span><span data-member-stats-label>${escapeHtml(summary)}</span>`;
+    stats.title = summary;
+    stats.hidden = false;
+  }
+
+  function applyMemberStats(name) {
+    if (!memberPane) return;
+    const hit = freshMemberStats(name);
+    if (!hit) return;
+    for (const row of memberPane.querySelectorAll("[data-dashboard-chat-member]")) {
+      if (row.dataset.dashboardChatMember !== name) continue;
+      fillMemberStats(row.querySelector("[data-dashboard-chat-member-stats]"), hit.entry);
+    }
+  }
+
+  function wantMemberStats(name) {
+    if (!name || freshMemberStats(name)) return;
+    memberStatsWanted.add(name);
+    if (memberStatsTimer) return;
+    memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+  }
+
+  async function flushMemberStats() {
+    memberStatsTimer = 0;
+    if (memberStatsInflight) return;
+    const names = [...memberStatsWanted]
+      .filter((name) => !freshMemberStats(name))
+      .slice(0, MEMBER_STATS_BATCH)
+      .sort();
+    for (const name of names) memberStatsWanted.delete(name);
+    if (!names.length) {
+      memberStatsWanted.clear();
+      return;
+    }
+    memberStatsInflight = true;
+    let entries = null;
+    try {
+      const response = await fetch(
+        `${MEMBER_STATS_ENDPOINT}?names=${encodeURIComponent(names.join(","))}`,
+        { headers: { accept: "application/json" } },
+      );
+      const data = response.ok ? await response.json() : null;
+      if (data && Array.isArray(data.members)) entries = data.members;
+    } catch (_) {}
+    const now = Date.now();
+    const byName = new Map();
+    for (const entry of entries || []) {
+      const key = mentionName(entry?.name);
+      if (key) byName.set(key, entry);
+    }
+    for (const name of names) {
+      memberStats.set(name, {
+        entry: byName.get(name) || null,
+        expires: now + (entries ? MEMBER_STATS_TTL_MS : MEMBER_STATS_RETRY_MS),
+      });
+      applyMemberStats(name);
+    }
+    memberStatsInflight = false;
+    if (memberStatsWanted.size && !memberStatsTimer) {
+      memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+    }
+  }
+
+  function watchMemberStats() {
+    if (memberStatsObserver || !memberPane || !("IntersectionObserver" in window)) return;
+    memberStatsObserver = new IntersectionObserver((records) => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue;
+        memberStatsObserver.unobserve(record.target);
+        wantMemberStats(record.target.dataset.dashboardChatMember);
+      }
+    }, { root: memberPane, rootMargin: "160px 0px" });
+  }
+
   function renderMemberList() {
     if (!memberPane || memberPane.offsetParent === null) return;
+    watchMemberStats();
+    memberStatsObserver?.disconnect();
     const selfName = displayName();
     const selfKey = mentionName(selfName);
     const byName = new Map();
@@ -5946,18 +6421,36 @@ function mountForkMeshDashboardChat(options = {}) {
     }
   }
 
+  function memberListWide() {
+    return Boolean(window.matchMedia?.("(min-width: 1200px)").matches);
+  }
+
+  function syncMemberListToggle(toggle) {
+    if (!chatView || !toggle) return;
+    const shown = memberListWide()
+      ? !chatView.hasAttribute("data-members-hidden")
+      : chatView.hasAttribute("data-members-open");
+    const label = shown ? "Hide member list" : "Show member list";
+    toggle.setAttribute("aria-pressed", String(shown));
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+  }
+
   function setMemberListHidden(hidden, toggle) {
     if (!chatView) return;
     chatView.toggleAttribute("data-members-hidden", hidden);
-    if (toggle) {
-      const label = hidden ? "Show member list" : "Hide member list";
-      toggle.setAttribute("aria-pressed", String(!hidden));
-      toggle.setAttribute("aria-label", label);
-      toggle.title = label;
-    }
-    if (!hidden && window.matchMedia?.("(min-width: 1200px)").matches) {
+    syncMemberListToggle(toggle);
+    if (!hidden && memberListWide()) {
       void refreshMentionDirectory();
     }
+    scheduleMemberList();
+  }
+
+  function setMemberDrawerOpen(open, toggle) {
+    if (!chatView) return;
+    chatView.toggleAttribute("data-members-open", open);
+    syncMemberListToggle(toggle);
+    if (open) void refreshMentionDirectory();
     scheduleMemberList();
   }
 
@@ -6095,13 +6588,29 @@ function mountForkMeshDashboardChat(options = {}) {
     const wideMembers = window.matchMedia?.("(min-width: 1200px)");
     setMemberListHidden(membersHidden, membersToggle);
     membersToggle?.addEventListener("click", () => {
+      if (!memberListWide()) {
+        setMemberDrawerOpen(!chatView.hasAttribute("data-members-open"), membersToggle);
+        return;
+      }
       const hidden = !chatView.hasAttribute("data-members-hidden");
       try {
         localStorage.setItem(MEMBER_LIST_HIDDEN_KEY, hidden ? "1" : "0");
       } catch (_) {}
       setMemberListHidden(hidden, membersToggle);
     });
+    chatView.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !chatView.hasAttribute("data-members-open")) return;
+      setMemberDrawerOpen(false, membersToggle);
+      membersToggle?.focus();
+    });
+    chatView.addEventListener("pointerdown", (event) => {
+      if (!chatView.hasAttribute("data-members-open") || memberListWide()) return;
+      if (memberPane?.contains(event.target) || membersToggle?.contains(event.target)) return;
+      setMemberDrawerOpen(false, membersToggle);
+    });
     wideMembers?.addEventListener?.("change", () => {
+      if (wideMembers.matches) chatView.removeAttribute("data-members-open");
+      syncMemberListToggle(membersToggle);
       if (wideMembers.matches && !chatView.hasAttribute("data-members-hidden")) {
         void refreshMentionDirectory();
       }

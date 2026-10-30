@@ -1,71 +1,154 @@
 QLineEdit#messageInput {
-    background-color: transparent; border: none; border-radius: 0px; color: @chatText;
-    padding: 0px; font-size: 15px; min-height: 32px;
+    background-color: transparent; border: none; border-radius: 0px; color: @fg;
+    padding: 0px; font-size: 14px; min-height: 24px;
 }
-QLineEdit#messageInput:focus { border: none; }
-#composerBar { background-color: @chatPane; border: none; }
-#composerInputRow { background-color: @chatComposer; border: none; border-radius: 8px; }
-QPushButton#composerAttachButton {
-    background-color: @chatComposerIcon; border: none; border-radius: 12px; padding: 0px;
+QLineEdit#messageInput:focus, QLineEdit#messageInput:hover { border: none; }
+#composerBar { background-color: @bg; border: none; }
+#composerInputRow {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 16px;
 }
-QPushButton#composerAttachButton:hover { background-color: @chatTextStrong; }
-QPushButton#composerToolButton {
-    background: transparent; border: none; border-radius: 4px; color: @chatComposerIcon;
-    font-size: 18px; font-weight: 600; padding: 0px;
+#composerInputRow[composerFocused="true"] { border-color: @accent; }
+QPushButton#composerAttachButton, QPushButton#composerToolButton {
+    background: transparent; border: none; border-radius: 8px; color: @fgMuted;
+    font-size: 14px; padding: 0px;
 }
-QPushButton#composerToolButton:hover { color: @chatTextStrong; }
+QPushButton#composerAttachButton:hover, QPushButton#composerToolButton:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QPushButton#composerAttachButton:pressed, QPushButton#composerToolButton:pressed {
+    background-color: @surfaceActive;
+}
 QPushButton#composerSendButton {
-    background: transparent; border: none; border-radius: 4px; padding: 0px;
+    background-color: @accent; border: none; border-radius: 14px; padding: 0px;
 }
-QPushButton#composerSendButton:hover { background-color: @chatRowHover; }
+QPushButton#composerSendButton:hover { background-color: @accentHover; }
+QPushButton#composerSendButton:pressed { background-color: @accentPressed; }
+QLabel#composerHint { color: @fgSubtle; font-size: 11px; background: transparent; }
 
-#chatMainColumn, #chatBody { background-color: @chatPane; border: none; }
-#chatHeader { background-color: @chatPane; border: none; border-bottom: 1px solid @chatEdge; }
-#chatHeader QLabel#channelHash { color: @chatFaint; font-size: 22px; font-weight: 400; }
-#chatHeader QLabel#channelTitle { color: @chatTextStrong; font-size: 16px; font-weight: 600; }
-#chatHeader QLabel#channelTopic { color: @chatMuted; font-size: 14px; }
-#chatHeader QFrame#channelTopicDivider { background-color: @chatDivider; border: none; }
+#chatMainColumn, #chatBody { background-color: @bg; border: none; }
+#chatHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+#chatHeader QLabel#channelHash { color: @fgMuted; font-size: 17px; font-weight: 400; }
+#chatHeader QLabel#channelTitle { color: @fg; font-size: 14px; font-weight: 600; }
+#chatHeader QLabel#channelTopic { color: @fgMuted; font-size: 12px; padding-left: 4px; }
+#chatHeader QFrame#channelTopicDivider { background-color: @border; border: none; }
 QPushButton#chatHeaderMeta {
-    background: transparent; border: none; border-radius: 4px; color: @chatComposerIcon;
-    font-size: 13px; font-weight: 500; padding: 0px 6px; min-height: 26px; max-height: 26px;
+    background: transparent; border: none; border-radius: 6px; color: @fgMuted;
+    font-size: 12px; font-weight: 400; padding: 0px 6px; min-height: 28px; max-height: 28px;
 }
-QPushButton#chatHeaderMeta:hover { color: @chatTextStrong; }
-QPushButton#chatHeaderMeta:checked { color: @chatTextStrong; background-color: @chatRowSelected; }
-QPushButton#chatHeaderIconButton { background: transparent; border: none; border-radius: 4px; padding: 0px; }
-QPushButton#chatHeaderIconButton:hover { background-color: @chatRowHover; }
-#messageView, #messageContainer { background-color: @chatPane; border: none; }
+QPushButton#chatHeaderMeta:hover { color: @fg; background-color: @surfaceRaised; }
+QPushButton#chatHeaderMeta:checked { color: @fg; background-color: @surfaceActive; }
+QPushButton#chatHeaderIconButton { background: transparent; border: none; border-radius: 8px; padding: 0px; }
+QPushButton#chatHeaderIconButton:hover { background-color: @surfaceRaised; }
+QPushButton#chatHeaderIconButton:checked { background-color: @surfaceActive; }
+#chatHeader QPushButton#ghostButton[chatHeaderIcon="true"] {
+    background: transparent; border: none; border-radius: 8px; padding: 0px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+}
+#chatHeader QPushButton#ghostButton[chatHeaderIcon="true"]:hover { background-color: @surfaceRaised; }
+#chatHeader QPushButton#ghostButton[buttonSize="sm"] { font-size: 12px; padding: 0px 8px; min-height: 28px; }
+
+#chatUnreadBanner { background-color: @accentSubtle; border: none; border-bottom: 1px solid @border; }
+#chatUnreadBanner QLabel { color: @accentFg; font-size: 12px; font-weight: 500; background: transparent; }
+QPushButton#chatUnreadBannerButton {
+    background: transparent; border: none; color: @accentFg; font-size: 12px; font-weight: 500;
+    padding: 2px 8px; border-radius: 6px;
+}
+QPushButton#chatUnreadBannerButton:hover { background-color: @surfaceRaised; color: @fg; }
+
+#messageView, #messageContainer { background-color: @bg; border: none; }
 #messageContainer QLabel, #messageContainer QFrame#messageRow,
 #messageContainer QWidget#chatDayDivider, #messageContainer QWidget#messageReactions,
-#messageContainer QWidget#messageExpiryRing {
+#messageContainer QWidget#messageExpiryRing, #messageContainer QWidget#threadSummaryLine,
+#messageContainer QWidget#fileChipText {
     background: transparent;
 }
-#messageContainer QFrame#messageRow:hover { background-color: @chatMessageHover; }
-QLabel#messageText { font-size: 15px; color: @chatText; }
-#typingLabel { background-color: @chatPane; color: @chatMuted; padding-left: 16px; }
-QFrame#chatDayDividerRule { background-color: @chatDivider; border: none; }
-QLabel#chatDayDividerLabel { color: @chatFaint; font-size: 12px; font-weight: 600; background: transparent; }
+QFrame#messageRow { border-radius: 8px; }
+#messageContainer QFrame#messageRow:hover { background-color: @surfaceRaised; }
+QLabel#messageSender { font-size: 13px; color: @fg; }
+QLabel#messageTime { color: @fgSubtle; font-size: 11px; background: transparent; }
+QLabel#messageSpecialBadge {
+    color: @fgMuted; background: transparent; border: 1px solid @border; border-radius: 4px;
+    font-size: 10px; font-weight: 500; padding: 0px 4px; min-height: 14px; max-height: 14px;
+}
+QLabel#messageText { font-size: 14px; color: @fgSecondary; }
+#typingLabel { background-color: @bg; color: @fgSubtle; font-size: 12px; padding: 0px; }
+QFrame#chatDayDividerRule { background-color: @border; border: none; }
+#messageContainer QLabel#chatDayDividerLabel, QLabel#chatDayDividerLabel {
+    color: @fgMuted; font-size: 11px; font-weight: 500; background-color: @surface;
+    border: 1px solid @border; border-radius: 10px; padding: 2px 12px;
+}
 
-QWidget#chatMembersPanel { background-color: @chatRail; border: none; }
+QPushButton#threadSummary {
+    background: transparent; border: none; color: @accentFg; font-size: 12px;
+    font-weight: 400; padding: 1px 0px; text-align: left;
+}
+QPushButton#threadSummary:hover { color: @accentHover; text-decoration: underline; }
+QLabel#threadSummaryMeta { color: @fgSubtle; font-size: 12px; background: transparent; }
+
+QWidget#fileChip { background-color: @surface; border: 1px solid @border; border-radius: 12px; }
+#messageContainer QWidget#fileChip { background-color: @surface; }
+QLabel#fileChipTile { background-color: @surfaceActive; border-radius: 8px; }
+#messageContainer QLabel#fileChipTile { background-color: @surfaceActive; }
+QLabel#fileChipName { color: @fg; font-size: 13px; }
+QLabel#fileChipMeta { color: @fgSubtle; font-size: 12px; }
+
+QPushButton#reactionChip {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+    color: @fgMuted; font-size: 12px; padding: 0px 8px; min-height: 22px; max-height: 22px;
+}
+QPushButton#reactionChip:hover { border-color: @borderStrong; background-color: @surfaceRaised; }
+QPushButton#reactionChip[mine="true"] {
+    background-color: @accentSubtle; border-color: @accent; color: @accentFg;
+}
+QPushButton#reactionChip[mine="true"]:hover { background-color: @accentSubtle; border-color: @accentHover; }
+QPushButton#reactionAdd {
+    background: transparent; border: 1px solid transparent; border-radius: 12px; padding: 0px 6px;
+    min-height: 22px; max-height: 22px;
+}
+QPushButton#reactionAdd:hover { border-color: @border; background-color: @surfaceRaised; }
+#reactionPicker { background-color: @surface; border: 1px solid @borderStrong; border-radius: 12px; }
+QToolButton#reactionPickerButton { background: transparent; border: none; border-radius: 8px; }
+QToolButton#reactionPickerButton:hover { background-color: @surfaceActive; }
+QToolButton#messageAction, QPushButton#messageAction {
+    background-color: @surface; border: 1px solid @border; border-radius: 6px;
+    color: @fgMuted; font-size: 12px; padding: 0px 6px;
+}
+QToolButton#messageAction:hover, QPushButton#messageAction:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QToolButton#messageAction::menu-indicator { image: none; width: 0px; }
+
+QWidget#chatThreadPane { background-color: @bg; border: none; }
+QWidget#chatThreadHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QLabel#chatThreadTitle { color: @fg; font-size: 14px; font-weight: 600; background: transparent; }
+QLabel#threadCountLabel { color: @fgMuted; font-size: 12px; background: transparent; }
+QScrollArea#chatThreadView { background-color: @bg; border: none; }
+QScrollArea#chatThreadView > QWidget > QWidget { background-color: @bg; }
+QWidget#chatThreadComposer { background-color: @bg; border: none; }
+#chatThreadComposer QPlainTextEdit {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 12px;
+    color: @fg; font-size: 14px; padding: 6px 8px;
+}
+#chatThreadComposer QPlainTextEdit:focus { border-color: @accent; }
+
+QWidget#chatMembersPanel { background-color: @bg; border: none; border-left: 1px solid @border; }
 #chatMembersPanel QScrollArea#chatMembersScroll, #chatMembersPanel QWidget#chatMembersList {
     background: transparent; border: none;
 }
 #chatMembersPanel QLabel#chatMembersHeading {
-    color: @chatFaint; font-size: 11px; font-weight: 600; padding: 0px 16px 4px 16px;
+    color: @fgSubtle; font-size: 11px; font-weight: 500; padding: 0px 16px 4px 16px;
 }
 #chatMembersPanel QLabel#chatMembersGroupHeading {
-    color: @chatMuted; font-size: 12px; font-weight: 600; padding: 16px 8px 4px 8px;
+    color: @fgMuted; font-size: 12px; font-weight: 500; padding: 16px 8px 4px 8px;
 }
 #chatMembersPanel QLabel, #chatMembersList QWidget { background: transparent; }
-#chatMembersList QWidget#chatMemberCard { background: transparent; border-radius: 4px; }
-#chatMembersList QWidget#chatMemberCard:hover { background-color: @chatRowHover; }
-#chatMembersPanel QLabel#chatMemberName { font-size: 15px; font-weight: 500; }
+#chatMembersList QWidget#chatMemberCard { background: transparent; border-radius: 8px; }
+#chatMembersList QWidget#chatMemberCard:hover { background-color: @surfaceRaised; }
+#chatMembersPanel QLabel#chatMemberName { font-size: 13px; font-weight: 500; }
 #chatMembersPanel QScrollBar:vertical { background: transparent; width: 8px; margin: 0px; }
-#chatMembersPanel QScrollBar::handle:vertical { background: @chatEdge; border-radius: 4px; min-height: 30px; }
+#chatMembersPanel QScrollBar::handle:vertical { background: @borderStrong; border-radius: 4px; min-height: 30px; }
 #chatMembersPanel QScrollBar::add-line:vertical, #chatMembersPanel QScrollBar::sub-line:vertical { height: 0px; }
 #chatMembersPanel QScrollBar::add-page:vertical, #chatMembersPanel QScrollBar::sub-page:vertical { background: transparent; }
-
-#reactionChip:hover { border-color: @borderStrong; background-color: @surfaceRaised; }
-#reactionPicker { border-color: @borderStrong; }
 
 QPushButton#quickAddSendIcon { color: @accentFg; }
 QPushButton#quickAddSendIcon:hover { color: @accentFg; background: @accentSubtle; }

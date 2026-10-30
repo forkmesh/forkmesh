@@ -359,9 +359,11 @@ def fleet_ports(fleet=None):
             tcp, udp = list(turn_tcp), list(turn_udp)
             low, _, high = relay_text.partition("-")
             relay = (int(low), int(high))
+        udp += render.calls_ports(fleet)[1]
     else:
         defaults = render.TURN_DEFAULTS
-        tcp, udp = [defaults["port"]], [defaults["port"]]
+        tcp, udp = [defaults["port"]], [defaults["port"],
+                                        render.CALLS_DEFAULTS["udp_port"]]
         relay = (defaults["relay_min_port"], defaults["relay_max_port"])
     return wg_port, tcp, udp, relay
 

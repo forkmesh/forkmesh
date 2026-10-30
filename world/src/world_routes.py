@@ -1781,21 +1781,6 @@ async def world_admin_delete_node_handler(env, request):
             env, "DELETE FROM mirror_https_endpoints "
             "WHERE lower(node_name)=?",
             identifier)
-        # The public /status page builds its mirror roster from recorded
-        # samples (status_history), not from the live endpoint table, so a
-        # deleted node kept a "Mirror node — <name>" row with 30 days of
-        # history — and a permanent "down" verdict — long after every other
-        # trace of it was gone. Drop its samples too so deletion leaves none.
-        status_system = STATUS_MIRROR_PREFIX + identifier
-        await d1_run(
-            env, "DELETE FROM system_status_daily WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_hourly WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_minute WHERE system=?",
-            status_system)
     for identity_bi in identity_bis:
         cleanup_name = (
             target if identity_bi == target_bi else requested_target
@@ -3267,7 +3252,8 @@ async def _world_mesh_load(env):
             rows = []
         return world_mesh.build_directory(
             world_mesh.hub_entry(env), rows,
-            world_mesh.own_api_origin(env)), world_mesh.DIRECTORY_CACHE_MS
+            world_mesh.own_api_origin(env),
+            world_mesh.hex_slots(env)), world_mesh.DIRECTORY_CACHE_MS
     try:
         resp = await js_fetch_with_timeout(
             world_mesh.hub_api(env) + "/api/world/mesh",
@@ -3304,6 +3290,139 @@ async def world_mesh_handler(env, request):
     return json_response(
         world_mesh.directory_payload(env, worlds),
         cache_seconds=world_mesh.DIRECTORY_MAX_AGE)
+
+
+def world_neighbour_scene_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    scene = world_mesh.neighbour_scene(env)
+    if scene is None:
+        return json_response({"error": "not_found"}, status=404)
+    return json_response(
+        scene, cache_seconds=world_mesh.SCENE_MAX_AGE,
+        extra_headers={"access-control-allow-origin": "*"})
+
+
+_WORLD_ICON_CACHE = {}
+WORLD_ICON_CACHE_LIMIT = 96
+# A neighbour's visa verdict is a few dozen bytes of JSON.
+WORLD_MESH_REPLY_MAX_BYTES = 4096
+
+
+def _reply_chunk(value):
+    if value is None:
+        return b""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    converter = getattr(value, "to_py", None)
+    return bytes(converter() if callable(converter) else value)
+
+
+async def _bounded_reply(resp, limit):
+    """A neighbour's reply body, or None when it is larger than ``limit``.
+
+    The directory names the neighbour, not us, so its reply is read as a
+    stream and abandoned past the cap instead of being buffered whole.
+    """
+    try:
+        declared = int(resp.headers.get("content-length") or 0)
+    except Exception:
+        declared = 0
+    if declared > limit:
+        return None
+    body = getattr(resp, "body", None)
+    get_reader = getattr(body, "getReader", None) if body is not None else None
+    if callable(get_reader):
+        reader = get_reader()
+        chunks = []
+        total = 0
+        while True:
+            result = await reader.read()
+            done = (result.get("done") if isinstance(result, dict)
+                    else getattr(result, "done", False))
+            if done:
+                break
+            chunk = _reply_chunk(result.get("value") if isinstance(
+                result, dict) else getattr(result, "value", None))
+            total += len(chunk)
+            if total > limit:
+                try:
+                    cancelled = reader.cancel()
+                    if hasattr(cancelled, "__await__"):
+                        await cancelled
+                except Exception:
+                    pass
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
+    reader = getattr(resp, "arrayBuffer", None)
+    if callable(reader):
+        raw = bytes(Uint8Array.new(await reader()).to_py())
+    else:
+        raw = str(await resp.text()).encode("utf-8")
+    return raw if len(raw) <= limit else None
+
+
+async def _world_neighbour_icon_fetch(source):
+    try:
+        resp = await js_fetch_with_timeout(
+            source,
+            {"method": "GET", "headers": {"accept": "image/*"},
+             "redirect": "error"},
+            WORLD_MESH_FETCH_TIMEOUT_SECONDS)
+        if int(getattr(resp, "status", 0)) != 200:
+            return b""
+        raw = await _bounded_reply(resp, world_mesh.ICON_MAX_BYTES)
+    except Exception:
+        return b""
+    return raw or b""
+
+
+async def world_neighbour_icon_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    params = parse_qs(urlparse(request.url).query)
+    worlds = await world_mesh_directory(env)
+    source = world_mesh.neighbour_icon_source(
+        env, worlds, (params.get("world") or [""])[0],
+        (params.get("path") or [""])[0])
+    if not source:
+        return json_response({"error": "not_found"}, status=404)
+    now = int(Date.now())
+    cached = _WORLD_ICON_CACHE.get(source)
+    if cached is None or now >= cached["until"]:
+        raw = await _world_neighbour_icon_fetch(source)
+        kind = world_mesh.icon_type(raw)
+        if len(_WORLD_ICON_CACHE) >= WORLD_ICON_CACHE_LIMIT:
+            _WORLD_ICON_CACHE.pop(next(iter(_WORLD_ICON_CACHE)))
+        cached = {
+            "raw": raw if kind else b"", "type": kind,
+            "until": now + (world_mesh.ICON_MAX_AGE * 1000 if kind
+                            else world_mesh.ICON_FAILURE_MS),
+        }
+        _WORLD_ICON_CACHE[source] = cached
+    if not cached["type"]:
+        return json_response(
+            {"error": "icon_unavailable"}, status=404,
+            extra_headers={"access-control-allow-origin": "*"})
+    return JsResponse.new(Uint8Array.new(_to_js(cached["raw"])), to_js({
+        "status": 200,
+        "headers": {
+            "content-type": cached["type"],
+            "content-length": str(len(cached["raw"])),
+            "cache-control": "public, max-age=%d" % world_mesh.ICON_MAX_AGE,
+            "access-control-allow-origin": "*",
+            "cross-origin-resource-policy": "cross-origin",
+            "content-security-policy": "default-src 'none'; sandbox",
+            "x-content-type-options": "nosniff",
+        },
+    }))
 
 
 async def world_visa_handler(env, request):
@@ -3374,11 +3493,115 @@ async def world_visa_verify_handler(env, request):
         cache_control=no_store)
 
 
-async def world_mesh_visitor(env, request, visa=""):
+def world_federated_path(path):
+    return world_mesh.federated_path(path)
+
+
+async def world_federation_cors(env, request, path):
+    if not world_mesh.federated_path(path):
+        return {}
+    try:
+        origin = str(request.headers.get("origin") or "")
+    except Exception:
+        origin = ""
+    if not origin:
+        return {}
+    try:
+        requested = str(
+            request.headers.get("access-control-request-method") or "")
+    except Exception:
+        requested = ""
+    if not world_mesh.federated_method_allowed(
+            path, method_name(request), requested):
+        return {}
+    worlds = await world_mesh_directory(env)
+    neighbour = world_mesh.neighbour_world_origin(env, worlds, origin)
+    if not neighbour:
+        return {}
+    return world_mesh.federation_cors_headers(
+        neighbour["world"], preflight=method_name(request) == "OPTIONS",
+        read_only=str(path or "").rstrip("/")
+        in world_mesh.FEDERATED_READ_ONLY_PATHS)
+
+
+def world_visitor_claim(env, token, home_host):
+    verified = world_mesh.visitor_verify(
+        _account_session_secret(env), token, int(Date.now()),
+        world_mesh.own_world_origin(env))
+    if not verified or verified["home"] != str(home_host or "").lower():
+        return None
+    return {
+        "name": verified["name"],
+        "accountStatus": world_mesh.VISITOR_STATUS,
+        "nodeCount": 0,
+        "isAdmin": False,
+        "ticketNonce": verified["nonce"],
+    }
+
+
+def world_bearer_visitor(env, request):
+    try:
+        header = request.headers.get("authorization") or ""
+    except Exception:
+        header = ""
+    token = world_mesh.bearer_visitor_token(header)
+    if not token:
+        return None
+    return world_mesh.visitor_verify(
+        _account_session_secret(env), token, int(Date.now()),
+        world_mesh.own_world_origin(env))
+
+
+async def world_visa_session_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    try:
+        data = await bounded_json_request(request, WORLD_MESH_BODY_MAX_BYTES)
+    except Exception:
+        data = None
+    data = data if isinstance(data, dict) else {}
+    visa = str(data.get("visa") or "")
+    visitor = await world_mesh_visitor(env, request, visa, arrival=True)
+    if not visitor or visitor.get("error") or not visitor.get("claim"):
+        return json_response(
+            {"ok": False, "error": "invalid_visa"}, status=401,
+            cache_control=no_store)
+    try:
+        origin = world_mesh.clean_origin(request.headers.get("origin") or "")
+    except Exception:
+        origin = ""
+    if origin and world_mesh.origin_host(origin) != visitor["home"]:
+        return json_response(
+            {"ok": False, "error": "origin_not_allowed"}, status=403,
+            cache_control=no_store)
+    claim = world_mesh.visitor_for(
+        visitor["claim"]["name"], visitor["home"],
+        world_mesh.own_world_origin(env), visitor["claim"]["ticketNonce"],
+        int(Date.now()))
+    return json_response(
+        {
+            "ok": True,
+            "token": world_mesh.visitor_encode(
+                _account_session_secret(env), claim),
+            "expiresAt": claim["exp"],
+            "name": claim["sub"],
+            "home": claim["home"],
+        },
+        cache_control=no_store)
+
+
+async def world_mesh_visitor(env, request, visa="", arrival=False):
     try:
         origin = request.headers.get("origin") or ""
     except Exception:
         origin = ""
+    if arrival:
+        if not visa:
+            return None
+        origin = world_mesh.visa_unverified_home(visa)
     worlds = await world_mesh_directory(env)
     home = world_mesh.neighbor_for_origin(env, worlds, origin)
     if not home:
@@ -3406,7 +3629,10 @@ async def world_mesh_visitor(env, request, visa=""):
             WORLD_MESH_FETCH_TIMEOUT_SECONDS)
         if int(getattr(resp, "status", 0)) != 200:
             return {"error": "invalid_visa"}
-        payload = json.loads(str(await resp.text())[:4096])
+        raw = await _bounded_reply(resp, WORLD_MESH_REPLY_MAX_BYTES)
+        if raw is None:
+            return {"error": "invalid_visa"}
+        payload = json.loads(raw.decode("utf-8"))
     except Exception:
         return {"error": "visa_unverified"}
     if not isinstance(payload, dict) or payload.get("ok") is not True:
@@ -3423,3 +3649,83 @@ async def world_mesh_visitor(env, request, visa=""):
         "ticketNonce": nonce,
     }
     return visitor
+
+
+WORLD_VOICE_TICKET_MAX_BODY = 512
+
+
+def world_voice_scope(room, secret=""):
+    room = world_protocol.world_voice_room(room)
+    if not room or room == "channel":
+        return ""
+    if room.startswith("space:"):
+        space = room[len("space:"):]
+        if world_protocol.world_space(space, "") != space:
+            return ""
+        return room
+    if room.startswith("bubble:"):
+        secret = str(secret or "")
+        if not world_protocol.WORLD_VOICE_SECRET_RE.fullmatch(secret):
+            return ""
+        tag = hashlib.sha256(
+            ("forkmesh-world-bubble-v1\n" + secret).encode()).hexdigest()[:16]
+        if not hmac.compare_digest(tag, room[len("bubble:"):]):
+            return ""
+        return "bubble:" + secret
+    return room
+
+
+async def world_voice_ticket_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    if not _request_origin_allowed(env, request):
+        return json_response(
+            {"error": "origin_not_allowed"}, status=403,
+            cache_control=no_store)
+    try:
+        payload = await bounded_json_request(
+            request, WORLD_VOICE_TICKET_MAX_BODY)
+    except RequestBodyTooLarge:
+        return json_response(
+            {"error": "payload_too_large"}, status=413,
+            cache_control=no_store)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        account_bi, record = await _account_session_record(env, request)
+    except Exception:
+        account_bi, record = "", None
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", str(account_bi or ""))
+        or not record
+        or record.get("status") != "active"
+        or _account_kind(record) != "user"
+    ):
+        return json_response(
+            {"error": "sign_in_required"}, status=401,
+            cache_control=no_store)
+    scope = world_voice_scope(payload.get("room"), payload.get("secret"))
+    if not scope:
+        return json_response(
+            {"error": "invalid_room"}, status=400, cache_control=no_store)
+    secret = str(getattr(env, "FORKMESH_CALLS_SECRET", "") or "")
+    nodes = chat_call_nodes(getattr(env, "FORKMESH_CALLS_NODES", "") or "")
+    if len(secret) < 32 or not nodes:
+        return json_response(
+            {"error": "calls_unavailable"}, status=503,
+            cache_control=no_store)
+    peer = bytes(js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+    ticket = chat_call_ticket(
+        secret, "world-voice:" + scope, peer, int(Date.now()),
+        str(account_bi))
+    ticket["url"] = chat_call_pick(
+        ticket["room"], nodes, await _chat_call_healthy(nodes))
+    return json_response(
+        {**ticket, "voice": payload.get("room")},
+        cache_control=no_store,
+        extra_headers={"x-content-type-options": "nosniff"})

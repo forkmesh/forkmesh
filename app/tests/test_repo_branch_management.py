@@ -781,17 +781,19 @@ def test_branches_page_shows_divergence_and_offers_the_owner_the_actions():
     assert "if (!repoBranchManageAllowed(repo)) {" in DASHBOARD
 
     for marker in (
-        "async function deleteRepoBranch(repo, branch, commit)",
+        "async function deleteRepoBranches(repo, names)",
         "async function updateRepoBranchFromDefault(repo, branch, commit)",
         "async function createRepoBranch(repo)",
-        "async function deleteMergedRepoBranches(repo)",
+        "function toggleRepoBranchMergedFilter(repo)",
         "async function cancelRepoBranchOp(repo, id)",
         "async function queueRepoBranchOp(repo, request, message)",
         '`${repoApiBase(repo)}/branches/ops`',
         'data-repo-branch-delete',
         'data-repo-branch-update',
         'data-repo-branch-create',
-        'data-repo-branch-delete-merged',
+        'data-repo-branches-filter-merged',
+        'data-repo-branch-select',
+        'data-repo-branches-delete-selected',
         'data-repo-branch-update-all',
         "async function updateAllRepoBranchesFromDefault(repo)",
         'data-repo-branch-op-cancel',
@@ -799,11 +801,15 @@ def test_branches_page_shows_divergence_and_offers_the_owner_the_actions():
     ):
         assert marker in DASHBOARD, marker
 
-    # Destructive, so it asks first on a desktop-sized screen; on a phone it
-    # deletes straight away. Either way it names the exact tip it saw.
-    assert 'const REPO_BRANCH_DELETE_NO_CONFIRM_QUERY = "(max-width: 767px), (pointer: coarse)";' in DASHBOARD
-    assert '!window.matchMedia?.(REPO_BRANCH_DELETE_NO_CONFIRM_QUERY)?.matches && !window.confirm(\n      `Delete branch "${branch}"?' in DASHBOARD
-    assert '{ op: "delete", branch, expectedOid: commit }' in DASHBOARD
+    # Deleting asks inline in the row or the selection bar, never with a
+    # browser dialog, and sends the exact tip the page showed.
+    assert "data-repo-branch-delete-confirmation" in DASHBOARD
+    assert "data-repo-branches-delete-summary" in DASHBOARD
+    assert "`${repoApiBase(repo)}/branches/delete${job ? `?job=${encodeURIComponent(job)}` : \"\"}`" in DASHBOARD
+    assert '({ name, expectedOid: String(listed.get(name)?.commit || "") })' in DASHBOARD
+    delete_code = DASHBOARD[DASHBOARD.index("const REPO_BRANCH_DELETE_LIMIT"):
+                            DASHBOARD.index("async function updateRepoBranchFromDefault(")]
+    assert "window.confirm" not in delete_code
 
 
 def test_the_owning_node_applies_the_queue_and_refuses_the_dangerous_cases():

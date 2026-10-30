@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 from urllib.parse import urlparse
 
@@ -11,6 +12,23 @@ HUB_NAME = "ForkMesh"
 DEFAULT_HUB_API = "https://app.forkmesh.com"
 DEFAULT_HUB_WORLD = "https://world.forkmesh.com"
 SLOTS = 12
+HEX_SLOTS = 5
+PETALS = 6
+SHAPE_FLOWER = "flower"
+SHAPE_HEX = "hex"
+SCENE_PATH = "/api/world/neighbour-scene"
+SCENE_VERSION = 1
+SCENE_MAX_BYTES = 64 * 1024
+SCENE_MAX_OBJECTS = 48
+SCENE_MAX_AGE = 300
+SCENE_TEXT_MAX = 40
+SCENE_LAMP_RING = 30
+SCENE_TREE_RING = 280
+SCENE_TREES = 12
+ICON_MAX_BYTES = 64 * 1024
+ICON_MAX_AGE = 3600
+ICON_FAILURE_MS = 60 * 1000
+ICON_PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,299}$")
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60
 DIRECTORY_CACHE_MS = 5 * 60 * 1000
@@ -69,6 +87,20 @@ def is_hub(env):
     return not " ".join(setting(env, "INSTANCE_NAME").split())
 
 
+def hex_slots(env):
+    slots = set()
+    for part in setting(env, "WORLD_MESH_HEX_SLOTS").split(","):
+        part = part.strip()
+        if part.isdigit() and int(part) < HEX_SLOTS:
+            slots.add(int(part))
+    return frozenset(slots)
+
+
+def shape_for(value, slot):
+    return SHAPE_HEX if value == SHAPE_HEX and 0 <= slot < HEX_SLOTS \
+        else SHAPE_FLOWER
+
+
 def hub_api(env):
     return clean_origin(setting(env, "WORLD_MESH_HUB")) or DEFAULT_HUB_API
 
@@ -89,6 +121,87 @@ def own_api_origin(env):
     return DEFAULT_HUB_API if is_hub(env) else own_world_origin(env)
 
 
+def ring(count, radius, offset=0.0):
+    return [
+        (round(radius * math.cos(offset + 2 * math.pi * i / count), 1),
+         round(radius * math.sin(offset + 2 * math.pi * i / count), 1))
+        for i in range(count)]
+
+
+def default_scene(name, host):
+    objects = [
+        {"type": "plaza", "x": 0, "z": 0, "radius": 34, "color": "#d8d0bf"},
+        {"type": "sign", "x": 0, "z": 0, "title": name[:SCENE_TEXT_MAX],
+         "text": host[:60]},
+    ]
+    objects += [{"type": "lamp", "x": x, "z": z, "color": "#fff3c4"}
+                for x, z in ring(4, SCENE_LAMP_RING, math.pi / 4)]
+    objects += [{"type": "tree", "x": x, "z": z, "scale": 1.4}
+                for x, z in ring(SCENE_TREES, SCENE_TREE_RING, math.pi / 12)]
+    return {
+        "v": SCENE_VERSION,
+        "ground": {"color": "#9fc584", "accent": "#9ef7c6",
+                   "pattern": "plain"},
+        "objects": objects,
+    }
+
+
+def configured_scene(raw):
+    if not raw or len(raw.encode("utf-8")) > SCENE_MAX_BYTES:
+        return None
+    try:
+        scene = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(scene, dict) or scene.get("v") != SCENE_VERSION:
+        return None
+    objects = scene.get("objects")
+    if not isinstance(objects, list) or not objects \
+            or len(objects) > SCENE_MAX_OBJECTS:
+        return None
+    if not all(isinstance(item, dict) for item in objects):
+        return None
+    return scene
+
+
+def neighbour_scene(env):
+    if is_hub(env):
+        return None
+    world = own_world_origin(env)
+    if not world:
+        return None
+    host = origin_host(world)
+    return configured_scene(setting(env, "WORLD_NEIGHBOUR_SCENE")) \
+        or default_scene(clean_name(setting(env, "INSTANCE_NAME"), host), host)
+
+
+def neighbour_icon_source(env, worlds, world_id, path):
+    path = str(path or "")
+    if not ICON_PATH_RE.fullmatch(path):
+        return ""
+    own = self_id(env, worlds)
+    for entry in worlds:
+        if entry["id"] == str(world_id or "") and entry["id"] != own \
+                and entry.get("scene"):
+            return entry["world"] + path
+    return ""
+
+
+def icon_type(raw):
+    raw = bytes(raw or b"")
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw[:4] == b"\x00\x00\x01\x00" and len(raw) > 6:
+        return "image/x-icon"
+    return ""
+
+
 def hub_entry(env):
     world = own_world_origin(env) or DEFAULT_HUB_WORLD
     return {
@@ -99,10 +212,11 @@ def hub_entry(env):
         "api": own_api_origin(env) or DEFAULT_HUB_API,
         "logo": "",
         "slot": -1,
+        "shape": SHAPE_FLOWER,
     }
 
 
-def instance_entry(row, api_base):
+def instance_entry(row, api_base, hexes=frozenset()):
     entry_id = str(row.get("id") or "")
     world = clean_origin(row.get("url"))
     try:
@@ -125,15 +239,17 @@ def instance_entry(row, api_base):
         "api": world,
         "logo": api_base + logo if LOGO_PATH_RE.fullmatch(logo) else "",
         "slot": slot,
+        "shape": SHAPE_HEX if slot in hexes else SHAPE_FLOWER,
+        **({"scene": world + SCENE_PATH} if slot in hexes else {}),
     }
 
 
-def build_directory(hub, rows, api_base):
+def build_directory(hub, rows, api_base, hexes=frozenset()):
     worlds = [hub]
     slots = set()
     hosts = {hub["host"]}
     for row in rows or []:
-        entry = instance_entry(dict(row), api_base)
+        entry = instance_entry(dict(row), api_base, hexes)
         if not entry or entry["slot"] in slots or entry["host"] in hosts:
             continue
         slots.add(entry["slot"])
@@ -142,6 +258,14 @@ def build_directory(hub, rows, api_base):
         if len(worlds) >= MAX_WORLDS:
             break
     return worlds
+
+
+def petal_of(item):
+    petal = item.get("petal")
+    if isinstance(petal, int) and not isinstance(petal, bool) \
+            and 0 <= petal < PETALS and item.get("shape") == SHAPE_HEX:
+        return {"petal": petal}
+    return {}
 
 
 def normalize_world(item):
@@ -179,6 +303,11 @@ def normalize_world(item):
         "api": api,
         "logo": logo if logo_ok else "",
         "slot": slot,
+        "shape": shape_for(item.get("shape"), slot),
+        **({"scene": world + SCENE_PATH}
+           if shape_for(item.get("shape"), slot) == SHAPE_HEX
+           and item.get("scene") == world + SCENE_PATH else {}),
+        **petal_of(item),
     }
 
 
@@ -301,3 +430,144 @@ def visa_for(name, home, destination, nonce, now):
         "issuedAt": int(now),
         "expiresAt": int(now) + VISA_TTL_MS,
     }
+
+
+VISITOR_PREFIX = "fmwv1."
+VISITOR_LABEL = b"forkmesh-world-visitor-v1\n"
+VISITOR_TTL_MS = 15 * 60 * 1000
+VISITOR_SCOPE = "world"
+
+
+def visitor_signature(secret, payload):
+    return hmac.new(
+        secret, VISITOR_LABEL + payload.encode(), hashlib.sha256).hexdigest()
+
+
+def visitor_for(name, home_host, audience, nonce, now):
+    return {
+        "v": 1,
+        "sub": str(name or "")[:64],
+        "home": str(home_host or "")[:253],
+        "aud": clean_origin(audience),
+        "scope": VISITOR_SCOPE,
+        "nonce": nonce,
+        "iat": int(now),
+        "exp": int(now) + VISITOR_TTL_MS,
+    }
+
+
+def visitor_encode(secret, claim):
+    payload = base64.urlsafe_b64encode(
+        json.dumps(claim, separators=(",", ":"), sort_keys=True).encode()
+    ).decode().rstrip("=")
+    return VISITOR_PREFIX + payload + "." + visitor_signature(secret, payload)
+
+
+def visitor_verify(secret, token, now, audience):
+    value = str(token or "").strip()
+    if not value.startswith(VISITOR_PREFIX):
+        return None
+    claim, payload, signature = visa_claim(value[len(VISITOR_PREFIX):])
+    if claim is None:
+        return None
+    if not hmac.compare_digest(signature, visitor_signature(secret, payload)):
+        return None
+    try:
+        issued = int(claim.get("iat", 0) or 0)
+        expires = int(claim.get("exp", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if issued <= 0 or expires <= now or expires - issued > VISITOR_TTL_MS:
+        return None
+    if issued > now + 5000:
+        return None
+    if claim.get("scope") != VISITOR_SCOPE:
+        return None
+    if clean_origin(claim.get("aud")) != clean_origin(audience) or not audience:
+        return None
+    name = str(claim.get("sub") or "").strip()
+    home = str(claim.get("home") or "").strip().lower()
+    nonce = str(claim.get("nonce") or "")
+    if not name or not HOST_RE.fullmatch(home) or not NONCE_RE.fullmatch(nonce):
+        return None
+    return {"name": name[:64], "home": home, "nonce": nonce,
+            "expiresAt": expires}
+
+
+def bearer_visitor_token(header):
+    value = str(header or "").strip()
+    if value[:7].lower() != "bearer ":
+        return ""
+    token = value[7:].strip()
+    return token if token.startswith(VISITOR_PREFIX) else ""
+
+
+FEDERATED_PATHS = frozenset({
+    "/api/world/visa/session",
+    "/api/world/mesh",
+    "/api/world/neighbour-scene",
+    "/api/world/organizations",
+    "/api/world/events",
+    "/api/world/office/floors",
+    "/api/world/office/attendance",
+    "/api/world/office/general/status",
+    "/api/world/office/general/entry",
+    "/api/repositories",
+    "/api/leaderboards",
+    "/api/accounts/users",
+    "/api/world/inactive",
+    "/api/world/visitors",
+    "/api/world/fediverse",
+    "/api/world/fediverse-mentions",
+    "/api/network/overview",
+})
+
+
+FEDERATED_READ_ONLY_PATHS = frozenset({
+    "/api/accounts/users",
+    "/api/world/inactive",
+    "/api/world/visitors",
+    "/api/world/fediverse",
+    "/api/world/fediverse-mentions",
+    "/api/network/overview",
+})
+
+
+def federated_path(path):
+    return str(path or "").rstrip("/") in FEDERATED_PATHS
+
+
+def federated_method_allowed(path, method, requested=""):
+    if str(path or "").rstrip("/") not in FEDERATED_READ_ONLY_PATHS:
+        return True
+    verb = str(method or "").upper()
+    if verb == "OPTIONS":
+        verb = str(requested or "").upper()
+    return verb in ("GET", "HEAD")
+
+
+def neighbour_world_origin(env, worlds, origin):
+    origin = clean_origin(origin)
+    if not origin:
+        return None
+    own = self_id(env, worlds)
+    for entry in worlds:
+        if entry["id"] != own and origin == entry["world"]:
+            return entry
+    return None
+
+
+def federation_cors_headers(origin, preflight=False, read_only=False):
+    headers = {
+        "access-control-allow-origin": origin,
+        "vary": "Origin",
+    }
+    if preflight:
+        headers.update({
+            "access-control-allow-methods":
+                "GET, OPTIONS" if read_only else "GET, POST, OPTIONS",
+            "access-control-allow-headers":
+                "authorization, content-type, accept",
+            "access-control-max-age": "600",
+        })
+    return headers

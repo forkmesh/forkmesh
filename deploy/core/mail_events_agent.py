@@ -19,6 +19,7 @@ DELIVERY = re.compile(r"^([0-9A-Za-z]+): to=<([^>]{0,254})>,.*?dsn=(\d\.\d{1,3}\
                       r"status=(sent|deferred|bounced) \((.{0,600})\)$")
 SENDER = re.compile(r"^([0-9A-Za-z]+): from=<([^>]{0,254})>, size=")
 EXPIRED = re.compile(r"^([0-9A-Za-z]+): from=<[^>]*>, status=expired")
+MESH_HOP = re.compile(r", relay=10\.77\.\d{1,3}\.\d{1,3}\[")
 EVENTS = {"sent": "delivery", "deferred": "soft bounce", "bounced": "bounce"}
 MAX_SPOOL = 5000
 
@@ -41,6 +42,8 @@ def event_for(line, ids, deferred, node, senders=None):
     if not match:
         return None
     queue_id, email, dsn, status, reason = match.groups()
+    if status == "sent" and MESH_HOP.search(line):
+        return None
     if status == "deferred":
         key = queue_id + email
         if key in deferred:

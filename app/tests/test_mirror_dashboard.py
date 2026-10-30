@@ -1078,9 +1078,46 @@ def test_direct_pull_and_discussion_signatures_match_browser_wire_format():
 def test_direct_discussion_answers_flag_only_the_owners_session():
     source = Path(gateway.__file__).read_text(encoding="utf-8")
     flag = source.index('item["meta"] = {"ownerApproved": True}')
-    guard = source[flag - 260:flag]
-    assert 'str(event.get("type") or "") == "answer"' in guard
-    assert "actor == owner" in guard and "trusted_browser_origin" in guard
+    guard = source[flag - 900:flag]
+    assert "actor and actor == owner and trusted_browser_origin" in guard
+    assert 'event_type == "answer"' in guard
+    assert ("if event_type in DISCUSSION_OWNER_EVENT_TYPES and not "
+            "owner_session:") in guard
+    assert '{"ok": False, "error": "not_authorized"}, 403' in guard
+
+
+def test_direct_discussion_moderation_signatures_match_browser_wire_format():
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+
+    def signed(event, number, content):
+        message = (
+            "forkmesh-discussion-event-v1\n" + event["type"] + "\n"
+            + str(number) + "\n" + author + "\n" + str(NOW) + "\n"
+            + hashlib.sha256(content.encode()).hexdigest()
+        ).encode()
+        return dict(event, author=author, ts=NOW, sig=base64.urlsafe_b64encode(
+            private_key.sign(message)).decode().rstrip("="))
+
+    close = signed({"type": "status", "status": "closed"}, 3, "closed")
+    assert gateway._verify_dashboard_discussion(3, close) is True
+    assert gateway._verify_dashboard_discussion(0, close) is False
+    assert gateway._verify_dashboard_discussion(
+        3, dict(close, status="archived")) is False
+    frozen = signed({"type": "status", "status": "frozen"}, 3, "frozen")
+    assert gateway._verify_dashboard_discussion(3, frozen) is False
+    delete = signed({"type": "delete", "target": "reply-2"}, 3, "reply-2")
+    assert gateway._verify_dashboard_discussion(3, delete) is True
+    assert gateway._verify_dashboard_discussion(
+        3, dict(delete, target="reply-3")) is False
+    untitled = signed({"type": "open", "title": "", "body": "b",
+                       "category": "Ideas"}, 0, "\0b\0Ideas")
+    assert gateway._verify_dashboard_discussion(0, untitled) is False
 
 
 def test_gateway_event_signatures_bind_the_repository(monkeypatch):
@@ -1273,3 +1310,238 @@ def test_dashboard_replica_requires_canonical_origin_and_safe_path(tmp_path):
     config_path.write_text(json.dumps(config), encoding="utf-8")
     with pytest.raises(gateway.GatewayError, match="replicaPath"):
         gateway.load_config(config_path)
+
+
+def _signed_direct_pull(description="", commits="", ai_model=None):
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+    pull = {
+        "title": "Direct pull", "base": "main", "head": "feature",
+        "patch": "diff --git a/a b/a\n", "commits": commits,
+        "author": author, "ts": NOW, "description": description,
+    }
+    content = "\0".join(
+        str(pull[key]) for key in ("title", "base", "head", "patch", "commits"))
+    message = (
+        "forkmesh-pull-event-v1\n" + author + "\n" + str(NOW) + "\n"
+        + hashlib.sha256(content.encode()).hexdigest()
+    ).encode()
+    pull["sig"] = base64.urlsafe_b64encode(
+        private_key.sign(message)).decode().rstrip("=")
+    if ai_model is not None:
+        pull["aiModel"] = ai_model
+    return pull
+
+
+def _post_direct_pull(dashboard_app, monkeypatch, pull, required):
+    config = replace(
+        dashboard_app.config,
+        dashboard_canonical_origin="https://app.forkmesh.example",
+        collaboration_control_url=(
+            "http://127.0.0.1:8791/v1/control/collaboration"
+        ),
+    )
+    dashboard_app.config = config
+    dashboard_app.dashboard.config = config
+    forwarded = {}
+    asked = []
+
+    class LocalResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _maximum):
+            return json.dumps({"ok": True, "number": 7}).encode()
+
+    def local_open(request, timeout):
+        forwarded.update(json.loads(request.data))
+        return LocalResponse()
+
+    def requires(_repository, base):
+        asked.append(base)
+        return required
+
+    monkeypatch.setattr(gateway, "_open_loopback_control", local_open)
+    monkeypatch.setattr(gateway, "_repository_requires_ai_disclosure", requires)
+    response = dashboard_app.dispatch(
+        "POST", "/api/repo/forkmesh/forkmesh/pulls",
+        {"Origin": "https://app.forkmesh.example",
+         "Content-Type": "application/json"},
+        json.dumps({"owner": "forkmesh", "repo": "forkmesh",
+                    "pull": pull}).encode(),
+    )
+    return response, forwarded, asked
+
+
+def test_direct_pull_without_ai_model_is_refused_when_the_repository_requires_it(
+    dashboard_app, monkeypatch,
+):
+    response, forwarded, asked = _post_direct_pull(
+        dashboard_app, monkeypatch, _signed_direct_pull("No disclosure"), True)
+    assert response.status == 422
+    data = json.loads(response.body)
+    assert data["error"] == "ai_disclosure_required"
+    assert "AI model: <name>" in data["message"]
+    assert forwarded == {} and asked == ["main"]
+
+
+def test_direct_pull_carries_its_ai_model_to_the_daemon(dashboard_app, monkeypatch):
+    response, forwarded, asked = _post_direct_pull(
+        dashboard_app, monkeypatch,
+        _signed_direct_pull("Body", ai_model=" **Claude\nOpus 5.5** "), True)
+    assert response.status == 201
+    assert forwarded["item"]["pull"]["aiModel"] == "Claude Opus 5.5"
+    assert asked == []
+
+
+def test_direct_pull_ai_model_falls_back_to_the_description_and_trailer(
+    dashboard_app, monkeypatch,
+):
+    response, forwarded, _asked = _post_direct_pull(
+        dashboard_app, monkeypatch,
+        _signed_direct_pull("Fixes it.\n\n- **AI model:** GPT-5\n"), True)
+    assert response.status == 201
+    assert forwarded["item"]["pull"]["aiModel"] == "GPT-5"
+    mbox = ("From 0123456789abcdef Mon Sep 17 00:00:00 2001\nSubject: [PATCH] a\n\n"
+            "Co-Authored-By: Alice <a@example.com>\n"
+            "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n")
+    response, forwarded, _asked = _post_direct_pull(
+        dashboard_app, monkeypatch, _signed_direct_pull("", commits=mbox), True)
+    assert response.status == 201
+    assert forwarded["item"]["pull"]["aiModel"] == "Claude Opus 5.5"
+
+
+def test_direct_pull_without_ai_model_is_accepted_when_not_required(
+    dashboard_app, monkeypatch,
+):
+    response, forwarded, _asked = _post_direct_pull(
+        dashboard_app, monkeypatch, _signed_direct_pull("Plain", ai_model=""), False)
+    assert response.status == 201
+    assert "aiModel" not in forwarded["item"]["pull"]
+
+
+def test_repository_ai_disclosure_setting_reads_pulls_json_at_the_base():
+    class Repository:
+        def __init__(self, payload):
+            self.payload = payload
+            self.queries = []
+
+        def blob(self, query):
+            self.queries.append(dict(query))
+            if isinstance(self.payload, Exception):
+                raise self.payload
+            return self.payload
+
+    on = Repository({"encoding": "utf8", "content": '{"requireAiDisclosure": true}'})
+    assert gateway._repository_requires_ai_disclosure(on, "release") is True
+    assert on.queries == [{"path": ".forkmesh/pulls.json", "ref": "release"}]
+    for payload in (
+        {"encoding": "utf8", "content": '{"requireAiDisclosure": "yes"}'},
+        {"encoding": "utf8", "content": "not json"},
+        {"encoding": "base64", "content": "e30="},
+        gateway.GatewayError("repository path was not found"),
+    ):
+        assert gateway._repository_requires_ai_disclosure(
+            Repository(payload), "main") is False
+
+
+def _post_direct_discussion(dashboard_app, monkeypatch, event, number=0,
+                            session=None):
+    config = replace(
+        dashboard_app.config,
+        dashboard_canonical_origin="https://app.forkmesh.example",
+        collaboration_control_url=(
+            "http://127.0.0.1:8791/v1/control/collaboration"
+        ),
+    )
+    dashboard_app.config = config
+    dashboard_app.dashboard.config = config
+    forwarded = {}
+
+    class LocalResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _maximum):
+            return json.dumps({"ok": True, "number": 12}).encode()
+
+    def local_open(request, timeout):
+        forwarded.update(json.loads(request.data))
+        return LocalResponse()
+
+    monkeypatch.setattr(gateway, "_open_loopback_control", local_open)
+    monkeypatch.setattr(gateway.DashboardService, "_portable_session",
+                        lambda _self, _headers: session)
+    response = dashboard_app.dispatch(
+        "POST", "/api/repo/forkmesh/forkmesh/discussions",
+        {"Origin": "https://app.forkmesh.example",
+         "Content-Type": "application/json"},
+        json.dumps({"owner": "forkmesh", "repo": "forkmesh",
+                    "number": number, "event": event}).encode(),
+    )
+    return response, forwarded
+
+
+def _signed_direct_discussion_event(event_type, number, content, **fields):
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+    message = (
+        "forkmesh-discussion-event-v2\nforkmesh/forkmesh\n" + event_type
+        + "\n" + str(number) + "\n" + author + "\n" + str(NOW) + "\n"
+        + hashlib.sha256(content.encode()).hexdigest()
+    ).encode()
+    return dict(fields, type=event_type, id=event_type + "-web-1",
+                author=author, ts=NOW, sig=base64.urlsafe_b64encode(
+                    private_key.sign(message)).decode().rstrip("="))
+
+
+def test_a_web_discussion_is_written_by_the_mirror_and_numbered(
+    dashboard_app, monkeypatch,
+):
+    event = _signed_direct_discussion_event(
+        "open", 0, "Roadmap\0What next?\0Ideas",
+        title="Roadmap", body="What next?", category="Ideas")
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, event, session={"name": "bob"})
+    assert response.status == 201
+    assert json.loads(response.body)["number"] == 12
+    assert forwarded["kind"] == "discussions"
+    assert forwarded["item"]["number"] == 0
+    assert forwarded["item"]["event"]["authorName"] == "bob"
+    assert "meta" not in forwarded["item"]
+
+
+def test_mirror_moderation_needs_the_owners_session(dashboard_app, monkeypatch):
+    close = _signed_direct_discussion_event("status", 4, "closed",
+                                            status="closed")
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4, session={"name": "bob"})
+    assert response.status == 403 and forwarded == {}
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4, session=None)
+    assert response.status == 403 and forwarded == {}
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4,
+        session={"name": "forkmesh"})
+    assert response.status == 201
+    assert forwarded["item"]["meta"] == {"ownerApproved": True}

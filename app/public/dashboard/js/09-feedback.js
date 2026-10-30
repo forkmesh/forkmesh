@@ -3,7 +3,7 @@
   let feedbackPlugin = null;
   const FEEDBACK_GENERAL_COPY = Object.freeze({
     title: "Send feedback",
-    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.",
+    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the " + platformName() + " team reads it; nothing is published.",
     placeholder: "What should we know?",
   });
 
@@ -24,6 +24,7 @@
   }
 
   function setFeedbackModalOpen(open, plugin = null) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-feedback-modal]");
     if (!modal) return;
     window.clearTimeout(feedbackCloseTimer);
@@ -84,7 +85,7 @@
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
-      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : "Thank you. Your feedback reached the ForkMesh team.", "good");
+      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : `Thank you. Your feedback reached the ${platformName()} team.`, "good");
       if (submit) submit.textContent = "Sent";
       feedbackCloseTimer = window.setTimeout(() => setFeedbackModalOpen(false), 1400);
     } catch (_) {
@@ -120,7 +121,8 @@
   }
 
   function initDashboardFeedback() {
-    if (!$("[data-feedback-modal]")) return;
+    // The dialog itself is added on first open (ensureDeferredMarkup), so its
+    // controls are reached through the document.
     document.addEventListener("click", (event) => {
       if (event.target.closest("[data-feedback-open]")) {
         event.preventDefault();
@@ -137,9 +139,11 @@
       if ($("[data-feedback-modal]")?.classList.contains("hidden")) return;
       setFeedbackModalOpen(false);
     });
-    $("[data-feedback-form]")?.addEventListener("submit", (event) => {
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest?.("[data-feedback-form]");
+      if (!form) return;
       event.preventDefault();
-      void submitDashboardFeedback(event.currentTarget);
+      void submitDashboardFeedback(form);
     });
     openFeedbackFromQuery();
   }

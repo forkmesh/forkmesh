@@ -784,6 +784,34 @@ QString deletedBranchTombstoneRef(const QString &branch)
     return QStringLiteral("refs/forkmesh/trash/deleted/") + branch;
 }
 
+QString restoreDeletedBranch(const QString &checkoutPath,
+                             const QString &branch)
+{
+    const QString name = branch.trimmed();
+    if (checkoutPath.trimmed().isEmpty() || name.isEmpty())
+        return QString();
+    if (runGit(checkoutPath,
+               {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
+                QStringLiteral("--quiet"), QStringLiteral("refs/heads/") + name},
+               nullptr))
+        return QString();
+    const QString tombstone = deletedBranchTombstoneRef(name);
+    QString tip;
+    if (!runGit(checkoutPath,
+                {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
+                 QStringLiteral("--quiet"), tombstone + QStringLiteral("^{commit}")},
+                &tip))
+        return QString();
+    tip = tip.trimmed();
+    if (tip.isEmpty() ||
+        !runGit(checkoutPath, {QStringLiteral("branch"), name, tip}, nullptr))
+        return QString();
+    runGit(checkoutPath,
+           {QStringLiteral("update-ref"), QStringLiteral("-d"), tombstone, tip},
+           nullptr);
+    return tip;
+}
+
 QByteArray branchTrashRequestCanonical(const QString &owner,
                                        const QString &repo,
                                        const QString &timestampMs)

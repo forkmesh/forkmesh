@@ -131,6 +131,34 @@ class ProjectsTest {
         assertEq(instance.serverUrl, restored.serverUrl)
     }
 
+    fun testAnInstanceBelongsToOnlyOneProject() {
+        val directory = ProjectDirectory.load(MemoryPrefStore())
+        val instance = Project.tryParse("relay.example.com")!!
+        val tea = directory.addNamed("Tea")!!
+        val coffee = directory.addNamed("Coffee")!!
+        expect(directory.attach(tea.id, instance) != null)
+        assertEq(tea.id, directory.ownerOf(instance)?.id)
+        assertEq(null, directory.attach(coffee.id, instance))
+        assertEq(false, directory.byId(coffee.id)!!.hasInstance)
+        assertEq(null, directory.attach(coffee.id, Project.tryParse("https://relay.example.com/ws")!!))
+        assertEq(null, directory.attach(coffee.id, Project.tryParse(prod)!!))
+        assertEq(null, directory.attach(coffee.id, Project.tryParse("forkmesh.com")!!))
+
+        val count = directory.projects.size
+        assertEq(tea.id, directory.add(instance).id)
+        assertEq(tea.id, directory.useUrl("wss://relay.example.com/ws")?.id)
+        assertEq(tea.id, directory.activeId)
+        assertEq(count, directory.projects.size)
+
+        val probe = ProjectProbe(transport = HttpTransport { _ -> error("no request expected") })
+        val duplicate = probe.check("https://relay.example.com/", directory.projects)
+        assertEq(ProbeStatus.duplicate, duplicate.status)
+        assertEq(tea.id, duplicate.knownAs?.id)
+        assertEq("That instance already belongs to the project Tea. An instance can only be in one project.", duplicate.message)
+        assertEq("This instance is already one of your projects.", probe.check(prod, directory.projects).message)
+        expect(directory.attach(coffee.id, Project.tryParse("other.example.com")!!) != null)
+    }
+
     fun testALogoCanBeSetAndClearedOnAnyProject() {
         val directory = ProjectDirectory.load(MemoryPrefStore())
         directory.setLogo(prod, "fm.png")
@@ -234,6 +262,8 @@ class ProjectsTest {
         val named = probe.check("relay.example.com")
         assertEq("Connected to Acme Code 1.2.4.", named.message)
         assertEq("https://relay.example.com/instance-logo.png", named.logoUrl)
+        assertEq("Acme Code", named.project!!.label)
+        assertEq("Work", probe.check("relay.example.com", label = "Work").project!!.label)
         instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"logo\":\"//evil.example.com/x.png\"}")
         assertEq("", probe.check("relay.example.com").logoUrl)
         instance = response(404, "")
@@ -241,6 +271,7 @@ class ProjectsTest {
         assertEq(ProbeStatus.ok, older.status)
         assertEq("Connected to ForkMesh 1.2.4.", older.message)
         assertEq("", older.logoUrl)
+        assertEq(older.project!!.id, older.project!!.label)
         expect(!older.branded)
     }
 

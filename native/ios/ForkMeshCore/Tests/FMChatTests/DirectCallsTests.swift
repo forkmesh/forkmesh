@@ -9,9 +9,16 @@ final class FakeCallPeer: DirectCallPeer {
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
+    var onConnection: (@MainActor (DirectCallConnection) -> Void)?
     var offered = false
     var answeredOffer: JSONObject?
+    var answeredOffers: [JSONObject] = []
     var acceptedAnswer: JSONObject?
+    var acceptedAnswers: [JSONObject] = []
+    var answerFails = false
+    var restartable = true
+    var restarts = 0
+    var resumed = 0
     var added: [JSONObject] = []
     var muted: [Bool] = []
     var cameraOff: [Bool] = []
@@ -28,10 +35,26 @@ final class FakeCallPeer: DirectCallPeer {
 
     func answer(offer: JSONObject) async throws -> JSONObject {
         answeredOffer = offer
-        return ["type": "answer", "sdp": "callee-sdp"]
+        answeredOffers.append(offer)
+        let round = answeredOffers.count
+        if round > 1 { onIceCandidate?(["candidate": .string("answer-candidate-\(round)")]) }
+        return ["type": "answer", "sdp": .string(round == 1 ? "callee-sdp" : "callee-sdp-\(round)")]
     }
 
-    func acceptAnswer(_ answer: JSONObject) async throws { acceptedAnswer = answer }
+    func acceptAnswer(_ answer: JSONObject) async throws {
+        acceptedAnswers.append(answer)
+        if answerFails { throw CancellationError() }
+        acceptedAnswer = answer
+    }
+
+    func restartOffer() async throws -> JSONObject? {
+        guard restartable else { return nil }
+        restarts += 1
+        onIceCandidate?(["candidate": .string("restart-candidate-\(restarts)")])
+        return ["type": "offer", "sdp": .string("restart-sdp-\(restarts)")]
+    }
+
+    func resumeMedia() { resumed += 1 }
 
     func add(candidate: JSONObject) async { added.append(candidate) }
 
@@ -420,6 +443,17 @@ final class DirectCallsTests: XCTestCase {
             .allSatisfy { $0 == 0 })
     }
 
+    @MainActor func testPushRingSoundLoopsTheRingUnderThirtySeconds() async {
+        let rate = 8000
+        let pcm = DirectCallTones.ringLoop(seconds: DirectCallEngine.ringSoundSeconds, rate: rate)
+        XCTAssertEqual(pcm.count, 9 * 3 * rate)
+        XCTAssertLessThan(Double(pcm.count) / Double(rate), 30)
+        XCTAssertEqual(Array(pcm[(3 * rate)..<(6 * rate)]), DirectCallTones.ring(rate: rate))
+        XCTAssertEqual(DirectCallTones.ringLoop(seconds: 1, rate: rate).count, 3 * rate)
+        XCTAssertEqual(DirectCallEngine.ringTopic, "calls")
+        XCTAssertTrue(DirectCallEngine.ringSound.hasSuffix(".wav"))
+    }
+
     @MainActor func testCalleeFlowAcceptsAndAnswers() async throws {
         let engine = makeEngine()
         let factory = FakeCallPeerFactory()
@@ -490,6 +524,27 @@ final class DirectCallsTests: XCTestCase {
         XCTAssertEqual(signals.last?.2["reason"]?.text, "missed")
         XCTAssertEqual(missed.map(\.0), [DirectCallsTests.conversation])
         XCTAssertEqual(missed.map(\.1), [.audio])
+    }
+
+    @MainActor func testHangingUpBeforeAnAnswerLeavesAMissedCall() async throws {
+        let engine = makeEngine()
+        engine.peerFactory = FakeCallPeerFactory()
+        var missed: [(String, DirectCallKind)] = []
+        engine.onMissed = { missed.append(($0, $1)) }
+        _ = await engine.start(DirectCallsTests.conversation, media: .video)
+        await engine.hangUp()
+        XCTAssertNil(engine.phase)
+        XCTAssertEqual(signalTypes(), ["call-invite", "call-bye"])
+        XCTAssertEqual(signals.last?.2["reason"]?.text, "missed")
+        XCTAssertEqual(missed.map(\.0), [DirectCallsTests.conversation])
+        XCTAssertEqual(missed.map(\.1), [.video])
+        _ = await engine.start(DirectCallsTests.conversation, media: .audio)
+        let callId = signals.last?.2["call"]?.text ?? ""
+        await engine.handleFrame(
+            frame("call-accept", call: callId, extra: ["to": "me-node"]), conversation: DirectCallsTests.conversation)
+        await engine.hangUp()
+        XCTAssertNil(engine.phase)
+        XCTAssertEqual(missed.count, 1)
     }
 
     @MainActor func testDeclineEndsTheCallerQuietly() async throws {

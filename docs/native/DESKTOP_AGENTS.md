@@ -20,6 +20,52 @@ ten minutes.
   (newest first), then the account's desktops; the last one that answered is
   tried first. `link()` dials up to four at once and keeps the first that
   completes the handshake with the expected key.
+- **Several desktops running (iOS, 2026-10-25).** The user can pick which
+  desktop the phone uses: on the Desktops page (Other desktops, tap one) or in
+  the composer's "Where it runs" sheet, which lists one row per desktop.
+  `choose(key:)` stores the key in `desktop/preferred-key`. From then on
+  `link()` dials only that desktop, `currentLink` ignores a LAN or relay
+  channel to any other one, and a relay channel to another desktop is closed.
+  A preferred key that is no longer one of the account's desktops is ignored.
+  `presence` records whether each desktop answered: every dial in the race
+  counts, and `checkDesktops()` dials the desktops it has no channel to and
+  closes each channel again. It runs when the Desktops page loads or is
+  pulled to refresh, and after `warm()` connects when the account has more
+  than one desktop, at most every five minutes. `choices` turns that into
+  `ShellDesktopLight` rows. Two desktops with the same node name get the first
+  six characters of their key added to the name. The icon above the clock
+  draws the desktop in use, with the other desktops stacked behind it, each
+  with its own dot. The core nodes are stacked the same way. Before this the
+  phone took whichever desktop answered first and showed only that one.
+- **Agents from every desktop (iOS, 2026-10-27).** A phone paired with two
+  desktops showed "No agent sessions yet" because its chosen desktop had none,
+  while the desktop it was connected to on the LAN had dozens. The Agents list
+  now shows the agents of every desktop of the account in one list.
+  `AgentControlCenter.rows` holds the desktop in use's rows plus up to four
+  other desktops' (`otherDesktops`, one `OtherDesktopAgents` each; an
+  unreachable one adds "<name>: Not reachable" to the list's notes). They
+  load on a full `refresh()`, after the desktop in use, and again when that
+  desktop rings `agents.changed`.
+  - Reaching another desktop: `link(to:)` / `request(_:_:to:)` use the LAN
+    channel when it goes to that desktop, else a relay channel kept per
+    desktop (`sideLinks`). `choose(key:)` keeps the old desktop's relay
+    channel as a side link and takes over the chosen desktop's side link, so
+    switching back and forth dials nothing new. `addEventTap(_:for:)` hears
+    one desktop's events whichever channel carries them. `openLink(for:)`
+    returns that desktop's open channel without dialling.
+  - The same local session id means a different agent on each desktop, so
+    every action follows the row's `desktopKey`. The center sends stop,
+    prompt, questions, answer, continue and transcript there. The transcript
+    stream follows that desktop. `DesktopScopedChannel` (from
+    `hub.channel(for:)` / `terminalChannel(for:)`) is a family and terminal
+    channel bound to one desktop. The app gives it to the agent-ops client
+    (`AgentOpsFeature.client(for:)`: diff, merge, delete, swipe delete) and to
+    an agent's terminal.
+  - Rows from another desktop have `elsewhere` set and ids prefixed with the
+    desktop key. They never match the relay-pushed sessions, which do not say
+    which desktop they came from, nor the active desktop's folders, queue,
+    unread marks, approvals or voice numbers. Their delete and read keys
+    carry the desktop key, and the line's host chip shows the desktop's name.
 - The desktop approves the phone without a code because its key is an enabled
   `owner_sign` device of the same account (`checkLocalControlAccountDevice`),
   records it in `data/local_control/paired-devices.json` as
@@ -77,8 +123,8 @@ ten minutes.
   apply. Outside ids are negative.
 - Session rows carry `diffStats` (`files`, `ahead`, `behind`, `added`,
   `removed`, `dirty`, `conflicted`), `worktree`, `attachments` (the first
-  image), `priority` (1..99), `mode`, `unread`, and `held: true` for a paused
-  session. The reply also carries `queue`, `folders` and `defaultMode`.
+  image), `priority` (1..99), `mode`, `unread`, `held: true` for a paused
+  session, and `backgroundTasks` (open backgrounded tasks) when above zero. The reply also carries `queue`, `folders` and `defaultMode`.
 - The `/proc` scan (`tickMachineAgents`, every 2 s) runs while a phone or
   browser is connected; a change rings `agents.changed`. The bell rings as soon
   as something changes, then at most every 300 ms.
@@ -112,6 +158,24 @@ nothing else is read from it. Its `outside` row carries `"otherUser"`, a title
 like `Claude Code (<login>)`, and no `steer`, `typeable` or `stoppable`;
 `agents.prompt`, `agents.stop` and deletes answer `outside_other_user`. Phones
 explain that ForkMesh cannot read or steer another login's agents.
+
+## Agents left in a deleted worktree
+
+An `outside` row is titled by its process's working folder, and an agent
+worktree is named after its branch. When a worktree was removed under a
+process that kept running, Linux reports `/proc/<pid>/cwd` as
+`<path> (deleted)`, so phones showed a leftover row like
+`2641-some-branch (deleted)` after the agent was deleted (2026-10-28).
+
+- `MachineAgentScan::scan` skips a process whose cwd `cwdRemoved` (ends in
+  ` (deleted)` and no longer exists): its folder is gone and it can do no work
+  there.
+- Deleting an agent ends what still runs in its worktree before the folder is
+  removed: `endOutsideAgentsIn` (called from `cleanupStreamWorktree` and
+  `deleteWorktreeBranchAndAgentInBackground`) stops each same-user outside
+  agent and surfaced Claude Code session whose cwd is `within` the worktree,
+  drops its row and tells phones the list changed. Another login's agents are
+  left alone.
 
 ## Following and watching an agent started outside ForkMesh
 
@@ -304,21 +368,74 @@ the line under the cursor and restores the cursor, so nothing scrolls.
 - **Views** (`agents/listView`): Compact, Zen (title only), Full (one-word
   columns: status, provider, host, age, conflicts, files, `+added−removed`,
   worktree or branch, columns dropped from the end when they do not fit), and
-  on iOS Eagle (the default). Android has the first three. Logic in
+  Eagle (the default on both). Logic in
   `AgentLines.chips` / `AgentListView` (iOS FMAgents) and `AgentLineChips`
   (Android core).
-- **Row**: agent dot with status, title, short age, a meta line (host glyph,
-  repository, branch, worktree, ahead/behind/conflict, files, churn bars on
-  the desktop's log scale, PR), and a thumbnail of the first image.
+- **Row** (Compact, Zen, Full): agent dot with status, title, short age, a
+  meta line (host glyph, repository, branch, worktree, ahead/behind/conflict,
+  files, churn bars on the desktop's log scale, PR), and a thumbnail of the
+  first image. Eagle rows differ; see below.
 - **Usage bars** (`AgentUsageBars`): one small bar per usage window, coloured by
   state; on iOS they push the native Usage screen. On Android the Usage card
   on Desktop agents opens the native Usage screen when tapped.
 
 ### Eagle view on iOS
 
-Each row shows the title, then tiny host, branch and worktree glyphs, the file
-count with churn bars (`AgentChurnBars`), the short age (`AgentEagleStats`),
-and a dialog ticker in the rest of the line.
+Each row shows the title and a dialog ticker under it, with an image tile
+(`AgentEagleTile`) on the right. Since 2026-10-22 there is no agent dot on the
+left, so the text starts at the row's edge (asked for from a phone screenshot:
+the dot took width and the churn bars were hard to read).
+
+- The tile shows the first image of the session, or a blank tile when there is
+  none. Since 2026-10-25 its border is the token flow (`AgentTokenRing`): two
+  1 pt dashed lanes, tokens in on the outer lane and tokens out on the inner
+  one, moving in opposite directions while the agent is active. Each lane's
+  colour follows its rate: grey idle, blue slow, green steady, orange fast,
+  red very fast (`AgentTokenPace`; output steps at 1, 15, 60 and 200
+  tokens/s, input at ten times that because each request re-reads the
+  context). Its speed follows the rate smoothly, 4 pt/s at 1 token/s plus
+  4 pt/s per tenfold, at most 24 (`AgentTokenPace.travel`), and the dash
+  position adds up frame by frame (`AgentTokenClock`), so a change of speed
+  does not make the dashes jump. The phone measures the rate from how the
+  totals grow: once a second from the desktop vitals feed's `agentTokens`
+  while it watches the desktop (see NAVIGATION.md, agent token charts), and
+  on each list update otherwise (`AgentTokenSampler`: gaps count as at most
+  8 s; a second with no growth halves the rate every 1.5 s, down to idle below
+  0.5 tokens/s, so bursty arrivals glide instead of stopping each second; the
+  rate drops to idle after 10 s with no growth). Asked for on 2026-10-25: the
+  ring should move with tokens as they are sent and received. With no token
+  counts the border is a hairline. Reduce Motion keeps the lanes still, and
+  they pause while the tab is hidden.
+- The totals come from the desktop row's `tokensIn` and `tokensOut`, counted
+  live as the run streams (`transcripttools::LiveTokenMeter`, since
+  2026-10-27). For Claude sessions a `message_start` adds the request's input
+  (fresh, cache written and cache read); each `content_block_delta` adds an
+  output guess of one token per four characters of text, thinking or tool
+  input; the closing `message_delta` usage tops the guess up to the real count,
+  and the finished `assistant` message adds only what is still missing, all
+  once per message id. Codex agent deltas add the same four-character guess.
+  Each `result` resets the totals to the CLI's own counts, so a guess that ran
+  high is corrected at the end of every turn. Before, the totals grew only when
+  a whole assistant message landed, so the ring and the island charts sat
+  still while a long reply streamed. Older desktops without these fields fall
+  back to the session's stored `promptTokens` / `completionTokens`.
+- Inside the tile, top to bottom: the file count in a small semi-transparent
+  pill (`AgentTileFiles`) whose outline is the churn, a 0.75 pt stroke green
+  for the share of lines added and red for the share removed (it used to be the
+  turning 2 pt border); a row of tiny icons (`AgentTileBadges`, up to four,
+  most urgent first: conflict or behind, worktree, branch, commits ahead, pull
+  request, then runner, cloud or outside terminal, the same icons as the list's
+  meta line, from `AgentLineBadge.of`); and the open background tasks.
+- Background tasks are thin 1 pt lines (`AgentTileTasks`, up to ten, or seven
+  and `+n` past that), from the desktop row's `backgroundTasks`: the session's
+  open backgrounded tasks (`agentclitasks::Ledger::openBackground`). The
+  desktop rings `agents.changed` when that count changes. The lines blink while
+  the agent is active; Reduce Motion holds them still.
+- When the agent has finished successfully the bottom slot shows a small green
+  `done` bar instead of the task lines (`AgentTileDone`).
+- The status dot (blue running, orange waiting, green done, purple merged, red
+  failed, grey queued or stopped; `AgentTileStatusDot`) sits on the tile's top
+  right corner and the unread dot on its top left.
 
 - `AgentEagleStrip` keeps the lane as a train of copies of the latest line
   with 5 pt seams, scrolling left at 80 pt/s after a 0.5 s pause, so the lane is
@@ -343,6 +460,10 @@ and a dialog ticker in the rest of the line.
   the screen leaves Eagle).
 - A missing or unknown `agents/listView` reads as Eagle; a phone that stored
   another view is switched once (`agents/listViewEagleDefault`).
+- Android (since 2026-10-20) has the same view: `AgentEagleFeed` and
+  `AgentEagle.dialog` in `core/.../agents/AgentEagleFeed.kt`, the row and
+  ticker in `feature/agents/AgentEagleViews.kt`. See
+  [ANDROID.md](ANDROID.md) section 26.
 
 ### Sorting
 
@@ -366,11 +487,63 @@ must not collide.
   `agents.markRead`. iOS `AgentReadTracker`, `AgentUnreadDot`; Android
   `AgentReadState`, `AgentReadMarks`.
 
+### Transcript scrolling (2026-10-21)
+
+A run's transcript follows its newest line until the reader scrolls up; then
+new output no longer pulls them back down. A round arrow button appears at the
+bottom centre, just above the composer, and takes them back to the end (a dot
+on it means something new arrived below). Sending a prompt also goes back to
+the end.
+
+- iOS: `TranscriptFollowScroll` (`ForkMesh/Kit`) wraps `AgentRunScreen` and
+  `AgentTranscriptList`. iOS 17 has no scroll-phase API, so it reads the
+  content frame from a preference: at the end (within 24 pt) it follows again;
+  the top edge moving down (the reader scrolling up) stops it; content growing
+  with the offset unchanged keeps following.
+- Android: `TranscriptFollowBox` (`feature/agents/TranscriptFollow.kt`) wraps
+  the `LazyColumn` of `UnifiedAgentScreen` and `AgentScreen`. A drag while
+  `canScrollForward` stops following; reaching the end restarts it. The lists
+  end in a 1 dp `transcriptEnd()` item so scrolling to the last item lands at
+  the true end, even below a reply taller than the screen.
+
 ### Navigation stability
 
 Rows are plain buttons that set `AgentsScreen.opened`; one
 `navigationDestination(item:)` pushes the page, decided at tap time, so list
 rebuilds never close an open agent.
+
+### Your last prompt, pinned (iOS)
+
+Every agent detail screen pins what you last wrote to the agent above its
+transcript, so the instruction stays in view while the reply scrolls (asked for
+on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
+`AgentSessionDetailScreen` (a desktop-pushed session), `LaunchedAgentSessionScreen`
+(a queued run) and `AgentScreen` (the phone's own agent).
+
+- `PromptDeck` (FMControl) holds your prompts newest first: `.prompt` blocks and
+  steers whose sender is you (`TranscriptBlock.steerFromYou`), the user turns
+  of a queued run's history, or `AgentEvent.userMessage`. A prompt still
+  being sent counts as soon as it shows.
+- `AgentPromptDeck` draws it as one compact line, a stack of cards with up to
+  two edges peeking out below for earlier prompts, and `3/5` when there is more
+  than one.
+  - Swipe right to go back to the previous prompt and left to go forward to
+    the next (2026-10-22; it used to be pull down and push up).
+  - The card follows your finger with a slight tilt and resists past either
+    end.
+  - Tap to read the whole prompt. Long press to copy it or jump back to the
+    latest.
+- The edges are drawn as the card's `background`, so they take the card's
+  size. They used to be shapes in the same `ZStack`, and a `Shape` fills all
+  the height it is offered, so on `AgentRunScreen` the deck grew into a tall
+  empty box under the line (fixed 2026-10-22).
+- The desktop (`PromptDeckBar`, `docs/desktop/agents-ui.md`) and the web
+  session pages (`docs/agents/README.md`) have the same deck.
+- A new prompt drops in on top, and the deck returns to it even when you were
+  reading back. Cards are keyed by the prompt's position from the first, so
+  this animates instead of swapping text.
+- VoiceOver reads it as one adjustable element (swipe up for newer, down for
+  older). Reduce Motion fades between cards without the tilt.
 
 ## Actions on one desktop agent
 
@@ -378,7 +551,7 @@ rebuilds never close an open agent.
 | --- | --- | --- | --- |
 | List, start, transcript, prompt, stop, continue | `agents.*` | `AgentRunScreen` | `UnifiedAgentScreen` |
 | Pending tool approvals | `agentops.approvals`, `agentops.prepare` + `agentops.answer` | `ApprovalScreen` | `ApprovalScreen` |
-| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | none |
+| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | `AgentQuestionCards` on `UnifiedAgentScreen` |
 | Changes (committed, uncommitted, untracked) | `agentops.diff` | `AgentDiffScreen` | `AgentDiffScreen` |
 | Changed images | `agentops.file` | `DiffImagePreview` | none |
 | Merge & clean up | `agentops.prepare` + `agentops.merge` | `MergeCleanupButton`, `MergeLandedScreen` | `MergeCleanupDialog` |
@@ -429,6 +602,37 @@ rebuilds never close an open agent.
   queueing behind it (`awaitDesktopDuringMerge` also refuses the phone merges
   already queued).
 
+### Set aside and merge
+
+The desktop refuses to merge into a checkout whose uncommitted changes touch
+files the merge changes ("Can't merge … yet: the checkout has uncommitted
+changes in files this merge touches"). On 2026-10-23 that blocked a phone
+merge while another agent was mid-edit in the primary checkout, and the only
+fix was at the desktop. Now the phone can do it:
+
+- The phone always sends `offerSetAside: true` with `agentops.merge`. When the
+  refusal is only that overlap (the checkout is on the base branch, nothing is
+  staged, and every overlapping file is an unstaged edit, `" M"`), the desktop
+  answers `checkout_dirty` with the same message instead of `merge_failed`. An
+  older phone never sends the flag, so it keeps getting `merge_failed`.
+- `MergeCleanupModel.canSetAside` turns on, and `MergeFailureNote` (Changes
+  screen) and `MergeCleanupSheet` show **Set aside and merge**, which runs the
+  merge again with `setAside: true`.
+- The desktop (`desktop/src/MergeSetAside.cpp`, called from
+  `prepareWorktreeMerge`) saves all uncommitted work with `git stash create`
+  on a branch `wip/<base>-before-<branch>-<yyyyMMdd-HHmmss>` (the shared stash
+  list is never touched), keeps the overlapping files' diff, checks only those
+  files out at `HEAD`, runs the normal merge, then reapplies the diff with
+  `git apply --3way` and unstages it. Other uncommitted files are never
+  touched, so an agent working in that checkout keeps its edits.
+- If the edits clash with the merge, those files keep conflict markers and
+  the `wip/` branch holds the untouched copy. The note saying what happened
+  (`putBackNote`) is posted on the desktop and answered as `setAside` next to
+  `branch` and `stats`; the phone appends it to the merge message and shows it
+  on the landed screen.
+- Staged changes, untracked or deleted files, and a checkout on another
+  branch still refuse as before: those need a person at the desktop.
+
 ### Merge stats
 
 `agentops.merge` answers `stats` next to `branch`:
@@ -458,6 +662,23 @@ account's other devices (`UserActivityLog`, `UserActivitySync`,
 `/api/accounts/activity-today`, [activity-today.md](../app/activity-today.md)).
 Counts are stored as `user_activity_today` (`yyyy-MM-dd|n,n,…`), written at
 most once a minute.
+
+### Answering an agent's question (2026-10-29)
+
+- The cards for a pending `AskUserQuestion` sit at the end of the transcript,
+  just above the composer, on both phones. They used to sit above the
+  transcript on iOS, so on a long run the phone kept the view at the bottom
+  and you only saw the tool line, never the question. Android had no cards.
+- While a question waits, the composer hint reads "Type your answer for the
+  agent" and Send answers the newest question with the typed text (an "Other"
+  answer), not a follow-up. A follow-up would wait in the queue behind a turn
+  that cannot end until the question is answered. A message with photos still
+  goes as a follow-up.
+- The questions are fetched again each time the transcript grows, and again
+  after an answer.
+- `AgentLogText::toolLine` writes the question texts for `AskUserQuestion`.
+  Its JSON input was cut at 200 characters, so the phone could not read it
+  and showed raw, truncated JSON.
 
 ### Fix conflicts with the agent
 
@@ -549,6 +770,28 @@ in `LocalControlAgentOps.cpp`), capability `agentops.bin`:
 `RecycleBinScreen` on both phones: retention menu, Restore all, Empty bin,
 selection, per-row restore and delete; deleting for good always confirms.
 State in `RecycleBinModel`.
+
+### Restoring brings the branch back
+
+Deleting an agent also removes its worktree and runs `git branch -D`, keeping
+the tip under `refs/forkmesh/trash/deleted/<branch>` and trashing the branch on
+the cores. Moving the session out of the bin alone used to leave a row whose
+branch was gone: a resume runs `git worktree add <path> <branch>` and failed.
+A branch that only came back locally was pruned again on the next converge,
+because the cores still list it as trashed and only a checked-out branch is
+safe from that.
+
+Every restore (bin dialog, Restore all, `agentops.bin.restore`) now goes
+through `MainWindow::restoreRecycledAgentSession`. After the store moves the
+session back, `restoreDeletedAgentBranch` runs off the UI thread:
+`forkmesh::upstream::restoreDeletedBranch` recreates the branch at the
+tombstone tip and clears the tombstone, then the worktree is added back at the
+session's `worktreeName` under `.worktrees/`. A branch that still exists, or
+one with no tombstone, is left alone. Uncommitted files in the deleted
+worktree are gone either way; only committed work comes back.
+
+Seen 2026-10-20 (task 2373): agent #2368 was deleted at 18:08:37 and restored
+from the bin at 18:08:56. The branch and worktree had to be recreated by hand.
 
 ## Moving a phone agent to the desktop
 
@@ -655,6 +898,7 @@ The feed stays plain text, so older phones read every line:
 | `> <text>` (to a blank line) | the user's prompt |
 | `> ⟵ <name>: <text>` | a message sent into the session (`ForkMesh (phone)` for a phone steer) |
 | `[<Tool> <arg>]` | tool call (may span lines, closed by `…]` or `]` before a blank line; capped at 200 characters) |
+| `[AskUserQuestion <question> · <question>]` | an agent question: its question texts, not its JSON input |
 | `▸ <Tool>: <arg>` | a runner's tool call (`claudeToolSummary` in `server/agents.go`) |
 | `==> Task <status>: <summary>` then lines indented four spaces | task notification and its result |
 | anything else | the agent's markdown |
@@ -708,6 +952,15 @@ repositoryName, cwd, startedAtMs, device, running, cols, rows}` (`terminal` is
   (cols 20 to 500, rows 5 to 200).
 - `replay` is base64 of the last 512 KiB written, cut at a line start (the most
   that fits one relay frame). Phone emulators keep 10,000 rows of scrollback.
+- The iPhone terminal follows new output only while it is scrolled to the
+  bottom: Claude Code redraws its spinner several times a second, and pinning
+  on every redraw made the scrollback impossible to read. Scrolled up, it stays
+  put and shows a jump-to-newest button (`TerminalGridView`).
+- The key bar (`TerminalKeyBar`) is two rows of equal-width keys sized to the
+  window, so no key sits off screen behind a sideways scroll. Ctrl is a
+  one-shot modifier: tap it, then type a letter (Ctrl+X then Ctrl+S sends
+  Claude Code's "send now") or tap an arrow (`ESC [1;5` + letter). `^C`
+  stays a key of its own.
 - Events: `terminal.output {terminal, data, reset}` (coalesced like follows, at
   most 16 KiB; `reset` after falling 256 KiB behind) and
   `terminal.exit {terminal, code}`.

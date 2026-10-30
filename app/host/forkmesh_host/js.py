@@ -1282,21 +1282,26 @@ class _Body(JsProxy):
     async def text(self):
         return (await self._read()).decode("utf-8", errors="replace")
 
-    async def json(self):
+    async def _parsed_json(self):
         raw = await self._read()
         try:
-            value = (_orjson.loads(raw) if _orjson is not None
-                     else _json.loads(raw or b"null"))
+            return (_orjson.loads(raw) if _orjson is not None
+                    else _json.loads(raw or b"null"))
         except Exception as error:
             raise JsException(str(error), "SyntaxError") from None
-        return _jsonify_tree(value)
+
+    async def json(self):
+        return _jsonify_tree(await self._parsed_json())
 
     async def blob(self):
         return await self.arrayBuffer()
 
-    async def formData(self):
+    async def _form_pairs(self):
         raw = (await self._read()).decode("utf-8", errors="replace")
-        return JsObject(urllib.parse.parse_qsl(raw, keep_blank_values=True))
+        return urllib.parse.parse_qsl(raw, keep_blank_values=True)
+
+    async def formData(self):
+        return JsObject(await self._form_pairs())
 
     def _clone_body(self):
         body = self._body
@@ -1326,7 +1331,21 @@ _STATUS_TEXT = {
 }
 
 
+def _inbound_cleaner(name):
+    try:
+        import hidden_unicode
+    except ImportError:
+        return lambda value: value
+    return getattr(hidden_unicode, name)
+
+
 class Request(_Body):
+    async def json(self):
+        return _jsonify_tree(_inbound_cleaner("clean_value")(await self._parsed_json()))
+
+    async def formData(self):
+        return JsObject(_inbound_cleaner("clean_pairs")(await self._form_pairs()))
+
     def __init__(self, url, method="GET", headers=None, body=None,
                  signal=None, cf=None, redirect="follow"):
         self.url = str(url)

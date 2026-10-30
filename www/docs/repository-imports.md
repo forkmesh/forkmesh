@@ -3,10 +3,15 @@
 Racing a shutdown, a takedown, a lost account, or censorship? Start with
 [preservation-first crisis onboarding](crisis-preservation.md).
 
+An import copies a project's issues, pull requests and their history once. It
+does not copy the code and is not kept up to date, so it is not a backup; to
+keep a copy of the code, see [Back up a GitHub repository](back-up-a-github-repository.md).
+
 ## Setup
 
 On **Repositories**, choose **New repository**, select **GitHub / GitLab /
-Codeberg**, paste the URL, and select **Start resumable import**. A read-scoped
+Codeberg**, paste the URL (a gitea.com URL works there too), and select
+**Start resumable import**. A read-scoped
 provider token is optional for public repositories and required for private
 ones. Tokens are used per request and never stored, logged, or returned, so a
 private import asks for one again on **Continue import**.
@@ -20,7 +25,7 @@ hosts it (see [Ending the provider dependency](#ending-the-provider-dependency))
 
 ```http
 POST /api/repository-imports                     # metadata entry or stub (mode: import | stub)
-POST /api/repository-imports/discover            # expand a Codeberg profile, max 200 public repos
+POST /api/repository-imports/discover            # expand a GitLab group or a Codeberg or Gitea profile, max 200 public repos
 POST /api/repository-imports/migrations          # durable job, 202 with a mig_… id
 POST /api/repository-imports/migrations/{id}/resume
 GET  /api/repository-imports/migrations/{id}
@@ -29,14 +34,16 @@ GET  /api/repository-imports/migration-metrics   # setupP50Ms, setupP95Ms, trans
 DELETE /api/repository-imports/{id}
 ```
 
-Only canonical `github.com`, `gitlab.com`, and `codeberg.org` HTTPS URLs are
-accepted. `targetOwner` is the caller or an organization they administer.
+Only canonical `github.com`, `gitlab.com`, `codeberg.org`, and `gitea.com`
+HTTPS URLs are accepted. Codeberg (Forgejo) and gitea.com share one adapter,
+because both serve Gitea's `/api/v1`; other Gitea or Forgejo instances are
+not accepted, so the import cannot be pointed at an arbitrary host. `targetOwner` is the caller or an organization they administer.
 Each `/resume` call advances one provider page and returns the next checkpoint;
 clients repeat it until `completed`, `429`, or an explicit error. Setup time
 (form to accepted job) and transfer time are measured separately; the setup
 gate is p50 at most 180,000 ms.
 
-All three adapters emit the same object families: `git_refs`, `issues`,
+Every adapter emits the same object families: `git_refs`, `issues`,
 `pull_requests` (GitHub pull requests and GitLab merge requests), `reviews`,
 `releases`, `documentation`, `labels`, `users`, and `collaboration_history`.
 Each object keeps the original provider payload plus a common projection.

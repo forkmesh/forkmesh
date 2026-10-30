@@ -119,6 +119,75 @@ def test_about_micro_cache_serves_anonymous_reads_from_memory(monkeypatch):
     asyncio.run(main())
 
 
+
+def test_about_micro_cache_never_replays_one_visitors_cors_headers():
+    import asyncio
+    from forkmesh_host import js
+
+    async def worker_fetch(request):
+        return js.Response(b'{"ok":true}', 200, "", js.Headers({
+            "content-type": "application/json",
+            "access-control-allow-origin": "https://forkmesh.com",
+            "access-control-allow-credentials": "true",
+            "vary": "Accept-Encoding"}))
+
+    def scope(headers=()):
+        return {"method": "GET", "path": "/api/repo/o/r/about",
+                "raw_path": b"/api/repo/o/r/about", "query_string": b"",
+                "headers": list(headers)}
+
+    async def main():
+        repo_ssr._micro.clear()
+        assert repo_ssr.start(object(), scope(
+            [(b"origin", b"https://forkmesh.com")])) is None
+        key = repo_ssr.start(object(), scope())
+        live = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert live.headers.get("access-control-allow-origin") == \
+            "https://forkmesh.com"
+        cached = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert cached.headers.get("access-control-allow-origin") is None
+        assert cached.headers.get("access-control-allow-credentials") is None
+        assert cached.headers.get("vary") == "Accept-Encoding, Origin"
+        repo_ssr._micro.clear()
+    asyncio.run(main())
+
+
+def test_about_micro_cache_forgets_a_repository_that_answers_not_found():
+    import asyncio
+    from forkmesh_host import js
+
+    status = [200]
+
+    async def worker_fetch(request):
+        return js.Response(b'{"ok":true,"description":"old"}' if status[0] == 200
+                           else b'{"error":"not_found"}', status[0], "",
+                           js.Headers({"content-type": "application/json"}))
+
+    def scope():
+        return {"method": "GET", "path": "/api/repo/o/r/about",
+                "raw_path": b"/api/repo/o/r/about", "query_string": b"",
+                "headers": []}
+
+    async def main():
+        repo_ssr._micro.clear()
+        repo_ssr._about_memo.clear()
+        key = repo_ssr.start(object(), scope())
+        await repo_ssr.fetch(key, worker_fetch, "req")
+        assert key in repo_ssr._micro
+        assert repo_ssr._about_memo
+        stamp, *rest = repo_ssr._micro[key]
+        repo_ssr._micro[key] = (stamp - repo_ssr.MICRO_FRESH_SECONDS - 1,
+                                *rest)
+        status[0] = 404
+        await repo_ssr.fetch(key, worker_fetch, "req")
+        await asyncio.sleep(0.01)
+        assert key not in repo_ssr._micro
+        assert not repo_ssr._about_memo
+        gone = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert int(gone.status) == 404
+    asyncio.run(main())
+
+
 def test_a_view_that_misses_its_budget_still_starts_its_bundle():
     import asyncio
 
@@ -249,6 +318,27 @@ def test_readme_relative_and_centred_images_use_the_raw_endpoint():
     assert repo_ssr.markdown_html("![x](logo.png)", "/tools") == "<p>x</p>"
 
 
+def test_readme_mentions_link_to_profiles_outside_code_links_and_urls():
+    out = repo_ssr.markdown_html(
+        "Thanks @Alice and **@bob**, not `@carol`, [@dan](https://d.example), "
+        "https://m.example/@erin, x@frank.example, @gh[bot] or @-no\n\n"
+        "- <a href=\"https://g.example\">@gus</a> @hal",
+        "/tools")
+    mention = ('<a href="/@%s" data-issue-person="%s" data-issue-mention="" '
+               'class="dashboard-accent-link underline underline-offset-2 '
+               'hover:text-foreground">@%s</a>')
+    assert mention % ("alice", "alice", "Alice") in out
+    assert "<strong>%s</strong>" % (mention % ("bob", "bob", "bob")) in out
+    assert "<code>@carol</code>" in out
+    assert '<a href="https://d.example">@dan</a>' in out
+    assert "https://m.example/@erin," in out
+    assert "x@frank.example" in out
+    assert "@gh[bot]" in out and "/@gh" not in out
+    assert '<a href="https://g.example">@gus</a>' in out
+    assert mention % ("hal", "hal", "hal") in out
+    assert out.count("data-issue-mention") == 3
+
+
 def test_readme_raw_html_stays_sanitized():
     out = repo_ssr.markdown_html(
         '<a href="javascript:alert(1)" onclick="x"><img src="javascript:y" onerror="z" alt="j"></a> '
@@ -278,7 +368,7 @@ def test_first_view_uses_dashboard_classes_that_the_stylesheet_has():
     css = (DASHBOARD / "tailwind.css").read_text("utf-8")
     tokens = {token for match in re.finditer(r'class="([^"]*)"', view)
               for token in match.group(1).split()}
-    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "group")
+    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "fm-label", "fm-counter", "group")
     missing = sorted(token for token in tokens if not token.startswith(own)
                      and _tailwind_selector(token) not in css)
     assert missing == []
@@ -307,16 +397,30 @@ def _tablist(view):
 
 def test_first_view_tabs_follow_the_cached_about():
     plain = _tablist(repo_ssr.render_view(DATA))
-    assert re.findall(r"<span>(Code|Issues|Pull requests|Discussions|Insights|Projects|Actions)</span>",
-                      plain) == ["Code"]
+    assert re.findall(r'<span data-repo-tab-label="[^"]+">([^<]+)</span>', plain) == [
+        "Code", "Issues", "Pull requests", "Discussions", "Insights", "Projects", "Actions",
+        "Security"]
     tree = dict(DATA["tree"], counts={"openIssues": 3, "openPulls": 12, "discussions": 0})
     about = {"ok": True, "features": {"issues": True, "pulls": True, "discussions": False}}
     view = _tablist(repo_ssr.render_view(dict(DATA, tree=tree), about=about))
-    labels = re.findall(r"<span>(Code|Issues|Pull requests|Discussions|Insights|Projects|Actions)</span>",
-                        view)
-    assert labels == ["Code", "Issues", "Pull requests", "Insights", "Projects", "Actions"]
+    labels = re.findall(r'<span data-repo-tab-label="[^"]+">([^<]+)</span>', view)
+    assert labels == ["Code", "Issues", "Pull requests", "Insights", "Projects", "Actions",
+                      "Security"]
     assert ">3</span>" in view and ">12</span>" in view
     assert 'href="/forkmesh/forkmesh" role="tab" aria-selected="true"' in view
+
+
+def test_first_view_tab_strip_matches_the_dashboards_so_hydration_does_not_shift_it():
+    # The dashboard draws every default tab, Security after Actions, a counter
+    # pill on Issues and Pull requests even before their counts arrive, and a
+    # hidden bold copy of each label; the first view reserves the same widths.
+    view = _tablist(repo_ssr.render_view(DATA))
+    assert "data-repo-tabs" in repo_ssr.render_view(DATA)
+    assert 'data-dashboard-repo-tab-count="issues"' in view
+    assert 'data-dashboard-repo-tab-count="pulls"' in view
+    assert view.count(">...</span>") == 2
+    assert '<span data-repo-tab-label="Security">Security</span>' in view
+    assert "tabular-nums" in view
 
 
 def test_first_view_about_rail_and_mirror_line():
@@ -331,6 +435,19 @@ def test_first_view_about_rail_and_mirror_line():
                                 about={"ok": True, "mirrorOf": "javascript:alert(1)"})
     assert "javascript:" not in bare and "Mirror of" not in bare
     assert bare.count('class="h-7 w-7 rounded-full border-2 border-background bg-secondary"') == 8
+
+
+def test_first_view_draws_the_title_row_without_stars_or_forks_in_about():
+    detail = (DASHBOARD / "js" / "08-repo-detail-network.js").read_text("utf-8")
+    fragment = 'class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5"'
+    assert fragment in detail
+    view = repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "alice/upstream"})
+    assert "data-repo-title-row " + fragment in view
+    assert view.index("data-repo-github-header") < view.index("data-repo-title-row") < view.index("data-repo-content-grid")
+    assert "<span>Fork</span>" in view and "<span>Star</span>" in view and ">Public</span>" in view
+    assert 'forked from</span><a href="/alice/upstream"' in view
+    assert ">Stars<" not in view and ">Forks<" not in view and ">Watchers<" in view
+    assert "forked from" not in repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "x/../y\"<"})
 
 
 def test_time_ago_matches_the_dashboard_wording():
@@ -373,4 +490,182 @@ def test_inject_fills_the_header_and_seeds_the_dashboard():
     assert payload["features"] == {"issues": False, "pulls": True}
     assert payload["info"] == {"about": "A", "website": ""}
     view = page[page.index("<div data-repo-ssr"):]
-    assert "<span>Issues</span>" not in view and "<span>Pull requests</span>" in view
+    assert '<span data-repo-tab-label="Issues">' not in view
+    assert '<span data-repo-tab-label="Pull requests">Pull requests</span>' in view
+
+
+
+from forkmesh_host import repo_ssr_about  # noqa: E402
+
+ROSTER = json.dumps({"count": 12, "contributors": [
+    {"slug": "ada", "name": "Ada <script>", "commits": 5,
+     "profile": "https://example.test/ada"},
+    {"slug": "../evil", "name": "Bob", "commits": 9, "profile": "javascript:alert(1)"},
+    {"slug": "cy", "name": "Cy", "commits": 9},
+]})
+EXTRAS = {
+    "stats": {"ok": True, "fileCount": 5811, "contributorCount": 3,
+              "counts": {"openIssues": 39, "openPulls": 0},
+              "extensions": {"py": {"bytes": 600, "files": 3}, "js": {"bytes": 300, "files": 2},
+                             "zz": {"bytes": 999, "files": 1}, "md": {"bytes": 0, "files": 4}},
+              "contributors": [{"name": "Ada", "commits": 3, "activityWeeks": [1] * 50}]},
+    "sizeBytes": 268609287,
+    "listing": {"ok": True, "entries": [{"name": "contributors", "type": "tree"}]},
+    "roster": repo_ssr_about.parse_roster(ROSTER),
+}
+
+
+def test_language_tables_match_the_dashboard():
+    source = (DASHBOARD / "js" / "06-repo-content.js").read_text("utf-8")
+
+    def table(name):
+        body = source.split("const %s = {" % name, 1)[1].split("};", 1)[0]
+        return dict(re.findall(r'"?([\w+#-]+)"?: "([^"]+)"', body))
+    assert table("REPO_LANGUAGE_EXTENSIONS") == repo_ssr_about.LANGUAGE_EXTENSIONS
+    assert table("REPO_LANGUAGE_COLORS") == repo_ssr_about.LANGUAGE_COLORS
+
+
+def test_roster_and_values_follow_the_dashboard_rules():
+    roster = EXTRAS["roster"]
+    assert roster["count"] == 12
+    assert [(row["name"], row["slug"], row["profile"]) for row in roster["rows"]] == [
+        ("Bob", "", ""), ("Cy", "cy", ""), ("Ada <script>", "ada", "https://example.test/ada")]
+    values = repo_ssr_about.rail_values(EXTRAS)
+    assert values["files"] == 5811 and values["size"] == 268609287
+    assert values["languages"] == [("Python", 600), ("JavaScript", 300), ("Markdown", 4)]
+    assert values["contributors"]["total"] == 12 and values["contributors"]["roster"]
+    assert repo_ssr_about.format_size(268609287) == "256.2 MB"
+    assert repo_ssr_about.format_size(512) == "512 B"
+    authors = repo_ssr_about.rail_values(dict(EXTRAS, roster=None, stats=dict(
+        EXTRAS["stats"], contributorCount=40, contributors=[
+            {"name": "dependabot[bot]", "commits": 9}, {"name": "Ada", "commits": 3}])))
+    assert [row["name"] for row in authors["contributors"]["rows"]] == ["Ada"]
+    assert authors["contributors"]["total"] == 39
+    assert repo_ssr_about.rail_values({}) == {}
+
+
+def test_seed_reads_are_keyed_like_the_dashboard_reads():
+    reads = repo_ssr_about.seed_reads(EXTRAS, "main")
+    assert sorted(reads) == [
+        "blobs?path=.forkmesh/contributors/contributors.json&ref=main",
+        "stats?ref=main", "tree?path=.forkmesh&ref=main"]
+    stats = reads["stats?ref=main"]
+    assert stats["fileCount"] == 5811 and "zz" not in stats["extensions"]
+    assert stats["contributors"] == []  # the roster wins, as in the dashboard
+    blob = reads["blobs?path=.forkmesh/contributors/contributors.json&ref=main"]
+    shown = json.loads(blob["blobs"][repo_ssr_about.ROSTER_PATH]["content"])
+    assert shown["count"] == 12 and len(shown["contributors"]) == 3
+    plain = repo_ssr_about.seed_reads(dict(EXTRAS, roster=None), "main")
+    assert plain["stats?ref=main"]["contributors"] == [{"name": "Ada", "commits": 3}]
+    source = (DASHBOARD / "js" / "06-repo-content.js").read_text("utf-8")
+    assert "pairs.sort((a, b) => (a[0] < b[0]" in source
+    assert "`${match[1].toLowerCase()}|${operation}?${pairs.map(([name, value]) => `${name}=${value}`).join(\"&\")}`" in source
+
+
+def test_about_rail_is_drawn_with_its_values_and_escaped():
+    view = repo_ssr.render_view(dict(DATA, extras=EXTRAS), short=True,
+                                about={"ok": True, "fediverse": {"followers": 4}})
+    rail = view[view.index("<aside"):]
+    assert '<span class="font-mono">5,811</span>' in rail
+    assert '<span class="font-mono">256.2 MB</span>' in rail
+    assert '<span class="font-mono">4</span>' in rail  # watchers
+    assert 'title="Python"' in rail and "66.4%" in rail and "background-color:#3572A5" in rail
+    assert ">12</span>" in rail
+    assert "Ada &lt;script&gt;" in rail and "<script>" not in rail
+    assert "javascript:" not in rail
+    assert ('src="/api/repo/forkmesh/forkmesh/raw?ref=main&amp;path=.forkmesh%2Fcontributors%2Fcy.png"'
+            in rail)
+    assert 'href="https://example.test/ada" target="_blank"' in rail
+    assert '>+9</a>' in rail and 'href="/forkmesh/blob/.forkmesh/contributors/contributors.json"' in rail
+    assert rail.count("data-repo-contributor-avatar") == 3
+    source = (DASHBOARD / "js" / "06-repo-content.js").read_text("utf-8")
+    assert repo_ssr.AVATAR_CLASS in source
+    assert 'class="h-full shrink-0 first:rounded-l-full last:rounded-r-full"' in source
+    detail = (DASHBOARD / "js" / "08-repo-detail-network.js").read_text("utf-8")
+    assert 'class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"' in detail
+    css = (DASHBOARD / "tailwind.css").read_text("utf-8")
+    tokens = {token for match in re.finditer(r'class="([^"]*)"', rail)
+              for token in match.group(1).split()}
+    assert sorted(t for t in tokens if not t.startswith(("lucide", "dashboard-accent-link"))
+                  and _tailwind_selector(t) not in css) == []
+
+
+def test_inject_hands_the_rail_reads_to_the_dashboard():
+    page = repo_ssr.inject(repo_page(), dict(DATA, extras=EXTRAS))
+    seed = json.loads(re.search(r'id="forkmesh-repo-ssr">(.*?)</script>', page, re.S).group(1))
+    assert "stats?ref=main" in seed["reads"] and seed["sizeBytes"] == 268609287
+    assert "about?" not in seed["reads"]  # no recent /about remembered
+    assert "</script" not in json.dumps(seed["reads"]).replace("<\\/", "")
+
+
+def test_short_sub_routes_get_the_header_and_tab_strip():
+    def scope(path, query=b""):
+        return {"method": "GET", "path": path, "raw_path": path.encode(),
+                "query_string": query}
+    assert repo_ssr.short_sub_target(scope("/Bolt/src/app")) == ("Bolt", "code")
+    assert repo_ssr.short_sub_target(scope("/Bolt/issues")) == ("Bolt", "issues")
+    for path in ("/Bolt/commits", "/api/x", "/Bolt", "/dashboard/repos"):
+        assert repo_ssr.short_sub_target(scope(path)) is None, path
+    assert repo_ssr.short_sub_target(scope("/Bolt/src", b"ref=x")) is None
+    tree = dict(DATA["tree"], counts={"openIssues": 3})
+    page = repo_ssr.inject_header(repo_page(), dict(DATA, tree=tree), "issues", short=True)
+    view = page[page.index("<div data-repo-ssr"):]
+    assert 'href="/forkmesh/issues" role="tab" aria-selected="true"' in view
+    assert 'href="/forkmesh" role="tab" aria-selected="false"' in view
+    assert ">3</span>" in view and "data-repo-tree" not in view
+    assert '<a href="/forkmesh" class="hover:underline">forkmesh</a>' in page
+
+
+def test_a_stale_first_view_waits_briefly_for_a_newer_one(monkeypatch):
+    import asyncio
+
+    async def main(delay):
+        loop = asyncio.get_running_loop()
+        key = ("acme", "stale")
+        repo_ssr._prerendered[key] = (loop.time() - repo_ssr.PRERENDER_FRESH_SECONDS - 1,
+                                      {"commit": "old"})
+
+        async def prerender(_fastpath, _owner, _repo):
+            await asyncio.sleep(delay)
+            return {"commit": "new"}
+        monkeypatch.setattr(repo_ssr, "prerender", prerender)
+        try:
+            return (await repo_ssr.remembered_prerender(object(), *key))["commit"]
+        finally:
+            repo_ssr._prerendered.pop(key, None)
+            await asyncio.sleep(delay)
+    assert asyncio.run(main(0)) == "new"
+    assert asyncio.run(main(repo_ssr.SSR_REFRESH_SECONDS * 2)) == "old"
+
+
+def test_a_repository_that_stopped_answering_drops_its_remembered_first_view(
+        monkeypatch):
+    import asyncio
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        key = ("acme", "gone")
+        repo_ssr._prerendered[key] = (loop.time() - repo_ssr.PRERENDER_FRESH_SECONDS - 1,
+                                      {"commit": "old"})
+
+        async def prerender(_fastpath, _owner, _repo):
+            return None
+        monkeypatch.setattr(repo_ssr, "prerender", prerender)
+        first = await repo_ssr.remembered_prerender(object(), *key)
+        return first, key in repo_ssr._prerendered
+    assert asyncio.run(main()) == (None, False)
+
+
+def test_about_answers_are_remembered_past_the_micro_cache():
+    import asyncio
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        body = json.dumps({"ok": True, "features": {"pulls": False}}).encode()
+        repo_ssr._remember_about("/api/repo/Acme/Tool/about", body,
+                                 loop.time() - repo_ssr.MICRO_STALE_SECONDS - 5)
+        try:
+            return repo_ssr.cached_about("acme", "tool")
+        finally:
+            repo_ssr._about_memo.clear()
+    assert asyncio.run(main())["features"] == {"pulls": False}

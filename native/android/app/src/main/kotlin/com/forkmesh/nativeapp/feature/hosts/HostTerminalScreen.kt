@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.hosts
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,11 +55,10 @@ internal class HostTerminalScreen(private val host: String, terminal: String) : 
         val tick = rememberTerminalTick(terminal)
         fun close() {
             scope.launch {
-                val confirmed = messenger.showConfirmDialog(
+                val confirmed = messenger.confirmAction(
                     "Close the SSH session to $host?",
+                    "Close",
                     "The desktop ends the connection and anything still running in that shell. Leaving this screen instead keeps the session open on the desktop.",
-                    confirmLabel = "Close",
-                    destructive = true,
                 )
                 if (!confirmed) return@launch
                 closing = true

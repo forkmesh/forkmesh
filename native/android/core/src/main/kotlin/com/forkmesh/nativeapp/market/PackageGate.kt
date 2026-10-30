@@ -29,7 +29,7 @@ object PackageGate {
     const val TOUR = "tour"
     const val WORKFLOWS = "workflows"
 
-    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor")
+    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices")
 
     val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
 
@@ -39,9 +39,10 @@ object PackageGate {
         "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
         "hosts" to "hosts", "network" to "network",
-        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
+        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
+        "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide", "speech" to "speech",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -71,10 +72,18 @@ object PackageGate {
         put("marketing", Route.Kind.Marketing)
         put("analytics", Route.Kind.Analytics)
         put("competitor", Route.Kind.Competitors)
+        put("invoices", Route.Kind.Invoices)
         put("ledger", Route.Kind.Ledger)
         put("vault", Route.Kind.Vault)
         put("coves", Route.Kind.Coves, Route.Kind.Cove)
         put("calories", Route.Kind.Calories)
+        put("steps", Route.Kind.Steps)
+        put("water", Route.Kind.Water)
+        put("sleep", Route.Kind.Sleep)
+        put("sugar-break", Route.Kind.SugarBreak)
+        put("stretch", Route.Kind.Stretch)
+        put("food-guide", Route.Kind.FoodGuide)
+        put("speech", Route.Kind.Speech)
         put("glasses-alert", Route.Kind.GlassesAlert)
         put("phone-security", Route.Kind.PhoneSecurity)
         put("ember", Route.Kind.Ember)
@@ -86,6 +95,8 @@ object PackageGate {
         put("runners", Route.Kind.Runners)
         put("usage", Route.Kind.Usage)
         put("rss-reader", Route.Kind.RssReader)
+        put("video-mix-dj-studio", Route.Kind.VideoMixDjStudio)
+        put("poker", Route.Kind.Poker)
         put("instance-feed", Route.Kind.InstanceFeed)
         put("secure-drive", Route.Kind.SecureDrive)
         put("files", Route.Kind.Files)
@@ -94,6 +105,8 @@ object PackageGate {
         put("docs", Route.Kind.Docs)
         put("on-device-ai", Route.Kind.LocalAI)
         put("activity", Route.Kind.Activity)
+        put("logs", Route.Kind.Logs)
+        put("diagnostics", Route.Kind.Diagnostics)
         put("stats", Route.Kind.Stats)
         put("status-page", Route.Kind.Status)
         put("organizations", Route.Kind.Orgs, Route.Kind.Org)

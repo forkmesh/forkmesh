@@ -137,6 +137,7 @@ ADMIN_HIDDEN_TABLES = (
     "org_succession_policies",
     "org_succession_cases",
     "org_succession_approvals",
+    "org_succession_case_approvers",
     "org_succession_events",
     "chain_intents",
     "pending_rewards",
@@ -1352,7 +1353,8 @@ async def _admin_update_user(env, request, form, actor):
             pass
     _users_directory_memos_clear()
     for cache_key in (ACCOUNT_LOOKUP_CACHE_PREFIX + quote(name),
-                      USERS_DIRECTORY_CACHE_KEY, USERS_WORLD_CACHE_KEY):
+                      USERS_DIRECTORY_CACHE_KEY, USERS_WORLD_CACHE_KEY,
+                      REFERRAL_LEADERBOARD_CACHE_KEY):
         try:
             await edge_cache_delete(cache_key)
         except Exception:
@@ -2310,5 +2312,6 @@ def render_admin_html(view, content, banner="", admin_query="", console="",
         subpages=subpages,
         head_extra=(
             "<style>" + CONSOLE_STYLE + "</style>"
-            "<script src=\"/analytics.js\"></script>"),
+            "<script src=\"/analytics.js\"></script>"
+            "<script src=\"/safe-input.js\" defer></script>"),
         body_extra=CONSOLE_SCRIPT)

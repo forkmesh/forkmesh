@@ -74,22 +74,22 @@ private struct MessagesTrustBanner: View {
         .chatGlass(RoundedRectangle(cornerRadius: 16, style: .continuous), border: fm.border)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chat-trust-banner")
-        .confirmationDialog("Block this device?", isPresented: $confirmBlock, titleVisibility: .visible) {
+        .confirmationDialog(DirectTrustText.blockTitle(notice.kids.count), isPresented: $confirmBlock, titleVisibility: .visible) {
             Button(DirectTrustText.block, role: .destructive) { decide(approve: false) }
         } message: {
-            Text("Nothing is sent to it and its messages are dropped from now on.")
+            Text(DirectTrustText.blockNote(notice.kids.count))
         }
     }
 
     private func decide(approve: Bool) {
-        guard let kid = notice.kid, !working else { return }
+        guard notice.asksApproval, !working else { return }
         working = true
         Task { @MainActor in
             if approve {
-                await hub.approveDevice(notice.conversation, kid: kid)
+                await hub.approveDevices(notice.conversation, kids: notice.kids)
                 FmHaptics.success()
             } else {
-                await hub.blockDevice(notice.conversation, kid: kid)
+                await hub.blockDevices(notice.conversation, kids: notice.kids)
             }
             working = false
         }

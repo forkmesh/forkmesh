@@ -8,6 +8,8 @@ contract and authorization rules independently testable.
 import json
 import re
 
+from organization_rbac import ORG_INSIDER_ROLE_SQL
+
 
 PREFIX = "/api/notes"
 MAX_BODY_BYTES = 1024 * 1024
@@ -86,12 +88,17 @@ async def _role(runtime, row, account_bi):
         if direct:
             return str(direct.get("role") or "viewer")
         organization = await runtime.d1_first(
-            "SELECT s.role FROM note_shares s INNER JOIN org_members m "
+            "SELECT s.role AS role, m.role AS member_role FROM note_shares s "
+            "INNER JOIN org_members m "
             "ON m.org_bi=s.principal_bi WHERE s.note_id=? "
             "AND s.principal_type='organization' AND m.member_bi=? "
-            "ORDER BY CASE s.role WHEN 'editor' THEN 0 ELSE 1 END LIMIT 1",
+            "AND m.role IN " + ORG_INSIDER_ROLE_SQL + " "
+            "ORDER BY CASE WHEN s.role='editor' AND m.role<>'auditor' "
+            "THEN 0 ELSE 1 END LIMIT 1",
             row["note_id"], account_bi)
         if organization:
+            if str(organization.get("member_role") or "") == "auditor":
+                return "viewer"
             return str(organization.get("role") or "viewer")
     if str(row.get("visibility") or "") == "public":
         return "public"
@@ -316,6 +323,7 @@ async def _list(runtime, account_bi, query=""):
         "LEFT JOIN note_shares s ON s.note_id=n.note_id "
         "LEFT JOIN org_members m ON s.principal_type='organization' "
         "AND m.org_bi=s.principal_bi AND m.member_bi=? "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL + " "
         "WHERE n.owner_bi=? OR (s.principal_type='user' AND s.principal_bi=?) "
         "OR m.member_bi=? ORDER BY n.updated_at DESC LIMIT ?",
         account_bi, account_bi, account_bi, account_bi, MAX_NOTES)

@@ -50,6 +50,8 @@ data class PullEvent(
                 }
             }
             return when (type) {
+                "merged" -> "Merged"
+                "status" -> if (state == "open") "Reopened" else "Closed"
                 "line-comment" -> "Line comment"
                 "thread-comment" -> "Thread comment"
                 "thread-reply" -> "Thread reply"
@@ -71,4 +73,11 @@ data class PublishedPull(
     val signed: Boolean = false,
     val events: List<PullEvent> = emptyList(),
     val branchBacked: Boolean = false,
-)
+    val author: String = "",
+    val authorName: String = "",
+    val createdMs: Long = 0,
+    val mergedMs: Long = 0,
+    val mergedBy: String = "",
+) {
+    val isOpen: Boolean get() = status != "closed" && status != "merged"
+}

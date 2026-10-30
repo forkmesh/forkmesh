@@ -233,4 +233,63 @@ class AppStoreStatusTest {
         assertEq("Screenshot", AppStoreStatus.screenshotTitle(0, 1))
         assertEq("Screenshot 2 of 3", AppStoreStatus.screenshotTitle(1, 3))
     }
+
+    private val withoutScreenshots get() = example.replace(
+        "\"screenshots\": [{\"id\": \"3f1c2a9b8d7e6f5a4b3c2d1e\", \"width\": 1179, \"height\": 2556}]",
+        "\"screenshots\": []",
+    )
+
+    private fun snapshotOf(text: String) = AppStoreSnapshot.fromJson(Json.parseObject(text))
+
+    fun testSnapshotLacksScreenshotsOnlyWhenNoReportHasOne() {
+        expect(withoutScreenshots != example)
+        expect(!snapshotOf(example).lacksScreenshots)
+        expect(snapshotOf(withoutScreenshots).lacksScreenshots)
+        expect(!snapshotOf("""{"feedback": [{"kind": "crash"}]}""").lacksScreenshots)
+        expect(!snapshotOf("{}").lacksScreenshots)
+    }
+
+    fun testAsksTheDesktopWhenTheServerSnapshotPredatesScreenshots() {
+        var desktopCalls = 0
+        val server = Json.parseObject("""{"ok": true, "publishedAt": 1760000300000, "snapshot": $withoutScreenshots}""")
+        val fresh = Json.parseObject("""{"ok": true, "source": "desktop", "publishedAt": 1760000400000, "snapshot": $example}""")
+        val describe: (Throwable) -> String = { it.message.orEmpty() }
+        val stale = AppStoreStatusLoader.load({ server }, { desktopCalls++; fresh }, describe)
+        assertEq(1, desktopCalls)
+        assertEq(true, stale.reply?.fromDesktop)
+        assertEq(listOf("3f1c2a9b8d7e6f5a4b3c2d1e"), stale.reply?.snapshot?.feedback?.first()?.screenshots?.map { it.id })
+
+        val oldDesktop = AppStoreStatusLoader.load(
+            { server },
+            { Json.parseObject("""{"ok": true, "source": "desktop", "snapshot": $withoutScreenshots}""") },
+            describe,
+        )
+        assertEq(false, oldDesktop.reply?.fromDesktop)
+        assertEq(1760000300000L, oldDesktop.reply?.publishedAt)
+
+        val failing = AppStoreStatusLoader.load({ server }, { throw AppStoreDesktopException("not_connected", "The desktop is not connected.") }, describe)
+        assertEq(false, failing.reply?.fromDesktop)
+        assertEq("", failing.error)
+        expect(failing.reply?.snapshot?.lacksScreenshots == true)
+
+        var asked = false
+        val current = AppStoreStatusLoader.load({ reply(example) }, { asked = true; fresh }, describe)
+        expect(!asked)
+        assertEq(false, current.reply?.fromDesktop)
+    }
+
+    fun testFallsBackToTheDesktopWhenTheServerHasNothing() {
+        val fresh = Json.parseObject("""{"ok": true, "source": "desktop", "snapshot": $example}""")
+        val describe: (Throwable) -> String = { it.message.orEmpty() }
+        val missing = AppStoreStatusLoader.load({ throw PackagesException("http_404", 404) }, { fresh }, describe)
+        assertEq(true, missing.reply?.fromDesktop)
+        val offline = AppStoreStatusLoader.load({ throw PackagesException("offline") }, { error("not asked") }, describe)
+        assertEq(null, offline.reply)
+        val both = AppStoreStatusLoader.load(
+            { throw PackagesException("http_404", 404) },
+            { throw AppStoreDesktopException("app_store_report_failed", "missing ASC_KEY_ID.") },
+            { "Not offered." },
+        )
+        assertEq("Not offered. Your desktop could not fetch it either: missing ASC_KEY_ID.", both.error)
+    }
 }

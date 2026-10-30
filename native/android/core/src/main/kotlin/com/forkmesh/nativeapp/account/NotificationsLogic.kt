@@ -17,6 +17,7 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "pull_submitted" -> "call_merge_rounded"
     "issue_assigned" -> "assignment_ind_outlined"
     "repo_shared" -> "folder_special_outlined"
+    "security_advisory" -> "gpp_maybe_outlined"
     "bounty_funded", "bounty_paid", "tip_sent" -> "payments_outlined"
     "release_published" -> "new_releases_outlined"
     "host_online" -> "cloud_done_outlined"
@@ -45,6 +46,8 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "hackathon_reward" -> "card_giftcard_outlined"
     "badge" -> "emoji_events_outlined"
     "package_review" -> "rate_review_outlined"
+    "reaction" -> "add_reaction_outlined"
+    "pull_attention" -> "rate_review_outlined"
     else -> NOTIFICATION_LINE_ICON
 }
 
@@ -257,6 +260,8 @@ fun pingWebLink(href: String): String? {
 }
 
 const val PING_DETAIL_TITLE = "Ping"
+const val PING_DETAIL_BACK = "All pings"
+const val INBOX_ITEM_BACK = "Inbox"
 const val PING_DELETE_LABEL = "Delete ping"
 const val PING_DELETE_TITLE = "Delete this ping?"
 const val PING_DELETE_BODY = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

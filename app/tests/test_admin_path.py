@@ -230,9 +230,11 @@ def test_routing_checks_the_private_path_before_the_router():
     assert hidden < sub < console < router
     assert "_serve_not_found_page(url)" in inner[hidden:sub]
     assert "_private_console_headers(response)" in inner
-    assert "if not read_only and not private_console:\n            response = " \
+    assert "if not read_only and not private_console and not private_mode:\n" \
+        "            response = " \
         "await _attribution.capture_page_view(" in inner
-    assert "if not read_only and not private_console:\n            await " \
+    assert "if not read_only and not private_console and not private_mode:\n" \
+        "            await " \
         "record_site_referral(" in inner
     entry = (SRC / "entry.py").read_text(encoding="utf-8")
     headers = entry.split("def _private_console_headers(response):", 1)[1]
@@ -285,7 +287,7 @@ def test_the_account_menu_links_admins_to_the_console():
         encoding="utf-8")
     menu = header.split('id="accountMenuDropdown"', 1)[1].split("</div>\n", 1)[0]
     assert ('<a data-account-menu-admin href="#" class="fm-menu-item hidden">'
-            "Admin console</a>") in menu
+            '<i data-lucide="shield" aria-hidden="true"></i><span>Admin console</span></a>') in menu
     script = (APP / "public" / "dashboard" / "js" / "04-account.js").read_text(
         encoding="utf-8")
     block = script.split('const adminMenuLink = $("[data-account-menu-admin]");',

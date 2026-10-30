@@ -264,7 +264,7 @@ def test_worker_route_auth_idempotency_and_no_failover_contracts():
     ] + "\n\n\n" + MERGE_HANDLER_TEXT
     for required in (
         "_account_session_record",
-        "_organization_owner_can_merge_repo",
+        "_repository_owner_can_merge_repo",
         "repo_merge_jobs",
         "request_id_reused",
         "selected_node",
@@ -317,7 +317,7 @@ def test_merge_selection_asks_for_the_mirror_that_runs_the_executor():
 def test_mirror_merge_authorization_is_org_owner_only():
     helper = ENTRY_TEXT[
         ENTRY_TEXT.index("async def _organization_owner_can_merge_repo"):
-        ENTRY_TEXT.index("\n\ndef _https_mirror_merge_response")
+        ENTRY_TEXT.index("async def _repository_owner_can_merge_repo")
     ]
     assert "_org_role(env, org_bi, actor) == \"owner\"" in helper
     assert "FROM org_repos" in helper
@@ -658,9 +658,9 @@ def test_update_is_audited_under_its_own_action_name():
 def test_update_is_owner_authorized_through_the_same_gate_as_merge():
     # The shared handler authorizes once, before the mutation is selected, so
     # the update path cannot be reached with a weaker check than merge.
-    assert "_organization_owner_can_merge_repo" in MERGE_HANDLER_TEXT
-    assert MERGE_HANDLER_TEXT.count("_organization_owner_can_merge_repo") == 1
-    assert MERGE_HANDLER_TEXT.index("_organization_owner_can_merge_repo") < (
+    assert "_repository_owner_can_merge_repo" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.count("_repository_owner_can_merge_repo") == 1
+    assert MERGE_HANDLER_TEXT.index("_repository_owner_can_merge_repo") < (
         MERGE_HANDLER_TEXT.index('profile["operation"]'))
 
 
@@ -823,3 +823,319 @@ def test_the_job_node_answers_through_its_own_signed_refs_lag():
         verdict.update(broken)
         assert run() == (0, None)
     assert len(fetched) == 1
+
+
+def _owner_merge_namespace(linked=False, owns=("alice",)):
+    import types
+    from urllib.parse import urlparse
+    ns = _entry_functions("_repository_owner_can_merge_repo", constants=())
+
+    async def org_owner(_env, _request, _owner, _repo, _actor):
+        return False
+
+    async def d1_first(_env, sql, *args):
+        assert "FROM org_repos WHERE repo=? AND node_owner=?" in sql
+        return {"ok": 1} if linked else None
+
+    async def owns_node(_env, actor, node):
+        return actor in owns and node == "alice"
+
+    ns.update({
+        "_organization_owner_can_merge_repo": org_owner,
+        "d1_first": d1_first,
+        "_account_owns_node": owns_node,
+        "urlparse": urlparse,
+        "REPO_API_PREFIX_RE": re.compile(r"^/api/repo/([^/]+)/([^/]+)"),
+        "safe_segment": lambda value: value,
+    })
+    return ns, types.SimpleNamespace
+
+
+def _merge_request(path):
+    import types
+    return types.SimpleNamespace(url="https://forge.test" + path)
+
+
+def test_a_personal_repository_owner_may_merge_on_the_web():
+    ns, _ = _owner_merge_namespace()
+    check = ns["_repository_owner_can_merge_repo"]
+    request = _merge_request("/api/repo/alice/garden/pulls/3/merge")
+    assert asyncio.run(check(None, request, "alice", "garden", "alice")) is True
+    assert asyncio.run(check(None, request, "alice", "garden", "bob")) is False
+    assert asyncio.run(check(None, request, "alice", "garden", "")) is False
+    other = _merge_request("/api/repo/alice/other/pulls/3/merge")
+    assert asyncio.run(check(None, other, "alice", "garden", "alice")) is False
+
+
+def test_an_organization_linked_repository_keeps_the_organization_rule():
+    ns, _ = _owner_merge_namespace(linked=True)
+    check = ns["_repository_owner_can_merge_repo"]
+    request = _merge_request("/api/repo/alice/garden/pulls/3/merge")
+    assert asyncio.run(check(None, request, "alice", "garden", "alice")) is False
+
+
+def test_rules_protection_and_checks_still_run_after_owner_authorization():
+    authorize = MERGE_HANDLER_TEXT.index("_repository_owner_can_merge_repo")
+    for gate in ("_pull_rules.merge_gate(", "_branch_protection.merge_refusal("):
+        assert authorize < MERGE_HANDLER_TEXT.index(gate)
+
+
+class _UpdateRequest:
+    def __init__(self, path):
+        self.url = "https://app.forkmesh.com" + path
+
+
+def _update_writer(owners=(), writers=(), contributors=()):
+    import hosted_git
+
+    async def owns(env, actor, node):
+        return actor in owners
+
+    async def org_write(env, owner, repo, actor):
+        return actor in writers
+
+    class Hosted:
+        contributor_ref_prefix = staticmethod(hosted_git.contributor_ref_prefix)
+
+        @staticmethod
+        async def contributor_push_allowed(env, owner, repo, actor, alias=""):
+            return actor in contributors
+
+    from urllib.parse import urlparse
+    return _route_handler_function(
+        "_account_may_write_branch",
+        _account_owns_node=owns, _org_write_allowed=org_write,
+        _hosted_git=Hosted, REPO_API_PREFIX_RE=urls.REPO_API_PREFIX_RE,
+        urlparse=urlparse, safe_segment=lambda value: value)
+
+
+def test_update_is_open_to_whoever_may_push_the_head_branch():
+    context = {"owner": "alice", "repo": "widgets"}
+    request = _UpdateRequest("/api/repo/alice/widgets/pulls/7/update")
+    may = _update_writer(owners={"alice"}, writers={"wendy"},
+                         contributors={"bob", "mallory"})
+
+    def allowed(branch, actor):
+        return asyncio.run(may(None, request, context, branch, actor))
+
+    assert allowed("feature", "alice")
+    assert allowed("feature", "wendy")
+    assert allowed("pr/bob/fix", "bob")
+    assert not allowed("feature", "bob")
+    assert not allowed("pr/bob/fix", "mallory")
+    assert not allowed("pr/bobby/fix", "bob")
+    assert not allowed("pr/bob/fix", "eve")
+    assert not allowed("", "alice")
+
+
+def test_update_reads_only_an_open_branch_backed_head():
+    records = {}
+
+    async def record(env, owner, repo, number):
+        return records.get(number, {})
+
+    class Protection:
+        @staticmethod
+        def valid_branch(branch):
+            return bool(branch) and ".." not in branch
+
+    head = _route_handler_function(
+        "_pull_update_head", _pull_lifecycle_record=record,
+        _branch_protection=Protection)
+    context = {"owner": "alice", "repo": "widgets"}
+    records[1] = {"status": "open", "derive": "branch", "head": "pr/bob/fix"}
+    records[2] = {"status": "open", "head": "bob:fix"}
+    records[3] = {"status": "merged", "derive": "branch", "head": "x"}
+    records[4] = {"status": "open", "derive": "branch", "head": "a:b"}
+    assert asyncio.run(head(None, context, 1)) == "pr/bob/fix"
+    for number in (2, 3, 4, 5):
+        assert asyncio.run(head(None, context, number)) == ""
+
+
+def test_an_update_checks_head_protection_before_queueing():
+    assert "_account_may_write_branch" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.index("_account_may_write_branch") < (
+        MERGE_HANDLER_TEXT.index("\n    if not authorized:\n"))
+    assert "branch_refusal(" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.index("branch_refusal(") < (
+        MERGE_HANDLER_TEXT.index("_repo_merge_jobs_make_room"))
+
+def test_gateway_reports_each_phase_while_the_job_runs():
+    release = threading.Event()
+    executing = threading.Event()
+
+    class Executor:
+        def call(self, request, timeout=20):
+            action = request["action"]
+            if action == "status":
+                return {"ok": True, "status": "missing",
+                        "requestId": request["requestId"],
+                        "generationReady": False}
+            assert action == "register"
+            return {"ok": True, "status": "registered",
+                    "requestId": request["requestId"]}
+
+        def stream(self, request, *, timeout, on_progress):
+            assert request["action"] == "execute"
+            for phase in ("fetching", "verifying", "verifying", "testing"):
+                on_progress(phase)
+            executing.set()
+            release.wait(5)
+            on_progress("pushing")
+            return {"ok": True, "status": "merged",
+                    "requestId": request["requestId"],
+                    "baseBefore": OID_A, "head": OID_B,
+                    "pullsBefore": OID_C, "baseAfter": OID_B,
+                    "pullsAfter": "d" * 40, "generationReady": True}
+
+    clock = iter(range(1_000, 100_000, 10))
+    app = object.__new__(gateway.GatewayApplication)
+    app.merge_executor = Executor()
+    app.clock_ms = lambda: next(clock)
+    app._merge_lock = threading.Lock()
+    app._merge_threads = {}
+    app._merge_results = {}
+    app._merge_payload_digests = {}
+    app.reload_from_disk = lambda **_: None
+    app._schedule_prewarm = lambda: None
+
+    app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+    assert executing.wait(5)
+    running = app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+    assert running.status == 202
+    progress = json.loads(running.body)["progress"]
+    assert progress["phase"] == "testing"
+    assert [step["phase"] for step in progress["steps"]] == [
+        "claimed", "fetching", "verifying", "testing"]
+    assert progress["startedAt"] == progress["steps"][0]["at"]
+    assert progress["updatedAt"] == progress["steps"][-1]["at"]
+    assert set(progress) == {"phase", "startedAt", "updatedAt", "steps"}
+    release.set()
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        done = app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+        if done.status == 200:
+            break
+        time.sleep(0.01)
+    body = json.loads(done.body)
+    assert body["status"] == "merged" and "progress" not in body
+
+
+def test_executor_stream_relays_only_known_phases_from_stderr(tmp_path):
+    script = tmp_path / "executor.py"
+    script.write_text(
+        "import json, sys\n"
+        "request = json.loads(sys.stdin.read())\n"
+        "for line in ['forkmesh-progress {\"phase\":\"fetching\",\"at\":1}',\n"
+        "             'git: some noise',\n"
+        "             'forkmesh-progress {\"phase\":\"rm -rf\",\"at\":2}',\n"
+        "             'forkmesh-progress not json',\n"
+        "             'forkmesh-progress {\"phase\":\"pushing\",\"at\":3}']:\n"
+        "    print(line, file=sys.stderr, flush=True)\n"
+        "print(json.dumps({'ok': True, 'status': 'merged',"
+        " 'requestId': request['requestId']}))\n",
+        encoding="utf-8")
+    executor = gateway.ExternalMergeExecutor([sys.executable, str(script)])
+    phases = []
+    result = executor.stream(
+        {"action": "execute", "requestId": "merge_request_0001"},
+        timeout=30, on_progress=phases.append)
+    assert result["status"] == "merged"
+    assert phases == ["fetching", "pushing"]
+    failing = tmp_path / "fail.py"
+    failing.write_text("import sys\nsys.exit(3)\n", encoding="utf-8")
+    with pytest.raises(gateway.GatewayError):
+        gateway.ExternalMergeExecutor([sys.executable, str(failing)]).stream(
+            {"action": "execute"}, timeout=30, on_progress=phases.append)
+
+
+def test_relay_keeps_only_a_bounded_known_progress_shape():
+    ns = _entry_functions(
+        "_https_mirror_merge_body", "_https_mirror_merge_result",
+        "_https_mirror_merge_progress",
+        constants=("HTTPS_MIRROR_PULL_MUTATIONS",
+                   "HTTPS_MIRROR_MERGE_PROGRESS_PHASES"))
+    parsed = ns["_https_mirror_merge_body"](merge_body().decode(), 7)
+    validate = ns["_https_mirror_merge_result"]
+    processing = {
+        "ok": True, "status": "processing",
+        "requestId": parsed["requestId"],
+        "progress": {
+            "phase": "testing", "startedAt": 10, "updatedAt": 30,
+            "message": "<script>", "node": "evil",
+            "steps": [
+                {"phase": "claimed", "at": 10},
+                {"phase": "unknown", "at": 15},
+                {"phase": "fetching", "at": True},
+                {"phase": "testing", "at": 30, "extra": "x"},
+            ],
+        },
+    }
+    checked = validate(processing, parsed)
+    assert checked["progress"] == {
+        "phase": "testing", "startedAt": 10, "updatedAt": 30,
+        "steps": [{"phase": "claimed", "at": 10},
+                  {"phase": "testing", "at": 30}],
+    }
+    for broken in ({"phase": "evil"}, {"startedAt": "10"}, {"steps": []},
+                   {"steps": [{"phase": "claimed", "at": 1}] * 40}):
+        progress = dict(processing["progress"], **broken)
+        result = validate(dict(processing, progress=progress), parsed)
+        assert result["status"] == "processing"
+        if "steps" in broken and broken["steps"]:
+            assert len(result["progress"]["steps"]) == 18
+        else:
+            assert "progress" not in result
+    assert "progress" not in validate(
+        dict(processing, progress="fetching"), parsed)
+
+
+def _route_functions(*names):
+    tree = ast.parse(ROUTE_HANDLERS_TEXT)
+    nodes = [node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.Assign))
+             and (getattr(node, "name", None) in names
+                  or (isinstance(node, ast.Assign)
+                      and getattr(node.targets[0], "id", "")
+                      == "PULL_MUTATION_PROGRESS_MESSAGES"))]
+    namespace = {"json": json}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "rh", "exec"),
+         namespace)
+    return namespace
+
+
+def test_relay_status_names_the_mirror_and_survives_its_absence():
+    ns = _route_functions(
+        "_pull_mutation_progress", "_pull_mutation_stored_progress")
+    progress = ns["_pull_mutation_progress"]
+    stored = ns["_pull_mutation_stored_progress"]
+    live = progress({"phase": "verifying", "startedAt": 1, "updatedAt": 2,
+                     "steps": [{"phase": "verifying", "at": 2}]},
+                    "mirror9", "processing")
+    assert live["state"] == "processing" and live["node"] == "mirror9"
+    assert live["message"] == "Verifying the reviewed commits."
+    older = progress(None, "mirror9", "processing")
+    assert older["phase"] == "claimed" and older["steps"] == []
+    row = {"status": "requested",
+           "result": json.dumps({"progress": {"phase": "pushing"}})}
+    assert stored(row) == {"phase": "pushing"}
+    assert stored(dict(row, status="succeeded")) == {}
+    assert stored({"status": "requested", "result": ""}) == {}
+    waiting = progress(stored(row), "mirror9", "waiting")
+    assert waiting["state"] == "waiting" and waiting["phase"] == "pushing"
+
+
+def test_relay_records_progress_only_for_the_authorized_in_flight_job():
+    forbidden = MERGE_HANDLER_TEXT.index(
+        'return json_response({"error": "forbidden"}, status=403)')
+    assert MERGE_HANDLER_TEXT.index("_pull_mutation_progress(") > forbidden
+    write = MERGE_HANDLER_TEXT[
+        MERGE_HANDLER_TEXT.index("if progress and progress != "):
+        MERGE_HANDLER_TEXT.index("return _https_mirror_merge_response(result, mutation)")]
+    assert "WHERE request_id=? AND status='requested'" in write
+    assert '"reason": "job_node_offline",\n             "progress": _pull_mutation_progress(' in MERGE_HANDLER_TEXT
+    # Every other reader of the job row only reads terminal results, so the
+    # in-flight progress can never be mistaken for a receipt.
+    for text in (ENTRY_TEXT, (WORKER / "src" / "repo_sync.py").read_text(encoding="utf-8")):
+        for match in re.finditer(r"SELECT[^;]*?result[^;]*?FROM repo_merge_jobs[^;]*?(?:\"\"\"|\"\s*\))", text, re.S):
+            assert "status='succeeded'" in match.group(0) or "request_id=?" in match.group(0), match.group(0)

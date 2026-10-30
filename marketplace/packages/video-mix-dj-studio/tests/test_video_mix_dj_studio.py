@@ -66,13 +66,29 @@ def test_mix_uses_youtube_embed_messages_local_storage_and_public_search_only():
     assert "XMLHttpRequest" not in PAGE
 
 
-def test_desktop_link_and_preview_are_packaged():
-    link = (PACKAGE / "content" / "desktop" / "VideoMixDjStudioLink.cpp").read_text(encoding="utf-8")
-    build = json.loads((PACKAGE / "content" / "desktop" / "build.json").read_text(encoding="utf-8"))
-    assert 'QStringLiteral("builtin:video-mix-dj-studio")' in link
-    assert 'QStringLiteral("/dashboard/video-mix-dj-studio")' in link
-    assert 'QStringLiteral("play")' in link
-    assert build == {"schemaVersion": 1, "sources": ["VideoMixDjStudioLink.cpp"], "mocHeaders": []}
+def test_desktop_studio_is_native_and_preview_is_packaged():
+    desktop = PACKAGE / "content" / "desktop"
+    feature = (desktop / "DjStudioFeature.cpp").read_text(encoding="utf-8")
+    player = (desktop / "DjPlayer.cpp").read_text(encoding="utf-8")
+    scripts = (desktop / "DjScripts.cpp").read_text(encoding="utf-8")
+    build = json.loads((desktop / "build.json").read_text(encoding="utf-8"))
+    assert 'QStringLiteral("builtin:video-mix-dj-studio")' in feature
+    assert 'QStringLiteral("/api/video-mix-dj-studio")' in feature
+    assert 'QStringLiteral("forkmesh-video-mix-dj-studio-request-v1")' in feature
+    assert "new forkmesh::djstudio::DjStudioFeature(host, parent)" in feature
+    assert 'QStringLiteral("/dashboard/video-mix-dj-studio")' in feature
+    assert "#ifdef FORKMESH_HAVE_WEBENGINE" in player
+    assert "setRunsOnSubFrames(true)" in player
+    assert "PlaybackRequiresUserGesture, false" in player
+    assert "https://www.youtube-nocookie.com" in scripts
+    assert "createMediaElementSource" in scripts
+    assert set(build) == {"schemaVersion", "sources", "mocHeaders", "testSources", "testLibraries"}
+    assert build["mocHeaders"] == []
+    assert "DjStudioFeature.cpp" in build["sources"]
+    assert "DjStudioFeature.cpp" not in build["testSources"]
+    assert "tests/test_video_mix_dj_studio.cpp" in build["testSources"]
+    for name in build["sources"] + build["testSources"]:
+        assert (desktop / name).is_file(), name
     assert (PACKAGE / "preview" / "market.svg").is_file()
     assert (PACKAGE / "preview" / "market.webp").stat().st_size > 1000
 
@@ -157,3 +173,46 @@ def test_auto_dj_follows_each_song_with_a_related_song_people_liked():
     assert "} else if autoDjOn, let pick = takeAutoDj() {" in model
     assert "saved.autoDj = autoDjOn" in model
     assert "DjAutoDj.likesURL(instance, id: id)" in auto
+
+
+def test_auto_dj_plays_songs_and_prefers_original_uploads():
+    assert '"got talent", "agt", "bgt", "x factor"' in PAGE
+    assert "if (isSong(item)) found.push(item);" in PAGE
+    assert "right.original - left.original" in PAGE
+    core = (IOS / "ForkMeshCore" / "Sources" / "FMPackages" / "DjAutoDj.swift").read_text(encoding="utf-8")
+    assert '"got talent", "agt", "bgt", "x factor"' in core
+    assert "isSong(candidate)" in core
+
+
+def test_a_push_tap_closes_the_studio_before_routing():
+    shell = (IOS / "ForkMesh" / "Shell" / "HomeShell.swift").read_text(encoding="utf-8")
+    screen = (IOS / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioScreen.swift").read_text(encoding="utf-8")
+    route = shell.split("private func routePushOpen()", 1)[1]
+    assert route.index("DjStudioHub.shared.stepAside()") < route.index("await model.routePush(")
+    assert "router.remove(.videoMixDjStudio)" in route
+    assert "if route != .videoMixDjStudio, DjStudioHub.shared.stepAside() {" in shell
+    assert "studio.onStepAside = { shown.wrappedValue = false }" in screen
+    assert "guard leaving else { return }" in screen
+
+
+def test_each_deck_can_repeat_its_song_and_auto_dj_leaves_it_alone():
+    for name in ("a", "b"):
+        assert f'data-vmdj="repeat-{name}"' in VIEW
+    assert "repeat: deck.repeat, position: deck.time" in PAGE
+    assert "decks[name].repeat = value.repeat === true;" in PAGE
+    assert "if (playerState === 0 && deck.repeat) {" in PAGE
+    assert 'command(deck, "seekTo", [0, true]);\n        command(deck, "playVideo");' in PAGE
+    assert "if (!deck?.id || deck.repeat) return;" in PAGE
+
+
+def test_ios_repeat_wraps_between_the_songs_silences_before_youtube_ends():
+    packages = IOS / "ForkMesh" / "Features" / "Packages"
+    model = (packages / "VideoMixDjStudioModel.swift").read_text(encoding="utf-8")
+    player = (packages / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
+    frame = swift_literal(player, "frameScript")
+    host = swift_literal(player, "html")
+    assert "} else {\n                aimRepeat(deck, at: now)\n            }" in model
+    assert "rewind(deck, to: span.start)" in model
+    assert "rewind(deck, to: DjRepeat.span(deck.waveform, duration: deck.duration)?.start ?? 0)" in model
+    assert 'else if(name==="seekTo"){d.w.from=+a[0]||0;d.w.seek++}' in host
+    assert "else if(m.seek!==w.seek){" in frame

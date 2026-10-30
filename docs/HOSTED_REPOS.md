@@ -38,9 +38,23 @@ for long. Push bodies are streamed, up to
 `FORKMESH_MAX_GIT_PUSH_BODY_BYTES` (256 MiB). The creating account must have a
 verified email.
 
-**Git rules** (gateway receive-pack): fast-forward only, no ref deletes, new
+**Git rules** (gateway receive-pack): the default and protected branches
+fast-forward only; other branches may be force-pushed by accounts that may
+write them ([CORE_PUSH.md](CORE_PUSH.md#force-pushes)); no ref deletes, new
 tags allowed but never moved, only `refs/heads/*` and `refs/tags/*`, objects
 fsck-checked, no hooks, every accepted push audited per ref.
+
+**Deleting branches.** The owner (or an organization owner or admin) deletes
+branches on the repository's Branches page, one at a time or several at once
+(`POST /api/repo/<owner>/<name>/branches/delete`, at most 200 per request).
+The default branch and protected branches are refused; any name Git accepts
+can be deleted. The request becomes a job that one background worker runs a
+branch at a time: a router-signed request to the core's merge executor, which
+moves the tip to `refs/forkmesh/trash/branch/` and deletes the branch in one
+ref transaction, then the same on every other core, each audited as
+`repository.branch_delete`. When the job ends the app notes the change like a
+push, so the cores wake and a push mirror with prune drops the branches on
+its next push, and updates the catalog's `branchCount`. Details: [app/branch-ops.md](app/branch-ops.md#deleting-branches).
 
 ## Design
 
@@ -122,6 +136,16 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
   `test_hosted_stats_update_only_the_record_whose_pin_they_describe` in
   `app/tests/test_hosted_repositories.py`,
   `TestHostedCopyStateReportsTheWholeHistoryCachedPerTip`.
+- **Attested state after intake and merges:** the router checks clones
+  against the routing digest (default branch plus tags,
+  `routingRefsSHA256`), and pushes already pinned that. The collaboration
+  intake acknowledgement (`server/intake.go`) and merge results
+  (`server/merge.go`) recorded the all-branches digest instead, so on a
+  repository with more than one branch they added a pin no node could match.
+  Both now attest the routing digest; the gateway's own generation pin still
+  uses the full digest. Test: the merge executor test in
+  `server/merge_test.go` compares the attested state with the live routing
+  digest.
 
 ### Private repositories
 
@@ -156,6 +180,162 @@ points HEAD at `main`, `master`, `trunk` or `develop`. Private sources are not
 supported. The separate metadata importer (`app/src/repository_imports.py`)
 imports issues, pulls and releases only.
 
+### Contributor pushes
+
+Without a node of their own, a signed-in contributor has no fork to push to,
+so a pull request against a hosted repository was out of reach. An operator
+can open named public repositories to contributor pushes
+(`HOSTED_GIT_CONTRIBUTOR_PUSH`, user guide in
+`www/docs/hosted-repositories.md`): any active, email-verified user account
+may then push branches under `refs/heads/pr/<account>/` of the repository
+itself (the namespace the SSH gateway's pull-request grant uses), with the
+same session-bound credential an owner uses.
+
+- **Allowlist** (`hosted_git`): `*`, `owner/*` or `owner/repo` items,
+  separated by whitespace or commas, case-insensitive; a route alias or its
+  backing node matches. Unparseable entries are ignored, so a typo narrows
+  access rather than widening it. The repository must be listed and public,
+  and the account an active, email-verified user; every check fails closed
+  and is repeated on each push.
+- **Credential.** `POST /api/hosted-repositories/push-credential` mints the
+  session-bound Basic credential. Owners and writers get full access; a
+  contributor gets one limited to its namespace, and the push answer names
+  that one ref namespace (an owner or writer gets no prefix). Signing out
+  revokes it.
+- **Enforcement.** The app's relay router (`app/src/edge_routing.py`) signs
+  `pushPrefix` into the receive-pack capability, so a contributor cannot widen it, and the gateway
+  (`tools/mirror_gateway.py`) refuses any command outside it, with at most
+  `MAX_CONTRIBUTOR_BRANCHES` (32) branches there. A refusal is answered as a
+  receive-pack report (`ng <ref> <reason>`), so stock Git prints the reason
+  beside each ref instead of an opaque HTTP failure. Deletes and force pushes
+  are refused for everyone on this path, so only a maintainer removes a
+  contributor's merged branches. Only new objects cross the wire.
+- **No workflows.** A contributor's push runs nobody's workflows
+  (`core_push`): `on: push` would execute untrusted code with the
+  repository's runner access.
+- **No quota.** There is no per-account byte quota or rate limit on this
+  path beyond the gateway's `receive.maxInputSize` per push.
+
+## Forks
+
+A hosted repository made private from the website
+(`POST /api/hosted-repositories/visibility`) first writes the public catalog
+snapshot tombstone, as a node's own catalog publish does, and then drops its
+`repo_forks` row, so its name leaves the parent's fork list. The fork list
+(`GET /api/repo/<owner>/<repo>/forks`) also leaves out any fork that is
+private now, and its count with it.
+
+**Forks → Fork this repository** on a public hosted repository (or one
+published from a node, below) creates
+`<you>/<name>`, a hosted repository you own, marked `forkedFrom` the parent
+and listed on its forks (`repo_forks`). Code: `hosted_git.hosted_fork_create`
+(reached from `POST /api/repo/<owner>/<repo>/forks` before the managed-mirror
+path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
+
+- **Storage.** The hosted record carries `fork: {of, network}`; the replica
+  exchange passes `forkOf` and `network` (the root repository's id) to every
+  core. Each core builds the fork from its own copy of the parent: the
+  network pool `<root>/.pools/<network>.git` is a `git clone --local` of the
+  root (hard links, so no extra disk until the parent repacks), refreshed
+  from the parent into `refs/pools/<parent>/…` before each new fork, and the
+  fork's `objects/info/alternates` points at it. Refs are copied from the
+  parent with nothing transferred. A fork costs about 26 KB (measured in
+  `TestHostedForkBorrowsFromTheNetworkPool`); its own pushes stay in it.
+- **One core picks the refs.** Only the fork's primary core copies the
+  parent's heads, tags and HEAD into a new fork. Every other core sets up the
+  pool and the alternates and then fetches the fork's refs from its peers,
+  which transfers almost nothing, so all cores agree on the fork's refs (and
+  refs digest) even when their copies of the parent differ for a moment
+  (`TestHostedForkRefsComeFromThePrimaryOnly`).
+- **Parent still public.** The replica exchange names `forkOf` only while the
+  parent is a live public hosted repository, and the core also refuses to
+  pool a parent its own answer lists as private. A parent made private after
+  the fork never feeds a fork that a core builds later (a new core, or a
+  wiped directory), nor the shared pool
+  (`test_a_fork_of_a_parent_made_private_is_not_built_from_it`,
+  `TestHostedForkOfAPrivateParentIsNotPooled`).
+- **Built under the parent's lock.** Creating and refreshing the pool and
+  copying the fork's refs hold a shared lock on the parent's
+  `forkmesh-maintenance.lock`, so a geometric repack cannot delete objects
+  mid-clone; when maintenance holds it, the fork is built on the next cycle.
+  A new pool must pass `git fsck --connectivity-only` before it is renamed
+  into place.
+- **Never pruned.** The pool is not served and not maintained (maintenance
+  walks only `<root>/hr*.git`, and repacks forks with `-l`), so a
+  force-push, repack or deletion of the parent never removes an object a
+  fork needs. An operator may delete a pool only when no fork in its network
+  is left.
+- **Limits.** Public parents only (shared objects would leak across a
+  private network); active users with a verified email; one fork per
+  account per parent (a second click links to the first);
+  `HOSTED_MAX_FORKS_PER_ACCOUNT` (default 20), separate from the repository
+  quota. Forks of forks join the root's network.
+- **Pull requests.** The composer on a fork targets the parent
+  (`forkedFrom`) and sends a patch-backed pull request (patch and commits),
+  so merging into the parent needs no fetch from the fork.
+- **Repositories published from a node.** A public repository published from
+  someone's own node (such as `forkmesh/forkmesh`) has no `hosted_repos` row,
+  so `hosted_fork_create` reads its catalog record instead. It must be public,
+  not `hosted-web`, and carry a `cloneUrl` that is plain `https` with a host
+  name (no IP address or `localhost`), no credentials, query or fragment
+  (`hosted_repos.fork_clone_url`). An account that has a linked headless
+  managed mirror, or names a `targetNode`, keeps the managed-mirror fork
+  (`_web_fork_create` gets the already-read body); everyone else gets a
+  hosted fork instead of `409 headless_mirror_required`.
+  - The fork's record carries `fork: {upstream: {owner, name, cloneUrl},
+    network}`. The network id is `hr` plus the first 24 hex digits of
+    `sha256("forkmesh-fork-network-v1\n<owner>/<name>")`, so every fork of the
+    same parent, and every fork of those forks, shares one pool on each core.
+  - The exchange sends `forkUpstream` and `network` only while the parent's
+    catalog record is still public and node-published (re-read once per
+    exchange, `_ReplicaRuntime.fork_parent`), with that record's current
+    `cloneUrl`.
+  - The stored `upstream.owner` is the publishing node, the catalog key
+    (`fmnext-n1` for `forkmesh/forkmesh`). The cores serve such a repository
+    under its organization name, so the exchange sends the organization in
+    `forkUpstream.owner` when the node's repository is linked into one
+    (`org_repos` joined to `orgs`, the name checked against the link's blind
+    index; `_ReplicaRuntime.fork_parent_alias`). Before 2026-10-27 it sent the
+    node name, no core found its local copy of `forkmesh/forkmesh`, and the
+    primary's fallback fetch of `https://app.forkmesh.com/forkmesh/forkmesh`
+    failed on the app's 307 to a core (redirects are refused), so every fork
+    of it stayed empty and could not be cloned or used for a pull request.
+    Forks created before the fix fill on the next exchange: a core retries an
+    empty fork each cycle
+    (`test_cores_are_told_the_organization_name_they_serve_the_parent_under`).
+  - On each core (`forkFromUpstream`), the local copy is the gateway
+    repository served as `<owner>/<name>` (the upstream mirrors the cores
+    already serve), only when it is enabled, public, not a hosted copy and
+    has a branch. The pool is a `git clone --local` of it and is refreshed
+    from it into `refs/pools/<network>/…`, as for hosted parents. Gateway
+    copies have no maintenance lock; when one has the lock file the build
+    holds it shared, and no lock file is ever created in a gateway copy (the
+    gateway would then start marking it for maintenance). A new pool still
+    has to pass `fsck --connectivity-only`.
+  - With no local copy, only the primary fetches the `cloneUrl` into the
+    pool (`git init --bare`, then `+refs/heads/*` and `+refs/tags/*` into
+    `refs/pools/<network>/…`). The fetch allows only `https` (plain `http`
+    only to loopback, for tests), clears credential helpers and is held to
+    the hosted size limit and fetch timeout like an import (`boundedGit`).
+    The `cloneUrl` comes from the publishing node's catalog record, so the
+    core only fetches it from the network's own git origin (the host of
+    `catalogUrl`) or a forge on `hosted.importHosts`, on the default port,
+    and never follows a redirect (`http.followRedirects=false`); anything
+    else would let a publisher point a core at an internal address
+    (`forkFetchHostAllowed`).
+    Replicas with no local copy fetch nothing from the parent: they borrow
+    from the pool if it already exists and take the fork's refs from their
+    peers.
+  - The primary copies the fork's heads and tags from the pool namespace and
+    points `HEAD` at the local copy's `HEAD` (or `main`, then `master`).
+  - Tests: `test_a_node_published_repository_forks_onto_the_cores`,
+    `test_an_account_with_a_managed_mirror_keeps_the_mirror_fork`,
+    `TestHostedForkOfANodePublishedRepositoryBorrowsTheGatewayCopy`,
+    `TestHostedForkOfANodePublishedRepositoryFetchesItsCloneURL`,
+    `TestHostedForkOfANodePublishedRepositoryStaysWithinTheSizeLimit`.
+- Contributors who would rather not fork can push `pr/<account>/` branches
+  where `HOSTED_GIT_CONTRIBUTOR_PUSH` allows it.
+
 ## Moving to your own node
 
 When the owner's node publishes the repository through the signed catalog,
@@ -167,20 +347,64 @@ the quota, stops routing pushes and moves core copies to `.trash`. Steps:
 
 The owner can mirror a hosted repository to GitHub or GitLab with a personal
 access token. Only the primary pushes. The exchange carries an optional
-`pushMirror` (`revision`, `provider`, `url`, `username`, `token`, `prune`) to
-the primary, and the daemon reports `pushMirrors` results (`revision`,
-`digest`, `ok`, `at`, `error`, `refs`).
+`pushMirror` (`revision`, `provider`, `url`, `username`, `token`, `prune`,
+`refs`) to the primary, and the daemon reports `pushMirrors` results
+(`revision`, `digest`, `ok`, `at`, `error`, and `refs`, the count of updated
+refs).
 
 - Valid only for `github`/`gitlab`, URL exactly
   `https://<host>/<owner>/<name>.git` on `hosted.pushHosts`, a token of at most
   512 characters without whitespace.
 - Push when settings change, when refs change, or every 6 hours; retry
   failures after 10 minutes; each push is limited to 10 minutes.
-- `git push --porcelain [--prune] <url> +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*`
-  with the token only in an `http.extraHeader` passed through `GIT_CONFIG_*`
-  environment variables, no credential helper, no redirects, HTTPS only.
+- `refs` is `all` (the default, also when absent) or `default`. With `all`:
+  `git push --porcelain [--prune] <url> +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*`.
+  With `default`, only the branch the hosted repository's `HEAD` points at,
+  plus tags: `git push --porcelain [--prune] <url> +refs/heads/<head>:refs/heads/<head> +refs/tags/*:refs/tags/*`.
+  `--prune` alone never deletes branches outside that refspec, so with prune
+  the daemon first runs `git ls-remote --heads <url>` (same header, timeout
+  and redaction) and adds `:refs/heads/<name>` for every other branch on the
+  target to the same push (at most 1000; names git would refuse are skipped).
+  In `default` mode only the head and tags count as a change, so pushes to
+  other branches do not trigger a push. Changing `refs` triggers a push even
+  with the same `revision`. The owner sets it in the mirror form ("Branches")
+  or with `refs` in the `save` action of the provider-mirror API.
+- Both commands run with the token only in an `http.extraHeader` passed
+  through `GIT_CONFIG_*` environment variables, no credential helper, no
+  redirects, HTTPS only.
   Errors are redacted (token and header value replaced) and folded to 300
   characters.
+- A branch deleted on the Branches page changes the refs digest, so it
+  triggers a push, and with prune the branch is removed from the target.
+
+## Internet Archive backups
+
+The owner can upload a public hosted repository to an archive.org item on a
+schedule ([app/archive-sync.md](app/archive-sync.md)). The exchange carries an
+optional `archiveSync` (`revision`, `url`, `accessKey`, `secret`,
+`intervalSeconds`, `collection`, `title`, `source`, and `uploaded`: the
+`revision`, `digest` and `at` of the last upload the app recorded) to the
+primary, only for public repositories, and the daemon reports `archiveSyncs`
+results (`revision`, `digest`, `ok`, `at`, `error`, `bytes`).
+`server/hosted_archive_sync.go` does the work:
+
+- Valid only for `https://s3.us.archive.org/<item>/<file>.bundle`, keys of 8
+  to 64 letters and digits, an interval from 1 hour to 400 days, and
+  printable ASCII metadata.
+- Due when the `revision` differs from the last upload (new settings or
+  **Back up now**), or when the refs digest (every branch and tag) changed and
+  the interval has passed since the last upload. `uploaded` seeds the last
+  upload after a daemon restart, so nothing is uploaded twice. Failures retry
+  after 1 hour.
+- The upload runs in the background, one at a time per core, so a large
+  repository never holds up replication: `git bundle create <root>/.archive/<id>-*.bundle
+  HEAD --branches --tags` (30 minutes at most), then one `PUT` with
+  `Authorization: LOW <access>:<secret>`, `x-amz-auto-make-bucket: 1`,
+  `x-archive-queue-derive: 0` and `x-archive-meta-*` (mediatype `software`,
+  the collection, title, description, source). Redirects are not followed;
+  the whole job is limited to 2 hours. The bundle file is removed afterwards.
+- Errors (the archive's `<Message>` when it sends one) are redacted (both
+  keys replaced) and folded to 300 characters.
 
 ## Operations
 
@@ -245,7 +469,8 @@ maintains them (`server/hosted_maintenance.go`):
 
 ## Known gaps
 
-- Branch deletion and force pushes are refused.
+- `git push` cannot delete a branch or force-push; delete branches on the
+  Branches page instead.
 - A core offline longer than the removal window keeps an orphaned copy.
 - Concurrent divergent pushes on two cores during failover converge to the
   newer commit.

@@ -219,6 +219,8 @@ bool isGlueFrame(const QString &symbol)
            symbol.contains(QLatin1String("QtEventDeliveryProbe")) ||
            symbol.contains(QLatin1String("QtRuntimeDiagnostics::noteDelivery")) ||
            symbol.contains(QLatin1String("QtRuntimeDiagnostics::recordEventDelivery")) ||
+           symbol.contains(QLatin1String("QtRuntimeDiagnostics::noteEventTiming")) ||
+           symbol.contains(QLatin1String("hiddenunicode::guardWidget(")) ||
            symbol.contains(QLatin1String("::eventFilter(")) ||
            symbol.contains(QLatin1String("MainWindow::handleFramelessResizeEvent(")) ||
            symbol.contains(QLatin1String("MainWindow::resizeEdgesAtGlobalPos(")) ||
@@ -251,6 +253,53 @@ QString qtFallbackOrigin(const QString &backtrace)
         return QStringLiteral("regular-expression scan on the UI thread");
     }
     return QStringLiteral("Qt event dispatch (application frame unresolved)");
+}
+
+QString waitAtSampleHead(const QString &backtrace,
+                         const QString &executablePath)
+{
+    constexpr int kHeadFrames = 16;
+    QString head;
+    int seen = 0;
+    for (const QString &line : backtrace.split(QLatin1Char('\n'))) {
+        if (line.isEmpty())
+            continue;
+        if (line.startsWith(QLatin1String("--"))) {
+            if (seen > 0)
+                break;
+            continue;
+        }
+        if (isApplicationFrame(line, executablePath) &&
+            !isGlueFrame(frameSymbol(line)))
+            break;
+        if (++seen > kHeadFrames)
+            break;
+        head += line;
+        head += QLatin1Char('\n');
+    }
+    if (head.contains(QLatin1String("swapBuffers")) ||
+        head.contains(QLatin1String("QRhi8endFrame")) ||
+        head.contains(QLatin1String("QRhi::endFrame"))) {
+        return QStringLiteral(
+            "Qt window flush: GPU buffer swap waiting on the compositor");
+    }
+    if (head.contains(QLatin1String("syncToDisk")) ||
+        head.contains(QLatin1String("QSaveFile6commit")) ||
+        head.contains(QLatin1String("QSaveFile::commit"))) {
+        return backtrace.left(backtrace.indexOf(QLatin1String("\n--")))
+                       .contains(QLatin1String("QSettings"))
+                   ? QStringLiteral("QSettings write flushed to disk by fsync "
+                                    "on the UI thread")
+                   : QStringLiteral("file flushed to disk by fsync on the UI "
+                                    "thread");
+    }
+    if (head.contains(QLatin1String("QCss13StyleSelector")) ||
+        head.contains(QLatin1String("QCss::StyleSelector"))) {
+        return QStringLiteral(
+            "Qt style-sheet polish: widgets created or re-parented under the "
+            "application style sheet");
+    }
+    return QString();
 }
 
 QMutex g_blockingMutex;
@@ -386,6 +435,7 @@ QString blockingCall()
 
 QString likelyOrigin(const QString &backtrace, const QString &executablePath)
 {
+    const QString wait = waitAtSampleHead(backtrace, executablePath);
     QStringList frames;
     for (const QString &line : backtrace.split(QLatin1Char('\n'))) {
         if (!isApplicationFrame(line, executablePath))
@@ -398,6 +448,11 @@ QString likelyOrigin(const QString &backtrace, const QString &executablePath)
         if (frames.size() == 2)
             break;
     }
+    if (!wait.isEmpty())
+        return frames.isEmpty()
+                   ? wait
+                   : QStringLiteral("%1, under %2")
+                         .arg(wait, frames.join(QStringLiteral(" -> ")));
     if (!frames.isEmpty())
         return frames.join(QStringLiteral(" -> "));
     return qtFallbackOrigin(backtrace);

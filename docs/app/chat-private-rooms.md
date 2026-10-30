@@ -55,12 +55,79 @@ bound to the resource and body (`_chat_channel_signed_session`,
 - Manager endpoints `GET|POST|DELETE /api/chat/channels/<id>/invite` read,
   rotate or disable the link. Only private rooms take one
   (`409 private_channel_required`).
-- Joining: `GET|POST /api/chat/invites/<token>` previews or joins, under the
-  `MAX_CHANNEL_MEMBERS` cap. Removing any member, deleting the room, or
-  changing its creator invalidates the link.
+- Joining: `POST /api/chat/invites/preview` and
+  `POST /api/chat/invites/accept`, each with the body `{"token": "<64 hex>"}`,
+  preview or join, under the `MAX_CHANNEL_MEMBERS` cap. Removing any member,
+  deleting the room, or changing its creator invalidates the link.
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
-  reaches the server in a page request or `Referer`. Request logs record
-  `/api/chat/invites/[token]`.
+  reaches the server in a page request or `Referer`, and the API takes it in
+  the request body, so it never appears in a URL either. Until 2026-10-22 the
+  API path was `/api/chat/invites/<token>`, which put the token in every Caddy
+  access log line ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)); that
+  path now answers `410 token_path_retired`. The body was chosen over a
+  Caddy `regexp` log filter because no Caddy binary is available to validate
+  a new log config before it ships.
+- Incoming webhook URLs are `/api/chat/webhooks?token=<64 hex>` (the
+  `x-forkmesh-webhook-token` header works too). The access log replaces the
+  `token` query value with `REDACTED` (`ACCESS_LOG_QUERY_KEYS` in
+  `deploy/core/render.py`). The old `/api/chat/webhooks/<token>` URLs answer
+  `410 token_path_retired`; their owners rotate the webhook to get a new URL.
+
+## Private channel names
+
+A private channel's name is unique only among its creator's private channels
+(`name_bi` is the blind index of `chat-channel-private-name:<creator_bi>:<name>`);
+public channel names stay unique among public channels
+(`chat-channel-name:<name>`). Before 2026-10-22 every channel shared one name
+space, so creating or renaming a channel answered `409 channel_name_taken`
+when someone else's private channel, invisible to the caller, already had the
+name: anyone could test whether a private channel with a given name existed.
+Now the only `409` a caller can see names a public channel or one of their own
+private channels. Switching visibility moves the row to the other name space
+and is refused with `409` if that name is taken there. The `UNIQUE` constraint
+on `chat_channels.name_bi` is unchanged, so no migration was needed; channels
+made before the change keep their old global `name_bi` until they are renamed.
+
+## Channel limits and webhook pings
+
+- `POST /api/chat/channels` refuses a new channel with
+  `429 too_many_own_channels` once its creator already holds
+  `MAX_CHAT_CHANNELS_PER_CREATOR` (20) channels, and with
+  `429 too_many_new_channels` once its creator made
+  `CHANNEL_CREATE_MAX_PER_WINDOW` (5) channels in the last
+  `CHANNEL_CREATE_WINDOW_MS` (one hour). Office and Everyone channels count
+  toward neither. The hourly budget counts successful `chat.channel.create`
+  rows in `sensitive_audit_log` (`channel_creations_since`), not live
+  channels, so deleting a channel and making a new one does not reset it.
+- There is no site-wide channel ceiling (removed 2026-10-28). The old
+  `MAX_CHAT_CHANNELS` (100) was shared by everyone, so five accounts at their
+  per-creator cap blocked channel creation for the whole site until they
+  deleted their channels. Counting only recently active channels would not
+  help, because the owner of a squatting channel can keep it active. Growth
+  is bounded per account by the two limits above instead.
+- An incoming webhook post to a public channel always pings the channel's
+  creator, and pings the channel's readers (accounts with a
+  `chat_channel_reads` row for it, which opening the channel writes; up to
+  `MAX_CHANNEL_MEMBERS`, newest first) only when none of that channel's
+  webhooks has posted in the last `WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS`
+  (10 minutes). Until 2026-10-28 that audience was the first
+  `MAX_CHANNEL_MEMBERS` active users of the whole site, so any account could
+  make a public channel and a webhook and push its own text to 500 phones,
+  over and over by deleting and recreating the channel. The check and the `last_used_at` write are one `UPDATE ...
+  WHERE NOT EXISTS ... RETURNING`, so parallel posts cannot all claim the
+  window, and the gate needs no new table. Before 2026-10-22 every post made
+  a ping (an uncoalesced phone banner) with the webhook's own title and text
+  for every active user, so anyone holding a webhook URL could flood every
+  phone. A steady stream of posts therefore pings the audience once, when it
+  starts after a quiet window; the messages themselves are all delivered.
+- Private channels take webhooks too (2026-10-22), so rooms fed by a tool
+  (a deploy log, a mail log) can be private. The server writes a webhook
+  message with the room cipher as it arrives (`_chat_channel_deliver`),
+  marks the envelope `srv` and the frame `webhook` and `serverVisible`; every
+  client accepts such frames in public and private channel rooms, never in
+  direct messages, and labels them server-visible. A private channel's
+  webhook notifies its creator and members only. Notices and office channels
+  still take no webhooks.
 
 ## Server copies of direct messages
 
@@ -270,6 +337,13 @@ protection. `ChatAttachmentView.sweepTemporaryFiles` deletes those files when
 the app goes to the background, and at launch also deletes leftover
 `viewonce-*` and `messages-voice*` recordings from a crash. Before, nothing
 ever deleted `tmp/chat-media/`.
+The file in `tmp/chat-media/` is named by `ChatMediaFile` (`FMChat`): the
+first 24 hex characters of the SHA-256 of the message id, a dash, and the file
+name with `/`, `\` and `..` replaced. The message id comes from the sender, so
+until 2026-10-28 an id such as `../../Documents/x` wrote attacker bytes into
+the app's Documents folder (visible in the Files app) as soon as the message
+was drawn. `ChatMediaFile.url` also refuses a path whose folder is not
+`chat-media` itself. Guard: `FMChatTests/ChatMediaFileTests.swift`.
 
 What is still not covered (audit 2026-10-14):
 
@@ -358,7 +432,13 @@ API (`app/src/chat_direct_media_api.py`, under
   is opened, expired or withdrawn, because it keeps no local DM history.
 - Recording filters reuse the call engine's face, background and voice
   stages ([chat-direct-calls.md](chat-direct-calls.md)); if a requested stage
-  cannot start, nothing is recorded rather than sending raw media.
+  cannot start, nothing is recorded rather than sending raw media. The voice
+  stage starts before the face stage, so the face models cannot starve the
+  voice worklet's load, and the status names the stage that failed. Each change
+  of face or background starts a new capture; an older one that fails after
+  that is dropped like one that succeeds late, so only the latest choice sets
+  the status ([github-actions.md](../engineering/github-actions.md), "A
+  passing retry that still fails the run").
 - Screen capture cannot be prevented; platforms that report it blank the
   viewer.
 

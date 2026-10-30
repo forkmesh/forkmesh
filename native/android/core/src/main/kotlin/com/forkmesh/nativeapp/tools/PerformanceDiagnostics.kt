@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.tools
 
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 data class PerformanceAlert(val reason: String) {
@@ -49,6 +52,8 @@ object DiagnosticsBundle {
     const val MAX_PROMPT_CHARS = 8000
     const val LOG_LINES = 15
     const val SLOW_EVENTS = 8
+    const val TOP_ROWS = 6
+    const val KEY_CHARS = 90
     val LOG_SECTIONS = listOf("## App log")
 
     private val rules: List<Pair<Regex, String>> = listOf(
@@ -56,6 +61,8 @@ object DiagnosticsBundle {
         Regex("(?i)\\b(authorization|bearer|token|access_token|refresh_token|secret|password|passwd|api[_-]?key|cookie|session(?:_?id)?|signature|sig)\\b([\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',;&]+") to "$1$2[redacted]",
         Regex("\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]*") to "[token]",
         Regex("(?i)\"(text|body|message|content|prompt|title|note|subject)\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"") to "\"$1\":\"[redacted]\"",
+        Regex("(?i)\"(conversation|channel|room|query|to|target)\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"") to "\"$1\":\"[redacted]\"",
+        Regex("(?i)\\b(conversation|channel|room|query|q)=[^\\s&\"',;]+") to "$1=[redacted]",
         Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}") to "[email]",
         Regex("(https?://[^\\s?#\"]+)\\?[^\\s\"]*") to "$1?[query]",
         Regex("\\+\\d[\\d ()-]{8,}\\d") to "[number]",
@@ -89,6 +96,7 @@ object DiagnosticsBundle {
         events: List<PerformanceEvent>,
         diagnostics: List<PerformanceAlert.Diagnostic>,
         nowMs: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
     ): String {
         val out = StringBuilder("# ForkMesh Android performance report\n")
         context.forEach { (key, value) -> out.append("$key: $value\n") }
@@ -102,6 +110,10 @@ object DiagnosticsBundle {
                 out.append("${metric.label}: ${fmt(short.avg)} / ${fmt(short.max)} | ${fmt(long.avg)} / ${fmt(long.max)} ${metric.unit}".trimEnd()).append('\n')
             }
         }
+        val stalls = events.filter { it.isStall }
+        out.append("\n## Stalls by name\n").append(eventGroups(stalls, zone) { eventKey(it) }).append('\n')
+        out.append("\n## Stalls by screen\n").append(eventGroups(stalls, zone) { stallScreen(it) }).append('\n')
+        out.append("\n## Slow operations by name\n").append(eventGroups(events.filter { !it.isStall }, null) { eventKey(it) }).append('\n')
         val recent = events.filter { nowMs - it.timestampMs <= PerformanceAlert.WINDOW_MS }
         out.append("\n## Slowest events, last ${PerformanceAlert.WINDOW_MS / 60_000} min\n")
         if (recent.isEmpty()) out.append("none\n")
@@ -117,7 +129,7 @@ object DiagnosticsBundle {
         val lines = telemetry?.log?.entries()?.takeLast(LOG_LINES).orEmpty()
         if (lines.isEmpty()) out.append("empty\n")
         lines.forEach { out.append(it.toString().take(160)).append('\n') }
-        return out.toString()
+        return scrub(out.toString())
     }
 
     fun prompt(reason: String, report: String, includeLogs: Boolean, limit: Int = MAX_PROMPT_CHARS): String {
@@ -126,6 +138,56 @@ object DiagnosticsBundle {
         val room = maxOf(0, limit - head.length)
         val clipped = if (body.length <= room) body else body.take(maxOf(0, room - 24)) + "\n[cut to fit the prompt]"
         return head + clipped
+    }
+
+    fun eventKey(event: PerformanceEvent): String =
+        if (event.name == event.kind.wireName) event.name else "${event.kind.wireName} ${event.name}"
+
+    fun stallScreen(event: PerformanceEvent): String =
+        event.details["screen"]?.toString()?.takeIf { it.isNotEmpty() } ?: "not recorded"
+
+    private class EventGroup(val key: String) {
+        var count = 0
+        var totalMs = 0L
+        var maxMs = 0L
+        var last = ""
+    }
+
+    fun eventGroups(events: List<PerformanceEvent>, zone: ZoneId?, key: (PerformanceEvent) -> String): String {
+        if (events.isEmpty()) return "none"
+        val groups = LinkedHashMap<String, EventGroup>()
+        for (event in events) {
+            val name = key(event)
+            val group = groups.getOrPut(name) { EventGroup(name) }
+            if (group.last.isEmpty() && zone != null) group.last = clockStamp(event.timestampMs, zone)
+            group.count++
+            group.totalMs += event.durationMs
+            group.maxMs = maxOf(group.maxMs, event.durationMs)
+        }
+        val sorted = groups.values.sortedWith(compareByDescending<EventGroup> { it.totalMs }.thenBy { it.key })
+        val lines = sorted.take(TOP_ROWS).map { g ->
+            val cells = listOf("${g.count}x", "total ${g.totalMs}ms", "max ${g.maxMs}ms") +
+                (if (g.last.isEmpty()) emptyList() else listOf("last ${g.last}")) + clip(g.key, KEY_CHARS)
+            row(cells)
+        }.toMutableList()
+        if (sorted.size > TOP_ROWS) lines += "... ${sorted.size - TOP_ROWS} more"
+        return lines.joinToString("\n")
+    }
+
+    private val clockFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+
+    private fun clockStamp(epochMs: Long, zone: ZoneId): String = clockFormat.format(Instant.ofEpochMilli(epochMs).atZone(zone))
+
+    private fun clip(text: String, limit: Int): String {
+        val flat = text.replace('\n', ' ')
+        return if (flat.length <= limit) flat else flat.take(limit - 1) + "…"
+    }
+
+    private fun row(cells: List<String>): String {
+        val widths = listOf(6, 8, 9, 9, 9, 9, 9, 8)
+        return cells.indices.joinToString(" ") { i ->
+            if (i == cells.lastIndex) cells[i] else cells[i].padEnd(widths.getOrElse(i) { 8 })
+        }
     }
 
     private fun fmt(value: Double): String =

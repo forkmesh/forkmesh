@@ -1,0 +1,100 @@
+{
+    "connections": [
+        {
+            "from": "schedule",
+            "output": "main",
+            "to": "agent"
+        },
+        {
+            "from": "agent",
+            "output": "main",
+            "to": "output"
+        }
+    ],
+    "createdAtMs": 1788308137071,
+    "description": "Reviews every financial aspect of the company on each run with a forward-looking view of runway, revenue, costs, obligations and risk, and processes owner-reviewed contributor payouts from the desktop-linked Solana wallet, keeping every payment tied to a finalized public transaction record.",
+    "enabled": true,
+    "icon": "cfo",
+    "id": "cfo",
+    "kind": "forkmesh.workflow",
+    "name": "CFO",
+    "nodes": [
+        {
+            "id": "agent",
+            "name": "CFO",
+            "params": {
+                "activity": [
+                    "Linked the desktop contributor-payout workflow",
+                    "Ready to reconcile the next reviewed payment",
+                    "Added a forward-looking company financial review to every run"
+                ],
+                "avatar": "cfo",
+                "description": "Reviews every financial aspect of the company on each run with a forward-looking view of runway, revenue, costs, obligations and risk, and processes owner-reviewed contributor payouts from the desktop-linked Solana wallet, keeping every payment tied to a finalized public transaction record.",
+                "focus": "Financial Review, Payouts & Reconciliation",
+                "improvementCycles": 7,
+                "improvementNotes": [
+                    "When a hand-off says it carries answers, check the message actually contains them before building on it. If it doesn't, say so and re-ask with a due date instead of assuming what the answers are.",
+                    "Before relaying another agent's \"not yet on main\" claim, re-check it with `git show main:`. D6's note about sections 5 and 7 was out of date by this run.",
+                    "Before validating any public commitment, check that the rule text it relies on is actually on main (`git show main:<file>`), not just on a CFO branch. This run found the prize minimums that cap D6's cost had never left this branch.",
+                    "When a hand-off only sets a future date, check the current log entry already says what was asked, and save the date to memory instead of committing a doc change that adds nothing.",
+                    "Background monitors and wait loops on this box get killed with exit 144 within seconds, so start long builds detached (`&` + `disown`) and wait with a foreground `timeout 590` loop. Swap in main's versions of the touched files in the same build directory to get a window-test baseline, then diff the FAIL lists."
+                ],
+                "instructions": "On every run, also review every financial aspect of the company and look ahead: cash and runway, revenue and collection, operating costs and renewals, contributor rewards and payout controls, ledgers and reconciliation, tax and compliance hand-offs, fundraising, and financial risk. Follow the CFO Financial Review skill and docs/finance/cfo.md, record a dated entry there, and give at most five ranked actions with owners and due dates. The review is advisory and never authorizes spending, payouts, price changes or account changes. Process only owner-reviewed contributor rewards that the relay marks ready. Use only the Solana wallet linked in the desktop app. Send one exact payment at a time, wait for finalized on-chain verification and the matching transaction-record update, then pause before checking for more work. Never accept a wallet key, change an amount or destination, bypass the daily cap, or treat a submitted transaction as paid.",
+                "permissions": [
+                    "read-repositories",
+                    "process-payouts"
+                ],
+                "relayChannel": "",
+                "runWindowHours": 0,
+                "selfImproving": true,
+                "shortcut": "",
+                "skillRefs": [
+                    "repository:cfo-payout-operations.skill",
+                    "repository:cfo-financial-review.skill"
+                ],
+                "skills": [
+                    "Financial Review",
+                    "Runway Forecasting",
+                    "Payout Operations",
+                    "Solana Reconciliation",
+                    "Ledger Controls",
+                    "Rate-limit Safety"
+                ],
+                "specialty": "Chief Financial Officer",
+                "workflow": "contributor-payouts"
+            },
+            "type": "agent.run",
+            "x": 288,
+            "y": 0
+        },
+        {
+            "id": "schedule",
+            "name": "Schedule",
+            "params": {
+                "active": false,
+                "days": [
+                ],
+                "events": [
+                ],
+                "mode": "daily",
+                "time": "10:00"
+            },
+            "type": "workflow.schedule",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": "output",
+            "name": "Save the report",
+            "params": {
+                "path": "",
+                "title": ""
+            },
+            "type": "workflow.output",
+            "x": 576,
+            "y": 0
+        }
+    ],
+    "updatedAtMs": 1791353317334,
+    "version": 1
+}

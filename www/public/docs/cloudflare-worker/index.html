@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <script src="/api-client.js?v=${version}"></script>
     <script src="/analytics.js"></script>
+    <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>App &amp; relay · ForkMesh Docs</title>
     <meta
@@ -98,8 +99,10 @@
         <p>Repository rooms connect over a WebSocket at:</p>
         <pre><code>/api/repo/{owner}/{repo}/rooms/{room}/ws</code></pre>
         <p>
-          The older <code>/api/room/{room}/ws</code> path remains as a
-          temporary compatibility endpoint. The official ForkMesh room is:
+          Only the <code>mainnode/forkmesh</code> rooms <code>world-general</code>,
+          <code>general</code> and the public <code>world-*</code> spaces are
+          served; the old <code>/api/room/{room}/ws</code> path is gone. The
+          official ForkMesh room is:
         </p>
         <pre><code>wss://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
         <p>

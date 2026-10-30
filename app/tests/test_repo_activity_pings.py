@@ -39,6 +39,9 @@ def _load_notifier(name, captured, maintainers=()):
     assert len(body) == 3, name + " not found in entry.py"
     body.extend(
         node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "repo_record_href")
+    body.extend(
+        node for node in tree.body
         if isinstance(node, ast.Assign) and {
             t.id for t in node.targets if isinstance(t, ast.Name)
         } & {"REPO_ACTIVITY_LABELS", "NOTIFICATION_BODY_MAX"})
@@ -103,7 +106,7 @@ def test_a_moved_default_head_pings_the_owner_and_the_org_maintainers():
     assert ping["title"] == "New push in alice/atlas"
     assert ping["body"] == "main advanced to " + "c" * 12
     assert ping["repo"] == "alice/atlas"
-    assert ping["href"] == "/alice/atlas"
+    assert ping["href"] == "/alice/atlas/commits"
     assert ping["meta"]["event"] == "branch.push"
     assert ping["meta"]["branch"] == "main"
     # The commit is the event's identity: republishing the same state collapses
@@ -139,6 +142,7 @@ def test_a_merged_pull_request_names_its_merger_as_the_actor():
     assert ping["title"] == "Pull request merged in alice/atlas"
     assert ping["actor"] == "mona"
     assert ping["meta"] == {"number": 7, "event": "pull.merged"}
+    assert ping["href"] == "/alice/atlas/pull/7"
 
 
 def test_an_unknown_event_or_repo_pings_nobody():
@@ -166,6 +170,7 @@ def test_a_published_release_reaches_the_org_that_fronts_the_repo():
     assert ping["actor"] == "jett"
     assert ping["ts"] == 1700
     assert ping["dedupe"] == "release:alice/atlas:v2.1.0"
+    assert ping["href"] == "/alice/atlas/releases"
 
 
 # --- what counts as an observed push ----------------------------------------

@@ -381,27 +381,43 @@ def repo_with_n4(tmp_path, monkeypatch):
     return path
 
 
-def test_commit_goes_to_a_branch_and_leaves_head_index_and_tree_alone(tmp_path, monkeypatch):
+def test_commit_goes_to_a_branch_and_merges_it_into_main(tmp_path, monkeypatch):
     seed()
     repo = repo_with_n4(tmp_path, monkeypatch)
     fleet_path = repo / "deploy" / "fleet.toml"
     job, _, ssh, out = make_job(tmp_path, fleet_path=fleet_path)
     backend = rc.RemoveBackend(ssh=ssh, repo=repo)
     head = git(repo, "rev-parse", "HEAD")
-    tree_before = fleet_path.read_text()
+    (repo / "README").write_text("unsaved\n")
     backend.step_commit(job)
     commit = job.state.get("commit")
-    assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "rev-parse", "fleet/remove-core-n4") == commit
     assert git(repo, "rev-parse", commit + "^") == head
     assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == \
         next_fleet.retire_core_block(fleet_text(), "n4")
     assert git(repo, "diff", "--name-only", head, commit) == "deploy/fleet.toml"
-    assert git(repo, "status", "--porcelain") == ""
-    assert fleet_path.read_text() == tree_before
-    assert "merge --autostash --no-ff fleet/remove-core-n4" in out.getvalue()
+    assert git(repo, "rev-parse", "HEAD^1") == head
+    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
+    assert git(repo, "status", "--porcelain") == "M README"
+    assert fleet_path.read_text() == next_fleet.retire_core_block(fleet_text(), "n4")
+    assert "fleet/remove-core-n4 merged into main" in out.getvalue()
+    merged = job.state.get("merged")
     backend.step_commit(job)
     assert git(repo, "rev-parse", "fleet/remove-core-n4") == commit
+    assert git(repo, "rev-parse", "main") == merged
+
+
+def test_commit_is_left_to_add_core_when_the_removal_is_a_replacement(tmp_path, monkeypatch):
+    seed()
+    repo = repo_with_n4(tmp_path, monkeypatch)
+    job, _, ssh, out = make_job(tmp_path, fleet_path=repo / "deploy" / "fleet.toml",
+                                replaced_by="n5")
+    backend = rc.RemoveBackend(ssh=ssh, repo=repo)
+    backend.step_commit(job)
+    assert job.state.get("commit") == "" and job.state.get("branch") == ""
+    assert "fleet/remove-core-n4" not in git(repo, "branch", "--list")
+    assert "together with n5" in out.getvalue()
 
 
 def test_commit_refuses_other_branches(tmp_path, monkeypatch):

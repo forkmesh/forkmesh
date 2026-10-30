@@ -7,7 +7,10 @@ Cloudflare Static Assets. Building them here keeps hot dashboard requests out
 of the Python Worker runtime.
 """
 
+import json
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -34,6 +37,52 @@ def _write_if_changed(root, rel, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return True
+
+
+def minified_scripts(destination):
+    """The staged dashboard scripts :func:`minify_staged` rewrites: the core
+    bundle and its per-page chunks (dashboard_bundle.LAZY_CHUNKS)."""
+    names = ["dashboard.js"] + sorted(
+        path.name for path in destination.glob("dashboard-page-*.js"))
+    return [name for name in names if (destination / name).is_file()]
+
+
+def minify_staged(destination, esbuild):
+    """Minify the dashboard bundle in a deploy stage, never in app/public.
+
+    app/public keeps the readable concatenation of the fragments (what the
+    tests read and what a developer debugs); the stage serves esbuild's
+    minified copy with a linked source map beside it
+    (``dashboard.js.map``, sources pointing back at app/public). Identifiers
+    are renamed too: each script is one closure, its chunks reach the core
+    through property names (``core.x``, ``{ x } = core``), which esbuild
+    keeps. Run it before the stage's ``?v=`` stamping so the version hashes
+    the bytes that are served.
+    """
+    destination = Path(destination)
+    names = minified_scripts(destination)
+    if not names:
+        return []
+    with tempfile.TemporaryDirectory(prefix=".dashboard-min-",
+                                     dir=destination.parent) as tmp:
+        subprocess.run(
+            [str(esbuild), *[str(destination / name) for name in names],
+             "--minify", "--sourcemap=linked", "--charset=utf8",
+             "--legal-comments=eof", "--log-level=error",
+             "--outdir=%s" % tmp],
+            check=True, capture_output=True)
+        for name in names:
+            built = Path(tmp) / name
+            source_map = json.loads(
+                built.with_name(name + ".map").read_text(encoding="utf-8"))
+            source_map["sources"] = ["app/public/" + name]
+            source_map["sourceRoot"] = ""
+            (destination / (name + ".map")).write_text(
+                json.dumps(source_map, separators=(",", ":")),
+                encoding="utf-8")
+            (destination / name).write_text(
+                built.read_text(encoding="utf-8"), encoding="utf-8")
+    return names
 
 
 def main():

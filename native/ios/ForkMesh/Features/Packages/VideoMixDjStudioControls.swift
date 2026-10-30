@@ -163,9 +163,11 @@ struct DjDeckInfo: View {
         HStack(alignment: .center, spacing: 12 * u) {
             if mirrored {
                 titles
+                DjRepeatButton(model: model, deck: deck, u: u)
                 clock
             } else {
                 clock
+                DjRepeatButton(model: model, deck: deck, u: u)
                 titles
             }
         }
@@ -189,6 +191,21 @@ struct DjDeckInfo: View {
         .frame(maxWidth: 220 * u, alignment: mirrored ? .trailing : .leading)
         .contentShape(Rectangle())
         .onTapGesture { model.openLoad(deck.side) }
+    }
+}
+
+struct DjRepeatButton: View {
+    let model: DjStudioModel
+    let deck: DjDeck
+    let u: CGFloat
+
+    var body: some View {
+        DjRoundButton(size: 26 * u, lit: deck.repeats, action: { model.toggleRepeat(deck.side) }) {
+            Image(systemName: "repeat.1")
+        }
+        .accessibilityLabel("Repeat Deck \(deck.side.label)")
+        .accessibilityValue(deck.repeats ? "On" : "Off")
+        .accessibilityAddTraits(deck.repeats ? .isSelected : [])
     }
 }
 

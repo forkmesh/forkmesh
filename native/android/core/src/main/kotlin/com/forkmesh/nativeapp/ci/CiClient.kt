@@ -65,6 +65,15 @@ object CiRequests {
 
     fun announceCanonical(account: String, ts: String): String = "forkmesh-issues-pull-v1\n$account\n$ts"
 
+    fun postBody(title: String, body: String, account: String): Map<String, Any?> = linkedMapOf(
+        "kind" to "discussion",
+        "eventType" to "open",
+        "manual" to true,
+        "title" to title.take(240),
+        "body" to body.take(4000),
+        "author" to account,
+    )
+
     fun announceBody(tag: String, title: String, body: String, account: String): Map<String, Any?> = linkedMapOf(
         "kind" to "release",
         "eventType" to "publish",
@@ -126,6 +135,17 @@ class ApiCiClient(private val api: ApiService) : CiClient {
             CiRequests.repoPath(repo, "ap-publish"),
             listOf("owner" to account, "ts" to ts, "sig" to sig),
             CiRequests.announceBody(tag, title, body, account),
+        )
+    }
+
+    fun announcePost(repo: RepoRef, title: String, body: String, account: String, sign: (ByteArray) -> String, nowMillis: Long) {
+        val ts = nowMillis.toString()
+        val sig = sign(CiRequests.announceCanonical(account, ts).toByteArray(Charsets.UTF_8))
+        send(
+            "POST",
+            CiRequests.repoPath(repo, "ap-publish"),
+            listOf("owner" to account, "ts" to ts, "sig" to sig),
+            CiRequests.postBody(title, body, account),
         )
     }
 }

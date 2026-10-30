@@ -1039,6 +1039,7 @@ def render_html(matrix: dict, published: dict) -> str:
     <link rel="stylesheet" href="/site-footer.css" />
     <script src="/api-client.js?v=${{version}}"></script>
     <script src="/analytics.js"></script>
+    <script src="/safe-input.js" defer></script>
     <script src="/static-page.js?v=${{version}}" defer></script>
     <script src="/site-header.js?v=${{version}}" defer></script>
     <script src="/site-footer.js?v=${{version}}" defer></script>

@@ -148,7 +148,7 @@ class PeopleScreen : Screen() {
         }
         revision
         picked?.let { person -> PeopleProfileSheet(person, model?.viewerName.orEmpty(), onDismiss = { picked = null }) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("People", navigator)
             when {
                 model == null -> FmEmptyState("people_outline", "People unavailable", message = "Sign in to a ForkMesh server to see people.")

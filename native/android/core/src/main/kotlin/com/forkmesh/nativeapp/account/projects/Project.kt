@@ -195,6 +195,9 @@ data class Project(
 
     val host: String get() = ServerUrl.parse(serverUrl).host.ifEmpty { id }
 
+    val instanceId: String?
+        get() = if (!hasInstance) null else ProjectDefaults.instanceKey(normalizeOrigin(serverUrl) ?: id)
+
     val isLoopback: Boolean get() = AppEnv.isLoopbackHost(host)
 
     val subtitle: String
@@ -399,6 +402,8 @@ object ProjectDefaults {
     }
 
     fun canonicalId(id: String): String = if (isNextHost(id)) PROD_HOST else id
+
+    fun instanceKey(origin: String): String = canonicalId(origin).let { if (it in PROD_HOST_ALIASES) PROD_HOST else it }
 
     fun production(now: Long) = Project(
         id = PROD_HOST,

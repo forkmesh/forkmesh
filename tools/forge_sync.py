@@ -39,6 +39,7 @@ import argparse
 from dataclasses import dataclass, field
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,9 @@ import shutil
 import sys
 import time
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 _TOOLS = Path(__file__).resolve().parent
@@ -64,14 +68,23 @@ def _load(name: str, path: Path) -> Any:
 
 providers = _load("forkmesh_forge_providers", _TOOLS / "forge_providers.py")
 bridge = _load("forkmesh_forge_bridge", _TOOLS / "github_forkmesh_bridge.py")
+attachments_mirror = _load("forkmesh_forge_attachments", _TOOLS / "forge_attachments.py")
 sync_status = _load("forkmesh_forge_sync_status", _TOOLS.parent / "app" / "src" / "sync_status.py")
 
 LEDGER_REL = ".forkmesh/forge-sync.json"
+LEDGER_ENV = "FORKMESH_FORGE_LEDGER"
+SOURCE_REL = ".forkmesh/forge-source.json"
+SOURCE_SCHEMA = "forkmesh-forge-source-v1"
+ISSUE_URL_TEMPLATES = {"github": "https://github.com/{repository}/issues/{number}",
+                       "gitea": "{base}/{repository}/issues/{number}"}
 SCHEMA = "forkmesh-forge-sync-v1"
 REPORT_SCHEMA = "forkmesh-forge-sync-report-v1"
 DEFAULT_SLO_MS = 15 * 60 * 1000
 FIELDS = ("title", "body", "state", "labels", "assignees")
 RULES = ("manual", "forkmesh", "provider")
+MODES = ("sync", "mirror")
+PROVIDER_WRITES = ("create_issue", "update_issue", "create_comment", "update_comment",
+                   "delete_comment")
 SIDES = ("forkmesh", "provider")
 FOREIGN_EVENT_PREFIXES = ("forge-", "github-")
 HISTORY_LIMIT = 100
@@ -80,8 +93,33 @@ MARKER_RE = re.compile(
     r"<!--\s*forkmesh-forge-sync:v1\s+(\{[^\r\n]*\})\s*-->\s*$")
 
 
+AVATAR_DIR_REL = ".forkmesh/contributors"
+ROSTER_REL = AVATAR_DIR_REL + "/contributors.json"
+AVATAR_HOSTS = {"github": ("avatars.githubusercontent.com",)}
+AVATAR_MAX_BYTES = 1024 * 1024
+AVATAR_PIXELS = 96
+AVATAR_TIMEOUT_SECONDS = 10
+AVATAR_REFRESH_MS = 30 * 24 * 3600 * 1000
+AVATAR_RETRY_MS = 24 * 3600 * 1000
+AVATAR_FETCHES_PER_RUN = 100
+AVATAR_LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?$")
+ROSTER_MAX_ROWS = 10000
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff"
+
+
 class SyncError(RuntimeError):
     """A configuration or usage failure that is safe to print."""
+
+
+class ReadOnlyProvider:
+    def __init__(self, provider: Any) -> None:
+        self._provider = provider
+
+    def __getattr__(self, name: str) -> Any:
+        if name in PROVIDER_WRITES:
+            raise SyncError(f"mirror mode never writes to the provider ({name})")
+        return getattr(self._provider, name)
 
 
 def digest(value: Any) -> str:
@@ -110,11 +148,133 @@ def label_key(labels: list[str]) -> list[str]:
     return sorted({str(label).casefold() for label in labels})
 
 
+# ---- avatars ----------------------------------------------------------------
+
+
+def avatar_hosts(ledger: dict[str, Any]) -> tuple[str, ...]:
+    provider = str(ledger.get("provider") or "")
+    if provider in AVATAR_HOSTS:
+        return AVATAR_HOSTS[provider]
+    base = urlsplit(str(ledger.get("baseUrl") or ""))
+    return (base.hostname,) if base.scheme == "https" and base.hostname else ()
+
+
+def avatar_url_allowed(url: str, hosts: tuple[str, ...]) -> bool:
+    try:
+        parts = urlsplit(str(url or ""))
+        port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == "https" and parts.hostname in hosts and port is None
+            and not parts.username and not parts.password and len(url) <= 2048)
+
+
+def avatar_request_url(provider: str, login: str, api_url: str) -> str:
+    if api_url:
+        sep = "&" if "?" in api_url else "?"
+        return f"{api_url}{sep}s={AVATAR_PIXELS}" if provider == "github" else api_url
+    if provider == "github":
+        return f"https://avatars.githubusercontent.com/{login}?s={AVATAR_PIXELS}"
+    return ""
+
+
+def normalize_avatar(raw: bytes | None) -> bytes | None:
+    if not raw or len(raw) > AVATAR_MAX_BYTES or not raw.startswith((PNG_MAGIC, JPEG_MAGIC)):
+        return None
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return raw
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            if image.width * image.height > 4096 * 4096:
+                return None
+            picture = ImageOps.fit(image.convert("RGBA"), (AVATAR_PIXELS, AVATAR_PIXELS))
+            out = io.BytesIO()
+            picture.save(out, "PNG", optimize=True)
+            return out.getvalue()
+    except Exception:
+        return None
+
+
+def fetch_avatar(url: str, hosts: tuple[str, ...]) -> bytes | None:
+    if not avatar_url_allowed(url, hosts):
+        return None
+
+    class Redirects(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if not avatar_url_allowed(newurl, hosts):
+                return None
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    request = Request(url, headers={"Accept": "image/png,image/jpeg",
+                                    "User-Agent": "forkmesh-forge-sync/1"})
+    try:
+        with build_opener(Redirects).open(request, timeout=AVATAR_TIMEOUT_SECONDS) as response:
+            if not avatar_url_allowed(response.geturl(), hosts):
+                return None
+            raw = response.read(AVATAR_MAX_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError):
+        return None
+    return raw if len(raw) <= AVATAR_MAX_BYTES else None
+
+
+def avatar_slug(provider: str, login: str) -> str:
+    return f"{provider}-{login.lower()}"
+
+
+def roster_rows(provider: str, people: dict[str, dict[str, Any]],
+                checkout: Path) -> list[dict[str, Any]]:
+    rows = []
+    for key in sorted(people):
+        person = people[key]
+        login = str(person.get("login") or key)
+        slug = avatar_slug(provider, login)
+        row: dict[str, Any] = {"slug": slug, "name": login}
+        row["github" if provider == "github" else "login"] = login
+        if provider == "github":
+            row["profile"] = f"https://github.com/{login}"
+        if (Path(checkout) / AVATAR_DIR_REL / f"{slug}.png").is_file():
+            row["avatar"] = f"{AVATAR_DIR_REL}/{slug}.png"
+        rows.append(row)
+    return rows
+
+
+def write_roster(checkout: Path, provider: str, people: dict[str, dict[str, Any]]) -> bool:
+    path = Path(checkout) / ROSTER_REL
+    kept: list[Any] = []
+    declared = 0
+    if path.is_file():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if not isinstance(current, dict) or not isinstance(current.get("contributors"), list):
+            return False
+        kept = [row for row in current["contributors"]
+                if not (isinstance(row, dict)
+                        and str(row.get("slug") or "").startswith(provider + "-"))]
+        count = current.get("count")
+        declared = count if isinstance(count, int) and not isinstance(count, bool) else 0
+    rows = (kept + roster_rows(provider, people, checkout))[:ROSTER_MAX_ROWS]
+    if not rows:
+        return False
+    count = max(declared, len(rows)) if kept else len(rows)
+    return bridge.write_if_changed(path, json.dumps(
+        {"count": count, "contributors": rows}, indent=2, sort_keys=True,
+        ensure_ascii=False) + "\n")
+
+
 # ---- ledger -----------------------------------------------------------------
 
 
+def ledger_path(checkout: Path) -> Path:
+    override = os.environ.get(LEDGER_ENV, "").strip()
+    return Path(override) if override else Path(checkout) / LEDGER_REL
+
+
 def load_ledger(checkout: Path) -> dict[str, Any]:
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     try:
         ledger = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -130,12 +290,14 @@ def load_ledger(checkout: Path) -> dict[str, Any]:
     for name, rule in ledger["sourceOfTruth"].items():
         if name not in FIELDS or rule not in RULES:
             raise SyncError(f"sourceOfTruth.{name} must be one of {', '.join(RULES)}")
+    if ledger.setdefault("mode", "sync") not in MODES:
+        raise SyncError(f"mode must be one of {', '.join(MODES)}")
     return ledger
 
 
 def save_ledger(checkout: Path, ledger: dict[str, Any]) -> bool:
     return bridge.write_if_changed(
-        Path(checkout) / LEDGER_REL,
+        ledger_path(checkout),
         json.dumps(ledger, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
@@ -301,12 +463,19 @@ class SyncReport:
 
 class Engine:
     def __init__(self, provider: Any, signer: Any, *, checkout: Path,
-                 clock: Callable[[], int] = lambda: int(time.time() * 1000)) -> None:
-        self.provider = provider
-        self.p = provider.name
+                 clock: Callable[[], int] = lambda: int(time.time() * 1000),
+                 avatars: Callable[[str, tuple[str, ...]], bytes | None] | None = None,
+                 attachments: Callable[..., dict[str, Any]] | None = None) -> None:
         self.checkout = Path(checkout)
         self.clock = clock
+        self.avatars = avatars
+        self.attachments = attachments
+        self.seen: dict[str, str] = {}
+        self.logins: dict[str, str] = {}
         self.ledger = load_ledger(self.checkout)
+        self.mirror = self.ledger["mode"] == "mirror"
+        self.provider = ReadOnlyProvider(provider) if self.mirror else provider
+        self.p = provider.name
         if self.ledger.get("provider") != self.p or \
                 self.ledger.get("repository") != provider.repository:
             raise SyncError(f"{LEDGER_REL} is connected to "
@@ -347,6 +516,8 @@ class Engine:
             return self.result(now)
         try:
             remote = list(self.provider.list_issues())
+            for issue in remote:
+                self.see(issue.author, getattr(issue, "author_avatar", ""))
             self.viewer = self.provider.viewer()
             by_id = {issue.id: issue for issue in remote}
             linked = {str(e.get("remoteId")): int(n) for n, e in self.ledger["issues"].items()
@@ -363,14 +534,77 @@ class Engine:
                 if issue.id not in linked:
                     self.adopt_or_import(issue, linked, now)
             for number in sorted(self.local.records):
-                self.export_if_new(number, now)
+                if not self.mirror:
+                    self.export_if_new(number, now)
         except providers.ForgeError as exc:
             self.report.completed = False
             self.report.error = exc.code
             self.report.error_message = str(exc)
         finally:
             self.local.flush()
-        return self.result(now)
+        if self.avatars is not None:
+            self.sync_avatars(now)
+        mirrored = self.sync_attachments(now)
+        result = self.result(now)
+        if mirrored is not None:
+            result["attachments"] = mirrored
+        return result
+
+    def sync_attachments(self, now: int) -> dict[str, Any] | None:
+        if self.attachments is None or self.p != "github":
+            return None
+        try:
+            return self.attachments(self.checkout, self.local.records, now)
+        except OSError as exc:
+            self.report.warnings.append(f"attachments: {exc.__class__.__name__}")
+            return None
+
+    def see(self, login: str, avatar: str) -> None:
+        if not AVATAR_LOGIN_RE.fullmatch(str(login or "")):
+            return
+        key = login.lower()
+        self.seen[key] = avatar or self.seen.get(key, "")
+        self.logins.setdefault(key, login)
+
+    def sync_avatars(self, now: int) -> None:
+        prefix = self.p + ":"
+        for record in self.local.records.values():
+            for event in record.get("events") or []:
+                name = str(event.get("authorName") or "") if isinstance(event, dict) else ""
+                if name.startswith(prefix):
+                    self.see(name[len(prefix):], "")
+        people = self.ledger.setdefault("avatars", {})
+        hosts = avatar_hosts(self.ledger)
+        for key in sorted(self.seen):
+            entry = people.setdefault(key, {"login": self.logins[key]})
+            if self.seen[key]:
+                entry["url"] = self.seen[key]
+        fetched = 0
+        for key in sorted(people):
+            entry = people[key]
+            if not isinstance(entry, dict):
+                people[key] = entry = {"login": key}
+            login = str(entry.get("login") or key)
+            if not AVATAR_LOGIN_RE.fullmatch(login):
+                continue
+            path = self.checkout / AVATAR_DIR_REL / f"{avatar_slug(self.p, login)}.png"
+            url = avatar_request_url(self.p, login, str(entry.get("url") or ""))
+            age = now - int(entry.get("fetchedAt") or 0)
+            wait = AVATAR_RETRY_MS if entry.get("failed") else AVATAR_REFRESH_MS
+            stale = entry.get("fetchedUrl") != url or age >= wait \
+                or (not entry.get("failed") and not path.is_file())
+            if not url or not stale or fetched >= AVATAR_FETCHES_PER_RUN:
+                continue
+            fetched += 1
+            picture = normalize_avatar(self.avatars(url, hosts))
+            entry["fetchedAt"] = now
+            entry["fetchedUrl"] = url
+            if picture is None:
+                entry["failed"] = True
+                continue
+            entry.pop("failed", None)
+            bridge.write_if_changed(path, picture)
+        write_roster(self.checkout, self.p, people)
 
     def guard(self, number: int, entry: dict[str, Any], now: int, work: Callable[[], None]) -> None:
         try:
@@ -439,6 +673,11 @@ class Engine:
             conflicts.pop(name, None)
             self.tidy(entry)
             return None
+        if self.mirror:
+            bases[name] = r
+            conflicts.pop(name, None)
+            self.tidy(entry)
+            return "provider"
         if l == base:
             bases[name] = r
             conflicts.pop(name, None)
@@ -513,6 +752,8 @@ class Engine:
             key = f"comment:{eid}"
             local = folded["comments"].get(eid)
             if link.get("reexport"):
+                if self.mirror:
+                    continue
                 if local is None:
                     link["deleted"] = True
                     continue
@@ -543,6 +784,8 @@ class Engine:
             if local is None and comment is None:
                 link["deleted"] = True
             elif local is None:
+                if self.mirror:
+                    continue
                 if digest(split_marker(comment.body)[0]) != base:
                     self.conflict(entry, key, {"forkmesh": "deleted",
                                                "provider": split_marker(comment.body)[0]}, now)
@@ -551,7 +794,7 @@ class Engine:
                 link["deleted"] = True
                 self.report.bump("toProvider", "deleted")
             else:
-                if digest(local["body"]) != base:
+                if not self.mirror and digest(local["body"]) != base:
                     self.conflict(entry, key, {"forkmesh": local["body"], "provider": "deleted"}, now)
                     continue
                 self.local.append(number, "delete", f"forge-{self.p}-delete-{link['remoteId']}",
@@ -565,11 +808,14 @@ class Engine:
             if comment.id in by_remote:
                 continue
             body, marker = split_marker(comment.body)
+            if self.mirror:
+                marker = None
             eid = str((marker or {}).get("event") or f"forge-{self.p}-comment-{comment.id}")
             if eid in mapped:
                 self.report.warnings.append(
                     f"issue #{number}: {self.p} comment {comment.id} duplicates a synced comment")
                 continue
+            self.see(comment.author, getattr(comment, "author_avatar", ""))
             if eid not in folded["comments"] and eid not in folded["deletedComments"]:
                 self.local.append(number, "comment", eid, comment.created_at,
                                   f"{self.p}:{comment.author}", body=body, attachments=[])
@@ -580,6 +826,8 @@ class Engine:
                            "bases": {f"comment:{eid}": digest(body)}}
             by_remote[comment.id] = eid
 
+        if self.mirror:
+            return
         folded = fold(self.local.records[number])
         for eid, local in sorted(folded["comments"].items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             if eid in mapped or eid.startswith(FOREIGN_EVENT_PREFIXES):
@@ -597,7 +845,7 @@ class Engine:
 
     def adopt_or_import(self, issue: Any, linked: dict[str, int], now: int) -> None:
         body, marker = split_marker(issue.body)
-        claimed = marker.get("issue") if marker else None
+        claimed = marker.get("issue") if marker and not self.mirror else None
         if isinstance(claimed, int) and claimed in self.local.records:
             entry = self.ledger["issues"].get(str(claimed))
             if entry and entry.get("remoteId") and str(entry["remoteId"]) != issue.id:
@@ -687,8 +935,38 @@ class Engine:
         retries = getattr(self.provider.transport, "retries", 0)
         recovered = getattr(self.provider.transport, "recovered", 0)
         save_ledger(self.checkout, self.ledger)
+        save_source(self.checkout, self.ledger)
         return build_report(self.ledger, now, report=self.report, retries=retries,
                             recovered=recovered)
+
+
+def source_record(ledger: dict[str, Any]) -> dict[str, Any] | None:
+    provider = str(ledger.get("provider") or "")
+    template = ISSUE_URL_TEMPLATES.get(provider)
+    repository = str(ledger.get("repository") or "")
+    if not template or not repository:
+        return None
+    base = str(ledger.get("baseUrl") or "").rstrip("/")
+    if "{base}" in template and not base:
+        return None
+    renumbered = {}
+    for number, entry in (ledger.get("issues") or {}).items():
+        remote = entry.get("remoteNumber")
+        if isinstance(remote, int) and str(remote) != str(number):
+            renumbered[str(number)] = remote
+    return {"schema": SOURCE_SCHEMA, "provider": provider, "repository": repository,
+            "baseUrl": base,
+            "issueUrl": template.replace("{repository}", repository).replace("{base}", base),
+            "renumbered": dict(sorted(renumbered.items(), key=lambda kv: int(kv[0])))}
+
+
+def save_source(checkout: Path, ledger: dict[str, Any]) -> bool:
+    record = source_record(ledger)
+    if record is None:
+        return False
+    return bridge.write_if_changed(
+        Path(checkout) / SOURCE_REL,
+        json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
 # ---- status & telemetry ---------------------------------------------------------
@@ -769,18 +1047,23 @@ def markdown(result: dict[str, Any]) -> str:
 
 
 def connect(checkout: Path, *, provider: str, repository: str, base_url: str = "",
-            export_from: int, slo_ms: int = DEFAULT_SLO_MS) -> dict[str, Any]:
+            export_from: int, slo_ms: int = DEFAULT_SLO_MS,
+            mode: str | None = None) -> dict[str, Any]:
     if provider not in providers.ADAPTERS:
         raise SyncError(f"provider must be one of {', '.join(providers.ADAPTERS)}")
     repository = providers.validate_repository(repository)
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     ledger = load_ledger(checkout) if path.exists() else {"schema": SCHEMA, "issues": {},
                                                           "identities": {}, "history": [],
                                                           "sourceOfTruth": {}}
     if ledger.get("provider") not in (None, provider) or \
             ledger.get("repository") not in (None, repository):
         raise SyncError(f"{LEDGER_REL} is already connected to another repository")
+    if mode is not None and mode not in MODES:
+        raise SyncError(f"mode must be one of {', '.join(MODES)}")
     ledger.update({"provider": provider, "repository": repository, "sloMs": slo_ms})
+    if mode is not None:
+        ledger["mode"] = mode
     ledger.setdefault("exportFrom", export_from)
     ledger.setdefault("paused", False)
     if base_url:
@@ -862,9 +1145,35 @@ def build_provider(ledger: dict[str, Any], token: str, **transport: Any) -> Any:
     return adapter(ledger["repository"], token, **kwargs)
 
 
+def attachment_mirror(args: argparse.Namespace) -> Callable[..., dict[str, Any]] | None:
+    switch = os.environ.get("FORKMESH_FORGE_ATTACHMENTS", "").strip().lower()
+    if not args.attachments or switch in ("0", "off", "no", "false"):
+        return None
+    files = max(0, int(args.attachment_files))
+    budget = max(0, int(args.attachment_megabytes)) * 1024 * 1024
+
+    def mirror(checkout: Path, records: dict[int, Any], now: int) -> dict[str, Any]:
+        return attachments_mirror.sync(checkout, records, now, max_files=files, max_bytes=budget)
+    return mirror
+
+
 def main(argv: list[str] | None = None) -> int:
+    previous = os.environ.get(LEDGER_ENV)
+    try:
+        return _main(argv)
+    finally:
+        if previous is None:
+            os.environ.pop(LEDGER_ENV, None)
+        else:
+            os.environ[LEDGER_ENV] = previous
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--checkout", type=Path, default=Path("."))
+    parser.add_argument("--ledger", type=Path, default=None,
+                        help="keep the sync ledger at this path instead of the checkout's "
+                             ".forkmesh/forge-sync.json")
     sub = parser.add_subparsers(dest="command", required=True)
     c = sub.add_parser("connect", help="create or update the sync ledger")
     c.add_argument("--provider", required=True, choices=sorted(providers.ADAPTERS))
@@ -873,8 +1182,22 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--slo-minutes", type=int, default=DEFAULT_SLO_MS // 60000)
     c.add_argument("--export-existing", action="store_true",
                    help="also create provider issues for ForkMesh issues opened before connecting")
+    c.add_argument("--mirror", action="store_const", const="mirror", dest="mode",
+                   help="import only: copy the provider's issues and comments exactly and "
+                        "never write to the provider")
+    c.add_argument("--two-way", action="store_const", const="sync", dest="mode",
+                   help="sync both ways (the default for a new ledger)")
     s = sub.add_parser("sync", help="run one two-way pass")
     s.add_argument("--report", type=Path)
+    s.add_argument("--avatars", action="store_true",
+                   help="also download provider avatars into .forkmesh/contributors")
+    s.add_argument("--attachments", action="store_true",
+                   help="also copy provider-hosted images and files into .forkmesh/attachments")
+    s.add_argument("--attachment-files", type=int, default=attachments_mirror.PASS_FILES,
+                   help="most attachment downloads in one pass")
+    s.add_argument("--attachment-megabytes", type=int,
+                   default=attachments_mirror.PASS_BYTES // (1024 * 1024),
+                   help="most attachment megabytes downloaded in one pass")
     sub.add_parser("status", help="show lag, conflicts and failures without contacting the provider")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
@@ -885,12 +1208,14 @@ def main(argv: list[str] | None = None) -> int:
                                                    "issue, or comment:<event id>")
     r.add_argument("--take", required=True, choices=SIDES)
     args = parser.parse_args(argv)
+    if args.ledger is not None:
+        os.environ[LEDGER_ENV] = str(args.ledger)
     now = int(time.time() * 1000)
     try:
         if args.command == "connect":
             connect(args.checkout, provider=args.provider, repository=args.repository,
                     base_url=args.base_url, slo_ms=args.slo_minutes * 60000,
-                    export_from=0 if args.export_existing else now)
+                    export_from=0 if args.export_existing else now, mode=args.mode)
             result = build_report(load_ledger(args.checkout), now)
         elif args.command in ("pause", "resume"):
             result = build_report(set_paused(args.checkout, args.command == "pause",
@@ -907,7 +1232,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise SyncError("FORKMESH_BRIDGE_SIGNING_KEY is not set")
             ledger = load_ledger(args.checkout)
             engine = Engine(build_provider(ledger, token), bridge.BridgeSigner.from_text(key),
-                            checkout=args.checkout)
+                            checkout=args.checkout,
+                            avatars=fetch_avatar if args.avatars else None,
+                            attachments=attachment_mirror(args))
             result = engine.run()
             if args.report:
                 args.report.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",

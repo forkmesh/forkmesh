@@ -94,7 +94,7 @@ def test_internal_repository_event_reduces_body_to_public_bounded_metadata():
     assert event["type"] == "pull_request"
     assert event["scope"] == "alice/widget"
     assert event["url"] == (
-        "https://forkmesh.example/alice/Widget/pulls/42")
+        "https://forkmesh.example/alice/Widget/pull/42")
     assert event["title"] == "Pull Request opened 42"
     assert "PRIVATE BODY" not in event["title"]
     assert set(event) == {

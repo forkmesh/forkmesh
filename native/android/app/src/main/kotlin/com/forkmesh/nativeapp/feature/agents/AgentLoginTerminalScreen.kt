@@ -1,7 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -62,6 +60,30 @@ import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
+import com.forkmesh.nativeapp.ui.theme.FmRadius
+import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
+import com.forkmesh.nativeapp.agents.terminalKeyBytes
+import com.forkmesh.nativeapp.agents.terminalControlBytes
+import com.forkmesh.nativeapp.agents.terminalChordTyped
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 
 private val ANSI = listOf(
     0xFF1E1E1E, 0xFFCD3131, 0xFF0DBC79, 0xFFE5E510, 0xFF2472C8, 0xFFBC3FBC, 0xFF11A8CD, 0xFFE5E5E5,
@@ -135,6 +157,10 @@ internal fun AgentTerminalPane(terminal: AgentTerminalSession, tick: Int, hint: 
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     var typed by remember(terminal) { mutableStateOf("") }
+    var ctrl by remember(terminal) { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    val haptics = FmHaptics.current
+    LaunchedEffect(ctrl) { if (ctrl) runCatching { focus.requestFocus() } }
     Column(modifier) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF111111))) {
             val cell = remember(style) { measurer.measure("M", style) }
@@ -147,30 +173,73 @@ internal fun AgentTerminalPane(terminal: AgentTerminalSession, tick: Int, hint: 
             tick.let { }
             val all = terminal.screen.allRows
             val list = rememberLazyListState()
-            LaunchedEffect(all.size, tick) { if (all.isNotEmpty()) list.scrollToItem(all.size - 1) }
+            var following by remember(terminal) { mutableStateOf(true) }
+            val atBottom by remember(list) {
+                derivedStateOf {
+                    val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf true
+                    last >= list.layoutInfo.totalItemsCount - 2
+                }
+            }
+            LaunchedEffect(atBottom, list.isScrollInProgress) { if (list.isScrollInProgress) following = atBottom }
+            LaunchedEffect(all.size, tick, following) { if (following && all.isNotEmpty()) list.scrollToItem(all.size - 1) }
             LazyColumn(Modifier.fillMaxSize(), state = list) {
                 itemsIndexed(all) { _, row ->
                     Text(rowText(row, Color(0xFFE5E5E5), Color(0xFF111111)), style = style, softWrap = false, maxLines = 1)
                 }
             }
+            if (!following) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(FmSpace.x3)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Fm.colors.accent)
+                        .clickable {
+                            haptics.tap()
+                            following = true
+                        }
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Scroll to the newest output"
+                        }
+                        .testTag("terminal-scroll-to-bottom"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmIcon("arrow_downward", size = 20.dp, tint = Color.White)
+                }
+            }
         }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(FmSpace.x2),
-            horizontalArrangement = Arrangement.spacedBy(FmSpace.x1),
-        ) {
-            val keys = listOf(
-                "Esc" to TerminalKey.Escape, "Tab" to TerminalKey.Tab, "↑" to TerminalKey.Up, "↓" to TerminalKey.Down,
-                "←" to TerminalKey.Left, "→" to TerminalKey.Right, "⌫" to TerminalKey.Backspace, "Ctrl-C" to TerminalKey.CtrlC,
-                "Enter" to TerminalKey.Enter,
-            )
-            for ((label, key) in keys) FmToneButton(label, onPressed = { terminal.key(key) }, tone = FmTone.Neutral)
-            FmToneButton("Paste", onPressed = { clipboard.getText()?.text?.let(terminal::paste) }, icon = "content_paste")
-        }
+        TerminalKeyBar(
+            ctrl = ctrl,
+            onCtrl = { ctrl = it },
+            onKey = { key ->
+                if (ctrl) {
+                    ctrl = false
+                    terminal.input(terminalKeyBytes(key, terminal.screen.appCursorKeys, control = true))
+                } else {
+                    terminal.key(key)
+                }
+            },
+            onPaste = {
+                ctrl = false
+                clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let(terminal::paste)
+            },
+        )
         Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(FmSpace.x2)) {
             FmTextField(
                 value = typed,
-                onValueChange = { typed = it },
-                modifier = Modifier.weight(1f),
+                onValueChange = { next ->
+                    val chord = if (ctrl && next.length > typed.length) terminalChordTyped(typed, next) else null
+                    if (chord != null) {
+                        ctrl = false
+                        val bytes = terminalControlBytes(chord.toString())
+                        if (bytes.isNotEmpty()) terminal.input(bytes) else typed = next
+                    } else {
+                        typed = next
+                    }
+                },
+                modifier = Modifier.weight(1f).focusRequester(focus),
                 hint = hint,
             )
             Spacer(Modifier.height(FmSpace.x1))
@@ -178,6 +247,68 @@ internal fun AgentTerminalPane(terminal: AgentTerminalSession, tick: Int, hint: 
                 terminal.submit(typed)
                 typed = ""
             }, tone = FmTone.Accent)
+        }
+    }
+}
+
+@Composable
+internal fun TerminalKeyBar(ctrl: Boolean, onCtrl: (Boolean) -> Unit, onKey: (TerminalKey) -> Unit, onPaste: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x2).testTag("terminal-key-bar"),
+        verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+            TerminalKeyButton("Esc") { onKey(TerminalKey.Escape) }
+            TerminalKeyButton("Tab") { onKey(TerminalKey.Tab) }
+            TerminalKeyButton("Ctrl", spoken = "Control", latched = ctrl) { onCtrl(!ctrl) }
+            TerminalKeyButton("^C", spoken = "Control-C") { onKey(TerminalKey.CtrlC) }
+            TerminalKeyButton("⌫", spoken = "Backspace") { onKey(TerminalKey.Backspace) }
+            TerminalKeyButton("", icon = "content_paste", spoken = "Paste", onPress = onPaste)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+            TerminalKeyButton("←", spoken = "Left") { onKey(TerminalKey.Left) }
+            TerminalKeyButton("↑", spoken = "Up") { onKey(TerminalKey.Up) }
+            TerminalKeyButton("↓", spoken = "Down") { onKey(TerminalKey.Down) }
+            TerminalKeyButton("→", spoken = "Right") { onKey(TerminalKey.Right) }
+            TerminalKeyButton("Enter", weight = 2f) { onKey(TerminalKey.Enter) }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TerminalKeyButton(
+    label: String,
+    icon: String? = null,
+    spoken: String? = null,
+    latched: Boolean = false,
+    weight: Float = 1f,
+    onPress: () -> Unit,
+) {
+    val c = Fm.colors
+    val haptics = FmHaptics.current
+    val color = if (latched) Color.White else c.textSecondary
+    val shape = RoundedCornerShape(FmRadius.md)
+    Box(
+        Modifier
+            .weight(weight)
+            .heightIn(min = 36.dp)
+            .clip(shape)
+            .background(if (latched) c.accent else c.bgOverlay)
+            .clickable {
+                haptics.tap()
+                onPress()
+            }
+            .semantics {
+                role = Role.Button
+                contentDescription = spoken ?: label
+                selected = latched
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (icon != null) {
+            FmIcon(icon, size = 18.dp, tint = color)
+        } else {
+            Text(label, style = Fm.text.labelMedium.copy(color = color), maxLines = 1, softWrap = false)
         }
     }
 }

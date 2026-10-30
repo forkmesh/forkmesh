@@ -452,6 +452,8 @@ def _env_and_calls(ai=None, catalog_issue_max=None, host=None, admins=(),
         "encrypt_row": encrypt_row,
         "decrypt_row": decrypt_row,
         "_record_contributor": record_contributor,
+        "_record_public_contributor": (
+            lambda env, _owner, _repo, *args: record_contributor(env, *args)),
         "_best_effort_inbox_side_effect": side_effect,
         "_inbox_author_over_quota": inbox_author_over_quota,
         "notify_pending_inbox": notify_pending_inbox,
@@ -610,23 +612,47 @@ def test_forkbot_chat_handler_queues_default_repo_issue():
     assert item["issueNumber"] == 7
     assert item["titleIfNew"] == "make crash logs searchable"
     assert item["submitter"] == "forkbot"
-    assert item["requestedBy"] == "alice"
+    assert item["requestedBy"] == "forkbot"
     assert item["meta"]["labels"] == ["forkbot"]
-    assert item["meta"]["reporter"] == "alice"
+    assert item["meta"]["reporter"] == ""
     assert item["event"]["type"] == "open"
     assert item["event"]["author"] == "forkbot"
     assert item["event"]["authorName"] == "forkbot"
     assert item["event"]["sig"] == ""
-    # The stored body credits ForkBot and the requester so a reader of the
-    # merged issue can see where it came from.
     assert item["event"]["body"] == (
         "make crash logs searchable\n\n"
-        "---\n_Filed by ForkBot at @alice's request via chat._")
-    assert calls["contributors"] == [("alice", "issues")]
+        "---\n_Filed by ForkBot via chat for alice (unverified)._")
+    assert calls["contributors"] == []
     # The owner node is pushed a sync event like every other inbox write, so
     # the issue lands in the repository now instead of on the slow fallback
     # poll (or never, if the node happens to be restarting).
     assert calls["hostNotifies"] == [("forkmesh", "forkmesh", "issues")]
+
+
+def test_a_guest_cannot_name_an_account_as_the_issue_opener():
+    env, calls, ns = _env_and_calls(catalog_issue_max=6)
+    response = asyncio.run(ns["forkbot_chat_handler"](env, _Request({
+        "message": "forkbot create an issue to make crash logs searchable",
+        "sender": "Jett",
+    })))
+    assert response["status"] == 201
+    _repo_bi, item, submitter_bi = calls["inserted"][0]
+    assert submitter_bi == "bi:forkbot"
+    assert item["meta"]["reporter"] == ""
+    assert item["requestedBy"] == "forkbot"
+    assert item["event"]["authorName"] == "forkbot"
+    assert "@jett" not in item["event"]["body"]
+    assert item["event"]["body"].endswith(
+        "_Filed by ForkBot via chat for jett (unverified)._")
+    assert calls["contributors"] == []
+    env, calls, ns = _env_and_calls(catalog_issue_max=6)
+    asyncio.run(ns["forkbot_chat_handler"](env, _Request({
+        "message": "forkbot create an issue to make crash logs searchable",
+        "sender": "[x](javascript:alert(1))",
+    })))
+    body = calls["inserted"][0][1]["event"]["body"]
+    assert "javascript" not in body
+    assert body.endswith("_Filed by ForkBot via chat._")
 
 
 def test_logged_in_user_opens_forkbot_assisted_issue():
@@ -830,7 +856,7 @@ def test_forkbot_ai_intent_creates_issue_from_natural_request():
     assert calls["inserted"][0][1]["titleIfNew"] == "Flaky login test"
     assert calls["inserted"][0][1]["event"]["body"] == (
         "The login integration test fails intermittently.\n\n"
-        "---\n_Filed by ForkBot at @alice's request via chat._")
+        "---\n_Filed by ForkBot via chat for alice (unverified)._")
 
 
 def test_forkbot_ai_intent_none_returns_help_without_enqueueing():

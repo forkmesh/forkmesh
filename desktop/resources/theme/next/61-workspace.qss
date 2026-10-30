@@ -97,3 +97,16 @@ QPushButton#workspaceSend {
 }
 QPushButton#workspaceSend:hover { background-color: @borderStrong; }
 QPushButton#workspaceSend:pressed { background-color: @surfaceRaised; }
+QPushButton#workspaceSend[workspaceChat="true"] {
+    background-color: @accent; border-color: @accent; color: @onAccent;
+    padding: 0px 10px; font-size: 12px; font-weight: 600;
+}
+QPushButton#workspaceSend[workspaceChat="true"]:hover { background-color: @accentHover; }
+
+QDialog#workspaceShortcutSheet { background-color: @bg; }
+#workspaceShortcutHeading { color: @fg; font-size: 15px; font-weight: 600; }
+#workspaceShortcutLabel { color: @fgSecondary; font-size: 13px; }
+#workspaceShortcutKeys {
+    color: @fg; background-color: @surfaceRaised; border: 1px solid @border;
+    border-radius: 5px; padding: 1px 7px; font-size: 12px;
+}

@@ -1,0 +1,53 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh group-call server (SFU, node @@NODE@@)
+Wants=network-online.target
+After=network-online.target nftables.service
+ConditionPathExists=@@CALLS_BIN@@
+ConditionPathExists=@@CREDS@@/@@CALLS_SECRET@@.cred
+
+[Service]
+Type=simple
+User=@@CALLS_USER@@
+Group=@@CALLS_USER@@
+UMask=0077
+LoadCredentialEncrypted=@@CALLS_SECRET@@:@@CREDS@@/@@CALLS_SECRET@@.cred
+Environment=FORKMESH_CALLS_HTTP=127.0.0.1:@@CALLS_HTTP_PORT@@
+Environment=FORKMESH_CALLS_UDP=:@@CALLS_UDP_PORT@@
+Environment=FORKMESH_CALLS_ADDRESSES=@@CALLS_ADDRESSES@@
+Environment=FORKMESH_CALLS_ORIGINS=@@CALLS_ORIGINS@@@@CALLS_FMM@@
+Environment=GOMEMLIMIT=180MiB
+ExecStart=@@CALLS_BIN@@
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+MemoryHigh=200M
+MemoryMax=256M
+MemorySwapMax=0
+OOMScoreAdjust=250
+LimitNOFILE=65536
+LimitCORE=0
+IPAddressDeny=@@CALLS_IP_DENY@@
+ProtectProc=invisible
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

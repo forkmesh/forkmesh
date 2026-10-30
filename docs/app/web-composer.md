@@ -69,7 +69,11 @@ heavy next to the rest of the dashboard.
   a cap (`fitInput()`).
 - **Header** (`.fmc-title`): a slim row above the box with clear, the
   pull-request dot, cloud, the drag grip, the character count, refresh,
-  expand and collapse at 24px with 14px icons.
+  expand and collapse at 24px with 14px icons. The character count stays
+  hidden until the prompt has used 80 percent of the 8000-character limit
+  (the theme's `attention` threshold): it shows amber with 1600 or fewer
+  characters left, red with 400 or fewer, and bold red once over the limit.
+  A count that is always on screen is noise for the usual short prompt.
 - **Toolbar**: left, 28px ghost icon buttons (attach, dictate, `/`) and chip
   triggers for repository (a native select, so `selectOption` and the OS
   picker keep working) and permission mode; right, the context gauge (hidden
@@ -111,7 +115,10 @@ does not also need an `email`, because the dashboard writes a missing email
 back as `""`, and requiring one left the home stuck on "Loading prompt...".
 When the dashboard has booted (`forkmesh:composer-host`) and the dock still
 does not mount (a node session, an iframe), the slot is hidden rather than
-left showing its placeholder.
+left showing its placeholder. `dashboard.js` loads first and can finish booting
+before `dashboard-composer.js` has added its listener, so the boot also sets
+`<html data-composer-host="1">` and the composer, on load, treats that flag as
+the event it missed (the home spec "hides the prompt slot" failed on this).
 
 `installErrorActions()` adds Copy and Send to prompt buttons to every
 dashboard error element; `showErrorNotice()` replaces `window.alert()`. The

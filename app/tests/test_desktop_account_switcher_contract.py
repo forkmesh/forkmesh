@@ -77,7 +77,7 @@ def test_recent_users_remember_and_restore_their_instance():
 def test_remote_instance_login_keeps_owner_signing_fail_closed():
     assert "AccountCapability::allowsPasswordOnlyFallback(err)" in SETUP
     assert "activateAccountSession(webResp, requestedAccount, false," in SETUP
-    assert "owner-signed actions remain disabled" in REPOS
+    assert "Owner-signed actions \"\n                             \"stay off on this desktop" in REPOS
     assert 'payload.value(QStringLiteral("isAdmin")).toBool(false)' in SETUP
     assert "m_profileLinkedNodes.clear()" in SETUP
     assert "void showUserAccountMenu();" in HEADER
@@ -102,3 +102,11 @@ def test_cross_instance_login_is_bound_to_selected_origin_and_account():
         )
     ]
     assert 'endsWith(QStringLiteral(".workers.dev"))' not in startup_server_load
+
+
+def test_every_desktop_of_the_account_keeps_owner_signing_after_a_switch():
+    assert "accountDesktopKeysForSession(session)" in REPOS
+    assert 'QStringLiteral("desktops")' in REPOS
+    assert "session, localKey, primaryKey, accountDesktopKeys)" in REPOS
+    assert "hasOwnerSigningCapability()\n            ? " in REPOS
+    assert "owner-signed actions remain disabled" not in REPOS

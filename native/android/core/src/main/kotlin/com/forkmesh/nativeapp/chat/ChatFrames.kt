@@ -143,6 +143,31 @@ object ReactionCatalog {
     }
 }
 
+data class StickerEntry(val slug: String, val text: String, val color: Long, val tilt: Float, val fallback: String)
+
+object StickerCatalog {
+    val entries: List<StickerEntry> = listOf(
+        StickerEntry("lgtm", "LGTM", 0xFF8250DF, -6f, "✅"),
+        StickerEntry("ship-it", "Ship it", 0xFF0969DA, 5f, "🚀"),
+        StickerEntry("nice", "Nice!", 0xFFBF3989, -4f, "👍"),
+        StickerEntry("thanks", "Thanks!", 0xFFBC4C00, 6f, "🙏"),
+        StickerEntry("on-it", "On it", 0xFF57606A, -5f, "👀"),
+        StickerEntry("wow", "Wow!", 0xFFCF222E, 4f, "😮"),
+        StickerEntry("love-it", "Love it", 0xFFD6336C, -3f, "❤️"),
+        StickerEntry("party", "Party!", 0xFF9A6700, 7f, "🎉"),
+    )
+
+    fun entry(slug: String): StickerEntry? = entries.firstOrNull { it.slug == slug }
+
+    fun isKnown(slug: String): Boolean = entry(slug) != null
+
+    fun index(slug: String): Int = entries.indexOfFirst { it.slug == slug }.let { if (it < 0) entries.size else it }
+
+    fun canOffer(conversation: String): Boolean =
+        (conversation.startsWith("#") || conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation)) &&
+            conversation != MESH_CONVERSATION && !OfficeFrames.isOffice(conversation)
+}
+
 interface ChatFrameSink {
     val selfId: String
 
@@ -183,6 +208,19 @@ fun compareChatMessages(a: ChatMessage, b: ChatMessage): Int {
     val byTimestamp = a.timestamp.compareTo(b.timestamp)
     if (byTimestamp != 0) return byTimestamp
     return a.id.compareTo(b.id)
+}
+
+internal fun mergeSorted(list: List<ChatMessage>, added: List<ChatMessage>): List<ChatMessage> {
+    val incoming = added.sortedWith(::compareChatMessages)
+    val out = ArrayList<ChatMessage>(list.size + incoming.size)
+    var i = 0
+    var j = 0
+    while (i < list.size && j < incoming.size) {
+        if (compareChatMessages(list[i], incoming[j]) <= 0) out.add(list[i++]) else out.add(incoming[j++])
+    }
+    while (i < list.size) out.add(list[i++])
+    while (j < incoming.size) out.add(incoming[j++])
+    return out
 }
 
 internal fun insertSorted(list: List<ChatMessage>, message: ChatMessage): MutableList<ChatMessage> {

@@ -15,6 +15,9 @@ concurrency:
   group: forkmesh-external-dependency-map-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   inventory:
     name: Inventory and failure drills · ${{ matrix.os }}
@@ -25,18 +28,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
+      - name: Keep LF line endings on Windows
+        run: git config --global core.autocrlf false
+
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Configure Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements-ci.txt
 
       - name: Install pinned test runner
-        run: python -m pip install --disable-pip-version-check pytest==9.1.1
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-ci.txt
 
       - name: Record the dependency inventory
         shell: bash
@@ -49,7 +57,7 @@ jobs:
 
       - name: Retain dependency-map evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: external-dependency-map-${{ matrix.os }}-${{ github.run_id }}
           path: |

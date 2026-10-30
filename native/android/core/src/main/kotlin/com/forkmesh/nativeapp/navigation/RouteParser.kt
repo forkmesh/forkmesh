@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.navigation
 
+import com.forkmesh.nativeapp.poker.PokerApi
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -245,8 +246,10 @@ object RouteParser {
             "settings" -> listOf(Route.Settings(first))
             "network" -> listOf(Route.Network(first))
             "ads" -> listOf(Route.Ads)
+            "invoices" -> if (first == null) listOf(Route.Invoices(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["invoice"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "speech" -> listOf(Route.Speech)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
@@ -255,9 +258,13 @@ object RouteParser {
             "runners" -> if (first == null) listOf(Route.Runners) else null
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
+        "video-mix-dj-studio", "dj-studio" -> listOf(Route.VideoMixDjStudio)
+            "video-mix-dj-studio", "dj-studio" -> if (first == null) listOf(Route.VideoMixDjStudio) else null
+            "poker" -> if (first == null) listOf(Route.Poker(query["table"]?.trim()?.lowercase()?.takeIf(PokerApi::isTableId))) else null
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
+            "nexus" -> if (first == null) listOf(Route.Nexus) else null
             "workflows" -> if (first == null) listOf(Route.Workflows) else null
             "docs" -> listOf(Route.Docs)
             "repos" -> listOf(Route.Repos(RepoScope.All))
@@ -273,6 +280,9 @@ object RouteParser {
         val head = all.firstOrNull()?.lowercase() ?: return null
         val tail = all.drop(1)
         val rest = tail.joinToString("/")
+        if (head == "profile" && tail.size == 1 && tail[0].startsWith("@")) {
+            return ProfileLinks.account(tail[0])?.let { listOf(Route.Profile(it)) } ?: listOf(AppTab.barOrder.first().root)
+        }
         return when (head) {
             "agents" ->
                 if (rest.isNotEmpty()) listOf(Route.Agents(AgentFilter.All), Route.Agent(rest))
@@ -306,6 +316,13 @@ object RouteParser {
     private fun named(head: String, first: String?): List<Route>? = when (head) {
         "vault" -> listOf(Route.Vault(first))
         "calories" -> listOf(Route.Calories)
+        "steps" -> listOf(Route.Steps)
+        "water" -> listOf(Route.Water)
+        "sleep" -> listOf(Route.Sleep)
+        "sugar-break" -> listOf(Route.SugarBreak)
+        "stretch" -> listOf(Route.Stretch)
+        "food-guide" -> listOf(Route.FoodGuide)
+        "speech" -> listOf(Route.Speech)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
         "ember" -> listOf(Route.Ember(null))
@@ -318,8 +335,10 @@ object RouteParser {
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))
+        "poker" -> listOf(Route.Poker(null))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)
+        "nexus" -> listOf(Route.Nexus)
         "workflows" -> listOf(Route.Workflows)
         "people" -> listOf(Route.People)
         "docs" -> listOf(Route.Docs)

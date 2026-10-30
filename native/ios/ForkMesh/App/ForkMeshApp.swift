@@ -14,7 +14,7 @@ import SwiftUI
 struct ForkMeshApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) var scenePhase
-    @State var boot: AppBoot = AppBoot()
+    @State var boot: AppBoot = AppBoot.shared
 
     var body: some Scene {
         WindowGroup {
@@ -59,6 +59,7 @@ struct AppRootView: View {
 /// Only the appearance choices rebuild the theme; watching the whole settings
 /// service would redraw every route on each keystroke in a Settings field.
 struct ThemedAppView: View {
+    @Environment(\.scenePhase) var scenePhase
     let services: AppServices
 
     private var forcedDark: Bool? {
@@ -69,15 +70,35 @@ struct ThemedAppView: View {
         }
     }
 
+    private var instanceThemeOrigin: String? {
+        let settings: SettingsService = services.settings
+        guard settings.matchesInstanceTheme, scenePhase == .active else { return nil }
+        return settings.relays.active.httpOrigin
+    }
+
+    private func refreshInstanceTheme(_ origin: String?) async {
+        guard let origin else { return }
+        let settings: SettingsService = services.settings
+        if origin.isEmpty {
+            settings.setInstanceThemeColors("")
+            return
+        }
+        guard let colors = await InstanceTheme.fetch(http: services.http, origin: origin) else { return }
+        if settings.matchesInstanceTheme, settings.relays.active.httpOrigin == origin {
+            settings.setInstanceThemeColors(colors)
+        }
+    }
+
     var body: some View {
         let settings: SettingsService = services.settings
-        ForkMeshTheme(theme: settings.theme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
+        ForkMeshTheme(theme: settings.effectiveTheme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
             AppHomeView(auth: services.auth)
                 .signInPresenter(services.signIn)
                 .background { FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim) }
                 .background { CaptureHoldAnchor().accessibilityHidden(true) }
         }
         .preferredColorScheme(forcedDark.map { (dark: Bool) -> ColorScheme in dark ? .dark : .light })
+        .task(id: instanceThemeOrigin) { await refreshInstanceTheme(instanceThemeOrigin) }
     }
 }
 
@@ -95,22 +116,31 @@ struct AppHomeView: View {
         Group {
             if updateCheck.blocksUse {
                 UpdateRequiredView(requirement: updateCheck.requirement, available: updateCheck.available)
+            } else if let settings, settings.needsPermissionsIntro, auth.hasAppAccess || settings.project.hasInstance == false {
+                PermissionsIntroView(settings: settings)
             } else if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
                 StarterPackView(settings: settings)
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
-                    .overlay { DevPerformanceOverlay() }
+                    .overlay {
+                        if !StoreScreenshotLaunch.on {
+                            DevPerformanceOverlay()
+                        }
+                    }
                     .overlay { PingCelebrationOverlay() }
                     .directCallsRoot()
+                    .groupCallsRoot()
             } else {
                 AuthFlowView()
             }
         }
+        .onAppear { StoreScreenshotLaunch.prepare(auth: auth, settings: settings) }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
         .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
+        .modifier(StoreCanvas())
         .task {
             await updateCheck.check()
             await updateCheck.checkStore()

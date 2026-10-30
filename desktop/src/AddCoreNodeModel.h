@@ -27,6 +27,7 @@ struct AddCoreOptions {
     QString region;
     QString plan;
     QString rev;
+    QString replaces;
     bool voter = false;
     QString voterReason;
     int estimateSeconds = 0;
@@ -35,6 +36,7 @@ struct AddCoreOptions {
     QString error;
     QString plansError;
     QString unfinishedName;
+    QString unfinishedReplaces;
     QString unfinishedFailedStep;
     QString unfinishedError;
 };
@@ -60,8 +62,10 @@ QString confirmationText(const AddCoreOptions &options, const QString &region,
                          const QString &plan);
 QStringList addCoreArguments(const QString &script, const QString &region,
                              const QString &plan, const QString &name, bool resume,
-                             const QString &provider = QString());
-QStringList addCoreOptionsArguments(const QString &script, const QString &provider);
+                             const QString &provider = QString(),
+                             const QString &replace = QString());
+QStringList addCoreOptionsArguments(const QString &script, const QString &provider,
+                                    const QString &replace = QString());
 QString providerDisplayName(const QString &provider);
 bool isFleetInstanceHost(const QString &name, const QString &address,
                          const QStringList &fleetAddresses);
@@ -100,6 +104,9 @@ public:
     QString error() const { return m_error; }
     QStringList notes() const { return m_notes; }
     QString branch() const { return m_branch; }
+    QString replaces() const { return m_replaces; }
+    QString merged() const { return m_merged; }
+    QString mergeError() const { return m_mergeError; }
     QString commit() const { return m_commit; }
     int doneCount() const;
     int remainingEstimateSeconds() const;
@@ -123,8 +130,13 @@ private:
     QString m_error;
     QStringList m_notes;
     QString m_branch;
+    QString m_replaces;
+    QString m_merged;
+    QString m_mergeError;
     QString m_commit;
     bool m_resultSeen = false;
 };
+
+QString fleetLandingText(const AddCoreRun &run, const QString &effect);
 
 } // namespace forkmesh::fleet

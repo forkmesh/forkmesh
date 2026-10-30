@@ -1,4 +1,5 @@
 import base64
+import re
 import json
 import sys
 from pathlib import Path
@@ -120,14 +121,16 @@ def test_branded_email_names_the_instance_and_credits_forkmesh():
 
 def test_forkmesh_com_keeps_every_feature():
     plain = env()
-    assert instance_features.enabled_ids(plain) == set(instance_features.IDS)
+    assert instance_features.enabled_ids(plain) == set(instance_features.IDS) - \
+        instance_features.OPT_IN
     for path in ("/api/hackathon", "/world", "/api/world/state", "/about"):
         assert instance_features.blocked(plain, path) == ""
 
 
 def test_white_label_instances_switch_forkmesh_features_off():
     branded = env(INSTANCE_NAME="Acme Code")
-    assert instance_features.enabled_ids(branded) == set()
+    assert instance_features.enabled_ids(branded) == set(
+        instance_features.DEFAULT_ON)
     assert instance_features.blocked(branded, "/api/hackathon/join") == "hackathon"
     assert instance_features.blocked(branded, "/world") == "world"
     assert instance_features.blocked(branded, "/api/orgs/acme/discord/oauth") == "discord"
@@ -137,7 +140,8 @@ def test_white_label_instances_switch_forkmesh_features_off():
     assert instance_features.blocked(branded, "/api/accounts/login") == ""
     assert instance_features.blocked(branded, "/acme/forkmesh") == ""
     chosen = env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="world, hackathon, bogus")
-    assert instance_features.enabled_ids(chosen) == {"world", "hackathon"}
+    assert instance_features.enabled_ids(chosen) == {
+        "world", "hackathon"} | instance_features.DEFAULT_ON
     assert instance_features.blocked(chosen, "/world") == ""
     everything = env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="all")
     assert instance_features.blocked(everything, "/api/ads") == ""
@@ -181,7 +185,7 @@ def test_brand_script_credits_forkmesh_and_hides_switched_off_links():
     assert "data-instance-powered-by" in BRAND_JS
     assert 'fetch("/api/instance"' in BRAND_JS
     assert "MutationObserver" in BRAND_JS
-    assert "ForkMesh(?! [Dd]esktop)" in BRAND_JS
+    assert "ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)" in BRAND_JS
 
 
 def test_brand_script_leaves_repository_and_chat_content_alone():
@@ -287,7 +291,7 @@ def test_branded_email_shows_the_instance_logo():
 
 
 def test_instance_api_names_the_logo_apps_use_as_the_project_icon():
-    import re
+
     names = {"re": re}
     for helper in ("instance_name", "instance_branded", "instance_logo_path", "instance_logo_url"):
         source = "def " + helper + "(env):" + ENTRY.split("def " + helper + "(env):", 1)[1].split("\n\n\n", 1)[0]
@@ -319,7 +323,8 @@ def test_blog_genie_and_status_are_plugins_that_start_off_on_an_instance():
     assert instance_features.blocked(chosen, "/status") == ""
     assert instance_features.blocked(chosen, "/rss.xml") == ""
     assert {item["id"] for item in instance_features.describe(chosen)
-            if item["enabled"]} == {"status", "blog", "genie"}
+            if item["enabled"]} == {"status", "blog", "genie"} | \
+        instance_features.DEFAULT_ON
     assert instance_features.blocked(env(), "/status") == ""
     assert instance_features.blocked(env(), "/rss.xml") == ""
 
@@ -386,3 +391,83 @@ def test_powered_by_badge_can_be_switched_off(tmp_path):
     assert 'c.get("poweredBy", True)' in installer
     assert "--no-powered-by" in installer
     assert 'echo "INSTANCE_POWERED_BY=$CFG_poweredBy"' in installer
+
+
+def test_the_company_group_is_a_website_section_hidden_from_the_first_paint():
+    sidebar = (ROOT / "public" / "dashboard" / "partials" / "sidebar.html").read_text(
+        encoding="utf-8")
+    group = re.search(
+        r'<div role="group" aria-labelledby="sidebarGroupCompany"[^>]*>(.*?)</div>',
+        sidebar, re.S)
+    assert group and 'data-instance-plugin="website"' in group.group(0).split(">", 1)[0]
+    assert '<span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>' in group.group(1)
+    for href in ("/about", "/careers", "/press"):
+        assert 'href="%s"' % href in group.group(1)
+        assert instance_features.feature_for(href) == "website"
+    for page in ("dashboard/index.html", "dashboard/repo.html", "referral/index.html"):
+        built = (ROOT / "public" / page).read_text(encoding="utf-8")
+        assert ('aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group" '
+                'data-instance-plugin="website"') in built
+    header = (ROOT.parent / "www" / "public" / "site-header.js").read_text(encoding="utf-8")
+    assert ('<div class="fm-nav-group" data-instance-plugin="website">\n'
+            '        <span class="fm-nav-group-title">Company</span>') in header
+    css = instance_features.chrome_css(env(INSTANCE_NAME="Acme Code"))
+    website_rule = next(line for line in css.splitlines()
+                        if '[data-instance-plugin~="website"]' in line)
+    assert website_rule.endswith("{display:none !important}")
+    shown = instance_features.chrome_css(env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="website"))
+    assert '[data-instance-plugin~="website"]' not in shown
+    assert instance_features.chrome_css(env()) == ":root{--instance-plugins:ready}\n"
+    assert "[data-instance-plugin] { display: none !important; }" in BRAND_JS
+    assert 'if (!name || name === "ForkMesh") return;' in BRAND_JS
+
+
+def test_the_changelog_link_shows_on_an_instance_and_the_page_is_bundled():
+    import build_site_assets
+    import static_routes
+    sidebar = (ROOT / "public" / "dashboard" / "partials" / "sidebar.html").read_text(
+        encoding="utf-8")
+    resources = sidebar.split('id="sidebarGroupResources"', 1)[1].split("</div>", 1)[0]
+    assert 'href="/changelog"' in resources
+    branded = env(INSTANCE_NAME="Acme Code")
+    assert instance_features.blocked(branded, "/changelog") == ""
+    assert 'href="/changelog"' not in instance_features.chrome_css(branded)
+    off = [item for item in instance_features.describe(branded) if not item["enabled"]]
+    assert "/changelog" not in {path for item in off for path in item["paths"]}
+    assert {"changelog.html", "changelog.js"} <= set(build_site_assets.BACKEND_ASSETS)
+    assert static_routes.external_site_delivery(
+        "/changelog", "https://code.example.com", "https://code.example.com",
+        ()) == ("local", "")
+    page = (ROOT.parent / "www" / "public" / "changelog.html").read_text(encoding="utf-8")
+    assert not re.search(r"""(?:src|href|fetch\()\s*=?\s*["']https?://(?:[a-z0-9-]+\.)*forkmesh\.com""",
+                         page)
+    assert 'data-source="/changelog.json"' in page
+    assert '<script src="/changelog.js?v=${version}" defer></script>' in page
+
+
+def test_brand_tool_drops_forkmesh_property_links_from_the_chrome():
+    page = (ROOT / "public" / "dashboard" / "repo.html").read_text(encoding="utf-8")
+    assert "https://forkmesh.com/market" in apply_instance_brand.brand_page(page, "example", powered_by=False)
+    branded = apply_instance_brand.brand_page(page, "example", powered_by=False, white_label=True)
+    chrome = "".join(block.group(0) for block in
+                     apply_instance_brand.CHROME_BLOCK_RE.finditer(branded))
+    for gone in ("https://forkmesh.com/market", "https://forkmesh.com/#pricing",
+                 "https://forkmesh.com/#membership", "https://world.forkmesh.com/",
+                 'href="https://forkmesh.com/"', "data-forkmesh-membership"):
+        assert gone not in chrome, gone
+    assert '<a href="/"><span class="dashboard-nav-icon"><i data-lucide="house">' in chrome
+    assert 'href="/world" data-plugin-entry="world"' in chrome
+    assert 'href="/lite" data-lite-link' in chrome
+    assert apply_instance_brand.brand_page(branded, "example", powered_by=False) == branded
+    main = '<main><a href="https://forkmesh.com/market">user text</a></main>'
+    assert main in apply_instance_brand.brand_page(main, "example")
+
+
+def test_instance_stylesheet_hides_forkmesh_links_the_dashboard_draws_later():
+    assert "forkmesh.com/" not in instance_features.chrome_css(env(INSTANCE_NAME="example"))
+    css = instance_features.chrome_css(env(INSTANCE_NAME="example", INSTANCE_WHITE_LABEL="1"))
+    rule = css.split("\n")[1]
+    assert ':is(header, nav, aside, footer) a[href^="https://forkmesh.com/"]' \
+        ':not([href="https://forkmesh.com/"]):not([data-instance-powered-by] a)' in rule
+    assert "a[data-forkmesh-membership]" in rule and "patreon.com" in rule
+    assert "forkmesh.com/" not in instance_features.chrome_css(env())

@@ -82,6 +82,14 @@ public final class RelayDirectory {
 
     public func contains(_ id: String) -> Bool { byId(id) != nil }
 
+    public func owner(ofInstance instanceId: String) -> RelayProfile? {
+        relays.first { $0.instanceId == instanceId } ?? relays.first { $0.hasInstance && $0.id == instanceId }
+    }
+
+    public func owner(of instance: RelayProfile) -> RelayProfile? {
+        instance.instanceId.flatMap(owner(ofInstance:))
+    }
+
     @discardableResult
     public func addListener(_ listener: @escaping @Sendable () -> Void) -> ListenerToken { listeners.add(listener) }
 
@@ -246,7 +254,7 @@ public final class RelayDirectory {
     /// Re-adding an existing relay refreshes its handshake stamp instead of duplicating it.
     @discardableResult
     public func add(_ relay: RelayProfile) -> RelayProfile {
-        if let existing = byId(relay.id) {
+        if let existing = byId(relay.id) ?? owner(of: relay) {
             let updated = existing.copyWith(verifiedAt: relay.verifiedAt, verifiedRev: relay.verifiedRev)
             replace(updated)
             return updated
@@ -271,7 +279,9 @@ public final class RelayDirectory {
 
     @discardableResult
     public func attach(_ id: String, to instance: RelayProfile) -> RelayProfile? {
-        guard let relay = byId(id), !relay.hasInstance, instance.hasInstance, !instance.serverUrl.isEmpty else { return nil }
+        guard let relay = byId(id), !relay.hasInstance, instance.hasInstance, !instance.serverUrl.isEmpty,
+            owner(of: instance) == nil
+        else { return nil }
         let attached = relay.attached(to: instance)
         replace(attached)
         return attached
@@ -290,6 +300,13 @@ public final class RelayDirectory {
         let clean = RelayDirectory.foldAliasUrl(canonicalize(url.dartTrimmed))
         if clean.isEmpty { return nil }
         guard let id = RelayProfile.normalizeOrigin(clean) else { return nil }
+        if let owner = owner(ofInstance: id), owner.id != id {
+            activeIdValue = owner.id
+            prefs.set(owner.id, forKey: RelayDirectory.activeKey)
+            persist()
+            notifyListeners()
+            return owner
+        }
         let existing = byId(id)
         let relay = existing?.copyWith(serverUrl: clean)
             ?? RelayProfile(

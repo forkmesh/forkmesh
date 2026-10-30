@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard, assembled_dashboard_page, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 from _maintenance_stubs import with_maintenance_off
 
@@ -84,21 +84,24 @@ def _load_notification_helpers():
     return ns
 
 
-def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None):
+def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None,
+                                 muted=()):
     """notify_pending_inbox with its collaborators stubbed, so the strings
     it composes for the ping inbox can be read back directly. maintainers is
     what the organization lookup answers for the repo."""
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     body = [node for node in tree.body
             if isinstance(node, ast.AsyncFunctionDef)
-            and node.name in ("notify_pending_inbox", "_node_owner_among")]
-    assert len(body) == 2, "notify_pending_inbox not found in entry.py"
+            and node.name in ("notify_pending_inbox", "_node_owner_among")
+            or isinstance(node, ast.FunctionDef)
+            and node.name == "pending_inbox_action"]
+    assert len(body) == 3, "notify_pending_inbox not found in entry.py"
     body.extend(
         node for node in tree.body
         if isinstance(node, ast.Assign) and {
             t.id for t in node.targets if isinstance(t, ast.Name)
         } & {"PING_OPENED_KINDS", "NOTIFICATION_ITEM_URL_SEGMENTS",
-             "NOTIFICATION_BODY_MAX"})
+             "NOTIFICATION_BODY_MAX", "PENDING_INBOX_ISSUE_ACTIONS"})
     mod = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(mod)
 
@@ -115,10 +118,14 @@ def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None):
     async def account_row(_env, name):
         return None, {"owner": (node_owners or {}).get(name, "")}
 
+    async def thread_muted(_env, _owner, _repo, source, number, listener):
+        return (source, number, listener) in muted
+
     ns = {
         "enqueue_notification": enqueue_notification,
         "_org_repo_maintainers": org_repo_maintainers,
         "_account_row": account_row,
+        "_thread_muted": thread_muted,
         "clean_string": lambda value, limit=240: (
             value.strip()[:limit] if isinstance(value, str) else ""),
         "repo_web_href": lambda owner, repo: "/" + owner + "/" + repo,
@@ -232,6 +239,31 @@ def test_dashboard_uses_related_icons_on_every_ping_surface():
     assert dashboard.count("data-notification-kind-icon") == 4
 
 
+def test_inbox_ping_rows_show_the_instance_logo_beside_or_under_the_icon():
+    dashboard = _read(PUBLIC / "dashboard.js")
+    helper = _source_block(
+        dashboard, "  function notificationInstanceLogoHtml() {", "\n  }\n")
+    assert 'src="/assets/logo.svg"' in helper
+    assert "platformName()" in helper
+    for start, end, icon in (
+        ("  function renderNotificationPreview() {",
+         "\n  function notificationLead", '<span class="relative">${avatar}'),
+        ("  function renderNotificationModal() {",
+         "\n  async function loadNotifications", "<i data-notification-kind-icon"),
+    ):
+        block = _source_block(dashboard, start, end)
+        assert "flex-col-reverse items-center gap-1 sm:flex-row" in block
+        assert block.index("${notificationInstanceLogoHtml()}") < block.index(icon)
+    row = _source_block(
+        _read(ROOT.parent / "native" / "ios" / "ForkMesh" / "Features" /
+              "Inbox" / "InboxScreen.swift"),
+        "struct InboxRow: View {", "\n}\n")
+    assert "item.source == .local ? nil : settings?.project" in row
+    icon = row.index("FmIcon(item.icon")
+    assert icon < row.index("ProjectIcon(project: instance") < row.index(
+        "VStack(alignment: .leading")
+
+
 def _source_block(text, start, end):
     begin = text.index(start)
     return text[begin:text.index(end, begin)]
@@ -287,7 +319,6 @@ def test_worker_indexes_notifications_from_existing_event_sources():
         "await notify_mentions(env, owner, repo,",
         "await enqueue_notification(env, grantee, \"repo_shared\"",
         "async def notify_release_published",
-        "await notify_host_status(env, repo_bi, \"host_offline\"",
     ):
         assert marker in ENTRY_TEXT
     # Legacy Worker-held bounty funding/payout mutation is frozen; public
@@ -311,7 +342,7 @@ def test_dashboard_notifications_are_wired_to_real_api_not_mock_data():
     assert "Notifications disabled until notification data is wired" not in dashboard
     assert "const notifications = []" not in dashboard
     assert "notificationToggle" in dashboard
-    assert "notificationModal" in dashboard
+    assert "notificationModal" in deferred_dialogs()
     assert "data-notification-count" in dashboard
     assert "loadNotifications" in dashboard_js
     assert 'fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`)' in dashboard_js
@@ -520,7 +551,7 @@ def test_pending_inbox_ping_names_the_repo_the_submitter_used():
     # the confirmation, the web URL and this ping's own href.
     assert ping["title"] == "Issue submitted for forkmesh/forkmesh"
     assert ping["repo"] == "forkmesh/forkmesh"
-    assert ping["href"] == "/forkmesh/forkmesh"
+    assert ping["href"] == "/forkmesh/forkmesh/issues/7"
     # The hosting node still matters to this recipient, who owns it, so it is
     # spelled out rather than dropped.
     assert ping["body"] == "Improve the README (hosted on your jett node)"
@@ -552,7 +583,7 @@ def test_new_pull_request_ping_for_a_plain_node_repo():
     assert ping["title"] == "New pull request in source/forkmesh"
     assert ping["repo"] == "source/forkmesh"
     # A new item links straight to itself rather than to the repository.
-    assert ping["href"] == "/source/forkmesh/pulls/3"
+    assert ping["href"] == "/source/forkmesh/pull/3"
     # No alias, so no parenthetical: the body stays the submitted title.
     assert ping["body"] == "Add relay retries"
     assert ping["meta"]["hostOwner"] == "source"
@@ -685,7 +716,74 @@ def test_inbox_activity_on_an_existing_item_stays_a_host_only_inbox_ping():
     assert ping["recipient"] == "source"
     assert ping["kind"] == "pending_inbox"
     assert ping["title"] == "Pull request activity for source/forkmesh"
-    assert ping["href"] == "/source/forkmesh"
+    assert ping["href"] == "/source/forkmesh/pull/3"
+
+
+def test_a_pull_request_event_without_text_says_what_happened():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    for event in ({"type": "review", "state": "approved", "body": ""},
+                  {"type": "status", "state": "closed", "body": ""},
+                  {"type": "thread-state", "state": "resolved", "body": ""}):
+        asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice",
+                           "Add relay retries", 3, text=event["body"],
+                           event=event))
+
+    approved, closed, resolved = captured
+    assert approved["title"] == "Pull request approved in source/forkmesh"
+    assert approved["body"] == (
+        "Add relay retries\n\nalice approved pull request #3.")
+    assert approved["href"] == "/source/forkmesh/pull/3"
+    assert closed["title"] == "Pull request closed in source/forkmesh"
+    assert closed["body"].endswith("alice closed pull request #3.")
+    assert resolved["title"] == "Review thread resolved in source/forkmesh"
+    for ping in captured:
+        assert "desktop inbox" not in ping["body"]
+    assert len({ping["dedupe"] for ping in captured}) == 3
+
+
+def test_an_approval_with_a_note_keeps_the_note():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice", "", 3,
+                       text="Ship it.",
+                       event={"type": "review", "state": "approved",
+                              "body": "Ship it."}))
+
+    ping, = captured
+    assert ping["title"] == "Pull request approved in source/forkmesh"
+    assert ping["body"] == "alice approved pull request #3.\n\nShip it."
+
+
+def test_an_issue_change_names_the_change_and_the_issue():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "assignees", "assignees": ["bob"]}))
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "status", "status": "closed"}))
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "unknown"}))
+
+    assigned, closed, other = captured
+    assert assigned["title"] == "Issue assigned in source/forkmesh"
+    assert assigned["body"] == "alice assigned issue #12 to bob."
+    assert assigned["href"] == "/source/forkmesh/issues/12"
+    assert closed["title"] == "Issue closed in source/forkmesh"
+    assert closed["body"] == "alice closed issue #12."
+    assert other["body"] == "There's new activity on issue #12."
+
+
+def test_an_owner_who_muted_the_thread_hears_nothing_more_from_it():
+    captured = []
+    notify = _load_pending_inbox_notifier(
+        captured, muted={("pull", 3, "source")})
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice", "", 3,
+                       text="Another comment."))
+    assert captured == []
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice",
+                       "Add relay retries", 3, opened=True))
+    assert [p["kind"] for p in captured] == ["pull_submitted"]
 
 
 def test_every_inbox_creation_path_marks_its_ping_opened():
@@ -1997,7 +2095,8 @@ def test_one_pings_settings_page_covers_every_ping_switch_on_the_web():
     # page) and the pings modal header, a trailing gear column on each modal
     # row, and "Turn off … pings" in the detail pane — all real links to the
     # section, switched in place when already on the settings page.
-    assert home_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 2
+    assert home_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
+    assert deferred_dialogs().count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
     assert "Ping settings" in home_page
     assert "/dashboard/settings/notifications#ping-kind-${encodeURIComponent(key)}" in dashboard_js
     assert "data-notification-row" in dashboard_js

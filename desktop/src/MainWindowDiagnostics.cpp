@@ -29,6 +29,8 @@
 #include "RepoSecurity.h"
 #include "RewardPoolSigner.h"
 #include "SourceCheckout.h"
+#include "SingleInstance.h"
+#include "StallRepairRouting.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
 
@@ -242,7 +244,8 @@ void MainWindow::startDiagnostics()
             QFile::rename(logPath, prev);
         }
         const QString buildInfo =
-            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src " FORKMESH_SOURCE_DIR ")");
+            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src ") + forkmesh::sourceDir() +
+            QStringLiteral(")");
         m_stallWatchdog->start(/*stallThresholdMs=*/500, logPath, buildInfo);
         if (!logPath.isEmpty())
             logSystem(QStringLiteral("UI-stall watchdog armed; reports append to %1")
@@ -373,6 +376,21 @@ void MainWindow::updateFooterDiagnostics()
     updateActivityTile(static_cast<ResourceSparkline *>(m_debugLogActivityTile),
                        m_debugAllLogCount, &m_debugLastLogActivityTotal,
                        QStringLiteral("Log"));
+    if (auto *stall = static_cast<ResourceSparkline *>(m_debugStallTile)) {
+        const qint64 peak = m_debugStallPeakSinceSampleMs;
+        m_debugStallPeakSinceSampleMs = 0;
+        stall->addSample(qMin<qint64>(peak, kDebugStallChartMaxMs),
+                         kDebugStallChartMaxMs, QStringLiteral("%1ms").arg(peak));
+        QString tip = QStringLiteral("UI stalls: %1 this session").arg(m_stallCount);
+        if (m_stallCount > 0)
+            tip += QStringLiteral(" · longest %1 ms · last %2 ago")
+                       .arg(m_debugStallLongestMs)
+                       .arg(formatDuration(QDateTime::currentMSecsSinceEpoch() -
+                                           m_debugStallLastAtMs));
+        tip += QStringLiteral("\nThe longest time the window froze each second. "
+                              "Click to see the stalls in the Log");
+        stall->setToolTip(tip);
+    }
 
     const qint64 fdNow = QDateTime::currentMSecsSinceEpoch();
     if (fdNow - m_fdPressureLastCheckMs >= 15000) {
@@ -415,6 +433,10 @@ void MainWindow::updateFooterDiagnostics()
     }
 #endif
     m_debugLastCpuPercent = cpuPct;
+    if (cpuPct >= 0.0)
+        m_diagnosticsCpuAverage = m_diagnosticsCpuAverage < 0.0
+                                      ? cpuPct
+                                      : 0.8 * m_diagnosticsCpuAverage + 0.2 * cpuPct;
     auto *resources = static_cast<ResourceQuadrantSparkline *>(m_resourceChart);
     if (resources) {
         resources->addSample(ResourceQuadrantSparkline::Cpu,
@@ -518,6 +540,84 @@ void MainWindow::updateFooterDiagnostics()
         m_logActivityLights->setStallToolTip(stallTip);
     if (m_logActivityHeader)
         m_logActivityHeader->setStallToolTip(stallTip);
+    updateDiagnosticsAlert();
+}
+
+int MainWindow::crashBannerLineCount() const
+{
+    int count = 0;
+    for (const QString &line : std::as_const(m_networkLog))
+        if (line.contains(forkmesh::crashlog::kCrashBanner))
+            ++count;
+    return count;
+}
+
+void MainWindow::updateDiagnosticsAlert()
+{
+    auto *button = dynamic_cast<ActivityRailButton *>(m_debugDiagnosticsButton);
+    if (!button)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_diagnosticsAlertLastCheckMs > 0 && now - m_diagnosticsAlertLastCheckMs < 5000)
+        return;
+    m_diagnosticsAlertLastCheckMs = now;
+
+    const int crashes = crashBannerLineCount();
+    m_diagnosticsAckCrashes = qMin(m_diagnosticsAckCrashes, crashes);
+    m_diagnosticsAckStalls = qMin(m_diagnosticsAckStalls, m_stallCount);
+    m_diagnosticsAckSecurity = qMin(m_diagnosticsAckSecurity, m_securityIncidentCount);
+
+    forkmesh::diagreport::AlertInputs in;
+    in.crashes = crashes - m_diagnosticsAckCrashes;
+    in.stalls = m_stallCount - m_diagnosticsAckStalls;
+    in.securityIncidents = m_securityIncidentCount - m_diagnosticsAckSecurity;
+    if (in.securityIncidents > 0 && !m_securityIncidentLines.isEmpty())
+        in.securitySample = m_securityIncidentLines.last();
+    if (m_qtDiagnostics)
+        in.loopLagP95Ms = m_qtDiagnostics->snapshot().p95LoopLagMs;
+    in.cpuPercent = m_diagnosticsCpuAverage;
+    in.residentBytes = SystemStats::residentBytes();
+    in.hostMemoryTotal = SystemStats::totalMemoryBytes();
+    in.hostMemoryAvailable = SystemStats::availableMemoryBytes();
+    in.diskTotal = SystemStats::diskTotalBytes(QDir::homePath());
+    in.diskFree = SystemStats::diskFreeBytes(QDir::homePath());
+    in.openFiles = SystemStats::openFileCount();
+    in.openFileLimit = SystemStats::openFileSoftLimit();
+    const forkmesh::diagreport::Alert alert = forkmesh::diagreport::alert(in);
+
+    m_diagnosticsAlertDetected = alert.detected();
+    button->setDangerTint(m_diagnosticsAlertDetected);
+    const forkmesh::teammates::AgentChoice choice = promptAreaAgentChoice();
+    QString agent = agentProviderName(choice.provider);
+    if (const QString model = agentModelLabel(choice.model); !model.isEmpty())
+        agent += QStringLiteral(" (%1)").arg(model);
+    if (agent.trimmed().isEmpty())
+        agent = QStringLiteral("the selected agent");
+    const QString action =
+        QStringLiteral("Click to start %1 with a diagnostic snapshot to fix them. "
+                       "Right-click to copy the report instead.")
+            .arg(agent);
+    button->setToolTip(
+        m_diagnosticsAlertDetected
+            ? QStringLiteral("Diagnostics found issues:\n%1\n\n%2")
+                  .arg(alert.summary(), action)
+            : QStringLiteral("No performance, security or UI issues detected. "
+                             "Click to start %1 with a diagnostic snapshot to "
+                             "fix errors and optimize resource usage. "
+                             "Right-click to copy the report instead.")
+                  .arg(agent));
+    button->setAccessibleDescription(m_diagnosticsAlertDetected
+                                         ? alert.summary()
+                                         : QStringLiteral("No issues detected"));
+}
+
+void MainWindow::acknowledgeDiagnosticsAlert()
+{
+    m_diagnosticsAckCrashes = crashBannerLineCount();
+    m_diagnosticsAckStalls = m_stallCount;
+    m_diagnosticsAckSecurity = m_securityIncidentCount;
+    m_diagnosticsAlertLastCheckMs = 0;
+    updateDiagnosticsAlert();
 }
 
 void MainWindow::checkFileDescriptorPressure()
@@ -645,6 +745,14 @@ void MainWindow::toggleRepositoryRatchet(bool enabled)
 }
 
 namespace {
+bool stallSessionIsActive(const AgentSession *session)
+{
+    return session &&
+           (session->status == AgentStatus::Running ||
+            session->status == AgentStatus::Queued ||
+            session->status == AgentStatus::Waiting);
+}
+
 QString normalizedStallSignature(const QString &blockingCall,
                                  const QString &likelyOrigin,
                                  const QString &backtrace)
@@ -734,6 +842,9 @@ void MainWindow::onUiStall(qint64 peakMs, const QString &stallId,
                            const QString &report, qint64 startedAtMs)
 {
     ++m_stallCount;
+    m_debugStallPeakSinceSampleMs = qMax(m_debugStallPeakSinceSampleMs, peakMs);
+    m_debugStallLongestMs = qMax(m_debugStallLongestMs, peakMs);
+    m_debugStallLastAtMs = QDateTime::currentMSecsSinceEpoch();
     const QString when = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
     const QString marker =
         stallId.isEmpty()
@@ -853,6 +964,10 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
     // turn those service-side diagnostics into coding-agent processes: doing
     // so competes with the mirror seal for RAM/disk and can create a feedback
     // loop where each stall launches more work and makes the next stall worse.
+    if (forkmesh::isBackgroundInstance() ||
+        QGuiApplication::platformName().contains(QStringLiteral("offscreen"),
+                                                 Qt::CaseInsensitive))
+        return;
     if (!QSettings().value(kAutoAgentOnStallSetting, true).toBool())
         return;
 
@@ -862,6 +977,32 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
 
     const forkmesh::teammates::LoadResult loaded =
         forkmesh::teammates::Store(teammatesDirPath(repoIndex)).load();
+
+    if (const int openSessionId = openStallRepairSessionId(repoIndex);
+        openSessionId > 0) {
+        const AgentSession *open = findAgentSession(openSessionId);
+        const bool working = open && stallSessionIsActive(open);
+        const int waiting = int(stallEntriesNotHandedOff().size());
+        bool due = working && waiting > 0;
+        for (const forkmesh::teammates::Config &teammate : loaded.teammates) {
+            if (due || !teammate.enabled)
+                break;
+            for (const forkmesh::teammates::LogMonitor &monitor :
+                 teammate.logMonitors) {
+                if (forkmesh::teammates::normalizedTaskType(monitor.taskType) ==
+                        forkmesh::teammates::kTaskTypeUiStalls &&
+                    forkmesh::teammates::logMonitorMatches(
+                        monitor, QStringLiteral("STALL"), waiting)) {
+                    due = true;
+                    break;
+                }
+            }
+        }
+        if (due)
+            addStallsToOpenRepairSession(/*immediate=*/false);
+        return;
+    }
+
     QString assignment;
     for (const forkmesh::teammates::Config &teammate : loaded.teammates) {
         if (!teammate.enabled)
@@ -889,27 +1030,126 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
             m_triggeredTeammateLogMonitors.insert(monitorKey);
             if (assignment.isEmpty())
                 assignment = stallFixPrompt();
+            const int handedOffThrough = m_stallCount;
             const int sessionId = runTeammate(
                 teammate.id, trigger, monitor.taskType, repoIndex, assignment,
                 /*switchToTab=*/false);
             if (sessionId > 0) {
+                rememberStallRepairSession(sessionId);
+                m_stallHandedOffThrough =
+                    qMax(m_stallHandedOffThrough, handedOffThrough);
+                m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
                 const forkmesh::teammates::AgentChoice taskAgent =
                     forkmesh::teammates::recentAgentChoice();
                 logSystem(QStringLiteral(
                               "%1 observed %2 UI stalls (threshold %3) and "
-                              "started %4 session #%5 to repair them.")
+                              "handed them to %4 session #%5; later stalls "
+                              "are added to that session.")
                               .arg(teammate.name)
                               .arg(m_stallCount)
                               .arg(monitor.threshold)
                               .arg(agentProviderName(taskAgent.provider))
                               .arg(sessionId));
-            } else {
-                // The teammate may already be busy or the provider may be
-                // unavailable. Retry on the next observed stall.
-                m_triggeredTeammateLogMonitors.remove(monitorKey);
+                return;
             }
+            // The teammate may already be busy or the provider may be
+            // unavailable. Retry on the next observed stall.
+            m_triggeredTeammateLogMonitors.remove(monitorKey);
         }
     }
+}
+
+int MainWindow::openStallRepairSessionId(int repoIndex)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return 0;
+    const RepositoryRecord &repo = m_repositories.at(repoIndex);
+    QList<forkmesh::stallrepair::Candidate> candidates;
+    candidates.reserve(m_agentSessions.size());
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        forkmesh::stallrepair::Candidate candidate;
+        candidate.id = session.id;
+        candidate.active = stallSessionIsActive(&session);
+        candidate.succeeded = session.status == AgentStatus::Success;
+        candidate.merged = session.merged;
+        candidate.foreign =
+            isCloudSession(session.id) || isExternalSession(session.id);
+        candidate.associationOnly = session.associationOnly;
+        candidate.sameRepository =
+            session.owner == repo.owner && session.name == repo.name;
+        candidate.title = session.issueTitle;
+        candidate.prompt = session.prompt;
+        candidate.createdAtMs = session.createdAtMs;
+        candidates.append(candidate);
+    }
+    return forkmesh::stallrepair::pickSession(
+        candidates, QSettings().value(kStallRepairSessionSetting, 0).toInt());
+}
+
+void MainWindow::rememberStallRepairSession(int sessionId)
+{
+    if (sessionId > 0)
+        QSettings().setValue(kStallRepairSessionSetting, sessionId);
+}
+
+QStringList MainWindow::stallEntriesNotHandedOff() const
+{
+    const int firstSerial = m_stallCount - int(m_stallLog.size()) + 1;
+    QStringList entries;
+    for (int i = 0; i < m_stallLog.size(); ++i) {
+        if (firstSerial + i > m_stallHandedOffThrough)
+            entries.append(m_stallLog.at(i));
+    }
+    return entries;
+}
+
+bool MainWindow::addStallsToOpenRepairSession(bool immediate)
+{
+    if (openStallRepairSessionId(stallReportRepoIndex()) <= 0)
+        return false;
+    if (immediate) {
+        if (m_stallFollowUpTimer)
+            m_stallFollowUpTimer->stop();
+        deliverStallFollowUp();
+        return true;
+    }
+    if (!m_stallFollowUpTimer) {
+        m_stallFollowUpTimer = new QTimer(this);
+        m_stallFollowUpTimer->setSingleShot(true);
+        connect(m_stallFollowUpTimer, &QTimer::timeout, this, [this] {
+            if (forkmesh::isBackgroundInstance() ||
+                !QSettings().value(kAutoAgentOnStallSetting, true).toBool())
+                return;
+            deliverStallFollowUp();
+        });
+    }
+    if (!m_stallFollowUpTimer->isActive()) {
+        const qint64 delayMs = forkmesh::stallrepair::followUpDelayMs(
+            QDateTime::currentMSecsSinceEpoch(), m_stallFollowUpLastMs);
+        m_stallFollowUpTimer->start(int(qBound<qint64>(1000, delayMs,
+                                                       24LL * 60 * 60 * 1000)));
+    }
+    return true;
+}
+
+void MainWindow::deliverStallFollowUp()
+{
+    const QStringList entries = stallEntriesNotHandedOff();
+    if (entries.isEmpty())
+        return;
+    const int sessionId = openStallRepairSessionId(stallReportRepoIndex());
+    if (sessionId <= 0)
+        return;
+    const QString prompt = forkmesh::stallrepair::followUpPrompt(
+        entries, m_stallCount, stallLogLocationsBlock());
+    m_stallHandedOffThrough = m_stallCount;
+    m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
+    rememberStallRepairSession(sessionId);
+    sendPromptToAgentSession(sessionId, prompt);
+    logSystem(QStringLiteral("Added %1 new UI stall report(s) to agent session "
+                             "#%2 instead of starting another agent.")
+                  .arg(entries.size())
+                  .arg(sessionId));
 }
 
 // The repository this build came from. Crash and error-log repairs keep their
@@ -923,7 +1163,7 @@ int MainWindow::stallReportRepoIndex() const
     for (const RepositoryRecord &repo : m_repositories)
         checkouts.append(repo.localPath);
     const int own = forkmesh::paths::checkoutContaining(
-        checkouts, QStringLiteral(FORKMESH_SOURCE_DIR));
+        checkouts, forkmesh::sourceDir());
     return own >= 0 ? own : issuesRepoIndex();
 }
 
@@ -932,6 +1172,9 @@ void MainWindow::clearStallLog()
     m_stallCount = 0;
     m_stallLog.clear();
     m_triggeredTeammateLogMonitors.clear();
+    m_stallHandedOffThrough = 0;
+    if (m_stallFollowUpTimer)
+        m_stallFollowUpTimer->stop();
     m_lastStallReportSignature.clear();
     m_lastStallReportMs = 0;
     if (!m_stallLogPath.isEmpty())
@@ -958,6 +1201,17 @@ bool MainWindow::sendStallLogToAgent()
                            "ForkMesh (or add the repo on the Issues tab) and try again."));
         return false;
     }
+    if (const int openSessionId = openStallRepairSessionId(repoIndex);
+        openSessionId > 0) {
+        if (stallEntriesNotHandedOff().isEmpty()) {
+            flashMessage(QStringLiteral("Agent session #%1 already has every "
+                                        "recorded UI stall.")
+                             .arg(openSessionId));
+            return true;
+        }
+        addStallsToOpenRepairSession(/*immediate=*/true);
+        return true;
+    }
     const QString prompt =
         QStringLiteral(
             "ForkMesh's GUI thread stalled %1 time(s) this session — the event loop "
@@ -968,12 +1222,17 @@ bool MainWindow::sendStallLogToAgent()
             .arg(m_stallLog.size())
             .arg(stallLogLocationsBlock())
             .arg(m_stallLog.join(QStringLiteral("\n\n---\n\n")));
-    if (startAdHocAgentForRepo(repoIndex, prompt, defaultAgentProvider(),
-                               /*createPr=*/false) <= 0) {
+    const int handedOffThrough = m_stallCount;
+    const int sessionId = startAdHocAgentForRepo(
+        repoIndex, prompt, defaultAgentProvider(), /*createPr=*/false);
+    if (sessionId <= 0) {
         QMessageBox::warning(this, QStringLiteral("UI stall diagnostics"),
                              QStringLiteral("Could not start an agent for the recorded stalls."));
         return false;
     }
+    rememberStallRepairSession(sessionId);
+    m_stallHandedOffThrough = qMax(m_stallHandedOffThrough, handedOffThrough);
+    m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
     logSystem(QStringLiteral("Started an agent to fix the %1 recorded UI stall(s).")
                   .arg(m_stallLog.size()));
     return true;
@@ -1093,7 +1352,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
     dr::Snapshot s;
     s.takenAtMs = QDateTime::currentMSecsSinceEpoch();
     s.version = QStringLiteral(FORKMESH_VERSION);
-    s.sourceDir = QStringLiteral(FORKMESH_SOURCE_DIR);
+    s.sourceDir = forkmesh::sourceDir();
     s.platform = QStringLiteral("%1 (%2, kernel %3), %4")
                      .arg(QSysInfo::prettyProductName(),
                           QSysInfo::currentCpuArchitecture(),
@@ -1136,6 +1395,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
         forkmesh::crashlog::parseCrashRecords(m_networkLog);
     for (int i = qMax(0, int(crashes.size()) - 3); i < crashes.size(); ++i)
         s.crashes.append(forkmesh::crashlog::describe(crashes.at(i)));
+    s.securityIncidents = m_securityIncidentLines;
     s.healthFindings =
         NodeDiagnostics::detailText(NodeDiagnostics::hostCollector().findings());
     s.logLocations = stallLogLocationsBlock();
@@ -1225,6 +1485,7 @@ void MainWindow::sendDiagnosticsReportToAgent()
                      true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
+    acknowledgeDiagnosticsAlert();
     flashMessage(QStringLiteral("Diagnostic report sent to desktop agent #%1. Follow its progress in Agents.")
                      .arg(sessionId));
 }
@@ -1661,8 +1922,9 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "that run in the Agent column, and “Stop agent” ends that run "
         "cleanly instead of killing one process out from under it. "
         "“Kill” requests a normal termination and “Kill all” does the "
-        "same for every listed process sharing that name; ForkMesh and PID 1 "
-        "are protected."));
+        "same for every listed process sharing that name. ForkMesh, its "
+        "helpers, whatever started it, the display server and PID 1 are "
+        "protected, since ending them would close ForkMesh too."));
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -1715,7 +1977,8 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "allowed to end. If host memory is still at 85% or more once that "
         "process exits (or after five seconds), it ends the next largest, and "
         "so on until memory drops below 85% or no listed process is left. "
-        "ForkMesh and PID 1 are never chosen. Opening the window yourself "
+        "ForkMesh, its helpers, whatever started it, the display server and "
+        "PID 1 are never chosen. Opening the window yourself "
         "never kills anything."));
     connect(autoKill, &QCheckBox::toggled, this, [this](bool enabled) {
         QSettings().setValue(kHighMemoryAutoKillSetting, enabled);
@@ -1744,6 +2007,7 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         m_highMemoryProcessStatus = nullptr;
         m_highMemoryProcessQuery = nullptr;
         m_highMemoryRssHistory.clear();
+        m_highMemoryProtectedPids.clear();
     });
     auto *autoRefresh = new QTimer(dialog);
     autoRefresh->setInterval(5000);
@@ -1852,6 +2116,28 @@ void MainWindow::refreshHighMemoryProcessTable()
                         rows.append({pid, owner, rssKb, percent.toDouble(),
                                      name, commandLine});
                 }
+
+                QSet<QString> selfExecutables;
+                for (const QString &path :
+                     {SystemStats::executablePath(
+                          QCoreApplication::applicationPid()),
+                      QCoreApplication::applicationFilePath(),
+                      QFileInfo(QCoreApplication::applicationFilePath())
+                          .canonicalFilePath(),
+                      qEnvironmentVariable("APPIMAGE")}) {
+                    if (!path.isEmpty())
+                        selfExecutables.insert(path);
+                }
+                QHash<qint64, QString> executableOf;
+                for (const ProcessRow &process : rows) {
+                    QString executable = SystemStats::executablePath(process.pid);
+                    if (executable.isEmpty())
+                        executable = process.commandLine.section(QLatin1Char(' '), 0, 0);
+                    executableOf.insert(process.pid, executable);
+                }
+                m_highMemoryProtectedPids = SystemStats::killProtectedPids(
+                    QCoreApplication::applicationPid(), selfExecutables,
+                    parentOf, nameOf, executableOf);
 
                 QHash<qint64, QVector<double>> history;
                 history.reserve(rows.size());
@@ -2045,12 +2331,12 @@ void MainWindow::refreshHighMemoryProcessTable()
                     auto *kill = new QPushButton(QStringLiteral("Kill"));
                     kill->setProperty("buttonSize", "sm");
                     const bool protectedProcess =
-                        process.pid == 1 ||
-                        process.pid == QCoreApplication::applicationPid();
+                        isHighMemoryProtected(process.pid);
                     kill->setEnabled(!protectedProcess);
                     kill->setToolTip(
                         protectedProcess
-                            ? QStringLiteral("This process is protected")
+                            ? QStringLiteral("This process is protected: "
+                                             "ending it would close ForkMesh")
                             : QStringLiteral("Request that %1 terminate")
                                   .arg(process.name));
                     connect(kill, &QPushButton::clicked, this,
@@ -2061,8 +2347,7 @@ void MainWindow::refreshHighMemoryProcessTable()
                     const QList<qint64> family = pidsByName.value(process.name);
                     QList<qint64> killable;
                     for (qint64 candidate : family) {
-                        if (candidate <= 1 ||
-                            candidate == QCoreApplication::applicationPid())
+                        if (isHighMemoryProtected(candidate))
                             continue;
                         killable.append(candidate);
                     }
@@ -2123,8 +2408,10 @@ void MainWindow::refreshHighMemoryProcessTable()
                             .toBool()) {
                         QList<QPair<qint64, QString>> candidates;
                         candidates.reserve(rows.size());
-                        for (const ProcessRow &process : rows)
-                            candidates.append({process.pid, process.name});
+                        for (const ProcessRow &process : rows) {
+                            if (!isHighMemoryProtected(process.pid))
+                                candidates.append({process.pid, process.name});
+                        }
                         QTimer::singleShot(0, this, [this, candidates] {
                             autoKillTopHighMemoryProcess(candidates);
                         });
@@ -2166,9 +2453,15 @@ void MainWindow::refreshHighMemoryProcessTable()
     });
 }
 
+bool MainWindow::isHighMemoryProtected(qint64 pid) const
+{
+    return pid <= 1 || pid == QCoreApplication::applicationPid() ||
+           m_highMemoryProtectedPids.contains(pid);
+}
+
 void MainWindow::killHighMemoryProcess(qint64 pid, const QString &name)
 {
-    if (pid <= 1 || pid == QCoreApplication::applicationPid())
+    if (isHighMemoryProtected(pid))
         return;
     const auto answer = QMessageBox::warning(
         m_highMemoryDialog ? static_cast<QWidget *>(m_highMemoryDialog.data())
@@ -2233,7 +2526,7 @@ void MainWindow::autoKillTopHighMemoryProcess(
 #if defined(Q_OS_UNIX)
     QStringList skipped;
     for (const auto &[pid, name] : candidates) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid() ||
+        if (isHighMemoryProtected(pid) ||
             m_highMemoryAutoKilledPids.contains(pid))
             continue;
         if (::kill(static_cast<pid_t>(pid), SIGTERM) == 0) {
@@ -2373,7 +2666,7 @@ void MainWindow::killAllHighMemoryProcesses(const QString &name,
 {
     QList<qint64> targets;
     for (qint64 pid : pids) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid())
+        if (isHighMemoryProtected(pid))
             continue;
         targets.append(pid);
     }

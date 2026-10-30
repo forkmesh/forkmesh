@@ -12,6 +12,7 @@ import com.forkmesh.nativeapp.account.projects.ProjectSwitchDriver
 import com.forkmesh.nativeapp.account.projects.SwitchPhase
 import com.forkmesh.nativeapp.account.projects.SwitchResult
 import com.forkmesh.nativeapp.api.AuthController
+import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.Features
 import com.forkmesh.nativeapp.feature.account.AuthService
@@ -89,7 +90,9 @@ class ProjectsService(
         withContext(Dispatchers.IO) { probe.check(input, directory.projects, label, worldUrl) }
 
     suspend fun checkInstance(input: String): ProbeResult =
-        withContext(Dispatchers.IO) { probe.check(input) }
+        withContext(Dispatchers.IO) { probe.check(input, directory.projects) }
+
+    fun instanceOwner(instance: Project): Project? = directory.ownerOf(instance)
 
     suspend fun attachInstance(projectId: String, instance: Project): Project? = withContext(Dispatchers.IO) {
         val attached = directory.attach(projectId, instance) ?: return@withContext null
@@ -110,7 +113,7 @@ class ProjectsService(
     }
 
     fun add(project: Project): Project {
-        val fresh = directory.byId(project.id) == null
+        val fresh = directory.byId(project.id) == null && directory.ownerOf(project) == null
         return directory.add(project).also { if (fresh) markNew(it) }
     }
 
@@ -160,6 +163,7 @@ class ProjectsService(
     private fun eraseProject(project: Project) {
         if (project.logo.isNotEmpty()) logos.delete(project.logo)
         val scope = project.scope
+        runCatching { ChatHistoryStore(File(AppFiles.projectSupportDir(app, scope), "chat-history")).eraseAll() }
         if (scope.isLegacy) return
         for (key in secrets.keys()) if (key.startsWith(scope.namespace)) secrets.delete(key)
         for (key in prefs.keys()) if (key.startsWith(scope.namespace)) prefs.remove(key)

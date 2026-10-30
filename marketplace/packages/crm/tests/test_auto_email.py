@@ -4,7 +4,7 @@ import re
 import sys
 import pytest
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_crm import Runtime, call, crm  # noqa: E402
@@ -81,7 +81,7 @@ def test_an_investor_gets_a_model_written_note_without_a_deck_link():
     assert payload["from"]["email"] == crm.OUTREACH_FROM_EMAIL
     opener, links = _tracking_urls(payload["html"])
     assert "/api/crm/-/t/o/" in opener and opener.endswith(".png")
-    assert all("/api/crm/-/t/c/" in link for link in links)
+    assert all("/api/crm/-/t/c/" in link for link in links if not link.startswith("mailto:"))
     contact = call(runtime.use("GET"), f"/api/crm/acme/contacts/{ivy}")["data"]["contact"]
     assert contact["lastContactedAt"] > 0
     log = runtime.db.execute("SELECT COUNT(*) FROM crm_outreach_log").fetchone()[0]
@@ -716,7 +716,8 @@ def test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links():
     assert sent["status"] == 201, sent
     page = runtime.mailtrap_calls[-1][1]["html"]
     assert page.startswith("<!doctype html>")
-    headings = ("Code with agents.<br>Own the forge.",
+    plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.replace("<br>", " ")))
+    headings = ("Code with agents. Own the forge.",
                 "Agents work differently. The forge does not.",
                 "AI coding is already a budget line. Agent governance is next.",
                 "One prompt becomes a reviewed, attributable pull request.",
@@ -730,15 +731,19 @@ def test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links():
                 "Company-building experience meets founder-problem fit.",
                 "$1M turns product proof into enterprise pull.",
                 "Let's build the forge teams own.")
-    places = [page.index(heading) for heading in headings]
+    places = [plain.index(heading) for heading in headings]
     assert places == sorted(places)
     assert "Prepared for Ivy" in page
-    for number in range(2, 15):
-        assert "· %02d</div>" % number in page, number
-    for asset in ("mesh.gif", "hero.jpg", "agent-flow.gif", "count.gif", "xr.jpg", "jett.png"):
+    assert 'content="light dark"' in page and "prefers-color-scheme:dark" in page
+    for asset in ("deck-cover.jpg", "deck-flow.gif", "xr.jpg", "jett.png", "kaif.png",
+                  "slab-top.png", "slab-bottom.png"):
         assert crm.EMAIL_ASSETS + asset in page
+    assert "mesh.gif" not in page and "border-radius:18px" not in page
     _, links = _tracking_urls(page)
-    targets = {parse_qs(urlparse(link).query)["u"][0] for link in links}
+    replies = {link for link in links if link.startswith("mailto:")}
+    assert replies == {"mailto:%s?subject=%s" % (
+        sent["data"]["email"]["fromEmail"], quote("Re: " + sent["data"]["email"]["subject"]))}
+    targets = {parse_qs(urlparse(link).query)["u"][0] for link in links if link not in replies}
     assert targets == {crm.TRACK_HOME}
     assert "/pitch-deck/" not in page and "Full slide" not in page
     assert len(page.encode()) < 100 * 1024
@@ -747,7 +752,8 @@ def test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links():
     assert page.count('class="fm-s') == crm.DECK_SLIDES
     markers = [page.index('class="fm-s%d"' % slide) for slide in range(1, crm.DECK_SLIDES + 1)]
     assert markers == sorted(markers)
-    assert places[8] < markers[8] < places[9]
+    assert page.index("Paid AI coding is proven.") < markers[8] < page.index(
+        "Monetize orchestration and governance,")
     assert "all fourteen slides" in runtime.prompts[0]
 
 

@@ -101,6 +101,7 @@ private:
     void editContent(const QJsonObject &content = QJsonObject());
     void deleteContent();
     void addMetric(const QString &channel = QString());
+    void editMetric(const QJsonObject &metric, int column);
     void showChannelRow(const QString &id, bool focusLink, bool reveal);
     void openChannel(const QString &id);
     void closeChannel();
@@ -413,6 +414,8 @@ private:
     QString m_readyPostSeen;
     QString m_readyPostError;
     QString m_readyPostImageId;
+    QString m_readyPostUrl;
+    QString m_readyPostUrlId;
     QPixmap m_readyPostImage;
     bool m_readyPostLoading = false;
     bool m_readyPostSaving = false;

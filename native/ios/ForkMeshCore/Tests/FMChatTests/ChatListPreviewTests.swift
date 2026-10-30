@@ -118,7 +118,7 @@ final class ChatListPreviewTests: XCTestCase {
     @MainActor func testAChannelRowShowsItsNewestTopLevelMessage() async throws {
         let (hub, h) = try await hub()
         XCTAssertNil(hub.listPreview("#general"))
-        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "*lunch* at noon?"], id: "m-1"))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "*lunch* at noon?"], id: "m-1"))
         let shown = await waitUntil { hub.listPreview("#general")?.text == "Pat: lunch at noon?" }
         XCTAssertTrue(shown)
         try await h.sendProtected(peerFrame("thread-reply", ["channel": "#general", "rootId": "m-1", "text": "in a thread"], id: "r-1"))

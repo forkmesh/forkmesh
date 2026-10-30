@@ -133,7 +133,7 @@
       /[^a-z-]/gi,
       "",
     ).slice(0, 20);
-    return `<span title="This repository has an active ForkMesh Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
+    return `<span title="This repository has an active ${escapeHtml(platformName())} Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
   }
 
   function groupMatchesGlobalSearch(group, query) {
@@ -490,6 +490,8 @@
           // with it so the card swaps instead of showing a broken image.
           fallbackDataUrl: nativeRepositoryLogoDataUrl(
             body?.logo?.fallbackDataUrl),
+          // "owner" when the logo is the one uploaded from Settings.
+          source: String(body?.logo?.source || ""),
         };
       }).catch(() => {
         // Do not negatively cache authorization failures or transient errors.
@@ -676,7 +678,7 @@
     const key = repoKey(origin);
     const label = repoLabelParts(groupDisplayName(group));
     const displayOwner = label.owner;
-    const servedNote = displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
+    const servedNote = !dashboardOnInstance() && displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
       ? ` (published from ${origin.owner || "a node"})`
       : "";
     const fullLabel = displayOwner ? `${displayOwner}/${origin.name || "repository"}` : String(origin.name || "repository");
@@ -707,13 +709,13 @@
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
               <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
-                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
+                ${displayOwner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(displayOwner, false)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
               </span>
               ${repositoryTermsBadge(origin)}
-              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
+              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || ""}/${origin.name || ""}`)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
                 <i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i>
                 <span data-repo-star-label>Star</span>
                 <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
@@ -818,7 +820,7 @@
     const license = String(repo.license || repo.licenseName || "").trim();
     const description = String(repo.description || "").trim();
     const displayOwner = repoLabelParts(groupDisplayName(group)).owner;
-    const publishedFrom = displayOwner && repo.owner &&
+    const publishedFrom = !dashboardOnInstance() && displayOwner && repo.owner &&
       displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
       ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
       : "";
@@ -836,11 +838,11 @@
           ${repositoryTermsBadge(repo)}
         </div>
         ${publishedFrom}
-        ${description ? `<p class="mb-2 break-words pr-6 text-sm text-muted-foreground">${escapeHtml(description)}</p>` : ""}
+        ${description ? `<p data-user-content class="mb-2 break-words pr-6 text-sm text-muted-foreground">${escapeHtml(description)}</p>` : ""}
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">${meta}</div>
       </div>
       <div class="flex shrink-0 flex-col items-end justify-between gap-3">
-        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
+        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || repo.owner || ""}/${repo.name || ""}`)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
           <i data-lucide="star" data-repo-star-icon class="h-4 w-4 text-muted-foreground"></i>
           <span data-repo-star-label>Star</span>
           <span data-repo-star-count class="hidden">${formatCount(0)}</span>
@@ -922,6 +924,249 @@
     hydrateNativeRepositoryLogos(list);
   }
 
+  const REPOSITORY_FORKS_SHOWN = 3;
+  const REPOSITORY_FORK_COUNTS_BATCH = 24;
+
+  function repositoryEntryLabel(entry) {
+    return String(entry?.label || entry?.key || (entry?.repo ? repoDisplayName(entry.repo) : "") || "");
+  }
+
+  function repositoryForkParentEntry(entry, entries) {
+    const parent = repoForkParent(entry?.repo);
+    if (!parent) return null;
+    const direct = entries.find((candidate) =>
+      candidate !== entry && repoMatchesKey(candidate.repo, parent.key));
+    if (direct) return direct;
+    const origin = findRepository(parent.key);
+    return origin
+      ? entries.find((candidate) => candidate !== entry && candidate.repo === origin) || null
+      : null;
+  }
+
+  function repositoryForkRoot(entry, entries) {
+    const seen = new Set([entry]);
+    let root = repositoryForkParentEntry(entry, entries);
+    while (root && !seen.has(root)) {
+      seen.add(root);
+      const above = repositoryForkParentEntry(root, entries);
+      if (!above || seen.has(above)) return root;
+      root = above;
+    }
+    return null;
+  }
+
+  function nestRepositoryForks(entries, viewsOf) {
+    const list = Array.isArray(entries) ? entries : [];
+    const roots = new Map(list.map((entry) => [entry, repositoryForkRoot(entry, list)]));
+    const groups = new Map();
+    list.forEach((entry) => {
+      if (!roots.get(entry)) groups.set(entry, { entry, forks: [] });
+    });
+    list.forEach((entry, index) => {
+      const group = groups.get(roots.get(entry));
+      if (group) group.forks.push({ entry, index });
+    });
+    const views = typeof viewsOf === "function" ? viewsOf : () => 0;
+    return [...groups.values()].map((group) => ({
+      entry: group.entry,
+      forks: group.forks
+        .sort((a, b) => (Number(views(b.entry)) || 0) - (Number(views(a.entry)) || 0) || a.index - b.index)
+        .map((item) => item.entry),
+    }));
+  }
+
+  function repositoryOwnerNameHtml(owner, inLink = true) {
+    const text = String(owner || "").trim();
+    return text ? issuePersonNameHtml(text, "", { inLink }) : "";
+  }
+
+  function repositoryForkOwnerHtml(entry, parentEntry) {
+    const repo = entry.repo || {};
+    const label = repoLabelParts(repositoryEntryLabel(entry));
+    const owner = String(label.owner || repoPublicOwner(repo) || repo.owner || "");
+    const name = String(label.name || repo.name || "");
+    const parentName = String(repoLabelParts(repositoryEntryLabel(parentEntry)).name || parentEntry?.repo?.name || "");
+    const renamed = name && name.toLowerCase() !== parentName.toLowerCase();
+    return `${repositoryOwnerNameHtml(owner)}${renamed ? `/${escapeHtml(name)}` : ""}`;
+  }
+
+  function repositoryForksKey(listName, parentEntry) {
+    return `${listName}:${repositoryEntryLabel(parentEntry).toLowerCase()}`;
+  }
+
+  function repositoryForksExpanded(listName, parentEntry) {
+    return state.repositoryForksExpanded?.has(repositoryForksKey(listName, parentEntry)) === true;
+  }
+
+  function toggleRepositoryForks(button) {
+    const key = String(button?.dataset?.repoForksToggle || "");
+    if (!key) return false;
+    if (!state.repositoryForksExpanded) state.repositoryForksExpanded = new Set();
+    if (state.repositoryForksExpanded.has(key)) state.repositoryForksExpanded.delete(key);
+    else state.repositoryForksExpanded.add(key);
+    return true;
+  }
+
+  function repositoryShownForks(listName, group) {
+    const expanded = repositoryForksExpanded(listName, group.entry);
+    const limit = sidebarForksShown();
+    const hidden = Math.max(0, group.forks.length - limit);
+    return { shown: expanded ? group.forks : group.forks.slice(0, limit), hidden, expanded };
+  }
+
+  function repositoryForksToggleHtml(listName, group, className) {
+    const { hidden, expanded } = repositoryShownForks(listName, group);
+    if (!hidden) return "";
+    const label = expanded ? "Show fewer forks" : `+${formatCount(hidden)} more ${hidden === 1 ? "fork" : "forks"}`;
+    return `<button type="button" data-repo-forks-toggle="${escapeHtml(repositoryForksKey(listName, group.entry))}" aria-expanded="${expanded ? "true" : "false"}" class="${className}">${escapeHtml(label)}</button>`;
+  }
+
+  function repositoryForkCountsHtml(entry, parentEntry, className) {
+    if (entry?.repo?.isPrivate || parentEntry?.repo?.isPrivate) return "";
+    const key = repositoryViewKey(entry.repo);
+    if (!isRepoKey(key)) return "";
+    return `<span data-repo-fork-counts="${escapeHtml(key)}" data-repo-fork-parent="${escapeHtml(repositoryEntryLabel(parentEntry))}" class="hidden ${className}"></span>`;
+  }
+
+  function repositoryForkCountsTitle(counts, parent) {
+    const ahead = Number(counts?.ahead) || 0;
+    const behind = Number(counts?.behind) || 0;
+    return `${formatCount(ahead)} ${ahead === 1 ? "commit" : "commits"} ahead, ${formatCount(behind)} behind ${parent}`;
+  }
+
+  function applyRepositoryForkCounts(root) {
+    const scope = root || document;
+    const nodes = scope?.querySelectorAll ? [...scope.querySelectorAll("[data-repo-fork-counts]")] : [];
+    for (const node of nodes) {
+      const counts = state.repositoryForkCounts?.get(node.getAttribute("data-repo-fork-counts"));
+      const ahead = Number(counts?.ahead) || 0;
+      const behind = Number(counts?.behind) || 0;
+      if (!counts || (!ahead && !behind)) {
+        node.textContent = "";
+        node.removeAttribute("title");
+        node.classList.add("hidden");
+        continue;
+      }
+      const parent = node.getAttribute("data-repo-fork-parent") || String(counts.parent || "");
+      node.textContent = `↑${formatCount(ahead)} ↓${formatCount(behind)}`;
+      node.setAttribute("title", repositoryForkCountsTitle(counts, parent));
+      node.classList.remove("hidden");
+    }
+    return nodes;
+  }
+
+  function repositoryForkCountsValue(value) {
+    const ahead = Number(value?.ahead);
+    const behind = Number(value?.behind);
+    return Number.isInteger(ahead) && Number.isInteger(behind) && ahead >= 0 && behind >= 0
+      ? { ahead, behind, parent: String(value.parent || "") }
+      : null;
+  }
+
+  async function hydrateRepositoryForkCounts(root) {
+    const nodes = applyRepositoryForkCounts(root);
+    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
+    if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
+    const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
+      .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
+    if (!wanted.length) return;
+    wanted.forEach((key) => state.repositoryForkCountsAsked.add(key));
+    for (let start = 0; start < wanted.length; start += REPOSITORY_FORK_COUNTS_BATCH) {
+      const batch = wanted.slice(start, start + REPOSITORY_FORK_COUNTS_BATCH);
+      try {
+        const response = await fetch("/api/repo-fork-counts", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ forks: batch }),
+        });
+        const data = response.ok ? await response.json() : null;
+        const counts = data?.counts && typeof data.counts === "object" ? data.counts : {};
+        batch.forEach((key) => {
+          const found = repositoryForkCountsValue(counts[key]);
+          if (found) state.repositoryForkCounts.set(key, found);
+        });
+      } catch (_) {}
+    }
+    applyRepositoryForkCounts(document);
+  }
+
+  function sidebarRepositoryRow(entry) {
+    const repo = entry.repo;
+    const live = repoIsLive(repo);
+    const label = repoLabelParts(entry.key);
+    return `
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
+          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
+          ${repositoryTermsBadge(repo, true)}
+          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
+          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
+        </a>`;
+  }
+
+  function sidebarRepositoryForkRow(entry, parentEntry) {
+    return `<a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo-fork" data-sidebar-repo="${escapeHtml(entry.key)}" data-sidebar-repo-fork title="${escapeHtml(entry.key)}">
+            <span class="dashboard-nav-repo-fork-name">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
+            ${repositoryForkCountsHtml(entry, parentEntry, "dashboard-nav-repo-fork-counts")}
+          </a>`;
+  }
+
+  function sidebarRepositoryGroup(group) {
+    if (!group.forks.length) return sidebarRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("sidebar", group);
+    return `<div class="dashboard-nav-repo-group" data-sidebar-repo-group>
+          ${sidebarRepositoryRow(group.entry)}
+          <div class="dashboard-nav-repo-forks" data-sidebar-repo-forks>
+            ${shown.map((fork) => sidebarRepositoryForkRow(fork, group.entry)).join("")}
+            ${repositoryForksToggleHtml("sidebar", group, "dashboard-nav-repo-forks-toggle")}
+          </div>
+        </div>`;
+  }
+
+  function sidebarSetting() {
+    const setting = state.sidebarSetting;
+    return setting && typeof setting === "object" ? setting : null;
+  }
+
+  function sidebarForksShown() {
+    const forks = Number(sidebarSetting()?.forks);
+    return Number.isInteger(forks) && forks >= 0 && forks <= 50 ? forks : REPOSITORY_FORKS_SHOWN;
+  }
+
+  function loadSidebarSetting() {
+    if (state.sidebarSettingRequested) return;
+    state.sidebarSettingRequested = true;
+    instanceInfo()
+      .then((info) => {
+        if (!info?.sidebar) return;
+        state.sidebarSetting = info.sidebar;
+        renderSidebarRepositories(state.session);
+        renderHomeRepositories();
+      })
+      .catch(() => {});
+  }
+
+  function sidebarPinnedGroups(groups, fallback = (all) => all.slice(0, 6)) {
+    const pinned = Array.isArray(sidebarSetting()?.pinned) ? sidebarSetting().pinned : [];
+    if (!pinned.length) return fallback(groups);
+    const matches = (group, key) => {
+      const repo = group.entry.repo;
+      const wanted = String(key).toLowerCase();
+      if (repoMatchesKey(repo, wanted)) return true;
+      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      return repositoryEntryLabel(group.entry).toLowerCase() === wanted
+        || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
+    };
+    const picked = [];
+    pinned.forEach((key) => {
+      const group = groups
+        .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
+        .sort((a, b) => b.forks.length - a.forks.length)[0];
+      if (group) picked.push(group);
+    });
+    return picked.length ? picked : fallback(groups);
+  }
+
   function renderSidebarRepositories(session) {
     const list = $("[data-sidebar-repo-list]");
     const count = $("[data-sidebar-repo-count]");
@@ -958,20 +1203,13 @@
       list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = entries.slice(0, 6).map((entry) => {
-      const repo = entry.repo;
-      const live = repoIsLive(repo);
-      const label = repoLabelParts(entry.key);
-      return `
-        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
-          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
-          ${repositoryTermsBadge(repo, true)}
-          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
-          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
-        </a>`;
-    }).join("");
+    loadSidebarSetting();
+    list.innerHTML = sidebarPinnedGroups(
+      nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views))
+      .map(sidebarRepositoryGroup)
+      .join("");
     window.lucide?.createIcons();
+    hydrateRepositoryForkCounts(list);
   }
 
   const HOME_TOP_REPOSITORY_LIMIT = 8;
@@ -1039,7 +1277,12 @@
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
-  function homeRepositoryRow(entry) {
+  function homeRepositoryLabelHtml(text) {
+    const label = repoLabelParts(text);
+    return label.owner ? `${repositoryOwnerNameHtml(label.owner)}/${escapeHtml(label.name)}` : escapeHtml(label.name);
+  }
+
+  function homeRepositoryRow(entry, nestedForks = 0) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
     const status = live
@@ -1050,19 +1293,43 @@
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
+    const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
+        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
+          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
         </span>
       </span>
     </a>`;
+  }
+
+  function homeRepositoryForkRow(entry, parentEntry) {
+    const views = Number(homeRepositoryViewTotals(entry.repo)?.views) || 0;
+    const label = entry.label || repoDisplayName(entry.repo);
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-fork class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}">
+        <span data-home-repo-fork-owner class="min-w-0 flex-1 truncate text-foreground">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
+        ${repositoryForkCountsHtml(entry, parentEntry, "shrink-0 font-mono text-[10px] text-muted-foreground")}
+        ${views ? `<span data-home-repo-views class="inline-flex shrink-0 items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))}</span>` : ""}
+      </a>`;
+  }
+
+  function homeRepositoryGroup(group) {
+    if (!group.forks.length) return homeRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("home", group);
+    return `<div data-home-repo-group class="grid min-w-0">
+      ${homeRepositoryRow(group.entry, group.forks.length)}
+      <div data-home-repo-forks class="ml-5 grid min-w-0 gap-0.5 border-l border-border pl-2">
+        ${shown.map((fork) => homeRepositoryForkRow(fork, group.entry)).join("")}
+        ${repositoryForksToggleHtml("home", group, "px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:text-accent")}
+      </div>
+    </div>`;
   }
 
   function renderHomeRepositories() {
@@ -1078,9 +1345,13 @@
     if (!searchable && search?.value) search.value = "";
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
+    const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
+    loadSidebarSetting();
     const entries = state.homeRepositoriesExpanded
-      ? matches
-      : matches.slice(0, HOME_TOP_REPOSITORY_LIMIT);
+      ? groups
+      : query
+        ? groups.slice(0, HOME_TOP_REPOSITORY_LIMIT)
+        : sidebarPinnedGroups(groups, (all) => all.slice(0, HOME_TOP_REPOSITORY_LIMIT));
     const showMore = $("[data-home-repos-show-more]");
     if (showMore) {
       showMore.classList.toggle(
@@ -1091,12 +1362,13 @@
     }
     if (!entries.length && !query && state.repositoriesLoading) return;
     container.innerHTML = entries.length
-      ? entries.map(homeRepositoryRow).join("")
+      ? entries.map(homeRepositoryGroup).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
-        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab or Codeberg, or create one</a>.'}</div>`;
+        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
+    hydrateRepositoryForkCounts(container);
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -1115,12 +1387,33 @@
       .slice(0, HOME_FEED_CARD_LIMIT);
   }
 
+  function homeFeedHref(item) {
+    const href = String(item?.href || "").trim();
+    const meta = item?.meta && typeof item.meta === "object" ? item.meta : {};
+    const number = Number(meta.number) || 0;
+    const root = /^\/[^/?#]+\/[^/?#]+\/?$/.test(href) ? href.replace(/\/$/, "") : "";
+    if (!root) return href;
+    const kind = String(item?.kind || "");
+    if (number > 0 && (kind === "issue_assigned" || kind.startsWith("bounty_"))) return `${root}/issues/${number}`;
+    if (number > 0 && (kind === "mention" || kind === "subscribed")) {
+      const section = { pull: "pull", discussion: "discussions" }[String(meta.source || "")] || "issues";
+      const comment = String(meta.comment || "").trim();
+      return `${root}/${section}/${number}${comment ? `#comment-${encodeURIComponent(comment)}` : ""}`;
+    }
+    if (kind === "repo_activity") {
+      if (meta.event === "pull.merged" && number > 0) return `${root}/pull/${number}`;
+      return `${root}/commits`;
+    }
+    if (kind === "release_published") return `${root}/releases`;
+    return href;
+  }
+
   function homeFeedCard(item) {
-    const href = repoPublicHref(String(item?.href || "").trim());
+    const href = repoPublicHref(homeFeedHref(item));
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      userNameHtml(`@${homeFeedActor(item)}`),
+      issuePersonNameHtml(`@${homeFeedActor(item)}`, "", { inLink: Boolean(href) }),
       escapeHtml(notificationTimeLabel(item.ts)),
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
@@ -1128,7 +1421,7 @@
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "ForkMesh activity")}</span>
+          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
           <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
         </span>
@@ -1136,13 +1429,17 @@
     `;
   }
 
+  const HALLOWEEN_PUMPKIN = '<svg viewBox="0 0 64 60" width="40" height="38" aria-hidden="true" class="shrink-0"><path d="M30 12C29 7 31 3 36 1l1.5 2.5C34 5 33 8 34 12z" fill="#4d7c2a"/><ellipse cx="18" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="46" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="32" cy="35" rx="15" ry="22" fill="#fa7a18"/><path d="M20 28l6-4 1 7zM44 28l-6-4-1 7z" fill="#3a1606"/><path d="M18 40q14 12 28 0l-4 1-2 4-4-3-4 5-4-5-4 3-2-4z" fill="#3a1606"/><path d="M21 29.5l4-2.5.5 3.5zM43 29.5l-4-2.5-.5 3.5z" fill="#fddf68"/></svg>';
+
   function renderHomeFeed() {
     const container = $("[data-home-feed]");
     if (!container) return;
     const cards = homeFeedItems().map(homeFeedCard);
     container.innerHTML = cards.length
       ? cards.join("")
-      : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
@@ -1233,6 +1530,7 @@
 
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
         credentials: "omit",
@@ -1341,7 +1639,9 @@
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
-      : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
+        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
   }
 
   async function loadHomeAgentSessions() {
@@ -1384,6 +1684,7 @@
 
   function renderProfileRepositories() {
     renderOrganizationRepositories();
+    hydrateProfileAvatars();
     const container = $("[data-profile-repo-list]");
     if (!container) return;
     const query = ($("[data-profile-repo-search]")?.value || "").trim().toLowerCase();
@@ -1471,7 +1772,7 @@
     const logo = String(repository?.logo?.dataUrl || "");
     const hosted = Boolean(repository?.mirrored && repository?.mirror?.owner && repository?.mirror?.name);
     const status = hosted
-      ? "Fully hosted by ForkMesh"
+      ? `Fully hosted by ${platformName()}`
       : String(repository?.statusLabel || "External repository");
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
@@ -1523,14 +1824,14 @@
             ${repository?.isPrivate ? '<span class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Private · owner only</span>' : ""}
           </div>
           <p class="mt-1 text-xs leading-5 text-muted-foreground">${escapeHtml(repository?.metadata?.description || "No provider description.")}</p>
-          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? "The complete Git repository is synced, cloneable, and hosted by ForkMesh." : repository?.mirrorNotice || "This external entry is not mirrored by ForkMesh.")}</p>
+          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? `The complete Git repository is synced, cloneable, and hosted by ${platformName()}.` : repository?.mirrorNotice || `This external entry is not mirrored by ${platformName()}.`)}</p>
           ${migrationSummary}
           ${incomplete}
           <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <a href="${escapeHtml(original)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">Open on ${escapeHtml(provider)}</a>
             ${repository?.targetOwner ? `<span aria-hidden="true">·</span><span>Listed under ${repository?.targetOwnerType === "organization" ? "organization " : ""}<span class="font-mono text-foreground">${escapeHtml(repository.targetOwner)}</span></span>` : ""}
             <span aria-hidden="true">·</span>
-            <span>${hosted ? "Full Git data hosted by ForkMesh" : "ForkMesh does not own or control this repository"}</span>
+            <span>${hosted ? `Full Git data hosted by ${escapeHtml(platformName())}` : `${escapeHtml(platformName())} does not own or control this repository`}</span>
           </div>
         </div>
         <div class="flex shrink-0 flex-col gap-2">
@@ -1618,7 +1919,7 @@
   async function deleteSelectedExternalRepositories() {
     const ids = [...state.externalRepositorySelection];
     if (!ids.length || !state.session?.sessionToken) return;
-    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ForkMesh metadata and does not delete anything from the source provider.`)) return;
+    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ${platformName()} metadata and does not delete anything from the source provider.`)) return;
     const button = $("[data-external-repo-delete-selected]");
     if (button) button.disabled = true;
     try {
@@ -1711,6 +2012,20 @@
     }
     const node = externalMirrorNodeName();
     if (!node) {
+      if (!hostedSettings) await loadHostedSettings();
+      const original = String(repository?.originalUrl || "").trim();
+      if (hostedImportAllowed(original)) {
+        const name = String(repository?.name || "").trim();
+        if (!window.confirm(`Import a public copy of ${original} into your account on ${platformName()}? The core nodes host it; you can push to it afterwards.`)) return;
+        setNewRepoModalOpen(true);
+        await createHostedRepository({
+          name,
+          visibility: "public",
+          description: String(repository?.description || "").slice(0, 300),
+          importUrl: original,
+        });
+        return;
+      }
       // Nothing to volunteer with yet: explain the desktop handoff instead of
       // silently doing nothing (issue #680).
       if (!openExternalMirrorHandoff(repository)) {
@@ -1768,10 +2083,10 @@
     return [
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
-        : `Install the ForkMesh desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
-      `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
-      `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
-      `Publish — the node clones and hosts the mirror.`,
+        : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
+      `On that computer, clone ${original ? mono(original) : "the repository"} with git, signing in with your own account. A read-only token is enough if git asks for a password.`,
+      `Open the desktop node's ${ui("Repos")} page, choose ${ui("Import folder…")} and pick the cloned ${mono(name)} folder.`,
+      `Choose ${ui("Public")} or ${ui("Private")}. The node copies the folder to the network and keeps that copy updated while it runs; run ${mono("git pull")} in the folder to pick up new changes.`,
       `Back here, ${ui("Volunteer to mirror")} records that node as a volunteer so the importer can see a mirror is available.`,
     ];
   }
@@ -1789,7 +2104,7 @@
       subtitle: node
         ? `${node} is not an eligible mirror node for this account yet, so no request was recorded.`
         : "This account has no linked desktop node, so there is nothing to volunteer yet.",
-      intro: "Mirroring runs on a ForkMesh desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:",
+      intro: `Mirroring runs on a ${desktopBrand()}desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:`,
     });
     window.setTimeout(() => $("[data-new-repo-close]")?.focus(), 0);
     window.lucide?.createIcons();
@@ -1871,7 +2186,7 @@
       const perAccount = Number(limits.repositoriesPerAccount || 0);
       const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
       quota.textContent = core && perAccount
-        ? `ForkMesh hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
         : "";
     }
     setNewRepoSource(newRepoSource());
@@ -1945,24 +2260,43 @@
   }
 
   const NEW_REPO_STEPS_INTRO =
-    "The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:";
+    `The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ${desktopBrand()}desktop node:`;
 
   const NEW_REPO_SUBTITLE =
-    "Mirror an existing repository. Your ForkMesh desktop node finishes creating and signing it.";
+    `Mirror an existing repository. Your ${desktopBrand()}desktop node finishes creating and signing it.`;
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    "Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ForkMesh desktop node.";
+    `Copy a project's issues, pull requests and their history, once. This does not copy the code or keep anything up to date: to back up the code, follow the guide at /docs/back-up-a-github-repository/.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    "A repository holds your project's files and history. ForkMesh keeps a copy on every core node.";
+    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+
+  const NEW_REPO_BACKUP_GUIDE =
+    `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
+
+  const NEW_REPO_CLONE_HINT =
+    `The ${escapeHtml(desktopBrand())}desktop app does not fetch from a URL. Clone the repository to your computer with git, signing in with your own GitHub account, then add that folder in the desktop app. It only reads the folder: nothing is pushed back to GitHub. If git asks for a password, a read-only token is enough, such as a GitHub fine-grained token for that one repository with Contents: Read-only. ${escapeHtml(platformName())} never needs permission to push to GitHub to make a backup. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`;
+
+  function renderNewRepoVisibilityNote() {
+    const note = $("[data-new-repo-visibility-note]");
+    if (!note) return;
+    const source = newRepoSource();
+    note.classList.toggle("hidden", source === "provider");
+    const privateText = hostedCoreMode() && (source === "empty" || source === "remote")
+      ? "only you and your organization's readers can see and clone it."
+      : "its contents stay encrypted and hidden from everyone else.";
+    note.innerHTML = newRepoVisibility() === "private"
+      ? `This repository will be <span class="font-medium text-foreground">Private</span>: ${privateText}`
+      : `This repository will be <span class="font-medium text-foreground">Public</span>: anyone can find, browse and clone it. Choose Private above to keep it hidden.`;
+  }
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
-      return "Paste a public repository URL: ForkMesh copies it and hosts it on its own nodes, no desktop app needed.";
+      return `Paste a public repository URL: ${platformName()} copies it and hosts it on its own nodes, no desktop app needed.`;
     }
     return NEW_REPO_SUBTITLE;
   }
@@ -1980,7 +2314,7 @@
     if (title) title.textContent = open ? (copy.title || "Finish creating your repository") : "Create a new repository";
     if (subtitle) {
       subtitle.textContent = open
-        ? (copy.subtitle || "ForkMesh needs your desktop node to publish and mirror this repository.")
+        ? (copy.subtitle || `${platformName()} needs your desktop node to publish and mirror this repository.`)
         : newRepoSubtitleFor(newRepoSource());
     }
     if (intro) intro.textContent = (open && copy.intro) || NEW_REPO_STEPS_INTRO;
@@ -2091,17 +2425,18 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `ForkMesh copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
+      if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = "Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ForkMesh mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.";
+      if (hint) hint.innerHTML = `Paste a repository URL, or a GitLab group / Codeberg or Gitea profile to import every repository in it. This copies issues, pull requests and their history once. It does not copy the code and is not kept up to date, so it is not a backup. The transfer keeps going after setup and can resume where it stopped. To back up the code, see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = "ForkMesh clones this URL into a bare mirror you then keep in sync.";
+      if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    renderNewRepoVisibilityNote();
   }
 
   function setNewRepoHint(text, cls) {
@@ -2115,17 +2450,24 @@
     const list = $("[data-new-repo-steps-list]");
     const panel = $("[data-new-repo-steps]");
     if (!list || !panel) return;
-    const sourceLabel = details.source === "local" ? "Local repository" : "Remote clone URL";
-    const pick = details.source === "local" ? "Select the local repository" : "Paste the clone URL";
-    const sourceValue = details.sourceValue
-      ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
-    const steps = [
-      `Open the ForkMesh desktop node and go to the <span class="text-foreground">Repos</span> page.`,
-      `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
-      `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
-      `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
-      `Publish — the node mirrors it and it appears here in your repositories.`,
-    ];
+    const ui = (text) => `<span class="text-foreground">${escapeHtml(text)}</span>`;
+    const mono = (text) => `<span class="font-mono text-foreground">${escapeHtml(text)}</span>`;
+    const visibility = ui(details.visibility === "private" ? "Private" : "Public");
+    const importStep = `Open the ${desktopBrand()}desktop app's ${ui("Repos")} page and choose ${ui("Import folder…")} (${ui("Add local repo…")} in some menus).`;
+    const steps = details.source === "local"
+      ? [
+        importStep,
+        `Pick the folder${details.sourceValue ? ` ${mono(details.sourceValue)}` : ""} and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. It then appears here in your repositories.`,
+      ]
+      : [
+        `On your computer, clone the repository with git, signing in with your own GitHub account${details.sourceValue ? `: ${mono(`git clone ${details.sourceValue}`)}` : ""}. A read-only token is enough if git asks for a password.`,
+        importStep,
+        `Pick the folder you cloned and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. To pick up new changes from GitHub, run ${mono("git pull")} in that folder; nothing is pushed back to GitHub. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`,
+      ];
     list.innerHTML = steps
       .map((step, index) => `<li class="flex gap-2"><span class="shrink-0 font-mono text-foreground">${index + 1}.</span><span>${step}</span></li>`)
       .join("");
@@ -2153,14 +2495,14 @@
     const intro = $("[data-new-repo-steps-intro]");
     if (intro) {
       intro.textContent = urls.length === 1
-        ? "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ForkMesh desktop node hosts it:"
-        : "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ForkMesh desktop node hosts each one:";
+        ? `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ${desktopBrand()}desktop node hosts it:`
+        : `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ${desktopBrand()}desktop node hosts each one:`;
     }
     panel.classList.remove("hidden");
     window.lucide?.createIcons();
   }
 
-  // A bare organization link — a GitLab group or a Codeberg profile — imports
+  // A bare organization link — a GitLab group or a Codeberg or Gitea profile — imports
   // every repository underneath it. GitHub is absent because the relay has no
   // organization walk for it, and a GitLab subgroup path is not matched because
   // group/thing is indistinguishable from a repository URL; the group walk
@@ -2172,7 +2514,7 @@
     } catch (_) {
       return "";
     }
-    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org"];
+    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org", "gitea.com", "www.gitea.com"];
     if (parsed.protocol !== "https:" || !namespaceHosts.includes(parsed.hostname.toLowerCase())) return "";
     return parsed.pathname.split("/").filter(Boolean).length === 1 ? parsed.toString() : "";
   }
@@ -2398,10 +2740,10 @@
     if (code === "email_not_verified") return "Confirm your email address to create a repository.";
     if (code === "blocked") return "That repository name is not available.";
     if (code === "hosted_quota_exceeded") {
-      return "This account hosts as many repositories on ForkMesh as it may. Delete one, or host more from your own node.";
+      return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
-      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
+      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]).join(", ")}.`;
     }
     if (code === "organization_not_found") return "That organization does not exist.";
     return "Could not create the repository.";
@@ -2409,7 +2751,7 @@
 
   async function createHostedRepository(details) {
     if (!state.session?.sessionToken) {
-      setNewRepoHint("Sign in to create a ForkMesh-hosted repository.", "bad");
+      setNewRepoHint(`Sign in to create a ${platformName()}-hosted repository.`, "bad");
       return;
     }
     const submit = $("[data-new-repo-submit]");
@@ -2451,11 +2793,11 @@
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
     if (source === "provider") {
       if (!state.session?.sessionToken) {
-        setNewRepoHint("Sign in to import a GitHub, GitLab, or Codeberg repository.", "bad");
+        setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
         return;
       }
       if (!sourceValue) {
-        setNewRepoHint("Enter a GitHub, GitLab, or Codeberg repository URL.", "bad");
+        setNewRepoHint("Enter a GitHub, GitLab, Codeberg, or Gitea repository URL.", "bad");
         $("[data-new-repo-source-value]")?.focus();
         return;
       }
@@ -2548,7 +2890,7 @@
         setNewRepoHint(
           code === "provider_rate_limited" ? "The provider rate limit was reached. Try again after its reset time."
             : code.includes("authorization") ? "The provider rejected access. Private repositories require a valid scoped token."
-            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, or codeberg.org repository URL."
+            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, codeberg.org, or gitea.com repository URL."
             : code === "empty_namespace" ? "That organization listed no importable repositories. A private group needs a token with read access."
             : code === "namespace_import_failed" ? "None of that organization's repositories could be read."
             : code === "provider_request_failed" ? "The provider did not recognise that organization. Check the group path, or add a token if it is private."
@@ -2595,9 +2937,35 @@
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
 
+  // Tab strips scroll sideways only. CSS hides their vertical overflow (the
+  // tabs sit 1px into the border line), but focus and scrollIntoView can still
+  // move it, so any vertical offset snaps straight back.
+  document.addEventListener("scroll", (event) => {
+    const strip = event.target;
+    if (strip instanceof Element && strip.scrollTop
+        && strip.matches("[data-repo-tabs], [data-repo-record-tabs]")) {
+      strip.scrollTop = 0;
+    }
+  }, { capture: true, passive: true });
+
+  function keepRepoActiveTabVisible(strip) {
+    if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
+    const active = strip.querySelector('[role="tab"][aria-selected="true"]');
+    if (!active || active.classList.contains("hidden")) return;
+    const frame = strip.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const inset = 12;
+    if (box.left < frame.left + inset) {
+      strip.scrollLeft -= Math.ceil(frame.left + inset - box.left);
+    } else if (box.right > frame.right - inset) {
+      strip.scrollLeft += Math.ceil(box.right - (frame.right - inset));
+    }
+  }
+
   function setRepoTab(tab) {
     const detail = $(`[data-dashboard-repo-tab-panel="${tab}"]`)?.closest("[data-repo-detail]") || $("[data-repo-detail]");
     if (!detail) return;
+    const tabChanged = state.activeRepoTab !== tab;
     state.activeRepoTab = tab;
     // The selected tab's weight and underline are styled from aria-selected
     // (shell.html), so this only has to move the attribute.
@@ -2605,6 +2973,7 @@
       const active = button.dataset.dashboardRepoTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
+    if (tabChanged) keepRepoActiveTabVisible(detail.querySelector("[data-repo-tabs]"));
     detail.querySelectorAll("[data-dashboard-repo-tab-panel]").forEach((panel) => {
       panel.classList.toggle("hidden", panel.dataset.dashboardRepoTabPanel !== tab);
     });
@@ -2662,7 +3031,7 @@
       state.repoRecordSection = "conversation";
     }
     navigateHistory(tab === "code"
-      ? (state.repoCodeUrl || repoLinkUrl(state.selectedRepo))
+      ? (state.repoCodeUrl || repoCodeLinkUrl(state.selectedRepo))
       : `${repoLinkUrl(state.selectedRepo)}/${tab}`);
     if (tab === "code") {
       if (!state.loadedRepoTabs) state.loadedRepoTabs = {};
@@ -2680,11 +3049,15 @@
     }
     // Runs are live executor state, never a load-once cache.
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
+    if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
       loadRepoFediverse(state.selectedRepo);
+      void loadRepoSettingsLogo(state.selectedRepo);
+      void loadRepoCollaborators(state.selectedRepo);
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
+      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }
@@ -2799,7 +3172,8 @@
       rows.push(`<div data-repo-explorer-current-path="${escapeHtml(path)}" class="${repoExplorerRowClass(true)}"><i data-lucide="folder-open" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(currentName)}</span></div>`);
     }
 
-    if (entries.length) {
+    if (entries === null) {
+    } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";
         const childPath = repoChildPath(path, entry.name);
@@ -3159,8 +3533,8 @@
     return { kind: preview[0], mime: preview[1], label: preview[2] };
   }
 
-  function repoRawUrl(repo, path) {
-    return repoLiveUrl(repo, "raw", { path });
+  function repoRawUrl(repo, path, ref = "") {
+    return repoLiveUrl(repo, "raw", ref ? { path, ref } : { path });
   }
 
   function repoLiveUrl(repo, action, params = {}) {
@@ -3468,7 +3842,7 @@
         <div data-repo-file-content>${content}</div>
       </div>`;
     bindRepoPreviewToolbar(viewer, meta);
-    navigateHistory(repoLinkUrl(repo, "blob", path));
+    navigateHistory(repoCodeLinkUrl(repo, "blob", path));
     window.lucide?.createIcons();
     return true;
   }
@@ -3547,7 +3921,7 @@
     const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
     if (branchInput) branchInput.readOnly = proposing;
     const saveLabel = editor.querySelector("[data-repo-file-editor-save-label]");
-    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : "Save";
+    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : (editor.dataset.repoFileDoneLabel || "Save");
   }
 
   async function probeRepoFileEditAccess(viewer, editor, repo, signal) {
@@ -3777,6 +4151,303 @@
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
   }
 
+  function openRepoFileMoveForm(viewer, repo, path, content, lines, meta, op) {
+    const shell = viewer?.querySelector("[data-repo-file-shell]");
+    const fileContent = viewer?.querySelector("[data-repo-file-content]");
+    if (!shell || !fileContent) return;
+    viewer.querySelector("[data-repo-file-editor]")?.remove();
+    viewer._repoFileEditorAbort?.abort();
+    const controller = new AbortController();
+    viewer._repoFileEditorAbort = controller;
+    const deleting = op === "delete";
+    const currentBranch = repoSelectedBranch(repo) || repoDefaultBranch(repo) || "main";
+    const branchListId = `repo-file-move-branches-${Date.now().toString(36)}`;
+    const options = repoFileEditorBranchOptions(repo, currentBranch)
+      .map((branch) => `<option value="${escapeHtml(branch)}"></option>`).join("");
+    const editor = document.createElement("form");
+    editor.dataset.repoFileEditor = "true";
+    editor.dataset.repoFileMove = op;
+    editor.className = "grid gap-3 border-t border-border bg-background p-3";
+    editor.innerHTML = `
+      <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+      ${deleting
+        ? `<p class="flex items-start gap-2 text-sm text-foreground"><i data-lucide="trash-2" class="mt-0.5 h-4 w-4 shrink-0 text-destructive"></i><span>Delete <code class="font-mono text-xs">${escapeHtml(path)}</code>? The file's history stays in the repository.</span></p>`
+        : `<label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>New path</span>
+            <input data-repo-file-move-path required autocomplete="off" spellcheck="false" value="${escapeHtml(path)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          </label>`}
+      <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
+        <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span data-repo-file-editor-branch-label>Branch</span>
+          <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
+        </label>
+        <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span>Commit message</span>
+          <input data-repo-file-editor-message value="${escapeHtml(`${deleting ? "Delete" : "Rename"} ${repoFileName(path)}`)}" class="h-9 rounded-md border border-border bg-background px-3 text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+        </label>
+        <div class="flex items-end gap-2">
+          <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${deleting ? "border-destructive/50 bg-destructive text-white" : "border-primary/50 bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="${deleting ? "trash-2" : "file-pen"}" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>${deleting ? "Delete file" : "Rename"}</span></button>
+        </div>
+      </div>
+      <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+        <span>Propose as a pull request instead of committing</span>
+      </label>`;
+    fileContent.classList.add("hidden");
+    viewer.querySelector("[data-repo-file-modes]")?.classList.add("hidden");
+    shell.appendChild(editor);
+    window.lucide?.createIcons();
+    const pathInput = editor.querySelector("[data-repo-file-move-path]");
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    const messageInput = editor.querySelector("[data-repo-file-editor-message]");
+    const saveButton = editor.querySelector("[data-repo-file-editor-save]");
+    const doneLabel = deleting ? "Delete file" : "Rename";
+    const cancel = () => closeRepoFileEditor(viewer, repo, path, content, lines, { ...meta });
+    editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
+    editor.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      }
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
+    editor.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const newPath = deleting ? "" : normalizedNewFilePath(pathInput?.value);
+      if (!deleting && (!newPath || newPath.endsWith("/") || newPath === path)) {
+        updateRepoFileStatus(viewer, "Enter a different path for the file.", "bad");
+        pathInput?.focus();
+        return;
+      }
+      const message = String(messageInput?.value || "").trim();
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
+      const request = { op, path, branch, oid: String(meta?.oid || ""), message };
+      if (!deleting) request.newPath = newPath;
+      saveButton.disabled = true;
+      let proposal = null;
+      try {
+        if (proposing) {
+          updateRepoFileStatus(viewer, "Preparing your proposed change...", "good");
+          proposal = await repoFileEditRequest(repo, { ...request, mode: "propose" });
+          await proposeRepoFileEdit(viewer, repo, proposal);
+          return;
+        }
+        updateRepoFileStatus(viewer, deleting ? "Deleting the file..." : "Renaming the file...", "good");
+        const payload = await repoFileEditRequest(repo, { ...request, mode: "commit", baseRef: currentBranch });
+        controller.abort();
+        if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;
+        if (deleting) {
+          const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+          navigateHistory(repoLinkUrl(repo, "tree", folder));
+          await loadRepositoryTree(repo, folder);
+        } else {
+          navigateHistory(repoLinkUrl(repo, "blob", newPath));
+          await loadRepositoryBlob(repo, newPath);
+          updateRepoFileStatus(viewer, `Renamed from ${path}.`, "good");
+        }
+      } catch (error) {
+        saveButton.disabled = false;
+        if (!proposal && error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
+        updateRepoFileStatus(viewer, proposal
+          ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
+          : error?.code === "conflict" && !deleting && /already has that name/.test(error?.message || "")
+            ? "A file or folder already has that name."
+            : repoFileEditError(error), "bad");
+      }
+    }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    editor.dataset.repoFileDoneLabel = doneLabel;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
+    (pathInput || saveButton)?.focus();
+    updateRepoFileStatus(viewer, deleting ? "Confirm to delete this file." : "Choose the new path.", "good");
+  }
+
+  function currentRepoBrowseFolder() {
+    const crumb = $("[data-repo-detail] [data-repo-breadcrumb]");
+    const folders = [...(crumb?.querySelectorAll("[data-dashboard-tree-path]") || [])];
+    return String(folders.at(-1)?.dataset.dashboardTreePath || "");
+  }
+
+  function normalizedNewFilePath(value) {
+    return String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/{2,}/g, "/");
+  }
+
+  function openRepoNewFile(repo, folder = currentRepoBrowseFolder()) {
+    const detail = $("[data-repo-detail]");
+    const viewer = detail?.querySelector("[data-repo-blob]");
+    if (!viewer || !repo) return;
+    setRepoTab("code");
+    detail.querySelector("[data-repo-tree-panel]")?.classList.add("hidden");
+    detail.querySelector("[data-repo-readme]")?.classList.add("hidden");
+    viewer.classList.remove("hidden");
+    viewer._repoFileEditorAbort?.abort();
+    const controller = new AbortController();
+    viewer._repoFileEditorAbort = controller;
+    const currentBranch = repoSelectedBranch(repo) || repoDefaultBranch(repo) || "main";
+    const branchListId = `repo-new-file-branches-${Date.now().toString(36)}`;
+    const options = repoFileEditorBranchOptions(repo, currentBranch)
+      .map((branch) => `<option value="${escapeHtml(branch)}"></option>`).join("");
+    const prefix = folder ? `${folder.replace(/\/+$/, "")}/` : "";
+    viewer.innerHTML = `
+      <div data-repo-file-shell class="overflow-hidden rounded-lg border border-border bg-background">
+        <div class="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-3 py-2">
+          <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="file-plus" class="h-4 w-4 text-muted-foreground"></i>New file</span>
+          <span data-repo-file-status role="status" class="min-w-0 font-mono text-[10px] text-muted-foreground">Name the file and write its contents.</span>
+        </div>
+        <form data-repo-file-editor="true" data-repo-new-file-form class="grid gap-3 p-3">
+          <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>File path</span>
+            <input data-repo-new-file-path required autocomplete="off" spellcheck="false" value="${escapeHtml(prefix)}" placeholder="docs/notes.md" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          </label>
+          <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <label class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Upload a file instead<input type="file" data-repo-new-file-upload class="sr-only" /></label>
+            <span data-repo-new-file-upload-name></span>
+          </div>
+          <textarea data-repo-file-editor-content spellcheck="false" placeholder="Enter file contents here" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70"></textarea>
+          <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span data-repo-file-editor-branch-label>Branch</span>
+              <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+              <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
+            </label>
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>Commit message</span>
+              <input data-repo-file-editor-message placeholder="Create a file on the web" class="h-9 rounded-md border border-border bg-background px-3 text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+            </label>
+            <div class="flex items-end gap-2">
+              <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+              <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>Save</span></button>
+            </div>
+          </div>
+          <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+            <span>Propose as a pull request instead of committing</span>
+          </label>
+        </form>
+      </div>`;
+    window.lucide?.createIcons();
+    const editor = viewer.querySelector("[data-repo-new-file-form]");
+    const pathInput = editor.querySelector("[data-repo-new-file-path]");
+    const textarea = editor.querySelector("[data-repo-file-editor-content]");
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    const messageInput = editor.querySelector("[data-repo-file-editor-message]");
+    const saveButton = editor.querySelector("[data-repo-file-editor-save]");
+    const cancel = () => {
+      controller.abort();
+      void loadRepositoryTree(repo, folder);
+    };
+    let upload = null;
+    const uploadInput = editor.querySelector("[data-repo-new-file-upload]");
+    const uploadName = editor.querySelector("[data-repo-new-file-upload-name]");
+    uploadInput?.addEventListener("change", () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        updateRepoFileStatus(viewer, "Files up to 2 MB can be uploaded here.", "bad");
+        uploadInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        upload = { name: file.name, size: file.size, base64: text.slice(text.indexOf(",") + 1) };
+        if (uploadName) uploadName.textContent = `${file.name} · ${formatSize(file.size)}`;
+        if (textarea) textarea.hidden = true;
+        const current = normalizedNewFilePath(pathInput?.value);
+        if (pathInput && (!current || current.endsWith("/") || current === prefix.replace(/\/$/, ""))) {
+          pathInput.value = `${prefix}${file.name}`;
+        }
+        updateRepoFileStatus(viewer, `Ready to upload ${file.name}.`, "good");
+      };
+      reader.onerror = () => updateRepoFileStatus(viewer, "Could not read that file.", "bad");
+      reader.readAsDataURL(file);
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
+    editor.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        editor.requestSubmit();
+      }
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
+    editor.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const path = normalizedNewFilePath(pathInput?.value);
+      if (!path || path.endsWith("/")) {
+        updateRepoFileStatus(viewer, "Name the new file.", "bad");
+        pathInput?.focus();
+        return;
+      }
+      const content = upload ? upload.base64 : (textarea?.value || "");
+      const encoding = upload ? { encoding: "base64" } : {};
+      const message = String(messageInput?.value || "").trim() || `${upload ? "Upload" : "Create"} ${repoFileName(path)}`;
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
+      saveButton.disabled = true;
+      let proposal = null;
+      try {
+        if (proposing) {
+          updateRepoFileStatus(viewer, "Preparing your proposed file...", "good");
+          proposal = await repoFileEditRequest(repo, {
+            mode: "propose", path, branch, content, message, create: true, ...encoding,
+          });
+          await proposeRepoFileEdit(viewer, repo, proposal);
+          return;
+        }
+        updateRepoFileStatus(viewer, "Creating the file...", "good");
+        const payload = await repoFileEditRequest(repo, {
+          mode: "commit", path, branch, baseRef: currentBranch, content, message, create: true, ...encoding,
+        });
+        controller.abort();
+        if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;
+        navigateHistory(repoLinkUrl(repo, "blob", path));
+        await loadRepositoryBlob(repo, path);
+        const shortCommit = String(payload.commit || "").slice(0, 10);
+        updateRepoFileStatus(viewer, `Created on ${payload.branch || branch}${shortCommit ? ` at ${shortCommit}` : ""}.`, "good");
+      } catch (error) {
+        saveButton.disabled = false;
+        if (!proposal && error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
+        updateRepoFileStatus(viewer, proposal
+          ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
+          : error?.code === "conflict" ? "A file with that name already exists. Choose another name or edit that file."
+          : repoFileEditError(error), "bad");
+      }
+    }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
+    pathInput?.focus();
+    pathInput?.setSelectionRange(prefix.length, prefix.length);
+  }
+
   function setRepoFileFullscreenFallback(shell, active) {
     if (!shell) return;
     shell.classList.toggle("fixed", active);
@@ -3838,6 +4509,16 @@
           return;
         }
         openRepoFileEditor(viewer, repo, path, content, lines, meta);
+      } else if (action === "rename" || action === "delete") {
+        if (repoReadOnlyMirror(repo)) {
+          updateRepoFileStatus(viewer, REPO_READ_ONLY_MIRROR_HINT, "bad");
+          return;
+        }
+        if (!state.session?.nodeName) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        openRepoFileMoveForm(viewer, repo, path, content, lines, meta, action);
       } else if (action === "copy") {
         const copied = await copyTextToClipboard(content);
         if (copied) {

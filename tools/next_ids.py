@@ -340,6 +340,14 @@ def expect_step(fleet, ssh, runner, name, step, replacement=False):
             "/etc/systemd/system/coturn.service", "/etc/forkmesh-next/creds")
             + WANTS, allow=("users", "processes", "listeners"),
             reason="next_fleet turn")
+    if step == "calls":
+        import render
+        if not render.calls_enabled(fleet):
+            return None
+        return push_expectation(fleet, ssh, runner, name, rescan=BASE_RESCAN + (
+            render.CALLS_BIN, "/etc/forkmesh-next/creds") + WANTS,
+            allow=("users", "processes", "listeners"),
+            reason="next_fleet calls")
     if step == "secrets":
         return push_expectation(fleet, ssh, runner, name, rescan=(
             "/etc/forkmesh-next/creds", "/etc/forkmesh-next/rqlite.curlrc"),

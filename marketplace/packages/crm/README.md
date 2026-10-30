@@ -42,6 +42,29 @@ generic package sockets and generated registries.
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
 
+## Adding a contact
+
+`POST /api/crm/<org>/contacts` is safe to send again. Every client picks a
+`requestId` (32 hex characters) when its add form opens and sends it with the
+contact; the worker uses it as the new contact's id, so a second send of the
+same form (a double tap, a phone that lost the reply, a retry after a 5xx)
+answers `200` with `"replayed": true` and the contact it already made instead
+of adding a twin or answering "already uses that email". Web, desktop and iOS
+retry a create on a network error or a 5xx only because of this; edits are
+never replayed.
+
+An email the organization already has answers `409 contact_email_exists`
+with that `contact`, so the form can say who it is and offer **Open it** (web,
+desktop) or, on iOS, **Open** and **Add these details to them** (fills only
+the fields their record is missing, adds new tags and the list the form was
+opened from; nothing they already have is overwritten). The form shows the
+error inside itself: before this the web message landed behind the open
+dialog and the iOS one at the bottom of a long form, so a failed add looked
+like nothing happened. Two adds of one address racing past the check hit the
+unique email index; the worker turns that into the same `409` (and a CSV row
+into an update) instead of a `500`. A shared sheet's add still answers
+`contact_exists` without naming anyone.
+
 ## Editing contacts
 
 - Moves: **Move to pipeline list** (keeps a stage of the same name, else the
@@ -70,6 +93,17 @@ generic package sockets and generated registries.
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
   re-importing updates them; columns the CRM has no field for become custom
   columns.
+- An organization holds at most 5000 contacts (`MAX_CONTACTS`; 1.42.0, 2000
+  before, raised when the forkmesh org filled up mid-import). The D1 trigger
+  `trg_crm_contact_limit_5000` aborts the insert with
+  `crm_contact_catalog_full`; the schema replay drops the old 2000-contact
+  `trg_crm_contact_limit`. Once it is full, an import still updates the
+  contacts it already knows and skips each new row with the row error
+  `crm_full` ("Row N was not added because the CRM already holds 5000
+  contacts."), which the finish ping lists. Adding one contact by hand, from a
+  shared sheet or from a linked mail message answers
+  `409 {"error": "crm_full"}`. Before 2026-10-20 the trigger's D1 error escaped
+  the import request as a 500 or 503.
 - A file whose every row names the same pipeline in its **Flow** or
   **Pipeline** column opens its new list bound to that pipeline. When an owner
   or admin imports such a file for a starter pipeline the organization does
@@ -243,6 +277,20 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 
 ## Email
 
+**One-off sends** (`POST /api/crm/<org>/emails/send`) that do not go out
+through the member's own Zoho connection follow the founders
+outreach rules: only owners, admins and the outreach roster may send, each
+sender gets `OUTREACH_DAILY_LIMIT` one-off sends per 24 hours, and only owners
+and admins may set `fromEmail`/`fromName`; everyone else sends as the
+organization's saved sender. Why: without a key the send goes through the
+host's shared mail account, so any account that made an organization and
+installed the CRM could otherwise send arbitrary HTML under a display name of
+its choice. On the shared sender the host then sends from its own address as
+`<organization> via ForkMesh` with the CRM's sender address as `Reply-To`
+(docs/MAIL_LOG.md), so the saved and chosen `fromName` show only in the CRM;
+every shared send carries `organization` and `account` so the host's per-org
+and per-account daily caps apply.
+
 ### Zoho Mail connection
 
 - **One click** (when the host runs a ForkMesh Zoho app): an owner or admin
@@ -334,6 +382,56 @@ still pointed there. Now:
 Tests: the two `forbidden_send` tests in `tests/test_auto_email.py` and the
 desktop bar test in `tests/test_note_drafts_and_zoho_guide.py`.
 
+**Every member connects their own Zoho Mail** (1.44.0). Before 1.44.0 Zoho
+Mail was one connection per organization, made by an owner or admin, so every
+member's automated email went out from that one mailbox and only that mailbox
+was synced. Now each member can connect their own mailbox, and the
+organization connection stays as the shared fallback:
+
+- **Stored**: `crm_zoho_members` (`org_bi`, `member_bi`, `member_name`,
+  `updated_at`, sealed `data`), one row per member, with the same fields as
+  the organization's `zoho` record (`region`, `accountId`, `clientId`,
+  `clientSecret` for a Self Client, `refreshToken`, `managed`, `scope`,
+  `connectedAt`, `lastSyncAt`, `lastSentAt`, `sendRefusedAt`,
+  `tokenRejectedAt`, `lastSyncError`). Uninstalling purges it with the rest
+  and drops the table with the schema; the uninstall export leaves it out.
+- **Connecting**: `POST /zoho/connect`, `POST /zoho/exchange` and the new
+  `POST /zoho/disconnect` take `{"mine": true}` for the caller's own mailbox.
+  With `mine` any member may call them; without it they act on the
+  organization connection and stay for owners and admins (disconnect then
+  equals `PUT /settings {"zohoDisconnect": true}`). The one-click `state`
+  carries `mine`; the callback re-checks membership and install (not the
+  role) and redirects with `zoho=connected_mine`. A member's own connection
+  files no team ping.
+- **Projected**: `settings.zohoMine` (`_zoho_mine`) is `_zoho_project` of the
+  caller's own record plus `own: true`, on the summary, `GET /settings`, a
+  settings save, a sync and a connect. `settings.zoho` is still the
+  organization's.
+- **Sending**: automated email (`POST /outreach/auto`) uses the sender's own
+  connection first, then the organization's, then Mailtrap
+  (`_zoho_for`). The send grant (`lastSentAt`, `sendRefusedAt`, ...) is
+  recorded on the connection that was used. A one-off **Compose**
+  (`POST /emails/send`) from a member with their own connection goes out
+  from that mailbox (`_send_own_zoho`; plain text becomes escaped HTML, the
+  answer carries `via: "zoho"` and `fromEmail`) unless the request names a
+  Mailtrap key; members without one keep the Mailtrap path. The organization
+  connection alone does not change Compose.
+- **Syncing**: `POST /mail/import` takes `mailbox: "mine" | "organization"`;
+  without it the caller's own mailbox wins when connected. Each record keeps
+  its own `lastSyncAt`, so the 15-minute auto-sync throttle is per mailbox.
+  The web page auto-syncs both the viewer's mailbox and the organization's.
+- **Privacy**: messages synced from a member's own mailbox carry `ownerBi`
+  and `owner` in their sealed envelope and are listed only for that member
+  (`_mail_visible`): other members, the export and `GET`/`PATCH`/`DELETE
+  /mail/<id>` see them as missing. The listing returns `mine: true` instead of
+  the blind index. Sent mail that matches a contact is still linked to that
+  contact through `_link_message`, so the team sees the email history and the
+  stage moves as before.
+- `email_channel_report` adds `zoho.members`, the number of member
+  connections.
+
+Tests: `tests/test_zoho_per_member.py`.
+
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
 cells open a compose window in the organization's Zoho data center
@@ -370,6 +468,31 @@ The same stage rule runs for every outbound `POST /emails/link` that does not
 name a flow or stage (the browser extension, and `send_email` logging in
 `tools/forkmesh_mcp_server.py`); its response carries `stageAdvanced`. Inbound
 links never move a stage. Tests: `tests/test_zoho_marks_contacted.py`.
+
+**Every contact made moves the stage** (1.43.0). Before 1.43.0 only a Zoho
+sync and an outbound `/emails/link` applied that stage rule. **Mark
+contacted**, the **Now** button and a typed **Last contacted** date (`PATCH
+/contacts/<id>` and `POST /contacts/bulk`), a tracked send (`POST
+/emails/send`), founders outreach (`POST /outreach/send`), an automatic
+outreach note (`POST /outreach/auto`) and a hand-recorded email (`POST
+/emails`) moved only **Last contacted**. So a pipeline's stage strip read
+**Contacted 0** while every row showed a recent date. Each of these now runs
+the same rule (`_stamp_contacted`, `_advance_contacted`): a contact before
+`contacted` moves to it, and one at or past it keeps its stage. An edit that
+names a `flow` or `stage` keeps the stage it names, and clearing the date
+moves nothing. `POST /emails` stamps the date from `sentAt` (forward only)
+unless the status is `draft`, `failed` or `reject`. It did not stamp the date
+at all before.
+
+Contacts stamped before 1.43.0 are moved once per organization, the first
+time the CRM page loads (`_backfill_contacted_stages`, run from the summary).
+Every contact with a **Last contacted** date that sits before `contacted` is
+moved, and the stage changes are filed in list activity. The pass is marked
+done in `crm_backfills` (`org_bi`, `name = "contacted-stages"`), so a contact
+moved back by hand afterwards stays where it was put. The marker has its own
+table rather than a settings key because the Zoho sync rewrites settings from
+the known keys only, and would drop the marker. Uninstalling purges the
+marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
 
 ### Sending and tracking
 
@@ -605,32 +728,83 @@ Tests: `tests/test_auto_email.py`.
 Since 20 Oct 2026 an automated email to an investor carries the whole
 investor deck in its body, under the short note the model writes. All
 fourteen slides, from the cover to Sources & contact, are there, with the
-same copy, order, numbering and colours as `app/public/pitch-deck/deck.html`.
-There is no "Full slide" or "Open the full deck" link: the founders asked
-for the deck to arrive as an email, not as a link to click. Before that, the
-email carried a condensed deck (cover, Problem, Product, Proof, Market, Team,
-The round) with a link to each full slide, and the note was told to send the
-reader to the deck link.
+same copy and order as `app/public/pitch-deck/deck.html`. There is no "Full
+slide" or "Open the full deck" link: the founders asked for the deck to
+arrive as an email, not as a link to click. Before that, the email carried a
+condensed deck (cover, Problem, Product, Proof, Market, Team, The round) with
+a link to each full slide, and the note was told to send the reader to the
+deck link.
 
 - **Why it is rebuilt, not copied.** `deck.html` cannot be mailed as it is.
   Mail clients drop its script, CSS variables, grid, `clip-path`, fixed bar
   and web font, and Gmail clips any message over about 102 KB, which would
   also cut off the reading beacons at the bottom. `_mail_deck_sections`
   rebuilds each slide from tables and inline styles, so it lays out in Gmail,
-  Outlook and Apple Mail. Slides 3, 7 and 13 sit in dark cards, as the deck's
-  dark panels do. `test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links`
-  checks the order, the 02–14 numbers, the images, that the only link is the
-  logo's, and that the page stays under 100 KB (66.7 KB on 20 Oct 2026).
+  Outlook and Apple Mail. `test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links`
+  checks the order, the light-and-dark declaration, the images, that the only
+  links are the reply button and the tracked forkmesh.com ones, and that the
+  page stays under 100 KB (80 KB on 21 Oct 2026).
+- **Why it looks like the homepage.** The first version was a light page of
+  white cards, and investors read it on phones in dark mode. Gmail's dark
+  mode recoloured the cards and text but not the white-backed images, and
+  every slide was a card with a blue dot, a "PROBLEM · 02" label and more
+  cards inside it, so on a phone it read as generated rather than designed.
+  A dark-only version fixed that, and on 21 Oct 2026 the founders asked for
+  a light mode in the homepage's style too. The deck now follows
+  `www/public/index.html`: a white page with left-aligned ABC Favorit
+  headings whose second half is grey ("Code with agents. Own the forge."),
+  a white badge pill above the cover title, the textured dark and white
+  button pair, and dark notched "slabs" (`DECK_SLAB` `#0b0b0c`) for the
+  cover image, Why now, Beyond the desk and The round. The notched corners
+  are two transparent PNGs, `slab-top.png` and `slab-bottom.png`, above and
+  below a dark cell, because mail clients drop `clip-path`.
+- **How it survives each mail app's dark mode.** Every screenshot and GIF
+  sits on a dark slab or a dark panel and is drawn on the same `#0b0b0c`,
+  so no image ever shows as a white box. The page declares
+  `color-scheme: light dark`. Apple Mail and Outlook for Mac then apply
+  `_mail_night`, a `prefers-color-scheme: dark` block that recolours every
+  light element through its `fm-ink`, `fm-body`, `fm-line`, `fm-tile`…
+  class to `DECK_NIGHT` on a `#18181b` page, while the slabs stay as they
+  are. Gmail ignores that query and inverts light colours itself; it leaves
+  the dark slabs, panels and images alone, so the result is close to the
+  Apple Mail one. A light element therefore always takes its colour from
+  `DECK_TONES["light"]` plus the matching class, and an element on a slab
+  from `DECK_TONES["slab"]` with no class.
+- **Layout rules.** Light slides are full-width bands with generous padding
+  (76 px, 56 px on a phone); nothing is a card inside a card. No slide
+  carries a section label or number: the heading carries it. Lists are
+  hairline rows or check-marked lines in one column, so nothing squeezes on
+  a 360 px screen. Business model shows the three plans as columns, with
+  Agent team on a dark panel like the homepage's Pro plan, and the columns
+  stack on a phone (`fm-col`). Competition opens with a check matrix
+  (`DECK_MAIL_MATRIX`: agent workflow, full forge, local-first) summarising
+  the rows under it. Small grey labels are sentence case; "Live in
+  production" and "In build" are green because they are status. The
+  headline proof figure, 7,416 merged agent branches, is live text on a dark
+  panel, not a counting GIF, because Outlook shows only a GIF's first frame.
+  "Reply to the founders" is a `mailto:` to the sender with a "Re:" subject;
+  it is the one untracked link, and "forkmesh.com" goes through the click
+  tracker like the logo.
+- **Size.** The deck helpers use a short font stack (`DECK_SANS`) because
+  it repeats on every element, and the email is about 80 KB, under Gmail's
+  102 KB clipping point that would cut off the reading beacons.
 - **Copy lives in `DECK_MAIL_*`.** When a slide's wording changes in
   `deck.html`, change the matching constant too. Nothing copies it across.
-- **Images** come from `https://forkmesh.com/assets/email/` and are drawn by
-  `tools/render_email_assets.py` (Pillow): `hero.jpg`, `mesh.gif`,
-  `agent-flow.gif`, `count.gif`, `xr.jpg` and the two avatars. `xr.jpg` is the
-  "Beyond the desk" slide flattened for email: the desktop app and a Claude
-  Code session seen through AR glasses, with the watch's agent list beside
-  them. The deck draws that slide with CSS, which mail clients cannot.
-  `python3 tools/render_email_assets.py` rewrites every file; to redraw one,
-  import the module and call its function (for example `xr()`).
+- **Images** come from `https://forkmesh.com/assets/email/` and are drawn on
+  the slabs' `#0b0b0c` by `tools/render_email_assets.py` (Pillow):
+  `slab-top.png`, `slab-bottom.png`, `deck-cover.jpg`, `deck-flow.gif` (the
+  mobile app screens, without a caption, since the step list sits under
+  it, and cut between screens rather than crossfaded: the fade frames
+  tripled it to 518 KB, too large to send as a pull request through the
+  API), `xr.jpg` and the two avatars. `xr.jpg` is the "Beyond the desk" slide flattened for email: the
+  desktop app and a Claude Code session seen through AR glasses, with the
+  watch's agent list beside them. The deck draws that slide with CSS, which
+  mail clients cannot. `python3 tools/render_email_assets.py` rewrites every
+  file; to redraw one, import the module and call its function (for example
+  `xr()`). The light images of the first version (`hero.jpg`, `mesh.gif`,
+  `agent-flow.gif`, `count.gif`) stay in the folder because emails already
+  sent load them, but nothing draws or uses them any more; the animated mesh
+  banner under the logo was removed at the founders' request.
 - **The note.** The prompt's "## The investor deck" section tells the model
   that the deck follows its note, so it should keep to a few sentences, add
   no link, and ask for a reply.
@@ -784,13 +958,47 @@ raising, so the caller can keep the lead.
 
 ## Surfaces
 
-- **Web**: lists and pipelines, the contacts table, board, detail card,
-  activity, Zoho boxes, import, settings, team, outreach and drafts.
+- **Web** (1.44.0 layout, matching the desktop): a left column lists every
+  list and pipeline (icon, name, share count, contact count, `⋯` menu;
+  right-click, double-click to rename and drag to reorder as before), then
+  **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
+  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
+  CSV list and CRM settings. The open page fills the right; `?section=` is one
+  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  switches back to its contacts. Arrow keys move along the More pages. The
+  column stacks above the page on phones. Controls use the compact sizes, the
+  header's **Add contact** is the page's one `cta` button, and **Hide
+  suggestions** folds the Reach out / Follow up cards into one line
+  (remembered per browser under `forkmesh-crm-next-collapsed`). **My Zoho
+  Mail** shows your own connection's state and steps, Connect with Zoho
+  (one-click), a Self Client code form, Sync now and Disconnect, and the
+  organization mailbox line. The Zoho bar above the page follows your own
+  connection when you have one, else the organization's, and hides when it has
+  no step to show or while My Zoho Mail is open. Compose says which mailbox it
+  sends from. Inbox groups that hold mail from your own mailbox carry **Only
+  you**.
 - **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
   panel), spreadsheet-style editing, a People grid of contacts with pictures,
   imports, and a rail count of never-contacted contacts. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
+- **iPhone layout**: a section bar under the title holds **Home** (greeting,
+  four tiles: contacts with the week's new ones, open deal value, people to
+  contact, won value; the busiest or open pipeline as a bar; **Up next** with
+  one Reach out and one Follow up drawn from every contact; recent emails),
+  **Contacts** (the list and pipeline chips, then the list), **Pipeline** (a
+  board or a stage list you open stage by stage, with a pipeline picker),
+  **Activity** (Activity, Mail, Outreach, Team, Decks, Shared) and **More**
+  (CRM settings, then the layout and theme switcher, then mail, organizing
+  and CSV tools, and the package's rate/report row). `+` adds a contact at
+  once and holds the other adds. The app's layout setting
+  (`appearance/layoutMode`, Settings > Appearance > Layout, also in the
+  toolbar's mode menu) sets the density: **Control Tower** is compact
+  (coloured tiles, small rows, the pipeline opens as a board), **Focus** is
+  roomier (Up next first, larger rows, the pipeline opens as a stage list).
+  The contact page is a short header, four quick actions and Overview /
+  Activity / Notes tabs; the add form keeps name, email, company, title,
+  phone and the pipeline in view and folds the rest under **More details**.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client

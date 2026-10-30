@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
+import com.forkmesh.nativeapp.chat.ChatPeerPresence
+import com.forkmesh.nativeapp.chat.peerPresence
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,9 +91,14 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
         }
         onSelected()
     }
+    val openDirect: (String) -> Unit = { account ->
+        scope.launch(Dispatchers.IO) { ChatDepth.hub?.switchConversation("@$account") }
+        onSelected()
+    }
     val channels = remember(relay.channels, revision) { hub?.channels ?: relay.channels }
     val offices = remember(revision) { hub?.officeChannels.orEmpty() }
     val directs = remember(relay, revision) { hub?.directListRows().orEmpty() }
+    val liveRevision by DirectLiveFeature.revision.collectAsState()
     val previews = remember(relay, revision, channels, offices) {
         (channels + offices).mapNotNull { conversation -> hub?.listPreview(conversation)?.let { conversation to it } }.toMap()
     }
@@ -173,11 +181,10 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                 val channel = row.channel
                 item(key = "channel:$channel") {
                     var menu by remember { mutableStateOf(false) }
-                    val private = hub?.extras?.isPrivate(channel) == true
                     Box {
                         ChannelTile(
                             title = channel,
-                            icon = if (private) "lock_outline" else "tag",
+                            icon = "tag",
                             selected = relay.currentConversation == channel,
                             unread = relay.hasUnread(channel),
                             onTap = { select(channel) },
@@ -203,22 +210,11 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                                 menu = false
                                 scope.launch { chatRetentionFlow(messenger, status, channel, channel) }
                             })
-                            if (private) {
-                                FmDropdownMenuItem("Invite people", icon = "person_add_alt_1_outlined", onClick = {
-                                    menu = false
-                                    scope.launch { inviteFlow(messenger, channel) }
-                                })
-                            }
                             if (channel != "#general") {
                                 FmDropdownMenuItem("Leave channel", icon = "logout", textColor = Fm.colors.danger, onClick = {
                                     menu = false
                                     scope.launch {
-                                        val ok = messenger.showConfirmDialog(
-                                            title = "Leave $channel?",
-                                            body = "It disappears from this phone. Messages others send there stop arriving here.",
-                                            confirmLabel = "Leave channel",
-                                            destructive = true,
-                                        )
+                                        val ok = messenger.confirmAction("Leave $channel?", "Leave channel", "It disappears from this phone. Messages others send there stop arriving here.")
                                         if (!ok) return@launch
                                         withContext(Dispatchers.IO) {
                                             val chat = ChatDepth.hub ?: return@withContext
@@ -276,25 +272,45 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
             item { Spacer(Modifier.height(FmSpace.x2)) }
             for ((record, preview) in directs) {
                 item(key = "direct:${record.id}") {
-                    val presence = groups.firstOrNull { !it.self && it.name.equals(record.otherUser, ignoreCase = true) }?.let { group ->
-                        val now = System.currentTimeMillis()
-                        val away = group.online && group.members.firstNotNullOfOrNull { it.userStatus }?.visible(now)?.away == true
-                        when {
-                            away -> Fm.colors.warning
-                            group.online -> Fm.colors.success
-                            else -> Fm.colors.offline
+                    val state = remember(record.conversation, relay, revision, liveRevision) { hub?.peerPresence(record.conversation) }
+                    val presence = when (state) {
+                        ChatPeerPresence.AWAY -> Fm.colors.warning
+                        ChatPeerPresence.ONLINE -> Fm.colors.success
+                        ChatPeerPresence.OFFLINE -> Fm.colors.offline
+                        null -> null
+                    }
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        ChannelTile(
+                            title = record.otherUser,
+                            icon = "person_outline",
+                            selected = relay.currentConversation == record.conversation,
+                            unread = record.unreadCount > 0,
+                            onTap = { select(record.conversation) },
+                            onLongPress = { menu = true },
+                            preview = preview,
+                            unreadCount = record.unreadCount,
+                            leading = { DirectAvatar(record.otherUser, presence) },
+                        )
+                        FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            FmDropdownMenuItem("Block ${record.otherUser}", icon = "block", textColor = Fm.colors.danger, onClick = {
+                                menu = false
+                                scope.launch {
+                                    val ok = messenger.confirmAction(
+                                        "Block ${record.otherUser}?",
+                                        "Block",
+                                        "Their messages are hidden on your devices and they cannot start a conversation with you.",
+                                    )
+                                    if (!ok) return@launch
+                                    withContext(Dispatchers.IO) {
+                                        val chat = ChatDepth.hub ?: return@withContext
+                                        if (chat.currentConversation == record.conversation) chat.select("#general")
+                                        chat.setBlocked(record.otherUser, true)
+                                    }
+                                }
+                            })
                         }
                     }
-                    ChannelTile(
-                        title = record.otherUser,
-                        icon = "person_outline",
-                        selected = relay.currentConversation == record.conversation,
-                        unread = record.unreadCount > 0,
-                        onTap = { select(record.conversation) },
-                        preview = preview,
-                        unreadCount = record.unreadCount,
-                        leading = { DirectAvatar(record.otherUser, presence) },
-                    )
                 }
             }
         }
@@ -310,13 +326,34 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
         item { Spacer(Modifier.height(FmSpace.x2)) }
         for (group in groups) {
             item(key = "person:${group.id}") {
-                MemberGroupTile(group, relay.currentConversation == "@${group.id}") {
-                    if (!group.self) {
-                        select("@${group.id}")
-                    } else {
-                        val auth = Services.get<AuthService>()
-                        if (auth != null) scope.launch { showUserStatusSheet(messenger, auth) }
-                    }
+                val account = remember(group, revision) { group.members.firstNotNullOfOrNull { hub?.messageAccount(it) } }
+                MemberGroupTile(
+                    group,
+                    false,
+                    onTap = when {
+                        group.self -> ({
+                            val auth = Services.get<AuthService>()
+                            if (auth != null) scope.launch { showUserStatusSheet(messenger, auth) }
+                        })
+                        account != null -> ({ openDirect(account) })
+                        else -> null
+                    },
+                )
+            }
+        }
+        val blocked = hub?.blocks?.accounts.orEmpty()
+        if (blocked.isNotEmpty()) {
+            item { Spacer(Modifier.height(FmSpace.x4)) }
+            item { FmSectionHeader(title = "Blocked") }
+            item { Spacer(Modifier.height(FmSpace.x2)) }
+            for (name in blocked) {
+                item(key = "blocked:$name") {
+                    ChannelTile(name, "block", false, false, {
+                        scope.launch {
+                            val ok = messenger.confirmAction("Unblock $name?", "Unblock", "Their messages show again and they can message you.")
+                            if (ok) withContext(Dispatchers.IO) { ChatDepth.hub?.setBlocked(name, false) }
+                        }
+                    })
                 }
             }
         }
@@ -419,7 +456,7 @@ private fun DirectAvatar(name: String, presence: Color?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MemberGroupTile(group: MemberGroup, selected: Boolean, onTap: () -> Unit) {
+private fun MemberGroupTile(group: MemberGroup, selected: Boolean, onTap: (() -> Unit)?) {
     val colors = Fm.colors
     val now = System.currentTimeMillis()
     val status = group.members.firstNotNullOfOrNull { it.userStatus }?.visible(now) ?: UserStatus()
@@ -430,7 +467,7 @@ private fun MemberGroupTile(group: MemberGroup, selected: Boolean, onTap: () -> 
             .fillMaxWidth()
             .padding(bottom = FmSpace.x1)
             .background(if (selected) colors.accentSubtle else colors.bgRaised, RoundedCornerShape(FmRadius.md))
-            .combinedClickable(onClick = onTap)
+            .then(if (onTap != null) Modifier.combinedClickable(onClick = onTap) else Modifier)
             .heightIn(min = 44.dp)
             .padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
     ) {

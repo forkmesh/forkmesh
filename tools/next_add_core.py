@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ SSH_TIMEOUT = 600
 JOIN_TIMEOUT = 900
 REPOS_TIMEOUT = 1200
 HEALTH_TIMEOUT = 300
+PTR_TIMEOUT = 600
+VM_ATTEMPTS = 3
 SYNC_NUDGE_SECONDS = 60
 DAEMON_STATUS = "curl -fsS --max-time 10 http://127.0.0.1:8791/v1/status"
 DAEMON_SYNC = "curl -fsS --max-time 10 -X POST http://127.0.0.1:8791/v1/control/sync"
@@ -44,15 +47,17 @@ STEPS = (
     ("join", "Start it and join the rqlite cluster", 45),
     ("services", "Mirror daemon and repo prefetch; app release upload", 150),
     ("activate", "Activate the served release and unseal", 60),
-    ("repos", "Every served repository synced from its peers", 60),
+    ("repos", "Node account, then every served repository synced from its peers", 60),
     ("ids", "Log reader and IDS baseline", 20),
     ("health", "Health checks: readyz, units, IDS, public probes", 20),
     ("dns", "Add it to DNS after the health probes pass", 15),
     ("register", "Node account and owner; monitoring, backups, DNS health loop, autodeploy and roll", 8),
-    ("commit", "Commit deploy/fleet.toml to a branch", 2),
+    ("commit", "Commit deploy/fleet.toml to a branch and merge it into main", 2),
 )
 STEP_IDS = tuple(step for step, _, _ in STEPS)
+REMOVE_STEP = ("remove", "Take the replaced core out of the fleet (remove-core, instance kept)", 520)
 RECHECK = ("health", "dns")
+KEEPS_SERVING = ("remove",)
 PARALLEL = {
     "vm": ("create the VM, wait for it to boot and answer SSH",
            "locally: the release tarball at the served rev, the wheelhouse, "
@@ -65,8 +70,30 @@ PARALLEL = {
 }
 
 
-def estimate_seconds():
-    return sum(seconds for _, _, seconds in STEPS)
+def steps_for(replaces=""):
+    if not replaces:
+        return STEPS
+    return STEPS[:-1] + (REMOVE_STEP,) + STEPS[-1:]
+
+
+def step_list(replaces=""):
+    return [{"id": s, "title": t, "estimate": e} for s, t, e in steps_for(replaces)]
+
+
+def estimate_seconds(replaces=""):
+    return sum(seconds for _, _, seconds in steps_for(replaces))
+
+
+def check_replace(fleet, old, new=""):
+    if not re.fullmatch(r"n[1-9][0-9]*", old or ""):
+        raise GuardError("--replace takes a core name like n2, not %r" % old)
+    cores = [n["name"] for n in fleet.get("nodes") or [] if n.get("role", "core") == "core"]
+    if old not in cores:
+        raise GuardError("%s is not a core in the fleet file (cores: %s)" % (
+            old, ", ".join(cores) or "none"))
+    if new and old == new:
+        raise GuardError("the new core cannot replace itself")
+    return old
 
 
 def choose_voter(voters):
@@ -246,6 +273,10 @@ class Job:
     def execute(self):
         return self.runner.execute
 
+    @property
+    def replaces(self):
+        return self.state.get("replaces") or ""
+
     def say(self, message):
         self.runner.say(message)
 
@@ -286,8 +317,8 @@ def parallel(job, branches):
 def run(job, backend, clock=time.monotonic):
     started = clock()
     job.emit(event="start", name=job.name, execute=job.execute,
-             steps=[{"id": s, "title": t, "estimate": e} for s, t, e in STEPS])
-    for step, title, estimate in STEPS:
+             replaces=job.replaces, steps=step_list(job.replaces))
+    for step, title, estimate in steps_for(job.replaces):
         if job.state.done(step):
             job.emit(event="step", step=step, status="done", resumed=True)
             job.say("== %s: already done" % step)
@@ -305,13 +336,17 @@ def run(job, backend, clock=time.monotonic):
                            seconds=round(clock() - begun, 1))
             job.emit(event="step", step=step, status="failed", error=message)
             notes = []
-            try:
-                notes = backend.contain(job) or []
-            except Exception as contain_error:
-                notes = ["containment failed: %s" % contain_error]
-            for recheck in RECHECK:
-                if job.state.done(recheck):
-                    job.state.mark(recheck, "pending")
+            if step in KEEPS_SERVING:
+                notes = ["%s stays in DNS and serving; re-run the same command to "
+                         "resume the removal of %s" % (job.name, job.replaces)]
+            else:
+                try:
+                    notes = backend.contain(job) or []
+                except Exception as contain_error:
+                    notes = ["containment failed: %s" % contain_error]
+                for recheck in RECHECK:
+                    if job.state.done(recheck):
+                        job.state.mark(recheck, "pending")
             for note in notes:
                 job.say(note)
             job.emit(event="result", status="failed", name=job.name, step=step,
@@ -325,9 +360,12 @@ def run(job, backend, clock=time.monotonic):
     total = round(clock() - started, 1)
     job.state.set(finished=True, finished_at=time.time())
     summary = "%s is serving, in DNS" % job.name
+    if job.replaces:
+        summary += "; %s is out of the fleet, its instance kept" % job.replaces
     job.emit(event="result", status="ok", name=job.name, seconds=total,
              summary=summary, branch=job.state.get("branch"),
-             commit=job.state.get("commit"))
+             commit=job.state.get("commit"), merged=job.state.get("merged") or "",
+             merge_error=job.state.get("merge_error") or "")
     job.say("%s (%d s)" % (summary, total))
     return total
 
@@ -335,7 +373,7 @@ def run(job, backend, clock=time.monotonic):
 def describe(job, backend):
     lines = []
     total = 0
-    for index, (step, title, estimate) in enumerate(STEPS, 1):
+    for index, (step, title, estimate) in enumerate(steps_for(job.replaces), 1):
         total += estimate
         lines.append("%2d. %-9s ~%4d s  %s" % (index, step, estimate, title))
         if step in PARALLEL:
@@ -393,15 +431,102 @@ class Git:
         self.call("update-ref", ref, commit, tip or "0" * 40)
         return commit, True
 
+    def is_ancestor(self, commit, ref):
+        return self.call("merge-base", "--is-ancestor", commit, ref,
+                         check=False).returncode == 0
+
+    def main_checkout(self):
+        path = None
+        for line in self.call("worktree", "list", "--porcelain").stdout.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree "):]
+            elif line == "branch " + MAIN_REF and path:
+                return Path(path)
+        return None
+
+    def merge_command(self, branch):
+        checkout = self.main_checkout()
+        return "git -C %s merge --no-ff %s" % (checkout or self.repo, branch)
+
+    def merge_into_main(self, commit, message):
+        main = self.rev(MAIN_REF)
+        if not main:
+            raise ToolError("no %s in %s" % (MAIN_REF, self.repo))
+        if self.is_ancestor(commit, main):
+            return main, False
+        result = self.call("merge-tree", "--write-tree", "--no-messages", main, commit,
+                           check=False)
+        if result.returncode != 0:
+            raise GuardError("%s does not merge cleanly into main" % commit[:12])
+        tree = result.stdout.split()[0]
+        checkout = self.main_checkout()
+        if checkout is None:
+            merged = self.call("commit-tree", tree, "-p", main, "-p", commit,
+                               "-m", message).stdout.strip()
+            self.call("update-ref", MAIN_REF, merged, main)
+            return merged, True
+        return Git(checkout, run=self._run).merge_checked_out(main, commit, tree,
+                                                             message), True
+
+    def merge_checked_out(self, main, commit, tree, message):
+        changed = self.call("diff", "--name-only", "-z", main, tree).stdout.split("\0")
+        changed = [path for path in changed if path]
+        restored = {}
+        for path in changed:
+            target = self.repo / path
+            if self.call("diff", "--cached", "--quiet", "--", path,
+                         check=False).returncode != 0:
+                raise GuardError("%s is staged in %s; commit or unstage it first"
+                                 % (path, self.repo))
+            if self.call("diff", "--quiet", "--", path, check=False).returncode == 0:
+                continue
+            wanted = self.call("rev-parse", "%s:%s" % (tree, path)).stdout.strip()
+            have = self.call("hash-object", "--", path).stdout.strip()
+            if have != wanted:
+                raise GuardError("%s in %s has other uncommitted changes" % (path,
+                                                                            self.repo))
+            restored[target] = target.read_bytes()
+            target.write_bytes(self.call("show", "%s:%s" % (main, path)).stdout.encode())
+        merged = self.call("merge", "--no-ff", "--no-edit", "-m", message, commit,
+                           check=False)
+        if merged.returncode != 0:
+            for target, data in restored.items():
+                target.write_bytes(data)
+            raise ToolError("git merge in %s failed: %s" % (
+                self.repo, (merged.stderr or merged.stdout or "").strip()[-300:]))
+        return self.rev("HEAD")
+
+
+def land_on_main(git, job, branch, commit):
+    try:
+        merged, created = git.merge_into_main(commit, "Merge %s into main" % branch)
+    except (GuardError, ToolError) as error:
+        job.state.set(merged="", merge_error=str(error))
+        job.say("%s is NOT on main yet: %s. Autodeploy checks the cores main lists and "
+                "fails until it is merged:\n  %s" % (branch, error,
+                                                     git.merge_command(branch)))
+        return
+    job.state.set(merged=merged, merge_error="")
+    job.say("%s %s main (%s); autodeploy and roll use the new %s" % (
+        branch, "merged into" if created else "is already on", merged[:12], FLEET_PATH))
+
 
 def fleet_state_path():
     return common.config_dir() / "fleet-state.json"
 
 
+def reverse_name(ip):
+    try:
+        return socket.gethostbyaddr(ip)[0].rstrip(".").lower()
+    except OSError:
+        return ""
+
+
 class FleetBackend:
     def __init__(self, vultr=None, ssh=None, cf=None, repo=None, sleep=time.sleep,
-                 clock=time.monotonic, git=None, prober=None):
+                 clock=time.monotonic, git=None, prober=None, reverse=None):
         self.prober = prober
+        self.reverse = reverse or reverse_name
         self.vultr = vultr
         self.clouds = {}
         self.ssh = ssh
@@ -576,6 +701,62 @@ class FleetBackend:
                        ("prefetch", lambda: self.prefetch(job))])
 
     def create_vm(self, job):
+        for attempt in range(1, VM_ATTEMPTS + 1):
+            instance = self.launch_vm(job)
+            if instance is None:
+                return None
+            if self.reverse_dns_published(job, instance):
+                break
+            if attempt == VM_ATTEMPTS:
+                raise ToolError(
+                    "%s: Vultr never published reverse DNS for %d new addresses; "
+                    "the last one, %s, is kept. Open a Vultr ticket for it and "
+                    "resume, or remove it (next_fleet.py destroy %s --yes "
+                    "--execute) and add the core later (docs/MAIL_LOG.md)"
+                    % (job.name, VM_ATTEMPTS, instance["main_ip"], job.name))
+            self.discard_vm(job, instance)
+        ip = instance["main_ip"]
+        if not common.wait_for(lambda: self.ssh.run(ip, "true", check=False,
+                                                    timeout=30).returncode == 0,
+                               SSH_TIMEOUT, interval=10, sleep=self.sleep,
+                               clock=self.clock):
+            raise ToolError("%s (%s) never answered SSH" % (job.name, ip))
+        job.say("%s: %s is up (%s, IPv6 %s)" % (job.name, instance["label"], ip,
+                                                 job.state.get("ipv6")))
+        return instance
+
+    def checks_reverse_dns(self, job):
+        return self.mail_enabled() and self.provider(job) == "vultr"
+
+    def reverse_dns_published(self, job, instance):
+        if not self.checks_reverse_dns(job):
+            return True
+        import next_mail
+        host = next_mail.mail_host({"name": job.name})
+        ip = instance["main_ip"]
+        self.vultr.set_reverse(instance["id"], ip, host)
+        if common.wait_for(lambda: self.reverse(ip) == host, PTR_TIMEOUT,
+                           interval=30, sleep=self.sleep, clock=self.clock):
+            job.say("%s: reverse DNS of %s is %s" % (job.name, ip, host))
+            return True
+        return False
+
+    def discard_vm(self, job, instance):
+        ip = instance["main_ip"]
+        job.say("%s: Vultr did not publish reverse DNS for %s within %d s (%s); "
+                "deleting the empty VM %s and creating another"
+                % (job.name, ip, PTR_TIMEOUT, self.reverse(ip) or "no PTR",
+                   instance["id"]))
+        self.vultr.delete_instance(instance["id"])
+        if not common.wait_for(lambda: not self.vultr.find_by_label(instance["label"]),
+                               VM_TIMEOUT, interval=10, sleep=self.sleep,
+                               clock=self.clock):
+            raise ToolError("%s: %s is still listed after its deletion"
+                            % (job.name, instance["label"]))
+        self.forget_host_key(ip)
+        job.state.set(instance_id="", ip="", ipv6="")
+
+    def launch_vm(self, job):
         import next_fleet
         number = int(job.state.get("number"))
         cloud = self.cloud(job)
@@ -618,13 +799,6 @@ class FleetBackend:
             self.forget_host_key(ip)
         job.state.set(ip=ip, ipv6=next_fleet.instance_ipv6(instance),
                       plan=instance.get("plan") or job.state.get("plan"))
-        if not common.wait_for(lambda: self.ssh.run(ip, "true", check=False,
-                                                    timeout=30).returncode == 0,
-                               SSH_TIMEOUT, interval=10, sleep=self.sleep,
-                               clock=self.clock):
-            raise ToolError("%s (%s) never answered SSH" % (job.name, ip))
-        job.say("%s: %s is up (%s, IPv6 %s)" % (job.name, instance["label"], ip,
-                                                 job.state.get("ipv6")))
         return instance
 
     def forget_host_key(self, ip):
@@ -835,7 +1009,7 @@ class FleetBackend:
         import next_fleet
         fleet = self.fleet(job)
         next_fleet.install(fleet, job.name, self.ssh, job.runner,
-                           ("daemon", "files", "start"), vultr=self.vultr,
+                           ("daemon", "calls", "files", "start"), vultr=self.vultr,
                            replacement=self.voter(job))
         job.runner.step("%s: ask the mirror daemon to sync every served repository "
                         "from its peers" % job.name,
@@ -888,8 +1062,10 @@ class FleetBackend:
                     "nudging a sync every %d s" % (job.name, SYNC_NUDGE_SECONDS))
             return
         fleet = self.fleet(job)
+        self.register_account(job, fleet)
         peer, wanted = self.peer_repositories(fleet, job)
         ip = self.ip(job)
+        self.ssh.run(ip, DAEMON_SYNC, check=False, timeout=60)
         last = {"nudge": self.clock(), "missing": sorted(wanted)}
 
         def synced():
@@ -953,6 +1129,28 @@ class FleetBackend:
                 job.name, notes["inside"], "; " + "; ".join(notes["outside"])
                 if notes["outside"] else ""))
         job.say("%s: %s; public probes pass" % (job.name, notes["inside"]))
+        self.check_mail_identity(job, fleet)
+
+    def check_mail_identity(self, job, fleet):
+        import next_mail
+        node = next((n for n in fleet["nodes"] if n["name"] == job.name), None)
+        if not node or not self.checks_reverse_dns(job):
+            return
+        relay = next_mail.relay_for(fleet, node)
+        if relay:
+            job.say("%s: sends mail through %s (mail_relay)" % (job.name, relay["name"]))
+            return
+        status = self.ptr_status(node["public_ipv4"], next_mail.mail_host(node))
+        if not status.startswith("ok"):
+            raise ToolError("%s cannot send mail: PTR %s %s. Fix the PTR, or set "
+                            "mail_relay on %s in deploy/fleet.toml, then resume "
+                            "(docs/MAIL_LOG.md)"
+                            % (job.name, node["public_ipv4"], status, job.name))
+        job.say("%s: PTR %s %s" % (job.name, node["public_ipv4"], status))
+
+    def ptr_status(self, ip, host):
+        import next_mail
+        return next_mail.ptr_status(ip, host)
 
     def step_dns(self, job):
         import next_dns
@@ -1007,11 +1205,40 @@ class FleetBackend:
         next_node_owner.provision_core(db, self.ssh, job.runner, fleet, node,
                                        next_node_owner.APP_URL)
 
+    def step_remove(self, job):
+        import next_remove_core as remover
+        old = job.replaces
+        if not job.execute:
+            job.say("[dry-run] remove-core %s, then commit both changes together" % old)
+            return
+        backend = remover.RemoveBackend(ssh=self.ssh, cf=self._cf, repo=self.repo,
+                                        sleep=self.sleep, git=self.git)
+        path = remover.state_path(old)
+        existing = State.load(path) if path.is_file() else None
+        if (existing is not None and existing.get("finished")
+                and not remover.in_fleet(job.fleet_file, old)):
+            job.say("%s is already out of the fleet (%s)" % (old, path))
+            job.state.set(promoted=existing.get("promoted") or "")
+            return
+        state, resumed = remover.start_state(backend, job.fleet_file, old, False, True)
+        if not resumed and not state.get("allowed"):
+            raise GuardError(state.get("blocker") or "removal of %s refused" % old)
+        state.data["replaced_by"] = job.name
+        if job.runner.log_path:
+            state.data["log"] = str(job.runner.log_path)
+        state.save()
+        removal = remover.Job(state, job.runner, fleet_file=job.fleet_file, out=job.out,
+                              events=job.events)
+        job.say("%s %s (state %s)" % ("resuming the removal of" if resumed else
+                                      "removing", old, state.path))
+        remover.run(removal, backend)
+        job.state.set(promoted=state.get("promoted") or "")
+
     def step_commit(self, job):
         branch = BRANCH_PREFIX + job.name
         if not job.execute:
-            job.say("[dry-run] commit %s with the %s block on %s (base %s), "
-                    "not pushed" % (FLEET_PATH, job.name, branch, MAIN_REF))
+            job.say("[dry-run] commit %s with the %s block on %s (base %s) "
+                    "and merge it into main" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
         block = self.node_block(job)
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
@@ -1022,12 +1249,24 @@ class FleetBackend:
                    % (job.name, job.state.get("label"),
                       "voter" if self.voter(job) else "non-voter",
                       job.state.get("rev")))
+        if job.replaces:
+            old = job.replaces
+            text = next_fleet.retire_core_block(
+                next_fleet.remove_core_block(text, old), old)
+            promoted = job.state.get("promoted") or ""
+            if promoted:
+                text = next_fleet.promote_core_block(text, promoted)
+            message = ("Replace core node %s with %s (%s) in deploy/fleet.toml\n\n"
+                       "Created by tools/next_fleet.py add-core --replace %s: release %s"
+                       "%s.\n" % (old, job.name, job.state.get("label"), old,
+                                   job.state.get("rev"),
+                                   "; %s promoted to an rqlite voter" % promoted
+                                   if promoted else ""))
         commit, created = self.git.commit_file(branch, MAIN_REF, FLEET_PATH, text, message)
         job.state.set(branch=branch, commit=commit)
-        job.say("%s %s on %s: merge it into main so autodeploy and roll include %s:\n"
-                "  git -C %s merge --autostash --no-ff %s" % (
-                    "committed" if created else "already committed", commit[:12],
-                    branch, job.name, self.repo, branch))
+        job.say("%s %s on %s" % ("committed" if created else "already committed",
+                                 commit[:12], branch))
+        land_on_main(self.git, job, branch, commit)
 
     def contain(self, job):
         import next_dns
@@ -1131,7 +1370,7 @@ class FleetBackend:
                         JOIN_TIMEOUT, name, role,
                         ", ".join(job.state.get("voters_before") or []))]
         if step == "services":
-            return ["%s: install --steps daemon,files,start, then POST "
+            return ["%s: install --steps daemon,calls,files,start, then POST "
                     "/v1/control/sync" % name,
                     "%s: next_deploy.py upload %s --rev %s (wheelhouse and venv "
                     "caches reused)" % (name, name, job.state.get("rev"))]
@@ -1141,7 +1380,9 @@ class FleetBackend:
                     "then next_vault.py unseal --if-sealed" % (
                         name, name, job.state.get("rev"))]
         if step == "repos":
-            return ["compare /v1/status repositories with a peer's; nudge a sync "
+            return ["node account fmnext-%s first: without it the relay answers "
+                    "HTTP 401 and catalog repositories never sync" % name,
+                    "compare /v1/status repositories with a peer's; nudge a sync "
                     "every %d s; <= %d s" % (SYNC_NUDGE_SECONDS, REPOS_TIMEOUT)]
         if step == "ids":
             return ["%s: install --steps logread; next_ids.py baseline %s" % (name, name)]
@@ -1166,10 +1407,24 @@ class FleetBackend:
                     "backups and status: read from the fleet file and "
                     "fleet-instances.json; nothing else to add",
                     "autodeploy and roll: read deploy/fleet.toml on main"]
+        if step == "remove":
+            old = job.replaces
+            return ["next_fleet.py remove-core %s: promote %s to a voter if 3 voters "
+                    "would not remain, hand over leadership, drain %s from DNS, stop "
+                    "it, leave rqlite, drop its [[nodes]] block, re-render the "
+                    "peers, deregister its DNS name" % (old, name, old),
+                    "its instance is kept; delete it later with remove-core %s "
+                    "--destroy-instance (the desktop's Remove...)" % old,
+                    "a failure here leaves %s serving; a re-run resumes the removal"
+                    % name]
         if step == "commit":
-            return ["git: commit %s on %s%s from %s (plumbing: HEAD, index and "
-                    "working tree untouched); print the merge command" % (
-                        FLEET_PATH, BRANCH_PREFIX, name, MAIN_REF)]
+            return ["git: commit %s on %s%s from %s%s (plumbing), then merge it into "
+                    "main where main is checked out, after a git merge-tree check; "
+                    "refused while that file has other staged or unsaved changes, "
+                    "and then the merge command is printed" % (
+                        FLEET_PATH, BRANCH_PREFIX, name, MAIN_REF,
+                        ", with %s added and %s removed" % (name, job.replaces)
+                        if job.replaces else "")]
         return []
 
     def domain(self, job):
@@ -1197,7 +1452,7 @@ class FleetBackend:
                                      voter=self.voter(job))
 
 
-def options(backend, job, vultr=None, provider=None):
+def options(backend, job, vultr=None, provider=None, replace=""):
     import next_fleet
     provider = next_cloud.check_name(provider)
     instances = common.load_json(next_fleet.instances_path(), {}) or {}
@@ -1207,8 +1462,8 @@ def options(backend, job, vultr=None, provider=None):
         plan = plan or next_aws.cheapest_type()
     else:
         region, plan = default_placement(instances)
-    result = {"estimate_seconds": estimate_seconds(),
-              "steps": [{"id": s, "title": t, "estimate": e} for s, t, e in STEPS],
+    result = {"estimate_seconds": estimate_seconds(replace),
+              "steps": step_list(replace), "replaces": replace,
               "region": region or next_fleet.REGION, "plan": plan, "plans": [],
               "regions": [], "provider": provider,
               "providers": list(next_cloud.PROVIDERS)}
@@ -1216,6 +1471,8 @@ def options(backend, job, vultr=None, provider=None):
         planned = backend.plan(job, provider=provider)
         result.update(name=planned["name"], voter=planned["voter"],
                       voter_reason=planned["voter_reason"], rev=planned["rev"])
+        if replace:
+            check_replace(backend.fleet(job), replace, planned["name"])
     except ToolError as error:
         result["error"] = str(error)
     unfinished = unfinished_states()
@@ -1244,10 +1501,13 @@ def summary(state):
     if state is None:
         return None
     keys = ("name", "label", "provider", "region", "plan", "voter", "voter_reason", "rev", "ip",
-            "ipv6", "instance_id", "branch", "commit", "finished", "failed",
-            "started_at", "updated_at", "log")
+            "ipv6", "instance_id", "branch", "commit", "merged", "merge_error",
+            "finished", "failed", "started_at", "updated_at", "log", "replaces",
+            "promoted")
     out = {key: state.get(key) for key in keys if state.get(key) is not None}
-    out["steps"] = {step: state.status(step) for step in STEP_IDS}
+    replaces = state.get("replaces") or ""
+    out["steps"] = {step: state.status(step) for step, _, _ in steps_for(replaces)}
+    out["step_list"] = step_list(replaces)
     out["state_file"] = str(state.path)
     return out
 
@@ -1262,7 +1522,13 @@ def start_state(backend, job_factory, args):
         if len(unfinished) > 1:
             raise ToolError("more than one unfinished add-core (%s); pass --name" % (
                 ", ".join(s.get("name") for s in unfinished)))
+    replace = getattr(args, "replace", None) or ""
     if existing is not None and existing.get("name") and not existing.get("finished"):
+        if replace and replace != (existing.get("replaces") or ""):
+            raise ToolError("%s is already planned %s; re-run without --replace to "
+                            "resume it" % (existing.get("name"), "to replace %s" % (
+                                existing.get("replaces")) if existing.get("replaces")
+                                else "as an added core"))
         for key, value in (("region", args.region), ("plan", args.plan),
                            ("snapshot", args.snapshot),
                            ("provider", getattr(args, "provider", None))):
@@ -1276,9 +1542,14 @@ def start_state(backend, job_factory, args):
         raise ToolError("%s was already added (%s)" % (existing.get("name"),
                                                         existing.path))
     probe = job_factory(State(Path(os.devnull), {}))
+    if replace:
+        check_replace(backend.fleet(probe), replace, args.name or "")
     planned = backend.plan(probe, region=args.region, plan=args.plan,
                            snapshot=args.snapshot, name=args.name,
                            provider=getattr(args, "provider", None))
+    if replace:
+        check_replace(backend.fleet(probe), replace, planned["name"])
+        planned["replaces"] = replace
     path = state_path(planned["name"]) if probe.execute else Path(os.devnull)
     state = State(path, dict(planned, started_at=time.time(), steps={}))
     return state, False
@@ -1342,7 +1613,8 @@ def main_options(args, vultr=None, ssh=None, backend=None, out=None):
     fleet_file = Path(args.fleet) if args.fleet else common.fleet_file()
     job = Job(State(Path(os.devnull), {}), runner, fleet_file=fleet_file, out=out,
               events=False)
-    result = options(backend, job, vultr, provider=getattr(args, "provider", None))
+    result = options(backend, job, vultr, provider=getattr(args, "provider", None),
+                     replace=getattr(args, "replace", None) or "")
     if args.json:
         print(json.dumps(result, sort_keys=True), file=out)
         return 0
@@ -1373,6 +1645,6 @@ def main_status(args, out=None):
                       "failed at %s: %s" % (result["failed"]["step"],
                                             result["failed"]["error"])
                       if result.get("failed") else "in progress"), file=out)
-    for step in STEP_IDS:
+    for step in result["steps"]:
         print("  %-9s %s" % (step, result["steps"][step]), file=out)
     return 0

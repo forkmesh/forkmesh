@@ -1340,6 +1340,57 @@ def test_pull_listing_advertises_branch_only_pulls_the_badge_counts(tmp_path):
     assert "status: open" in record["content"]
 
 
+
+def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
+    # The web pull list shows each pull's review state. The listing carries
+    # every committed review's (reviewer, state) so the list reads no per-pull
+    # folder; the dashboard applies the merge box's latest-review rule.
+    bare, _commit = make_bare_repository(tmp_path)
+    source = tmp_path / "source"
+    run(["git", "switch", "forkmesh/pulls"], source)
+    folder = source / ".forkmesh" / "pulls" / "43"
+    folder.mkdir(parents=True)
+    (folder / "pull.md").write_text(
+        "---\nnumber: 43\nstatus: open\nauthor: bob-key\n---\n",
+        encoding="utf-8")
+    review = "---\ntype: review\nauthor: %s\nstate: %s\nsig: s\n---\n\nstate: approved\n"
+    (folder / "0001-review.md").write_text(
+        review % ("carol-key", "changes_requested"), encoding="utf-8")
+    (folder / "0002-comment.md").write_text(
+        "---\ntype: comment\nauthor: dave-key\n---\n\nHi\n", encoding="utf-8")
+    (folder / "0003-review.md").write_text(
+        review % ("carol-key", "approved"), encoding="utf-8")
+    (folder / "0004-review.md").write_text(
+        "---\ntype: review\nauthor: \nstate: approved\n---\n", encoding="utf-8")
+    run(["git", "add", ".forkmesh/pulls/43"], source)
+    run(["git", "commit", "-m", "pull #43 reviews"], source)
+    run(["git", "push", "origin", "forkmesh/pulls"], source)
+    ledger = run(["git", "rev-parse", "HEAD"], source)
+
+    config = gateway.load_config(write_config(tmp_path, bare))
+    app = gateway.GatewayApplication(
+        config,
+        verifier=AcceptVerifier(),
+        health_signer=HealthSigner(),
+        materializer=FakeArchiveMaterializer(bare),
+        clock_ms=lambda: NOW,
+        log=lambda _record: None,
+    )
+    try:
+        listing = decode_json(dispatch(
+            app, "tree", {"path": ".forkmesh/pulls", "ref": ledger},
+            request_id="pull_listing_reviews_01"))
+        folder_listing = decode_json(dispatch(
+            app, "tree", {"path": ".forkmesh/pulls/43", "ref": ledger},
+            request_id="pull_listing_reviews_02"))
+    finally:
+        app.close()
+
+    assert listing["pullReviews"]["43"] == [
+        ["carol-key", "changes_requested"], ["carol-key", "approved"]]
+    assert set(listing["pullReviews"]) == {"43"}
+    assert "pullReviews" not in folder_listing
+
 def _commit_at(source, when, message):
     env = dict(os.environ, GIT_AUTHOR_DATE="@%d +0000" % when,
                GIT_COMMITTER_DATE="@%d +0000" % when)
@@ -1763,6 +1814,22 @@ def test_collaboration_tree_avoids_whole_repo_analysis_and_per_entry_logs(
     assert payload["entries"][0]["dependencies"] == []
 
 
+def test_collaboration_tree_lists_past_the_code_tree_entry_cap(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    monkeypatch.setattr(gateway, "MAX_TREE_ENTRIES", 0)
+    metadata_commit = repository.resolve_commit("forkmesh/pulls")
+
+    code = repository.tree({"path": "", "ref": "main"})
+    metadata = repository.tree({"path": ".forkmesh/pulls", "ref": metadata_commit})
+
+    assert code["truncated"] is True and code["entries"] == []
+    assert metadata["truncated"] is False
+    assert [item["name"] for item in metadata["entries"]] == ["42"]
+    monkeypatch.setattr(gateway, "MAX_COLLABORATION_TREE_ENTRIES", 0)
+    assert repository.tree({"path": ".forkmesh/pulls", "ref": metadata_commit})["truncated"] is True
+
+
 def test_compare_returns_bounded_portable_pull_change_set(application):
     app, commit, _release_hash, _logs = application
     repository = app.repositories[("alice", "project")]
@@ -2152,6 +2219,36 @@ def test_batched_blobs_preserve_repeated_paths_and_bound_missing_files(applicati
     assert "searchable mirror gateway" in payload["blobs"]["README.md"]["content"]
     assert payload["blobs"]["src/main.py"]["ok"] is True
     assert payload["blobs"]["does-not-exist"] is None
+
+
+def test_raw_active_media_types_are_attachments(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    for index, (media, expected, disposition) in enumerate((
+        ("application/atom+xml", "application/octet-stream", "attachment"),
+        ("application/rdf+xml", "application/octet-stream", "attachment"),
+        ("application/mathml+xml", "application/octet-stream", "attachment"),
+        ("application/xslt+xml", "application/octet-stream", "attachment"),
+        ("application/xhtml+xml", "application/octet-stream", "attachment"),
+        ("image/svg+xml", "application/octet-stream", "attachment"),
+        ("text/html", "application/octet-stream", "attachment"),
+        ("application/ecmascript", "application/octet-stream", "attachment"),
+        ("multipart/related", "application/octet-stream", "attachment"),
+        (None, "application/octet-stream", "attachment"),
+        ("text/x-python", "text/plain; charset=utf-8", "inline"),
+        ("image/png", "image/png", "inline"),
+    )):
+        monkeypatch.setattr(gateway.mimetypes, "guess_type",
+                            lambda _path, media=media: (media, None))
+        raw = dispatch(app, "raw", {"path": "README.md"},
+                       request_id="raw_active_%04d" % index)
+        assert raw.status == 200
+        assert raw.stream.content_type == expected, media
+        assert raw.stream.disposition == disposition, media
+    monkeypatch.undo()
+    for name in ("feed.atom", "x.rdf", "x.mml", "x.xht", "x.xsl", "x.svg",
+                 "x.html", "x.js"):
+        assert gateway._active_media_type(
+            gateway.mimetypes.guess_type(name)[0] or ""), name
 
 
 def test_raw_release_and_git_upload_pack_are_stream_specs(application):
@@ -3023,7 +3120,8 @@ def test_source_never_enables_push_or_default_request_logging():
     assert "receive.fsckObjects=true" in source
     # Repository hooks never run: the hooks path is the null device unless
     # the gateway-owned operator-policy directory replaces it.
-    assert 'max_input_bytes: int, hooks_path: str = os.devnull' in source
+    assert "hooks_path: str = os.devnull,\n        allow_rewrite: bool = False" in source
+    assert "self.rewrite_hooks_path = \"\"" in source
     assert 'core.hooksPath=" + hooks_path' in source
     assert "self.receive_hooks_path = os.devnull" in source
     assert "writableOwners requires writableRepositoryRoot" in source
@@ -4103,6 +4201,125 @@ def test_reads_resolve_only_visible_refs(application):
     assert repository.resolve_commit(tip[:12]) == tip
 
 
+def _hidden_commit(git_dir, parent, ref, content):
+    blob = subprocess.run(
+        ["git", "--git-dir", git_dir, "hash-object", "-w", "--stdin"],
+        input=content, check=True, capture_output=True,
+    ).stdout.decode().strip()
+    tree = subprocess.run(
+        ["git", "--git-dir", git_dir, "mktree"],
+        input=f"100644 blob {blob}\tsecret.txt\n".encode(),
+        check=True, capture_output=True,
+    ).stdout.decode().strip()
+    commit = subprocess.run(
+        ["git", "--git-dir", git_dir, "-c", "user.name=t",
+         "-c", "user.email=t@example.invalid", "commit-tree", tree,
+         "-p", parent, "-m", "hidden"],
+        check=True, capture_output=True,
+    ).stdout.decode().strip()
+    subprocess.run(["git", "--git-dir", git_dir, "update-ref", ref, commit],
+                   check=True)
+    return commit
+
+
+def test_reads_refuse_commit_reachable_only_from_hidden_refs(application):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    git_dir = str(repository.git_dir)
+    tip = repository.resolve_commit("main")
+
+    secret = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/secret", b"trashed secret\n")
+    for requested in (secret, secret[:7], secret[:12]):
+        with pytest.raises(gateway.GatewayError):
+            repository.resolve_commit(requested)
+        for operation in ("raw", "history", "tree"):
+            query = urlencode({"ref": requested, "path": "secret.txt"})
+            response = app.dispatch(
+                "GET",
+                f"/v1/public/repositories/alice/project/{operation}?{query}",
+                {}, b"")
+            assert response.status == 404, (operation, requested)
+            assert response.stream is None
+            assert b"trashed secret" not in response.body
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(tip[:6])
+
+    kept = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/history/main/0000000001", b"kept\n")
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(kept[:12]) == kept
+    response = app.dispatch(
+        "GET",
+        "/v1/public/repositories/alice/project/raw?"
+        + urlencode({"ref": kept, "path": "secret.txt"}), {}, b"")
+    assert response.status == 200
+    assert subprocess.run(
+        response.stream.command, check=True, capture_output=True,
+        env=gateway._git_environment()).stdout == b"kept\n"
+
+
+def test_commit_id_visibility_is_cached_per_refs_state_and_bounded(
+    application, monkeypatch
+):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    git_dir = str(repository.git_dir)
+    tip = repository.resolve_commit("main")
+    parent = subprocess.run(
+        ["git", "--git-dir", git_dir, "rev-parse", tip + "^"],
+        capture_output=True).stdout.decode().strip()
+    secret = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/secret", b"secret\n")
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(tip) == tip
+    spawns = []
+    real_run_git, real_run_git_status = gateway._run_git, gateway._run_git_status
+
+    def counted(real):
+        def run(*args, **kwargs):
+            spawns.append(args[1])
+            return real(*args, **kwargs)
+        return run
+
+    monkeypatch.setattr(gateway, "_run_git", counted(real_run_git))
+    monkeypatch.setattr(gateway, "_run_git_status", counted(real_run_git_status))
+    for _ in range(3):
+        assert repository.resolve_commit(tip) == tip
+        if parent:
+            assert repository.resolve_commit(parent) == parent
+        with pytest.raises(gateway.GatewayError):
+            repository.resolve_commit(secret)
+    assert spawns == []
+
+    monkeypatch.setattr(gateway, "VISIBLE_COMMIT_SET_LIMIT", 0)
+    repository.invalidate_memory_generation()
+    assert repository.resolve_commit(tip) == tip
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(secret)
+    walks = [args for args in spawns if "--contains" in list(args)]
+    assert walks and all("core.commitGraph=true" in list(args) for args in walks)
+    spawns.clear()
+    with pytest.raises(gateway.GatewayError):
+        repository.resolve_commit(secret)
+    assert not [args for args in spawns if "--contains" in list(args)]
+
+    busy = gateway.threading.BoundedSemaphore(1)
+    busy.acquire()
+    monkeypatch.setattr(gateway, "_visible_commit_walks", busy)
+    monkeypatch.setattr(gateway, "VISIBLE_COMMIT_WALK_WAIT_SECONDS", 0.01)
+    repository.invalidate_memory_generation()
+    other = _hidden_commit(
+        git_dir, tip, "refs/forkmesh/trash/branch/other", b"other\n")
+    with pytest.raises(gateway.GitError):
+        repository.resolve_commit(other)
+    response = app.dispatch(
+        "GET",
+        "/v1/public/repositories/alice/project/history?"
+        + urlencode({"ref": other}), {}, b"")
+    assert response.status == 503
+
+
 def test_retired_runtime_roots_are_reaped_after_grace(monkeypatch):
     class Root:
         def __init__(self):
@@ -4183,3 +4400,30 @@ def test_github_noreply_emails_give_contributor_avatars():
     for email in ("github-actions[bot]@users.noreply.github.com", "alice@example.com",
                   "a/b@users.noreply.github.com", "", "x@users.noreply.github.com.evil.test"):
         assert avatar(email) == "", email
+
+
+def test_a_cut_text_blob_stays_text_at_a_character_boundary():
+    data = ("\u0627\u06cc" * 10).encode("utf-8")
+    for cut in range(1, len(data)):
+        prefix = gateway._utf8_prefix(data[:cut])
+        assert data.startswith(prefix) and len(prefix) >= cut - 3
+        prefix.decode("utf-8")
+    broken = b"ok\xff\xfeok"
+    assert gateway._utf8_prefix(broken) == broken
+
+
+def test_sizes_lists_every_issue_folder_but_still_folds_code(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    blobs = [(100 + n, f".forkmesh/issues/open/{n}/issue-{n}.json") for n in range(1, 121)]
+    blobs += [(10, f"vendor/pkg{n}.js") for n in range(60)]
+    monkeypatch.setattr(repository, "_all_blobs", lambda _commit: blobs)
+    payload = repository.sizes({})
+    forkmesh = next(item for item in payload["children"] if item["name"] == ".forkmesh")
+    open_dir = forkmesh["children"][0]["children"][0]
+    assert open_dir["name"] == "open"
+    assert len(open_dir["children"]) == 120
+    assert all(item["type"] == "directory" and item["children"][0]["type"] == "file"
+               for item in open_dir["children"])
+    vendor = next(item for item in payload["children"] if item["name"] == "vendor")
+    assert len(vendor["children"]) == 41 and vendor["children"][-1]["type"] == "summary"

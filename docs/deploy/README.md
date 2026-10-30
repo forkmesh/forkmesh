@@ -11,7 +11,7 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 | Path | Responsibility |
 | --- | --- |
-| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[dns]`, `[ids]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
+| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[autoscale]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[self_deploy]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
 | `deploy/fleet.example.toml` | annotated template |
 | `deploy/core/render.py` | renders a node's files into a tree plus `MANIFEST.json`; never reads secrets |
 | `deploy/core/caddy_routes.py` | Caddy route snippets shipped with each release |
@@ -35,10 +35,10 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 - **Render, then push.** `render.py` produces files only;
   `next_fleet.py install <node> --steps …` copies them and runs each step over
-  SSH. Core steps: `base`, `wireguard`, `rqlite`, `ssh-port`, `files`,
-  `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`). Runner steps:
-  `base`, `ssh-port`, `files`, `start`, `daemon`. SSH runs on `ssh_port`
-  ([ssh-port.md](ssh-port.md)).
+  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `ssh-port`,
+  `files`, `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`).
+  Runner steps: `base`, `ssh-port`, `files`, `start`, `daemon`. SSH runs on
+  `ssh_port` ([ssh-port.md](ssh-port.md)).
 - **Secrets never rendered.** Units load encrypted credentials by name
   (`LoadCredentialEncrypted=`). With `[app] vault = true` the app gets only
   bootstrap credentials and starts sealed ([VAULT.md](../VAULT.md)).
@@ -49,6 +49,13 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 - **Rolling restart gate.** Each node must report `/readyz` and the new
   `BUILD_REV`; a failing node goes back to its previous release and the rollout
   stops. Migrations run once, through any healthy rqlite node.
+- **A core down does not block a release.** `upload`, `restart` and `all`
+  leave out a core that is held or out of DNS (`dns-health.json`, the
+  `next_dns.py` health loop) or that SSH cannot reach, as long as a majority
+  of the cores and at least two still get it (`deploy_quorum`); otherwise
+  they refuse. `--skip nN` names the cores to leave out instead. The deploy
+  manifest records `skipped`, and `restart nN` of that release later clears
+  it (`caughtUp`). See [auto-deploy.md](auto-deploy.md), "Skipped cores".
 - **Speed.** One multiplexed SSH connection per node
   (`FMNEXT_SSH_MULTIPLEX=0` disables it), parallel uploads with the migration
   alongside, venv reuse when requirements are unchanged, a wheelhouse cache,
@@ -70,6 +77,7 @@ chosen at run time among live cores:
 | certificates, cron, Durable Objects, autoscaler | rendezvous or rotation over live `cluster_members` |
 | WireGuard, firewall, mesh, certsync, IDS keys, Git upstreams | full mesh from `fleet.toml` |
 | runner-pool and hosted-git core lists | rendered into `app.env` from the fleet's cores |
+| group calls | every core runs `fmnext-calls`; the app places each room by rendezvous over the healthy cores in `FORKMESH_CALLS_NODES` ([calls.md](calls.md)) |
 
 `deploy/tests/test_no_main_node.py` checks this.
 
@@ -88,24 +96,28 @@ the plan. Steps:
 | 5 | keys | WireGuard and IDS keys generated on the node |
 | 6 | mesh | re-render peers one at a time while the new core installs |
 | 7 | join | start; rqlite joins over the mesh; the IDS starts last |
-| 8 | services | daemon, files, start; sync every repository from peers |
+| 8 | services | daemon, calls, files, start; sync every repository from peers |
 | 9 | activate | deploy the served release, unseal |
-| 10 | repos | wait until every repository is present and synced |
+| 10 | repos | provision the core's node account, then wait until every repository is present and synced |
 | 11 | ids | install the log reader, sign the baseline |
 | 12 | health | node and external health checks |
 | 13 | dns | undrain after probes |
-| 14 | register | confirm DNS release; provision the core's node account |
-| 15 | commit | commit `deploy/fleet.toml` on `fleet/add-core-nN` without touching HEAD |
+| 14 | register | confirm DNS release and the node account |
+| 15 | commit | commit `deploy/fleet.toml` on `fleet/add-core-nN`, then merge it into `main` |
 
 - **rqlite role:** keep an odd number of voters; with three voters a fourth
   core joins as a non-voter (`rqlite_voter = false`).
 - **DNS:** a newly seen core is held out of DNS until an explicit undrain.
 - **Resume:** state in `config/fleet/add-core/nN.json`; every step is
   idempotent; a failure drains the node and keeps the VM for a retry.
+- **Node account before repos:** without its `fmnext-nN` node account the relay
+  answers the new daemon with HTTP 401, so repositories it learns from the
+  catalog never sync. On 2026-10-23 n5 waited 20 minutes for `kaifdemo/demo`.
+  `repos` registers the account first (idempotent) and nudges a sync.
 - **Snapshots:** only keyless builder images are accepted; cloning a live
   core would copy its keys and Raft state.
-- **Merge** with `git merge --autostash --no-ff fleet/add-core-nN` (the working
-  tree already holds the same file).
+- **Merge:** the commit step merges the branch into `main` itself (see
+  [Landing the fleet change on main](#landing-the-fleet-change-on-main)).
 
 ## Removing a core node
 
@@ -114,15 +126,71 @@ the plan. Steps:
 three healthy voters), promote a non-voter if voters would drop below three
 or become even, hand over leadership, drain from DNS, stop services, leave
 rqlite and delete its membership row, remove the fleet block, re-render
-peers, deregister DNS names, commit on `fleet/remove-core-nN`, and optionally
-destroy the instance.
+peers, deregister DNS names, commit on `fleet/remove-core-nN` and merge it into
+`main`, and optionally destroy the instance.
 
 Only the destroy step talks to a cloud provider. Other steps identify the
 node over SSH by its pinned host key and recorded WireGuard public key. State
 is in `config/fleet/remove-core/nN.json`; runs resume.
 
-**Replace a core:** `add-core`, merge, `remove-core <old>`, merge, then
-`--destroy-instance` when sure.
+### Landing the fleet change on main
+
+Autodeploy, roll and backups read `deploy/fleet.toml` on `main`, and every
+deploy first asks each core listed there for `/api/version`. A fleet change
+left on its branch breaks every deploy: on 2026-10-23 n2 was removed and n5
+added, neither branch was merged, and each deploy from 03:21 on (run 7110 and
+the runs before it) failed with "n2 did not answer /api/version (HTTP 0)".
+
+So the commit step of `add-core` and `remove-core` lands the change itself
+(`land_on_main` in `tools/next_add_core.py`):
+
+1. `git merge-tree --write-tree main <commit>` first; a conflict is refused
+   and nothing is touched.
+2. Where `main` is checked out (normally `~/projects/forkmesh/src`), it runs
+   `git merge --no-ff` there. A changed file holding exactly the merge result
+   (the tool's own edit of `deploy/fleet.toml`) is set back to `main`'s copy
+   first and rewritten if the merge fails. Any other unsaved or staged change
+   to that file refuses the merge. Unrelated unsaved work stays as it is, and
+   no stash is used.
+3. When no checkout holds `main`, it writes the merge commit with plumbing and
+   moves `refs/heads/main` by compare-and-swap.
+
+The merge in the source checkout is published like any other commit
+([source-publisher.md](../tools/source-publisher.md)), and that push starts
+the next deploy. A refused merge does not fail the run (the core is already
+added or removed): the run records `merge_error` and prints the
+`git -C <main checkout> merge --no-ff <branch>` to run. Until then, gate 1
+names the pending branch: autodeploy lists `fleet/add-core-nN` branches whose
+core is not in `main`'s file and `fleet/remove-core-nN` branches whose core
+still is (`unmerged_fleet_branches` in `tools/next_autodeploy.py`).
+
+## Replacing a core node
+
+`python3 tools/next_fleet.py add-core --replace nOLD [--region R] [--plan P] --execute`
+(the desktop's **Replace…** on a core row in Network, Hosts) adds a new core
+and then takes `nOLD` out in the same run, so the fleet never drops below
+three cores and there is one fleet commit, which lands on `main` like any
+add or remove.
+
+- The add steps run as usual. A `remove` step before `commit` then runs
+  `remove-core nOLD`: it promotes the new core to a voter if needed, drains,
+  stops and removes `nOLD`, and re-renders the peers.
+- If the `remove` step fails, the new core stays serving and in DNS. A re-run
+  (or **Retry**) resumes the removal from its own state file. Failures before
+  `remove` drain the new core, as in a plain add.
+- `commit` writes one commit on `fleet/add-core-nNEW` with the new block (made a
+  voter if it was promoted), without the `nOLD` block, and with `nOLD` in
+  `[hosted] retired_cores`. The removal's own `fleet/remove-core-nOLD` commit is
+  skipped.
+- The old instance is kept. Delete it later with
+  `remove-core nOLD --destroy-instance --execute` (**Remove…** with the instance
+  box ticked), which resumes the finished removal and runs only `destroy`.
+- `add-core-options --replace nOLD --json` gives the step list and estimate;
+  `add-core-status --json` includes `replaces` and `step_list`.
+
+The manual route still works: `add-core`, then `remove-core <old>`; each
+lands its own commit on `main`.
+The legacy `replace-core nOLD --new nNEW` is the older, partly manual path.
 
 ## Node addresses
 
@@ -132,6 +200,25 @@ The repository holds no real node address. Addresses live only in
 address is a `RenderError` naming the node and that operator file, and nothing
 renders an empty address. Tests and docs use documentation ranges
 (`203.0.113.0/24`, `198.51.100.0/24`, `2001:19f0:ffff::/48`).
+
+### Reaching nodes over IPv6
+
+On 2026-10-07 the operator box lost IPv4 while IPv6 kept working, and a deploy
+stopped mid-rollout. Node configs, firewall rules and DNS A records keep using
+`ip`; only the operator's own connections can switch address family. Those are
+`next_common.Ssh` (ssh, scp, tunnels) and the autodeploy `/api/version` probe,
+and both go through `next_common.route_address`. `FMNEXT_ROUTE_FAMILY` picks
+the family:
+
+- `auto` (the default): use `ip` while it answers on port 22. If it doesn't
+  and the node's `ipv6` does, use `ipv6`. The choice is made once per process.
+- `4`: always use `ip`.
+- `6`: use `ipv6` for every node that has one.
+
+Over IPv6, ssh passes `-o HostKeyAlias=<ip>`, so the host key pinned under the
+IPv4 address is still checked; no new key is accepted. A node without `ipv6`
+(the runner today) always uses `ip`. Tests that inject a fake runner never
+route.
 
 ## Cloud providers
 
@@ -232,9 +319,18 @@ python3 tools/next_fleet.py install n1 --steps files      # dry run
 python3 tools/next_deploy.py all --execute
 ```
 
+## Services on every core
+
+- Office TURN relay: `fmnext-turn.service`, `[turn]`
+  ([office/README.md](../office/README.md)).
+- Group-call server (SFU): `fmnext-calls.service`, `[calls]`, UDP 3479 and
+  `/calls/*` on each per-node name ([calls.md](calls.md)).
+
 ## Traps
 
 - `fmnext-ids` takes `--config` before the subcommand.
+- A fleet branch that is not merged into `main` makes every deploy fail on
+  gate 1 ([Landing the fleet change on main](#landing-the-fleet-change-on-main)).
 - Operator units must not use `PrivateTmp`.
 - rqlite's default snapshot WAL size makes small databases snapshot every few
   minutes and rewrite the whole file; `[rqlite] snap_wal_size` (and optional

@@ -144,12 +144,27 @@ async function mockRepoPage(page, submitted = []) {
           body: JSON.stringify({ ok: false, error: "not_found" }),
         });
       }
+    } else if (url.pathname === "/api/repo/acme/widgets/blobs") {
+      const contents = {
+        ".forkmesh/pulls/93/pull.md": PULL_MD,
+        ".forkmesh/pulls/93/changes.patch": PULL_PATCH,
+        ".forkmesh/pulls/93/0001-line-comment.md": INLINE_COMMENT_MD,
+      };
+      body = {
+        ok: true,
+        blobs: Object.fromEntries(url.searchParams.getAll("path")
+          .map((name) => [name, contents[name] ? { ok: true, content: contents[name] } : null])),
+      };
     } else if (url.pathname === "/api/repo/acme/widgets/tree") {
       body = blobPath === ".forkmesh/pulls/93"
         ? {
             ok: true,
             commit: PULL_COMMIT,
-            entries: [{ name: "0001-line-comment.md", type: "blob" }],
+            entries: [
+              { name: "pull.md", type: "blob" },
+              { name: "changes.patch", type: "blob" },
+              { name: "0001-line-comment.md", type: "blob" },
+            ],
           }
         : { ok: true, commit: PULL_COMMIT, entries: [] };
     } else if (
@@ -174,7 +189,7 @@ test("daily interface diff rendering is addressable, readable, and within budget
 
   // The link a reviewer copies from the Files changed review must open there
   // for whoever it is sent to.
-  await page.goto("/acme/widgets/pulls/93/files");
+  await page.goto("/acme/widgets/pull/93/files");
 
   const filesTab = page.locator('[data-repo-record-tab="files"]');
   await expect(filesTab).toHaveAttribute("aria-selected", "true", {
@@ -193,7 +208,7 @@ test("daily interface diff rendering is addressable, readable, and within budget
   expect(diffMetric).not.toBeNull();
   expect(diffMetric.duration).toBeLessThanOrEqual(diffBudget.remoteMaximum);
   expect(diffMetric.passed).toBe(true);
-  await expect(page.locator("[data-repo-pull-diff-row]").first()).toContainText("+");
+  await expect(page.locator("[data-repo-pull-diff-row]", { hasText: "hero" })).toContainText("+");
 
   // Both sides of the merge name their repository, not just their branch.
   const hero = page.locator("[data-repo-record-hero]");
@@ -203,13 +218,13 @@ test("daily interface diff rendering is addressable, readable, and within budget
   // Switching sections rewrites the address bar, so the URL always matches
   // what is on screen.
   await page.locator('[data-repo-record-tab="conversation"]').click();
-  await expect(page).toHaveURL(/\/acme\/widgets\/pulls\/93$/);
+  await expect(page).toHaveURL(/\/acme\/widgets\/pull\/93$/);
   await expect(
     page.locator('[data-repo-record-panel="conversation"]'),
   ).toBeVisible();
 
   await filesTab.click();
-  await expect(page).toHaveURL(/\/acme\/widgets\/pulls\/93\/files$/);
+  await expect(page).toHaveURL(/\/acme\/widgets\/pull\/93\/files$/);
   const navigationMetric = await page.evaluate(() =>
     (window.ForkMeshInterfaceMetrics || []).findLast((row) => row.name === "navigation"));
   const navigationBudget = DAILY_BUDGETS.budgets.find((row) => row.id === "daily-navigation");
@@ -218,7 +233,7 @@ test("daily interface diff rendering is addressable, readable, and within budget
 
   // Back steps between sections of the same record without refetching it.
   await page.goBack();
-  await expect(page).toHaveURL(/\/acme\/widgets\/pulls\/93$/);
+  await expect(page).toHaveURL(/\/acme\/widgets\/pull\/93$/);
   await expect(
     page.locator('[data-repo-record-panel="conversation"]'),
   ).toBeVisible();
@@ -236,7 +251,7 @@ test("line gutters open inline range comments and support immediate or batched s
     }));
   });
   await mockRepoPage(page, submitted);
-  await page.goto("/acme/widgets/pulls/93/files");
+  await page.goto("/acme/widgets/pull/93/files");
 
   const files = page.locator('[data-repo-record-panel="files"]');
   await expect(files).toBeVisible({ timeout: 15_000 });

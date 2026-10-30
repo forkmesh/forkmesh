@@ -82,7 +82,7 @@ def test_web_candidates_put_the_issue_first_then_repository_then_directory():
         '"participant"',
         '"owner"',
         '"active"',
-        '"ForkMesh user"',
+        '`${platformName()} user`',
     ]
     positions = [body.index(needle) for needle in order]
     assert positions == sorted(positions)

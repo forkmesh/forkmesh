@@ -316,6 +316,7 @@ public final class DirectMessageService {
     @ObservationIgnored private var roomNames: [String: String] = [:]
     @ObservationIgnored private var seen: [String: Set<String>] = [:]
     @ObservationIgnored private var sequence = 0
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored private var receivedRefs: [String: [String]] = [:]
     @ObservationIgnored let sleeper: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var pinned: Set<String> = []
@@ -340,6 +341,7 @@ public final class DirectMessageService {
     @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
     @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var onConversations: (@MainActor ([DirectConversation]) -> Void)?
     @ObservationIgnored private var refBooks: [String: DirectRefBook] = [:]
     @ObservationIgnored private var receiptOrder: [String] = []
     @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
@@ -409,8 +411,23 @@ public final class DirectMessageService {
     public func restore(
         _ messages: [ChatMessage], receipts saved: [String: ChatReceipt], times: [String: ChatReceiptTimes] = [:]
     ) {
+        var added: [String: [ChatMessage]] = [:]
+        var order: [String] = []
         for message in messages where DirectMessageFrames.isDirect(message.conversation) && !isGone(message.id) {
-            append(message, conversationId: DirectMessageFrames.conversationId(message.conversation))
+            if isExpired?(message.conversation, message.timestamp) == true { continue }
+            let conversationId = DirectMessageFrames.conversationId(message.conversation)
+            guard seen[conversationId, default: []].insert(message.id).inserted else { continue }
+            if added[message.conversation] == nil { order.append(message.conversation) }
+            added[message.conversation, default: []].append(message)
+        }
+        if !order.isEmpty {
+            var next = history
+            for conversation in order {
+                let list = RelayService.merging(next[conversation] ?? [], added[conversation] ?? [])
+                next[conversation] = Array(list.suffix(DirectMessageFrames.maxMessagesPerRoom))
+            }
+            history = next
+            onChange?()
         }
         for (id, receipt) in saved where receipt == .delivered || receipt == .read {
             setReceipt(receipt, id, stamped: times[id] ?? ChatReceiptTimes())
@@ -434,17 +451,22 @@ public final class DirectMessageService {
     }
 
     public func refresh() async {
-        loading = true
-        defer { loading = false }
+        let shows = records.isEmpty && !loading
+        if shows { loading = true }
+        defer { if shows { loading = false } }
+        let started = generation
         do {
             let payload = try await call(
                 "GET", "\(DirectMessageFrames.endpoint)?limit=\(DirectMessageFrames.pageLimit)", nil)
+            if generation != started { return }
             apply(DirectMessageFrames.conversations(from: payload), replacing: true)
-            nextCursor = payload["nextCursor"]?.text ?? ""
-            lastError = nil
+            let cursor = payload["nextCursor"]?.text ?? ""
+            if nextCursor != cursor { nextCursor = cursor }
+            if lastError != nil { lastError = nil }
             watchWanted()
         } catch {
-            lastError = "\(error)"
+            let message = "\(error)"
+            if lastError != message { lastError = message }
         }
     }
 
@@ -453,8 +475,10 @@ public final class DirectMessageService {
             let cursor = nextCursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
         else { return }
         do {
+            let started = generation
             let payload = try await call(
                 "GET", "\(DirectMessageFrames.endpoint)?limit=\(DirectMessageFrames.pageLimit)&cursor=\(cursor)", nil)
+            if generation != started { return }
             apply(DirectMessageFrames.conversations(from: payload), replacing: false)
             nextCursor = payload["nextCursor"]?.text ?? ""
         } catch {
@@ -477,7 +501,10 @@ public final class DirectMessageService {
                 if let socket = sockets[old.id] { Task { await self.close(socket) } }
             }
         }
-        records = merged
+        if records != merged {
+            records = merged
+            onConversations?(merged)
+        }
     }
 
     public func searchUsers(_ query: String) async -> [String] {
@@ -578,9 +605,18 @@ public final class DirectMessageService {
         return await connect(record.id)
     }
 
+    @discardableResult
+    public func openRinging(_ conversation: String) async -> Bool {
+        guard conversation.hasPrefix(DirectMessageFrames.prefix) else { return false }
+        if record(for: conversation) == nil { await refresh() }
+        return await open(conversation)
+    }
+
     public func appLifecycleChanged(_ state: AppLifecycleState) {
         if state == .inactive { return }
-        foreground = state == .resumed
+        let next = state == .resumed
+        if next == foreground { return }
+        foreground = next
         publishFocus()
         cancelReconnects()
         if foreground {
@@ -1376,11 +1412,16 @@ public final class DirectMessageService {
 
     @discardableResult
     public func sendCallFrame(_ conversation: String, type: String, extra: JSONObject) async -> Bool {
-        guard type.hasPrefix("call-"), let record = record(for: conversation), let socket = sockets[record.id]
-        else { return false }
+        guard type.hasPrefix("call-"), let record = record(for: conversation) else { return false }
+        if sockets[record.id] == nil { _ = await open(conversation) }
+        guard let socket = sockets[record.id] else { return false }
         let plain = frame(record, type: type, extra: extra)
         do {
-            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            var envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            if type == "call-invite" {
+                envelope["ring"] = true
+                if let call = extra["call"] { envelope["call"] = call }
+            }
             try await socket.connection.send(text: JSON.encode(envelope))
             return true
         } catch {
@@ -1441,7 +1482,14 @@ public final class DirectMessageService {
     }
 
     public func clear() async {
+        generation &+= 1
         await closeAll()
+        sockets = [:]
+        connected = []
+        serverCopies = [:]
+        cryptos = [:]
+        receivedRefs = [:]
+        lastError = nil
         records = []
         history = [:]
         seen = [:]

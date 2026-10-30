@@ -26,17 +26,20 @@ export function createDesertPlots(THREE, interactive) {
   const group = new THREE.Group();
   group.name = "forkmesh-desert-plots";
   const sandTexture = desertSandTexture(THREE);
+  const sandGeometry = (petals) => roundedHexagonGeometry(
+    THREE,
+    CONTINUOUS_CITY_RADIUS,
+    CONTINUOUS_CITY_CORNER_RADIUS,
+    WORLD_ROAD_CORNER_SEGMENTS,
+    {
+      centers: DESERT_HEXES
+        .filter((_, side) => !petals.has(side))
+        .map((hex) => [hex.x, -hex.z]),
+      uvScale: 1 / DESERT_SAND_TILE,
+    },
+  );
   const sand = new THREE.Mesh(
-    roundedHexagonGeometry(
-      THREE,
-      CONTINUOUS_CITY_RADIUS,
-      CONTINUOUS_CITY_CORNER_RADIUS,
-      WORLD_ROAD_CORNER_SEGMENTS,
-      {
-        centers: DESERT_HEXES.map((hex) => [hex.x, -hex.z]),
-        uvScale: 1 / DESERT_SAND_TILE,
-      },
-    ),
+    sandGeometry(new Set()),
     resources.uniqueMaterial(THREE, {
       color: "#f2dfb8",
       map: sandTexture,
@@ -67,10 +70,12 @@ export function createDesertPlots(THREE, interactive) {
     [0.85, 0.9],
   ];
   const cactusPlacements = [];
+  const cactusPetals = [];
   DESERT_PLOTS.forEach((plot) => {
     const tangentX = -plot.normalZ;
     const tangentZ = plot.normalX;
     cactusSpots.forEach(([outward, sideways]) => {
+      cactusPetals.push(plot.hex);
       cactusPlacements.push([
         plot.x +
           plot.normalX * outward * DESERT_PLOT_APOTHEM +
@@ -81,9 +86,10 @@ export function createDesertPlots(THREE, interactive) {
       ]);
     });
   });
-  DESERT_HEXES.forEach((hex) => {
+  DESERT_HEXES.forEach((hex, side) => {
     const facing = Math.atan2(hex.normalZ, hex.normalX);
     openDesertSpots.forEach(([reach, turn]) => {
+      cactusPetals.push(side);
       cactusPlacements.push([
         hex.x + Math.cos(facing + turn) * reach * CONTINUOUS_CITY_RADIUS,
         hex.z + Math.sin(facing + turn) * reach * CONTINUOUS_CITY_RADIUS,
@@ -125,6 +131,8 @@ export function createDesertPlots(THREE, interactive) {
   });
   trunks.instanceMatrix.needsUpdate = true;
   arms.instanceMatrix.needsUpdate = true;
+  const trunkMatrices = trunks.instanceMatrix.array.slice();
+  const armMatrices = arms.instanceMatrix.array.slice();
   trunks.computeBoundingSphere();
   arms.computeBoundingSphere();
   trunks.castShadow = true;
@@ -140,8 +148,10 @@ export function createDesertPlots(THREE, interactive) {
   const signPlots = DESERT_HEXES.map((_, side) =>
     DESERT_PLOTS.find((plot) => plot.hex === side),
   ).filter(Boolean);
+  const signs = [];
   signPlots.forEach((plot, index) => {
     const sign = new THREE.Group();
+    signs.push({ sign, petal: plot.hex });
     sign.name = `forkmesh-start-world-sign-${index + 1}`;
     const inset = DESERT_PLOT_APOTHEM - 14;
     sign.position.set(
@@ -181,5 +191,34 @@ export function createDesertPlots(THREE, interactive) {
     setShadows(sign, true, false);
     group.add(sign);
   });
+
+  let replaced = "";
+  group.userData.replacePetals = (list = []) => {
+    const petals = new Set(
+      (Array.isArray(list) ? list : []).filter((side) => DESERT_HEXES[side]),
+    );
+    const key = [...petals].sort().join(",");
+    if (key === replaced) return;
+    replaced = key;
+    const previous = sand.geometry;
+    sand.geometry = sandGeometry(petals);
+    previous.dispose();
+    trunks.instanceMatrix.array.set(trunkMatrices);
+    arms.instanceMatrix.array.set(armMatrices);
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    cactusPetals.forEach((side, cactus) => {
+      if (!petals.has(side)) return;
+      trunks.setMatrixAt(cactus, hidden);
+      arms.setMatrixAt(cactus * 2, hidden);
+      arms.setMatrixAt(cactus * 2 + 1, hidden);
+    });
+    trunks.instanceMatrix.needsUpdate = true;
+    arms.instanceMatrix.needsUpdate = true;
+    trunks.computeBoundingSphere();
+    arms.computeBoundingSphere();
+    signs.forEach(({ sign, petal }) => {
+      sign.visible = !petals.has(petal);
+    });
+  };
   return group;
 }

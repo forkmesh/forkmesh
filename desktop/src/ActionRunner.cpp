@@ -30,6 +30,7 @@
 #include <functional>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <csignal>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -46,6 +47,7 @@ constexpr qsizetype kActionProcessLogMaxBytes = 1024 * 1024;
 constexpr qsizetype kActionProcessLogTailBytes = 128 * 1024;
 constexpr qsizetype kActionProcessLogMaxLineChars = 4096;
 constexpr qsizetype kActionCrashOutputTailBytes = 12 * 1024;
+constexpr int kActionCrashContextRefreshMs = 250;
 constexpr qsizetype kActionCrashContextMaxChars = 12000;
 constexpr qint64 kMaxLandedArtifactBytes = 1024LL * 1024 * 1024;
 constexpr qint64 kHostRunFreeBytes = 1024LL * 1024 * 1024;
@@ -127,6 +129,49 @@ bool sandboxIsClaimed(const QString &name)
 {
     QMutexLocker locker(&liveSandboxMutex());
     return liveSandboxRoots().contains(name);
+}
+
+int lockSandboxTree(const QString &root)
+{
+#ifndef Q_OS_WIN
+    const QByteArray path = QFile::encodeName(root);
+    const int fd = ::open(path.constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0)
+        return -1;
+    if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+#else
+    Q_UNUSED(root)
+    return -1;
+#endif
+}
+
+void unlockSandboxTree(int &fd)
+{
+#ifndef Q_OS_WIN
+    if (fd >= 0)
+        ::close(fd);
+#endif
+    fd = -1;
+}
+
+bool sandboxTreeLocked(const QString &path)
+{
+#ifndef Q_OS_WIN
+    const QByteArray name = QFile::encodeName(path);
+    const int fd = ::open(name.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+    const bool held = ::flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK;
+    ::close(fd);
+    return held;
+#else
+    Q_UNUSED(path)
+    return false;
+#endif
 }
 
 // How long an unclaimed tree is left alone. Nothing in this process needs it —
@@ -367,6 +412,13 @@ ActionRunner::ActionRunner(ActionStore *store, QObject *parent)
                      QStringLiteral("Workflow exceeded the total time limit."));
         }
     });
+    m_crashContextTimer = new QTimer(this);
+    m_crashContextTimer->setSingleShot(true);
+    m_crashContextTimer->setInterval(kActionCrashContextRefreshMs);
+    connect(m_crashContextTimer, &QTimer::timeout, this, [this] {
+        if (m_busy)
+            updateCrashContext();
+    });
     m_terminationTimer = new QTimer(this);
     m_terminationTimer->setSingleShot(true);
     connect(m_terminationTimer, &QTimer::timeout, this, [this] {
@@ -389,9 +441,11 @@ ActionRunner::~ActionRunner()
     // drop the claim instead: the next run's sweep reclaims it rather than
     // leaving a gigabyte of checkout and build output on the disk for good.
     releaseSandboxClaim(m_sandboxRoot);
+    unlockSandboxTree(m_sandboxLock);
     m_stepTimer->stop();
     m_jobTimer->stop();
     m_terminationTimer->stop();
+    m_crashContextTimer->stop();
 
     QProcess *const process = m_process;
     if (!process)
@@ -499,6 +553,8 @@ ActionSandboxSweep ActionRunner::reclaimSandboxes(const QString &base,
             if (sandboxIsClaimed(name))
                 continue;
             const QString path = dir.absoluteFilePath(name);
+            if (sandboxTreeLocked(path))
+                continue;
             // Both prefixes end in "-<ms>"; a tree whose name says nothing is
             // aged by its own timestamp rather than kept forever.
             bool parsed = false;
@@ -539,7 +595,7 @@ QString ActionRunner::removeUnclaimedSandbox(const QString &base, const QString 
     if (!name.startsWith(QLatin1String("forkmesh-run-")) &&
         !name.startsWith(kSandboxDiscardPrefix))
         return QStringLiteral("%1 is not an Actions sandbox tree").arg(path);
-    if (sandboxIsClaimed(name))
+    if (sandboxIsClaimed(name) || sandboxTreeLocked(path))
         return QStringLiteral("a running Action still uses %1").arg(name);
     QString why;
     if (!forkmesh::safedelete::removeTree(path, root, &why,
@@ -725,6 +781,14 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
         m_sandboxRoot,
         QFileDevice::ReadOwner | QFileDevice::WriteOwner |
             QFileDevice::ExeOwner);
+    unlockSandboxTree(m_sandboxLock);
+    m_sandboxLock = lockSandboxTree(m_sandboxRoot);
+#ifndef Q_OS_WIN
+    if (m_sandboxLock < 0)
+        emitLog(QString::fromUtf8(
+            "==> \xE2\x9A\xA0\xEF\xB8\x8F  Could not lock this run's sandbox; "
+            "another ForkMesh process on this computer may remove it mid-run."));
+#endif
 
     // Everything above is discarded when the run ends, so a C++ build starts
     // with no objects and a cold ccache every time — around fifteen minutes
@@ -799,7 +863,9 @@ void ActionRunner::reclaimSandboxSpaceThenCheckout()
                     complete(false,
                              QStringLiteral(
                                  "Not enough free disk space on this node: %1 "
-                                 "available where a run needs %2.")
+                                 "available where a run needs %2. Run the "
+                                 "Free disk space workflow, then run this "
+                                 "again.")
                                  .arg(humanBytes(sweep.freeBytes),
                                       humanBytes(needed)));
                     return;
@@ -903,7 +969,7 @@ void ActionRunner::terminateCurrentProcess(bool timedOut)
         const QString systemctl =
             QStandardPaths::findExecutable(QStringLiteral("systemctl"));
         if (!systemctl.isEmpty()) {
-            forkmesh::processreaper::startReleased(
+            forkmesh::processreaper::startReleasedQuietly(
                 systemctl, {QStringLiteral("--user"), QStringLiteral("kill"),
                             QStringLiteral("--kill-whom=all"), m_systemdUnit});
         }
@@ -1124,7 +1190,7 @@ void ActionRunner::launch(Phase phase, const QString &program,
     child->start();
     const int timeoutMs =
         phase == Phase::Step
-            ? qMax(250, m_limits.stepTimeoutMs)
+            ? currentStepTimeoutMs()
             : qMax(30000, qMin(m_limits.jobTimeoutMs, 5 * 60 * 1000));
     m_stepTimer->start(timeoutMs);
 }
@@ -1289,7 +1355,7 @@ void ActionRunner::launchSandboxedStep(const QString &command)
             .arg(m_stepIndex);
     forkmesh::processreaper::registerOwnedUnit(m_systemdUnit);
     const int runtimeSeconds =
-        qMax(1, (m_limits.stepTimeoutMs + 999) / 1000);
+        qMax(1, (currentStepTimeoutMs() + 999) / 1000);
     QStringList args{
         QStringLiteral("--user"),
         QStringLiteral("--scope"),
@@ -1749,6 +1815,7 @@ void ActionRunner::finishComplete(bool ok, const QString &finalMessage,
     m_completing = false;
     m_stepTimer->stop();
     m_jobTimer->stop();
+    m_crashContextTimer->stop();
     forkmesh::setCrashContext(QString());
     forkmesh::setTerminationSignalSurvivalEnabled(false);
     emit statusChanged(m_run.id, m_run.status);
@@ -1779,6 +1846,7 @@ void ActionRunner::interruptForShutdown(bool crashed, int exitCode)
     m_phase = Phase::Idle;
     m_busy = false;
     m_completing = false;
+    m_crashContextTimer->stop();
     forkmesh::setCrashContext(QString());
     forkmesh::setTerminationSignalSurvivalEnabled(false);
     emit interrupted(m_run.id);
@@ -1890,6 +1958,16 @@ bool ActionRunner::landVersionHeader()
 {
     if (m_repoWorkTree.isEmpty() || m_worktree.isEmpty())
         return false;
+    if (m_run.ref.startsWith(QStringLiteral("refs/tags/"))) {
+        QProcess ancestor;
+        ancestor.setWorkingDirectory(m_repoWorkTree);
+        ancestor.start(QStringLiteral("git"),
+                       {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"),
+                        m_run.ref + QStringLiteral("^{commit}"), QStringLiteral("HEAD")});
+        if (!ancestor.waitForFinished(30000) || ancestor.exitStatus() != QProcess::NormalExit ||
+            ancestor.exitCode() != 0)
+            return false;
+    }
     const QString rel = QStringLiteral("desktop/CMakeLists.txt");
     QFile src(m_workspace + QLatin1Char('/') + rel);
     QFile dst(m_repoWorkTree + QLatin1Char('/') + rel);
@@ -2043,6 +2121,7 @@ bool ActionRunner::copySandboxTree(const QString &source,
 void ActionRunner::cleanupWorktree()
 {
     releaseSandboxClaim(m_sandboxRoot);
+    unlockSandboxTree(m_sandboxLock);
     if (m_sandboxRoot.isEmpty()) {
         releaseBuildCache();
         return;
@@ -2099,7 +2178,8 @@ void ActionRunner::emitProcessOutput(const QByteArray &bytes)
         return;
 
     rememberCrashProcessOutput(bytes);
-    updateCrashContext();
+    if (!m_crashContextTimer->isActive())
+        m_crashContextTimer->start();
 
     if (m_processOutputBytes >= kActionProcessLogMaxBytes) {
         emitProcessOutputTruncationNotice();
@@ -2214,6 +2294,17 @@ void ActionRunner::rememberCrashProcessOutput(const QByteArray &bytes)
         m_crashOutputTail = m_crashOutputTail.right(kActionCrashOutputTailBytes);
 }
 
+int ActionRunner::currentStepTimeoutMs() const
+{
+    int timeoutMs = m_limits.stepTimeoutMs;
+    if (m_stepIndex >= 0 && m_stepIndex < m_workflow.steps.size()) {
+        const int minutes = m_workflow.steps.at(m_stepIndex).timeoutMinutes;
+        if (minutes > 0)
+            timeoutMs = qMin(minutes * 60 * 1000, m_limits.jobTimeoutMs);
+    }
+    return qMax(250, timeoutMs);
+}
+
 QString ActionRunner::phaseName() const
 {
     switch (m_phase) {
@@ -2260,8 +2351,17 @@ QString ActionRunner::crashContext() const
     return out;
 }
 
+#ifdef FORKMESH_ACTION_STORE_TESTS
+bool ActionRunner::crashContextRefreshPendingForTesting() const
+{
+    return m_crashContextTimer->isActive();
+}
+#endif
+
 void ActionRunner::updateCrashContext() const
 {
+    m_crashContextTimer->stop();
+    ++m_crashContextUpdates;
     const QString tail = crashOutputTail();
     QString head = crashContextHeader();
     if (!tail.isEmpty())

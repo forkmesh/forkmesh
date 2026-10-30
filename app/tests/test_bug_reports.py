@@ -27,6 +27,19 @@ SRC = ROOT / "src"
 MODULE = SRC / "bug_reports.py"
 
 
+def _entry_function(name):
+    import ast
+    import ipaddress
+    entry = SRC / "entry.py"
+    tree = ast.parse(entry.read_text(encoding="utf-8"), filename=str(entry))
+    node = next(item for item in tree.body
+                if isinstance(item, ast.FunctionDef) and item.name == name)
+    namespace = {"ipaddress": ipaddress}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(entry), "exec"),
+         namespace)
+    return namespace[name]
+
+
 def run_async_test(function):
     def wrapped(*args, **kwargs):
         return asyncio.run(function(*args, **kwargs))
@@ -152,6 +165,15 @@ class _Runtime:
                     if row["report_id"] == args[0]:
                         return {"status": row.get("status", "new")}
                 return None
+            if "SUM(a.size)" in sql:
+                (since,) = args
+                anonymous = {row["report_id"] for row in runtime.rows
+                             if row["account"] == ""
+                             and row["created_at"] >= since}
+                return {"bytes": sum(
+                    item["size"] for item in runtime.attachments
+                    if item["chunk_index"] == 0
+                    and item["report_id"] in anonymous)}
             if "COUNT(*) AS n FROM bug_reports" in sql:
                 reporter_bi, since = args
                 return {"n": sum(
@@ -258,6 +280,7 @@ class _Runtime:
             "Response": _Response,
             "_authed_account_name": _authed_account_name,
             "_transient_client_address": _transient_client_address,
+            "_client_source_bucket": _entry_function("_client_source_bucket"),
             "_forkbot_enqueue_issue": _forkbot_enqueue_issue,
             "log_error": log_error,
         }
@@ -391,6 +414,50 @@ def test_the_hourly_quota_refuses_the_eleventh_report_from_one_reporter():
     assert refused.json["error"] == "rate_limited"
     assert refused.headers["retry-after"] == "3600"
     assert len(runtime.rows) == module["RATE_LIMIT_MAX"]
+
+
+def test_one_ipv6_64_shares_one_hourly_quota():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    for index in range(module["RATE_LIMIT_MAX"]):
+        assert _submit(module, {"message": "report %d" % index},
+                       {"cf-connecting-ip": "2001:db8:5:6::%x" % (index + 1)}
+                       ).status == 201
+    refused = _submit(module, {"message": "one too many"},
+                      {"cf-connecting-ip": "2001:db8:5:6:ffff::1"})
+    assert refused.status == 429
+    assert refused.json["error"] == "rate_limited"
+    other = _submit(module, {"message": "another network"},
+                    {"cf-connecting-ip": "2001:db8:5:7::1"})
+    assert other.status == 201
+
+
+def test_signed_out_attachments_share_one_hourly_byte_budget():
+    import base64
+    runtime = _Runtime()
+    module = runtime.namespace()
+    module["ANONYMOUS_ATTACHMENT_BYTES_PER_WINDOW"] = 3 * 1024 * 1024
+    blob = base64.b64encode(b"x" * (1024 * 1024)).decode("ascii")
+    body = {"message": "screenshot attached",
+            "attachments": [{"name": "a.png", "contentType": "image/png",
+                             "data": blob}]}
+    for index in range(3):
+        assert _submit(module, body,
+                       {"cf-connecting-ip": "198.51.100.%d" % (index + 1)}
+                       ).status == 201
+    refused = _submit(module, body, {"cf-connecting-ip": "203.0.113.50"})
+    assert refused.status == 429
+    assert refused.json["error"] == "attachments_busy"
+    assert len(runtime.rows) == 3
+    text_only = _submit(module, {"message": "no screenshot this time"},
+                        {"cf-connecting-ip": "203.0.113.50"})
+    assert text_only.status == 201
+    runtime.account = "alice"
+    assert _submit(module, body).status == 201
+    runtime.account = ""
+    runtime.now += module["RATE_LIMIT_WINDOW_MS"] + 1
+    assert _submit(module, body, {"cf-connecting-ip": "203.0.113.50"}
+                   ).status == 201
 
 
 def test_a_different_reporter_is_not_blocked_by_someone_elses_quota():

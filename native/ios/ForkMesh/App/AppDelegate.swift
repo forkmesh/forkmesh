@@ -16,6 +16,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        HiddenUnicodeInputGuard.install()
+        let bridge: ApplePushBridge = pushBridge
+        DirectCallKit.shared.wake = {
+            Task { await AppBoot.shared.start(pushBridge: bridge) }
+        }
+        DirectCallKit.shared.start()
         return true
     }
 

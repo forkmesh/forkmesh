@@ -175,7 +175,8 @@ def test_status_events_are_remembered_and_every_mirror_read_applies_them():
     assert submit.index("await fetchRepoMutation(repo, \"issues\", payload);") < submit.index(
         'if (type === "status") rememberPendingIssueStatus(repo, issueNumber, event);')
     detail = _function(REPO_UI, "loadRepoRecordDetail")
-    assert "withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))" in detail
+    assert ("withPendingIssueStatus(repo, number, issueDetailParsed(\n"
+            "          applyIssueModeration(blobText(blob), moderation), number))") in detail
     assert "withPendingIssueStatus(repo, number, parsed)" in _function(REPO_UI, "showOptimisticRepoRecord")
     listing = _function(REPO_UI, "loadRepoIssues")
     assert "applyPendingIssueStatuses(repo, state.issuesView.items)" in listing

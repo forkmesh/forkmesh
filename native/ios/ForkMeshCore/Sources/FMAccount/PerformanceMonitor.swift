@@ -69,6 +69,25 @@ public enum AppLifecycleState: String, Sendable {
     case resumed, inactive, hidden, paused, detached
 }
 
+public struct AppReturnGate: Sendable {
+    private var away = false
+
+    public init() {}
+
+    public mutating func isReturn(_ state: AppLifecycleState) -> Bool {
+        switch state {
+        case .hidden, .paused, .detached:
+            away = true
+            return false
+        case .inactive:
+            return false
+        case .resumed:
+            defer { away = false }
+            return away
+        }
+    }
+}
+
 /// Watches for anything that makes the app feel laggy and records it.
 ///
 /// Runs in every build mode. Each record is written to `logSink` (default: `Log`, tag `perf`,

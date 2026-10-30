@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.forkmesh.nativeapp.feature.chat.CallQualityWidget
 import com.forkmesh.nativeapp.feature.composer.PhotoPicker
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
@@ -81,7 +82,7 @@ class FaceChangerScreen : Screen() {
             permitted = mediaPermitted(context)
         }
         LaunchedEffect(Unit) { if (!permitted) ask.launch(MEDIA_PERMISSIONS) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Face Changer", navigator)
             when {
                 !asked -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
@@ -116,6 +117,7 @@ private fun FaceChangerStudio(modifier: Modifier) {
     val previewing by peers.previewing.collectAsState()
     val faces by peers.facesSupported.collectAsState()
     val thumbs by peers.backgrounds.collectAsState()
+    val quality by peers.quality.collectAsState()
     var phase by remember { mutableStateOf(StudioPhase.OPENING) }
     var notice by remember { mutableStateOf("") }
     var hearing by remember { mutableStateOf(false) }
@@ -135,11 +137,12 @@ private fun FaceChangerStudio(modifier: Modifier) {
             val folder = File(context.cacheDir, SHARE_DIR).apply { mkdirs() }
             folder.listFiles()?.forEach { if (it.isFile) it.delete() }
             val target = File(folder, "face-changer-${System.currentTimeMillis()}.mp4")
-            val made = runCatching { peer.finishRecording(target) }.getOrNull()
+            val result = runCatching { peer.finishRecording(target) }
+            val made = result.getOrNull()
             phase = StudioPhase.READY
             if (made == null) {
                 target.delete()
-                notice = "The clip could not be saved. Try again."
+                notice = saveFailure(result.exceptionOrNull())
                 return@run
             }
             val file = if (made.mime == "video/mp4") target else File(folder, target.nameWithoutExtension + ".webm").also { target.renameTo(it) }
@@ -207,7 +210,7 @@ private fun FaceChangerStudio(modifier: Modifier) {
             else -> Unit
         }
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -233,6 +236,9 @@ private fun FaceChangerStudio(modifier: Modifier) {
                         .background(Color.Black.copy(alpha = .55f))
                         .padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
                 )
+            }
+            if (previewing && (phase == StudioPhase.READY || phase == StudioPhase.RECORDING)) {
+                CallQualityWidget(quality, video = true, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
         val live = phase == StudioPhase.READY || phase == StudioPhase.RECORDING
@@ -304,6 +310,13 @@ private fun FaceChangerStudio(modifier: Modifier) {
         }
     }
 }
+
+private fun saveFailure(error: Throwable?): String =
+    if (generateSequence(error) { it.cause }.any { it.message == "empty_recording" }) {
+        "Nothing was recorded. Record for a little longer, then stop."
+    } else {
+        "The clip could not be saved. Try again."
+    }
 
 private fun recordFailure(error: Throwable): String = when (error.message) {
     "face_not_ready", "face_unavailable", "background_unavailable" -> "The face or background could not start here, so nothing was recorded."

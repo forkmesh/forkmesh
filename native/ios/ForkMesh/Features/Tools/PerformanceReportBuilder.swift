@@ -2,6 +2,7 @@ import FMAccount
 import FMAgents
 import FMApi
 import FMBase
+import FMChat
 import FMInsights
 import FMTools
 import Foundation
@@ -73,13 +74,14 @@ enum PerformanceReportBuilder {
         if let router = router {
             out.append(("tab", router.selectedTab.rawValue))
             let path: [String] = router.currentPath.map(\.title)
-            out.append(("screen", path.isEmpty ? "tab root" : path.joined(separator: " > ")))
+            out.append(("screen", router.cover ?? (path.isEmpty ? "tab root" : path.joined(separator: " > "))))
             if !router.recents.isEmpty {
                 out.append(("recent screens", router.recents.prefix(5).map(\.title).joined(separator: ", ")))
             }
         }
         out.append(("agents", agents()))
         out.append(("watch", watch()))
+        out.append(("chat history", chatHistory()))
         return out
     }
 
@@ -89,6 +91,12 @@ enum PerformanceReportBuilder {
         let view: String = Services.get(KeyValueStore.self)?.string(forKey: AgentListView.storageKey) ?? AgentListView.eagle.rawValue
         return "\(counts.agentsTotal) listed, \(counts.agents) running, view \(view), "
             + "dots \(settings?.showAgentDots == true ? "on" : "off"), aquarium \(settings?.aquariumOn == true ? "on" : "off")"
+    }
+
+    static func chatHistory() -> String {
+        guard let directory = ChatHistoryStore.defaultDirectory() else { return "none" }
+        let stored: (files: Int, bytes: Int) = ChatHistoryStore.storedBytes(in: directory)
+        return "\(stored.bytes / 1024) KB in \(stored.files) files, read at launch"
     }
 
     static func watch() -> String {

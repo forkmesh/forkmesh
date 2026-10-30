@@ -484,7 +484,7 @@ def test_office_task_list_still_shows_bids_filed_from_the_website():
     for contract in (
         'const kind = task.kind === "bid" ? "bid" : "task"',
         'data-kind="${bid ? "bid" : "task"}"',
-        "SOL bounty requested · bidder @",
+        "SOL bounty requested · bidder`)} ${officeTaskProfileHTML(bidder)}",
         "world-office-task-bid-badge",
         "function refreshNow()",
     ):
@@ -525,13 +525,7 @@ def test_physical_board_displays_bounded_authorized_summaries_only():
 
 def test_one_general_bot_replaces_the_claude_and_codex_task_choice():
     tasks = source(TASKS)
-    chat_view = (
-        ROOT / "public" / "dashboard" / "partials" / "views" / "chat.html"
-    ).read_text(encoding="utf-8")
     chat = (ROOT / "public" / "dashboard-chat.js").read_text(encoding="utf-8")
-    assert '<option value="agent">Bot</option>' in chat_view
-    assert '<option value="codex">Codex</option>' not in chat_view
-    assert '<option value="claude">Claude</option>' not in chat_view
     assert 'const ORG_BOT_SENDER_ID = "agent"' in chat
     assert "MCP bots consume repository-linked agent tasks" in chat
     assert "MCP task created." in chat
@@ -591,3 +585,40 @@ def test_task_feedback_is_reported_inline_where_the_visitor_acted():
         assert handler in tasks
     assert 'await mutate(OFFICE_TASKS_PATH, body, "", { silent: true });' in tasks
     assert "notify: (message, options) => this.notice(message, options)," in world
+
+
+def test_task_people_and_mentions_link_to_public_profiles():
+    script = f"""
+      globalThis.location = {{ hostname: "world.forkmesh.com", origin: "https://world.forkmesh.com" }};
+      const {{ mentionHTML, officeTaskProfileHTML, officeTaskProfileUrl }} = await import({json.dumps(TASKS.as_uri())});
+      console.log(JSON.stringify({{
+        person: officeTaskProfileHTML("Dana"),
+        prefixed: officeTaskProfileHTML("@dana"),
+        bot: officeTaskProfileHTML("agent"),
+        suffixed: officeTaskProfileHTML("helper[bot]"),
+        hostile: officeTaskProfileHTML("<b>x</b>"),
+        url: officeTaskProfileUrl("dana"),
+        mention: mentionHTML("ping @Dana and @agent", 2000, "dana"),
+      }}));
+    """
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        check=True, capture_output=True, text=True, timeout=30)
+    out = json.loads(result.stdout)
+    link = '<a class="world-task-profile-link" href="https://forkmesh.com/@dana">@dana</a>'
+    assert out["person"] == '<a class="world-task-profile-link" href="https://forkmesh.com/@dana">@Dana</a>'
+    assert out["prefixed"] == link
+    assert out["bot"] == "@agent"
+    assert out["suffixed"] == "@helper[bot]"
+    assert out["hostile"] == "@&lt;b&gt;x&lt;/b&gt;"
+    assert out["url"] == "https://forkmesh.com/@dana"
+    assert out["mention"] == (
+        'ping <a class="world-task-mention-link" href="https://forkmesh.com/@dana">'
+        '<mark class="world-task-mention" data-self="true">@dana</mark></a> and '
+        '<mark class="world-task-mention">@agent</mark>')
+    tasks = source(TASKS)
+    assert "<strong>${officeTaskProfileHTML(reply.author)}</strong>" in tasks
+    assert "by ${officeTaskProfileHTML(task.qa.reviewer)}" in tasks
+    assert ": assigneeHTML\n" in tasks
+    assert "<span>${assigneeHTML}</span>" in tasks
+    assert "? officeTaskProfileHTML(task.assignee)" in tasks

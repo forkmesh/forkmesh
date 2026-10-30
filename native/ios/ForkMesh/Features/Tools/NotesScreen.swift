@@ -28,7 +28,7 @@ struct NotesScreen: View {
             .navigationTitle(NotesListModel.title)
             .navigationBarTitleDisplayMode(.inline)
             .background(fm.canvas)
-            .navigationDestination(isPresented: $editorOpen) {
+            .shellDetail(isPresented: $editorOpen, id: openedId) {
                 NoteEditorScreen(noteId: openedId)
                     .shellPageClearance()
             }

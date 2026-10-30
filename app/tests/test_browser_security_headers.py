@@ -60,11 +60,10 @@ def test_only_explicit_embedded_documents_are_frameable():
     # Chat renders inside World frames; issue and pull details render inside
     # the World workbench. These documents stay same-origin only.
     for path in (
-        "/dashboard/chat*",
         "/chat",
         "/chat.html",
         "/:owner/:repo/issues/:number",
-        "/:owner/:repo/pulls/:number",
+        "/:owner/:repo/pull/:number",
     ):
         rule = _rule(path)
         assert "! Content-Security-Policy" in rule
@@ -78,7 +77,7 @@ def test_only_explicit_embedded_documents_are_frameable():
 
     world_ancestors = (
         "frame-ancestors 'self' https://forkmesh.com "
-        "https://forkmesh.com"
+        "https://www.forkmesh.com"
     )
     for path in ("/world", "/world/*"):
         rule = _rule(path)
@@ -100,8 +99,8 @@ def test_only_explicit_embedded_documents_are_frameable():
         assert "https://cdn.jsdelivr.net" in rule
         assert "https://static.cloudflareinsights.com" in rule
 
-    assert HEADERS.count("frame-ancestors 'self'") == 7
-    assert HEADERS.count("X-Frame-Options: SAMEORIGIN") == 5
+    assert HEADERS.count("frame-ancestors 'self'") == 6
+    assert HEADERS.count("X-Frame-Options: SAMEORIGIN") == 4
     assert HEADERS.count(world_ancestors) == 2
     assert "https://cdn.tailwindcss.com" not in HEADERS
 
@@ -122,6 +121,20 @@ def test_policy_does_not_grant_sensitive_device_capabilities():
         assert blocked in permissions
     # Speech is an explicit, same-origin opt-in feature.
     assert "microphone=(self)" in permissions
+
+
+def test_world_pages_may_use_the_camera_for_avatar_capture():
+    rules = {
+        pattern: body
+        for pattern, body in re.findall(
+            r"^(/\S*)\n((?:  .*\n?)+)", HEADERS, flags=re.M)
+    }
+    for pattern in ("/world", "/world/*"):
+        rule = rules[pattern]
+        assert "! Permissions-Policy" in rule
+        assert "camera=(self)" in rule
+        assert "microphone=(self)" in rule
+        assert "geolocation=()" in rule
 
 
 def test_dynamic_app_html_receives_the_same_security_boundary():
@@ -229,6 +242,13 @@ def test_dynamic_app_html_receives_the_same_security_boundary():
             DynamicResponse(), path)
         assert "camera=()" in other.headers["permissions-policy"]
         assert "mediastream:" not in other.headers["content-security-policy"]
+    for path in ("/chat", "/chat.html"):
+        chat = namespace["_apply_browser_security_headers"](
+            DynamicResponse(), path)
+        assert "camera=(self)" in chat.headers["permissions-policy"]
+        assert "microphone=(self)" in chat.headers["permissions-policy"]
+        assert "mediastream:" in chat.headers["content-security-policy"]
+        assert chat.headers["x-frame-options"] == "SAMEORIGIN"
 
     strict = DynamicResponse()
     strict.headers["content-security-policy"] = (

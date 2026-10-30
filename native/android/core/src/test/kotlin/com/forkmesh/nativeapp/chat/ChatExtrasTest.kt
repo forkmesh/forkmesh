@@ -95,6 +95,138 @@ class ChatExtrasTest {
         expect(hub.rows("#general")[0].reactions.isEmpty())
     }
 
+    private fun sticker(slug: String, emoji: String, added: Boolean = true, reactor: String = "peer-1", target: String = "m-1"): Map<String, Any?> =
+        peerFrame(
+            "reaction",
+            mapOf(
+                "conversation" to "#general", "target" to target, "emoji" to emoji, "sticker" to slug,
+                "reactorId" to reactor, "reactorName" to "Pat", "added" to added,
+            ),
+            sender = reactor,
+        )
+
+    fun testAPeerStickerArrivesAndComesOffAgain() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "ready"), id = "m-1"))
+        relay.handle(sticker("lgtm", "✅"))
+        val chip = hub.rows("#general")[0].stickers.single()
+        assertEq("lgtm", chip.slug)
+        assertEq("LGTM", chip.text)
+        assertEq(-6f, chip.entry?.tilt)
+        assertEq(0xFF8250DF, chip.entry?.color)
+        assertEq(listOf("Pat"), chip.names)
+        expect(!chip.mine)
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+        relay.handle(sticker("lgtm", "✅"))
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        relay.handle(sticker("lgtm", "✅", reactor = "intruder").plus("senderId" to "peer-1"))
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        relay.handle(sticker("lgtm", "✅", added = false))
+        expect(hub.rows("#general")[0].stickers.isEmpty())
+    }
+
+    fun testTogglingAStickerSendsItsFallbackAndTurnsItOff() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "ship"), id = "m-1"))
+        relay.handle(sticker("lgtm", "✅"))
+        val message = hub.rows("#general")[0].message
+        hub.toggleSticker(message, "lgtm")
+        val sent = relay.sentOfType("reaction").single()
+        assertEq("m-1", sent["target"])
+        assertEq("✅", sent["emoji"])
+        assertEq("lgtm", sent["sticker"])
+        assertEq("me-node", sent["reactorId"])
+        assertEq(true, sent["added"])
+        assertEq(true, sent["persist"])
+        assertEq("#general", sent["conversation"])
+        val chip = hub.rows("#general")[0].stickers.single()
+        assertEq(2, chip.count)
+        expect(chip.mine)
+        assertEq("LGTM ×2", chip.label)
+        assertEq(listOf("Me", "Pat"), chip.names)
+        hub.toggleSticker(message, "lgtm")
+        assertEq(false, relay.sentOfType("reaction").last()["added"])
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        expect(!hub.rows("#general")[0].stickers.single().mine)
+        hub.toggleSticker(message, "not-a-sticker")
+        assertEq(2, relay.sentOfType("reaction").size)
+        relay.online = false
+        hub.toggleSticker(message, "party")
+        assertEq(listOf("lgtm"), hub.rows("#general")[0].stickers.map { it.slug })
+    }
+
+    fun testAStickerAndTheSameEmojiReactionNeverUndoEachOther() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "launch"), id = "m-1"))
+        relay.handle(sticker("party", "🎉"))
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to true)))
+        assertEq(listOf("party"), hub.rows("#general")[0].stickers.map { it.slug })
+        assertEq(listOf("celebrate"), hub.rows("#general")[0].reactions.map { it.value })
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to false)))
+        assertEq(listOf("party"), hub.rows("#general")[0].stickers.map { it.slug })
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to true)))
+        relay.handle(sticker("party", "🎉", added = false))
+        expect(hub.rows("#general")[0].stickers.isEmpty())
+        assertEq(listOf("celebrate"), hub.rows("#general")[0].reactions.map { it.value })
+    }
+
+    fun testAnUnknownStickerShowsAsItsFallbackReaction() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "x"), id = "m-1"))
+        relay.handle(sticker("moon-shot", "🚀"))
+        val row = hub.rows("#general")[0]
+        expect(row.stickers.isEmpty())
+        assertEq(listOf("rocket"), row.reactions.map { it.value })
+        relay.handle(sticker("moon-shot", "🚀", added = false))
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+    }
+
+    fun testStickersShowInCatalogOrder() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "x"), id = "m-1"))
+        relay.handle(sticker("party", "🎉"))
+        relay.handle(sticker("wow", "😮", reactor = "peer-2"))
+        relay.handle(sticker("lgtm", "✅", reactor = "peer-3"))
+        assertEq(listOf("lgtm", "wow", "party"), hub.rows("#general")[0].stickers.map { it.slug })
+        assertEq(
+            listOf("lgtm", "ship-it", "nice", "thanks", "on-it", "wow", "love-it", "party"),
+            StickerCatalog.entries.map { it.slug },
+        )
+        assertEq("❤️", StickerCatalog.entry("love-it")?.fallback)
+        for (entry in StickerCatalog.entries) expect(ReactionCatalog.hasEmoji(ReactionCatalog.valueForEmoji(entry.fallback)), entry.slug)
+    }
+
+    fun testStickersAreOfferedOnlyInRelayRoomsAndDirectMessages() {
+        val (hub, _) = hubWith()
+        expect(hub.canSticker("#general"))
+        expect(hub.canSticker("@peer-1"))
+        expect(!hub.canSticker(MESH_CONVERSATION))
+        expect(!hub.canSticker(OfficeFrames.conversation("design")))
+        expect(!hub.canSticker(""))
+    }
+
+    fun testStickersPersistWithTheHistory() {
+        val dir = Files.createTempDirectory("chat-history").toFile()
+        try {
+            val (hub, relay) = hubWith()
+            hub.attachHistory(ChatHistoryStore(dir)) { "scope-s" }
+            relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "keep me"), id = "m-1"))
+            relay.handle(sticker("thanks", "🙏"))
+            hub.toggleSticker(hub.rows("#general")[0].message, "nice")
+            hub.saveHistory()
+            val (other, _) = hubWith()
+            other.attachHistory(ChatHistoryStore(dir)) { "scope-s" }
+            val row = other.rows("#general").single()
+            assertEq(listOf("nice", "thanks"), row.stickers.map { it.slug })
+            expect(row.stickers.first().mine)
+            expect(row.reactions.isEmpty())
+        } finally {
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        }
+    }
+
     fun testOnlyTheAuthorCanEdit() {
         val (hub, relay) = hubWith()
         relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "original"), id = "m-2"))
@@ -141,23 +273,15 @@ class ChatExtrasTest {
         expect(relay.sentOfType("typing").none { it.containsKey("channel") })
     }
 
-    fun testAnInviteJoinsAPrivateChannelAndItsMessagesAreMarkedPrivate() {
+    fun testARelayInviteNoLongerOpensAPrivateChannel() {
         val (hub, relay) = hubWith()
         relay.handle(peerFrame("invite", mapOf("to" to relay.selfId, "channel" to "secret")))
-        expect("#secret" in hub.channels)
-        expect(hub.extras.isPrivate("#secret"))
-        expect(hub.extras.inviteNotice != null)
-        hub.select("#secret")
-        expect(hub.isPrivateRoom("#secret"))
-        assertEq("end-to-end", hub.badge("#secret"))
-        expect(!hub.canAskForkbot("#secret"))
-        assertEq(ChatHubSend.Sent, hub.sendText("#secret", "psst"))
-        assertEq(listOf("psst"), hub.rows("#secret").map { it.text })
-        expect(relay.sent.any { it["private"] == true && it["text"] == "psst" })
-        hub.extras.removeChannel("#secret")
         expect("#secret" !in hub.channels)
-        relay.handle(peerFrame("invite", mapOf("to" to "someone-else", "channel" to "other")))
-        expect("#other" !in hub.channels)
+        expect(!hub.isPrivateRoom("#secret"))
+        assertEq("public", hub.badge("#secret"))
+        expect(hub.canAskForkbot("#secret"))
+        assertEq(ChatHubSend.Sent, hub.sendText("#lobby", "hello"))
+        expect(relay.sent.none { it["private"] == true })
     }
 
     fun testChannelNamesAndCreation() {
@@ -165,13 +289,9 @@ class ChatExtrasTest {
         expect(ChatExtras.validChannelName("team-notes"))
         expect(!ChatExtras.validChannelName("#team"))
         expect(!ChatExtras.validChannelName("has space"))
-        assertEq("#plans", hub.extras.createPrivateChannel("Plans"))
-        expect("#plans" in hub.channels)
         assertEq("#lobby", hub.extras.addPublicChannel("lobby"))
         expect("#lobby" in hub.channels)
         assertEq("#lobby", relay.sentOfType("channel").single()["name"])
-        expect(hub.extras.invite("peer-1", "#plans"))
-        expect(!hub.extras.invite("peer-1", "#lobby"))
         hub.extras.removeChannel("#general")
         expect("#general" in hub.channels)
     }
@@ -203,9 +323,10 @@ class ChatExtrasTest {
             peerFrame("chat", mapOf("channel" to "#random", "text" to "old news"), id = "h-1"),
             peerFrame("chat", mapOf("channel" to "#hidden-room", "text" to "nope", "private" to true), id = "h-2"),
             peerFrame("chat", mapOf("channel" to "#team", "text" to "team"), id = "h-3"),
+            peerFrame("chat", mapOf("channel" to "#random", "text" to "in someone else's name"), id = "h-4", sender = "mallory-node"),
         )
         relay.handle(peerFrame("history", mapOf("to" to relay.selfId, "entries" to entries)))
-        assertEq(1, relay.messages("#random").size)
+        assertEq(listOf("old news"), relay.messages("#random").map { it.text }, "a history frame carries only its sender's own messages")
         expect(relay.messages("#hidden-room").isEmpty())
         expect(relay.messages("#team").isEmpty())
         expect(hub.rows("#random").isNotEmpty())
@@ -219,7 +340,6 @@ class ChatExtrasTest {
             relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "keep me"), id = "p-1"))
             relay.handle(peerFrame("thread-reply", mapOf("channel" to "#general", "rootId" to "p-1", "text" to "reply"), id = "p-2"))
             hub.toggleReaction(hub.rows("#general")[0].message, "rocket")
-            hub.extras.createPrivateChannel("vault")
             hub.saveHistory()
 
             val (other, _) = hubWith()
@@ -227,12 +347,25 @@ class ChatExtrasTest {
             assertEq(listOf("keep me"), other.rows("#general").map { it.text })
             assertEq(listOf("rocket"), other.rows("#general").first().reactions.map { it.value })
             assertEq(1, other.rows("#general").first().thread?.replyCount)
-            expect(other.extras.isPrivate("#vault"))
-            expect("#vault" in other.channels)
         } finally {
             dir.listFiles()?.forEach { it.delete() }
             dir.delete()
         }
+    }
+
+    fun testANotificationOpenAsksTheScreenToRevealTheConversation() {
+        val (hub, relay) = hubWith()
+        var reveals = 0
+        hub.onReveal = { reveals++ }
+        assertEq(0, hub.revealRequests)
+        hub.select("#random")
+        assertEq(0, hub.revealRequests, "picking a room inside Chat reveals nothing")
+        hub.switchConversation("#random")
+        assertEq(1, hub.revealRequests, "the same room opened from a notification still closes what covers it")
+        hub.switchConversation("#ops")
+        assertEq(2, hub.revealRequests)
+        assertEq(2, reveals)
+        assertEq("#ops", relay.currentConversation)
     }
 
     fun testSlashCommandsAreHandledBeforeSending() {
@@ -264,7 +397,7 @@ class ChatExtrasTest {
         assertEq(snapshot, ChatHistoryCodec.decode(ChatHistoryCodec.encode(snapshot)))
         expect(ChatHistoryCodec.scopeName("a", "b") != ChatHistoryCodec.scopeName("a", "c"))
         assertEq("af63f14c8602103b", ChatHistoryCodec.scopeName("", ""))
-        assertEq(null, ChatHistoryCodec.decode("{\"v\":2}"))
+        assertEq(null, ChatHistoryCodec.decode("{\"v\":0}"))
     }
 
     fun testReactionCatalogTranslatesBothWays() {
@@ -288,9 +421,14 @@ class ChatExtrasTest {
     fun testReplyTargetsResolveWithoutSwitching() {
         val (hub, relay) = hubWith()
         relay.peers.add(Member(id = "peer-9", name = "pat", online = true, owner = "pat", nodeName = "pat-laptop"))
-        hub.reply("pat", "on my way")
+        try {
+            hub.reply("pat", "on my way")
+            expect(false, "a person is only reached through a server direct message")
+        } catch (error: ChatReplyException) {
+            assertEq(ChatReplyException.Kind.REFUSED, error.kind)
+        }
         assertEq("#general", relay.currentConversation)
-        assertEq(listOf("on my way"), relay.messages("@peer-9").map { it.text })
+        expect(relay.messages("@peer-9").isEmpty(), "no relay @peer conversation")
         hub.reply("random", "hi all")
         assertEq(listOf("hi all"), relay.messages("#random").map { it.text })
         try {
@@ -304,7 +442,7 @@ class ChatExtrasTest {
         assertEq("@stranger", ChatReplyTarget.resolve("@stranger", emptyList(), relay.roster()))
         assertEq("#office/design", ChatReplyTarget.resolve("design", emptyList(), emptyList(), listOf("#office/design")))
         hub.switchConversation("@pat")
-        assertEq("@peer-9", hub.currentConversation)
+        assertEq("#general", hub.currentConversation, "without direct messages nothing opens")
         relay.online = false
         try {
             hub.reply("random", "x")
@@ -323,16 +461,17 @@ class ChatExtrasTest {
         hub.onNotice = { notices.add(it) }
         relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "context line"), id = "c-1"))
         assertEq(ChatHubSend.Sent, hub.sendText("#general", "@forkbot what is up"))
-        expect(hub.rows("#general").any { it.message.senderId == "forkbot" })
+        val bot = hub.rows("#general").single { it.message.senderId.startsWith(RelayFrames.BOT_PREFIX) }.message
+        assertEq(RelayFrames.BOT_PREFIX + relay.selfId + ":forkbot", bot.senderId)
+        expect(bot.senderName.startsWith("forkbot \u00b7 via "), bot.senderName)
+        expect(!bot.self, "a bot line is not shown as the device's own message")
+        val posted = relay.sent.last()
+        assertEq(relay.selfId, posted["senderId"], "the device posts the bot line under its own node id")
+        assertEq("forkbot", posted["bot"])
         val body = api.calls.first().third!!
         assertEq(1, (body["context"] as List<*>).size)
         assertEq("@forkbot what is up", body["message"])
         assertEq("Me", body["sender"])
-        hub.extras.createPrivateChannel("quiet")
-        hub.select("#quiet")
-        hub.sendText("#quiet", "forkbot?")
-        assertEq(1, api.calls.size)
-        assertEq(ChatHub.FORKBOT_PRIVATE_NOTICE, notices.last())
         hub.sendText("#general", "no bot here")
         assertEq(1, api.calls.size)
     }
@@ -343,7 +482,8 @@ class ChatExtrasTest {
         expect(hub.rows("#general")[0].visitor)
         assertEq(ChatHub.PUBLIC_SEAL_SUMMARY, hub.sealSummary("#general"))
         assertEq(ChatHub.PRIVATE_SEAL_SUMMARY, hub.sealSummary("@peer"))
-        assertEq("", hub.sealSummary(MESH_CONVERSATION))
+        assertEq(ChatHub.MESH_SEAL_SUMMARY, hub.sealSummary(MESH_CONVERSATION))
+        expect(ChatHub.MESH_SEAL_SUMMARY.startsWith("Anyone nearby"))
         assertEq("public", hub.badge("#general"))
         val names = hub.mentionNames("#general")
         expect("Guest 4411" in names)

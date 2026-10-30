@@ -40,6 +40,7 @@ REFERENCE_RE = re.compile(
 UNVERSIONED_ASSETS = {
     # Consent controller; it loads the tracking SDK itself, only after opt-in.
     "analytics.js",
+    "safe-input.js",
     # ES module entry. Its static imports carry their own URLs, so stamping only
     # the entry would not invalidate the rest of its module graph.
     "chat.js",

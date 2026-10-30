@@ -45,6 +45,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+import instance_features
+
 
 WEBHOOK_SCHEME = "forkmesh-webhook-v1"
 EVENT_SCHEMA = "forkmesh-event-v1"
@@ -255,7 +257,7 @@ def sign_body(secret, event_id, timestamp, body):
 def delivery_headers(signature, event, attempt, timestamp):
     return {
         "content-type": "application/json",
-        "user-agent": USER_AGENT,
+        "user-agent": instance_features.user_agent(USER_AGENT, "webhooks"),
         "ForkMesh-Webhook-Id": str(event.get("id") or ""),
         "ForkMesh-Webhook-Timestamp": str(int(timestamp)),
         "ForkMesh-Webhook-Signature": signature,

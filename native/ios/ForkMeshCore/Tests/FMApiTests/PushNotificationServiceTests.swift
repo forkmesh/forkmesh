@@ -71,6 +71,8 @@ private final class RecordingPlatform: PushPlatform {
     /// "" is a platform that does not say (the protocol default).
     var bundleIdAnswer = ""
     func appBundleId() -> String { bundleIdAnswer }
+
+    func registerForCalls() async throws { record("registerForCalls") }
 }
 
 /// A PlatformException from the bridge (Kotlin's IllegalStateException("bridge missing")).
@@ -146,7 +148,7 @@ final class PushNotificationServiceTests: XCTestCase {
         let platform = RecordingPlatform()
         platform.cachedToken = tokenA
         let push = build(api(relay), platform)
-        await push.start(accountKey: "alice")
+        await push.start(accountKey: "alice", ask: true)
 
         XCTAssertTrue(platform.calls.contains("requestPermission"))
         // The token was minted by a sandbox build, so the Worker has to send it to the sandbox
@@ -154,29 +156,82 @@ final class PushNotificationServiceTests: XCTestCase {
         XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
     }
 
-    func testADeniedPhoneNeverRegistersAndNeverRePrompts() async {
+    func testSigningInNeverPromptsBeforeAFeatureNeedsAlerts() async {
+        let relay = PushRelay()
+        let platform = RecordingPlatform()
+        platform.cachedToken = tokenA
+        let push = build(api(relay), platform)
+        await push.start(accountKey: "alice")
+        await push.rebind(accountKey: "alice")
+
+        XCTAssertFalse(platform.calls.contains("requestPermission"))
+        XCTAssertEqual(platform.calls.prefix(2), ["permissionStatus", "registerForCalls"])
+        XCTAssertEqual(push.permission, "notDetermined")
+        XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
+    }
+
+    func testTheFirstUsefulMomentAsksOnceAndNeverAgain() async {
+        let relay = PushRelay()
+        let platform = RecordingPlatform()
+        platform.cachedToken = tokenA
+        let push = build(api(relay), platform)
+        push.accountKeyProvider = { "alice" }
+        await push.askWhenUseful()
+        XCTAssertFalse(platform.calls.contains("requestPermission"))
+
+        await push.start(accountKey: "alice")
+        await push.askWhenUseful()
+        XCTAssertEqual(platform.calls.filter { $0 == "requestPermission" }.count, 1)
+        XCTAssertEqual(push.permission, "authorized")
+
+        platform.permission = "authorized"
+        await push.askWhenUseful()
+        XCTAssertEqual(platform.calls.filter { $0 == "requestPermission" }.count, 1)
+    }
+
+    func testEnableNotificationsAsksEvenWithATokenAlreadyIssued() async {
+        let relay = PushRelay()
+        let platform = RecordingPlatform()
+        platform.cachedToken = tokenA
+        let push = build(api(relay), platform)
+        push.accountKeyProvider = { "alice" }
+        await push.start(accountKey: "alice")
+        XCTAssertFalse(platform.calls.contains("requestPermission"))
+
+        await push.enable()
+        XCTAssertTrue(platform.calls.contains("requestPermission"))
+        XCTAssertEqual(push.permission, "authorized")
+    }
+
+    func testADeniedPhoneNeverRePromptsButStillRegistersForCalls() async {
         let relay = PushRelay()
         let platform = RecordingPlatform()
         platform.permission = "denied"
+        platform.cachedToken = tokenA
         let push = build(api(relay), platform)
         await push.start(accountKey: "alice")
 
-        XCTAssertEqual(platform.calls, ["permissionStatus"])
+        XCTAssertEqual(platform.calls.prefix(2), ["permissionStatus", "registerForCalls"])
         XCTAssertFalse(platform.calls.contains("requestPermission"))
-        XCTAssertTrue(registrations(relay).isEmpty)
+        XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
         XCTAssertEqual(push.permission, "denied")
-        XCTAssertEqual(push.token, "")
+        XCTAssertTrue(push.registered)
     }
 
-    func testDecliningTheSystemPromptRegistersNothing() async {
+    func testDecliningTheSystemPromptStillRegistersForCalls() async {
         let relay = PushRelay()
         let platform = RecordingPlatform()
         platform.granted = false
         let push = build(api(relay), platform)
-        await push.start(accountKey: "alice")
+        push.accountKeyProvider = { "alice" }
+        await push.start(accountKey: "alice", ask: true)
 
+        XCTAssertTrue(platform.calls.contains("registerForCalls"))
         XCTAssertTrue(registrations(relay).isEmpty)
         XCTAssertEqual(push.permission, "denied")
+
+        await push.didReceiveToken(tokenA)
+        XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
     }
 
     func testARotatedTokenFromAPNsReRegistersOnItsOwn() async {
@@ -465,7 +520,7 @@ final class PushNotificationServiceTests: XCTestCase {
         let push = build(api(relay), platform)
         let notifications = SvcBox(0)
         push.addListener { notifications.mutate { $0 += 1 } }
-        await push.start(accountKey: "alice")
+        await push.start(accountKey: "alice", ask: true)
 
         XCTAssertEqual(push.permission, "authorized")
         XCTAssertEqual(push.environment, "development")
@@ -506,7 +561,7 @@ final class PushNotificationServiceTests: XCTestCase {
         let declinedPlatform = RecordingPlatform()
         declinedPlatform.granted = false
         let declined = build(api(relay), declinedPlatform)
-        await declined.start(accountKey: "alice")
+        await declined.start(accountKey: "alice", ask: true)
         XCTAssertEqual(declined.permission, "denied")
 
         let deniedPlatform = RecordingPlatform()

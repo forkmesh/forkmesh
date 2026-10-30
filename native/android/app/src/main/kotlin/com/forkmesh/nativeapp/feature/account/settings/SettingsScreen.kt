@@ -103,6 +103,7 @@ import com.forkmesh.nativeapp.feature.account.VGap
 import com.forkmesh.nativeapp.feature.account.openExternalUrl
 import com.forkmesh.nativeapp.feature.account.orgs.OrgsScreen
 import com.forkmesh.nativeapp.feature.chat.ChatFeature
+import com.forkmesh.nativeapp.feature.chat.ChatLinkPreviewSettingRow
 import com.forkmesh.nativeapp.feature.chat.RelayConnection
 import com.forkmesh.nativeapp.feature.chat.showChatRetentionSheet
 import com.forkmesh.nativeapp.model.ChatRetention
@@ -261,27 +262,30 @@ class SettingsScreen : AccountScreen() {
                 item {
                     Section("Chat") {
                         FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                            FmListRow(
-                                title = "Chat messages disappear after",
-                                modifier = Modifier.testTag("settings-chat-retention-row"),
-                                subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
-                                leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
-                                onTap = {
-                                    scope.launch {
-                                        val choice = showChatRetentionSheet(
-                                            messenger,
-                                            "Chat messages disappear after",
-                                            ChatRetention.clamp(chatRetention.defaultMs),
-                                        ) ?: return@launch
-                                        chatStatus.clear()
-                                        try {
-                                            auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
-                                        } catch (refused: ChatRetentionException) {
-                                            chatStatus.error(refused.message ?: "Could not save when messages disappear.")
+                            Column(Modifier.fillMaxWidth()) {
+                                FmListRow(
+                                    title = "Chat messages disappear after",
+                                    modifier = Modifier.testTag("settings-chat-retention-row"),
+                                    subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
+                                    leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
+                                    onTap = {
+                                        scope.launch {
+                                            val choice = showChatRetentionSheet(
+                                                messenger,
+                                                "Chat messages disappear after",
+                                                ChatRetention.clamp(chatRetention.defaultMs),
+                                            ) ?: return@launch
+                                            chatStatus.clear()
+                                            try {
+                                                auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
+                                            } catch (refused: ChatRetentionException) {
+                                                chatStatus.error(refused.message ?: "Could not save when messages disappear.")
+                                            }
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                                ChatLinkPreviewSettingRow()
+                            }
                         }
                         FmInlineStatus(chatStatus, Modifier.padding(top = FmSpace.x2))
                     }
@@ -306,6 +310,9 @@ class SettingsScreen : AccountScreen() {
                                     settings.setSolanaAddress(it.trim())
                                 },
                             )
+                            VGap(FmSpace.x3)
+                            ChatTipsRow(settings)
+                            VGap(FmSpace.x3)
                             Text(
                                 "Non-custodial: ForkMesh saves only this public payout address. Wallet keys and recovery " +
                                     "phrases remain on your device. User-owned funds, the public community pool, pending " +
@@ -765,6 +772,28 @@ private fun ServeAsNodeRow(settings: SettingsService) {
             enabled = supported,
             onCheckedChange = { settings.setServeAsNode(it) },
             modifier = Modifier.testTag("serve-as-node"),
+        )
+    }
+}
+
+@Composable
+private fun ChatTipsRow(settings: SettingsService) {
+    val enabled by settings.chatTipsEnabled.collectAsState()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f)) {
+            Text("Accept tips in chat", style = emphasisStyle())
+            VGap(FmSpace.x1)
+            Text(
+                "Shows this Solana address to everyone in shared chat rooms, guests included, so they can tip you. " +
+                    "Off by default.",
+                style = noteStyle(),
+            )
+        }
+        HGap(FmSpace.x3)
+        FmSwitch(
+            checked = enabled,
+            onCheckedChange = { settings.setChatTipsEnabled(it) },
+            modifier = Modifier.testTag("chat-tips"),
         )
     }
 }

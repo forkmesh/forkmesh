@@ -29,6 +29,9 @@ final class FakeCollabAPI: CollabAPI {
         payee: "maintainer-node")
     var comparison = RepoComparison()
     var failure: Error?
+    var branchList: [RepoBranch] = []
+    var forks: [RemoteFork] = []
+    var instanceHost = ""
 
     var commandRequests: [JSONObject] = []
     var bountyRequests: [JSONObject] = []
@@ -89,6 +92,10 @@ final class FakeCollabAPI: CollabAPI {
         try check()
         return comparison
     }
+
+    func branches(_ owner: String, _ name: String) async throws -> [RepoBranch] { branchList }
+
+    func remoteForks(_ owner: String, _ name: String) async throws -> [RemoteFork] { forks }
 
     var mergeOwner = true
     var mergePlan: PullMergePlan? = PullMergePlan(
@@ -155,6 +162,29 @@ final class RecordingInbox: CollabInbox {
         description: String, authorName: String
     ) async throws {
         try record("pull \(title) \(base)...\(head) \(patch.count)")
+    }
+
+    var openedPulls: [(owner: String, name: String, head: String, commits: String, description: String)] = []
+    var remotePulls: [(fork: RemoteFork, base: String, head: String, patch: String)] = []
+    var remoteFailure: Error?
+
+    func openNewPull(
+        _ owner: String, _ name: String, title: String, base: String, head: String, patch: String, commits: String,
+        description: String, authorName: String
+    ) async throws -> Int {
+        openedPulls.append((owner, name, head, commits, description))
+        try record("open \(title) \(base)...\(head)")
+        return 12
+    }
+
+    func openRemotePull(
+        _ fork: RemoteFork, title: String, base: String, head: String, patch: String, commits: String,
+        description: String, authorName: String
+    ) async throws -> Int {
+        remotePulls.append((fork, base, head, patch))
+        try record("remote \(fork.url) \(title)")
+        if let remoteFailure { throw remoteFailure }
+        return 41
     }
 
     func commentOnPull(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws {

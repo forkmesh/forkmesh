@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <script src="/api-client.js?v=${version}"></script>
     <script src="/analytics.js"></script>
+    <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Start your own instance - ForkMesh</title>
     <meta
@@ -328,6 +329,21 @@
       .tp-label.bad { background: color-mix(in srgb, var(--t-destructive) 18%, transparent); color: var(--t-destructive); }
       .tp-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--t-muted-foreground); }
       .tp-default-logo { width: 20px; height: 20px; }
+      .theme-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+      .theme-card {
+        display: grid; align-content: start; gap: 7px; padding: 8px; text-align: left; cursor: pointer;
+        border: 1px solid var(--field-border); border-radius: 14px; background: var(--panel-bg); color: var(--ink); font: inherit;
+      }
+      .theme-card:hover { border-color: color-mix(in srgb, var(--link) 50%, var(--field-border)); }
+      .theme-card[aria-checked="true"] { border-color: var(--link); box-shadow: 0 0 0 1px var(--link); }
+      .theme-card:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+      .theme-card:disabled { cursor: not-allowed; opacity: 0.55; }
+      .theme-card-palette { display: flex; height: 52px; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.25); }
+      .theme-card-palette span { flex: 1; }
+      .theme-card-name { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink-strong); }
+      .theme-card-name em { font-style: normal; font-size: 10.5px; font-weight: 650; color: var(--ink-faint); white-space: nowrap; }
+      .theme-card-desc { font-size: 11.5px; line-height: 1.4; color: var(--ink-faint); }
+      .theme-field[data-named] :is([data-start-theme-accents], [data-start-theme-neutrals], [data-start-theme-shuffle], [data-start-theme-more]) { display: none; }
       .theme-more { margin-top: 10px; }
       .theme-tokens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-bottom: 10px; }
       .field label.theme-token { display: grid; grid-template-columns: 28px 1fr 92px; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); text-transform: capitalize; }
@@ -343,6 +359,7 @@
         .tp-body { grid-template-columns: 1fr; }
         .tp-side, .tp-nav, .tp-search { display: none; }
         .theme-tokens { grid-template-columns: 1fr; }
+        .theme-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
     </style>
     <script src="/genie-spider.js?v=${version}" defer></script>
@@ -384,6 +401,22 @@
             <button type="button" class="launch-btn" data-start-config-launch hidden>Start my instance now</button>
           </section>
 
+          <section class="start-card config-card" aria-labelledby="start-agent-title">
+            <div class="section-head"><h2 id="start-agent-title">Let your coding agent do it <span class="sub" style="font-weight: 400; color: var(--ink-faint)">(optional)</span></h2></div>
+            <p class="hint">Using Claude Code or another coding agent? Paste this into it. It reads our agent guide, asks you for your server details, writes the settings file for you and walks you through every step. The same guide covers how we open pull requests.</p>
+            <div class="field">
+              <div class="copy-row">
+                <input type="text" readonly spellcheck="false" value="Read https://app.forkmesh.com/forkmesh-agent.md and help me start my own ForkMesh instance. Ask me for anything you need first." aria-label="Prompt for your coding agent" data-start-agent-prompt />
+                <button type="button" class="ghost-btn" data-start-agent-copy>Copy</button>
+              </div>
+            </div>
+            <div class="config-links">
+              <a href="/forkmesh-agent.md" target="_blank" rel="noopener" data-start-agent-guide>Read the agent guide</a>
+              <a href="/forkmesh-agent.md" download="FORKMESH.md">Download it as FORKMESH.md</a>
+              <a href="https://forkmesh.com/docs/coding-agents/" target="_blank" rel="noopener">Keep it private in your repository</a>
+            </div>
+          </section>
+
           <section class="start-card" aria-labelledby="start-name-title">
             <div class="section-head"><span class="section-num">1</span><h2 id="start-name-title">Name your project</h2></div>
             <p class="hint">This name replaces “ForkMesh” across your instance, its emails and its pages.</p>
@@ -404,8 +437,9 @@
               <p class="help">It replaces the ForkMesh logo in your instance's header, browser tab and emails. Without one, the ForkMesh logo stays.</p>
             </div>
             <div class="field theme-field">
-              <span class="label" id="start-theme-label">Colour theme</span>
-              <div class="theme-bar" data-start-theme aria-labelledby="start-theme-label">
+              <span class="label" id="start-theme-label">Theme</span>
+              <div class="theme-cards" role="radiogroup" aria-labelledby="start-theme-label" data-start-theme-cards></div>
+              <div class="theme-bar" data-start-theme aria-label="Colours">
                 <div class="theme-group" role="radiogroup" aria-label="Accent colour" data-start-theme-accents></div>
                 <div class="theme-group" role="radiogroup" aria-label="Surfaces" data-start-theme-neutrals></div>
                 <div class="theme-group" role="group" aria-label="Preview mode">
@@ -460,7 +494,7 @@
                 <button type="button" class="link-btn" data-start-theme-reset>Back to the ForkMesh colours</button>
               </details>
               <input type="hidden" name="theme" />
-              <p class="help" data-start-theme-note>Colours for your instance's pages, in dark and light mode. Layout stays the same, and admins can change them later.</p>
+              <p class="help" data-start-theme-note>Pick a ready-made theme, or start from Default and choose your own colours for dark and light mode. Admins can change it later in Settings.</p>
             </div>
           </section>
 

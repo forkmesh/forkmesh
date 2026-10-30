@@ -80,7 +80,7 @@ class MarketingFormScreen(private val model: MarketingModel, draft: MarketingDra
             MarketingKind.METRIC -> "Log"
             else -> "Save"
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(draft.title, navigator) {
                 if (runner.busy > 0) FmCircularProgressIndicator()
                 FmTextButton(onClick = {
@@ -194,7 +194,7 @@ class MarketingCampaignScreen(private val model: MarketingModel, private val cam
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val overview = model.overview
         val campaign = overview?.campaign(campaignId)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(campaign?.title ?: "Campaign", navigator) {
                 if (overview != null && campaign != null) FmTextButton(onClick = {
                     navigator.push(MarketingFormScreen(model, MarketingDraft.of(MarketingKind.CAMPAIGN, overview, campaign.json, campaign.id, model.zone)))
@@ -270,7 +270,7 @@ class MarketingChannelScreen(private val model: MarketingModel, private val chan
         val overview = model.overview ?: return
         val stats = overview.stats(channel)
         val setting = overview.setting(channel)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(overview.channelName(channel), navigator)
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (stats != null) {
@@ -328,7 +328,7 @@ class MarketingAssistantScreen(private val model: MarketingModel, campaignId: St
         val runner = rememberMarketingRunner(model)
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val overview = model.overview
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Marketing assistant", navigator)
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
                 Box {
@@ -386,7 +386,7 @@ class MarketingReportScreen(private val model: MarketingModel) : Screen() {
         LaunchedEffect(Unit) { runner.run({ loadReport() }) }
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val report = model.report
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Weekly report", navigator) {
                 if (report != null) FmTextButton(onClick = { crmShare(context, report.markdown, "Marketing report") }) { Text("Share") }
             }
@@ -411,7 +411,7 @@ class MarketingLinkScreen(private val model: MarketingModel) : Screen() {
     override fun Content(navigator: Navigator) {
         val runner = rememberMarketingRunner(model)
         val context = LocalContext.current
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Tagged link", navigator)
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val current = draft ?: return@Column
@@ -444,7 +444,7 @@ class MarketingKeywordImportScreen(private val model: MarketingModel) : Screen()
     override fun Content(navigator: Navigator) {
         val runner = rememberMarketingRunner(model)
         val rows = remember(text) { MarketingKeywordImport.rows(text) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Import keywords", navigator) {
                 FmTextButton(onClick = {
                     val observed = runCatching { LocalDate.parse(day.trim()).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli() + 12 * 3_600_000L }.getOrNull()
@@ -483,7 +483,7 @@ class MarketingAddChannelsScreen(private val model: MarketingModel) : Screen() {
     override fun Content(navigator: Navigator) {
         val runner = rememberMarketingRunner(model)
         val channels = model.overview?.addableChannels.orEmpty().filter { com.forkmesh.nativeapp.market.PackagesText.matches(query, it.name, it.category) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Add channels", navigator) {
                 FmTextButton(onClick = { runner.run({ addChannels(selected.sorted()) }) { navigator.pop() } }, enabled = selected.isNotEmpty() && runner.busy == 0) { Text("Add ${selected.size}") }
             }
@@ -513,7 +513,7 @@ class MarketingSettingsScreen(private val model: MarketingModel) : Screen() {
         val runner = rememberMarketingRunner(model)
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val overview = model.overview ?: return
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Marketing settings", navigator)
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 MarketingHeader("X")

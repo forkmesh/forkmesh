@@ -9,6 +9,7 @@ import com.forkmesh.nativeapp.json.maps
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
+import com.forkmesh.nativeapp.navigation.Route
 import java.util.concurrent.CopyOnWriteArrayList
 
 enum class PackageSettingType(val wire: String) {
@@ -300,6 +301,69 @@ class AccountPackagesStore(
     var projectChoices: Map<String, Boolean> = loadChoices()
         private set
 
+    private var seenVersions: Map<String, String> = loadVersions("seen")
+
+    private var latestVersions: Map<String, String> = loadVersions("latest")
+
+    @Volatile
+    var updated: Set<String> = changed(seenVersions, latestVersions)
+        private set
+
+    fun isUpdated(id: String): Boolean = id in updated
+
+    fun isUpdated(hubItemId: String, kind: Route.Kind?): Boolean = packageFor(hubItemId, kind)?.let { it in updated } ?: false
+
+    fun canMarkUpdated(hubItemId: String, kind: Route.Kind?): Boolean =
+        packageFor(hubItemId, kind)?.let { latestVersions[it] != null && it !in updated } ?: false
+
+    val canShowUpdates: Boolean get() = updated.size < latestVersions.size
+
+    fun markViewed(id: String) {
+        val version = latestVersions[id] ?: return
+        if (seenVersions[id] == version) return
+        seenVersions = seenVersions + (id to version)
+        saveVersions()
+    }
+
+    fun markViewed(hubItemId: String, kind: Route.Kind?) {
+        packageFor(hubItemId, kind)?.let(::markViewed)
+    }
+
+    fun markAllViewed() {
+        if (updated.isEmpty()) return
+        seenVersions = seenVersions + latestVersions
+        saveVersions()
+    }
+
+    fun markAllUnviewed() {
+        if (!canShowUpdates) return
+        seenVersions = emptyMap()
+        saveVersions()
+    }
+
+    private fun packageFor(hubItemId: String, kind: Route.Kind?): String? =
+        PackageGate.HUB_ITEMS[hubItemId] ?: kind?.let(PackageGate.ROUTE_KINDS::get) ?: hubItemId.takeIf { it in latestVersions }
+
+    private fun adoptVersions(packages: List<MarketPackage>) {
+        val next = latestVersions + packages.filter { it.version.isNotEmpty() && PackagesText.isPackageId(it.id) }.associate { it.id to it.version }
+        if (next == latestVersions) return
+        latestVersions = next
+        saveVersions()
+    }
+
+    private fun saveVersions() {
+        prefs?.putString(VERSIONS_KEY, Json.stringify(linkedMapOf("seen" to seenVersions.toSortedMap(), "latest" to latestVersions.toSortedMap())))
+        val next = changed(seenVersions, latestVersions)
+        if (next == updated) return
+        updated = next
+        notifyListeners()
+    }
+
+    private fun loadVersions(field: String): Map<String, String> {
+        val text = prefs?.getString(VERSIONS_KEY) ?: return emptyMap()
+        return versionMap(Json.parseObject(text).obj(field))
+    }
+
     val perProject: Boolean get() = !legacyProject()
 
     val starterPack: StarterPack get() = PackageGate.starterPack(prefs)
@@ -395,6 +459,7 @@ class AccountPackagesStore(
     }
 
     fun rememberCatalog(packages: List<MarketPackage>) {
+        adoptVersions(packages)
         val entries = packages.filter { it.accountSync }.map(AccountCatalogEntry::of)
         if (entries.isEmpty()) return
         val next = entries.associateBy { it.id }
@@ -445,5 +510,12 @@ class AccountPackagesStore(
         const val PATH = "/api/plugins/@account"
         const val STATE_KEY = "packages/account/state"
         const val CATALOG_KEY = "packages/account/catalog"
+        const val VERSIONS_KEY = "packages/versions"
+
+        fun changed(seen: Map<String, String>, latest: Map<String, String>): Set<String> =
+            latest.filter { (id, version) -> seen[id] != version }.keys
+
+        fun versionMap(json: Map<String, Any?>): Map<String, String> =
+            json.mapNotNull { (id, version) -> if (PackagesText.isPackageId(id) && version is String && version.isNotEmpty()) id to version else null }.toMap()
     }
 }

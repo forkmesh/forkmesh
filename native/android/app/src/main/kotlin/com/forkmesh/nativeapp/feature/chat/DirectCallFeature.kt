@@ -9,13 +9,16 @@ import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.DirectMessageService
 import com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature
 import com.forkmesh.nativeapp.feature.facechanger.WebCallPeers
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 data class PreCall(val conversation: String, val partner: String, val media: DirectCallKind)
 
@@ -26,9 +29,13 @@ object DirectCallFeature {
     private val worker get() = FaceChangerFeature.worker
     private val revisionState = MutableStateFlow(0)
     private val precallState = MutableStateFlow<PreCall?>(null)
+    private val minimizedState = MutableStateFlow(false)
+    const val ANSWER_GONE = "The call ended before it could be answered."
+    const val ANSWER_BUSY = "Hang up the current call to answer this one."
 
     val revision: StateFlow<Int> = revisionState.asStateFlow()
     val precall: StateFlow<PreCall?> = precallState.asStateFlow()
+    val minimized: StateFlow<Boolean> = minimizedState.asStateFlow()
 
     @Volatile
     var engine: DirectCallEngine? = null
@@ -46,6 +53,9 @@ object DirectCallFeature {
 
     @Volatile
     private var partnerOf: (String) -> String = { "" }
+
+    @Volatile
+    private var direct: DirectMessageService? = null
 
     private fun bump() {
         revisionState.update { it + 1 }
@@ -76,19 +86,26 @@ object DirectCallFeature {
         made.addListener {
             val active = made.phase != null
             if (active) precallState.value = null
+            if (!active) minimizedState.value = false
             if (wasActive.getAndSet(active) && !active) worker.execute { runCatching { factory?.endPreview(PRECALL_OWNER) } }
+            made.ending?.let { ending ->
+                made.dismissEnding()
+                ChatDepth.post(ending.message)
+            }
             bump()
         }
         direct.onCallFrame = { plain, conversation -> worker.execute { runCatching { made.handleFrame(plain, conversation) } } }
         val app = context.applicationContext
         appContext = app
         partnerOf = partner
+        this.direct = direct
         engine = made
         peers = factory
         precallState.value = null
         val rings = CallRinger(app, made)
         ringer = rings
         rings.start()
+        DirectCallAudio.attach(app, made)
         ProjectLifecycle.onClose { rings.release() }
         bump()
         return made
@@ -99,9 +116,12 @@ object DirectCallFeature {
         engine = null
         peers = null
         partnerOf = { "" }
+        this.direct = null
         precallState.value = null
         ringer?.release()
         ringer = null
+        minimizedState.value = false
+        DirectCallAudio.detach()
         made.detach()
         direct?.onCallFrame = null
         bump()
@@ -114,14 +134,29 @@ object DirectCallFeature {
         }
     }
 
+    fun wake(conversation: String): Boolean {
+        val current = engine ?: return false
+        val service = direct ?: return false
+        if (current.active) return true
+        ProjectLifecycle.scope.launch(Dispatchers.IO) { runCatching { service.openRinging(conversation) } }
+        return true
+    }
+
+    fun ringing(conversation: String): Boolean {
+        val current = engine ?: return false
+        return current.active || current.invite?.conversation == conversation
+    }
+
     fun run(block: (DirectCallEngine) -> Unit) {
         val current = engine ?: return
         worker.execute { runCatching { block(current) } }
     }
 
+    val busy: Boolean get() = engine?.active == true || peers?.busy == true || precallState.value != null
+
     fun openPreCall(conversation: String, media: DirectCallKind): String? {
         val current = engine ?: return "Calls are not available right now."
-        if (current.active || peers?.busy == true) return "A call is already in progress."
+        if (current.active || peers?.busy == true || GroupCallFeature.active) return "A call is already in progress."
         if (precallState.value != null) return null
         val partner = partnerOf(conversation)
         if (partner.isEmpty()) return "The call could not start. Try again in a moment."
@@ -131,6 +166,42 @@ object DirectCallFeature {
 
     fun closePreCall() {
         precallState.value = null
+    }
+
+    fun minimize() {
+        if (engine?.active != true || minimizedState.value) return
+        minimizedState.value = true
+        peers?.live()?.setLayout(true)
+    }
+
+    fun expand() {
+        if (!minimizedState.value) return
+        minimizedState.value = false
+        peers?.live()?.setLayout(false)
+    }
+
+    fun answer(callId: String, media: DirectCallKind, granted: Boolean) {
+        run { current ->
+            val pending = current.invite
+            if (pending == null || pending.callId != callId) {
+                if (!(current.active && current.callId == callId)) ChatDepth.post(ANSWER_GONE)
+                return@run
+            }
+            if (!granted) {
+                current.declineInvite()
+                ChatDepth.post(
+                    if (media == DirectCallKind.VIDEO) {
+                        "Allow ForkMesh to use the camera and microphone in Settings to answer video calls."
+                    } else {
+                        "Allow ForkMesh to use the microphone in Settings to answer calls."
+                    },
+                )
+                return@run
+            }
+            if (current.acceptInvite()) return@run
+            if (current.active && current.callId == callId) return@run
+            ChatDepth.post(if (current.active) ANSWER_BUSY else ANSWER_GONE)
+        }
     }
 
     fun permitted(context: Context, media: DirectCallKind): Boolean {
@@ -145,18 +216,27 @@ object DirectCallFeature {
     fun onIntent(intent: Intent?): Boolean {
         val action = intent?.action ?: return false
         if (action != IncomingCallNotifier.ACTION_SHOW && action != IncomingCallNotifier.ACTION_ACCEPT) return false
-        val callId = intent.getStringExtra(IncomingCallNotifier.EXTRA_CALL).orEmpty()
+        val trusted = IntentTokens.carries(appContext, intent)
+        val callId = runCatching { intent.getStringExtra(IncomingCallNotifier.EXTRA_CALL) }.getOrNull().orEmpty()
         intent.action = null
         intent.removeExtra(IncomingCallNotifier.EXTRA_CALL)
-        if (action == IncomingCallNotifier.ACTION_ACCEPT) accept(callId)
+        IntentTokens.strip(intent)
+        if (trusted && action == IncomingCallNotifier.ACTION_ACCEPT) accept(callId)
         return true
     }
 
     fun accept(callId: String) {
         val context = appContext ?: return
         run { current ->
-            val pending = current.invite ?: return@run
-            if (pending.callId != callId || current.phase != null) return@run
+            val pending = current.invite
+            if (pending == null || pending.callId != callId) {
+                if (!(current.active && current.callId == callId)) ChatDepth.post(ANSWER_GONE)
+                return@run
+            }
+            if (current.phase != null) {
+                ChatDepth.post(ANSWER_BUSY)
+                return@run
+            }
             if (permitted(context, pending.media)) current.acceptInvite()
         }
     }

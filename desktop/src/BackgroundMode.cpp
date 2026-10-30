@@ -40,6 +40,7 @@ constexpr char kLegacyEngineName[] = "forkmesh-core";
 
 std::atomic_bool g_stopSignal{false};
 std::atomic_bool g_sessionEnding{false};
+std::atomic_bool g_handOverRequested{false};
 
 bool writeText(const QString &path, const QString &content, QString *error)
 {
@@ -72,6 +73,12 @@ QString readText(const QString &path)
     if (!file.open(QIODevice::ReadOnly))
         return {};
     return QString::fromUtf8(file.readAll());
+}
+
+QString scriptString(const QString &value)
+{
+    const QByteArray quoted = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+    return QString::fromUtf8(quoted.mid(1, quoted.size() - 2));
 }
 
 QString systemdQuote(QString value)
@@ -481,13 +488,12 @@ QString StartManager::bootSleepPolicy() const
 {
     if (account.isEmpty())
         return {};
-    const QByteArray quoted = QJsonDocument(QJsonArray{account}).toJson(QJsonDocument::Compact);
     return QStringLiteral(
         "polkit.addRule(function(action, subject) {\n"
         "    if (action.id === \"org.freedesktop.login1.inhibit-block-sleep\" &&\n"
         "        subject.user === %1)\n"
         "        return polkit.Result.YES;\n"
-        "});\n").arg(QString::fromUtf8(quoted.mid(1, quoted.size() - 2)));
+        "});\n").arg(scriptString(account));
 }
 
 bool StartManager::bootSleepProtected() const
@@ -504,16 +510,69 @@ bool StartManager::ensureBootSleepPermission(QString *error) const
             *error = QStringLiteral("Could not determine the account for the boot sleep permission.");
         return false;
     }
-    const CommandResult result = call(QStringLiteral("pkexec"), {
-        QStringLiteral("/bin/sh"), QStringLiteral("-c"),
-        QStringLiteral("umask 022; mkdir -p -- \"$1\" && "
-                       "printf '%s' \"$3\" > \"$2\" && chmod 0644 -- \"$2\""),
-        QStringLiteral("forkmesh-boot-sleep"), polkitRulesHome, bootSleepPolicyPath(),
-        bootSleepPolicy()});
+    const CommandResult result =
+        installPolicy(QStringLiteral("forkmesh-boot-sleep"), bootSleepPolicyPath(), bootSleepPolicy());
     if (!result.ok && error)
         *error = QStringLiteral("Start at boot is registered, but keeping the computer awake "
                                 "before login needs administrator authentication. %1")
                      .arg(QString::fromUtf8(result.output).trimmed());
+    return result.ok;
+}
+
+CommandResult StartManager::installPolicy(const QString &tag, const QString &path,
+                                          const QString &text) const
+{
+    return call(QStringLiteral("pkexec"), {
+        QStringLiteral("/bin/sh"), QStringLiteral("-c"),
+        QStringLiteral("umask 022; mkdir -p -- \"$1\" && "
+                       "printf '%s' \"$3\" > \"$2\" && chmod 0644 -- \"$2\""),
+        tag, polkitRulesHome, path, text});
+}
+
+QString StartManager::restartPolicyPath() const
+{
+    return polkitRulesHome + QStringLiteral("/49-forkmesh-restart-%1.rules").arg(uid);
+}
+
+QString StartManager::restartPolicy() const
+{
+    if (account.isEmpty())
+        return {};
+    return QStringLiteral(
+        "polkit.addRule(function(action, subject) {\n"
+        "    if ((action.id === \"org.freedesktop.login1.reboot\" ||\n"
+        "         action.id === \"org.freedesktop.login1.reboot-multiple-sessions\") &&\n"
+        "        subject.user === %1)\n"
+        "        return polkit.Result.YES;\n"
+        "});\n").arg(scriptString(account));
+}
+
+bool StartManager::restartAllowed() const
+{
+    return !account.isEmpty() && readText(restartPolicyPath()) == restartPolicy();
+}
+
+bool StartManager::allowRestart(bool on, QString *error) const
+{
+    if (on ? restartAllowed() : !QFileInfo::exists(restartPolicyPath()))
+        return true;
+    if (on && account.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Could not determine the account for the restart permission.");
+        return false;
+    }
+    const CommandResult result =
+        on ? installPolicy(QStringLiteral("forkmesh-restart"), restartPolicyPath(), restartPolicy())
+           : call(QStringLiteral("pkexec"),
+                  {QStringLiteral("/bin/sh"), QStringLiteral("-c"),
+                   QStringLiteral("rm -f -- \"$1\""), QStringLiteral("forkmesh-restart"),
+                   restartPolicyPath()});
+    if (!result.ok && error) {
+        const QString output = QString::fromUtf8(result.output).trimmed();
+        *error = QStringLiteral("Changing who may restart this computer needs administrator "
+                                "authentication. %1")
+                     .arg(output.isEmpty() ? QStringLiteral("Not approved.") : output);
+    }
     return result.ok;
 }
 
@@ -681,6 +740,7 @@ StartStatus StartManager::status(const QString &project) const
     StartStatus status;
     status.sleepDisabled = sleepDisabled();
     status.bootSleepProtected = bootSleepProtected();
+    status.restartAllowed = restartAllowed();
     status.afterLogout = QFileInfo::exists(logoutUnitPath(project)) && lingering();
     const QString unit = systemdUnitPath(project);
     if (QFileInfo::exists(unit)) {
@@ -765,6 +825,230 @@ bool StartManager::disable(const QString &project, QString *error) const
     ok = removeFile(headlessEntryPath(project), error) && ok;
     ok = removeFile(trayEntryPath(project), error) && ok;
     return ok;
+}
+
+RunnerDiagnostics StartManager::diagnose(const QString &project, qint64 instancePid,
+                                         bool withJournal) const
+{
+    RunnerDiagnostics diagnostics;
+    diagnostics.start = status(project);
+    diagnostics.unit = unitName(project);
+    diagnostics.instancePid = instancePid;
+    diagnostics.instanceRunning = headlessProcessRunning(instancePid);
+    diagnostics.binaryExecutable = validBinary(diagnostics.start.binary);
+    if (!diagnostics.start.enabled ||
+        !diagnostics.start.mechanism.startsWith(QLatin1String("systemd")))
+        return diagnostics;
+    const CommandResult shown = call(
+        QStringLiteral("systemctl"),
+        {QStringLiteral("--user"), QStringLiteral("show"), diagnostics.unit,
+         QStringLiteral("--property=UnitFileState,ActiveState,SubState,Result,MainPID,"
+                        "NRestarts,ExecMainStatus,ActiveEnterTimestamp,InactiveEnterTimestamp")});
+    diagnostics.systemdReachable = shown.ok;
+    const QStringList lines = QString::fromUtf8(shown.output).split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        const qsizetype equals = line.indexOf(QLatin1Char('='));
+        if (equals <= 0)
+            continue;
+        const QString key = line.left(equals);
+        const QString value = line.mid(equals + 1).trimmed();
+        if (key == QLatin1String("UnitFileState"))
+            diagnostics.unitFileState = value;
+        else if (key == QLatin1String("ActiveState"))
+            diagnostics.activeState = value;
+        else if (key == QLatin1String("SubState"))
+            diagnostics.subState = value;
+        else if (key == QLatin1String("Result"))
+            diagnostics.result = value;
+        else if (key == QLatin1String("MainPID"))
+            diagnostics.mainPid = value.toLongLong();
+        else if (key == QLatin1String("NRestarts"))
+            diagnostics.restarts = value.toInt();
+        else if (key == QLatin1String("ExecMainStatus"))
+            diagnostics.lastExitStatus = value.toInt();
+        else if (key == QLatin1String("ActiveEnterTimestamp"))
+            diagnostics.activeSince = value;
+        else if (key == QLatin1String("InactiveEnterTimestamp"))
+            diagnostics.inactiveSince = value;
+    }
+    if (!withJournal)
+        return diagnostics;
+    diagnostics.journal =
+        QString::fromUtf8(call(QStringLiteral("journalctl"),
+                               {QStringLiteral("--user-unit=") + diagnostics.unit,
+                                QStringLiteral("-n"), QStringLiteral("20"),
+                                QStringLiteral("--no-pager"), QStringLiteral("-q"),
+                                QStringLiteral("-o"),
+                                QStringLiteral("short-iso")})
+                              .output)
+            .trimmed();
+    return diagnostics;
+}
+
+bool StartManager::turnOff(const QString &project, QString *error) const
+{
+    if (paths::isValidSlug(project) && QFileInfo::exists(systemdUnitPath(project)) &&
+        !isBackgroundInstance()) {
+        call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("stop"),
+                                           QStringLiteral("--no-block"), unitName(project)});
+        call(QStringLiteral("systemctl"),
+             {QStringLiteral("--user"), QStringLiteral("reset-failed"), unitName(project)});
+    }
+    return disable(project, error);
+}
+
+bool headlessProcessRunning(qint64 pid)
+{
+#if defined(Q_OS_LINUX)
+    if (pid <= 1)
+        return false;
+    QFile cmdline(QStringLiteral("/proc/%1/cmdline").arg(pid));
+    if (!cmdline.open(QIODevice::ReadOnly))
+        return false;
+    return cmdline.readAll().split('\0').contains("--headless");
+#else
+    Q_UNUSED(pid);
+    return false;
+#endif
+}
+
+namespace {
+
+struct RunnerState {
+    QString name;
+    QString severity;
+    QString detail;
+};
+
+RunnerState runnerState(const RunnerDiagnostics &d)
+{
+    const bool systemd = d.start.mechanism.startsWith(QLatin1String("systemd"));
+    if (d.instanceRunning || d.activeState == QLatin1String("active")) {
+        const qint64 pid = d.instanceRunning ? d.instancePid : d.mainPid;
+        QString detail = QStringLiteral("ForkMesh is running without a window (pid %1).").arg(pid);
+        if (d.restarts > 0)
+            detail += QStringLiteral(" systemd restarted it %1 times since it was enabled.")
+                          .arg(d.restarts);
+        return {QStringLiteral("Running"), QStringLiteral("ok"), detail};
+    }
+    if (!d.binaryExecutable)
+        return {QStringLiteral("Broken"), QStringLiteral("error"),
+                QStringLiteral("It starts %1, which is not an executable file any more. Turn "
+                               "start at boot off and on in Settings to use this copy.")
+                    .arg(d.start.binary.isEmpty() ? QStringLiteral("no program") : d.start.binary)};
+    if (d.activeState == QLatin1String("failed"))
+        return {QStringLiteral("Failed"), QStringLiteral("error"),
+                QStringLiteral("Its last run failed (%1, exit status %2). It starts again at "
+                               "the next boot.")
+                    .arg(d.result, QString::number(d.lastExitStatus))};
+    if (d.activeState == QLatin1String("activating"))
+        return {QStringLiteral("Restarting"), QStringLiteral("warn"),
+                QStringLiteral("It stopped with an error and systemd is starting it again "
+                               "(%1 restarts so far).")
+                    .arg(d.restarts)};
+    if (systemd && !d.systemdReachable)
+        return {QStringLiteral("Unknown"), QStringLiteral("warn"),
+                QStringLiteral("systemctl --user did not answer, so its state is unknown.")};
+    if (systemd && d.unitFileState != QLatin1String("enabled"))
+        return {QStringLiteral("Not enabled"), QStringLiteral("error"),
+                QStringLiteral("The unit file is there, but systemd reports it as %1, so it "
+                               "does not start.")
+                    .arg(d.unitFileState.isEmpty() ? QStringLiteral("unknown") : d.unitFileState)};
+    const QString closing = d.keepRunning
+                                ? QStringLiteral(" and when you close this window")
+                                : QString();
+    if (systemd && !d.start.atBoot)
+        return {QStringLiteral("At log-in"), QStringLiteral("warn"),
+                QStringLiteral("Lingering is off, so it starts when you log in%1, not when the "
+                               "computer starts. To start it before anyone logs in, run: "
+                               "loginctl enable-linger")
+                    .arg(closing)};
+    return {QStringLiteral("Ready"), QStringLiteral("ok"),
+            QStringLiteral("Not running while this window is open. It starts %1%2.")
+                .arg(systemd ? QStringLiteral("when the computer starts")
+                             : QStringLiteral("when you log in"),
+                     closing)};
+}
+
+QString yesNo(bool on)
+{
+    return on ? QStringLiteral("yes") : QStringLiteral("no");
+}
+
+} // namespace
+
+RunnerBadge runnerBadge(const RunnerDiagnostics &diagnostics)
+{
+    RunnerBadge badge;
+    if (!diagnostics.start.enabled)
+        return badge;
+    const RunnerState state = runnerState(diagnostics);
+    badge.visible = true;
+    badge.severity = state.severity;
+    badge.text = QStringLiteral("Background: %1").arg(state.name);
+    badge.toolTip = QStringLiteral("ForkMesh without a window: %1\n%2\n\nClick for diagnostics "
+                                   "or to turn it off.")
+                        .arg(state.name, state.detail);
+    return badge;
+}
+
+bool canCloseToHeadless(const RunnerDiagnostics &diagnostics)
+{
+    return diagnostics.start.enabled && !diagnostics.instanceRunning &&
+           diagnostics.activeState != QLatin1String("active");
+}
+
+QString runnerReport(const RunnerDiagnostics &d)
+{
+    if (!d.start.enabled)
+        return QStringLiteral("ForkMesh is not set to start without a window.\nIt would be added "
+                              "as a %1 at %2.")
+            .arg(d.start.mechanism, d.start.location);
+    const RunnerState state = runnerState(d);
+    const bool systemd = d.start.mechanism.startsWith(QLatin1String("systemd"));
+    QStringList lines;
+    lines << QStringLiteral("State: %1").arg(state.name) << state.detail << QString();
+    lines << QStringLiteral("Registered as: %1").arg(d.start.mechanism);
+    lines << QStringLiteral("File: %1").arg(d.start.location);
+    lines << QStringLiteral("Program: %1 (%2)")
+                 .arg(d.start.binary.isEmpty() ? QStringLiteral("none") : d.start.binary,
+                      d.binaryExecutable ? QStringLiteral("executable")
+                                         : QStringLiteral("missing or not executable"));
+    if (systemd) {
+        lines << QStringLiteral("Unit: %1").arg(d.unit);
+        if (d.systemdReachable) {
+            lines << QStringLiteral("systemd: %1, %2 (%3), result %4")
+                         .arg(d.unitFileState, d.activeState, d.subState, d.result);
+            if (d.mainPid > 0)
+                lines << QStringLiteral("Main pid: %1").arg(d.mainPid);
+            lines << QStringLiteral("Restarts: %1").arg(d.restarts);
+            lines << QStringLiteral("Last exit status: %1").arg(d.lastExitStatus);
+            if (!d.activeSince.isEmpty())
+                lines << QStringLiteral("Last started: %1").arg(d.activeSince);
+            if (!d.inactiveSince.isEmpty())
+                lines << QStringLiteral("Last stopped: %1").arg(d.inactiveSince);
+        } else {
+            lines << QStringLiteral("systemd: systemctl --user did not answer");
+        }
+        lines << QStringLiteral("Starts before log-in (lingering): %1").arg(yesNo(d.start.atBoot));
+    }
+    lines << QStringLiteral("Windowless instance: %1")
+                 .arg(d.instanceRunning ? QStringLiteral("running, pid %1").arg(d.instancePid)
+                                        : QStringLiteral("not running"));
+    lines << QStringLiteral("Keep running after the window closes: %1").arg(yesNo(d.keepRunning));
+    lines << QStringLiteral("Keeps running after log-out: %1").arg(yesNo(d.start.afterLogout));
+    lines << QStringLiteral("Sleep: %1")
+                 .arg(d.start.sleepDisabled
+                          ? QStringLiteral("this computer never goes to sleep")
+                          : d.start.bootSleepProtected
+                                ? QStringLiteral("ForkMesh may keep it awake before log-in")
+                                : QStringLiteral("the login screen can put it to sleep"));
+    if (systemd) {
+        lines << QString() << QStringLiteral("Recent log (journalctl --user-unit=%1 -n 20):")
+                                  .arg(d.unit);
+        lines << (d.journal.isEmpty() ? QStringLiteral("(nothing)") : d.journal);
+    }
+    return lines.join(QLatin1Char('\n'));
 }
 
 LegacyEngine StartManager::removeLegacyEngine(const QString &project) const
@@ -878,10 +1162,15 @@ bool launchTray()
     return startInOwnScope(trayLabel(project), desktopBinaryPath(), trayArguments(project));
 }
 
+void requestHandOverOnClose()
+{
+    g_handOverRequested = true;
+}
+
 bool handOverAfterWindowClose(bool restarting)
 {
-    if (restarting || g_stopSignal || !supported() || !keepRunning() || isBackgroundInstance() ||
-        !singleInstanceHeld() || !displayPlatform())
+    if (restarting || g_stopSignal || !supported() || !(keepRunning() || g_handOverRequested) ||
+        isBackgroundInstance() || !singleInstanceHeld() || !displayPlatform())
         return false;
     if (!startHeadless()) {
         qWarning().noquote() << "ForkMesh closed, but could not start it without a window.";

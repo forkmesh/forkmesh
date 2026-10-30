@@ -7,19 +7,24 @@ enum class AgentListView(val key: String, val caption: String) {
     Compact("compact", "Compact"),
     Zen("zen", "Zen"),
     Full("full", "Full"),
+    Eagle("eagle", "Eagle"),
     ;
 
     val next: AgentListView
         get() = when (this) {
             Compact -> Zen
             Zen -> Full
-            Full -> Compact
+            Full -> Eagle
+            Eagle -> Compact
         }
 
     companion object {
         const val PREF_KEY = "agents/listView"
+        const val EAGLE_DEFAULT_KEY = "agents/listViewEagleDefault"
 
-        fun fromKey(key: String?): AgentListView = entries.firstOrNull { it.key == key } ?: Compact
+        fun fromKey(key: String?): AgentListView = entries.firstOrNull { it.key == key } ?: Eagle
+
+        fun stored(key: String?, eagleDefaulted: Boolean): AgentListView = if (eagleDefaulted) fromKey(key) else Eagle
     }
 }
 
@@ -62,7 +67,51 @@ data class AgentChipFacts(
     val linesRemoved: Int = -1,
     val branch: String = "",
     val hasWorktree: Boolean = false,
+    val backgroundTasks: Int = 0,
+    val active: Boolean = false,
+    val ahead: Int = -1,
+    val prNumber: Int = 0,
+    val tokensIn: Int = 0,
+    val tokensOut: Int = 0,
+    val desktop: String = "",
+    val desktopSessionId: Int = 0,
 )
+
+enum class AgentLineBadge {
+    Conflicted,
+    Behind,
+    Worktree,
+    Branch,
+    Ahead,
+    Pull,
+    Runner,
+    Cloud,
+    Outside,
+    ;
+
+    companion object {
+        const val SHOWN = 4
+
+        fun of(facts: AgentChipFacts): List<AgentLineBadge> {
+            val out = mutableListOf<AgentLineBadge>()
+            if (facts.conflicted) {
+                out += Conflicted
+            } else if (facts.behind > 0) {
+                out += Behind
+            }
+            if (facts.hasWorktree) out += Worktree
+            if (facts.branch.isNotEmpty()) out += Branch
+            if (facts.ahead > 0) out += Ahead
+            if (facts.prNumber > 0) out += Pull
+            when {
+                facts.runner -> out += Runner
+                facts.cloud -> out += Cloud
+                facts.outside -> out += Outside
+            }
+            return out
+        }
+    }
+}
 
 object AgentLineChips {
     fun status(raw: String, merged: Boolean, active: Boolean): AgentLineStatus {
@@ -116,7 +165,23 @@ object AgentLineChips {
         behind = session.behind,
         filesChanged = session.filesChanged,
         branch = session.branchName,
+        active = session.isActive,
+        ahead = session.ahead,
+        prNumber = session.prNumber,
+        tokensIn = maxOf(session.promptTokens, 0),
+        tokensOut = maxOf(session.completionTokens, 0),
     )
+
+    fun facts(session: AgentSession, live: UnifiedAgentRow?): AgentChipFacts {
+        val base = facts(session)
+        if (live == null) return base
+        return base.copy(
+            backgroundTasks = live.backgroundTasks,
+            tokensIn = maxOf(base.tokensIn, live.tokensIn),
+            tokensOut = maxOf(base.tokensOut, live.tokensOut),
+            desktopSessionId = if (live.localId > 0 && !live.outside) live.localId else 0,
+        )
+    }
 
     fun facts(session: AgentLaunchSession, cloud: Boolean): AgentChipFacts {
         val stats = session.diffStats
@@ -133,6 +198,9 @@ object AgentLineChips {
             linesAdded = if (stats.known) stats.added else -1,
             linesRemoved = if (stats.known) stats.removed else -1,
             branch = session.branchName,
+            active = session.isActive,
+            ahead = if (stats.known) stats.ahead else -1,
+            prNumber = session.prNumber,
         )
     }
 
@@ -150,7 +218,35 @@ object AgentLineChips {
         linesAdded = row.linesAdded,
         linesRemoved = row.linesRemoved,
         branch = row.branchName,
+        backgroundTasks = row.backgroundTasks,
+        active = row.isActive,
+        ahead = row.ahead,
+        prNumber = row.prNumber,
+        tokensIn = row.tokensIn,
+        tokensOut = row.tokensOut,
+        desktop = if (row.elsewhere) row.node else "",
+        desktopSessionId = if (row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0) row.localId else 0,
     )
+
+    fun churnShare(added: Int, removed: Int): Float? {
+        val plus = maxOf(added, 0)
+        val minus = maxOf(removed, 0)
+        if (plus + minus == 0) return null
+        return plus.toFloat() / (plus + minus)
+    }
+
+    fun backgroundTasksLabel(count: Int): String = when {
+        count <= 0 -> ""
+        count == 1 -> "1 background task"
+        else -> "$count background tasks"
+    }
+
+    fun eagleSummary(facts: AgentChipFacts): String = listOf(
+        facts.status.word,
+        if (facts.filesChanged >= 0) "${facts.filesChanged} ${if (facts.filesChanged == 1) "file" else "files"}" else "",
+        if (facts.linesAdded > 0 || facts.linesRemoved > 0) "${maxOf(facts.linesAdded, 0)} added, ${maxOf(facts.linesRemoved, 0)} removed" else "",
+        backgroundTasksLabel(facts.backgroundTasks),
+    ).filter { it.isNotEmpty() }.joinToString(", ")
 
     fun runnerWord(name: String): String {
         val clean = name.trim()
@@ -178,6 +274,7 @@ object AgentLineChips {
             AgentChipSlot.Host,
             when {
                 facts.runner -> runnerWord(facts.runnerName)
+                facts.desktop.isNotEmpty() -> runnerWord(facts.desktop)
                 facts.cloud -> "Cloud"
                 facts.outside -> "Outside"
                 else -> "Desktop"

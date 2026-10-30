@@ -1,8 +1,7 @@
 // The encrypted chat room on the live relay.
 //
 // One WebSocket to the active relay's room. Every frame is wrapped in the relay-derived room
-// cipher (RoomCrypto); everything but public #channel chat is additionally sealed device to device
-// (RoomSeal) before the room key sees it. Presence goes out every minute, peers not heard from in
+// cipher (RoomCrypto). Presence goes out every minute, peers not heard from in
 // three minutes drop off the roster, and a dropped socket comes back on a 1 s doubling backoff (to
 // five minutes), or at once when the app returns to the foreground.
 //
@@ -52,6 +51,14 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var isReadElsewhere: (@MainActor (ChatMessage) -> Bool)?
+    @ObservationIgnored public var nodeOwners: ChatNodeOwners? {
+        didSet {
+            guard let nodeOwners, nodeOwners !== oldValue else { return }
+            nodeOwners.addAnswerObserver { [weak self] node, account in self?.ownerConfirmed(node, account) }
+        }
+    }
+    @ObservationIgnored let guestLines: GuestLineRenames
+    @ObservationIgnored public var isHiddenChannel: (@MainActor (String) -> Bool)?
     @ObservationIgnored public let listeners = Listeners()
 
     @ObservationIgnored private var sharedPassphrase = ""
@@ -63,10 +70,9 @@ public final class RelayService: OwnStatusAnnouncer {
 
     @ObservationIgnored private var socket: WebSocketConnection?
     @ObservationIgnored private var crypto: RoomCrypto?
-    // Created automatically from a private X25519 key in the device secure store. DMs and
-    // protected traffic are sealed before the relay-derived room key sees them; public #channels
-    // deliberately remain available to integrations.
     @ObservationIgnored private var seal: RoomSeal?
+    @ObservationIgnored private var heldForOwner: [String: [JSONObject]] = [:]
+    @ObservationIgnored private var ownerGeneration = 0
     // Sender ids already logged, so a room full of old frames not addressed to this installation
     // costs the log one line per sender device.
     @ObservationIgnored private var reportedSealKeyIds = Set<String>()
@@ -125,6 +131,7 @@ public final class RelayService: OwnStatusAnnouncer {
         self.platform = platform
         self.clock = clock
         self.sleeper = sleep
+        self.guestLines = GuestLineRenames(sleep: sleep)
     }
 
     @discardableResult
@@ -172,6 +179,8 @@ public final class RelayService: OwnStatusAnnouncer {
 
     /// This device's node id, as it appears in `senderId`.
     public var selfId: String { identity.nodeId }
+
+    public var nodeIdentity: DeviceIdentity { identity }
 
     @ObservationIgnored public var accountProvider: (@MainActor () -> String)?
 
@@ -428,8 +437,10 @@ public final class RelayService: OwnStatusAnnouncer {
             let store = secureStore
             let account = sealAccount
             let node = nodeId
+            let nodeKey = identity
             let loaded = try await Task.detached(priority: .userInitiated) {
-                try RoomSeal.loadOrCreate(room, scope: room, policy: .open, acct: account, node: node, secureStore: store)
+                try RoomSeal.loadOrCreate(
+                    room, scope: room, policy: .open, acct: account, node: node, secureStore: store, nodeIdentity: nodeKey)
             }.value
             seal = loaded
             if generation != openGeneration { return }
@@ -504,8 +515,19 @@ public final class RelayService: OwnStatusAnnouncer {
     /// relay. Called by RelaySwitchController while the socket is already down.
     public func resetForRelaySwitch() {
         history.removeAll()
+        channels = ["#general"]
+        currentConversation = "#general"
+        unread.removeAll()
+        unseenBadge.removeAll()
+        seenIds.removeAll()
+        liveAtTick.removeAll()
+        ownStatusValue = nil
         seenNotificationIds.removeAll()
         forgetPeers()
+        heldForOwner.removeAll()
+        ownerGeneration += 1
+        nodeOwners?.clear()
+        guestLines.clear()
         log.removeAll()
         sharedPassphrase = ""
         sharedPassphraseScope = ""
@@ -635,11 +657,10 @@ public final class RelayService: OwnStatusAnnouncer {
             let persist = plain["persist"]?.boolValue == true
             var payload = plain
             if persist { payload.removeValue(forKey: "persist") }
+            guard ChatFrameText.isRelayAllowed(payload) else { return false }
             guard let seal else { throw RelayError("End-to-end encryption unavailable.") }
             let framed: JSONObject
-            if RelayService.isControllerReadableFrame(payload) {
-                framed = payload
-            } else if let to = RelayService.directRecipient(payload) {
+            if let to = RelayService.directRecipient(payload) {
                 framed = try seal.seal(payload, forNodes: [to], now: clock.nowMillis)
             } else {
                 framed = try seal.seal(payload, now: clock.nowMillis)
@@ -723,14 +744,28 @@ public final class RelayService: OwnStatusAnnouncer {
     private func withOwnStatus(_ frame: JSONObject) -> JSONObject {
         var frame = frame
         if let status = ownStatusValue { frame["userStatus"] = .object(status.toJSON()) }
-        frame["timeZone"] = .string(TimeZone.current.identifier)
         return frame
     }
 
     private func sendHello() async {
         var hello = withOwnStatus(envelopeBase("hello"))
-        hello["channels"] = JSONValue(channels)
+        hello["channels"] = JSONValue(advertisedChannels)
         send(hello)
+    }
+
+    var advertisedChannels: [String] {
+        channels.filter { !OfficeFrames.isOffice($0) && isHiddenChannel?($0) != true }
+    }
+
+    private func adoptAdvertised(_ values: [JSONValue]) {
+        var adopted: [String] = []
+        for value in values {
+            let channel = value.text
+            if channel.isEmpty || !channel.hasPrefix("#") || channels.contains(channel) || adopted.contains(channel) { continue }
+            if OfficeFrames.isOffice(channel) || isHiddenChannel?(channel) == true { continue }
+            adopted.append(channel)
+        }
+        if !adopted.isEmpty { channels.append(contentsOf: adopted) }
     }
 
     private func sendPresence() async {
@@ -748,16 +783,12 @@ public final class RelayService: OwnStatusAnnouncer {
     @discardableResult
     public func sendMessage(_ text: String, to conversation: String) async -> Bool {
         let trimmed = text.dartTrimmed
-        if trimmed.isEmpty || !(conversation.hasPrefix("#") || conversation.hasPrefix("@")) { return false }
-        var msg = envelopeBase(conversation.hasPrefix("@") ? "dm" : "chat")
+        if trimmed.isEmpty || !conversation.hasPrefix("#") { return false }
+        var msg = envelopeBase("chat")
         msg["text"] = .string(trimmed)
         msg["conversation"] = .string(conversation)
-        if conversation.hasPrefix("#") {
-            msg["channel"] = .string(conversation)
-            msg["persist"] = true
-        } else {
-            msg["to"] = .string(String(conversation.dropFirst()))
-        }
+        msg["channel"] = .string(conversation)
+        msg["persist"] = true
         let id = msg["id"]?.stringValue ?? ""
         let ts = Date(epochMillis: msg["ts"]?.int64Value ?? clock.nowMillis)
         let appended = appendMessage(
@@ -781,15 +812,12 @@ public final class RelayService: OwnStatusAnnouncer {
     @discardableResult
     public func deleteMessage(_ message: ChatMessage) async -> Bool {
         let conversation = message.conversation
+        if !conversation.hasPrefix("#") { return false }
         var del = envelopeBase("delete")
         del["conversation"] = .string(conversation)
         del["target"] = .string(message.id)
-        if conversation.hasPrefix("#") {
-            del["channel"] = .string(conversation)
-            del["persist"] = true
-        } else {
-            del["to"] = .string(String(conversation.dropFirst()))
-        }
+        del["channel"] = .string(conversation)
+        del["persist"] = true
         removeMessage(conversation, message.id)
         seenIds.insert(del["id"]?.stringValue ?? "")
         notifyListeners()
@@ -806,57 +834,47 @@ public final class RelayService: OwnStatusAnnouncer {
     public var historySnapshot: [String: [ChatMessage]] { history }
 
     public func restoreHistory(_ messages: [ChatMessage]) {
-        var changed = false
+        var added: [String: [ChatMessage]] = [:]
+        var order: [String] = []
         for message in messages where !message.id.isEmpty && !seenIds.contains(message.id) {
             if isExpired?(message.conversation, message.timestamp) == true { continue }
             seenIds.insert(message.id)
-            var list = history[message.conversation] ?? []
-            var at = list.count
-            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
-            list.insert(message, at: at)
-            history[message.conversation] = list
-            if message.conversation.hasPrefix("#") && !channels.contains(message.conversation) {
-                channels.append(message.conversation)
-            }
-            changed = true
+            if added[message.conversation] == nil { order.append(message.conversation) }
+            added[message.conversation, default: []].append(message)
         }
-        if changed { notifyListeners() }
+        if order.isEmpty { return }
+        var next = history
+        var shown = channels
+        for conversation in order {
+            next[conversation] = RelayService.merging(next[conversation] ?? [], added[conversation] ?? [])
+            if conversation.hasPrefix("#") && !shown.contains(conversation) { shown.append(conversation) }
+        }
+        history = next
+        if shown != channels { channels = shown }
+        notifyListeners()
     }
 
-    @discardableResult
-    public func sendCoveInvite(
-        inviteeAccount: String, coveId: String, coveName: String, inviterName: String, shareUrl: String, ts: Int64
-    ) -> Bool {
-        let invitee = inviteeAccount.trimmingCharacters(in: .whitespacesAndNewlines)
-        if invitee.isEmpty { return false }
-        var frame = envelopeBase("cove-invite")
-        frame["invitee"] = .string(String(invitee.prefix(120)))
-        frame["coveId"] = .string(String(coveId.prefix(80)))
-        frame["coveName"] = .string(String(coveName.prefix(160)))
-        frame["inviterName"] = .string(String(inviterName.prefix(80)))
-        frame["shareUrl"] = .string(String(shareUrl.prefix(512)))
-        frame["coveTs"] = .int(ts)
-        seenIds.insert(frame["id"]?.text ?? "")
-        return send(frame)
-    }
-
-    @discardableResult
-    public func sendCoveOpen(
-        creatorKey: String, coveId: String, coveName: String, openerKey: String, openerName: String, ts: Int64,
-        signature: String
-    ) -> Bool {
-        let creator = creatorKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if creator.isEmpty { return false }
-        var frame = envelopeBase("cove-open")
-        frame["creator"] = .string(String(creator.prefix(120)))
-        frame["coveId"] = .string(String(coveId.prefix(80)))
-        frame["coveName"] = .string(String(coveName.prefix(160)))
-        frame["openerKey"] = .string(String(openerKey.prefix(120)))
-        frame["openerName"] = .string(String(openerName.prefix(80)))
-        frame["coveTs"] = .int(ts)
-        frame["sig"] = .string(String(signature.prefix(200)))
-        seenIds.insert(frame["id"]?.text ?? "")
-        return send(frame)
+    nonisolated static func merging(_ list: [ChatMessage], _ added: [ChatMessage]) -> [ChatMessage] {
+        let incoming: [ChatMessage] = added.enumerated().sorted { a, b in
+            let order = compareMessages(a.element, b.element)
+            return order != 0 ? order < 0 : a.offset < b.offset
+        }.map(\.element)
+        var out: [ChatMessage] = []
+        out.reserveCapacity(list.count + incoming.count)
+        var i = 0
+        var j = 0
+        while i < list.count && j < incoming.count {
+            if compareMessages(list[i], incoming[j]) <= 0 {
+                out.append(list[i])
+                i += 1
+            } else {
+                out.append(incoming[j])
+                j += 1
+            }
+        }
+        out.append(contentsOf: list[i...])
+        out.append(contentsOf: incoming[j...])
+        return out
     }
 
     public func addChannel(_ channel: String) {
@@ -890,24 +908,17 @@ public final class RelayService: OwnStatusAnnouncer {
         }
         guard case .object(let env)? = try? JSON.parse(text) else { return }
         guard let decrypted = crypto.decrypt(env) else { return }
-        guard let plain = openSealedFrame(decrypted) else { return }
+        guard let plain = openSealedFrame(decrypted, serverInjected: env["srv"]?.boolValue == true) else { return }
         handle(plain)
     }
 
     nonisolated static func directRecipient(_ frame: JSONObject) -> String? {
-        guard (frame["type"]?.text ?? "") == "dm" else { return nil }
+        if (frame["type"]?.text ?? "") == "hello" { return nil }
         let to = frame["to"]?.text ?? ""
         return to.isEmpty ? nil : to
     }
 
-    nonisolated static func isControllerReadableFrame(_ frame: JSONObject) -> Bool {
-        if (frame["type"]?.text ?? "") != "chat" || frame["private"]?.boolValue == true { return false }
-        return (frame["channel"]?.text ?? "").hasPrefix("#")
-    }
-
-    /// Public #channel chat accepts controller-readable application frames for integrations. DMs
-    /// and all other traffic remain recipient-sealed.
-    private func openSealedFrame(_ frame: JSONObject) -> JSONObject? {
+    private func openSealedFrame(_ frame: JSONObject, serverInjected: Bool) -> JSONObject? {
         guard let seal else { return nil }
         if RoomSeal.isKeyFrame(frame) {
             guard let result = seal.acceptBundle(frame, now: clock.nowMillis), result.isNew || result.updated else {
@@ -920,7 +931,7 @@ public final class RelayService: OwnStatusAnnouncer {
             return nil
         }
         if !RoomSeal.isSealedFrame(frame) {
-            if RelayService.isControllerReadableFrame(frame) { return frame }
+            if serverInjected, let integration = ChatFrameText.integrationFrame(frame) { return integration }
             noteSealMismatch("")
             return nil
         }
@@ -943,44 +954,126 @@ public final class RelayService: OwnStatusAnnouncer {
     }
 
     private func handle(_ m: JSONObject) {
+        guard ChatFrameText.isRelayAllowed(m) else { return }
+        let senderId = m["senderId"]?.text ?? ""
+        if ChatFrameText.isIntegration(senderId) {
+            admit(m)
+            return
+        }
+        if senderId.isEmpty || senderId == nodeId {
+            let me = persona
+            admit(ChatFrameText.asBotLine(m, via: me.ownerUser.isEmpty ? me.name : me.ownerUser))
+            return
+        }
+        let claim = RelayService.ownerClaim(m)
+        if !claim.isEmpty, let nodeOwners, nodeOwners.cached(senderId) == nil {
+            holdForOwner(senderId, m, owners: nodeOwners)
+            return
+        }
+        admit(personFrame(m, senderId: senderId, claim: claim))
+    }
+
+    nonisolated static func ownerClaim(_ m: JSONObject) -> String {
+        let owner = m["ownerUser"].flatMap { $0.isNull ? nil : $0 } ?? m["owner"]
+        return ChatNodeOwners.normalized(owner?.text ?? "")
+    }
+
+    private func personFrame(_ m: JSONObject, senderId: String, claim: String) -> JSONObject {
+        if !claim.isEmpty && nodeOwners?.isVerified(node: senderId, claim: claim) == true {
+            return ChatFrameText.asBotLine(m, via: claim)
+        }
+        if !claim.isEmpty && ChatFrameText.botName(m) == nil { guestLines.note(m, node: senderId, claim: claim, owners: nodeOwners) }
+        return ChatFrameText.asBotLine(RelayService.asGuest(m, senderId: senderId), via: guestChatName(senderId))
+    }
+
+    private func ownerConfirmed(_ node: String, _ account: String) {
+        let lines = guestLines.confirmed(node: node, account: account)
+        if lines.isEmpty { return }
+        let names = Dictionary(lines.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
+        let guest = guestChatName(node)
+        var changed = false
+        for (conversation, list) in history {
+            var renamed = list
+            var touched = false
+            for index in renamed.indices where renamed[index].senderId == node && renamed[index].senderName == guest {
+                guard let name = names[renamed[index].id] else { continue }
+                renamed[index].senderName = name
+                touched = true
+            }
+            if touched {
+                history[conversation] = renamed
+                changed = true
+            }
+        }
+        if var peer = peers[node], peer.owner.isEmpty {
+            if peer.name == guest { peer.name = lines.last?.name ?? account }
+            peer.owner = account
+            peers[node] = peer
+            rosterRevision &+= 1
+            changed = true
+        }
+        if changed { notifyListeners() }
+    }
+
+    nonisolated static func asGuest(_ m: JSONObject, senderId: String) -> JSONObject {
+        var out = m
+        out.removeValue(forKey: "ownerUser")
+        out.removeValue(forKey: "owner")
+        out["accountKind"] = "guest"
+        let name = guestChatName(senderId)
+        out["sender"] = .string(name)
+        if out["reactorName"] != nil { out["reactorName"] = .string(name) }
+        return out
+    }
+
+    private func holdForOwner(_ senderId: String, _ m: JSONObject, owners: ChatNodeOwners) {
+        let first = heldForOwner[senderId] == nil
+        var list = heldForOwner[senderId] ?? []
+        list.append(m)
+        if list.count > 64 { list.removeFirst(list.count - 64) }
+        heldForOwner[senderId] = list
+        if !first { return }
+        let generation = ownerGeneration
+        Task { [weak self] in
+            _ = await owners.account(for: senderId)
+            guard let self, generation == self.ownerGeneration else { return }
+            for frame in self.heldForOwner.removeValue(forKey: senderId) ?? [] {
+                self.admit(self.personFrame(frame, senderId: senderId, claim: RelayService.ownerClaim(frame)))
+            }
+        }
+    }
+
+    private func admit(_ m: JSONObject) {
         let type = m["type"]?.text ?? ""
         let senderId = m["senderId"]?.text ?? ""
         let sender = m["sender"]?.text ?? ""
+        let isPeer = !senderId.isEmpty && senderId != nodeId && !ChatFrameText.isIntegration(senderId)
         if type != "typing" {
             let id = m["id"]?.text ?? ""
             if !id.isEmpty {
                 if seenIds.contains(id) {
-                    if !senderId.isEmpty && senderId != nodeId { rememberPeer(senderId, sender, m) }
+                    if isPeer { rememberPeer(senderId, sender, m) }
                     return
                 }
                 seenIds.insert(id)
             }
         }
-        if !senderId.isEmpty && senderId != nodeId { rememberPeer(senderId, sender, m) }
+        if isPeer { rememberPeer(senderId, sender, m) }
 
         switch type {
         case "hello":
-            for value in m["channels"]?.arrayValue ?? [] {
-                let channel = value.text
-                if !channel.isEmpty && !channels.contains(channel) { channels.append(channel) }
-            }
+            adoptAdvertised(m["channels"]?.arrayValue ?? [])
             if (m["to"]?.text ?? "").isEmpty && senderId != nodeId {
                 var reply = withOwnStatus(envelopeBase("hello"))
-                reply["channels"] = JSONValue(channels)
+                reply["channels"] = JSONValue(advertisedChannels)
                 reply["to"] = .string(senderId)
                 send(reply)
             }
         case "chat":
             let channel = m["channel"].map { $0.isNull ? "#general" : $0.text } ?? "#general"
+            if !channel.hasPrefix("#") { return }
             if !channels.contains(channel) { channels.append(channel) }
             receive(toMessage(m, channel))
-        case "dm":
-            let to = m["to"]?.text ?? ""
-            if to == nodeId {
-                receive(toMessage(m, "@\(senderId)"))
-            } else if senderId == nodeId && !to.isEmpty {
-                appendMessage(toMessage(m, "@\(to)"))
-            }
         case "delete":
             let conversation = m["conversation"]?.text ?? ""
             let target = m["target"]?.text ?? ""

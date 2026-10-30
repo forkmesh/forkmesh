@@ -80,7 +80,9 @@ bool isWindowTool(const QString &name)
     return tool == QLatin1String("show_window") || tool == QLatin1String("read_window") ||
            tool == QLatin1String("close_window") ||
            tool == QLatin1String("open_browser_window") ||
-           tool == QLatin1String("read_browser_page");
+           tool == QLatin1String("read_browser_page") ||
+           tool == QLatin1String("browser_action") || tool == QLatin1String("show_widget") ||
+           tool == QLatin1String("suggest_session");
 }
 
 bool isShowWindowTool(const QString &name)
@@ -104,7 +106,24 @@ QString displayName(const QString &name, const QJsonObject &input)
             return QStringLiteral("Read page");
         if (tool == QLatin1String("read_window"))
             return QStringLiteral("Read window");
+        if (tool == QLatin1String("browser_action"))
+            return QStringLiteral("Browser action");
+        if (tool == QLatin1String("show_widget"))
+            return QStringLiteral("Widget");
+        if (tool == QLatin1String("suggest_session"))
+            return QStringLiteral("Suggest session");
         return QStringLiteral("Close window");
+    }
+    if (mcpServer(name) == QLatin1String("forkmesh")) {
+        const QString tool = mcpToolName(name);
+        if (tool == QLatin1String("list_agents"))
+            return QStringLiteral("List agents");
+        if (tool == QLatin1String("send_agent_message"))
+            return QStringLiteral("Message agent");
+        if (tool == QLatin1String("list_runners"))
+            return QStringLiteral("List runners");
+        if (tool == QLatin1String("notify_user"))
+            return QStringLiteral("Notify");
     }
     if (isMcpTool(name))
         return QStringLiteral("%1 · %2").arg(humanServer(mcpServer(name)),
@@ -258,8 +277,32 @@ QString subtitle(const QString &name, const QJsonObject &input)
         return str(input, "title");
     if (isWindowTool(name) && mcpToolName(name) == QLatin1String("open_browser_window"))
         return str(input, "url");
+    if (isWindowTool(name) && mcpToolName(name) == QLatin1String("suggest_session")) {
+        const QString title = str(input, "title");
+        return title.isEmpty() ? firstLine(str(input, "prompt")) : title;
+    }
+    if (isWindowTool(name) && mcpToolName(name) == QLatin1String("show_widget")) {
+        const QString title = str(input, "title");
+        return title.isEmpty() ? str(input, "window_id") : title;
+    }
+    if (isWindowTool(name) && mcpToolName(name) == QLatin1String("browser_action")) {
+        const QString action = str(input, "action");
+        QString what = str(input, "target");
+        if (what.isEmpty())
+            what = str(input, "selector");
+        if (what.isEmpty())
+            what = str(input, "url");
+        if (what.isEmpty() && action == QLatin1String("press"))
+            what = str(input, "value");
+        return what.isEmpty() ? action : QStringLiteral("%1 %2").arg(action, firstLine(what));
+    }
     if (isWindowTool(name))
         return str(input, "window_id");
+    if (mcpServer(name) == QLatin1String("forkmesh") &&
+        mcpToolName(name) == QLatin1String("send_agent_message")) {
+        const QJsonValue id = input.value(QStringLiteral("agent_id"));
+        return id.isDouble() ? QStringLiteral("Agent #%1").arg(id.toInt()) : QString();
+    }
     for (const char *key : {"description", "title", "name", "query", "pattern", "url",
                             "file_path", "path", "repository", "subject", "command"}) {
         const QString value = firstLine(str(input, key));
@@ -295,6 +338,9 @@ QString bodyMarkdown(const QString &name, const QJsonObject &input)
     if (name == QLatin1String("WebFetch") || name == QLatin1String("web_fetch"))
         return input.value(QStringLiteral("prompt")).toString().trimmed();
     if (name == QLatin1String("SendMessage"))
+        return input.value(QStringLiteral("message")).toString().trimmed();
+    if (mcpServer(name) == QLatin1String("forkmesh") &&
+        mcpToolName(name) == QLatin1String("send_agent_message"))
         return input.value(QStringLiteral("message")).toString().trimmed();
     if (name == QLatin1String("Skill"))
         return input.value(QStringLiteral("args")).toString().trimmed();
@@ -566,6 +612,20 @@ QString systemNotice(const QJsonObject &event)
             return QStringLiteral("Compacting conversation…");
         return QString();
     }
+    if (sub == QLatin1String("vcs_state_changed")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        return kind.isEmpty() ? QStringLiteral("Version control state changed")
+                              : QStringLiteral("Version control state changed: %1").arg(kind);
+    }
+    if (sub == QLatin1String("dev_intent")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        const QString trigger = event.value(QStringLiteral("trigger")).toString().trimmed();
+        QString text = kind.isEmpty() ? QStringLiteral("Development intent")
+                                     : QStringLiteral("Development intent: %1").arg(kind);
+        if (!trigger.isEmpty())
+            text += QStringLiteral(" (trigger: %1)").arg(trigger);
+        return text;
+    }
     if (sub == QLatin1String("api_retry")) {
         const int attempt = event.value(QStringLiteral("attempt")).toInt();
         const int max = event.value(QStringLiteral("max_retries")).toInt();
@@ -598,6 +658,17 @@ QString systemNotice(const QJsonObject &event)
                  summary.isEmpty() ? QString() : QStringLiteral(": ") + summary);
     }
     return QString();
+}
+
+QString commandLifecycleNotice(const QJsonObject &event)
+{
+    const QString state = event.value(QStringLiteral("state")).toString().trimmed();
+    const QString id = event.value(QStringLiteral("command_uuid")).toString().trimmed();
+    QString text = state.isEmpty() ? QStringLiteral("Command lifecycle update")
+                                  : QStringLiteral("Command %1").arg(state);
+    if (!id.isEmpty())
+        text += QStringLiteral(": %1").arg(id);
+    return text;
 }
 
 namespace {
@@ -805,6 +876,15 @@ WindowResult parseWindowResult(const QString &text)
     result.url = object.value(QStringLiteral("url")).toString();
     result.pageTitle = object.value(QStringLiteral("page_title")).toString();
     result.page = object.value(QStringLiteral("kind")).toString() == QLatin1String("page");
+    result.widget = object.value(QStringLiteral("kind")).toString() == QLatin1String("widget");
+    if (object.value(QStringLiteral("kind")).toString() == QLatin1String("action")) {
+        result.action = object.value(QStringLiteral("action")).toString();
+        result.pageTitle = object.value(QStringLiteral("title")).toString();
+    }
+    result.suggestion = object.value(QStringLiteral("suggestion")).toString();
+    result.sessionId = object.value(QStringLiteral("session_id")).toInt();
+    result.message = object.value(QStringLiteral("message")).toString();
+    result.events = object.value(QStringLiteral("events")).toArray().size();
     if (result.page) {
         result.pageTitle = object.value(QStringLiteral("title")).toString();
         result.totalChars = qint64(object.value(QStringLiteral("total_chars")).toDouble());
@@ -831,6 +911,33 @@ QString windowResultSummary(const WindowResult &result)
         return QString();
     if (result.external)
         return QStringLiteral("Opened in the user's browser");
+    if (!result.suggestion.isEmpty()) {
+        if (result.suggestion == QLatin1String("started"))
+            return QStringLiteral("The user started agent #%1").arg(result.sessionId);
+        if (result.suggestion == QLatin1String("dismissed"))
+            return QStringLiteral("The user chose not to start it");
+        if (result.suggestion == QLatin1String("failed"))
+            return firstLine(QStringLiteral("Could not start it: %1").arg(result.message), 160);
+        return result.open ? QStringLiteral("Asked the user to start a new session")
+                           : QStringLiteral("The user closed the suggestion");
+    }
+    if (!result.action.isEmpty()) {
+        const QString page = firstLine(result.pageTitle.isEmpty() ? result.url
+                                                                  : result.pageTitle,
+                                       100);
+        const QString done = QStringLiteral("Did %1").arg(result.action);
+        return page.isEmpty() ? done : QStringLiteral("%1 · %2").arg(done, page);
+    }
+    if (result.widget) {
+        const QString state = result.open ? QStringLiteral("Widget open")
+                                          : QStringLiteral("Widget closed");
+        if (result.events <= 0)
+            return state;
+        return QStringLiteral("%1 · %2 event%3")
+            .arg(state)
+            .arg(result.events)
+            .arg(result.events == 1 ? QString() : QStringLiteral("s"));
+    }
     if (result.page) {
         QString text = QStringLiteral("Read %1 characters").arg(count(result.totalChars));
         const QString page = firstLine(result.pageTitle.isEmpty() ? result.url
@@ -866,22 +973,79 @@ QString windowResultSummary(const WindowResult &result)
     return result.open ? QStringLiteral("Window open") : QStringLiteral("Window closed");
 }
 
+static qint64 countMessageTokens(QHash<QString, qint64> &seen, const QString &id, qint64 count)
+{
+    if (count <= 0)
+        return 0;
+    if (id.isEmpty())
+        return count;
+    const qint64 before = seen.value(id, 0);
+    if (count <= before)
+        return 0;
+    if (seen.size() >= 512 && !seen.contains(id))
+        seen.clear();
+    seen.insert(id, count);
+    return count - before;
+}
+
 qint64 OutputTokenCounter::add(const QJsonObject &message)
 {
     const qint64 out = qint64(message.value(QStringLiteral("usage")).toObject()
                                   .value(QStringLiteral("output_tokens")).toDouble());
-    const QString id = message.value(QStringLiteral("id")).toString();
-    if (out <= 0)
-        return 0;
-    if (id.isEmpty())
-        return out;
-    const qint64 seen = m_seen.value(id, 0);
-    if (out <= seen)
-        return 0;
-    if (m_seen.size() >= 512 && !m_seen.contains(id))
-        m_seen.clear();
-    m_seen.insert(id, out);
-    return out - seen;
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), out);
+}
+
+qint64 InputTokenCounter::add(const QJsonObject &message)
+{
+    const QJsonObject usage = message.value(QStringLiteral("usage")).toObject();
+    const qint64 in = qint64(usage.value(QStringLiteral("input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_creation_input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_read_input_tokens")).toDouble());
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), in);
+}
+
+TokenStep LiveTokenMeter::addMessage(const QJsonObject &message)
+{
+    return {m_in.add(message), m_out.add(message)};
+}
+
+TokenStep LiveTokenMeter::add(const QJsonObject &event)
+{
+    const QString type = event.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("assistant"))
+        return addMessage(event.value(QStringLiteral("message")).toObject());
+    if (type == QLatin1String("_codex_agent_delta")) {
+        const qint64 before = m_codexChars / kCharsPerToken;
+        m_codexChars += event.value(QStringLiteral("delta")).toString().size();
+        return {0, m_codexChars / kCharsPerToken - before};
+    }
+    if (type != QLatin1String("stream_event"))
+        return {};
+    const QJsonObject inner = event.value(QStringLiteral("event")).toObject();
+    const QString innerType = inner.value(QStringLiteral("type")).toString();
+    if (innerType == QLatin1String("message_start")) {
+        const QJsonObject message = inner.value(QStringLiteral("message")).toObject();
+        m_message = message.value(QStringLiteral("id")).toString();
+        m_messageChars = 0;
+        return m_message.isEmpty() ? TokenStep{} : addMessage(message);
+    }
+    if (m_message.isEmpty())
+        return {};
+    if (innerType == QLatin1String("content_block_delta")) {
+        const QJsonObject delta = inner.value(QStringLiteral("delta")).toObject();
+        m_messageChars += delta.value(QStringLiteral("text")).toString().size() +
+                          delta.value(QStringLiteral("thinking")).toString().size() +
+                          delta.value(QStringLiteral("partial_json")).toString().size();
+        const qint64 guess = (m_messageChars + kCharsPerToken - 1) / kCharsPerToken;
+        return {0, m_out.add(QJsonObject{
+                       {QStringLiteral("id"), m_message},
+                       {QStringLiteral("usage"),
+                        QJsonObject{{QStringLiteral("output_tokens"), double(guess)}}}})};
+    }
+    if (innerType == QLatin1String("message_delta"))
+        return addMessage(QJsonObject{{QStringLiteral("id"), m_message},
+                                      {QStringLiteral("usage"), inner.value(QStringLiteral("usage"))}});
+    return {};
 }
 
 namespace {

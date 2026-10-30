@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.DartException
 import com.forkmesh.nativeapp.api.ServerUrl
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -71,6 +72,16 @@ class RelayRoom(
         const val CLIENT_VERSION = "native-1.0"
 
         private val seq = AtomicLong()
+
+        fun directRecipient(frame: Map<String, Any?>): String? {
+            if (jsonText(frame["type"]) == "hello") return null
+            return jsonText(frame["to"]).ifEmpty { null }
+        }
+
+        fun sealRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>, ownAccount: String): Collection<String>? {
+            val to = directRecipient(payload) ?: return null
+            return roomSeal.trust.approved().filter { it.node == to || it.acct == ownAccount }.map { it.kid }
+        }
     }
 
     @Volatile
@@ -89,6 +100,21 @@ class RelayRoom(
 
     @Volatile
     var isReadElsewhere: ((ChatMessage) -> Boolean)? = null
+
+    @Volatile
+    var owners: NodeOwners? = null
+        set(value) {
+            field = value
+            value?.addListener {
+                loop.post {
+                    relabelBots()
+                    notifyListeners()
+                }
+            }
+        }
+
+    @Volatile
+    var isHiddenChannel: ((String) -> Boolean)? = null
 
     private val framesCounter = AtomicInteger()
 
@@ -139,9 +165,9 @@ class RelayRoom(
         var owner = ""
         var nodeName = ""
         var mirrors: List<String> = emptyList()
+        var diagnostics: List<Any?>? = null
         var status: UserStatus? = null
         var statusTs = 0L
-        var diagnostics: List<Any?>? = null
         var online = true
         var lastSeenMs = 0L
     }
@@ -175,6 +201,8 @@ class RelayRoom(
     private val name: String get() = persona.name
 
     val selfId: String get() = identity.nodeId
+
+    val nodeKey: ChatNodeKey get() = ChatNodeKey.of(identity)
 
     @Volatile
     private var ownStatusValue: UserStatus? = null
@@ -261,7 +289,7 @@ class RelayRoom(
                     version = p.version,
                     solanaAddress = p.solana,
                     mirrors = p.mirrors,
-                    owner = p.owner,
+                    owner = verifiedOwner(id, p.owner),
                     nodeName = p.nodeName,
                     userStatus = p.status ?: UserStatus(),
                     diagnostics = p.diagnostics,
@@ -394,7 +422,7 @@ class RelayRoom(
                 RoomCrypto.withPassphrase(room, shared)
             }
             if (!loop.call { (generation == openGeneration).also { if (it) crypto = roomCrypto } }) return
-            val roomSeal = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, node = nodeId)
+            val roomSeal = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, node = nodeId, nodeKey = ChatNodeKey.of(identity))
             val current = loop.call {
                 (generation == openGeneration).also {
                     if (it) {
@@ -550,7 +578,7 @@ class RelayRoom(
         self.stamp(m)
         announcedPersona = self
         val solana = settings.solanaAddress
-        if (solana.isNotEmpty()) m["solana"] = solana
+        if (solana.isNotEmpty() && settings.chatTipsEnabled) m["solana"] = solana
         return m
     }
 
@@ -562,12 +590,13 @@ class RelayRoom(
             return EventLoop.done(false)
         }
         val roomSeal = seal
+        if (RelayFrames.isPrivate(plain)) return EventLoop.done(false)
         return writer.submit {
             try {
                 val persist = plain["persist"] == true
                 val payload = if (persist) LinkedHashMap(plain).apply { remove("persist") } else plain
                 if (roomSeal == null) throw IllegalStateException("End-to-end encryption unavailable.")
-                val framed = if (isControllerReadableFrame(payload)) payload else roomSeal.seal(payload, only = directRecipients(roomSeal, payload))
+                val framed = roomSeal.seal(payload, only = directRecipients(roomSeal, payload))
                 if (roomSeal.needsAdvertisement()) loop.post { sendKeyAdvertisement(true) }
                 val envelope = LinkedHashMap(roomCrypto.encrypt(framed))
                 if (persist) {
@@ -588,12 +617,8 @@ class RelayRoom(
         }
     }
 
-    private fun directRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>): Collection<String>? {
-        if (jsonText(payload["type"]) != "dm") return null
-        val to = jsonText(payload["to"])
-        val own = sealAccount()
-        return roomSeal.trust.approved().filter { it.node == to || it.acct == own }.map { it.kid }
-    }
+    private fun directRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>): Collection<String>? =
+        sealRecipients(roomSeal, payload, sealAccount())
 
     private fun sealAccount(): String = persona.ownerUser.trim().lowercase().ifEmpty { nodeId }
 
@@ -624,8 +649,23 @@ class RelayRoom(
 
     private fun sendHello() {
         val hello = withOwnStatus(envelopeBase("hello"))
-        hello["channels"] = ArrayList(channelList)
+        hello["channels"] = advertisedNow()
         send(hello)
+    }
+
+    val advertisedChannels: List<String> get() = loop.call { advertisedNow() }
+
+    private fun advertisedNow(): List<String> =
+        channelList.filter { !OfficeFrames.isOffice(it) && !hidden(it) }
+
+    private fun hidden(channel: String): Boolean = isHiddenChannel?.invoke(channel) == true
+
+    private fun adoptAdvertised(values: List<String>) {
+        for (channel in values) {
+            if (channel.isEmpty() || !channel.startsWith("#") || channel in channelList) continue
+            if (OfficeFrames.isOffice(channel) || hidden(channel)) continue
+            channelList.add(channel)
+        }
     }
 
     private fun sendPresence() {
@@ -636,15 +676,12 @@ class RelayRoom(
     fun deleteMessage(msg: ChatMessage): Boolean {
         val pending = loop.call {
             val target = msg.conversation
+            if (!target.startsWith("#")) return@call EventLoop.done(false)
             val del = envelopeBase("delete")
             del["conversation"] = target
             del["target"] = msg.id
-            if (target.startsWith("#")) {
-                del["channel"] = target
-                del["persist"] = true
-            } else {
-                del["to"] = target.removePrefix("@")
-            }
+            del["channel"] = target
+            del["persist"] = true
             removeMessage(target, msg.id)
             seenIds.add(del["id"] as String)
             notifyListeners()
@@ -674,18 +711,14 @@ class RelayRoom(
 
     fun sendMessage(text: String, to: String): Boolean {
         val trimmed = dartTrimText(text)
-        if (trimmed.isEmpty() || !(to.startsWith("#") || to.startsWith("@"))) return false
+        if (trimmed.isEmpty() || !to.startsWith("#")) return false
         val (pending, target, id) = loop.call {
             val target = to
-            val msg = envelopeBase(if (target.startsWith("@")) "dm" else "chat")
+            val msg = envelopeBase("chat")
             msg["text"] = trimmed
             msg["conversation"] = target
-            if (target.startsWith("#")) {
-                msg["channel"] = target
-                msg["persist"] = true
-            } else {
-                msg["to"] = target.substring(1)
-            }
+            msg["channel"] = target
+            msg["persist"] = true
             val id = msg["id"] as String
             val appended = appendMessage(
                 ChatMessage(
@@ -757,21 +790,17 @@ class RelayRoom(
         retention?.isExpired(message.timestamp, message.conversation, System.currentTimeMillis()) == true
 
     fun restoreHistory(messages: List<ChatMessage>) = loop.call {
-        var changed = false
+        val added = LinkedHashMap<String, MutableList<ChatMessage>>()
         for (message in messages) {
             if (message.id.isEmpty() || message.id in seenIds || expired(message)) continue
             seenIds.add(message.id)
-            val list = history[message.conversation].orEmpty()
-            var at = list.size
-            while (at > 0 && compareMessages(list[at - 1], message) > 0) at--
-            val next = ArrayList<ChatMessage>(list.size + 1)
-            next.addAll(list)
-            next.add(at, message)
-            history[message.conversation] = java.util.Collections.unmodifiableList(next)
-            if (message.conversation.startsWith("#") && message.conversation !in channelList) channelList.add(message.conversation)
-            changed = true
+            added.getOrPut(message.conversation) { ArrayList() }.add(message)
         }
-        if (changed) notifyListeners()
+        for ((conversation, incoming) in added) {
+            history[conversation] = java.util.Collections.unmodifiableList(mergeSorted(history[conversation].orEmpty(), incoming))
+            if (conversation.startsWith("#") && conversation !in channelList && !hidden(conversation)) channelList.add(conversation)
+        }
+        if (added.isNotEmpty()) notifyListeners()
     }
 
     fun addChannel(channel: String) = loop.call {
@@ -839,8 +868,9 @@ class RelayRoom(
             return
         }
         if (!RoomSeal.isSealedFrame(decrypted)) {
-            if (isControllerReadableFrame(decrypted)) {
-                session.onLoop { handle(decrypted) }
+            val injected = RelayFrames.serverFrame(envelope, decrypted)
+            if (injected != null) {
+                session.onLoop { handle(injected) }
             } else {
                 session.onLoop { noteSealMismatch("") }
             }
@@ -851,7 +881,10 @@ class RelayRoom(
 
     private fun openSealed(session: Session, frame: Map<String, Any?>, history: Boolean) {
         when (val opened = session.seal.open(frame, history = history, meta = if (history) mapOf("history" to true) else emptyMap())) {
-            is SealOpen.Opened -> session.onLoop { handle(opened.plain) }
+            is SealOpen.Opened -> {
+                val plain = RelayFrames.authenticated(opened.plain, opened.senderNode) ?: return
+                session.onLoop { handle(plain) }
+            }
             is SealOpen.NotForMe -> {
                 val keyId = RoomSeal.frameKeyId(frame)
                 session.onLoop { noteSealMismatch(keyId) }
@@ -861,9 +894,18 @@ class RelayRoom(
         }
     }
 
-    private fun isControllerReadableFrame(frame: Map<String, Any?>): Boolean {
-        if (jsonText(frame["type"]) != "chat" || frame["private"] == true) return false
-        return jsonText(frame["channel"]).startsWith("#")
+    fun receive(envelope: Map<String, Any?>, decrypted: Map<String, Any?>, senderNode: String?) = loop.call {
+        val frame = if (senderNode == null) RelayFrames.serverFrame(envelope, decrypted) else RelayFrames.authenticated(decrypted, senderNode)
+        if (frame != null) handle(frame)
+    }
+
+    private fun verifiedOwner(node: String, claimed: String): String = owners?.verified(node, claimed).orEmpty()
+
+    private fun watchClaim(node: String, m: Map<String, Any?>) {
+        val known = owners ?: return
+        val claim = jsonText(m["ownerUser"] ?: m["owner"])
+        if (node.isEmpty() || node == nodeId || claim.isBlank()) return
+        if (known.verified(node, claim).isEmpty()) known.watch(node, claim)
     }
 
     private fun noteSealMismatch(keyId: String) {
@@ -886,34 +928,36 @@ class RelayRoom(
             val id = jsonText(m["id"])
             if (id.isNotEmpty()) {
                 if (id in seenIds) {
-                    if (senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+                    if (!RelayFrames.isIntegration(m) && senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
                     return
                 }
                 seenIds.add(id)
             }
         }
-        if (senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+        val person = !RelayFrames.isIntegration(m)
+        if (person && senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+        if (RelayFrames.isPrivate(m)) return
+        if (person && (type == "chat" || type == "thread-reply")) watchClaim(senderId, m)
 
         when (type) {
             "hello" -> {
                 val incoming = (m["channels"] as? List<*>)?.map { if (it == null) "null" else jsonText(it) } ?: emptyList()
-                for (c in incoming) {
-                    if (c.isNotEmpty() && c !in channelList) channelList.add(c)
-                }
+                adoptAdvertised(incoming)
                 if (jsonText(m["to"]).isEmpty() && senderId != nodeId) {
                     val reply = withOwnStatus(envelopeBase("hello"))
-                    reply["channels"] = ArrayList(channelList)
+                    reply["channels"] = advertisedNow()
                     reply["to"] = senderId
                     send(reply)
                 }
             }
             "chat" -> {
                 val target = if (m["channel"] == null) "#general" else jsonText(m["channel"])
-                if (target !in channelList) channelList.add(target)
+                if (!target.startsWith("#")) return
+                if (target !in channelList && !hidden(target)) channelList.add(target)
                 receive(toMessage(m, target))
             }
-            "dm" -> if (jsonText(m["to"]) == nodeId) receive(toMessage(m, "@$senderId"))
             "delete" -> {
+                if (!person) return
                 val target = jsonText(m["conversation"])
                 val id = jsonText(m["target"])
                 if (target.isNotEmpty() && id.isNotEmpty()) {
@@ -921,8 +965,14 @@ class RelayRoom(
                     if (original != null && original.senderId == senderId) removeMessage(target, id)
                 }
             }
-            "bye" -> if (peers.remove(senderId) != null) logLine("$sender left")
+            "bye" -> if (person && peers.remove(senderId) != null) logLine("$sender left")
         }
+        if (!person && type != "chat") return
+        observe(m)
+        notifyListeners()
+    }
+
+    private fun observe(m: Map<String, Any?>) {
         frameObserver?.let { observer ->
             try {
                 observer(m)
@@ -930,22 +980,34 @@ class RelayRoom(
                 loop.failures.add(failure)
             }
         }
-        notifyListeners()
     }
 
     private fun toMessage(m: Map<String, Any?>, conversation: String): ChatMessage {
-        val senderId = jsonText(m["senderId"])
+        val senderId = RelayFrames.shownSender(m)
         val tsRaw = m["ts"]
         return ChatMessage(
             id = jsonText(m["id"]),
             conversation = conversation,
             senderId = senderId,
-            senderName = jsonText(m["sender"]),
+            senderName = RelayFrames.shownName(m, ::botAccountNow),
             text = jsonText(m["text"]),
             timestamp = if (tsRaw is Number) tsRaw.toLong() else System.currentTimeMillis(),
             self = senderId == nodeId,
             fileName = jsonText(m["fileName"]),
+            serverVisible = RelayFrames.serverVisible(m),
         )
+    }
+
+    fun botAccount(node: String): String = loop.call { botAccountNow(node) }
+
+    private fun botAccountNow(node: String): String =
+        if (node == nodeId) persona.ownerUser.trim().lowercase() else owners?.account(node).orEmpty()
+
+    private fun relabelBots() {
+        for ((key, list) in ArrayList(history.entries)) {
+            if (list.none { RelayFrames.botParts(it.senderId) != null }) continue
+            history[key] = java.util.Collections.unmodifiableList(list.map { RelayFrames.relabel(it, ::botAccountNow) })
+        }
     }
 
     private fun receive(msg: ChatMessage) {

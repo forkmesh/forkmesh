@@ -1163,6 +1163,12 @@ async def catalog_handler(env, request):
             # push never banners a fleet of devices twice. Best effort: an
             # authorized publication is never rolled back because a ping could
             # not be filed.
+            if head_moved:
+                try:
+                    await pull_attention_moved(
+                        env, owner, record["name"], [branch])
+                except Exception:
+                    pass
             try:
                 await notify_code_push(
                     env, owner, record["name"],
@@ -1177,6 +1183,12 @@ async def catalog_handler(env, request):
                     pusher=(record.get("machineName", "") or owner),
                     key=new_commit if head_moved else state_hash,
                     refs_digest=state_hash)
+            except Exception:
+                pass
+        if exists:
+            try:
+                await notify_catalog_issues_opened(
+                    env, owner, record["name"], key_bi, prior, record)
             except Exception:
                 pass
         payload = {

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <script src="/api-client.js?v=${version}"></script>
     <script src="/analytics.js"></script>
+    <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Desktop client · ForkMesh Docs</title>
     <meta
@@ -180,7 +181,6 @@ uvx --from workers-py pywrangler dev</code></pre>
         <ul>
           <li>Relay WebSocket path: <code>/api/repo/{owner}/{repo}/rooms/{room}/ws</code></li>
           <li>Repository catalog path: <code>/api/repositories</code></li>
-          <li>Compatibility WebSocket path: <code>/api/room/{room}/ws</code></li>
           <li>The client encrypts room traffic before sending it to the mainnode.</li>
           <li>
             File browsing/clone are served on demand from a managed mirror host,

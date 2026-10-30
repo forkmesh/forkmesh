@@ -9,6 +9,14 @@ The developer home page for both native apps (this one and `native/ios`) is
 Android-specific decisions are in
 [`docs/native/ANDROID.md`](../../docs/native/ANDROID.md).
 
+## Keeping level with iOS
+
+Android has every iOS feature and the same look. A pull request that changes
+something a phone user can see changes both apps; what cannot exist on
+Android is listed in
+[`docs/native/ANDROID.md`](../../docs/native/ANDROID.md), "Differences kept on
+purpose".
+
 ## Build, test, run
 
 ```sh

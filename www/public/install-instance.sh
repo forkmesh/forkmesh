@@ -268,12 +268,20 @@ powered_by = c.get("poweredBy", True)
 if not isinstance(powered_by, bool):
     sys.exit("Setting poweredBy must be true or false.")
 values["poweredBy"] = "1" if powered_by else "0"
+white_label = c.get("whiteLabel", False)
+if not isinstance(white_label, bool):
+    sys.exit("Setting whiteLabel must be true or false.")
+values["whiteLabel"] = "1" if white_label else "0"
 single = c.get("singleOrganization", False)
 if not isinstance(single, bool):
     sys.exit("Setting singleOrganization must be true or false.")
 if single and values["ownerType"] != "org":
     sys.exit("Setting singleOrganization needs ownerType org.")
 values["singleOrganization"] = "1" if single else "0"
+privacy_mode = c.get("privacyMode", False)
+if not isinstance(privacy_mode, bool):
+    sys.exit("Setting privacyMode must be true or false.")
+values["privacyMode"] = "1" if privacy_mode else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -342,6 +350,14 @@ if not isinstance(directory, dict) or not set(directory) <= {"listed", "world"} 
         not all(isinstance(value, bool) for value in directory.values()):
     sys.exit("Setting directory may only set listed and world, each true or false.")
 values["directory"] = json.dumps(directory, separators=(",", ":"), sort_keys=True) if directory else ""
+web_firewall = c.get("webFirewall") or ""
+if web_firewall not in ("", "open", "cloudflare"):
+    sys.exit("Setting webFirewall must be open or cloudflare.")
+values["webFirewall"] = "" if web_firewall == "open" else web_firewall
+onion = c.get("onionService", False)
+if not isinstance(onion, bool):
+    sys.exit("Setting onionService must be true or false.")
+values["onionService"] = "1" if onion else "0"
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
 ' "$CONFIG_MODE"
@@ -361,6 +377,9 @@ if [ "$CONFIG_MODE" != "update" ]; then
 fi
 if [ "$CFG_actions" = "1" ]; then
   PACKAGES+=("${ACTIONS_PACKAGES[@]}")
+fi
+if [ "${CFG_onionService:-0}" = "1" ]; then
+  PACKAGES+=(tor)
 fi
 RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
@@ -574,6 +593,224 @@ ensure_swap() {
   fi
 }
 
+# Ports 80 and 443 in ufw. Without a webFirewall setting the installer opens
+# a web port only when no ufw rule mentions it at all: a port the operator
+# has narrowed (for example to a CDN's address ranges) is theirs, and an
+# update never re-opens it. With "webFirewall": "cloudflare" the installer
+# keeps 80 and 443 open to Cloudflare's published ranges only, refreshed
+# weekly. SSH (22) is never touched.
+WEB_FIREWALL="/usr/local/sbin/forkmesh-web-firewall"
+WEB_FIREWALL_UNIT="/etc/systemd/system/forkmesh-web-firewall.service"
+WEB_FIREWALL_TIMER="/etc/systemd/system/forkmesh-web-firewall.timer"
+
+write_web_firewall_tool() {
+  cat > "$WEB_FIREWALL.new" <<'WEBFIREWALL'
+#!/usr/bin/python3 -I
+"""The instance's ufw rules for its web ports (install-instance.sh).
+
+  forkmesh-web-firewall status PORT   open | narrow | none
+  forkmesh-web-firewall cloudflare    allow 80 and 443 from Cloudflare only
+"""
+import ipaddress
+import os
+import subprocess
+import sys
+import urllib.request
+
+RULE_FILES = ("/etc/ufw/user.rules", "/etc/ufw/user6.rules")
+STATE = "/var/lib/forkmesh-web-firewall/cloudflare"
+SOURCES = ("https://www.cloudflare.com/ips-v4",
+           "https://www.cloudflare.com/ips-v6")
+WEB_PORTS = "80,443"
+COMMENT = "forkmesh-cloudflare"
+OPEN_SPECS = ("80/tcp", "443/tcp", "80,443/tcp", "80", "443")
+MAX_RANGES = 200
+
+
+def _covers(dport, port):
+    if dport == "any":
+        return True
+    for part in dport.split(","):
+        low, _, high = part.partition(":")
+        try:
+            if int(low) <= port <= int(high or low):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def port_state(port, paths=RULE_FILES):
+    """open, narrow or none: how ufw's own rules admit inbound TCP `port`.
+
+    Read from ufw's rule files ("### tuple ### action proto dport dst sport
+    src ... direction"), so ranges, port lists and application profiles are
+    all seen as ufw resolved them.
+    """
+    state = "none"
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                lines = handle.read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.startswith("### tuple ### "):
+                continue
+            fields = line.split()[3:]
+            if len(fields) < 6 or fields[0] not in ("allow", "limit"):
+                continue
+            if any(field.startswith("out") for field in fields[6:]):
+                continue
+            if fields[1] not in ("tcp", "any") or not _covers(fields[2], port):
+                continue
+            if fields[5] in ("0.0.0.0/0", "::/0"):
+                return "open"
+            if fields[2] != "any":
+                state = "narrow"
+    return state
+
+
+def _fetch(url):
+    with urllib.request.urlopen(url, timeout=20) as response:
+        return response.read(64 * 1024).decode("ascii")
+
+
+def cloudflare_ranges(fetch=_fetch):
+    ranges = set()
+    for url in SOURCES:
+        for item in fetch(url).split():
+            network = ipaddress.ip_network(item, strict=True)
+            if network.prefixlen < (12 if network.version == 4 else 28):
+                raise ValueError("implausible range " + item)
+            ranges.add(str(network))
+    if not 4 <= len(ranges) <= MAX_RANGES:
+        raise ValueError("implausible range list")
+    return sorted(ranges)
+
+
+def _ufw(*arguments):
+    subprocess.run(("ufw",) + arguments, check=True,
+                   stdout=subprocess.DEVNULL)
+
+
+def refresh_cloudflare(fetch=_fetch, ufw=_ufw, state=STATE):
+    """Allow the current ranges, drop retired ones, then close open rules.
+
+    The new ranges are allowed before anything is removed, and nothing is
+    changed when the list cannot be fetched or does not parse.
+    """
+    ranges = cloudflare_ranges(fetch)
+    try:
+        with open(state, encoding="ascii") as handle:
+            previous = [line.strip() for line in handle if line.strip()]
+    except OSError:
+        previous = []
+    for cidr in ranges:
+        ufw("allow", "proto", "tcp", "from", cidr, "to", "any", "port",
+            WEB_PORTS, "comment", COMMENT)
+    for cidr in previous:
+        if cidr not in ranges:
+            ufw("delete", "allow", "proto", "tcp", "from", cidr, "to", "any",
+                "port", WEB_PORTS)
+    for spec in OPEN_SPECS:
+        ufw("delete", "allow", spec)
+    os.makedirs(os.path.dirname(state), mode=0o700, exist_ok=True)
+    with open(state + ".new", "w", encoding="ascii") as handle:
+        handle.write("".join(cidr + "\n" for cidr in ranges))
+    os.replace(state + ".new", state)
+    return ranges
+
+
+def main(argv):
+    if len(argv) == 3 and argv[1] == "status" and argv[2] in ("80", "443"):
+        print(port_state(int(argv[2])))
+        return 0
+    if len(argv) == 2 and argv[1] == "cloudflare":
+        try:
+            ranges = refresh_cloudflare()
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            print("web firewall unchanged: %s" % error, file=sys.stderr)
+            return 1
+        print("ports 80 and 443 allowed from %d Cloudflare ranges" % len(ranges))
+        return 0
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
+WEBFIREWALL
+  chmod 0755 "$WEB_FIREWALL.new"
+  mv "$WEB_FIREWALL.new" "$WEB_FIREWALL"
+}
+
+configure_web_firewall() {
+  if ! { command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; }; then
+    if [ "${CFG_webFirewall:-}" = "cloudflare" ]; then
+      warn "webFirewall is cloudflare but ufw is not active; ports 80 and 443 are not limited to Cloudflare."
+    fi
+    return 0
+  fi
+  write_web_firewall_tool
+  if [ "${CFG_webFirewall:-}" = "cloudflare" ]; then
+    cat > "$WEB_FIREWALL_UNIT" <<EOF
+[Unit]
+Description=Allow web traffic from Cloudflare's current address ranges only
+After=network-online.target ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$WEB_FIREWALL cloudflare
+EOF
+    cat > "$WEB_FIREWALL_TIMER" <<'EOF'
+[Unit]
+Description=Refresh the Cloudflare-only web firewall weekly
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    systemctl start forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    if "$WEB_FIREWALL" cloudflare >/dev/null; then
+      say "Ports 80 and 443 accept Cloudflare's address ranges only (refreshed weekly)."
+    else
+      warn "Could not read Cloudflare's address ranges; the web firewall was left as it was."
+    fi
+    return 0
+  fi
+  if [ -e "$WEB_FIREWALL_TIMER" ]; then
+    # Switching back to an open web firewall leaves the narrow rules in
+    # place: the operator removes them, the installer never widens them.
+    systemctl disable --now forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    rm -f "$WEB_FIREWALL_TIMER" "$WEB_FIREWALL_UNIT"
+    systemctl daemon-reload
+  fi
+  local port state opened=""
+  for port in 80 443; do
+    state="$("$WEB_FIREWALL" status "$port" 2>/dev/null)" || state=""
+    case "$state" in
+      open) ;;
+      narrow) say "Port $port is limited by this server's own ufw rules; they are left as they are." ;;
+      none)
+        if ufw allow "$port/tcp" >/dev/null; then
+          opened="$opened $port"
+          if [ "$NEW_INSTANCE" = "1" ]; then : > "$CLEANUP_DIR/ufw-$port"; fi
+        fi
+        ;;
+      *) warn "Could not read the ufw rules for port $port; they are left as they are." ;;
+    esac
+  done
+  [ -z "$opened" ] || say "Opened port(s)$opened in ufw."
+}
+
 install_packages() {
   begin packages "Installing system packages"
   capture_first_login_baseline
@@ -591,19 +828,7 @@ install_packages() {
     [ -z "$missing" ] || die "These packages did not install: ${missing% }."
   fi
   say "Installed git, Python $(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])'), Node $(node --version 2>/dev/null || echo '?') and Caddy $(caddy version 2>/dev/null | awk '{print $1}')."
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-    if ! ufw status | grep -Eq '(^|[[:space:]])80/tcp([[:space:]]|$)'; then
-      if ufw allow 80/tcp >/dev/null && [ "$NEW_INSTANCE" = "1" ]; then
-        : > "$CLEANUP_DIR/ufw-80"
-      fi
-    fi
-    if ! ufw status | grep -Eq '(^|[[:space:]])443/tcp([[:space:]]|$)'; then
-      if ufw allow 443/tcp >/dev/null && [ "$NEW_INSTANCE" = "1" ]; then
-        : > "$CLEANUP_DIR/ufw-443"
-      fi
-    fi
-    say "Opened ports 80 and 443 in ufw."
-  fi
+  configure_web_firewall
   id -u "$APP_USER" >/dev/null 2>&1 ||
     useradd --system --home-dir "$VAR" --shell /usr/sbin/nologin "$APP_USER"
   id -u "$NODE_USER" >/dev/null 2>&1 ||
@@ -784,7 +1009,7 @@ save_logo() {
 build_stamp() {
   local tree="${1:-$SRC}"
   printf '%s\n' "$(git -C "$tree" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
+    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}" "${CFG_whiteLabel:-0}"
 }
 
 release_version() {
@@ -880,6 +1105,7 @@ build_app() {
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
   if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
+  if [ "${CFG_whiteLabel:-0}" = "1" ]; then brand_args+=(--white-label); fi
   "$BUILD_VENV/bin/python" "$BUILD_SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$BUILD_SRC" "$BUILD_VENV"
   if [ "$BUILD_SRC" = "$SRC" ]; then
@@ -1034,6 +1260,8 @@ print(encode(seed), encode(public))
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
     echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
+    echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"
+    echo "INSTANCE_PRIVACY_MODE=${CFG_privacyMode:-0}"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -1052,7 +1280,7 @@ print(encode(seed), encode(public))
     echo "CORS_ALLOWED_ORIGINS=$ORIGIN"
     echo "NODE_NAME=$NODE_NAME"
     echo "HOSTED_GIT_CORE_NODES=$NODE_NAME"
-    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,app.forkmesh.com"
+    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,gitea.com,app.forkmesh.com"
     echo "HOSTED_REPO_MAX_BYTES=1073741824"
     if [ "$CFG_actions" = "1" ]; then
       echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"
@@ -1079,7 +1307,7 @@ print(encode(seed), encode(public))
     echo "MIRROR_ROUTER_SIGNING_SEED=$seed"
     echo "MIRROR_ROUTER_PUBLIC_KEY=$public_key"
     if [ -r "$APP_ENV" ]; then
-      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY)=' "$APP_ENV" || true
+      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY|HOSTED_GIT_CONTRIBUTOR_PUSH|SSH_GATEWAY_HOST|SSH_GATEWAY_PORT|SSH_GATEWAY_TOKEN|SSH_GATEWAY_REPOSITORIES|SSH_GATEWAY_NODE_HOSTS|SSH_GATEWAY_TOKEN_NEXT|SSH_GATEWAY_ALLOWED_ADDRESSES)=' "$APP_ENV" || true
     fi
     if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
       grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
@@ -1094,20 +1322,26 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
+        "webFirewall", "whiteLabel", "privacyMode"]
 values = dict(zip(keys, sys.argv[1:]))
 if not values["platformUrl"]:
     del values["platformUrl"]
+if not values["webFirewall"]:
+    del values["webFirewall"]
 values["poweredBy"] = values["poweredBy"] == "1"
+values["whiteLabel"] = values["whiteLabel"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
+values["privacyMode"] = values["privacyMode"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
 values["installerVersion"] = sys.argv[-1]
 print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
+    "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1151,9 +1385,10 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$SRC/app/host
 Environment=HOME=$VAR
-Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN
+Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN${ONION_HOST:+,$ONION_HOST}
+$( [ -n "$ONION_HOST" ] && printf 'Environment=FORKMESH_VAR_INSTANCE_ONION=%s\n' "$ONION_HOST" )
 Environment=FORKMESH_HOST_REPO_GATEWAY=http://127.0.0.1:$GATEWAY_PORT
-Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST
+Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST,$DOMAIN
 Environment=MALLOC_ARENA_MAX=2
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$VENV/bin/python -m forkmesh_host serve --no-build --host 127.0.0.1 --port $APP_PORT --env-file $APP_ENV --db sqlite:$VAR/app.db --data-dir $VAR/data
@@ -1166,6 +1401,22 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=$VAR
 UMask=0027
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+ProtectProc=invisible
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
@@ -1232,18 +1483,48 @@ start_app() {
   die "The app did not start. The lines above show why."
 }
 
+JOURNALD_PRIVACY="/etc/systemd/journald.conf.d/forkmesh-privacy.conf"
+JOURNALD_PRIVACY_RETENTION="3day"
+
+write_journald_privacy() {
+  local before
+  before="$(files_digest "$JOURNALD_PRIVACY")"
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    install -d -m 0755 "$(dirname "$JOURNALD_PRIVACY")"
+    printf '%s\n' "# managed by install-instance.sh: privacyMode keeps logs for a short time only" \
+      "[Journal]" "MaxRetentionSec=$JOURNALD_PRIVACY_RETENTION" "MaxFileSec=1day" > "$JOURNALD_PRIVACY"
+  elif [ -f "$JOURNALD_PRIVACY" ] && grep -q 'managed by install-instance.sh' "$JOURNALD_PRIVACY"; then
+    rm -f "$JOURNALD_PRIVACY"
+  fi
+  if [ "$(files_digest "$JOURNALD_PRIVACY")" != "$before" ]; then
+    systemctl restart systemd-journald >/dev/null 2>&1 || warn "systemd-journald did not restart; the log retention applies after a reboot"
+  fi
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    say "Privacy mode: no request logs, and the system journal keeps $JOURNALD_PRIVACY_RETENTION of lines."
+  fi
+}
+
 write_caddyfile() {
   if [ -f /etc/caddy/Caddyfile ] && ! grep -q 'managed by install-instance.sh' /etc/caddy/Caddyfile; then
     cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-forkmesh.$(date +%s)"
   fi
+  # Local additions live in files the installer never rewrites: conf.d for
+  # whole blocks and snippets, site.d for directives inside this site (for
+  # example extra headers or a remote_ip guard).
+  install -d -m 0755 /etc/caddy/conf.d /etc/caddy/site.d
   cat > /etc/caddy/Caddyfile <<EOF
 # managed by install-instance.sh for $DOMAIN
+# Rewritten on every update; put local changes in /etc/caddy/conf.d/*.caddy
+# (top level) or /etc/caddy/site.d/*.caddy (inside the $DOMAIN site).
 {
-	email $CFG_adminEmail
+	email $CFG_adminEmail$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\n\tlog default {\n\t\texclude http.log.access http.log.error http.handlers.reverse_proxy http.stdlib\n\t}' )
 }
+
+import /etc/caddy/conf.d/*.caddy
 
 $DOMAIN {
 $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
+	import /etc/caddy/site.d/*.caddy
 	encode zstd gzip
 	header {
 		defer
@@ -1258,6 +1539,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 		reverse_proxy 127.0.0.1:$APP_PORT {
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 	handle {
@@ -1266,10 +1548,144 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 			header_up -Cf-Ipcountry
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 }
 EOF
+}
+
+ONION_DIR="/var/lib/tor/forkmesh-instance"
+ONION_PORT="8091"
+ONION_TORRC_DIR="/etc/tor/torrc.d"
+ONION_TORRC="$ONION_TORRC_DIR/forkmesh-instance.conf"
+TOR_CONFIG="/etc/tor/torrc"
+ONION_CADDY="/etc/caddy/conf.d/forkmesh-onion.caddy"
+ONION_HEADER="/etc/caddy/site.d/forkmesh-onion-location.caddy"
+ONION_WAIT_SECONDS="${FORKMESH_ONION_WAIT_SECONDS:-120}"
+ONION_HOST=""
+
+onion_torrc() {
+  cat <<EOF
+# managed by install-instance.sh: the Tor onion service of $DOMAIN
+HiddenServiceDir $ONION_DIR/
+HiddenServicePort 80 127.0.0.1:$ONION_PORT
+EOF
+}
+
+onion_caddy() {
+  cat <<EOF
+# managed by install-instance.sh: $DOMAIN as the Tor onion service $1
+http://$1:$ONION_PORT {
+	bind 127.0.0.1
+	encode zstd gzip
+	header {
+		defer
+		Content-Security-Policy "; upgrade-insecure-requests" ""
+		-Strict-Transport-Security
+	}
+	@gateway path /v1/* /health /forkmesh-mirror.json /.well-known/forkmesh-mirror.json
+	handle @gateway {
+		reverse_proxy 127.0.0.1:$GATEWAY_PORT
+	}
+	handle {
+		reverse_proxy 127.0.0.1:$APP_PORT {
+			header_up Host $1
+			header_up Cf-Connecting-Ip 100.64.0.1
+			header_up -Cf-Ipcountry
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Host
+		}
+	}
+}
+EOF
+}
+
+onion_location() {
+  cat <<EOF
+# managed by install-instance.sh: tells Tor Browser about the onion address
+header Onion-Location "http://$1{uri}"
+EOF
+}
+
+remember_onion_setting() {
+  [ -f "$INSTANCE_JSON" ] || return 0
+  python3 - "$INSTANCE_JSON" "${CFG_onionService:-0}" <<'PY'
+import json, os, sys
+path, wanted = sys.argv[1], sys.argv[2] == "1"
+with open(path, encoding="utf-8") as handle:
+    doc = json.load(handle)
+before = dict(doc)
+if wanted:
+    doc["onionService"] = True
+else:
+    doc.pop("onionService", None)
+if doc != before:
+    with open(path + ".new", "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    os.chmod(path + ".new", os.stat(path).st_mode & 0o777)
+    os.replace(path + ".new", path)
+PY
+}
+
+reload_caddy_if_running() {
+  if systemctl is-active --quiet caddy; then
+    systemctl reload caddy >/dev/null 2>&1 || warn "Caddy did not reload its settings; the next setup run restarts it."
+  fi
+}
+
+remove_onion_service() {
+  local found=0 file
+  for file in "$ONION_CADDY" "$ONION_HEADER" "$ONION_TORRC"; do
+    if [ -e "$file" ]; then rm -f "$file"; found=1; fi
+  done
+  [ "$found" = "1" ] || return 0
+  reload_caddy_if_running
+  if systemctl is-active --quiet tor; then systemctl restart tor >/dev/null 2>&1 || true; fi
+  say "The onion service is off. Its key stays in $ONION_DIR, so turning it back on keeps the same address."
+}
+
+setup_onion() {
+  if [ "${CFG_onionService:-0}" != "1" ]; then
+    remove_onion_service
+    remember_onion_setting
+    return 0
+  fi
+  say "Setting up the Tor onion service."
+  command -v tor >/dev/null 2>&1 || die "Tor is not installed (apt-get install tor), so the onion service cannot start."
+  local torrc_before caddy_before waited=0
+  install -d -m 0755 "$ONION_TORRC_DIR"
+  torrc_before="$(files_digest "$ONION_TORRC" "$TOR_CONFIG")"
+  onion_torrc > "$ONION_TORRC.new"
+  mv "$ONION_TORRC.new" "$ONION_TORRC"
+  if ! grep -qE "^%include[[:space:]]+$ONION_TORRC_DIR(/|/\*\.conf)?[[:space:]]*$" "$TOR_CONFIG" 2>/dev/null; then
+    printf '\n%%include %s/*.conf\n' "$ONION_TORRC_DIR" >> "$TOR_CONFIG"
+  fi
+  systemctl enable tor >/dev/null 2>&1 || true
+  if [ "$(files_digest "$ONION_TORRC" "$TOR_CONFIG")" != "$torrc_before" ] || [ ! -s "$ONION_DIR/hostname" ] ||
+      ! systemctl is-active --quiet tor; then
+    systemctl restart tor
+  fi
+  while [ ! -s "$ONION_DIR/hostname" ]; do
+    if [ "$waited" -ge "$ONION_WAIT_SECONDS" ]; then
+      journalctl -u tor@default --no-pager -n 15 2>/dev/null | cut -c1-300 || true
+      die "Tor did not create the onion service in $ONION_DIR. The lines above show why."
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  ONION_HOST="$(tr -d '[:space:]' < "$ONION_DIR/hostname")"
+  [[ "$ONION_HOST" =~ ^[a-z2-7]{56}\.onion$ ]] || die "$ONION_DIR/hostname does not hold a v3 onion address."
+  install -d -m 0755 "$(dirname "$ONION_CADDY")" "$(dirname "$ONION_HEADER")"
+  caddy_before="$(files_digest "$ONION_CADDY" "$ONION_HEADER")"
+  onion_caddy "$ONION_HOST" > "$ONION_CADDY"
+  onion_location "$ONION_HOST" > "$ONION_HEADER"
+  if [ "$(files_digest "$ONION_CADDY" "$ONION_HEADER")" != "$caddy_before" ]; then
+    reload_caddy_if_running
+  fi
+  remember_onion_setting
+  say "Also reachable over Tor at http://$ONION_HOST"
+  say "The onion key is in $ONION_DIR: back up that folder to keep this address on a new server."
 }
 
 dns_record_type() {
@@ -1534,7 +1950,7 @@ Environment=HOME=/var/lib/forkmesh
 Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
 Environment=TMPDIR=/var/lib/forkmesh/tmp
 Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"
-Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN
+Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\nEnvironment=FORKMESH_PRIVACY_MODE=1' )
 ExecStartPre=$DAEMON --config $DAEMON_CONFIG --check
 ExecStart=$DAEMON --config $DAEMON_CONFIG
 Restart=on-failure
@@ -1548,6 +1964,17 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/forkmesh /etc/forkmesh
 IPAddressDeny=169.254.0.0/16
 LimitNOFILE=8192
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
@@ -1555,11 +1982,38 @@ EOF
 }
 
 daemon_digest() {
-  local gateway=""
-  if [ -s "$DAEMON_CONFIG" ]; then
-    gateway="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("gatewayConfig") or "")' "$DAEMON_CONFIG" 2>/dev/null || true)"
-  fi
-  files_digest "$DAEMON" "$DAEMON_CONFIG" "$DAEMON_UNIT" ${gateway:+"$gateway"}
+  {
+    cat "$DAEMON" "$DAEMON_UNIT" "$DAEMON_TOOLS"/*.py 2>/dev/null || true
+    [ -s "$DAEMON_CONFIG" ] && python3 - "$DAEMON_CONFIG" <<'PY' 2>/dev/null || true
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg.pop("version", None)
+print(json.dumps(cfg, sort_keys=True))
+gateway = cfg.get("gatewayConfig")
+if gateway:
+    doc = json.load(open(gateway))
+    dashboard = doc.get("dashboard") if isinstance(doc.get("dashboard"), dict) else {}
+    print(json.dumps([
+        doc.get("routerPublicKey"), doc.get("publicOrigin"), dashboard.get("canonicalOrigin"),
+        sorted([str(entry.get(key) or "") for key in ("owner", "name", "gitDir")]
+               for entry in doc.get("repositories") or []
+               if isinstance(entry, dict) and entry.get("name") == "forkmesh"),
+    ]))
+PY
+  } | sha256sum | cut -c1-64
+}
+
+# An SSH relay added by tools/install_ssh_relay.sh keeps its gateway and
+# broker in step with the app it relays to: an update installs the same
+# release's copies and restarts the broker. Nothing here creates a relay.
+refresh_ssh_relay() {
+  [ -s /etc/forkmesh-ssh/ssh-gateway.json ] || return 0
+  [ -d /opt/forkmesh-ssh ] || return 0
+  local tool
+  for tool in ssh_gateway.py ssh_authorization_broker.py; do
+    [ -s "$SRC/tools/$tool" ] && install -m 0755 -o root -g root "$SRC/tools/$tool" "/opt/forkmesh-ssh/$tool"
+  done
+  systemctl try-restart forkmesh-ssh-auth.service >/dev/null 2>&1 || warn "the SSH relay broker did not restart (journalctl -u forkmesh-ssh-auth)"
 }
 
 setup_git_node() {
@@ -1626,7 +2080,7 @@ cfg.update({
         "enabled": True,
         "root": "/var/lib/forkmesh/hosted",
         "maxRepositoryBytes": 1073741824,
-        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "app.forkmesh.com"],
+        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "gitea.com", "app.forkmesh.com"],
     },
 })
 gateway = cfg.get("gatewayConfig")
@@ -1678,6 +2132,7 @@ PY
     mv "$DAEMON_CONFIG.norole" "$DAEMON_CONFIG"
   fi
   rm -f "$DAEMON_CONFIG.new" "$DAEMON_CONFIG.nomirror" "$DAEMON_CONFIG.norole"
+  refresh_ssh_relay
   NODE_PUBLIC_KEY="$(runuser -u "$NODE_USER" -- "$DAEMON" --config "$DAEMON_CONFIG" --public-key | tr -d '[:space:]')"
   [[ "$NODE_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "The git node has no identity key."
   chmod -R go-rwx /etc/forkmesh /var/lib/forkmesh
@@ -1861,6 +2316,9 @@ rm -f /usr/local/bin/forkmesh-mirror-node /usr/local/bin/forkmesh-actions \
   /etc/systemd/system/forkmesh-instance-update.path \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.service \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.timer
+systemctl disable --now forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/forkmesh-web-firewall.service \
+  /etc/systemd/system/forkmesh-web-firewall.timer
 if [ -e "$CLEANUP_DIR/ufw-80" ]; then ufw delete allow 80/tcp >/dev/null 2>&1 || true; fi
 if [ -e "$CLEANUP_DIR/ufw-443" ]; then ufw delete allow 443/tcp >/dev/null 2>&1 || true; fi
 if [ -e "$CLEANUP_DIR/created-swap" ]; then
@@ -1905,6 +2363,7 @@ EOF
 
 arm_first_login_timeout() {
   [ "$NEW_INSTANCE" = "1" ] || return 0
+  [ -n "${CFG_launchId:-}" ] || return 0
   [ ! -e "$LOGIN_MARKER" ] || return 0
   [ -z "$(env_value INSTANCE_LOGIN_DEADLINE)" ] || return 0
   local deadline
@@ -1926,6 +2385,7 @@ finish() {
   say "$CFG_projectName is running at $ORIGIN"
   say "Sign in as @$CFG_adminUsername. Your repository: $REPO_URL"
   say_admin_path
+  if [ -n "$ONION_HOST" ]; then say "Over Tor: http://$ONION_HOST"; fi
   say "Update later with: bash install-instance.sh --update"
   printf 'FMI {"done":true,"url":"%s"}\n' "$REPO_URL"
 }
@@ -1936,7 +2396,9 @@ fetch_source
 build_app
 activate_source
 write_settings
+setup_onion
 migrate_database
+write_journald_privacy
 start_app
 SOURCE_COMMITTED="1"
 setup_https

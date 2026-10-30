@@ -19,8 +19,44 @@ TITLE_RE = re.compile(r"(<title[^>]*>)(.*?)(</title>)", re.IGNORECASE | re.DOTAL
 META_RE = re.compile(
     r'(<meta\s+(?:name|property)="(?:application-name|apple-mobile-web-app-title|og:site_name)"\s+content=")'
     r'ForkMesh(")', re.IGNORECASE)
+BRAND_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
+DESKTOP_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh (?=[Dd]esktop)")
+CODE_BLOCK_RE = re.compile(r"(<(script|style)\b[^>]*>.*?</\2\s*>)", re.IGNORECASE | re.DOTALL)
+
+
+def rename_markup(text: str, escaped: str) -> str:
+    parts = CODE_BLOCK_RE.split(text)
+    out = []
+    index = 0
+    while index < len(parts):
+        chunk = parts[index]
+        if index % 3 == 0:
+            chunk = BRAND_RE.sub(lambda _: escaped, DESKTOP_RE.sub("", chunk))
+            out.append(chunk)
+            index += 1
+        else:
+            out.append(chunk)
+            index += 2
+    return "".join(out)
 OLD_TAG_RE = re.compile(r'<script src="/instance-brand\.js"[^>]*' + MARKER + r'[^>]*></script>')
 THEME_TAG = '<link rel="stylesheet" href="/instance-theme.css" data-instance-theme />'
+MODE_TAG = (
+    r'<script data-instance-color-mode>(function(){try{var d=document.documentElement,'
+    r'q=matchMedia("(prefers-color-scheme: light)"),'
+    r'm=getComputedStyle(d).getPropertyValue("--instance-color-mode").trim();'
+    r'function choice(){var c="";try{c=localStorage.getItem("forkmesh.dashboard.theme")'
+    r'||localStorage.getItem("forkmesh.theme")||""}catch(_){}'
+    r'if(!c){var k=/(?:^|;\s*)forkmesh_theme=([a-z]+)/.exec(document.cookie);c=k?k[1]:""}'
+    r'return c==="light"||c==="dark"||c==="system"?c:""}'
+    r'function apply(){var c=choice(),x=c||m,t=c==="light"||c==="dark"?c:'
+    r'x==="system"?(q.matches?"light":"dark"):x==="light"?"light":"";'
+    r'd.setAttribute("data-dashboard-theme-resolved","");if(!t)return;'
+    r'd.setAttribute("data-dashboard-theme",t);d.style.colorScheme=t;'
+    r'var e=document.querySelector("meta[name=theme-color]");'
+    r'if(e)e.setAttribute("content",t==="light"?"#f6f8fb":"#090909")}'
+    r'apply();if(q.addEventListener)q.addEventListener("change",apply);'
+    r'else if(q.addListener)q.addListener(apply)}catch(_){}})()</script>')
+MODE_TAG_RE = re.compile(r"<script data-instance-color-mode>.*?</script>", re.DOTALL)
 ICON_RE = re.compile(r'[ \t]*<link\s+rel="(?:icon|shortcut icon|apple-touch-icon)"[^>]*>[ \t]*\n?', re.IGNORECASE)
 LOGO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
 MAX_LOGO_BYTES = 200 * 1024
@@ -74,10 +110,97 @@ def icon_links(logo: str) -> str:
             '<link rel="apple-touch-icon" href="%s" data-instance-logo />') % (logo, kind, logo)
 
 
-def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
+HEADER_RE = re.compile(r"<header\b[^>]*>.*?</header\s*>", re.IGNORECASE | re.DOTALL)
+ANCHOR_RE = re.compile(r"<a\b([^>]*)>(.*?)</a\s*>", re.IGNORECASE | re.DOTALL)
+LABEL_RE = re.compile(r"<span data-instance-name-label[^>]*>.*?</span>", re.IGNORECASE | re.DOTALL)
+LABEL = '<span data-instance-name-label style="margin-left:8px;font-weight:700;white-space:nowrap">%s</span>'
+
+
+def _attribute(attributes: str, name: str) -> str | None:
+    found = re.search(r'(?<![\w-])%s\s*=\s*"([^"]*)"' % name, attributes, re.IGNORECASE)
+    return found.group(1) if found else None
+
+
+def _logo_anchor(attributes: str) -> bool:
+    classes = (_attribute(attributes, "class") or "").split()
+    if "brand" in classes or "forkmesh-simple-brand" in classes:
+        return True
+    return _attribute(attributes, "href") == "/" and _attribute(attributes, "aria-label") is not None
+
+
+def name_beside_logo(text: str, escaped: str) -> str:
+    header = HEADER_RE.search(text)
+    if not header:
+        return text
+    block = header.group(0)
+    if LABEL_RE.search(block):
+        branded = LABEL_RE.sub(lambda _: LABEL % escaped, block, count=1)
+        return text[:header.start()] + branded + text[header.end():]
+    for anchor in ANCHOR_RE.finditer(block):
+        attributes = anchor.group(1)
+        if not _logo_anchor(attributes):
+            continue
+        if _attribute(attributes, "style") is None:
+            attributes += ' style="display:inline-flex;align-items:center"'
+        branded = "<a%s>%s%s</a>" % (attributes, anchor.group(2), LABEL % escaped)
+        block = block[:anchor.start()] + branded + block[anchor.end():]
+        return text[:header.start()] + block + text[header.end():]
+    return text
+
+
+# GET /api/instance is one public document that the dashboard, instance-brand.js
+# and genie-spider.js all read. A dashboard page asks for it from its first
+# script, in parallel with the bundle download, instead of after the ~2 MB
+# bundle has run (bootDashboard waits for the repository addresses in it on a
+# first visit). The readers take this promise over (window.__forkmeshInstanceInfo).
+INFO_EARLY = (
+    '<script data-instance-info-early>try{window.__forkmeshInstanceInfo='
+    'fetch("/api/instance",{credentials:"omit",headers:{accept:"application/json"}})'
+    '.then(function(r){return r.ok?r.json():null}).catch(function(){return null})'
+    '}catch(_){}</script>')
+INFO_EARLY_RE = re.compile(r"<script data-instance-info-early>.*?</script>", re.DOTALL)
+DASHBOARD_SCRIPT_RE = re.compile(r'<script\b[^>]*\bsrc="/dashboard\.js[?"]', re.IGNORECASE)
+SCRIPT_OPEN_RE = re.compile(r"<script\b", re.IGNORECASE)
+
+
+def instance_info_early(text: str) -> str:
+    text = INFO_EARLY_RE.sub("", text)
+    if not DASHBOARD_SCRIPT_RE.search(text):
+        return text
+    head_end = text.lower().find("</head>")
+    if head_end == -1:
+        return text
+    first = SCRIPT_OPEN_RE.search(text, 0, head_end)
+    at = first.start() if first else head_end
+    return text[:at] + INFO_EARLY + text[at:]
+
+
+CHROME_BLOCK_RE = re.compile(r"<(header|aside|footer)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+OFFSITE_HREF_RE = re.compile(
+    r"^https://(?:(?:www\.|app\.)?forkmesh\.com/.+|(?:www\.)?patreon\.com/.*)$", re.IGNORECASE)
+CHROME_HREFS = {"https://forkmesh.com/": "/", "https://world.forkmesh.com/": "/world"}
+
+
+def _chrome_anchor(match: re.Match) -> str:
+    attributes = match.group(1)
+    href = _attribute(attributes, "href") or ""
+    if href in CHROME_HREFS:
+        attributes = attributes.replace('href="%s"' % href, 'href="%s"' % CHROME_HREFS[href], 1)
+        return "<a%s>%s</a>" % (attributes, match.group(2))
+    if OFFSITE_HREF_RE.match(href) or re.search(r"(?<![\w-])data-forkmesh-membership(?![\w-])", attributes):
+        return ""
+    return match.group(0)
+
+
+def offsite_chrome(text: str) -> str:
+    return CHROME_BLOCK_RE.sub(lambda block: ANCHOR_RE.sub(_chrome_anchor, block.group(0)), text)
+
+
+def brand_page(text: str, name: str, logo: str = "", powered_by=True, white_label=False) -> str:
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
     text = text.replace(THEME_TAG, "")
+    text = MODE_TAG_RE.sub("", text)
     if logo:
         found = ICON_RE.search(text)
         if found:
@@ -87,8 +210,13 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
         lambda match: match.group(1) + match.group(2).replace("ForkMesh", escaped) + match.group(3),
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
+    text = rename_markup(text, escaped)
+    if white_label:
+        text = offsite_chrome(text)
+    text = name_beside_logo(text, escaped)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
-    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
+    tag = THEME_TAG + MODE_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
+    text = instance_info_early(text)
     lower = text.lower()
     index = lower.rfind("</head>")
     if index == -1:
@@ -126,17 +254,33 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
     return "/" + target
 
 
-def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True) -> int:
+def name_manifest(dist: Path, name: str) -> None:
+    manifest = dist / "favicon" / "site.webmanifest"
+    if not manifest.is_file():
+        return
+    try:
+        app = json.loads(manifest.read_text(encoding="utf-8"))
+    except ValueError:
+        return
+    if not isinstance(app, dict) or (app.get("name") == name and app.get("short_name") == name):
+        return
+    app.update({"name": name, "short_name": name})
+    manifest.write_text(json.dumps(app, separators=(",", ":")), encoding="utf-8")
+
+
+def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True,
+          white_label: bool = False) -> int:
     if not NAME_RE.fullmatch(name):
         raise SystemExit("instance name: letters, numbers, spaces and ._&+- only, up to 40")
     if not dist.is_dir():
         raise SystemExit("no such directory: %s" % dist)
     shutil.copyfile(SCRIPT, dist / "instance-brand.js")
     logo_path = install_logo(dist, name, logo) if logo else ""
+    name_manifest(dist, name)
     changed = 0
     for page in sorted(dist.rglob("*.html")):
         original = page.read_text(encoding="utf-8", errors="surrogateescape")
-        branded = brand_page(original, name, logo_path, powered_by)
+        branded = brand_page(original, name, logo_path, powered_by, white_label)
         if branded != original:
             page.write_text(branded, encoding="utf-8", errors="surrogateescape")
             changed += 1
@@ -149,9 +293,11 @@ def main(argv=None) -> int:
     parser.add_argument("--dist", default=str(APP / "dist"), help="the built app directory")
     parser.add_argument("--logo", help="the instance's logo: a PNG, JPEG, WebP or SVG file")
     parser.add_argument("--no-powered-by", action="store_true", help="leave out the Powered by ForkMesh badge")
+    parser.add_argument("--white-label", action="store_true",
+                        help="drop the header and sidebar links to forkmesh.com's own sites")
     args = parser.parse_args(argv)
     changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None,
-                    powered_by=not args.no_powered_by)
+                    powered_by=not args.no_powered_by, white_label=args.white_label)
     print("branded %d pages as %s" % (changed, args.name))
     return 0
 

@@ -15,6 +15,7 @@ import android.view.FrameMetrics
 import android.view.Window
 import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.net.HttpClient
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.tools.AppBuild
@@ -77,6 +78,7 @@ internal object DiagnosticsRuntime {
         registered += { Services.put(monitor) }
         registered += { Services.put(telemetry) }
         monitor.onHeartbeatLag = telemetry::recordLoopLag
+        monitor.screenName = { NavigationFeature.screenTitle() }
         observeHttp(monitor, telemetry)
 
         app.registerActivityLifecycleCallbacks(Visibility(FrameMetricsWatcher(monitor, telemetry), monitor))

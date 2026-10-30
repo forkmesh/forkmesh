@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.crypto
 
 import com.forkmesh.nativeapp.json.Json
+import com.forkmesh.nativeapp.security.Identity
 import com.forkmesh.nativeapp.security.SecretStore
 
 class ChatPrekey internal constructor(
@@ -171,11 +172,48 @@ class ChatDeviceKeys private constructor(private val store: SecretStore?, identi
     companion object {
         const val IDENTITY_STORE_KEY = "chat/e2ee/ed25519IdentityV3"
         const val PREKEYS_STORE_KEY = "chat/e2ee/prekeysV3"
+        const val COUNTER_FLOOR_STORE_KEY = "chat/e2ee/ctrFloorV3"
+        const val COUNTER_EPOCH_SECONDS = 1_767_225_600L
+        private val DERIVE_SALT = "ForkMesh chat identity salt v3".toByteArray(Charsets.UTF_8)
+        private val DERIVE_INFO = "forkmesh-chat-identity-v3".toByteArray(Charsets.UTF_8)
 
-        private const val LEGACY_PRIVATE_KEY = "chat/e2ee/x25519PrivateV2"
+        fun storedSeed(text: String?): ByteArray? {
+            val trimmed = text?.trim().orEmpty()
+            if (trimmed.isEmpty()) return null
+            val bytes = try {
+                B64.decode(trimmed)
+            } catch (_: Exception) {
+                null
+            }
+            return bytes?.takeIf { it.size == Ed25519.SEED_BYTES }
+        }
+
+        fun derivedSeed(nodeSeed: ByteArray): ByteArray = Hkdf.sha256(nodeSeed, DERIVE_SALT, DERIVE_INFO, Ed25519.SEED_BYTES)
+
+        fun counterFloor(store: SecretStore?): Long = try {
+            store?.read(COUNTER_FLOOR_STORE_KEY)?.trim()?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+        } catch (_: Exception) {
+            0L
+        }
+
+        private fun freshSeed(store: SecretStore, nowMs: Long): ByteArray {
+            val node = try {
+                storedSeed(store.read(Identity.SEED_KEY))
+            } catch (_: Exception) {
+                null
+            } ?: return Ed25519.generateSeed()
+            try {
+                store.write(COUNTER_FLOOR_STORE_KEY, maxOf(nowMs / 1000 - COUNTER_EPOCH_SECONDS, 0L).toString())
+                return derivedSeed(node)
+            } finally {
+                node.fill(0)
+            }
+        }
+
+        private const val LEGACY_PRIVATE_KEY = "chat/e2ee/x25519PrivateV2"  // forkmesh-secret-scan:ignore-line
         private val cache = HashMap<StoreIdentity, ChatDeviceKeys>()
 
-        fun forStore(store: SecretStore): ChatDeviceKeys = synchronized(cache) {
+        fun forStore(store: SecretStore, nowMs: Long = System.currentTimeMillis()): ChatDeviceKeys = synchronized(cache) {
             val identity = StoreIdentity.of(store)
             cache[identity]?.let { return it }
             val stored = try {
@@ -184,7 +222,7 @@ class ChatDeviceKeys private constructor(private val store: SecretStore?, identi
                 null
             }
             val loaded = if (stored.isNullOrEmpty()) null else ChatV3.unb64(stored)?.takeIf { it.size == Ed25519.SEED_BYTES }
-            val seed: ByteArray = loaded ?: Ed25519.generateSeed().also { fresh ->
+            val seed: ByteArray = loaded ?: freshSeed(store, nowMs).also { fresh ->
                 store.write(IDENTITY_STORE_KEY, ChatV3.b64(fresh))
                 try {
                     store.delete(LEGACY_PRIVATE_KEY)

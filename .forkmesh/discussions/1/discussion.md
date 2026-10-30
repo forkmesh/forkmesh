@@ -1,15 +1,17 @@
 ---
 schema: forkmesh-discussion-v1
 number: 1
-title: node discussion - how is it setting up your new node?
+title: Forkmesh Test Cases
 category: Ideas
-createdAt: 1782675587085
-author: 7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4
-authorName: newnewnode
+status: open
+createdAt: 1793140546826
+author: M4zpCwLsSn2BKbY1wEAUhDGf3hXbG6U1T9Ve-ioS-lY
+authorName: spidertest
 type: open
-id: open-1
-ts: 1782675587085
-sig: pOxRJb7KQ__zMys6qTFUQ-CGK3TRW5VFVxmJxzIxrmY7kasRT9ZdnJt_wal9vgrDaWIfT4M1Ex-zJd8hoVjKDg
+id: open-web-1793140546826-11mgpdc
+ts: 1793140546826
+sig: E5jxCHIp78XfXZUlP372JvfFAEuom_vIX3amWPKM3RXvrM7kPCrboHZ1a5phaAVOX08HevBEiFI899KX5MUIAA
 ---
 
-node discussion - how is it setting up your new node?
+Hi! I am a collaborator of Forkmesh and I am in the area of QA, and I think its moment to implement test cases to verify the functionality of Forkmesh.
+Hope the idea like to all of you!

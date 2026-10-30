@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -35,6 +36,19 @@ static void checkEqual(const QString &actual, const QString &expected,
                      qPrintable(expected), qPrintable(actual));
         ++failures;
     }
+}
+
+static QString visibleText(const QString &html)
+{
+    static const QRegularExpression tag(QStringLiteral("<[^>]*>"));
+    QString text = html;
+    text.remove(tag);
+    text.replace(QLatin1String("&nbsp;"), QLatin1String(" "));
+    text.replace(QLatin1String("&lt;"), QLatin1String("<"));
+    text.replace(QLatin1String("&gt;"), QLatin1String(">"));
+    text.replace(QLatin1String("&quot;"), QLatin1String("\""));
+    text.replace(QLatin1String("&#39;"), QLatin1String("'"));
+    return text.replace(QLatin1String("&amp;"), QLatin1String("&"));
 }
 
 static QByteArray journal(const char *unit, const char *identifier,
@@ -377,6 +391,17 @@ static void testClassification()
                QStringLiteral("error admin.api: request error error=loading config: "
                               "panic: runtime error"),
                "a Caddy JSON line reads as level, logger, message and error");
+    const JournalEntry altSvc = entry(
+        "caddy.service", "caddy", "6",
+        QStringLiteral("{\"level\":\"error\",\"ts\":1.5,\"logger\":\"http.log\","
+                       "\"msg\":\"setting HTTP/3 Alt-Svc header\",\"error\":\"no "
+                       "port can be announced, specify it explicitly using "
+                       "Server.Port or Server.Addr\"}"));
+    check(isCaddyReloadNoise(altSvc) && classify(altSvc).forward &&
+              classify(altSvc).severity == Severity::Warning &&
+              !isCaddyReloadNoise(caddyPanic) &&
+              classify(caddyPanic).severity == Severity::Error,
+          "a missing HTTP/3 advert while Caddy reloads is a warning, not an error");
     const JournalEntry goPanic = entry("forkmesh-mirror-node.service",
                                        "forkmesh-mirror-node", "6",
                                        QStringLiteral("panic: runtime error: index out of range"));
@@ -604,6 +629,41 @@ static void testAccessLog()
     check(webHtml.contains(QLatin1String("#57606a'>2.6 KB</span>")), "the size is muted");
     check(webHtml.contains(QLatin1String("#57606a'>git/2.45.2 x</span>")),
           "the User-Agent is muted");
+    AccessRecord shortGet = ok;
+    shortGet.method = QStringLiteral("POST");
+    shortGet.host = QStringLiteral("n2.next.[hidden]");
+    shortGet.path = QStringLiteral("/x");
+    shortGet.durationMs = 2461;
+    shortGet.bytes = 0;
+    AccessRecord failedGet = ok;
+    failedGet.status = 503;
+    failedGet.expectedDegraded = true;
+    const QStringList columns{
+        visibleText(webHtml),
+        visibleText(nodeLineHtml(
+            QStringLiteral("Node n12 runner caddy warn: ") + accessLogMessage(shortGet),
+            false)),
+        visibleText(nodeLineHtml(
+            QStringLiteral("Node n1 core caddy err: ") + accessLogMessage(failedGet), false))};
+    for (const QString &line : columns) {
+        check(line.indexOf(QLatin1String(" -> ")) == columns.first().indexOf(QLatin1String(" -> ")),
+              "the status starts in the same column on every web line");
+        check(line.indexOf(QStringLiteral(" \u00b7 ")) ==
+                  columns.first().indexOf(QStringLiteral(" \u00b7 ")),
+              "the client starts in the same column on every web line");
+        check(line.indexOf(QRegularExpression(QStringLiteral(" (GET|POST) "))) ==
+                  columns.first().indexOf(QRegularExpression(QStringLiteral(" (GET|POST) "))),
+              "the method starts in the same column whatever the node prefix");
+    }
+    check(columns.at(1).contains(QStringLiteral(" 2461ms         \u00b7")) &&
+              columns.first().contains(QStringLiteral("  133ms  2.6 KB \u00b7")),
+          "durations and sizes are right-aligned in their columns");
+    check(webHtml.contains(QLatin1String("font-weight:600'>GET</span>")) &&
+              nodeLineHtml(QStringLiteral("Node n1 core caddy info: ") +
+                               accessLogMessage(shortGet),
+                           false)
+                  .contains(QLatin1String("#57606a'>n2.next.[hidden]</span>")),
+          "the method and a redacted host are coloured like any other");
     const QString peerHtml = nodeLineHtml(
         QStringLiteral("Node n1 core caddy info: ") + accessLogMessage(peer), false);
     check(peerHtml.contains(QLatin1String("font-weight:600'>r1</span>")),

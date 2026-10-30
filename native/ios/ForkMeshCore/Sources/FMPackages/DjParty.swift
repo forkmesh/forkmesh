@@ -224,13 +224,15 @@ public struct DjAutomixDeck: Equatable, Sendable {
     public var position: Double
     public var duration: Double
     public var rate: Double
+    public var repeats: Bool
 
-    public init(loaded: Bool, playing: Bool = false, position: Double = 0, duration: Double = 0, rate: Double = 1) {
+    public init(loaded: Bool, playing: Bool = false, position: Double = 0, duration: Double = 0, rate: Double = 1, repeats: Bool = false) {
         self.loaded = loaded
         self.playing = playing
         self.position = position
         self.duration = duration
         self.rate = rate
+        self.repeats = repeats
     }
 
     public var remaining: Double? {
@@ -240,6 +242,64 @@ public struct DjAutomixDeck: Equatable, Sendable {
 
     public var fresh: Bool {
         loaded && !playing && (duration <= 0 || position < duration - DjStudio.automixSeconds - 2)
+    }
+}
+
+public enum DjEndReport: Equatable, Sendable {
+    case ended
+    case doubted
+    case failed
+}
+
+public enum DjEnd {
+    public static let slack: Double = 5
+    public static let patience: Double = 3
+
+    public static func judge(position: Double, duration: Double, doubtedSince: Double?, intended: Bool, at now: Double) -> DjEndReport {
+        guard duration > 0, position.isFinite, position < duration - slack else { return .ended }
+        guard intended, let since = doubtedSince, now - since >= patience else { return .doubted }
+        return .failed
+    }
+}
+
+public struct DjRepeatSpan: Equatable, Sendable {
+    public let start: Double
+    public let end: Double
+
+    public init(start: Double, end: Double) {
+        self.start = start
+        self.end = end
+    }
+}
+
+public enum DjRepeatStep: Equatable, Sendable {
+    case wait
+    case wrap
+    case after(Double)
+}
+
+public enum DjRepeat {
+    public static let quiet: Double = 0.07
+    public static let tail: Double = 0.25
+    public static let shortest: Double = 2
+    public static let ahead: Double = 0.6
+
+    public static func span(_ bars: [DjWaveBar], duration: Double) -> DjRepeatSpan? {
+        guard duration.isFinite, duration > tail + shortest else { return nil }
+        let whole = DjRepeatSpan(start: 0, end: duration - tail)
+        guard let first = bars.firstIndex(where: { $0.level > quiet }), let last = bars.lastIndex(where: { $0.level > quiet }) else { return whole }
+        let step = duration / Double(bars.count)
+        let start = Double(first) * step
+        let end = min(whole.end, Double(last + 1) * step)
+        guard end - start >= shortest else { return whole }
+        return DjRepeatSpan(start: start, end: end)
+    }
+
+    public static func step(position: Double, span: DjRepeatSpan, rate: Double) -> DjRepeatStep {
+        guard position.isFinite, rate.isFinite, rate > 0.01 else { return .wait }
+        let left = (span.end - position) / rate
+        if left <= 0 { return .wrap }
+        return left < ahead ? .after(left) : .wait
     }
 }
 
@@ -255,10 +315,18 @@ public enum DjAutomix {
             return queued ? .preload(favoured) : .wait
         }
         let other = live.other
-        guard let incoming = decks[other], !incoming.playing, let outgoing = decks[live] else { return .wait }
+        guard let incoming = decks[other], !incoming.playing, let outgoing = decks[live], !outgoing.repeats else { return .wait }
         if !incoming.fresh { return queued ? .preload(other) : .wait }
         guard let remaining = outgoing.remaining, remaining <= DjStudio.automixSeconds + lead else { return .wait }
         return .mix(from: live, to: other, seconds: max(2, min(DjStudio.automixSeconds, remaining)))
+    }
+
+    public static func playNow(a: DjAutomixDeck, b: DjAutomixDeck, crossfader: Double) -> DjDeckSide? {
+        guard !a.playing, !b.playing else { return nil }
+        let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
+        let decks: [DjDeckSide: DjAutomixDeck] = [.a: a, .b: b]
+        let open = decks[favoured]?.loaded == true && decks[favoured.other]?.loaded == false
+        return abs(crossfader) < 0.5 && open ? favoured.other : favoured
     }
 
     public static func next(_ library: [DjPlayedSong], loaded: Set<String>, playing: Set<String>, seed: UInt64) -> DjPlayedSong? {

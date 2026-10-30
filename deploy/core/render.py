@@ -58,9 +58,11 @@ SSH_FINGERPRINT = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 LOGREAD_PUBLIC_KEY = re.compile(r"^ssh-ed25519 (AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{48}) fmnext-logread$")
 LOGREAD_PROGRAM = "/opt/forkmesh-next/bin/fmnext-logread"
 LOGREAD_AUTHORIZED_KEY = "/etc/forkmesh-next/logread.authorized_key"
+APP_UPSTREAM_TRY_SECONDS = 30
+UPSTREAM_RETRY_AFTER_SECONDS = 5
 ACCESS_LOG_QUERY_KEYS = ("token", "access_token", "refresh_token", "sig",
                          "signature", "key", "api_key", "code", "password",
-                         "secret", "auth", "session")
+                         "secret", "auth", "session", "ticket", "node")
 CLOUDFLARE_RANGES = ("173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22",
                      "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
                      "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22",
@@ -178,6 +180,13 @@ def load_fleet(path, state_path=None, state=None, instances=None,
             raise RenderError("rqlite_voter must be true or false: %r" % node["name"])
     if nodes and not any(node.get("rqlite_voter", True) for node in nodes):
         raise RenderError("at least one core must be an rqlite voter")
+    for node in nodes:
+        if "mail_relay" not in node:
+            continue
+        relay = next((n for n in nodes if n.get("name") == node["mail_relay"]), None)
+        if relay is None or relay is node or "mail_relay" in relay:
+            raise RenderError("mail_relay of %s must name another core that sends "
+                              "mail itself: %r" % (node["name"], node["mail_relay"]))
     for runner in fleet.get("runners") or []:
         if not RUNNER_NAME.match(str(runner.get("name"))):
             raise RenderError("runner name must look like r1: %r" % runner.get("name"))
@@ -535,7 +544,19 @@ def core_role_settings(fleet):
     return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners,
-                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates])
+                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates,
+                      "FORKMESH_VAR_FORKMESH_PROBE_BAN_ALLOW=%s"
+                      % ",".join(probe_ban_allow(fleet))])
+
+
+def probe_ban_allow(fleet):
+    allowed = []
+    for runner in fleet.get("runners") or []:
+        allowed.append("%s/32" % ipaddress.IPv4Address(runner["public_ipv4"]))
+        if runner.get("public_ipv6"):
+            allowed.append(str(ipaddress.ip_network(
+                "%s/64" % runner["public_ipv6"], strict=False)))
+    return sorted(set(allowed))
 
 
 def public_hosts(fleet):
@@ -617,7 +638,9 @@ def caddy_binary_dropin(fleet):
         % (settings["version"], CADDY_DEBIAN_BIN, CADDY_BIN, CADDY_BIN))
 
 
-IDS_MAIL_CREDENTIALS = ("FMNEXT_IDS_MAIL_TOKEN", "FMNEXT_IDS_ALERT_EMAIL")
+IDS_MAIL_SMTP = "127.0.0.1:25"
+IDS_MAIL_TOKEN_FILE = "/etc/postfix/sasl_passwd"
+IDS_MAIL_ADDRESS = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,}$")
 IDS_STATE_DIR = "/var/lib/fmnext-ids"
 IDS_SEVERITIES = ("info", "alert", "lockdown")
 # Units the lockdown stops; each gets a drop-in that keeps it from starting
@@ -654,7 +677,8 @@ IDS_EXCLUDE = ("/etc/forkmesh-next/tls", "/etc/forkmesh-next/tls/*",
 
 
 def ids_core_stop_units(fleet):
-    return IDS_CORE_STOP_UNITS + ((TURN_UNIT,) if turn_enabled(fleet) else ())
+    return IDS_CORE_STOP_UNITS + ((TURN_UNIT,) if turn_enabled(fleet) else ()) + (
+        (CALLS_UNIT,) if calls_enabled(fleet) else ())
 
 
 def ids_settings(fleet):
@@ -689,6 +713,15 @@ def ids_settings(fleet):
     url = ids.get("webhook_url", "")
     if url and not str(url).startswith("https://"):
         raise RenderError("ids.webhook_url must be https://")
+    if not isinstance(ids.get("direct_mail", False), bool):
+        raise RenderError("ids.direct_mail must be true or false")
+    if ids.get("direct_mail") and not IDS_MAIL_ADDRESS.match(
+            str(ids.get("mail_to", ""))):
+        raise RenderError("ids.mail_to must be the address IDS mail goes to "
+                          "when direct_mail = true")
+    sender = str(ids.get("mail_from", "") or "")
+    if sender and not IDS_MAIL_ADDRESS.match(sender):
+        raise RenderError("ids.mail_from must be an email address or empty")
     return ids
 
 
@@ -794,8 +827,6 @@ def ids_credential_names(fleet, role):
     names = [IDS_KEY_CREDENTIAL]
     if role == "core":
         names.append("RQLITE_PASSWORD")
-    if ids.get("direct_mail"):
-        names += list(IDS_MAIL_CREDENTIALS)
     return names
 
 
@@ -852,14 +883,18 @@ def ids_config(fleet, name, role, paths):
         "webhook": {"url": ids.get("webhook_url", "")},
     }
     if ids.get("direct_mail"):
-        config["mail"] = {"token_credential": IDS_MAIL_CREDENTIALS[0],
-                          "to_credential": IDS_MAIL_CREDENTIALS[1],
-                          "from": ids.get("mail_from", "")}
+        config["mail"] = {"to": ids["mail_to"],
+                          "from": ids.get("mail_from", ""),
+                          "smtp": IDS_MAIL_SMTP,
+                          "token_file": IDS_MAIL_TOKEN_FILE}
     if role == "core":
         turn_tcp, turn_udp = (turn_ports(fleet)[:2] if turn_enabled(fleet)
                               else ([], []))
         turn_users = ({TURN_USER: {"units": [TURN_UNIT], "exe": [TURN_BIN]}}
                       if turn_enabled(fleet) else {})
+        calls_tcp, calls_udp = calls_ports(fleet)
+        calls_users = ({CALLS_USER: {"units": [CALLS_UNIT], "exe": [CALLS_BIN]}}
+                       if calls_enabled(fleet) else {})
         config.update({
             "processes": {
                 "service_users": {
@@ -885,6 +920,7 @@ def ids_config(fleet, name, role, paths):
                         "shell_severity": "alert",
                         "outside_severity": "alert"},
                     **turn_users,
+                    **calls_users,
                 },
                 "protected_units": ["forkmesh-app.service", "rqlite.service",
                                     "caddy.service",
@@ -899,9 +935,10 @@ def ids_config(fleet, name, role, paths):
                                int(app.get("mesh_port", 8792)),
                                int(app.get("certsync_port", 8793)),
                                int(app.get("acme_forward_port", 8794)),
-                               *turn_tcp}),
+                               *turn_tcp, *calls_tcp}),
                 "udp": sorted({53, 68, 123, 323, 443, 546,
-                               int(wg.get("port", 51820)), *turn_udp}),
+                               int(wg.get("port", 51820)), *turn_udp,
+                               *calls_udp}),
                 "udp_max_port": 10240},
             "rqlite": {"url": "http://127.0.0.1:%d" % int(
                 rq.get("http_port", 4001)),
@@ -1263,6 +1300,166 @@ def add_turn_files(fleet, node, paths, values, add, units,
     return True
 
 
+CALLS_SECRET_CREDENTIAL = "FORKMESH_CALLS_SECRET"
+CALLS_NODES_VAR = "FORKMESH_CALLS_NODES"
+CALLS_USER = "fmnext-calls"
+CALLS_BIN = "/usr/local/bin/forkmesh-calls"
+CALLS_UNIT = "fmnext-calls.service"
+CALLS_UNIT_PATH = "/etc/systemd/system/" + CALLS_UNIT
+CALLS_DEFAULTS = {"enabled": False, "udp_port": 3479, "http_port": 7881,
+                  "origins": [], "fmm": False, "fmm_port": 4433}
+CALLS_RESERVED_UDP = (53, 68, 123, 323, 443, 546)
+CALLS_RESERVED_TCP = (22, 25, 53, 80, 443, 8791)
+CALLS_ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+                          r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+def calls_settings(fleet):
+    raw = fleet.get("calls") or {}
+    if not isinstance(raw, dict):
+        raise RenderError("[calls] must be a table")
+    unknown = set(raw) - set(CALLS_DEFAULTS)
+    if unknown:
+        raise RenderError("unknown [calls] keys: %s" % ", ".join(sorted(unknown)))
+    settings = dict(CALLS_DEFAULTS, **raw)
+    for key in ("enabled", "fmm"):
+        if not isinstance(settings[key], bool):
+            raise RenderError("calls.%s must be true or false" % key)
+    for key in ("udp_port", "http_port", "fmm_port"):
+        value = settings[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RenderError("calls.%s must be an integer" % key)
+    for key in ("udp_port", "fmm_port"):
+        if not 1024 < settings[key] < 10240:
+            raise RenderError("calls.%s must be in 1025-10239" % key)
+    if not 1024 < settings["http_port"] < 65536:
+        raise RenderError("calls.http_port must be in 1025-65535")
+    origins = settings["origins"]
+    if not isinstance(origins, list) or not all(
+            isinstance(o, str) and CALLS_ORIGIN.match(o) for o in origins):
+        raise RenderError("calls.origins must list https://host origins")
+    if not settings["enabled"]:
+        return settings
+    rq = fleet.get("rqlite") or {}
+    app = fleet.get("app") or {}
+    wg = fleet.get("wireguard") or {}
+    udp_taken = set(CALLS_RESERVED_UDP) | {int(wg.get("port", 51820))}
+    tcp_taken = set(CALLS_RESERVED_TCP) | {
+        int(rq.get("http_port", 4001)), int(rq.get("raft_port", 4002)),
+        int(app.get("port", 8080)), int(app.get("gateway_port", 8790)),
+        int(app.get("mesh_port", 8792)), int(app.get("certsync_port", 8793)),
+        int(app.get("acme_forward_port", 8794))}
+    if turn_enabled(fleet):
+        turn_tcp, turn_udp, _ = turn_ports(fleet)
+        udp_taken |= set(turn_udp)
+        tcp_taken |= set(turn_tcp)
+    if settings["udp_port"] in udp_taken:
+        raise RenderError("calls.udp_port %d is already used on the cores"
+                          % settings["udp_port"])
+    if settings["fmm"] and settings["fmm_port"] in udp_taken | {
+            settings["udp_port"]}:
+        raise RenderError("calls.fmm_port %d is already used on the cores"
+                          % settings["fmm_port"])
+    if settings["http_port"] in tcp_taken:
+        raise RenderError("calls.http_port %d is already used on the cores"
+                          % settings["http_port"])
+    if CALLS_SECRET_CREDENTIAL not in app_secret_names(fleet):
+        raise RenderError("[calls] enabled needs %s in app.secrets or "
+                          "app.optional_secrets (the app signs the join "
+                          "tickets with it)" % CALLS_SECRET_CREDENTIAL)
+    if CALLS_NODES_VAR in (production(fleet).get("vars") or {}):
+        raise RenderError("[calls] sets %s; remove it from production.vars"
+                          % CALLS_NODES_VAR)
+    return settings
+
+
+def calls_enabled(fleet):
+    return calls_settings(fleet)["enabled"]
+
+
+def calls_urls(fleet):
+    return ["wss://%s.%s/calls/ws" % (n["name"], fleet["domain"])
+            for n in fleet.get("nodes") or []]
+
+
+def calls_origins(fleet):
+    hosts = ["https://" + host for host in (
+        served_app_host(fleet), fleet["app_host"],
+        served_world_host(fleet), fleet["world_host"])]
+    return list(dict.fromkeys(hosts + list(calls_settings(fleet)["origins"])))
+
+
+def calls_app_settings(fleet):
+    if not calls_enabled(fleet):
+        return ""
+    return "\n%s=%s" % ("FORKMESH_VAR_" + CALLS_NODES_VAR,
+                         ",".join(calls_urls(fleet)))
+
+
+def calls_fmm_enabled(fleet):
+    settings = calls_settings(fleet)
+    return settings["enabled"] and settings["fmm"]
+
+
+def calls_ports(fleet):
+    settings = calls_settings(fleet)
+    if not settings["enabled"]:
+        return [], []
+    udp = [settings["udp_port"]]
+    if settings["fmm"]:
+        udp.append(settings["fmm_port"])
+    return [settings["http_port"]], udp
+
+
+def calls_fmm_unit_lines(fleet):
+    if not calls_fmm_enabled(fleet):
+        return ""
+    return "".join("\n" + line for line in (
+        "Environment=FORKMESH_CALLS_FMM=:%d" % calls_settings(fleet)["fmm_port"],
+        "StateDirectory=" + CALLS_USER,
+        "StateDirectoryMode=0700"))
+
+
+def calls_ip_deny():
+    return " ".join(item for item in turn_ip_deny().split() if item != "localhost")
+
+
+def calls_caddy_handle(fleet):
+    if not calls_enabled(fleet):
+        return []
+    port = calls_settings(fleet)["http_port"]
+    return ["\thandle /calls/* {",
+            "\t\treverse_proxy 127.0.0.1:%d {" % port,
+            "\t\t\tflush_interval -1",
+            "\t\t}",
+            "\t}"]
+
+
+def runs_calls(fleet, node):
+    return calls_enabled(fleet) and not is_app_node(node)
+
+
+def add_calls_files(fleet, node, paths, values, add, units,
+                    credentials_by_unit):
+    if not runs_calls(fleet, node):
+        return False
+    settings = calls_settings(fleet)
+    addresses = [node["public_ipv4"]] + (
+        [node["public_ipv6"]] if node.get("public_ipv6") else [])
+    values = dict(values, CALLS_BIN=CALLS_BIN, CALLS_USER=CALLS_USER,
+                  CALLS_SECRET=CALLS_SECRET_CREDENTIAL,
+                  CALLS_HTTP_PORT=settings["http_port"],
+                  CALLS_UDP_PORT=settings["udp_port"],
+                  CALLS_ADDRESSES=",".join(addresses),
+                  CALLS_ORIGINS=",".join(calls_origins(fleet)),
+                  CALLS_FMM=calls_fmm_unit_lines(fleet),
+                  CALLS_IP_DENY=calls_ip_deny())
+    add(CALLS_UNIT_PATH, template(CALLS_UNIT, values))
+    units.append(CALLS_UNIT)
+    credentials_by_unit[CALLS_UNIT] = [CALLS_SECRET_CREDENTIAL]
+    return True
+
+
 # --------------------------------------------------------------------------
 # generated files
 
@@ -1479,7 +1676,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "\ttransport http {",
         "\t\tkeepalive 10s",
         "\t}",
-        "\tlb_try_duration 10s",
+        "\tlb_try_duration %ds" % APP_UPSTREAM_TRY_SECONDS,
         "\tlb_try_interval 250ms",
         "\tflush_interval -1",
         "}",
@@ -1550,10 +1747,23 @@ def caddyfile(fleet, node, paths, per_node=True):
         "}",
         "",
         *(access_log_snippet() if access_log else []),
+        "# The App unreachable (restart, crash): a JSON answer the clients can",
+        "# read and retry; the status stays 502/504 for the Worker's fallback.",
+        "(upstream_errors) {",
+        "\thandle_errors 502 504 {",
+        "\t\timport security_headers",
+        "\t\theader Content-Type \"application/json; charset=utf-8\"",
+        "\t\theader Cache-Control no-store",
+        "\t\theader Retry-After %d" % UPSTREAM_RETRY_AFTER_SECONDS,
+        "\t\trespond `{\"error\":\"upstream_unavailable\"}` {err.status_code}",
+        "\t}",
+        "}",
+        "",
         "(site_common) {",
         *(["\timport access_log"] if access_log else []),
         "\timport client_headers",
         "\timport security_headers",
+        "\timport upstream_errors",
         "\timport app_body_limits",
         "\tencode zstd gzip",
         "\t# Host-internal and mesh paths are never public. A handle (not a",
@@ -1657,6 +1867,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "\t\t\timport app_proxy_app_host",
         "\t\t}",
         "\t}",
+        *calls_caddy_handle(fleet),
         "\t@git_push_app {",
         "\t\tpath_regexp git_push %s" % GIT_PUSH_PATH,
         "\t}",
@@ -1729,6 +1940,11 @@ def replica_settings(fleet):
     return ("FORKMESH_CLUSTER_ROLE=replica\nFORKMESH_DNS_RECONCILER=off\n"
             "FORKMESH_DNS_TARGETS=\nFORKMESH_DNS_NAMES=%s"
             % ",".join(shared_hosts(fleet)))
+
+
+def mail_senders(fleet):
+    return ",".join("%s.%s=%s" % (n["name"], fleet["domain"], n["public_ipv4"])
+                    for n in fleet["nodes"] if "mail_relay" not in n)
 
 
 def dns_settings(fleet):
@@ -1903,9 +2119,11 @@ def render_core(fleet, node_name, replacement=False):
         "DNS_SETTINGS": replica_settings(fleet) if replica
         else dns_settings(fleet),
         "IDS_SETTINGS": ids_env_settings(fleet),
+        "MAIL_SENDERS": mail_senders(fleet),
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
         "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),
+        "CALLS_SETTINGS": calls_app_settings(fleet),
         "MESH_PEERS": mesh_peers(fleet),
         **request_rules_paths(paths),
         "CERTSYNC_SECRET": CERTSYNC_SECRET_NAME,
@@ -1955,13 +2173,14 @@ def render_core(fleet, node_name, replacement=False):
         template("journald.conf", values))
     add(FAIL2BAN_SSHD, fail2ban_sshd(fleet, node_name))
     mesh_ports = sorted({values["HTTP_PORT"], raft_port, values["MESH_PORT"],
-                         int(app.get("certsync_port", 8793)), 80})
+                         int(app.get("certsync_port", 8793)), 80, 25})
     # 80 on wg0: the HTTP-01 forwarder of every peer asks this Caddy.
     peers_agent = autoscale_enabled(fleet) and not replica
     public_tcp, public_udp = [ssh_port(fleet), 80, 443], [443, wg_port]
     if turn_enabled(fleet):
         turn_tcp, turn_udp, relay = turn_ports(fleet)
         public_tcp, public_udp = public_tcp + turn_tcp, public_udp + turn_udp + [relay]
+    public_udp = public_udp + calls_ports(fleet)[1]
     add("/etc/nftables.conf", nftables_conf(
         fleet, node_name, mesh_ports, public_tcp, public_udp,
         output_rules=core_output_rules(fleet) + (
@@ -2024,6 +2243,8 @@ def render_core(fleet, node_name, replacement=False):
             AUTOSCALE_CERTSYNC_CREDENTIAL)
     turn = add_turn_files(fleet, node, paths, values, add, units,
                           credentials_by_unit)
+    calls = add_calls_files(fleet, node, paths, values, add, units,
+                            credentials_by_unit)
     add_ids_files(fleet, node_name, "core", paths, values, add, units,
                   credentials_by_unit)
     if not replica:
@@ -2033,6 +2254,7 @@ def render_core(fleet, node_name, replacement=False):
     manifest = {
         "role": "core",
         "turn": turn,
+        "calls": calls,
         "logread": logread,
         "node": node_name,
         "public_ipv4": node["public_ipv4"],

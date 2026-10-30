@@ -15,6 +15,7 @@ import {
   PLAYER_SUPER_JUMP_MOVE_MULTIPLIER,
 } from "../gameplay-constants.js";
 import { circularRideCameraYaw, parachuteSinkVelocity } from "../movement.js";
+import { constrainToFootprints, neighbourFootprints } from "../neighbour-footprints.js";
 import { REMOTE_DETAIL_NEAR_DISTANCE_SQ } from "../quality.js";
 
 export function functions({
@@ -22,6 +23,24 @@ export function functions({
   ctx,
   fns,
 }) {
+  let neighbourDoorAt = 0;
+
+  function constrainNeighbourWalls(previous) {
+    const footprints = neighbourFootprints();
+    if (!footprints.length) return;
+    const result = constrainToFootprints(
+      footprints, previous, ctx.player.position, OFFICE_AVATAR_RADIUS);
+    if (!result.blocked) return;
+    ctx.player.position.x = result.x;
+    ctx.player.position.z = result.z;
+    fns.cancelDash();
+    const now = performance.now();
+    if (result.door?.link && now - neighbourDoorAt > 4000) {
+      neighbourDoorAt = now;
+      fns.onNeighbourDoor?.({ ...result.door.link });
+    }
+  }
+
   function walkPlayer(delta, time) {
     const previousHorizontalPosition =
       ctx.movementPreviousPosition.copy(ctx.player.position);
@@ -207,8 +226,11 @@ export function functions({
       ctx.player.position.z = previousHorizontalPosition.z;
       fns.cancelDash();
     }
+    fns.checkTerritoryCrossing?.(previousHorizontalPosition);
     if (!ctx.superJumping) {
       fns.constrainTownOfficeWalls(previousHorizontalPosition);
+      fns.constrainTerritoryObstacles?.(previousHorizontalPosition);
+      constrainNeighbourWalls(previousHorizontalPosition);
       for (let index = 0; index < ctx.districtPackages.length; index += 1) {
         ctx.districtPackages[index].instance.constrainPlayer?.(
           previousHorizontalPosition,

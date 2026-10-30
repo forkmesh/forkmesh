@@ -1,8 +1,10 @@
 #include "OfficeChannelMirror.h"
 #include "ChatBlocks.h"
 #include "ChatRecipients.h"
+#include "ChatNodeOwners.h"
 #include "ServerNode.h"
 #include "SettingsWrite.h"
+#include "StickerCatalog.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -363,7 +365,11 @@ bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
         message.threadRootId = rootId;
     message.senderId =
         plain.value(QStringLiteral("senderId")).toString().left(64);
-    message.senderName = boundedText(plain, "sender", kMaxDisplayNameChars);
+    message.senderName = boundedText(
+        plain, "sender",
+        plain.value(QStringLiteral("accountKind")) == QLatin1String("integration")
+            ? 96
+            : kMaxDisplayNameChars);
     if (message.senderName.isEmpty())
         message.senderName = QStringLiteral("Office visitor");
     message.text = forkmesh::chatformat::bodySource(plain, kMaxTextChars);
@@ -410,11 +416,12 @@ bool roomMutationFromPlain(const QJsonObject &plain, RoomMutation *out)
         mutation.senderId.isEmpty())
         return false;
     if (mutation.type == QLatin1String("reaction")) {
-        mutation.emoji = plain.value(QStringLiteral("emoji")).toString();
+        const QString wireEmoji = plain.value(QStringLiteral("emoji")).toString();
         const QJsonValue added = plain.value(QStringLiteral("added"));
-        if (mutation.emoji.trimmed().isEmpty() || mutation.emoji.size() > 32 ||
+        if (wireEmoji.trimmed().isEmpty() || wireEmoji.size() > 32 ||
             !added.isBool())
             return false;
+        mutation.emoji = stickers::valueFromWire(plain);
         mutation.added = added.toBool();
         const QString reactorId =
             plain.value(QStringLiteral("reactorId")).toString().left(64);
@@ -548,6 +555,26 @@ void OfficeChannelMirror::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event even
     }
 }
 
+void OfficeChannelMirror::setOwnerVerifier(ChatNodeOwners *owners)
+{
+    m_owners = owners;
+    for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it)
+        if (it->sender)
+            it->sender->setOwnerVerifier(owners);
+}
+
+void OfficeChannelMirror::prepareRoomSender(
+    ServerNode &sender, const std::function<QString(const QByteArray &)> &signer,
+    ChatNodeOwners *owners)
+{
+    sender.setSharedRoom(false);
+    sender.setOwnerVerifier(owners);
+    if (signer)
+        sender.setNodeSigner([signer](const QByteArray &message) {
+            return forkmesh::chatv3::fromB64u(signer(message));
+        });
+}
+
 void OfficeChannelMirror::setSigner(std::function<QString(const QByteArray &)> signer)
 {
     m_signer = std::move(signer);
@@ -583,6 +610,12 @@ void OfficeChannelMirror::setConnectionAuthorizer(
     std::function<bool(const QUrl &)> authorizer)
 {
     m_connectionAuthorizer = std::move(authorizer);
+}
+
+void OfficeChannelMirror::setSessionProvider(
+    std::function<QString(const QUrl &)> provider)
+{
+    m_sessionProvider = std::move(provider);
 }
 
 void OfficeChannelMirror::setApiBase(const QUrl &apiBase)
@@ -681,7 +714,7 @@ bool OfficeChannelMirror::createChannel(const QString &name, bool privateRoom,
         QStringLiteral("/api/chat/channels"), ts,
         forkmesh::office::channelCreateProof(m_account, ts, wanted, visibility,
                                              invitees));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     const QByteArray body =
@@ -778,7 +811,7 @@ void OfficeChannelMirror::sendMemberChange(const QString &conversation,
         forkmesh::office::channelMembersProof(m_account, channelId, ts,
                                               QString::fromLatin1(method),
                                               username));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     const QByteArray body =
@@ -820,13 +853,45 @@ void OfficeChannelMirror::sendMemberChange(const QString &conversation,
 
 bool OfficeChannelMirror::startDirectMessage(const QString &username)
 {
+    return openDirect(username, true);
+}
+
+bool OfficeChannelMirror::sendDirectText(const QString &username, const QString &text)
+{
+    const QString name = normalizedUsername(username);
+    const QString message = text.trimmed().left(kMaxTextChars);
+    if (!ready() || name.isEmpty() || name == m_account || message.isEmpty())
+        return false;
+    QStringList &queued = m_directTexts[name];
+    if (queued.size() >= 8)
+        return false;
+    queued.append(message);
+    if (!openDirect(name, false)) {
+        m_directTexts.remove(name);
+        return false;
+    }
+    return true;
+}
+
+void OfficeChannelMirror::flushDirectTexts(const QString &name,
+                                           const QString &conversation)
+{
+    const QStringList texts = m_directTexts.take(name);
+    for (const QString &text : texts)
+        sendMessage(conversation, text);
+}
+
+bool OfficeChannelMirror::openDirect(const QString &username, bool announce)
+{
     const QString name = normalizedUsername(username);
     if (!ready() || name.isEmpty() || name == m_account)
         return false;
     const QString existing = forkmesh::office::conversationForDirect(name);
     for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
         if (it->direct && it->conversation == existing) {
-            emit directConversationReady(existing);
+            flushDirectTexts(name, existing);
+            if (announce)
+                emit directConversationReady(existing);
             return true;
         }
     }
@@ -834,14 +899,14 @@ bool OfficeChannelMirror::startDirectMessage(const QString &username)
     const QUrl url = signedUrl(
         QStringLiteral("/api/chat/direct-messages"), ts,
         forkmesh::office::directStartProof(m_account, ts, name));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     const QByteArray body =
         QJsonDocument(QJsonObject{{QStringLiteral("username"), name}})
             .toJson(QJsonDocument::Compact);
     QNetworkReply *reply = m_network->post(request, body);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name, announce]() {
         const QByteArray responseBody = reply->readAll();
         const bool failed = reply->error() != QNetworkReply::NoError;
         const QString transportError = failed ? reply->errorString() : QString();
@@ -870,12 +935,15 @@ bool OfficeChannelMirror::startDirectMessage(const QString &username)
                 reason = transportError.isEmpty()
                              ? QStringLiteral("the relay rejected the message")
                              : transportError;
+            m_directTexts.remove(name);
             emit directMessageFailed(name, reason);
             return;
         }
         saveDirectDirectory();
         emit directConversationsChanged(m_directConversations);
-        emit directConversationReady(conversation);
+        flushDirectTexts(name, conversation);
+        if (announce)
+            emit directConversationReady(conversation);
     });
     return true;
 }
@@ -958,7 +1026,7 @@ void OfficeChannelMirror::fetchReadMarks()
     const QUrl url = signedUrl(QStringLiteral("/api/chat/reads"), ts,
                                forkmesh::office::readMarksListProof(m_account,
                                                                     ts));
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         const QByteArray body = reply->readAll();
         const bool failed = reply->error() != QNetworkReply::NoError;
@@ -1007,7 +1075,7 @@ void OfficeChannelMirror::postReadMarks(const QHash<QString, qint64> &marks)
     for (auto it = keyed.constBegin(); it != keyed.constEnd(); ++it)
         markObject.insert(it.key(), static_cast<double>(it.value()));
     const QString ts = QString::number(QDateTime::currentMSecsSinceEpoch());
-    QNetworkRequest request(
+    QNetworkRequest request = apiRequest(
         signedUrl(QStringLiteral("/api/chat/reads"), ts,
                   forkmesh::office::readMarksPostProof(m_account, ts, keyed)));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
@@ -1135,7 +1203,7 @@ QJsonObject OfficeChannelMirror::directPlain(const Room &room,
         plain.insert(QStringLiteral("type"), QStringLiteral("reaction"));
         plain.insert(QStringLiteral("conversation"), channel);
         plain.insert(QStringLiteral("target"), pending.target);
-        plain.insert(QStringLiteral("emoji"), pending.emoji);
+        stickers::writeWire(plain, pending.emoji);
         plain.insert(QStringLiteral("reactorId"), m_selfId);
         plain.insert(QStringLiteral("reactorName"), name);
         plain.insert(QStringLiteral("added"), pending.added);
@@ -1532,7 +1600,7 @@ void OfficeChannelMirror::fetchDirectMessages()
                        QString::number(kMaxDirectConversations));
     url.setQuery(query);
     m_listingDirect = true;
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         m_listingDirect = false;
         if (m_relistDirectPending) {
@@ -1983,7 +2051,7 @@ bool OfficeChannelMirror::setTopic(const QString &conversation,
             QStringLiteral("/api/chat/channels/%1").arg(room.id), ts,
             forkmesh::office::channelTopicProof(
                 m_account, room.id, ts, normalized));
-        QNetworkRequest request(url);
+        QNetworkRequest request = apiRequest(url);
         request.setHeader(QNetworkRequest::ContentTypeHeader,
                           QStringLiteral("application/json"));
         const QByteArray body = QJsonDocument(
@@ -2048,6 +2116,17 @@ QUrl OfficeChannelMirror::signedUrl(const QString &path, const QString &ts,
     query.addQueryItem(QStringLiteral("sig"), m_signer(canonical));
     url.setQuery(query);
     return url;
+}
+
+QNetworkRequest OfficeChannelMirror::apiRequest(const QUrl &url) const
+{
+    QNetworkRequest request(url);
+    const QString token =
+        m_sessionProvider ? m_sessionProvider(url).trimmed() : QString();
+    if (!token.isEmpty())
+        request.setRawHeader(QByteArrayLiteral("Authorization"),
+                             QByteArrayLiteral("Bearer ") + token.toUtf8());
+    return request;
 }
 
 QString OfficeChannelMirror::channelNameForConversation(
@@ -2140,7 +2219,7 @@ bool OfficeChannelMirror::updateChannel(const QString &conversation,
         QStringLiteral("/api/chat/channels/%1").arg(channelId), ts,
         forkmesh::office::channelSettingsProof(m_account, channelId, ts, wanted,
                                                visibility, normalizedTopic));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     const QByteArray body =
@@ -2234,7 +2313,7 @@ bool OfficeChannelMirror::deleteChannel(const QString &conversation)
     const QUrl url = signedUrl(
         QStringLiteral("/api/chat/channels/%1").arg(channelId), ts,
         forkmesh::office::channelDeleteProof(m_account, channelId, ts));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     QNetworkReply *reply = m_network->sendCustomRequest(
@@ -2281,7 +2360,7 @@ bool OfficeChannelMirror::refreshWebhooks(const QString &conversation)
         forkmesh::office::channelWebhooksProof(m_account, channelId, ts,
                                                QStringLiteral("GET"),
                                                QString()));
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, channelId, conversation]() {
                 const QByteArray responseBody = reply->readAll();
@@ -2349,7 +2428,7 @@ bool OfficeChannelMirror::createWebhook(const QString &conversation,
         QStringLiteral("/api/chat/channels/%1/webhooks").arg(channelId), ts,
         forkmesh::office::channelWebhooksProof(m_account, channelId, ts,
                                                QStringLiteral("POST"), wanted));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     const QByteArray body =
@@ -2397,7 +2476,7 @@ bool OfficeChannelMirror::rotateWebhook(const QString &conversation,
         ts,
         forkmesh::office::channelWebhookProof(m_account, channelId, webhookId,
                                               ts, QStringLiteral("POST")));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     QNetworkReply *reply = m_network->post(request, QByteArrayLiteral("{}"));
@@ -2457,7 +2536,7 @@ bool OfficeChannelMirror::deleteWebhook(const QString &conversation,
         ts,
         forkmesh::office::channelWebhookProof(m_account, channelId, webhookId,
                                               ts, QStringLiteral("DELETE")));
-    QNetworkRequest request(url);
+    QNetworkRequest request = apiRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
     QNetworkReply *reply = m_network->sendCustomRequest(
@@ -2495,7 +2574,7 @@ void OfficeChannelMirror::fetchChannels()
     const QUrl url = signedUrl(QStringLiteral("/api/chat/channels"), ts,
                                forkmesh::office::channelListProof(m_account, ts));
     m_listing = true;
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         m_listing = false;
         if (m_relistPending) {
@@ -2665,7 +2744,7 @@ void OfficeChannelMirror::fetchEveryoneMembers()
                                               QStringLiteral("GET"),
                                               QString()));
     m_everyoneMembersFetching = true;
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, expected]() {
         m_everyoneMembersFetching = false;
         const QByteArray body = reply->readAll();
@@ -2767,7 +2846,7 @@ void OfficeChannelMirror::fetchRoomAccess(const QString &channelId)
         emit sendActivity(QStringLiteral("Office chat: requesting encrypted room access "
                                          "for %1.")
                               .arg(room.conversation));
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, channelId]() {
                 const QByteArray body = reply->readAll();
@@ -2841,6 +2920,7 @@ void OfficeChannelMirror::openSender(const QString &channelId,
     auto *sender = new ServerNode(
         m_displayName.isEmpty() ? m_account : m_displayName, m_account, m_account,
         m_selfId, endpoint, roomName, QString(), passphrase, this);
+    prepareRoomSender(*sender, m_signer, m_owners);
     sender->setChatDevice(m_device);
     sender->setChatAccount(selfDirectAcct());
     if (room.direct)
@@ -3085,7 +3165,7 @@ void OfficeChannelMirror::fetchHistory(const QString &channelId)
     query.addQueryItem(QStringLiteral("since"), QString::number(room.lastTs));
     url.setQuery(query);
     room.fetching = true;
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkReply *reply = m_network->get(apiRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, channelId]() {
         const QByteArray body = reply->readAll();
         const bool failed = reply->error() != QNetworkReply::NoError;
@@ -3165,9 +3245,8 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
             if (!plain.contains(QStringLiteral("senderId")))
                 plain.insert(QStringLiteral("senderId"), opened.senderNode);
             RoomSeal::useSignedTime(plain, opened);
-        } else if (room.privateRoom && !room.serverVisible) {
-            // The history endpoint is controlled by the relay too. Apply the
-            // same fail-closed policy as the live socket for private rooms.
+        } else if (room.direct || !envelope.value(QStringLiteral("srv")).toBool() ||
+                   !ServerNode::serverFrameFromPlain(plain, &plain, false)) {
             continue;
         }
         const QString type = plain.value(QStringLiteral("type")).toString();

@@ -9,6 +9,7 @@
 #include "FlowLayout.h"
 #include "HeaderWrapLayout.h"
 #include "KebabHeaderView.h"
+#include "MergeSetAside.h"
 #include "PrivateMirrorRuntime.h"
 #include "RepoStatsStore.h"
 #include "UiSounds.h"
@@ -2720,6 +2721,7 @@ void MainWindow::requestMergeWorktreeIntoMain(const QString &branchArg,
         m_branchCleanupInProgress.contains(branch))
         return;
     if (m_branchMergeFlowBusy) {
+        const PingThreadScope pingThread(this, mergePingThread(dir, branch));
         flashMessage(QStringLiteral("A branch update is running; merge again when it finishes."));
         return;
     }
@@ -2739,11 +2741,15 @@ void MainWindow::requestMergeWorktreeIntoMain(const QString &branchArg,
         m_branchMergeDeleteButton->setEnabled(false);
     if (m_branchDeleteCleanupButton)
         m_branchDeleteCleanupButton->setEnabled(false);
-    setRepoDetailNotice(
-        cleanUp
-            ? QString::fromUtf8("Merging %1, then cleaning up in the background\xE2\x80\xA6")
-                  .arg(branch)
-            : QString::fromUtf8("Merging %1\xE2\x80\xA6").arg(branch));
+    m_pingThreadIds.remove(mergePingThread(dir, branch));
+    {
+        const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+        setRepoDetailNotice(
+            cleanUp
+                ? QString::fromUtf8("Merging %1, then cleaning up in the background\xE2\x80\xA6")
+                      .arg(branch)
+                : QString::fromUtf8("Merging %1\xE2\x80\xA6").arg(branch));
+    }
 
     QTimer::singleShot(0, this,
                        [this, branch, worktreePath, dir, cleanUp,
@@ -2850,7 +2856,8 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                        const QString &worktreePathArg,
                                        bool cleanUp,
                                        std::function<void(bool)> callerDone,
-                                       bool unattended)
+                                       bool unattended,
+                                       bool setAside)
 {
     const QString branch = branchArg;
     const QString worktreePath = worktreePathArg;
@@ -2868,7 +2875,10 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                "for an answer on the desktop (%2).")
                     .arg(branch, m_worktreeMergeAwaiting);
             logSystem(QStringLiteral("Git: ") + message);
-            flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+            {
+                const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+            }
             if (callerDone)
                 callerDone(false);
             return;
@@ -2879,6 +2889,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         queued.worktreePath = worktreePath;
         queued.cleanUp = cleanUp;
         queued.unattended = unattended;
+        queued.setAside = setAside;
         queued.done = std::move(callerDone);
         if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
             queued.owner = m_repositories.at(m_repoDetailIndex).owner;
@@ -2892,12 +2903,16 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     }
     m_worktreeMergeRunning = true;
     m_worktreeMergeConflicted = false;
+    m_worktreeMergeCanSetAside = false;
+    m_worktreeMergeSetAsideNote.clear();
     std::function<void(bool)> done = [this, callerDone](bool ok) {
         m_worktreeMergeRunning = false;
         m_worktreeMergeAwaiting.clear();
         if (callerDone)
             callerDone(ok);
         m_worktreeMergeConflicted = false;
+        m_worktreeMergeCanSetAside = false;
+        m_worktreeMergeSetAsideNote.clear();
         QTimer::singleShot(0, this, [this] { runNextQueuedWorktreeMerge(); });
     };
     const auto refuse = [&done] { done(false); };
@@ -2941,15 +2956,18 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                 : QStringLiteral("Agents %1 are")
                                       .arg(names.join(QStringLiteral(", ")));
         if (anyExternal || unattended) {
-            setRepoDetailNotice(
-                QStringLiteral("%1 still working on %2. %3, then merge so %4 "
-                               "committed work is included.")
-                    .arg(who, branch,
-                         liveSessionIds.size() == 1 ? QStringLiteral("Stop it")
-                                                    : QStringLiteral("Stop them"),
-                         liveSessionIds.size() == 1 ? QStringLiteral("its")
-                                                    : QStringLiteral("their")),
-                true);
+            {
+                const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                setRepoDetailNotice(
+                    QStringLiteral("%1 still working on %2. %3, then merge so %4 "
+                                   "committed work is included.")
+                        .arg(who, branch,
+                             liveSessionIds.size() == 1 ? QStringLiteral("Stop it")
+                                                        : QStringLiteral("Stop them"),
+                             liveSessionIds.size() == 1 ? QStringLiteral("its")
+                                                        : QStringLiteral("their")),
+                    true);
+            }
             refuse();
             return;
         }
@@ -2979,11 +2997,14 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         }
         for (const int sessionId : std::as_const(liveSessionIds)) {
             if (!stopAgentSessionById(sessionId)) {
-                setRepoDetailNotice(
-                    QStringLiteral("Couldn't stop Agent #%1; its branch was left "
-                                   "unchanged.")
-                        .arg(sessionId),
-                    true);
+                {
+                    const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                    setRepoDetailNotice(
+                        QStringLiteral("Couldn't stop Agent #%1; its branch was left "
+                                       "unchanged.")
+                            .arg(sessionId),
+                        true);
+                }
                 refuse();
                 return;
             }
@@ -3025,17 +3046,20 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                 }
                 if (!after || after->prNumber <= 0) {
                     const QString reason = m_agentPullFailures.take(sessionId);
-                    setRepoDetailNotice(
-                        QStringLiteral("Couldn't create the requested PR for "
-                                       "Agent #%1 (%2); %3 was not merged or "
-                                       "cleaned up.")
-                            .arg(sessionId)
-                            .arg(reason.isEmpty()
-                                     ? QStringLiteral(
-                                           "see the agent log for details")
-                                     : reason,
-                                 branch),
-                        true);
+                    {
+                        const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                        setRepoDetailNotice(
+                            QStringLiteral("Couldn't create the requested PR for "
+                                           "Agent #%1 (%2); %3 was not merged or "
+                                           "cleaned up.")
+                                .arg(sessionId)
+                                .arg(reason.isEmpty()
+                                         ? QStringLiteral(
+                                               "see the agent log for details")
+                                         : reason,
+                                     branch),
+                            true);
+                    }
                     done(false);
                     return;
                 }
@@ -3063,7 +3087,10 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         return;
     }
     if (!repoHasWorkingTree()) {
-        setRepoDetailNotice("Read-only mirror — nothing to merge into here.", true);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            setRepoDetailNotice("Read-only mirror — nothing to merge into here.", true);
+        }
         refuse();
         return;
     }
@@ -3079,6 +3106,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     flow.worktreePath = worktreePath;
     flow.cleanUp = cleanUp;
     flow.unattended = unattended;
+    flow.setAside = setAside;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
         flow.owner = repo.owner;
@@ -3113,7 +3141,10 @@ void MainWindow::runNextQueuedWorktreeMerge()
         const QString message =
             QStringLiteral("Couldn't merge %1: %2").arg(next.branch, why);
         logSystem(QStringLiteral("Git: ") + message);
-        flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(next.dir, next.branch));
+            flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        }
         if (next.done)
             next.done(false);
         QTimer::singleShot(0, this, [this] { runNextQueuedWorktreeMerge(); });
@@ -3126,7 +3157,7 @@ void MainWindow::runNextQueuedWorktreeMerge()
         }
     }
     mergeWorktreeIntoMain(next.branch, next.worktreePath, next.cleanUp,
-                          std::move(next.done), next.unattended);
+                          std::move(next.done), next.unattended, next.setAside);
 }
 
 void MainWindow::awaitDesktopDuringMerge(const QString &what)
@@ -3147,7 +3178,10 @@ void MainWindow::awaitDesktopDuringMerge(const QString &what)
                            "an answer on the desktop (%2).")
                 .arg(next.branch, what);
         logSystem(QStringLiteral("Git: ") + message);
-        flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(next.dir, next.branch));
+            flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        }
         if (next.done)
             next.done(false);
     }
@@ -3254,6 +3288,39 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
         }
         QString why;
         QStringList listed = dirt.changed;
+        const bool overlapOnly = dirt.read && touchedRead && head == base
+                                 && dirt.staged.isEmpty() && !overlap.isEmpty();
+        if (overlapOnly && flow.setAside) {
+            const forkmesh::mergesetaside::Git git = forkmesh::mergesetaside::processGit(dir);
+            const forkmesh::mergesetaside::Aside aside = forkmesh::mergesetaside::setAside(
+                git, base, branch, overlap, QDateTime::currentDateTime());
+            if (!aside.ok) {
+                step.message =
+                    QStringLiteral("Couldn't set aside the uncommitted changes to %1 in %2, so "
+                                   "%3 was not merged: %4%5")
+                        .arg(describeDirtyPaths(overlap), QDir::toNativeSeparators(dir), branch,
+                             aside.error,
+                             aside.backupBranch.isEmpty()
+                                 ? QString()
+                                 : QStringLiteral(". A copy is on branch %1.").arg(aside.backupBranch));
+                step.noticeKind = forkmesh::kLocalOperationNoticeKind;
+                return step;
+            }
+            WorktreeMergeFlow inner = flow;
+            inner.setAside = false;
+            WorktreeMergeStep next = prepareWorktreeMerge(inner);
+            const forkmesh::mergesetaside::PutBack back = forkmesh::mergesetaside::putBack(git, aside);
+            next.setAsideNote = forkmesh::mergesetaside::putBackNote(aside, back);
+            QStringList logs = step.logs;
+            logs << QStringLiteral("Git: saved the uncommitted work in %1 on branch %2 and set "
+                                   "aside %3 to merge %4.")
+                        .arg(QDir::toNativeSeparators(dir), aside.backupBranch,
+                             describeDirtyPaths(overlap), branch);
+            logs << next.logs;
+            logs << QStringLiteral("Git: ") + next.setAsideNote;
+            next.logs = logs;
+            return next;
+        }
         if (!dirt.read || !touchedRead) {
             why = QStringLiteral("and Git couldn't tell which files this merge touches");
         } else if (head != base) {
@@ -3276,6 +3343,10 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
                          describeDirtyPaths(listed));
             step.noticeKind = forkmesh::kLocalOperationNoticeKind;
             step.error = false;
+            step.canSetAside =
+                overlapOnly
+                && forkmesh::mergesetaside::canSetAside(
+                    forkmesh::mergesetaside::processGit(dir), overlap);
             return step;
         }
         step.logs << QStringLiteral("Git: merging %1 into %2 around %3 uncommitted "
@@ -3405,6 +3476,16 @@ MainWindow::mergeBranchIntoBase(const WorktreeMergeFlow &flow,
         if (runGitCapture(dir, {QStringLiteral("rev-parse"), QStringLiteral("HEAD")},
                           &head, nullptr))
             step.mergeCommit = QString::fromUtf8(head).trimmed();
+        if (!flow.localPath.isEmpty()) {
+            PullStore pulls(flow.localPath, flow.mirrorPath, flow.identity,
+                            flow.userName);
+            QString reconcileError;
+            pulls.reconcileMergedPulls(&reconcileError);
+            if (!reconcileError.isEmpty())
+                step.logs << QStringLiteral("PR: merged %1, but could not record "
+                                            "its PR status yet: %2")
+                                 .arg(branch, reconcileError);
+        }
     } else {
         runGitCapture(dir, {"merge", "--abort"}, nullptr, nullptr);
     }
@@ -3422,8 +3503,17 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
     const QString &base = flow.base;
     const QString &dir = flow.dir;
     const bool here = repoGitDir() == dir;
+    if (!step.setAsideNote.isEmpty()) {
+        m_worktreeMergeSetAsideNote = step.setAsideNote;
+        const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+        noticeForRepo(here, step.setAsideNote, false, forkmesh::kLocalOperationNoticeKind);
+    }
     if (step.kind == WorktreeMergeStep::Refused) {
-        noticeForRepo(here, step.message, step.error, step.noticeKind);
+        m_worktreeMergeCanSetAside = step.canSetAside;
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            noticeForRepo(here, step.message, step.error, step.noticeKind);
+        }
         if (here && step.reloadPanels) {
             loadWorktreesPanel();
             loadBranchesAndTags();
@@ -3460,10 +3550,13 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
             return;
         }
         if (!here) {
-            flashMessage(QStringLiteral("Left %1 unmerged: its repository was closed "
-                                        "before its conflicts could be resolved.")
-                             .arg(branch),
-                         true);
+            {
+                const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                flashMessage(QStringLiteral("Left %1 unmerged: its repository was closed "
+                                            "before its conflicts could be resolved.")
+                                 .arg(branch),
+                             true);
+            }
             if (done)
                 done(false);
             return;
@@ -3504,20 +3597,6 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
     const bool landed = merged && !hasConflicts && branchInBase;
     if (landed) {
         danceGenie();
-        // Record the merge while the agent branch still resolves. Cleanup may
-        // delete that branch seconds later, after which reconciliation cannot
-        // prove which commit was merged.
-        if (!flow.localPath.isEmpty()) {
-            PullStore pulls(flow.localPath, flow.mirrorPath, &m_profileIdentity,
-                            m_userName);
-            QString reconcileError;
-            pulls.reconcileMergedPulls(&reconcileError);
-            if (!reconcileError.isEmpty()) {
-                logSystem(QStringLiteral("PR: merged %1, but could not record its "
-                                         "PR status yet: %2")
-                              .arg(branch, reconcileError));
-            }
-        }
         {
             const QList<AgentSession> sessions = m_agentSessions;
             rememberMergedBranch(step.mergeCommit, branch, sessions, flow.owner,
@@ -3536,8 +3615,11 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
                                     "and branch.")
                          .arg(branch, base);
         logSystem(QStringLiteral("Git: ") + message);
-        flashMessage(message, true, QString(),
-                     forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            flashMessage(message, true, QString(),
+                         forkmesh::kLocalOperationNoticeKind);
+        }
         if (done)
             done(false);
         return;
@@ -3582,11 +3664,14 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
             flashMergedBranchRow(branch);
             startMergedBranchCelebration(branch, base, dir);
             m_branchCleanupInProgress.insert(branch);
-            setRepoDetailNotice(
-                QStringLiteral("Merged %1 into %2. Cleaning up its worktree, "
-                               "branch and Agent record in the background.")
-                    .arg(branch, base),
-                false);
+            {
+                const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+                setRepoDetailNotice(
+                    QStringLiteral("Merged %1 into %2. Cleaning up its worktree, "
+                                   "branch and Agent record in the background.")
+                        .arg(branch, base),
+                    false);
+            }
             deleteWorktreeBranchAndAgentInBackground(
                 worktreePath, branch,
                 [this, flow, sessionPulls](bool success) {
@@ -3597,7 +3682,8 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
                             finishMergedBranchCleanup(flow, success, deletedPulls,
                                                       pullError);
                         });
-                });
+                },
+                /*announce=*/false);
         } else if (!worktreePath.isEmpty() &&
             QDir(worktreePath).absolutePath() != QDir(dir).absolutePath()) {
             removeWorktree(worktreePath, branch, /*confirm=*/false,
@@ -3614,12 +3700,15 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
         }
     } else if (hasConflicts) {
         m_worktreeMergeConflicted = true;
-        setRepoDetailNotice(
-            QStringLiteral("Couldn't merge %1 into %2 cleanly — kept its worktree and "
-                           "branch. Update it from %2 to resolve the conflicts (the "
-                           "\"Update from %2\" button), or use \"Fix with agent\".")
-                .arg(branch, base),
-            true, forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            setRepoDetailNotice(
+                QStringLiteral("Couldn't merge %1 into %2 cleanly — kept its worktree and "
+                               "branch. Update it from %2 to resolve the conflicts (the "
+                               "\"Update from %2\" button), or use \"Fix with agent\".")
+                    .arg(branch, base),
+                true, forkmesh::kLocalOperationNoticeKind);
+        }
     } else {
         // Git refused the merge outright rather than reporting a conflicted
         // file: a stale .git/index.lock left by a Git run that was killed
@@ -3639,11 +3728,14 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
             detail += QStringLiteral(" A Git process that was killed mid-merge "
                                      "can leave .git/index.lock behind; remove "
                                      "it once no Git process is running.");
-        setRepoDetailNotice(
-            QStringLiteral("Couldn't merge %1 into %2 — kept its worktree and "
-                           "branch. %3")
-                .arg(branch, base, detail),
-            true);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            setRepoDetailNotice(
+                QStringLiteral("Couldn't merge %1 into %2 — kept its worktree and "
+                               "branch. %3")
+                    .arg(branch, base, detail),
+                true);
+        }
     }
     finishWorktreeMerge(flow, step, false, false, std::move(done));
 }
@@ -3732,29 +3824,38 @@ void MainWindow::finishMergedBranchCleanup(const WorktreeMergeFlow &flow,
     for (const int number : deletedPulls)
         pullLabels << QStringLiteral("#%1").arg(number);
     if (success && !pullError.isEmpty()) {
-        setRepoDetailNotice(
-            QStringLiteral("Merged %1 into %2 and cleaned up its worktree, branch "
-                           "and Agent record, but could not delete its pull "
-                           "request: %3")
-                .arg(branch, base, pullError),
-            true, forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(flow.dir, flow.branch));
+            setRepoDetailNotice(
+                QStringLiteral("Merged %1 into %2 and cleaned up its worktree, branch "
+                               "and Agent record, but could not delete its pull "
+                               "request: %3")
+                    .arg(branch, base, pullError),
+                true, forkmesh::kLocalOperationNoticeKind);
+        }
     } else if (success) {
-        setRepoDetailNotice(
-            pullLabels.isEmpty()
-                ? QStringLiteral("Merged %1 into %2 and cleaned up its worktree, "
-                                 "branch and Agent record.")
-                      .arg(branch, base)
-                : QStringLiteral("Merged %1 into %2 and cleaned up its worktree, "
-                                 "branch, pull request %3 and Agent record.")
-                      .arg(branch, base, pullLabels.join(QStringLiteral(", "))),
-            false);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(flow.dir, flow.branch));
+            setRepoDetailNotice(
+                pullLabels.isEmpty()
+                    ? QStringLiteral("Merged %1 into %2 and cleaned up its worktree, "
+                                     "branch and Agent record.")
+                          .arg(branch, base)
+                    : QStringLiteral("Merged %1 into %2 and cleaned up its worktree, "
+                                     "branch, pull request %3 and Agent record.")
+                          .arg(branch, base, pullLabels.join(QStringLiteral(", "))),
+                false);
+        }
     } else {
         if (m_branchMergedFlashBranch == branch)
             clearMergedBranchFlash();
-        setRepoDetailNotice(
-            QStringLiteral("Merged %1 into %2, but cleanup could not finish.")
-                .arg(branch, base),
-            true, forkmesh::kLocalOperationNoticeKind);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(flow.dir, flow.branch));
+            setRepoDetailNotice(
+                QStringLiteral("Merged %1 into %2, but cleanup could not finish.")
+                    .arg(branch, base),
+                true, forkmesh::kLocalOperationNoticeKind);
+        }
     }
     if (success && m_repoBranch == branch)
         setRepoBranch(base);
@@ -3780,28 +3881,33 @@ void MainWindow::finishWorktreeMerge(const WorktreeMergeFlow &flow,
     const QString &dir = flow.dir;
     const bool landed = step.merged && !step.hasConflicts && step.branchInBase;
     if (repoGitDir() != dir) {
-        if (landed)
+        if (landed) {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
             flashMessage(QStringLiteral("Merged %1 into %2, but its repository was "
                                         "closed before its Agent sessions were "
                                         "marked merged.")
                              .arg(branch, base),
                          true, QString(), forkmesh::kLocalOperationNoticeKind);
+        }
         if (done)
             done(false);
         return;
     }
     if (landed && !flow.cleanUp) {
-        setRepoDetailNotice(
-            (removed
-                 ? QStringLiteral("Merged %1 into %2, removed its worktree and "
-                                  "deleted its branch")
-                       .arg(branch, base)
-                 : branchDeleted
-                       ? QStringLiteral("Merged %1 into %2 and deleted its branch")
-                             .arg(branch, base)
-                       : QStringLiteral("Merged %1 into %2").arg(branch, base))
-                + QStringLiteral("."),
-            false);
+        {
+            const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+            setRepoDetailNotice(
+                (removed
+                     ? QStringLiteral("Merged %1 into %2, removed its worktree and "
+                                      "deleted its branch")
+                           .arg(branch, base)
+                     : branchDeleted
+                           ? QStringLiteral("Merged %1 into %2 and deleted its branch")
+                                 .arg(branch, base)
+                           : QStringLiteral("Merged %1 into %2").arg(branch, base))
+                    + QStringLiteral("."),
+                false);
+        }
         markAgentSessionsMerged(0, branch, step.branchInBase);
     } else if (landed) {
         reloadIssues();
@@ -3956,8 +4062,9 @@ MainWindow::WorktreeRemoval MainWindow::removeWorktreeAndBranch(
                                        "its entry and finished the cleanup.")
                             .arg(worktreePath);
     }
-    const QString scratch = forkmesh::agentscratch::folderFor(worktreePath);
-    if (!scratch.isEmpty() && QFileInfo::exists(scratch)) {
+    for (const QString &scratch : forkmesh::agentscratch::foldersFor(worktreePath)) {
+        if (!QFileInfo::exists(scratch))
+            continue;
         if (forkmesh::agentscratch::remove(scratch)) {
             removal.logs << QStringLiteral("Agents: removed scratch folder %1.").arg(scratch);
             runGitCapture(repoPath, {QStringLiteral("worktree"), QStringLiteral("prune")},
@@ -4262,7 +4369,7 @@ void MainWindow::deleteWorktreeBranchAndAgent(const QString &worktreePath,
 
 void MainWindow::deleteWorktreeBranchAndAgentInBackground(
     const QString &worktreePath, const QString &branch,
-    std::function<void(bool)> onDone)
+    std::function<void(bool)> onDone, bool announce)
 {
     const auto rejected = [&onDone] {
         if (onDone)
@@ -4315,6 +4422,7 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
             return;
         }
     }
+    endOutsideAgentsIn(worktreePath);
     if (!agentIds.isEmpty()) {
         logSystem(
             QStringLiteral("Agents: dropped %1 stored session%2 on %3 in %4 ms; "
@@ -4323,11 +4431,12 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
                 .arg(agentIds.size() == 1 ? QString() : QStringLiteral("s"))
                 .arg(branch)
                 .arg(storeTimer.elapsed()));
-        flashMessage(
-            agentIds.size() == 1
-                ? QStringLiteral("Agent session deleted. Cleanup is running in the background.")
-                : QStringLiteral("%1 agent sessions deleted. Cleanup is running in the background.")
-                      .arg(agentIds.size()));
+        if (announce)
+            flashMessage(
+                agentIds.size() == 1
+                    ? QStringLiteral("Agent session deleted. Cleanup is running in the background.")
+                    : QStringLiteral("%1 agent sessions deleted. Cleanup is running in the background.")
+                          .arg(agentIds.size()));
     }
     // Only the rows deleted above changed: repaint the list without reloading
     // and rescanning every other agent.
@@ -5914,7 +6023,9 @@ void MainWindow::refreshBranchLinks()
                 ids.append(id);
         }
     };
-    for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+    const QJsonArray catalog =
+        m_organizationTaskStore ? m_organizationTaskStore->tasks() : QJsonArray();
+    for (const QJsonValue &value : catalog) {
         const QJsonObject task = value.toObject();
         const QString id = task.value(QStringLiteral("id")).toString();
         if (id.isEmpty())
@@ -10404,10 +10515,12 @@ void MainWindow::updateBranchDiffHealth(const QList<DiffFileEntry> &files,
     if (m_branchDiffHealthReport && m_branchDiffHealthReportKey == inputKey &&
         patch == m_branchDiffHealthReportPatch) {
         health = *m_branchDiffHealthReport; // scored on the render worker
-    } else {
+    } else if (!branchDiffRenderNeedsWorker(patch)) {
         if (m_branchDiffHealthReport && patch == m_branchDiffHealthReportPatch)
             appendBranchDiffLog(QStringLiteral("Merge-health inputs changed since "
                                               "the worker scored them; re-scoring"));
+        m_branchDiffHealthScoringKey.clear();
+        m_branchDiffHealthScoringPatch.clear();
         health = diffHealthReport(patch, files, m_branchDiffHealthBehind,
                                   m_branchDiffHealthAhead, m_branchDiffHealthConflict,
                                   m_branchDiffHealthWorktreeConflict,
@@ -10415,6 +10528,50 @@ void MainWindow::updateBranchDiffHealth(const QList<DiffFileEntry> &files,
         m_branchDiffHealthReport = std::make_shared<DiffHealthReport>(health);
         m_branchDiffHealthReportKey = inputKey;
         m_branchDiffHealthReportPatch = patch;
+    } else {
+        const bool alreadyScoring = m_branchDiffHealthScoringKey == inputKey &&
+                                    m_branchDiffHealthScoringPatch == patch;
+        if (m_branchDiffHealthReport && patch == m_branchDiffHealthReportPatch &&
+            !alreadyScoring)
+            appendBranchDiffLog(QStringLiteral("Merge-health inputs changed since "
+                                              "the worker scored them; re-scoring"));
+        if (patch != m_branchDiffHealthPatch) {
+            for (QLabel *label : std::as_const(m_branchDiffHealthLabels))
+                label->setVisible(false);
+            if (m_branchSecretBanner)
+                m_branchSecretBanner->clearFindings();
+        }
+        m_branchDiffHealthPatch = patch;
+        if (alreadyScoring)
+            return;
+        m_branchDiffHealthScoringKey = inputKey;
+        m_branchDiffHealthScoringPatch = patch;
+        const int behind = m_branchDiffHealthBehind;
+        const int ahead = m_branchDiffHealthAhead;
+        const bool conflict = m_branchDiffHealthConflict;
+        const bool worktreeConflict = m_branchDiffHealthWorktreeConflict;
+        const bool conflictPending = m_branchDiffHealthConflictPending;
+        runOffThread<DiffHealthReport>(
+            [patch, files, behind, ahead, conflict, worktreeConflict,
+             conflictPending] {
+                return diffHealthReport(patch, files, behind, ahead, conflict,
+                                        worktreeConflict, conflictPending);
+            },
+            [this, files, patch, inputKey](DiffHealthReport scored) {
+                if (m_branchDiffHealthScoringKey != inputKey ||
+                    m_branchDiffHealthScoringPatch != patch)
+                    return;
+                m_branchDiffHealthScoringKey.clear();
+                m_branchDiffHealthScoringPatch.clear();
+                m_branchDiffHealthReport =
+                    std::make_shared<DiffHealthReport>(std::move(scored));
+                m_branchDiffHealthReportKey = inputKey;
+                m_branchDiffHealthReportPatch = patch;
+                if (m_branchDiffHealthPatch == patch &&
+                    branchDiffHealthInputKey() == inputKey)
+                    updateBranchDiffHealth(files, patch);
+            });
+        return;
     }
     m_branchDiffHealthPatch = patch;
     if (m_branchSecretBanner)

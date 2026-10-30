@@ -11,12 +11,14 @@ follows a run through every layer. The desktop UI for agents is described in
 
 | Layer | Files |
 | --- | --- |
-| Desktop local runtimes | `desktop/src/AgentRuntimeRegistry.*`, `AgentRuntimeSession.*`, `ClaudeStreamSession.*` (Claude Code stream-json), `CodexAppServerSession.*` (Codex app-server), `AgentRunner.*` (legacy script providers) |
+| Desktop local runtimes | `desktop/src/AgentRuntimeRegistry.*`, `AgentRuntimeSession.*`, `ClaudeStreamSession.*` (Claude Code stream-json), `ClaudeControlProtocol.*` and `MainWindowAgentClaudeControl.cpp` (its control requests, names and sub-sessions), `ClaudeElicitationDialog.*`, `CodexAppServerSession.*` (Codex app-server), `AgentRunner.*` (legacy script providers) |
 | Desktop sessions and storage | `desktop/src/AgentStore.*`, `AgentWorktree.h`, `AgentScratch.h`, `MainWindowAgent*.cpp` |
 | Desktop memory and CPU containment | `desktop/src/AgentResources.*`, `AgentResourceGovernor.*` ([memory.md](memory.md)) |
+| Claude Code summary side query off | `desktop/src/AgentSummaryPreload.h`, `AgentSummaryPreloadScript.h` ([agent-summary-preload.md](agent-summary-preload.md)) |
 | Desktop sandboxing | `desktop/src/ProjectAgentAccess.*`, `MainWindowAgentAccess.cpp`, `AgentNetworkGate.*`, `AgentRunRules.*`, `CommandVariables.*`, `AgentJail.h`, `AgentGuardrails.*`, `AgentPermissionController.*`, `VirtualMachineRuntime.*` ([access-rules.md](access-rules.md)) |
 | Desktop claiming website jobs | `desktop/src/MainWindowAgentSync.cpp`, `OrgAgentJobAttachments.*` |
 | Desktop cloud rows and Move to cloud | `desktop/src/AgentCloudSessions.*`, `MainWindowAgentCloud.cpp`, `MainWindowAgentEvents.cpp` |
+| Claude Code agents in the Claude app | `desktop/src/ClaudeDesktopSessions.*`, `MainWindowClaudeDesktop.cpp` ([claude-desktop-sessions.md](claude-desktop-sessions.md)) |
 | Mirror node and runner | `server/agents.go`, `server/agent_errors.go`, `server/agent_attachments.go`, `server/agent_live.go`, `server/agentstream.go` |
 | Host CLI install and refresh | `desktop/src/ControlNode.{h,cpp}`, `MainWindowHostInstall.cpp`, `MainWindowHosts.cpp` |
 | Relay | `app/src/route_handlers.py` (org/owner agent routes, job results), `app/src/entry.py`, `app/src/urls.py`, `app/src/agent_streams.py`, `app/src/agent_live_relay.py`; tables in `app/migrations/0093_org_agent_bots.sql`, `0191_org_agent_attachments.sql`, `0232_agent_session_streams` |
@@ -31,19 +33,64 @@ follows a run through every layer. The desktop UI for agents is described in
   repository name; the task title is `issueTitle`.
 - **Titles.** A run starts with `promptTitle()` (`AgentWorktree.h`, up to 8
   words); the branch and worktree slug (`titleSlug()`) is 4 words / 30
-  characters. In parallel the agent's own CLI may reword the title
-  (`requestAgentTitle()`; Settings > Agents > "Agent titles"): a one-shot,
-  tool-less call that replies `{"title": ...}`, at most 2 at once, killed
-  after 45 s. An optional Workers AI namer uses the desktop's locally stored
-  Cloudflare token directly. `AgentSession::titledBy` records who reworded
-  the title. Naming requests go through `WorkspaceNameGate` (2 in flight,
-  `Retry-After` honoured up to 1 hour).
+  characters.
+- **Claude Code and Codex name their own runs (2026-10-25).** Before a Claude
+  Code or Codex run with a worktree starts, its own CLI names it the way
+  Claude's desktop app names a Code session (`generate_title_and_branch` in
+  its bundle; read from the 2026-10-22 Linux build):
+  - one tool-less call returns both names, `<title>…</title><branch>…</branch>`
+    (`agentTitleRequest()`, `parseAgentTitle()` in `AgentWorktree.h`). The
+    title is 2–5 words in sentence case, a noun phrase rather than "Fix …";
+    the branch is up to 4 lowercase ASCII words joined by dashes. The prompt
+    is our own wording of the same rules, capped at 4,000 characters;
+  - a title over 200 characters is refused; a branch that is not
+    `[a-z0-9]+(-[a-z0-9]+)*` or is over 60 characters is rebuilt from the
+    title (`branchSlug()`, as the desktop's `slugifyToBranch`). The desktop's
+    `claude/` prefix is dropped and our `<id>-` prefix kept
+    (`adHocBranchName()`), so two runs never share a branch;
+  - the small fast model goes first (`haiku`; `gpt-5.4-mini` for Codex), then
+    the run's own model (`agentNamingModel()`) if that fails, as the desktop
+    falls back from its `small_fast` model to the session model. Claude gets
+    `--system-prompt`; Codex, which has none, gets it ahead of the request;
+  - each try is killed after 30 s. Three failed namings in a row turn the
+    namer off for that CLI for 5 minutes (the desktop does this for its
+    direct API path). At most 2 namings run at once;
+  - the desktop can also call the API directly, or have claude.ai's server
+    do it; ForkMesh holds neither credential, so it always spawns the CLI.
+  The title names the run in the Agents list; `titledBy` is
+  `promptNamerLabel()` with the model that answered, e.g.
+  `Claude Code namer (haiku)`. With no title the run keeps its prompt title;
+  with no branch it keeps the local `<id>-<slug>` name. Settings > Agents >
+  "Agent titles" (on by default) turns this off. A direct-checkout run has no
+  branch to name, so it starts at once: Codex titles it in parallel and
+  Claude Code's own session names it.
+- **Cloudflare naming is opt-in.** Settings > Agents > "Cloudflare naming"
+  (`agents/cloudflareNaming`, off by default) sends the prompt to the Workers
+  AI model picked under "Branch/worktree names" instead, with the desktop's
+  locally stored Cloudflare token; its requests go through
+  `WorkspaceNameGate` (2 in flight, `Retry-After` honoured up to 1 hour).
+  Before 2026-10-25 a picked model alone turned it on; that pick is kept but
+  does nothing until the box is ticked.
+- **Claude Code sessions keep the name.** A Claude Code run named before
+  launch passes that name as the session's `title` and sends it with
+  `rename_session`, so the Claude session, the Agents list and the branch
+  agree. A run without one (Cloudflare naming, a direct checkout) is named by
+  its Claude Code session (`generate_session_title` over the session's
+  stream). Every `session_title_changed` still renames the run, so `/rename`
+  and renames on claude.ai carry over, and **Rename…** in the agent list
+  renames the Claude session too. See
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#claude-code-session-control-2026-10-23).
 - **Worktree and scratch.** Each run gets a Git worktree at
   `.worktrees/agent-<session>-<slug>` (bare mirrors and KVM runs use a temp
   directory) and a scratch folder `.worktrees/.scratch/<worktree>`
   (`AgentScratch.h`). Runs launch with `FORKMESH_AGENT_SCRATCH` naming it and
   `TMPDIR`/`TMP`/`TEMP` pointing at its `tmp/`; the agent is told to keep
-  build trees, logs and throwaway files there.
+  build trees, logs and throwaway files there, except a build folder the
+  project's own instructions put in the worktree (ForkMesh's `desktop/build`,
+  so ccache shares objects across worktrees:
+  [../desktop/build-and-test.md](../desktop/build-and-test.md#ccache)). When a disk labelled `TMP` is
+  mounted, the scratch folder and the agents' `CCACHE_DIR` live on it instead
+  ([../desktop/tmp-disk.md](../desktop/tmp-disk.md)).
 - **Resuming.** A resumed ad-hoc run reuses its saved branch and worktree. If
   an older workspace naming update left those saved names out of sync, the
   desktop recovers the one unambiguous worktree whose folder and checked-out
@@ -52,15 +99,21 @@ follows a run through every layer. The desktop UI for agents is described in
 - **Deleting an agent deletes its area.** Every worktree removal also removes
   its scratch folder; deleting a session removes leftovers under the session
   id in `builds/` and `/tmp`. All deletes go through
-  `safedelete::removeTree`, which refuses a git checkout.
+  `safedelete::removeTree`, which refuses a git checkout. This covers the
+  web merge's branch clean-up (`WebBranchOps.cpp`) and the task clean-up's
+  remove and back-up-and-remove (`TaskWorkItems.cpp`) too: until 2026-10-25
+  those three removed only the worktree, and 52 orphaned scratch folders
+  (82 GB) filled the disk to 99%.
 - **Parity alert.** `MainWindowAgentParity.cpp` checks every local checkout
   1 minute after start and every 3 minutes (`git worktree list --porcelain`,
   `git for-each-ref refs/heads/`); `AgentParity.h` reports agents with no
   branch or worktree, orphan worktrees under the agent root and orphan agent
   branches. An issue must show in two checks in a row before one local
   warning ping. Tests: `forkmesh-agent-parity-tests`.
-- **Runtimes.** Claude Code runs as a stream-json session; Codex through its
-  app-server protocol. Both report provider-neutral events
+- **Runtimes.** Claude Code runs as a stream-json session that ForkMesh hosts
+  fully (an `initialize` handshake, `--permission-prompt-tool stdio`, permission,
+  plan, question, dialog and MCP-input prompts, sub-sessions with a stop
+  control; `ClaudeControlProtocol.*`); Codex through its app-server protocol. Both report provider-neutral events
   (`session.lifecycle`, `output.text.streaming`, `tool.lifecycle`, `usage`;
   `AgentRuntimeSession.h`) feeding the transcript, the tool efficiency ledger
   (`data/agents/tool-efficiency.json`) and the activity window.
@@ -68,6 +121,11 @@ follows a run through every layer. The desktop UI for agents is described in
   machine are rows with ids `<= -1000`, matched by the first `cwd` in their
   transcript; cloud rows use ids `<= -1000000`. Neither is written to the
   store.
+- **Imported Claude Code sessions.** The Agents list's **Import** button turns
+  past Claude Code and Claude Desktop sessions into stored agents named after
+  the session; they mirror new turns until continued in ForkMesh, which resumes
+  them with `--fork-session`. See
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions-2026-10-22).
 - **Merge & clean up** deletes only the merged branch's session, its
   worktree, branch and the PR records whose head is that branch. The merge
   runs in the main checkout; it proceeds past unstaged or untracked edits the
@@ -225,6 +283,26 @@ The website's session page follows a running Claude Code run.
 
 Text arrives per assistant message, not per token.
 
+### Pinned last prompt on the web
+
+The cloud and desktop session pages (`06-repo-content.js`) and World's agent
+sessions (`world.js`) pin the last prompt above the transcript, like the
+phone and the desktop (asked for on 2026-10-22). It is one line, with edges
+peeking out below for earlier prompts and `2/5` with ‹ › buttons when there
+are several. Swipe or drag the card sideways, use a trackpad's sideways
+scroll, or press ← → while it has focus: right goes back to the previous
+prompt, left goes forward to the next. Click the text to read all of it.
+
+- Prompts are the `user` history entries (cloud and World) or the desktop's
+  `_local_user` events, with `Attached image:` lines dropped.
+- `promptDecks` / `worldPromptDecks` keep the prompt you are reading per
+  session across live patches. A new prompt resets it to the latest.
+- A live patch swaps the deck (`data-…-detail-deck`) only when its markup
+  changed and nobody is dragging it, so a read-back is not interrupted.
+- The dashboard's markup uses only classes already in the committed
+  `tailwind.css` (see `docs/app/content-first-pings.md`). The drag and
+  `touch-action: pan-y`, which keeps vertical scrolling, are inline styles.
+
 ### Live stream to the phone
 
 `GET /api/repo/<owner>/<repo>/agent-sessions/<id>/live` (or the `agent-bots`
@@ -270,6 +348,33 @@ magic-byte checks.
   for the branch. The desktop signs as its account; the relay accepts the
   node's key or the key of an account that owns the node or the linking
   organization.
+- **Send to another desktop** (2026-10-25, task 2596) is the same move aimed
+  at one of the account's other desktops instead of a mirror. It is a
+  submenu on the Agents list's right-click menu and on the agent pane's menu,
+  offered whenever Continue in cloud is (same `agentCloudHandoff` gates,
+  since the branch travels through the served mirror either way).
+  - Opening the submenu runs `GET .../agents/<id>/handoff`, signed like the
+    POST. The relay answers `{desktops: [{key, node, lastSeen}]}`: the
+    signing account's `desktop_node` keys with `owner_sign` plus its primary
+    key (`_account_desktops`, the list phones read), minus the key that
+    signed. The desktop keeps the list for five minutes, retries a failed
+    read after ten seconds, and refills an open submenu when the answer
+    lands. `handoffDesktops()` sorts by last seen and adds the first six
+    characters of the key to two desktops with one name.
+  - Picking one posts the handoff with `toKey`. The relay refuses a key that
+    is not one of those desktops (`409 unknown_desktop`), skips the mirror
+    search, queues the job in the account namespace with `toKey` and
+    `toDevice`, and answers `targetDevice`. The queue drain
+    (`repo_org_agent_jobs_handler`) passes over a job whose `toKey` is not
+    the claimant's key, the same way it passes over the sender's own
+    `fromKey`, so only the chosen desktop claims it. It starts the run with
+    `startCloudHandoffJob`, as for any handoff to a desktop.
+  - The sending desktop stops its run and logs "Sent to the desktop X on
+    branch". If the chosen desktop never comes back, the job stays queued; any
+    of the account's desktops can still take it with **Continue here**.
+  - Before this a desktop could only hand a session to "the cloud": a mirror
+    if one served the repository, else whichever other desktop drained the
+    queue first.
 - **Continue here** on a queued owner row posts
   `.../agent-sessions/<id>/claim` and reports on
   `.../org-agent-jobs/<id>/result`, signed as the account. Organization-scope
@@ -336,8 +441,8 @@ running jobs keep their binary. The update's exit status is unchanged.
 
 ## Operations
 
-- Mirror CLI sign-in: **Network → Hosts** has an agent-CLI installer and a
-  sign-in shell per host.
+- Mirror CLI sign-in: the Hosts rail beside **Network → Nodes** has an
+  agent-CLI installer and a sign-in shell per host.
 - A job stuck unclaimed: check the target node is online and advertises the
   provider.
 - A terminal report the relay keeps refusing (6 conflicts) is dropped
@@ -354,7 +459,9 @@ running jobs keep their binary. The update's exit status is unchanged.
   (`applyProjectAgentAccess`), take tool options from
   `agentRunLaunchOptions(sid, codex)` and the gate environment from
   `agentNetworkGateEnv(sid)`, and use the memory containment calls
-  (`applyEnvironment`, `wrapShellCommand`, `contain`).
+  (`applyEnvironment`, `wrapShellCommand`, `contain`). A new Claude Code
+  launch path also calls `forkmesh::agentsummary::applyEnvironment(env)`
+  ([agent-summary-preload.md](agent-summary-preload.md)).
 
 ## Related docs
 

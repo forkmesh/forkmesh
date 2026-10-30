@@ -15,6 +15,7 @@ struct ChatReactionBar: View {
     @Environment(\.fmPalette) private var fm
     let chips: [ReactionChip]
     let onToggle: (String) -> Void
+    var onSticker: ((String) -> Void)? = nil
 
     var body: some View {
         if !chips.isEmpty {
@@ -37,6 +38,9 @@ struct ChatReactionBar: View {
                         .accessibilityLabel("\(chip.label), \(chip.count). \(chip.names.joined(separator: ", "))")
                     }
                     ChatAddReactionButton(onPick: onToggle)
+                    if let onSticker {
+                        ChatAddStickerButton(onPick: onSticker)
+                    }
                 }
                 .padding(.vertical, 1)
             }
@@ -84,6 +88,106 @@ struct ChatReactionMenu: View {
             }
         } label: {
             Label("React", systemImage: "face.smiling")
+        }
+    }
+}
+
+struct ChatStickerBadge: View {
+    let chip: StickerChip
+    let onToggle: (String) -> Void
+
+    private var placedBy: String { chip.names.isEmpty ? "" : "Placed by \(chip.names.joined(separator: ", "))" }
+
+    var body: some View {
+        Button(action: { onToggle(chip.sticker.slug) }) {
+            HStack(spacing: 3) {
+                Text(chip.sticker.text)
+                if !chip.countLabel.isEmpty {
+                    Text(chip.countLabel)
+                }
+            }
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(Color.white)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(fmARGB: 0xFF00_0000 | chip.sticker.rgb)))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white, lineWidth: 2))
+            .shadow(color: Color.black.opacity(0.28), radius: 2, x: 0, y: 1)
+            .rotationEffect(.degrees(chip.sticker.tilt))
+            .padding(3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(placedBy)
+        .contextMenu {
+            if !placedBy.isEmpty {
+                Text(placedBy)
+            }
+            Button(action: { onToggle(chip.sticker.slug) }) {
+                Label(chip.mine ? "Remove your sticker" : "Add this sticker", systemImage: chip.mine ? "minus.circle" : "plus.circle")
+            }
+        }
+        .accessibilityLabel("\(chip.sticker.text) sticker, \(chip.count). \(placedBy)")
+        .accessibilityHint(chip.mine ? "Removes your sticker" : "Adds your sticker")
+    }
+}
+
+struct ChatStickerStack: View {
+    let chips: [StickerChip]
+    let onToggle: ((String) -> Void)?
+
+    var body: some View {
+        if !chips.isEmpty {
+            HStack(spacing: -8) {
+                ForEach(chips) { (chip: StickerChip) in
+                    ChatStickerBadge(chip: chip, onToggle: { (slug: String) in onToggle?(slug) })
+                        .allowsHitTesting(onToggle != nil)
+                }
+            }
+        }
+    }
+}
+
+struct ChatAddStickerButton: View {
+    @Environment(\.fmPalette) private var fm
+    let onPick: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ChatStickerItems(onPick: onPick)
+        } label: {
+            Image(systemName: "seal")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(fm.textSecondary)
+                .frame(width: 44, height: 34)
+                .background(Capsule().fill(fm.bgOverlay))
+                .overlay(Capsule().stroke(fm.border, lineWidth: 1))
+        }
+        .accessibilityLabel("Add sticker")
+    }
+}
+
+struct ChatStickerItems: View {
+    let onPick: (String) -> Void
+
+    var body: some View {
+        ForEach(StickerCatalog.entries, id: \.slug) { (entry: StickerEntry) in
+            Button("\(entry.fallback)  \(entry.text)") { onPick(entry.slug) }
+        }
+    }
+}
+
+struct ChatStickerMenu: View {
+    let onPick: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ChatStickerItems(onPick: onPick)
+        } label: {
+            Label("Add sticker", systemImage: "seal")
         }
     }
 }
@@ -204,9 +308,8 @@ struct ChatAttachmentView: View {
     }
 
     static func temporaryFile(_ attachment: ChatAttachment) -> URL? {
-        let safe = attachment.fileName.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "..", with: "_")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("chat-media", isDirectory: true)
-        let url = directory.appendingPathComponent("\(attachment.messageId.prefix(24))-\(safe)")
+        guard let url = ChatMediaFile.url(for: attachment, in: directory) else { return nil }
         if FileManager.default.fileExists(atPath: url.path) { return url }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

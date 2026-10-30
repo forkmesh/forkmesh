@@ -533,4 +533,17 @@ final class StallLogFileTests: XCTestCase {
         let tail = await StallLogFile(directory: { root }).tail(maxBytes: 1024)
         XCTAssertEqual(tail, "")
     }
+
+    func testAReturnIsOnlyAResumeAfterTheBackground() {
+        var gate = AppReturnGate()
+        XCTAssertFalse(gate.isReturn(.resumed))
+        XCTAssertFalse(gate.isReturn(.inactive))
+        XCTAssertFalse(gate.isReturn(.resumed), "Control Center or an alert is not a return")
+        XCTAssertFalse(gate.isReturn(.paused))
+        XCTAssertFalse(gate.isReturn(.inactive))
+        XCTAssertTrue(gate.isReturn(.resumed))
+        XCTAssertFalse(gate.isReturn(.resumed))
+        XCTAssertFalse(gate.isReturn(.hidden))
+        XCTAssertTrue(gate.isReturn(.resumed))
+    }
 }

@@ -10,12 +10,17 @@ html_handling = "auto-trailing-slash"
 not_found_handling = "404-page"
 run_worker_first = [
   "/api/*",
+  "/signup",
+  "/signup/",
   "/*/*",
   "!/assets/*",
   "!/blog/*",
   "!/dashboard/*",
+  "!/dashboard-plugins/*",
   "!/docs/*",
   "!/favicon/*",
+  "!/fmm/*",
+  "!/instance-themes/*",
   "!/security/*",
   "!/world/*",
 ]
@@ -27,6 +32,7 @@ command = "python3 tools/build_worker_python.py"
 DATA_KEY = "browser-tests-private-data-key-2026"
 NODE_NAME = "forkmesh-browser-tests"
 PUBLIC_BASE_URL = "http://127.0.0.1:4179"
+APP_ORIGIN = "http://127.0.0.1:4179"
 
 [[durable_objects.bindings]]
 name = "FORKMESH_MAINNODE_ROOM"
@@ -44,6 +50,26 @@ class_name = "ForkMeshOfficeRoom"
 name = "FORKMESH_NODES"
 class_name = "ForkMeshNodes"
 
+[[durable_objects.bindings]]
+name = "FORKMESH_NOTE_ROOM"
+class_name = "ForkMeshNoteRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_CRON_WATCHDOG"
+class_name = "ForkMeshCronWatchdog"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_CRON_RUNNER"
+class_name = "ForkMeshCronRunner"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_DISCORD_GATE"
+class_name = "ForkMeshDiscordGate"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_ORG_OFFICE"
+class_name = "ForkMeshOrgOffice"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "forkmesh-browser-tests-v3"
@@ -57,4 +83,14 @@ new_sqlite_classes = [
   "ForkMeshWorld",
   "ForkMeshOfficeRoom",
   "ForkMeshNodes",
+]
+
+[[migrations]]
+tag = "browser-tests-v2"
+new_sqlite_classes = [
+  "ForkMeshNoteRoom",
+  "ForkMeshCronWatchdog",
+  "ForkMeshCronRunner",
+  "ForkMeshDiscordGate",
+  "ForkMeshOrgOffice",
 ]

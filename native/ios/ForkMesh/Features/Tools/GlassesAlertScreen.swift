@@ -25,7 +25,7 @@ struct GlassesAlertScreen: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Keep the screen on while watching")
                             .fmText(.bodyMedium)
-                        Text("iPhone only scans for glasses while ForkMesh is open, so keep it on screen.")
+                        Text("iPhone only scans for glasses and cameras while ForkMesh is open, so keep it on screen.")
                             .fmText(.bodySmall, color: fm.textSecondary)
                     }
                 }
@@ -33,7 +33,7 @@ struct GlassesAlertScreen: View {
                 .accessibilityIdentifier("glasses-alert-keep-awake")
                 FmSectionHeader(title: "Nearby now", icon: "visibility", count: watcher.nearby.count)
                 if watcher.nearby.isEmpty {
-                    Text(watcher.watching ? "No Meta glasses in range." : "Start watching to scan for Meta glasses.")
+                    Text(watcher.watching ? "No smart glasses or cameras in range." : "Start watching to scan for smart glasses and cameras.")
                         .fmText(.bodyMedium, color: fm.textSecondary)
                 } else {
                     ForEach(watcher.nearby) { (sighting: GlassesSighting) in
@@ -81,7 +81,7 @@ struct GlassesAlertScreen: View {
                         watcher.watching ? "bluetooth_searching" : "bluetooth", size: 28,
                         color: watcher.watching ? fm.success : fm.textTertiary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(watcher.watching ? "Watching for smart glasses" : "Not watching")
+                        Text(watcher.watching ? "Watching for smart glasses and cameras" : "Not watching")
                             .fmText(.titleMedium)
                         Text(statusDetail)
                             .fmText(.bodySmall, color: fm.textSecondary)
@@ -132,7 +132,7 @@ struct GlassesAlertScreen: View {
         return FmListRow(
             title: sighting.label,
             subtitle: parts.joined(separator: " · "),
-            leading: AnyView(FmIcon("visibility", color: sighting.rssi >= -70 ? fm.danger : fm.warning)),
+            leading: AnyView(FmIcon(sighting.kind.icon, color: sighting.rssi >= -70 ? fm.danger : fm.warning)),
             showChevron: false)
     }
 
@@ -151,11 +151,11 @@ struct GlassesAlarmView: View {
             Color.red.opacity(0.92).ignoresSafeArea()
             VStack(spacing: 24) {
                 Spacer()
-                Image(systemName: "eyeglasses")
+                Image(systemName: sighting.kind == .camera ? "camera.fill" : "eyeglasses")
                     .font(.system(size: 72, weight: .bold))
                     .symbolEffect(.pulse)
                     .accessibilityHidden(true)
-                Text("Smart glasses nearby")
+                Text(sighting.kind.title)
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
                 Text(GlassesSignatures.alertText(sighting))

@@ -31,8 +31,8 @@ android {
         applicationId = resolvedApplicationId
         minSdk = 26
         targetSdk = 37
-        versionCode = versionCodeOverride ?: 10400
-        versionName = versionNameOverride.ifEmpty { "1.4.0" }
+        versionCode = versionCodeOverride ?: 10500
+        versionName = versionNameOverride.ifEmpty { "1.5.0" }
         manifestPlaceholders["appLabel"] = if (resolvedApplicationId == storeApplicationId) "ForkMesh" else "ForkMesh Native"
     }
 

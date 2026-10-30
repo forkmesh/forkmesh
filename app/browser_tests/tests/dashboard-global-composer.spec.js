@@ -365,12 +365,6 @@ test("composer follows the light theme and picks a repository off repo pages", a
   await page.locator("[data-composer-input]").fill("Check the release checklist against docs/releases.md");
   await shot(page, "desktop-light", panel);
   await page.locator("[data-composer-collapse]").click();
-  await page.goto("/dashboard/chat/");
-  const pill = page.locator("[data-composer-pill]");
-  await expect(pill).toBeVisible();
-  const pillBox = await pill.boundingBox();
-  expect(page.viewportSize().height - (pillBox.y + pillBox.height)).toBeGreaterThanOrEqual(170);
-  await shot(page, "chat-page-light");
 });
 
 test.describe("phone", () => {
@@ -379,7 +373,7 @@ test.describe("phone", () => {
 
   test("composer is a full-width bottom sheet with 44px targets", async ({ page }) => {
     await prepare(page);
-    await page.goto("/alice/engine/pulls/3");
+    await page.goto("/alice/engine/pull/3");
     const pill = page.locator("[data-composer-pill]");
     await expect(pill).toBeVisible();
     const pillBox = await pill.boundingBox();
@@ -427,7 +421,7 @@ test.describe("phone", () => {
       window.__fakeViewport = fake;
     });
     await prepare(page);
-    await page.goto("/alice/engine/pulls/3");
+    await page.goto("/alice/engine/pull/3");
     await page.locator("[data-composer-pill]").click();
     const panel = page.locator("[data-composer-panel]");
     await expect(panel).toBeVisible();

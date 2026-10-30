@@ -4,6 +4,7 @@
 import ast
 import asyncio
 import base64
+import json
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -29,7 +30,8 @@ FUNCS = {
     "_accept_issue_submission",
     "_queue_issue_actions",
     "_queued_issue_inbox_event",
-    "_fill_signer_author_name",
+    "_issue_event_signature_stored",
+    "_bind_session_author",
     "_inbox_author_over_quota",
     "_best_effort_inbox_side_effect",
     "_clean_issue_attachment_data",
@@ -69,7 +71,8 @@ class _Request:
 SIGNER_KEY = "MXcj4dF_" + "A" * 35
 
 
-def _issue_handler_namespace(inserted, wakes, queued_rows=()):
+def _issue_handler_namespace(inserted, wakes, queued_rows=(), session="",
+                             stored_events=()):
 
     class _Date:
         @staticmethod
@@ -147,7 +150,25 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=()):
     async def feature_on(_env, _owner, _repo, _feature):
         return None
 
+    async def session_record(_env, _request, _data=None,
+                             allow_unverified=False):
+        assert allow_unverified is True
+        return ("bi:" + session, {"name": session}) if session else ("", None)
+
+    async def repo_gateway_json(_env, owner, repo, action_query):
+        assert (owner, repo) == ("source", "forkmesh")
+        assert action_query.startswith("blobs?path=")
+        return {"blobs": {".forkmesh/issues/7/issue.json": json.dumps(
+            {"number": 7, "events": list(stored_events)})}}
+
     ns = _load_functions({
+        "_forkbot_repo_gateway_json": repo_gateway_json,
+        "_forkbot_issue_json_candidates": lambda number: [
+            ".forkmesh/issues/%d/issue.json" % number],
+        "_forkbot_blob_text": lambda blob: blob or "",
+        "json": json,
+        "ISSUE_REPLAY_CHECKED_EVENT_TYPES": frozenset(
+            {"comment", "edit", "vote"}),
         "_repo_feature_off": feature_on,
         "Date": _Date,
         "json_response": json_response,
@@ -165,11 +186,17 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=()):
         "decrypt_row": decrypt_row,
         "d1_run": d1_run,
         "_record_contributor": record_contributor,
+        "_record_public_contributor": (
+            lambda env, _owner, _repo, *args: record_contributor(env, *args)),
         "valid_node_pubkey": lambda value: value == SIGNER_KEY,
         "_git_push_account_for_pubkey": account_for_pubkey,
+        "_account_session_record": session_record,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", value or "")),
         "notify_pending_inbox": failing_side_effect,
         "notify_mentions": failing_side_effect,
         "notify_issue_assignees": failing_side_effect,
+        "notify_account_event": failing_side_effect,
         "notify_subscribers": failing_side_effect,
         "subscribe_thread": failing_side_effect,
         "notify_repo_host": notify_source,
@@ -276,7 +303,7 @@ def test_issue_signed_without_a_name_is_queued_under_the_signer_username():
     assert inserted[0][1]["event"]["authorName"] == "alice"
 
 
-def test_issue_keeps_the_name_its_author_signed_with():
+def test_a_spoofed_name_is_replaced_by_the_account_the_key_belongs_to():
     inserted = []
     ns = _issue_handler_namespace(inserted, [])
     body = _open_body()
@@ -285,7 +312,113 @@ def test_issue_keeps_the_name_its_author_signed_with():
         ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
 
     assert response["status"] == 201
-    assert inserted[0][1]["event"]["authorName"] == "mirror-node"
+    assert inserted[0][1]["event"]["authorName"] == "alice"
+    assert inserted[0][1]["event"]["authorVerified"] is True
+
+
+def test_the_signed_in_account_names_a_web_key_comment():
+    inserted = []
+    ns = _issue_handler_namespace(inserted, [], session="carol")
+    body = {"number": 7, "event": {
+        "type": "comment", "author": "web-author", "authorName": "alice",
+        "body": "/assign", "sig": "sig-c"}}
+    response = asyncio.run(
+        ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
+
+    assert response == {"status": 201, "data": {"ok": True, "number": 7}}
+    assert inserted[0][1]["event"]["authorName"] == "carol"
+    assert inserted[0][1]["event"]["authorVerified"] is True
+
+
+def _stored_edit(sig="sig-edit", target="comment-1"):
+    return {"type": "edit", "id": "edit-1", "author": "web-author",
+            "target": target, "body": "old text", "sig": sig}
+
+
+def test_a_replayed_edit_with_a_new_id_and_target_is_not_queued():
+    inserted = []
+    ns = _issue_handler_namespace(
+        inserted, [], stored_events=[_stored_edit()])
+    replay = dict(_stored_edit(), id="edit-again", target="comment-2")
+    response = asyncio.run(ns["issues_handler"](
+        object(), _Request({"number": 7, "event": replay}),
+        "source", "forkmesh"))
+
+    assert response == {"status": 200, "data": {
+        "ok": True, "number": 7, "alreadyApplied": True}}
+    assert inserted == []
+
+
+def test_a_replayed_comment_or_vote_is_not_queued_twice():
+    for event in (
+            {"type": "comment", "id": "c-1", "author": "web-author",
+             "body": "hi", "sig": "sig-comment"},
+            {"type": "vote", "id": "v-1", "author": "web-author",
+             "sig": "sig-vote"}):
+        inserted = []
+        ns = _issue_handler_namespace(inserted, [], stored_events=[event])
+        replay = dict(event, id="fresh-id")
+        response = asyncio.run(ns["issues_handler"](
+            object(), _Request({"number": 7, "event": replay}),
+            "source", "forkmesh"))
+        assert response["data"].get("alreadyApplied") is True
+        assert inserted == []
+
+
+def test_a_comment_with_a_signature_not_in_the_issue_is_queued():
+    inserted = []
+    ns = _issue_handler_namespace(
+        inserted, [], stored_events=[_stored_edit()])
+    body = {"number": 7, "event": {
+        "type": "comment", "author": "web-author", "body": "new",
+        "sig": "sig-new"}}
+    response = asyncio.run(
+        ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
+
+    assert response == {"status": 201, "data": {"ok": True, "number": 7}}
+    assert len(inserted) == 1
+
+
+def test_a_key_bound_to_another_account_than_the_session_is_refused():
+    inserted = []
+    ns = _issue_handler_namespace(inserted, [], session="carol")
+    body = {"number": 7, "event": {
+        "type": "comment", "author": SIGNER_KEY, "authorName": "carol",
+        "body": "hi", "sig": "sig-d"}}
+    response = asyncio.run(
+        ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
+
+    assert response == {"status": 403, "data": {"error": "author_mismatch"}}
+    assert inserted == []
+
+
+def test_an_anonymous_comment_is_never_given_a_username():
+    inserted = []
+    ns = _issue_handler_namespace(inserted, [])
+    body = {"number": 7, "event": {
+        "type": "comment", "author": "web-author", "authorName": "alice",
+        "authorVerified": True, "body": "/assign", "sig": "sig-e"}}
+    response = asyncio.run(
+        ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
+
+    assert response["status"] == 201
+    assert inserted[0][1]["event"]["authorName"] == ""
+    assert inserted[0][1]["event"]["authorVerified"] is False
+
+
+def test_an_actions_job_submission_keeps_the_bot_name_and_is_verified():
+    inserted = []
+    ns = _issue_handler_namespace(inserted, [], session="carol")
+    body = {"number": 7, "event": {
+        "type": "comment", "author": "bot-key", "authorName": "acme-actions",
+        "body": "Thanks", "sig": "sig-f"}}
+    response = asyncio.run(ns["_accept_issue_submission"](
+        object(), _Request(body), "source", "forkmesh", "bi:source/forkmesh",
+        body, ("source/forkmesh",), actions_job=True))
+
+    assert response["status"] == 201
+    assert inserted[0][1]["event"]["authorName"] == "acme-actions"
+    assert inserted[0][1]["event"]["authorVerified"] is True
 
 
 def test_discussion_handler_resolves_an_unnamed_signer_before_notifying():
@@ -296,5 +429,54 @@ def test_discussion_handler_resolves_an_unnamed_signer_before_notifying():
         and node.name == "discussions_handler")
     source = ast.get_source_segment(ENTRY_TEXT, handler)
     assert source is not None
-    assert source.index("await _fill_signer_author_name(env, event)") < source.index(
+    assert source.index(
+        "await _bind_session_author(env, request, data, event)") < source.index(
         'actor = clean_string(event.get("authorName", "")')
+
+
+def _claim_namespace(inserted, notified, claims, session=""):
+    ns = _issue_handler_namespace(inserted, [], session=session)
+
+    async def record_assignees(_env, _owner, _repo, assignees, actor,
+                               _title, number=0):
+        notified.append((sorted(assignees), actor, number))
+
+    async def self_claim(_env, _data, _request, event):
+        claims.append(event.get("assignee"))
+        return True, None
+
+    ns["notify_issue_assignees"] = record_assignees
+    ns["_authorize_issue_self_claim"] = self_claim
+    return ns
+
+
+def _claim_body(assignee, author_name, sig):
+    return {"number": 7, "event": {
+        "type": "claim", "author": "bot-key", "authorName": author_name,
+        "assignee": assignee, "claimState": "assigned", "sig": sig}}
+
+
+def test_an_actions_job_claim_assigns_and_notifies_the_assignee():
+    inserted, notified, claims = [], [], []
+    ns = _claim_namespace(inserted, notified, claims)
+    body = _claim_body("Bob", "acme-actions", "sig-g")
+    response = asyncio.run(ns["_accept_issue_submission"](
+        object(), _Request(body), "source", "forkmesh", "bi:source/forkmesh",
+        body, ("source/forkmesh",), actions_job=True))
+
+    assert response == {"status": 201, "data": {"ok": True, "number": 7}}
+    assert claims == []
+    assert inserted[0][1]["event"]["assignee"] == "Bob"
+    assert notified == [(["bob"], "acme-actions", 7)]
+
+
+def test_a_self_claim_still_needs_the_session_and_notifies_nobody():
+    inserted, notified, claims = [], [], []
+    ns = _claim_namespace(inserted, notified, claims, session="alice")
+    response = asyncio.run(ns["issues_handler"](
+        object(), _Request(_claim_body("alice", "alice", "sig-h")),
+        "source", "forkmesh"))
+
+    assert response["status"] == 201
+    assert claims == ["alice"]
+    assert notified == [([], "alice", 7)]

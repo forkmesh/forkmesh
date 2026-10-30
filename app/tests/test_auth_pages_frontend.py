@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from _dashboard_shell import assembled_dashboard
+from _dashboard_shell import assembled_dashboard, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 
 
@@ -210,7 +210,8 @@ def test_signup_rejects_malformed_email_before_submit_with_inline_error():
     assert "EMAIL_LOCAL_RE" in signup_js
     assert "EMAIL_DOMAIN_RE" in signup_js
     assert 'local.includes("..")' in signup_js
-    assert "nameOk && validEmail(email)" in signup_js
+    assert "nameOk && emailAcceptable(email)" in signup_js
+    assert "(emailOptional && !value) || validEmail(value)" in signup_js
     assert 'emailInput.addEventListener("blur", () => validateEmail(true))' in signup_js
     assert 'if (!validateEmail(true))' in signup_js
     assert 'emailInput.setAttribute("aria-invalid"' in signup_js
@@ -234,8 +235,9 @@ def test_login_rejects_malformed_email_before_calling_the_api():
 
 
 def test_dashboard_profile_has_email_verification_and_payout_wallet_controls():
-    # Assert against the composed dashboard shell (see _dashboard_shell).
-    dashboard = assembled_dashboard()
+    # Assert against the composed dashboard shell (see _dashboard_shell) and
+    # the dialogs dashboard.js adds on first open.
+    dashboard = assembled_dashboard() + deferred_dialogs()
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
     assert "data-profile-settings-button" in dashboard

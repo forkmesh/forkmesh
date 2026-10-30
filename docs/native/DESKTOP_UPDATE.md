@@ -26,6 +26,39 @@ dialog on a screen nobody is watching. A `update.run` for `computerRestart`
 with a stale or wrong token now reports the token error
 (`confirmation_expired`, `confirmation_mismatch`) rather than `unknown_action`.
 
+### "Interactive authentication required"
+
+On 2026-10-28 an iPhone showed "Could not request a computer restart: Call to
+Reboot failed: Interactive authentication required." The desktop's account
+(`f`) was logged in on seat0, but a second user (`um`) had switched in and held
+the seat's active session, and the desktop ran as a systemd user service.
+polkit grants `org.freedesktop.login1.reboot` (and
+`reboot-multiple-sessions`, needed while another user is logged in) only to
+the *active* local session; for an inactive session or no session at all it
+is `auth_admin_keep`. logind's `CanReboot` answered `challenge`, and
+`--no-ask-password` turned that into the error. The same happens after a
+reboot before anyone logs in, which is exactly when a phone wants to restart a
+headless desktop. Nothing held a shutdown block inhibitor, so polkit was the
+only refusal.
+
+polkit is the security boundary, so only an administrator can lift it. Settings
+→ General → Startup has **Let my phones restart this computer**. Turning it on
+installs `/usr/share/polkit-1/rules.d/49-forkmesh-restart-<uid>.rules` through
+`pkexec` (`StartManager::allowRestart`, `desktop/src/BackgroundMode.cpp`), the
+same way and in the same readable directory as the boot sleep permission
+(`docs/desktop/lifecycle.md`), with one administrator authentication. The rule
+returns `YES` for `org.freedesktop.login1.reboot` and
+`org.freedesktop.login1.reboot-multiple-sessions` when `subject.user` is this
+account, and grants nothing else: no power-off, no `reboot-ignore-inhibit`, so
+another user's block inhibitor still stops the restart. It is a separate file
+from the sleep rule so turning it off (`pkexec rm -f` of that one file) leaves
+sleep alone. It applies to every process of the account, agents included, and
+lets the account restart the computer while another user is logged in, which
+ends their session; the checkbox tooltip says so. Without it, a refusal that
+contains polkit's "Interactive authentication required" reaches the phone as a
+message naming that setting (`computerRestartFailure`,
+`desktop/src/LocalControlUpdate.cpp`); other failures keep systemctl's words.
+
 The protocol action is named `updateRestart`; on every desktop that has the
 `update.` family it runs the quick rebuild, never a pull. A failed pull must
 not block a restart the desktop's own Restart button could do.

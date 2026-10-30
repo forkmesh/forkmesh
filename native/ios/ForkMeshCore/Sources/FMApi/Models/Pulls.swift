@@ -83,6 +83,8 @@ public struct PullEvent: Equatable, Hashable, Sendable {
             }
         }
         switch type {
+        case "merged": return "Merged"
+        case "status": return state == "open" ? "Reopened" : "Closed"
         case "line-comment": return "Line comment"
         case "thread-comment": return "Thread comment"
         case "thread-reply": return "Thread reply"
@@ -108,13 +110,16 @@ public struct PublishedPull: Equatable, Hashable, Sendable, Identifiable {
     public var author: String
     public var authorName: String
     public var createdMs: Int
+    public var mergedMs: Int
+    public var mergedBy: String
 
     public var id: Int { number }
 
     public init(
         number: Int, title: String, status: String = "open", body: String = "", base: String = "",
         head: String = "", branchBacked: Bool = false, patch: String = "", commits: String = "", signed: Bool = false,
-        events: [PullEvent] = [], author: String = "", authorName: String = "", createdMs: Int = 0
+        events: [PullEvent] = [], author: String = "", authorName: String = "", createdMs: Int = 0, mergedMs: Int = 0,
+        mergedBy: String = ""
     ) {
         self.number = number
         self.title = title
@@ -130,6 +135,8 @@ public struct PublishedPull: Equatable, Hashable, Sendable, Identifiable {
         self.author = author
         self.authorName = authorName
         self.createdMs = createdMs
+        self.mergedMs = mergedMs
+        self.mergedBy = mergedBy
     }
 
     public var displayAuthor: String { authorName.isEmpty ? author : authorName }

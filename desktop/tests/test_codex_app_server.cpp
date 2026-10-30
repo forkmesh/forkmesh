@@ -1,6 +1,7 @@
 #include "../src/AgentResumeIdentity.h"
 #include "../src/CodexAppServerSession.h"
 #include "../src/CodexTranscriptStyle.h"
+#include "../src/TranscriptCoverage.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -633,6 +634,50 @@ int runStub(const QStringList &arguments)
                                                        QStringLiteral("completed"))}}}});
                     continue;
                 }
+                writeMessage(
+                    output,
+                    QJsonObject{{QStringLiteral("method"),
+                                 QStringLiteral("turn/completed")},
+                                {QStringLiteral("params"),
+                                 QJsonObject{{QStringLiteral("threadId"),
+                                              QStringLiteral("thread-fresh")},
+                                             {QStringLiteral("turn"),
+                                              turn(turnId,
+                                                   QStringLiteral("completed"))}}}});
+                return 0;
+            } else if (scenario == QStringLiteral("unshown")) {
+                const QJsonObject thread{{QStringLiteral("threadId"),
+                                          QStringLiteral("thread-fresh")}};
+                const char *statusMessages[] = {
+                    R"({"method":"remoteControl/status/changed","params":{"serverName":"a","status":"disabled","environmentId":null}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{"name":"codex_apps","status":"starting","error":null,"failureReason":null}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{"name":"codex_apps","status":"failed","error":{"message":"connection refused"},"failureReason":"transport"}})",
+                    R"({"method":"thread/settings/updated","params":{"threadId":"thread-fresh","threadSettings":{"model":"gpt-test","effort":"high","approvalPolicy":"never","cwd":"/workspace","sandboxPolicy":{"type":"dangerFullAccess"},"collaborationMode":{"mode":"default","settings":{"developer_instructions":"do not repeat this"}}}}})",
+                    R"({"method":"remoteControl/status/changed","params":{}})",
+                    R"({"method":"mcpServer/startupStatus/updated","params":{}})",
+                    R"({"method":"thread/settings/updated","params":{}})",
+                    R"({"method":"turn/moderationMetadata","params":{"metadata":{"generation":{},"prompt":{"omnimod":{"outputs":[{"is_blocked":false}]}},"tool_call":{},"tool_response":{}}}})",
+                };
+                for (const char *json : statusMessages)
+                    writeMessage(output, QJsonDocument::fromJson(QByteArray(json)).object());
+                writeMessage(output,
+                             QJsonObject{{QStringLiteral("method"),
+                                          QStringLiteral("model/rerouted")},
+                                         {QStringLiteral("params"), thread}});
+                writeMessage(output,
+                             QJsonObject{{QStringLiteral("method"),
+                                          QStringLiteral("account/updated")},
+                                         {QStringLiteral("params"), thread}});
+                writeMessage(
+                    output,
+                    QJsonObject{{QStringLiteral("method"),
+                                 QStringLiteral("item/completed")},
+                                {QStringLiteral("params"),
+                                 QJsonObject{{QStringLiteral("item"),
+                                              QJsonObject{{QStringLiteral("type"),
+                                                           QStringLiteral("hookPrompt")},
+                                                          {QStringLiteral("id"),
+                                                           QStringLiteral("hook-1")}}}}}});
                 writeMessage(
                     output,
                     QJsonObject{{QStringLiteral("method"),
@@ -1777,6 +1822,58 @@ void runFatalErrorTest(const QString &executable)
           "non-retrying error emits one terminal result");
 }
 
+void runUnshownMessageTest(const QString &executable)
+{
+    QTemporaryDir temp;
+    const QString logPath = temp.filePath(QStringLiteral("unshown.jsonl"));
+    CodexAppServerSession session;
+    session.setAppServerCommand(executable,
+                                {QStringLiteral("--codex-stub"),
+                                 QStringLiteral("unshown"), logPath});
+    QList<QJsonObject> events;
+    bool finished = false;
+    QObject::connect(&session, &CodexAppServerSession::event,
+                     [&](const QJsonObject &event) { events.append(event); });
+    QObject::connect(&session, &CodexAppServerSession::finished,
+                     [&](int) { finished = true; });
+    session.start(temp.path(), QStringList(), QStringLiteral("unshown"));
+    check(pump([&] { return finished; }), "unshown-message stub completes");
+    QStringList kinds;
+    for (const QJsonObject &event : events) {
+        if (event.value(QStringLiteral("type")).toString() ==
+            QLatin1String("_local_raw_line"))
+            kinds << forkmesh::transcriptcoverage::eventGaps(event);
+    }
+    check(kinds == QStringList{QStringLiteral("codex:model/rerouted"),
+                               QStringLiteral("codex-item:hookPrompt")},
+          qPrintable(QStringLiteral("only the Codex messages the session drops are "
+                                    "recorded for the transcript check (got %1)")
+                         .arg(kinds.join(QStringLiteral(", ")))));
+    QStringList notices;
+    QStringList errors;
+    for (const QJsonObject &event : events) {
+        if (event.value(QStringLiteral("type")).toString() != QLatin1String("_local_notice"))
+            continue;
+        const QString text = event.value(QStringLiteral("text")).toString();
+        notices.append(text);
+        if (event.value(QStringLiteral("level")).toString() == QLatin1String("error"))
+            errors.append(text);
+        check(forkmesh::transcriptcoverage::eventGaps(event).isEmpty(),
+              "normalized Codex status notices are drawn transcript events");
+    }
+    check(notices == QStringList{
+              QStringLiteral("Remote control (a): disabled"),
+              QStringLiteral("MCP server codex_apps: starting"),
+              QStringLiteral("MCP server codex_apps: failed — connection refused; transport"),
+              QStringLiteral("Thread settings updated — model: gpt-test, effort: high, approvals: never, directory: /workspace, sandbox: dangerFullAccess, mode: default"),
+              QStringLiteral("Remote control: unknown"),
+              QStringLiteral("MCP server: unknown"),
+              QStringLiteral("Thread settings updated.")},
+          "status messages produce readable notices, omit instructions and moderation bookkeeping, and tolerate absent fields");
+    check(errors == QStringList{QStringLiteral("MCP server codex_apps: failed — connection refused; transport")},
+          "MCP startup failures use the existing error notice style");
+}
+
 // Which conversation a resumed session may pick up. A session can be handed
 // between Claude Code and Codex between runs, so one transcript can hold both
 // CLIs' identities — and Codex stamps its thread id into `session_id` as well
@@ -2006,6 +2103,7 @@ int main(int argc, char *argv[])
     runActiveTurnModeSwitchTest(executable);
     runTurnOptionsKeepModelTest(executable);
     runFatalErrorTest(executable);
+    runUnshownMessageTest(executable);
     runResumeIdentityTest();
     runResumeAccountTest();
     runTranscriptStyleTest();

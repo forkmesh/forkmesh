@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.files
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
+import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -40,7 +42,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -130,7 +131,7 @@ private fun Line(text: String, error: Boolean = false) {
 private fun Field(label: String, value: String, onChange: (String) -> Unit, secret: Boolean = false, hint: String = "") {
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = if (secret) onChange else FmSafeInput.text(onChange),
         label = { Text(label) },
         placeholder = if (hint.isEmpty()) null else ({ Text(hint) }),
         singleLine = true,
@@ -147,7 +148,7 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        FmSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -160,7 +161,7 @@ private fun NamePrompt(title: String, initial: String, action: String, onConfirm
         title = { Text(title) },
         text = {
             Column {
-                OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, label = { Text("Name") })
+                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, label = { Text("Name") })
                 if (problem != null && value.isNotEmpty()) Text(problem, style = Fm.text.bodySmall, color = Fm.colors.danger, modifier = Modifier.padding(top = FmSpace.x1))
             }
         },
@@ -183,7 +184,7 @@ private fun PasswordPrompt(share: SavedShare, onConfirm: (String, Boolean) -> Un
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), modifier = Modifier.padding(top = FmSpace.x2))
                 Row(Modifier.clickable { keep = !keep }.padding(top = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
                     Text("Remember password", style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-                    Switch(checked = keep, onCheckedChange = { keep = it })
+                    FmSwitch(checked = keep, onCheckedChange = { keep = it })
                 }
             }
         },
@@ -204,7 +205,7 @@ private fun mimeOf(name: String): String = MimeTypeMap.getSingleton().getMimeTyp
 
 private suspend fun exportCopy(context: Context, source: FileSource, item: FileItem, progress: (Long, Long) -> Boolean): Uri = withContext(Dispatchers.IO) {
     val folder = File(store.tempDir, UUID.randomUUID().toString()).also { it.mkdirs() }
-    val target = File(folder, item.name.replace('/', '_'))
+    val target = FilesModel.localTarget(folder, item.name)
     target.outputStream().use { source.readTo(item.path, it, Long.MAX_VALUE, progress) }
     FileProvider.getUriForFile(context, "${context.packageName}.composer.files", target)
 }
@@ -234,7 +235,7 @@ class FilesHomeScreen : Screen() {
                 navigator.push(FolderScreen(store.shareSource(updated, password), "", updated))
             }, { passwordFor = null })
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator)
             LazyColumn(Modifier.fillMaxSize()) {
                 if (message.isNotEmpty()) item(key = "message") { Line(message, messageIsError) }
@@ -318,7 +319,7 @@ class AddShareScreen(host: String = "", share: String = "", private val existing
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         fun parsed() = FilesModel.parseAddress(address)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             LazyColumn(Modifier.fillMaxSize().imePadding()) {
@@ -616,7 +617,7 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
                 dismissButton = { TextButton(onClick = { copyToClipboard(context, where); info = null }) { Text("Copy path") } },
             )
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false) {
                 Box {
                     TextButton(onClick = { sortMenu = true }) { Text(store.sort.label) }
@@ -665,7 +666,7 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
                 }
             }
             if (searching) {
-                OutlinedTextField(filter, { filter = it }, singleLine = true, placeholder = { Text("Filter this folder") },
+                OutlinedTextField(filter, FmSafeInput.text<String> { filter = it }, singleLine = true, placeholder = { Text("Filter this folder") },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = FmSpace.x1))
             }
             if (busy.isNotEmpty()) {
@@ -764,7 +765,7 @@ class TextFileScreen(private val source: FileSource, private val item: FileItem)
                 }
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false) {
                 TextButton(onClick = ::save, enabled = dirty && !saving) { Text("Save") }
             }
@@ -818,7 +819,7 @@ class ImageFileScreen(private val source: FileSource, private val item: FileItem
             offsetX = if (scale == 1f) 0f else offsetX + pan.x
             offsetY = if (scale == 1f) 0f else offsetY + pan.y
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 val shown = bitmap

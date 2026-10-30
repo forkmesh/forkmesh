@@ -15,7 +15,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -64,10 +64,13 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-theme") initInstanceThemeSection();
+    else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
       bindAccountPasswordControls();
+      bindAccountRecoveryControls();
       loadAccountSessions({ force: true });
       loadAccountDevices({ force: true });
       loadPatreonConnection();
@@ -650,7 +653,7 @@
   // them all; logout() then clears this browser and tells its other tabs.
   async function revokeAllAccountSessions() {
     if (!await confirmAccountAction({
-      title: "Sign out of ForkMesh on every device, including this one?",
+      title: `Sign out of ${platformName()} on every device, including this one?`,
       confirmLabel: "Sign out everywhere",
     })) return;
     const button = $("[data-account-sessions-revoke-all]");
@@ -698,7 +701,7 @@
       if (!asHtml && window.ClipboardItem && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([emailFooter.html], { type: "text/html" }),
-          "text/plain": new Blob(["Sent with ForkMesh"], { type: "text/plain" }),
+          "text/plain": new Blob([`Sent with ${platformName()}`], { type: "text/plain" }),
         })]);
       } else {
         await navigator.clipboard.writeText(emailFooter.html);
@@ -851,6 +854,228 @@
     } finally {
       if (button) { button.disabled = false; button.textContent = "Update password"; }
     }
+  }
+
+  const INSTANCE_THEME_ERRORS = {
+    invalid_credentials: "That password is not right.",
+    too_many_attempts: "Too many wrong passwords. Wait a minute and try again.",
+    not_admin: "Only an admin of this instance can change its theme.",
+    password_not_set: "Your account has no password to confirm with. Set one under Account first.",
+    invalid_theme: "That theme is not available yet.",
+  };
+  const instanceThemeState = { themes: [], current: "default", previewing: "", bound: false };
+
+  function renderInstanceThemeAccess(session) {
+    const nav = $("[data-instance-theme-nav]");
+    nav?.classList.toggle("hidden", !(session?.isAdmin === true && dashboardOnInstance()));
+  }
+
+  function instanceThemeLink() {
+    let link = document.querySelector("link[data-instance-theme]");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "/instance-theme.css";
+      link.setAttribute("data-instance-theme", "");
+      document.head.append(link);
+    }
+    return link;
+  }
+
+  function setInstanceThemeStatus(text, tone = "") {
+    const status = $("[data-instance-theme-status]");
+    if (!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("text-destructive", tone === "bad");
+    status.classList.toggle("text-success", tone === "good");
+    status.classList.toggle("text-muted-foreground", tone !== "bad" && tone !== "good");
+  }
+
+  function instanceThemeName(id) {
+    return instanceThemeState.themes.find((theme) => theme.id === id)?.name || id;
+  }
+
+  function instanceThemeCard(theme) {
+    const palette = (theme.palette || []).map((colour) => escapeHtml(colour));
+    const ready = theme.status === "ready";
+    const current = theme.id === instanceThemeState.current;
+    const selected = theme.id === (instanceThemeState.previewing || instanceThemeState.current);
+    const badge = current
+      ? '<span class="fm-label fm-label-accent">Current</span>'
+      : ready ? (selected ? '<span class="fm-label fm-label-attention">Previewing</span>' : "") : '<span class="fm-label">Coming soon</span>';
+    const swatches = palette.map((colour, index) =>
+      `<span class="h-full" style="background:${colour};flex:${index === 0 ? 3 : 1}"></span>`).join("");
+    return `<button type="button" role="radio" data-instance-theme-card="${escapeHtml(theme.id)}" aria-checked="${selected}"${ready ? "" : ' disabled aria-disabled="true"'} class="grid content-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-card"} ${ready ? "hover:border-primary/60" : "cursor-not-allowed opacity-60"}">
+      <span class="flex h-16 overflow-hidden rounded-md border border-border" aria-hidden="true">${swatches}</span>
+      <span class="flex items-center justify-between gap-2"><span class="text-sm font-semibold text-foreground">${escapeHtml(theme.name)}</span>${badge}</span>
+      <span class="text-xs leading-5 text-muted-foreground">${escapeHtml(theme.description)}</span>
+    </button>`;
+  }
+
+  function renderInstanceThemeCards() {
+    const box = $("[data-instance-theme-cards]");
+    if (!box) return;
+    box.innerHTML = instanceThemeState.themes.map(instanceThemeCard).join("");
+    const confirm = $("[data-instance-theme-confirm]");
+    const previewing = instanceThemeState.previewing;
+    if (confirm) confirm.hidden = !previewing;
+    const name = $("[data-instance-theme-preview-name]");
+    if (name) name.textContent = previewing ? instanceThemeName(previewing) : "";
+  }
+
+  function previewInstanceTheme(id) {
+    const previewing = id === instanceThemeState.current ? "" : id;
+    instanceThemeState.previewing = previewing;
+    instanceThemeLink().href = previewing
+      ? `/instance-theme.css?preset=${encodeURIComponent(previewing)}`
+      : `/instance-theme.css?v=${Date.now()}`;
+    renderInstanceThemeCards();
+    setInstanceThemeStatus(previewing ? "" : `${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+    if (previewing) $("[data-instance-theme-password]")?.focus({ preventScroll: true });
+  }
+
+  async function applyInstanceTheme() {
+    const id = instanceThemeState.previewing;
+    const field = $("[data-instance-theme-password]");
+    const password = field?.value || "";
+    if (!id) return;
+    if (!password) {
+      setInstanceThemeStatus("Enter your current password to change the instance theme.", "bad");
+      field?.focus();
+      return;
+    }
+    const button = $("[data-instance-theme-apply]");
+    if (button) { button.disabled = true; button.textContent = "Applying…"; }
+    setInstanceThemeStatus("Applying the theme…");
+    try {
+      const token = state.session?.sessionToken || "";
+      const response = await fetch("/api/instance/theme", {
+        method: "PUT",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(token ? { authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify({ theme: id, password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
+      if (field) field.value = "";
+      instanceThemeState.current = body.theme?.preset || "default";
+      const info = await instanceInfo();
+      if (info && typeof info === "object") {
+        info.theme = { ...(info.theme && typeof info.theme === "object" ? info.theme : {}), preset: instanceThemeState.current };
+      }
+      instanceThemeState.previewing = "";
+      instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
+      renderInstanceThemeCards();
+      setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
+    } catch (error) {
+      if (field) field.value = "";
+      setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
+    }
+  }
+
+  function clearInstanceThemePassword() {
+    const field = $("[data-instance-theme-password]");
+    if (field) field.value = "";
+  }
+
+  function leaveInstanceThemeSection() {
+    clearInstanceThemePassword();
+    if (instanceThemeState.previewing) previewInstanceTheme(instanceThemeState.current);
+  }
+
+  function bindInstanceThemeControls() {
+    if (instanceThemeState.bound) return;
+    instanceThemeState.bound = true;
+    $("[data-instance-theme-cards]")?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-instance-theme-card]");
+      if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
+    });
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => {
+      clearInstanceThemePassword();
+      previewInstanceTheme(instanceThemeState.current);
+    });
+    window.addEventListener("pagehide", clearInstanceThemePassword);
+    $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
+    $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyInstanceTheme();
+    });
+  }
+
+  async function initInstanceThemeSection() {
+    bindInstanceThemeControls();
+    const username = $("[data-instance-theme-username]");
+    if (username) username.value = state.session?.nodeName || "";
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-theme-denied]");
+    if (denied) denied.hidden = allowed;
+    if (!allowed) {
+      $("[data-instance-theme-cards]")?.replaceChildren();
+      return;
+    }
+    const info = await instanceInfo();
+    instanceThemeState.themes = Array.isArray(info?.themes) ? info.themes : [];
+    if (!instanceThemeState.previewing) instanceThemeState.current = info?.theme?.preset || "default";
+    renderInstanceThemeCards();
+    if (!instanceThemeState.themes.length) setInstanceThemeStatus("Could not load the themes. Refresh to try again.", "bad");
+    else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+  }
+
+  function bindAccountRecoveryControls() {
+    const button = $("[data-account-recovery-new]");
+    if (!button || button.dataset.controlsBound === "true") return;
+    button.dataset.controlsBound = "true";
+    const status = (text, bad) => {
+      const node = $("[data-account-recovery-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "min-h-4 text-xs " + (bad ? "text-destructive" : "text-muted-foreground");
+    };
+    button.addEventListener("click", async () => {
+      const field = $("[data-account-recovery-password]");
+      const password = field?.value || "";
+      if (!password) {
+        status("Enter your current password.", true);
+        field?.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = state.session?.sessionToken || "";
+        const response = await fetch("/api/accounts/recovery-code", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...(token && token !== "cookie" ? { authorization: "Bearer " + token } : {}),
+          },
+          body: JSON.stringify({ password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.recoveryCode) throw new Error(body.error || `http_${response.status}`);
+        if (field) field.value = "";
+        const code = $("[data-account-recovery-code]");
+        if (code) {
+          code.textContent = String(body.recoveryCode);
+          code.hidden = false;
+        }
+        status("This is your new recovery code. The old one no longer works.");
+      } catch (error) {
+        status(ACCOUNT_PASSWORD_ERRORS[error.message] || "Could not make a new code. Try again.", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
   }
 
   // ---- Nodes & devices (account_devices registry) ----------------------------
@@ -1180,6 +1405,142 @@
     return data;
   }
 
+  let gitPushWired = false;
+
+  function setGitPushStatus(message, kind = "") {
+    const target = $("[data-git-push-status]");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = "min-h-4 text-xs " + (
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
+        : "text-muted-foreground"
+    );
+  }
+
+  async function loadGitPushSettings() {
+    const note = $("[data-git-push-contributor]");
+    const input = $("[data-git-push-repo]");
+    try {
+      const response = await fetch("/api/hosted-repositories", { headers: { accept: "application/json" } });
+      const data = await response.json().catch(() => ({}));
+      const listed = (Array.isArray(data?.contributorPush) ? data.contributorPush : [])
+        .filter((item) => /^[^*/\s]+\/[^*/\s]+$/.test(String(item)));
+      const account = String(state.session?.nodeName || state.session?.name || "").toLowerCase();
+      if (note && listed.length) {
+        note.textContent = `To contribute, Fork the repository from its page (Forks, then Fork this repository), push any branch to your fork with a credential for it, and open a pull request back. Without a fork, anyone with a verified email address can also push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} directly. Other branches stay with the owners.`;
+        note.classList.remove("hidden");
+      }
+      if (input && !input.value && listed.length) input.value = listed[0];
+    } catch (_) {
+    }
+  }
+
+  function renderGitPushGrant(push) {
+    const target = $("[data-git-push-result]");
+    if (!target) return;
+    const contributor = push?.access === "contributor";
+    const expires = Number(push?.expiresAt || 0);
+    const field = (label, value, attr) => `
+      <label class="grid gap-1 text-xs font-semibold text-foreground">${escapeHtml(label)}
+        <input ${attr} type="text" readonly value="${escapeHtml(value || "")}" class="h-9 rounded-md border border-border bg-secondary px-2 font-mono text-xs font-normal text-foreground" />
+      </label>`;
+    const commands = (Array.isArray(push?.commands) ? push.commands : []).join("\n");
+    target.innerHTML = `
+      ${field("Remote URL", push?.remoteUrl, "data-git-push-remote")}
+      ${field("Username", push?.username, "data-git-push-username")}
+      ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
+      <p class="text-xs text-muted-foreground">${contributor
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>, and you may force-push them after a rebase or amend (use <span class="font-mono">git push --force-with-lease</span>; the previous tip is kept). Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository. You may force-push any branch except the default and protected ones (use git push --force-with-lease; the previous tip is kept); branch protection still applies."}
+        ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
+      <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
+    target.classList.remove("hidden");
+  }
+
+  async function mintGitPushCredential() {
+    const raw = String($("[data-git-push-repo]")?.value || "").trim().replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "");
+    const [owner, name, extra] = raw.split("/");
+    if (!owner || !name || extra !== undefined) {
+      setGitPushStatus("Enter the repository as owner/repository.", "bad");
+      return;
+    }
+    const token = state.session?.sessionToken || "";
+    if (!token) {
+      setGitPushStatus("Sign in to create a push credential.", "bad");
+      return;
+    }
+    const button = $("[data-git-push-mint]");
+    if (button) button.disabled = true;
+    setGitPushStatus("Creating a push credential…");
+    try {
+      const response = await fetch("/api/hosted-repositories/push-credential", {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ owner, name, sessionToken: token }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.push) {
+        const messages = {
+          unauthorized: "Sign in to create a push credential.",
+          session_required: "Sign in again in this browser to create a push credential.",
+          hosted_git_unavailable: "This server cannot accept pushes right now.",
+        };
+        setGitPushStatus(data.message || messages[data.error] || "A push credential could not be created.", "bad");
+        return;
+      }
+      setGitPushStatus(data.push.access === "contributor" ? "Contributor push credential created." : "Push credential created.", "good");
+      renderGitPushGrant(data.push);
+    } catch (_) {
+      setGitPushStatus("A push credential could not be created.", "bad");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function wireGitPushPanel() {
+    if (gitPushWired || !$("[data-git-push-panel]")) return;
+    gitPushWired = true;
+    $("[data-git-push-mint]")?.addEventListener("click", () => mintGitPushCredential());
+    $("[data-git-push-repo]")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        mintGitPushCredential();
+      }
+    });
+    loadGitPushSettings();
+  }
+
+  // How to use a key, shown once the server has an SSH gateway. The HTTPS
+  // push credential above stays the fallback for networks that block SSH.
+  function renderSshUsePanel(data) {
+    const panel = $("[data-ssh-use-panel]");
+    const steps = $("[data-ssh-use-steps]");
+    if (!panel || !steps) return;
+    const host = String(data?.gatewayHost || "");
+    if (!data?.gatewayConfigured || !host) {
+      panel.classList.add("hidden");
+      return;
+    }
+    const port = Number(data.gatewayPort) || 22;
+    const example = String(data.gatewayExampleUrl || "");
+    const login = port === 22 ? `ssh -T git@${host}` : `ssh -T -p ${port} git@${host}`;
+    const account = String(data.account || "<you>");
+    const code = (value) => `<code class="mt-1 block overflow-x-auto rounded-md border border-border bg-secondary px-2 py-1 font-mono text-xs text-foreground">${escapeHtml(value)}</code>`;
+    const items = [
+      ["Create a key if you do not have one, on your own computer:", code('ssh-keygen -t ed25519 -C "you@example.com"')],
+      ["Paste the public half (the .pub file) below and select <strong>Add SSH key</strong>:", code("cat ~/.ssh/id_ed25519.pub")],
+      ["Check the connection. It prints a greeting; there is no shell:", code(login)],
+      ["Clone with the SSH address from a repository's <strong>Code</strong> button, or switch an existing clone:", code(`git clone ${example}`) + code(`git remote set-url origin ${example}`)],
+    ];
+    if (data.gatewayAllRepositories) {
+      items.push(["Contributing without write access: fork the repository and push to your fork, or, where the repository accepts contributor branches, push one named pr/" + escapeHtml(account) + "/&lt;topic&gt; and open a pull request:", code(`git push origin HEAD:pr/${account}/my-fix`)]);
+    }
+    steps.innerHTML = items.map(([text, body], index) => `
+      <li class="grid gap-1"><span><span class="font-semibold text-foreground">${index + 1}.</span> ${text}</span>${body}</li>`).join("");
+    panel.classList.remove("hidden");
+  }
+
   function renderSshKeys(data) {
     const list = $("[data-ssh-key-list]");
     if (!list) return;
@@ -1188,8 +1549,9 @@
     if (gateway) {
       gateway.textContent = data?.gatewayConfigured
         ? `SSH gateway: ${data.gatewayHost}${Number(data.gatewayPort) === 22 ? "" : `:${data.gatewayPort}`}`
-        : "SSH gateway is not configured";
+        : "SSH pushes are not available on this server. Push over HTTPS with a push credential instead.";
     }
+    renderSshUsePanel(data);
     if (!keys.length) {
       list.innerHTML = accountBlankslate("key-round", "No SSH keys registered.", "Add a public key above to clone and push over SSH.");
       window.lucide?.createIcons();
@@ -1212,6 +1574,7 @@
   }
 
   async function loadSshKeys({ force = false } = {}) {
+    wireGitPushPanel();
     if (!$("[data-ssh-key-list]")) return;
     if (sshKeysLoaded && !force) return;
     if (sshKeysLoading) return sshKeysLoading;
@@ -1561,6 +1924,7 @@
     renderOrgDetail(
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
+    void loadOrgModeration(root, name);
   }
 
   async function loadOrgPullRules(root, name) {
@@ -1623,7 +1987,7 @@
           "Verify the live revision and production behavior. Only then call complete_org_task with the commit, deployed revision, tests, and exact QA steps.",
         ]
       : [
-          "Push the task branch and open a focused pull request against main using the repository's normal ForkMesh tooling.",
+          `Push the task branch and open a focused pull request against main using the repository's normal ${platformName()} tooling.`,
           "Do not merge or deploy. After the pull request exists, call complete_org_task with its number, branch, tests, and exact QA steps.",
         ];
     return [
@@ -1660,7 +2024,7 @@
     ];
     return '<section class="mt-6 rounded-md border border-border bg-card p-4" data-org-remote-mcp>' +
       '<div class="flex items-center gap-2"><i data-lucide="plug-zap" class="h-4 w-4 text-muted-foreground"></i>' +
-        '<h4 class="text-sm font-semibold text-foreground">Remote ForkMesh MCP</h4></div>' +
+        '<h4 class="text-sm font-semibold text-foreground">Remote ' + escapeHtml(platformName()) + ' MCP</h4></div>' +
       '<p class="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Generate a revocable task-only credential and one complete paste block. It connects the agent directly to <span class="font-mono text-foreground">' +
         escapeHtml(publicSiteOrigin() + "/mcp") +
         '</span>; there is no local Python server, repository path, or Qt connector token to fill in.</p>' +
@@ -1735,7 +2099,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -1776,7 +2140,7 @@
           '<div class="min-w-[14rem] flex-1">' +
             '<input data-member-name list="org-member-suggestions" role="combobox" aria-autocomplete="list" aria-controls="org-member-suggestions" placeholder="Start typing an account name" autocomplete="off" class="' + ORG_INPUT_CLASS + ' w-full" />' +
             '<datalist id="org-member-suggestions" data-org-member-suggestions></datalist>' +
-            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ForkMesh accounts.</p>' +
+            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ' + escapeHtml(platformName()) + ' accounts.</p>' +
           "</div>" +
           '<select data-member-role class="' + ORG_INPUT_CLASS + '">' + orgOptionTags(ORG_ROLE_OPTIONS, "member") + "</select>" +
           '<button type="submit" class="' + ORG_BTN_SECONDARY + '">Add member</button></form>'
@@ -1950,6 +2314,11 @@
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
         '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Requirements every pull request on this organization\'s linked repositories must meet: tests, documentation, size, commit format, secrets, protected paths, or a required AI model. Each repository can add its own rules in <span class="font-mono">.forkmesh/pull-rules.json</span>. A failing rule is flagged on the pull request with how to fix it; a blocking one also locks the merge.</p>' +
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
+      "</section>" +
+      '<section class="mt-6" data-org-moderation-section hidden>' +
+        '<h4 class="text-sm font-semibold text-foreground">Moderation</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Posts waiting for review, the people who moderate this organization\'s repositories, and the accounts blocked from them.</p>' +
+        '<div data-org-moderation class="mt-3 text-xs text-muted-foreground">Loading moderation…</div>' +
       "</section>" +
       botTokenControls +
       (canManage
@@ -2275,7 +2644,7 @@
       const currentGeneration = ++generation;
       suggestions.replaceChildren();
       if (!query) {
-        status.textContent = "Type a name to search active ForkMesh accounts.";
+        status.textContent = `Type a name to search active ${platformName()} accounts.`;
         return;
       }
       status.textContent = "Searching active accounts…";
@@ -2336,7 +2705,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
@@ -2347,7 +2716,7 @@
     const addForm =
       '<form data-org-team-member-add class="mt-3 grid gap-2 rounded-md border border-border bg-card p-3">' +
         '<div class="flex flex-wrap items-center gap-2">' +
-          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="ForkMesh account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
+          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="' + escapeHtml(platformName()) + ' account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
           '<datalist id="org-team-member-candidates">' +
             candidates.map((member) => '<option value="' + escapeHtml(member.name) + '"></option>').join("") +
           "</datalist>" +
@@ -2493,10 +2862,6 @@
     }
     if (section === "network") {
       headerContext.textContent = "Network";
-      return;
-    }
-    if (section === "chat") {
-      headerContext.textContent = "Chat";
       return;
     }
     if (section === "explore" && state.selectedRepo) {
@@ -2703,7 +3068,7 @@
         <a href="${escapeHtml(groupLinkUrl(group))}" class="min-w-0 truncate text-sm font-semibold text-accent hover:underline">${escapeHtml(repo.name || "repository")}</a>
         <span class="inline-flex shrink-0 items-center rounded-full border border-border px-[7px] text-xs font-medium leading-[18px] text-muted-foreground">${repo.isPrivate ? "Private" : "Public"}</span>
       </div>
-      <p class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
+      <p data-user-content class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
       <p class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         ${language ? `<span class="inline-flex items-center gap-1"><span data-repo-language-dot class="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style="background-color:${escapeHtml(color)}"></span><span>${escapeHtml(language)}</span></span>` : ""}
         <span data-org-popular-star data-repo-key="${escapeHtml(repoKey(repo))}" class="hidden inline-flex items-center gap-1"><i data-lucide="star" class="h-4 w-4"></i><span data-org-popular-star-count>0</span></span>
@@ -2857,7 +3222,7 @@
     const label = reconnect.querySelector("[data-node-reconnect-label]");
     if (label) label.textContent = offline.length > 1 ? "Desktops offline" : "Desktop offline";
     const message = (offline.length > 1 ? "Your desktop nodes " + names + " are" : "Your desktop node " + names + " is") +
-      " offline. Open the ForkMesh desktop app on that machine to reconnect it.";
+      ` offline. Open the ${desktopBrand()}desktop app on that machine to reconnect it.`;
     reconnect.title = message;
     reconnect.setAttribute("aria-label", message);
   }
@@ -2922,10 +3287,10 @@
         .filter(Boolean).join(" · ");
     }
     if (statusItem) {
-      statusItem.textContent = label ? "Edit status: " + label : "Set a status…";
+      (statusItem.querySelector("[data-account-menu-label]") || statusItem).textContent = label ? "Edit status: " + label : "Set a status…";
     }
     if (awayItem) {
-      awayItem.textContent = own.away ? "Set yourself active" : "Set yourself away";
+      (awayItem.querySelector("[data-account-menu-label]") || awayItem).textContent = own.away ? "Set yourself active" : "Set yourself away";
     }
   }
 
@@ -2947,7 +3312,9 @@
     let installed = [];
     if (account) {
       try {
-        installed = (await pluginRequest("/api/plugins/")).plugins || [];
+        const reply = await pluginRequest("/api/plugins/");
+        if (!Array.isArray(reply?.plugins)) throw new Error("plugin_list_missing");
+        installed = reply.plugins;
         window.ForkMeshAPI?.rememberPlugins?.(account, installed);
         window.ForkMeshAPI?.rememberStatusPage?.(
           account, installed.includes("status-page"));
@@ -3126,6 +3493,7 @@
   }
 
   function setProfileModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -3260,7 +3628,7 @@
   }
 
   function defaultProfileAbout(session = profileSubject()) {
-    const name = String(session?.nodeName || session?.email || "ForkMesh").trim() || "ForkMesh";
+    const name = String(session?.nodeName || session?.email || platformName()).trim() || platformName();
     if (session?.kind === "node") {
       const owner = String(session?.owner || "").trim();
       return `# ${name} is a ForkMesh node\n\nIt mirrors Git repositories and helps serve them to the network.` +
@@ -3999,6 +4367,7 @@
   }
 
   function setProfileAboutModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-about-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -4031,6 +4400,7 @@
     pull_submitted: true,
     issue_assigned: true,
     repo_shared: true,
+    security_advisory: true,
     bounty_funded: true,
     bounty_paid: true,
     release_published: true,
@@ -4097,6 +4467,7 @@
     { key: "conversations", label: "Conversations", kinds: [
       { kind: "mention", label: "Mentions", email: true },
       { kind: "subscribed", label: "Activity on things you follow", email: true },
+      { kind: "reaction", label: "Reactions to your comments", email: false },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
       { kind: "direct_unread", label: "Unread direct messages", email: true },
@@ -4113,6 +4484,7 @@
       { kind: "repo_activity", label: "Merged pull requests", email: false },
       { kind: "release_published", label: "Releases", email: true },
       { kind: "repo_shared", label: "Repositories shared with you", email: true },
+      { kind: "security_advisory", label: "Security advisories", email: true },
       { kind: "mirror_request", label: "Mirror requests", email: true },
       { kind: "repository_hosted", label: "Imports finished hosting", email: false },
     ] },
@@ -4973,6 +5345,7 @@
     if (payoutStatus) payoutStatus.textContent = session?.hasPayoutAddress ? "Configured" : "Not configured";
     if (adminStatus) adminStatus.textContent = session?.isAdmin ? "Yes" : "No";
     $("[data-admin-test-email-row]")?.classList.toggle("hidden", session?.isAdmin !== true);
+    renderInstanceThemeAccess(session);
     if (emailStatus) {
       emailStatus.textContent = session?.emailVerified
         ? `${email} is verified.`
@@ -5023,7 +5396,9 @@
     renderProfileReferrals(session);
     if (!session?.emailVerified) {
       state.nodeNameAvailability.available = false;
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
     } else if (!($("[data-profile-rename-input]")?.value || "").trim()) {
       state.nodeNameAvailability.available = false;
       setRenameStatus("Enter a new username to check availability.", "");
@@ -5033,6 +5408,7 @@
     renderProfileContributionGraph();
     renderProfileTips(session);
     renderProfileBadges(session);
+    void renderProfileSecurityCredits(session);
     renderProfileFediverse(session);
   }
 
@@ -5674,7 +6050,7 @@
     const result = await openImageResizeModal(file, PROFILE_AVATAR_MAX_BYTES, {
       dialogLabel: "Crop profile picture",
       title: "Crop profile picture",
-      description: "Drag to choose a square crop. ForkMesh will resize it to a PNG that fits the profile picture limit.",
+      description: `Drag to choose a square crop. ${platformName()} will resize it to a PNG that fits the profile picture limit.`,
       confirmLabel: "Save profile picture",
       outputType: "image/png",
       aspectRatio: 1,
@@ -5866,7 +6242,9 @@
       return;
     }
     if (!state.session?.emailVerified) {
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(state.session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
       updateRenameButton();
       return;
     }
@@ -6015,6 +6393,31 @@
       "and hyphens, e.g. \"mirror-01\". You can also paste the node's 43-character public key.";
   }
 
+  function claimNodeAuthHeaders() {
+    const token = String(state.session?.sessionToken || "");
+    const headers = { "content-type": "application/json", accept: "application/json" };
+    if (token && token !== "cookie") headers.authorization = "Bearer " + token;
+    return headers;
+  }
+
+  function claimNodeAuthBody(password, extra) {
+    const body = {
+      identifier: state.session?.email || state.session?.nodeName || "",
+      password,
+      ...extra,
+    };
+    const totp = String($("[data-claim-node-totp]")?.value || "").replace(/\s+/g, "");
+    if (totp) body.totp = totp;
+    return body;
+  }
+
+  function revealClaimNodeTotp() {
+    const row = $("[data-claim-node-totp-row]");
+    if (row) row.classList.remove("hidden");
+    const field = $("[data-claim-node-totp]");
+    if (field) { field.value = ""; field.focus(); }
+  }
+
   async function claimNode() {
     const input = $("[data-claim-node-input]");
     // Not lowercased up front: a node's public-key ID is case-sensitive, and
@@ -6034,11 +6437,8 @@
     try {
       const response = await fetch("/api/accounts/claim-node", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6057,8 +6457,11 @@
           "good");
       }
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         invalid_node_id: claimNodeIdHint(nodeId),
         cannot_claim_self: "You can't claim your own account.",
         no_such_node: `No node called "${nodeId}" has registered with the relay. Check the ID on the node itself - or, if you have not installed one yet, see "No node yet?" below.`,
@@ -6095,11 +6498,8 @@
     try {
       const response = await fetch("/api/accounts/claim-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId, code,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId, code })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6118,8 +6518,11 @@
       if (codeInput) codeInput.value = "";
       setProfilePageHint("[data-claim-node-status]", `Linked "${nodeId}" to your account.`, "good");
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         no_such_node: "No node with that ID was found.",
         no_pending_claim: "No pending claim for that node. Send a new claim code.",
         bad_code: "That code is incorrect.",

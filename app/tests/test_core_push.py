@@ -644,6 +644,9 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
     db.executescript(
         (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
         .split("INSERT INTO schema_meta")[0])
+    db.executescript(
+        (ROOT / "migrations" / "0285_actions_pull_requests.sql").read_text()
+        .split("INSERT INTO schema_meta")[0])
     online = {"forkmesh"}
 
     async def holds(_env, name):
@@ -688,7 +691,8 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
     db = ctx["db"]
     db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
     for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
-                 "0272_actions_instance.sql"):
+                 "0272_actions_instance.sql",
+                 "0285_actions_pull_requests.sql"):
         db.executescript(
             (ROOT / "migrations" / name).read_text()
             .split("-- The runtime schema text changed")[0]
@@ -725,6 +729,48 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
             sys.modules.pop(name, None)
 
 
+def test_a_contributor_push_queues_no_workflows(module):
+    """A pr/<account>/ push by a contributor runs nobody's workflows: on:
+    push would execute the contributor's own workflow files with the
+    repository's runner access."""
+    loaded, ctx = module
+    db = ctx["db"]
+    db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
+    for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
+                 "0272_actions_instance.sql",
+                 "0285_actions_pull_requests.sql"):
+        db.executescript(
+            (ROOT / "migrations" / name).read_text()
+            .split("-- The runtime schema text changed")[0]
+            .split("INSERT INTO schema_meta")[0])
+
+    async def holds(_env, _name):
+        return True
+
+    for name in ("runner_leases", "runner_actions"):
+        sys.modules.pop(name, None)
+    loaded._bind_runtime({"_node_events_object_holds_node": holds,
+                          "_branch_protection": UNPROTECTED})
+    env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
+                           "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def push(new, contributor):
+        asyncio.run(loaded.record_accepted_push(
+            env, "forkmesh", "site", {"node": "forkmesh"}, "bob",
+            _report(("refs/heads/pr/bob/change", "0" * 40, new, 1)),
+            core=True, state="e" * 64, credential="contributor",
+            contributor=contributor))
+        return db.execute("SELECT COUNT(*) FROM repo_action_jobs").fetchone()[0]
+
+    try:
+        assert push("4" * 40, contributor=True) == 0
+        # The same update by a writer would have queued a run.
+        assert push("5" * 40, contributor=False) == 1
+    finally:
+        for name in ("runner_leases", "runner_actions"):
+            sys.modules.pop(name, None)
+
+
 def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_pushes(
         module):
     loaded, _ctx = module
@@ -752,3 +798,180 @@ def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_
             "main", "m0", "m1", "m2", "m3", "m4"]
     assert heads([("refs/heads/topic", "", "3" * 40, 1),
                   ("refs/heads/gone", "1" * 40, zero, 0)]) == ["topic"]
+
+
+def test_a_forced_update_is_audited_and_queues_one_timeline_event_per_pull(
+        module):
+    loaded, ctx = module
+    ctx["db"].execute(
+        "CREATE TABLE pull_inbox (repo_bi TEXT, data TEXT, submitter_bi TEXT)")
+    notified = []
+
+    async def encrypt_row(_env, record):
+        return json.dumps(record, sort_keys=True)
+
+    async def notify(_env, owner, repo, kind):
+        notified.append((owner, repo, kind))
+
+    loaded._bind_runtime({"encrypt_row": encrypt_row,
+                          "notify_repo_host": notify,
+                          "notify_repo_mirrors": notify})
+    old, new = "a" * 40, "b" * 40
+    report = {"total": 2, "updates": [
+        {"ref": "refs/heads/feature", "old": old, "new": new, "commits": 1,
+         "forced": True, "pulls": [3, 7],
+         "kept": "refs/forkmesh/history/feature/0000000001"},
+        {"ref": "refs/heads/other", "old": "c" * 40, "new": "d" * 40,
+         "commits": 1}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report))
+    forced = [a for a in ctx["audits"] if a["action"] == "git.force_push"]
+    assert forced == [{
+        "actor": "bob", "action": "git.force_push", "target": "alice/app",
+        "outcome": "success",
+        "details": {"ref": "refs/heads/feature", "old": old, "new": new,
+                    "node": "fmnext-n1", "pulls": [3, 7],
+                    "kept": "refs/forkmesh/history/feature/0000000001"}}]
+    rows = ctx["db"].execute(
+        "SELECT repo_bi, data, submitter_bi FROM pull_inbox").fetchall()
+    assert [(row[0], row[2]) for row in rows] == [
+        ("bi:alice/app", "bi:bob"), ("bi:alice/app", "bi:bob")]
+    items = [json.loads(row[1]) for row in rows]
+    assert [item["number"] for item in items] == [3, 7]
+    event = items[0]["event"]
+    assert event == {
+        "type": "synchronize", "id": "synchronize-3-%s" % new[:16],
+        "author": "bob", "authorName": "bob", "ts": NOW // 1000,
+        "ref": "refs/heads/feature", "before": old, "after": new,
+        "commits": 1, "forced": "true",
+        "body": "force-pushed `feature` from `aaaaaaa` to `bbbbbbb`",
+        "sig": ""}
+    assert items[0]["source"] == "synchronize"
+    assert (items[0]["head"], items[0]["owner"], items[0]["repo"]) == (
+        "feature", "alice", "app")
+    assert notified == [("alice", "app", "pulls")] * 2
+
+
+def _inbox(ctx, loaded, notified=None):
+    ctx["db"].execute(
+        "CREATE TABLE pull_inbox (repo_bi TEXT, data TEXT, submitter_bi TEXT)")
+
+    async def encrypt_row(_env, record):
+        return json.dumps(record, sort_keys=True)
+
+    async def notify(_env, owner, repo, kind):
+        if notified is not None:
+            notified.append((owner, repo, kind))
+
+    loaded._bind_runtime({"encrypt_row": encrypt_row,
+                          "notify_repo_host": notify,
+                          "notify_repo_mirrors": notify})
+
+    def items():
+        return [json.loads(row[0]) for row in ctx["db"].execute(
+            "SELECT data FROM pull_inbox").fetchall()]
+    return items
+
+
+def test_a_fast_forward_push_synchronizes_the_open_pulls_of_its_branch(
+        module):
+    loaded, ctx = module
+    items = _inbox(ctx, loaded)
+    report = {"total": 3, "updates": [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40,
+         "commits": 2, "pulls": [3, 3, 5]},
+        {"ref": "refs/heads/quiet", "old": "c" * 40, "new": "d" * 40,
+         "commits": 1},
+        {"ref": "refs/heads/forkmesh/pulls", "old": "e" * 40,
+         "new": "f" * 40, "commits": 1, "pulls": [9]}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report))
+    queued = items()
+    assert [(item["number"], item["event"]["after"]) for item in queued] == [
+        (3, "b" * 40), (5, "b" * 40)]
+    event = queued[0]["event"]
+    assert event["body"] == "pushed 2 commits to `feature`"
+    assert "forced" not in event and event["sig"] == ""
+    assert not [a for a in ctx["audits"] if a["action"] == "git.force_push"]
+
+
+def test_a_contributor_synchronizes_only_its_own_branches(module):
+    loaded, ctx = module
+    items = _inbox(ctx, loaded)
+    report = {"total": 2, "updates": [
+        {"ref": "refs/heads/pr/bob/fix", "old": "a" * 40, "new": "b" * 40,
+         "commits": 1, "pulls": [3]},
+        {"ref": "refs/heads/pr/carol/fix", "old": "c" * 40, "new": "d" * 40,
+         "commits": 1, "pulls": [4]}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report,
+        contributor=True))
+    assert [item["number"] for item in items()] == [3]
+
+
+def test_new_branches_and_anonymous_pushes_synchronize_nothing(module):
+    loaded, ctx = module
+    items = _inbox(ctx, loaded)
+    created = {"total": 1, "updates": [
+        {"ref": "refs/heads/feature", "old": "0" * 40, "new": "b" * 40,
+         "commits": 1, "pulls": [3]}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", created))
+    moved = {"total": 1, "updates": [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40,
+         "commits": 1, "pulls": [3]}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "", moved))
+    assert items() == []
+
+
+def test_the_synchronize_event_id_is_stable_per_pull_and_head(module):
+    loaded, _ctx = module
+    update = {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40,
+              "commits": 1}
+    first = loaded.synchronize_event(update, 3, "bob", NOW)
+    again = loaded.synchronize_event(dict(update, old="c" * 40), 3, "eve",
+                                     NOW + 5000)
+    assert first["id"] == again["id"] == "synchronize-3-" + "b" * 16
+    assert loaded.synchronize_event(update, 4, "bob", NOW)["id"] != first["id"]
+    assert loaded.synchronize_event(
+        dict(update, commits=1), 3, "bob", NOW)["body"] == (
+            "pushed 1 commit to `feature`")
+
+
+def test_intake_of_synchronize_events_requeues_the_pull_hooks(module):
+    loaded, _ctx = module
+    calls = []
+
+    async def moved(_env, owner, repo, branches):
+        calls.append(("conflicts", owner, repo, branches))
+
+    async def ai_review(_env, owner, repo, updates):
+        calls.append(("ai", owner, repo, [u["ref"] for u in updates]))
+
+    async def checks(_env, owner, repo, force=False):
+        calls.append(("checks", owner, repo, force))
+
+    loaded._bind_runtime({"pull_attention_moved": moved,
+                          "ai_review_note_push": ai_review,
+                          "pull_actions_sync_repo": checks})
+    item = {"source": "synchronize", "head": "pr/bob/fix", "owner": "alice",
+            "repo": "app", "event": {"after": "b" * 40}}
+    count = asyncio.run(loaded.pulls_synchronized(
+        object(), "owasp", "app", [item, dict(item), {"head": "x"}]))
+    assert count == 1
+    assert calls == [
+        ("conflicts", "alice", "app", ["pr/bob/fix"]),
+        ("ai", "alice", "app", ["refs/heads/pr/bob/fix"]),
+        ("checks", "alice", "app", True)]
+
+
+def test_a_forced_update_without_open_pulls_only_audits(module):
+    loaded, ctx = module
+    report = {"total": 1, "updates": [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40,
+         "commits": 1, "forced": True, "pulls": []}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report))
+    assert [a["action"] for a in ctx["audits"]] == [
+        "git.push", "git.force_push"]

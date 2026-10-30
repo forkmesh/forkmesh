@@ -4,9 +4,11 @@
 import json
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CPA_CONFIG = PROJECT / ".forkmesh" / "teammates" / "cpa.json"
+CPA_CONFIG = PROJECT / ".forkmesh" / "workflows" / "cpa.json"
 
 
 def _load_without_duplicate_keys(path):
@@ -17,10 +19,10 @@ def _load_without_duplicate_keys(path):
             result[key] = value
         return result
 
-    return json.loads(
+    return as_teammate(json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=unique_object,
-    )
+    ))
 
 
 def test_cpa_is_a_delaware_corporate_tax_readiness_teammate():

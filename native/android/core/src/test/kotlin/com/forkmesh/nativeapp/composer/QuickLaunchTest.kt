@@ -85,6 +85,17 @@ private class FakeBackend(
 
     override fun desktopName(): String = desktop
 
+    var desktops: List<String> = emptyList()
+    val chosenDesktops = ArrayList<String>()
+
+    override fun desktopNames(): List<String> = desktops.ifEmpty { super.desktopNames() }
+
+    override fun desktopDetail(name: String): String = if (desktops.isEmpty()) "" else "Running · $name"
+
+    override fun chooseDesktop(name: String) {
+        chosenDesktops.add(name)
+    }
+
     override fun startOnDesktop(
         owner: String,
         name: String,
@@ -377,6 +388,27 @@ class QuickLaunchTest {
         assertEq(QuickLaunchDestination.Desktop("studio"), again.destination)
     }
 
+    fun testEachDesktopIsADestinationAndSendingPicksIt() {
+        val backend = FakeBackend(listOf(node("fmnext-r1", listOf("claude-code"), true)))
+        backend.desktops = listOf("studio", "laptop")
+        val prefs = MemoryPrefStore()
+        val quick = QuickAgentLauncher(backend, prefs)
+        quick.prepare()
+        expect(QuickLaunchDestination.Desktop("studio") in quick.destinations)
+        expect(QuickLaunchDestination.Desktop("laptop") in quick.destinations)
+        assertEq("Your desktop, directly · Running · laptop", quick.detail(QuickLaunchDestination.Desktop("laptop")))
+        quick.choose(QuickLaunchDestination.Desktop("laptop"))
+        assertEq(QuickLaunchOutcome.Desktop("laptop", 7, "Started agent #7 on laptop."), quick.send("Go", emptyList()))
+        assertEq(listOf("laptop"), backend.chosenDesktops)
+        val again = QuickAgentLauncher(backend, prefs)
+        again.prepare()
+        assertEq(QuickLaunchDestination.Desktop("laptop"), again.destination)
+        backend.desktops = listOf("studio")
+        val gone = QuickAgentLauncher(backend, prefs)
+        gone.prepare()
+        assertEq(QuickLaunchDestination.Desktop("studio"), gone.destination)
+    }
+
     fun testYoloAndNoWorktreeGoToTheDesktopOnly() {
         val backend = FakeBackend(listOf(node("fmnext-r1", listOf("claude-code"), true)))
         backend.desktop = "studio"
@@ -466,5 +498,201 @@ class QuickLaunchTest {
         assertEq("codex-box", quick.destinationLabel)
         assertEq("Mirror · online · no Codex", quick.detail(QuickLaunchDestination.Node("claude-only")))
         assertEq("Mirror · online", quick.detail(QuickLaunchDestination.Node("codex-box")))
+    }
+}
+
+private class FakePromptActions : QuickPromptActions {
+    var error: Exception? = null
+    var people = QuickTaskPeople("alice", emptyList())
+    val bugs = ArrayList<Pair<String, List<PromptAttachment>>>()
+    val tasks = ArrayList<List<String>>()
+    val issues = ArrayList<List<String>>()
+    val posts = ArrayList<List<String>>()
+    val notes = ArrayList<List<String>>()
+
+    override fun reportBug(text: String, photos: List<PromptAttachment>) {
+        error?.let { throw it }
+        bugs += text to photos
+    }
+
+    override fun taskPeople(): QuickTaskPeople = people
+
+    override fun createTask(title: String, details: String, assignee: String, repository: String) {
+        error?.let { throw it }
+        tasks += listOf(title, details, assignee, repository)
+    }
+
+    override fun createIssue(owner: String, name: String, title: String, body: String) {
+        error?.let { throw it }
+        issues += listOf(owner, name, title, body)
+    }
+
+    override fun postToActivityPub(owner: String, name: String, title: String, body: String) {
+        error?.let { throw it }
+        posts += listOf(owner, name, title, body)
+    }
+
+    override fun takeNote(title: String, markdown: String) {
+        error?.let { throw it }
+        notes += listOf(title, markdown)
+    }
+}
+
+class QuickPromptActionsTest {
+    private val online = listOf(AgentLaunchTarget("mirror35", providers = listOf("claude-code"), online = true, runtimeMode = "headless"))
+
+    private fun launcher(
+        backend: FakeBackend,
+        prefs: MemoryPrefStore = MemoryPrefStore(),
+        actions: FakePromptActions? = FakePromptActions(),
+    ): QuickAgentLauncher = QuickAgentLauncher(backend, prefs).also { it.actions = actions }
+
+    private val photo = PromptAttachment("a", "shot.png", byteArrayOf(1), "image/png")
+
+    fun testTheActionsAreOfferedBeforeTheModelsOnlyWhenTheAppProvidesThem() {
+        val quick = launcher(FakeBackend(online))
+        assertEq(
+            listOf("Bug report", "Task · assign", "Manual · create issue", "ActivityPub · post", "Take a note"),
+            quick.modelChoices.take(5).map { it.label },
+        )
+        assertEq(AgentModelCatalog.DEFAULT_NODE_MODEL, quick.modelChoices.drop(5).first())
+        val bare = launcher(FakeBackend(online), actions = null)
+        expect(bare.modelChoices.none { QuickPromptAction.of(it) != null })
+    }
+
+    fun testWithNoAgentAnywhereTheChipDefaultsToABugReport() {
+        val quick = launcher(FakeBackend(emptyList(), canQueue = false))
+        quick.prepare()
+        expect(!quick.hasAgent)
+        assertEq(QuickPromptAction.BugReport, quick.action)
+        assertEq("Bug report", quick.chip.label)
+        assertEq("Bug report · ForkMesh team", quick.contextLine)
+        expect(!quick.takesRunOptions)
+    }
+
+    fun testSignedOutPeopleCanStillSendABugReport() {
+        val actions = FakePromptActions()
+        val quick = launcher(FakeBackend(online, signedIn = false), actions = actions)
+        quick.prepare()
+        assertEq(QuickPromptAction.BugReport, quick.action)
+        val outcome = quick.send("The calendar said Invalid json.", listOf(photo))
+        assertEq(QuickLaunchOutcome.Done("Sent to the ForkMesh team as a bug report."), outcome)
+        assertEq(listOf("The calendar said Invalid json."), actions.bugs.map { it.first })
+        assertEq(listOf(photo), actions.bugs.first().second)
+    }
+
+    fun testWithAnAgentTheModelStaysTheDefault() {
+        val quick = launcher(FakeBackend(online))
+        quick.prepare()
+        expect(quick.hasAgent)
+        assertEq(null, quick.action)
+        assertEq(AgentModelCatalog.DEFAULT_NODE_MODEL, quick.chip)
+    }
+
+    fun testPickingAModelOverridesTheBugReportDefaultAndIsRemembered() {
+        val prefs = MemoryPrefStore()
+        val quick = launcher(FakeBackend(emptyList(), canQueue = false), prefs)
+        quick.prepare()
+        quick.chooseModel(AgentModelCatalog.DEFAULT_NODE_MODEL)
+        assertEq(null, quick.action)
+        val again = launcher(FakeBackend(emptyList(), canQueue = false), prefs)
+        again.prepare()
+        assertEq(null, again.action)
+    }
+
+    fun testAChosenActionIsRememberedAndBlocksNoAgentRun() {
+        val prefs = MemoryPrefStore()
+        val quick = launcher(FakeBackend(online), prefs)
+        quick.prepare()
+        quick.chooseModel(QuickPromptAction.Note.choice)
+        assertEq("Take a note", quick.chip.label)
+        val again = launcher(FakeBackend(online), prefs)
+        assertEq(QuickPromptAction.Note, again.action)
+        assertEq(AgentModelCatalog.DEFAULT_NODE_MODEL, again.model)
+    }
+
+    fun testATaskGoesToThePickedMemberWithTheFirstLineAsItsTitle() {
+        val actions = FakePromptActions()
+        actions.people = QuickTaskPeople("alice", listOf("bob", "alice", "carol"))
+        val prefs = MemoryPrefStore()
+        val backend = FakeBackend(online)
+        val quick = launcher(backend, prefs, actions)
+        quick.prepare()
+        quick.chooseAction(QuickPromptAction.Task)
+        assertEq(listOf("", "alice", "bob", "carol"), quick.taskAssignees)
+        assertEq("@alice (you)", quick.taskAssigneeLabel("alice"))
+        assertEq("Unassigned", quick.taskAssigneeLabel(""))
+        quick.chooseAssignee("bob")
+        assertEq("Task for @bob", quick.contextLine)
+        val outcome = quick.send("Ship the calendar fix\nIt fails on save.", emptyList())
+        assertEq(QuickLaunchOutcome.Done("Created a task for @bob."), outcome)
+        assertEq(listOf("Ship the calendar fix", "Ship the calendar fix\nIt fails on save.", "bob", "alice/mobile"), actions.tasks.first())
+        expect(backend.launches.isEmpty())
+        assertEq("bob", launcher(FakeBackend(online), prefs).taskAssignee)
+    }
+
+    fun testAnUnassignedTaskSaysSo() {
+        val actions = FakePromptActions()
+        val quick = launcher(FakeBackend(online), actions = actions)
+        quick.chooseAction(QuickPromptAction.Task)
+        assertEq(QuickLaunchOutcome.Done("Created an unassigned task on General."), quick.send("Plan the offsite", emptyList()))
+        assertEq("", actions.tasks.first()[2])
+    }
+
+    fun testIssuesAndPostsGoToThePublishedRepository() {
+        val actions = FakePromptActions()
+        val quick = launcher(FakeBackend(online), actions = actions)
+        quick.prepare()
+        quick.chooseAction(QuickPromptAction.Issue)
+        assertEq("alice/mobile", quick.contextLine)
+        assertEq(QuickLaunchOutcome.Done("Filed an issue on alice/mobile."), quick.send("Calendar save fails\nSteps: open, save.", emptyList()))
+        assertEq(listOf("alice", "mobile", "Calendar save fails", "Steps: open, save."), actions.issues.first())
+        quick.chooseAction(QuickPromptAction.ActivityPub)
+        assertEq(QuickLaunchOutcome.Done("Published to ActivityPub for alice/mobile."), quick.send("Calendars work again", emptyList()))
+        assertEq(listOf("alice", "mobile", "Calendars work again", ""), actions.posts.first())
+    }
+
+    fun testANoteKeepsTheRestAsItsBody() {
+        val actions = FakePromptActions()
+        val quick = launcher(FakeBackend(online), actions = actions)
+        quick.chooseAction(QuickPromptAction.Note)
+        assertEq(QuickLaunchOutcome.Done("Saved as a note."), quick.send("Groceries\n- milk\n- eggs", emptyList()))
+        assertEq(listOf("Groceries", "- milk\n- eggs"), actions.notes.first())
+    }
+
+    fun testOnlyBugReportsTakePhotosAndAccountActionsNeedAnAccount() {
+        val quick = launcher(FakeBackend(online))
+        quick.chooseAction(QuickPromptAction.Note)
+        assertEq(
+            QuickLaunchOutcome.Failed("Take a note cannot include photos yet. Remove them, or send a bug report."),
+            quick.send("Hi", listOf(photo)),
+        )
+        val signedOut = launcher(FakeBackend(online, signedIn = false))
+        signedOut.chooseAction(QuickPromptAction.Task)
+        val outcome = signedOut.send("Hi", emptyList())
+        expect(outcome is QuickLaunchOutcome.NeedsFix && outcome.fix == QuickLaunchFix.SignInAccount, "$outcome")
+    }
+
+    fun testARefusalIsShownAndTheTextIsKept() {
+        val actions = FakePromptActions()
+        actions.error = QuickActionError("Only the assignee can do that.")
+        val quick = launcher(FakeBackend(online), actions = actions)
+        quick.chooseAction(QuickPromptAction.Task)
+        assertEq(QuickLaunchOutcome.Failed("Only the assignee can do that."), quick.send("Do it", emptyList()))
+    }
+
+    fun testAnAgentOnlySendStillStartsAnAgentWhateverTheChipSays() {
+        val actions = FakePromptActions()
+        val quick = launcher(FakeBackend(online), actions = actions)
+        quick.chooseAction(QuickPromptAction.BugReport)
+        val outcome = quick.sendAgent("Fix the crash", emptyList())
+        expect(outcome is QuickLaunchOutcome.Queued, "$outcome")
+        expect(actions.bugs.isEmpty())
+    }
+
+    fun testTitlesAreTheFirstLineCappedLikeTheDesktop() {
+        assertEq("One two" to "three", QuickPromptAction.titleAndBody("  One   two \n three "))
+        assertEq(160, QuickPromptAction.titleAndBody("a".repeat(200)).first.length)
+        assertEq("body only", QuickPromptAction.titleAndBody("\n\nbody only").first)
     }
 }

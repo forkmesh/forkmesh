@@ -45,6 +45,7 @@ object Features {
     fun install(app: App) {
         AccountFeature.install(app)
         com.forkmesh.nativeapp.feature.market.PackageGateFeature.install(app)
+        com.forkmesh.nativeapp.feature.account.PermissionsIntro.install(com.forkmesh.nativeapp.feature.market.PackageGateFeature.needsStarterPack())
         LocalReposFeature.install(app)
         com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature.install(app)
         ChatFeature.install(app)
@@ -63,6 +64,7 @@ object Features {
         com.forkmesh.nativeapp.feature.admin.AdminFeature.install(app)
         com.forkmesh.nativeapp.feature.planning.PlanningFeature.install(app)
         com.forkmesh.nativeapp.feature.glasses.GlassesFeature.install(app)
+        com.forkmesh.nativeapp.feature.health.HealthFeature.install(app)
         com.forkmesh.nativeapp.feature.phonesecurity.PhoneSecurityFeature.install()
         com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.install(app)
         com.forkmesh.nativeapp.feature.openwrt.OpenWrtFeature.install()
@@ -71,8 +73,10 @@ object Features {
         com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.instancefeed.InstanceFeedFeature.install()
+        com.forkmesh.nativeapp.feature.poker.PokerFeature.install()
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.files.FilesFeature.install(app)
+        com.forkmesh.nativeapp.feature.nexus.NexusFeature.install()
         com.forkmesh.nativeapp.feature.workflows.WorkflowsFeature.install()
         com.forkmesh.nativeapp.feature.people.PeopleFeature.install()
         com.forkmesh.nativeapp.feature.docs.DocsFeature.install()
@@ -81,6 +85,8 @@ object Features {
         SurfacesFeature.install(app)
         com.forkmesh.nativeapp.feature.coves.CovesFeature.install(app)
         com.forkmesh.nativeapp.feature.account.settings.SettingsArea.install(app)
+        com.forkmesh.nativeapp.shell.ShellBadges.install(app)
+        com.forkmesh.nativeapp.feature.genie.GenieFeature.install(app)
         connectAreas(app)
     }
 
@@ -118,13 +124,20 @@ object Features {
         com.forkmesh.nativeapp.feature.account.settings.DataFolderAlert()
         AccountFeature.Gate {
             val starterPackPending by PackageGateFeature.starterPackPending.collectAsState()
-            if (starterPackPending) {
+            val permissionsIntroPending by com.forkmesh.nativeapp.feature.account.PermissionsIntro.pending.collectAsState()
+            if (permissionsIntroPending) {
+                com.forkmesh.nativeapp.feature.account.PermissionsIntroScreen()
+            } else if (starterPackPending) {
                 StarterPackScreen(onContinue = PackageGateFeature::chooseStarterPack)
             } else {
                 Box(Modifier.fillMaxSize(), propagateMinConstraints = true) {
                     NavigatorHost(navigator, onExit)
                     PingCelebrationOverlay()
+                    com.forkmesh.nativeapp.feature.genie.GenieOverlay()
+                    com.forkmesh.nativeapp.feature.genie.GenieAutoSendReviewHost()
                     DirectCallOverlay()
+                    com.forkmesh.nativeapp.feature.chat.GroupCallOverlay()
+                    com.forkmesh.nativeapp.feature.pocket.PocketLockOverlay()
                 }
             }
         }

@@ -93,13 +93,10 @@ def _issue_ping(**overrides):
 
 
 def test_a_banner_names_the_record_the_repo_the_actor_and_the_text():
-    # The whole point of the change: three populated lines instead of one
-    # placeholder. Number in the headline, repository and byline on the
-    # subtitle, the body text as the body.
     ns = _load()
     alert = ns["_push_alert_item"](_issue_ping())
-    assert alert["title"] == "\U0001F440 #42 Issue submitted"
-    assert alert["subtitle"] == "acme/widgets \xb7 by bob"
+    assert alert["title"] == "\U0001F440 bob \xb7 acme/widgets #42"
+    assert alert["subtitle"] == ""
     assert alert["body"] == "Search box is broken on mobile"
     assert alert["actor"] == "bob"
     assert alert["repo"] == "acme/widgets"
@@ -113,8 +110,11 @@ def test_the_repository_is_named_once_not_twice():
     # line, and a lock screen has far less room than a list row.
     ns = _load()
     alert = ns["_push_alert_item"](_issue_ping())
-    assert "acme/widgets" not in alert["title"]
-    assert alert["subtitle"].count("acme/widgets") == 1
+    assert alert["title"].count("acme/widgets") == 1
+    assert "acme/widgets" not in alert["subtitle"] + alert["body"]
+    plain = ns["_push_alert_item"](_issue_ping(actor=""))
+    assert "acme/widgets" not in plain["title"]
+    assert plain["subtitle"].count("acme/widgets") == 1
 
 
 def test_an_alias_fronted_repo_shows_the_organization_not_the_mirror():
@@ -127,9 +127,15 @@ def test_an_alias_fronted_repo_shows_the_organization_not_the_mirror():
                     repo="mirror23/forkmesh"),
         {"mirror23/forkmesh": "forkmesh/forkmesh"},
     )
-    assert alert["title"] == "\U0001F440 #42 Issue submitted"
-    assert alert["subtitle"] == "forkmesh/forkmesh \xb7 by bob"
-    assert "mirror23" not in alert["subtitle"].lower()
+    assert alert["title"] == "\U0001F440 bob \xb7 forkmesh/forkmesh #42"
+    assert "mirror23" not in alert["title"].lower()
+    plain = ns["_push_alert_item"](
+        _issue_ping(title="Issue submitted for Mirror23/ForkMesh",
+                    repo="mirror23/forkmesh", actor=""),
+        {"mirror23/forkmesh": "forkmesh/forkmesh"},
+    )
+    assert plain["title"] == "\U0001F440 #42 Issue submitted"
+    assert plain["subtitle"] == "forkmesh/forkmesh"
     assert alert["threadId"] == "forkmesh/forkmesh"
 
 
@@ -156,10 +162,10 @@ def test_missing_pieces_drop_out_instead_of_rendering_placeholders():
         assert "#0" not in alert[field]
         assert "\xb7" not in alert[field]
 
-    # Actor but no repository still reads as a byline on its own.
     solo = ns["_push_alert_item"]({"title": "Bounty funded", "actor": "carol"})
-    assert solo["subtitle"] == "by carol"
-    assert solo["title"] == "\U0001F514 Bounty funded"
+    assert solo["title"] == "\U0001F514 carol"
+    assert solo["subtitle"] == ""
+    assert solo["body"] == "Bounty funded"
 
     # And nothing at all still produces a drawable banner.
     empty = ns["_push_alert_item"]({})
@@ -172,8 +178,11 @@ def test_a_submission_without_a_number_keeps_its_plain_headline():
     # A brand-new submission has no durable number until the owner drains it.
     ns = _load()
     alert = ns["_push_alert_item"](_issue_ping(meta={"source": "issue"}))
-    assert alert["title"] == "\U0001F440 Issue submitted"
-    assert not alert["title"].startswith("#")
+    assert alert["title"] == "\U0001F440 bob \xb7 acme/widgets"
+    assert "#" not in alert["title"]
+    plain = ns["_push_alert_item"](
+        _issue_ping(meta={"source": "issue"}, actor=""))
+    assert plain["title"] == "\U0001F440 Issue submitted"
 
 
 def test_a_long_body_is_bounded_but_still_several_lines():
@@ -202,8 +211,8 @@ def test_the_actor_portrait_rides_along_and_oversize_ones_are_dropped():
         _issue_ping(), None, {"bob": "not base64!!"})["avatarPng"] == ""
     # The byline never depends on the picture arriving.
     assert ns["_push_alert_item"](
-        _issue_ping(), None, {"bob": huge})["subtitle"] == (
-            "acme/widgets \xb7 by bob")
+        _issue_ping(), None, {"bob": huge})["title"] == (
+            "\U0001F440 bob \xb7 acme/widgets #42")
 
     # A phone thumbnail may be larger than the digest's inline email portrait,
     # and still small enough to read inside an extension's budget.
@@ -223,7 +232,7 @@ def test_a_tap_lands_on_the_record_the_banner_names():
     assert ns["_push_alert_item"](_issue_ping())["href"] == (
         "/acme/widgets/issues/42")
     pull = _issue_ping(meta={"number": 7, "source": "pull"})
-    assert ns["_push_alert_item"](pull)["href"] == "/acme/widgets/pulls/7"
+    assert ns["_push_alert_item"](pull)["href"] == "/acme/widgets/pull/7"
     # No number yet: the repository itself.
     fresh = _issue_ping(meta={"source": "issue"})
     assert ns["_push_alert_item"](fresh)["href"] == "/acme/widgets"

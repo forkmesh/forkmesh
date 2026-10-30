@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -51,6 +52,8 @@ URLS = ROOT / "src" / "urls.py"
 URLS_TEXT = URLS.read_text(encoding="utf-8")
 
 DAY_MS = 86400000
+LEGACY_STATUS_TABLE_RE = re.compile(
+    r"\bsystem_status_(?:minute|hourly|daily)\b")
 
 
 def _load(*names, extra_globals=None):
@@ -64,6 +67,7 @@ def _load(*names, extra_globals=None):
         "STATUS_SYSTEM_CHECK_STEPS", "STATUS_MIRROR_CHECK_STEPS",
         "STATUS_SYSTEM_PROBE_PHASES", "STATUS_SAMPLE_PHASE",
         "STATUS_NEXT_CHECK_SCAN_MINUTES",
+        "STATUS_REDACTED_ROUTE_PREFIXES", "STATUS_REDACTED_ROUTE_PATHS",
         "STATUS_HISTORY_DAYS",
         "STATUS_HISTORY_RETAIN_MS", "STATUS_SAMPLE_WINDOW_MS",
         "STATUS_HOUR_MS", "STATUS_DAY_MS",
@@ -82,6 +86,7 @@ def _load(*names, extra_globals=None):
         "STATUS_CORE_PREFIX", "STATUS_CORE_MAX",
         "STATUS_CORE_ROSTER_FRESH_MS", "STATUS_CORE_HEARTBEAT_FRESH_MS",
         "STATUS_CORE_VOTE_FRESH_MS", "STATUS_CORE_IDS_FRESH_MS",
+        "STATUS_CORE_METRICS_FRESH_MS",
         "STATUS_CORE_CHECK_STEPS",
         "STATUS_RUNNER_PREFIX", "STATUS_RUNNER_MAX",
         "STATUS_RUNNER_SEEN_FRESH_MS", "STATUS_RUNNER_CHECK_STEPS",
@@ -117,6 +122,7 @@ def _load(*names, extra_globals=None):
     }
     helper_names = {
         "_cron_due_phases", "_status_phase_slots", "_status_next_check",
+        "_status_error_route_path", "_status_route_family",
         "_status_expected_checks_for_hour", "_status_effective_hour",
         "_status_minute", "_is_tunnel_content_path",
         "_status_deploy_semaphore_active",
@@ -138,6 +144,8 @@ def _load(*names, extra_globals=None):
         "_status_core_name", "_status_core_rows",
         "_status_core_vote_detail", "_status_core_verdicts",
         "_status_core_health", "_flagship_monitor_duration",
+        "_status_core_resource_pct", "_status_core_resources_from_rows",
+        "_status_core_resources",
         "_status_runner_rows", "_status_runner_verdicts",
         "_status_runner_health",
         "record_status_compaction",
@@ -271,18 +279,6 @@ def _sample_env(
             "INSERT INTO system_status_daily_batch",
         )):
             return
-        # Legacy shapes retained for isolated compatibility fixtures.
-        if sql.startswith("INSERT INTO system_status_daily"):
-            for i in range(0, len(args), 3):
-                inserted.append({"system": args[i + 1], "failure": args[i + 2]})
-        elif sql.startswith("INSERT INTO system_status_hourly"):
-            for i in range(0, len(args), 4):
-                hourly.append({"system": args[i + 1], "failure": args[i + 2],
-                               "reason": args[i + 3]})
-        elif sql.startswith("INSERT INTO system_status_minute"):
-            for i in range(0, len(args), 4):
-                minutely.append({"system": args[i + 1], "ok": args[i + 2],
-                                 "reason": args[i + 3]})
 
     async def noop(*_a, **_k):
         return None
@@ -1183,7 +1179,8 @@ def test_static_page_error_does_not_fail_api():
     assert results["website"] == 1
     assert results["api"] == 0
     assert results["errors"] == 1
-    assert "/dashboard/index.html" in reasons["website"]
+    assert reasons["website"].endswith("/dashboard")
+    assert "index.html" not in reasons["website"]
 
 
 def test_git_clone_and_room_errors_are_bucketed_as_realtime():
@@ -1229,15 +1226,31 @@ def test_aggregated_do_aborts_fail_only_realtime_and_do_status_rows():
     assert "5 exceeded allowed duration" in reasons["durable_objects"]
 
 
-def test_reason_includes_status_and_message_and_extra_count():
+def test_reason_includes_status_and_route_family_and_extra_count():
     results, reasons, _minutes = _run_sample(error_rows=[
         {"path": "/api/repositories", "status": 500, "message": "boom"},
         {"path": "/api/other", "status": 502, "message": "boom2"},
     ])
     assert results["api"] == 1
     assert results["errors"] == 1
-    assert reasons["api"] == "500 on /api/repositories: boom (+1 more)"
-    assert reasons["errors"] == "500 on /api/repositories: boom (+1 more)"
+    assert reasons["api"] == "500 on /api/repositories (+1 more)"
+    assert reasons["errors"] == "500 on /api/repositories (+1 more)"
+
+
+def test_public_reason_never_repeats_exception_text_or_full_paths():
+    message = ("KeyError('alice@example.com')\nTraceback (most recent call "
+               "last):\n  File \"entry.py\", line 1")
+    results, reasons, _minutes = _run_sample(error_rows=[
+        {"path": "/api/accounts/alice/sessions/abc?token=t", "status": 500,
+         "message": message},
+        {"path": "/@alice/settings", "status": 500, "message": message},
+    ])
+    assert results["api"] == 1 and results["website"] == 1
+    assert reasons["api"] == "500 on /api/accounts"
+    assert reasons["website"] == "500 on /@[account]"
+    for text in filter(None, reasons.values()):
+        assert "alice" not in text and "Traceback" not in text
+        assert "KeyError" not in text and "token" not in text
 
 
 def test_offline_direct_mirror_503s_do_not_fail_any_system():
@@ -1270,7 +1283,8 @@ def test_a_500_on_a_direct_mirror_path_still_fails_the_api_bucket():
     ])
     assert results["api"] == 1
     assert results["errors"] == 1
-    assert "boom" in reasons["api"]
+    assert reasons["api"] == "500 on /api/repo/[repository]/releases"
+    assert "boom" not in reasons["api"] and "somenode" not in reasons["api"]
 
 
 def test_repository_content_paths_are_classified_and_room_paths_are_not():
@@ -1525,24 +1539,57 @@ def test_ensure_schema_skips_ddl_when_fingerprint_matches():
 
 # --- status_history ----------------------------------------------------------
 
+_STATUS_BATCH_BUCKET_KEYS = {
+    "minute": "minute_ts", "hour": "hour_ts", "day": "day_ts"}
+_STATUS_BATCH_CODEC = {}
+
+
+def _status_batch_rows(bucket, rows):
+    # Fold per-system fixture rows into the one-row-per-bucket batch shape the
+    # status readers decode. A row that already carries "data" is a raw batch
+    # row and passes through untouched (for deliberately invalid payloads).
+    if "encode" not in _STATUS_BATCH_CODEC:
+        _STATUS_BATCH_CODEC["encode"] = _load()["_status_batch_encode"]
+    key = _STATUS_BATCH_BUCKET_KEYS[bucket]
+    raw = []
+    buckets = {}
+    for row in rows:
+        if "data" in row:
+            raw.append(dict(row))
+            continue
+        if bucket == "minute":
+            item = {"ok": int(row.get("ok") or 0) == 1,
+                    "reason": row.get("reason") or None}
+        else:
+            item = {"checks": int(row["checks"]),
+                    "failures": int(row["failures"])}
+            if bucket == "hour":
+                item["reason"] = row.get("reason") or None
+        buckets.setdefault(int(row[key]), {})[row["system"]] = item
+    return raw + [
+        {key: bucket_ts,
+         "data": _STATUS_BATCH_CODEC["encode"](bucket, systems)}
+        for bucket_ts, systems in sorted(buckets.items())
+    ]
+
+
 def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
-                 core_rows=(), runner_rows=()):
+                 core_rows=(), runner_rows=(), metric_rows=()):
     async def noop(*_a, **_k):
         return None
 
+    minute_batches = _status_batch_rows("minute", minute_rows)
+    hour_batches = _status_batch_rows("hour", hour_rows)
+    day_batches = _status_batch_rows("day", rows)
+
     async def d1_all(_env, sql, *_args):
         if "system_status_minute_batch" in sql:
-            return []
+            return list(minute_batches)
         if "system_status_hourly_batch" in sql:
-            return []
+            return list(hour_batches)
         if "system_status_daily_batch" in sql:
-            return []
-        if "system_status_minute" in sql:
-            return list(minute_rows)
-        if "system_status_hourly" in sql:
-            return list(hour_rows)
-        if "system_status_daily" in sql:
-            return list(rows)
+            return list(day_batches)
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "mirror_https_endpoints" in sql:
             return list(mirror_rows)
         if "FROM cluster_members" in sql:
@@ -1551,6 +1598,8 @@ def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
                 if int(row.get("heartbeat_ms") or 0) >= _args[0]]
         if "FROM runner_nodes" in sql:
             return list(runner_rows)
+        if "FROM host_metrics" in sql:
+            return list(metric_rows)
         return rows
 
     captured = {}
@@ -1569,9 +1618,10 @@ def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
 
 
 def _run_history(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
-                 core_rows=(), runner_rows=()):
+                 core_rows=(), runner_rows=(), metric_rows=()):
     extra, captured = _history_env(
-        rows, hour_rows, minute_rows, mirror_rows, core_rows, runner_rows)
+        rows, hour_rows, minute_rows, mirror_rows, core_rows, runner_rows,
+        metric_rows)
     g = _load("status_history", extra_globals=extra)
     asyncio.run(g["status_history"](object()))
     return captured
@@ -2178,6 +2228,60 @@ def test_worker_errors_still_fail_worker_health_after_client_filtering():
     assert "/desktop-error/" not in reasons["errors"]
 
 
+def test_redacted_private_repository_errors_keep_their_route_family():
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:pulls]",
+            "status": 503, "message": "response status 503",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["api"] == 1
+    assert results["errors"] == 1
+    assert results["website"] == 0
+    assert "[api:pulls]" in reasons["api"]
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:tree]",
+            "status": 503, "message": "response status 503",
+        },
+        {
+            "method": "GET",
+            "path": "/repository-route-redacted/[git-upload-pack]",
+            "status": 502, "message": "response status 502",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[release-blob]",
+            "status": 504, "message": "response status 504",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    for system in ("website", "api", "errors", "realtime"):
+        assert results[system] == 0, system
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[git-info-refs]",
+            "status": 500, "message": "response status 500",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[page]",
+            "status": 500, "message": "response status 500",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["realtime"] == 1
+    assert results["website"] == 1
+    assert results["api"] == 0
+    assert "[page]" in reasons["website"]
+
+
 def test_one_sampler_records_each_minute_via_the_claim_row():
     # Replayed alarm delivery can call record_status_sample more than once for
     # a minute. A completed batch is the receipt that suppresses later work.
@@ -2394,11 +2498,17 @@ def test_mirror_without_recent_online_signal_is_omitted_from_world_status():
 
 def test_retired_mirror_history_does_not_resurrect_status_rows():
     cur_minute = (_Clock.value // MINUTE_MS) * MINUTE_MS
-    minute_rows = [
-        {"minute_ts": cur_minute, "system": "mirror:" + mirror,
-         "ok": 0, "reason": "old retired-node failure"}
-        for mirror in ("mirror2", "mirror14")
-    ]
+    minute_rows = [{
+        "minute_ts": cur_minute,
+        "data": json.dumps({
+            "schemaVersion": 1,
+            "systems": {
+                "mirror:" + mirror: {
+                    "ok": False, "reason": "old retired-node failure"}
+                for mirror in ("mirror2", "mirror14")
+            },
+        }),
+    }]
     out = _run_history([], minute_rows=minute_rows)
     assert all(s["id"] != "mirror:mirror2" for s in out["systems"])
     assert all(s["id"] != "mirror:mirror14" for s in out["systems"])
@@ -2942,27 +3052,25 @@ def test_release_rows_inherit_the_history_of_the_checks_they_replaced():
     assert decoded["release_macos"] == {"checks": 900, "failures": 9}
 
 
-def test_mid_hour_cutover_compacts_legacy_and_batch_minutes_once():
+def test_hour_compaction_rebuilds_from_batch_minutes_only():
     current_hour = (_Clock.value // HOUR_MS) * HOUR_MS
     target = current_hour - HOUR_MS
     writes = []
-    holder = {}
+    queries = []
+    minute_batches = _status_batch_rows("minute", [
+        {
+            "minute_ts": target + index * MINUTE_MS,
+            "system": "website", "ok": 0 if index in (4, 52) else 1,
+            "reason": {4: "early outage", 52: "late outage"}.get(index),
+        }
+        for index in range(60)
+    ])
 
-    async def d1_first(_env, _sql, *_args):
-        return None
-
-    async def d1_all(_env, sql, *_args):
+    async def d1_all(_env, sql, *args):
+        queries.append((sql, args))
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "system_status_minute_batch" in sql:
-            return holder["batch"]
-        if "system_status_minute" in sql:
-            return [
-                {
-                    "minute_ts": target + index * MINUTE_MS,
-                    "system": "website", "ok": 0 if index == 4 else 1,
-                    "reason": "legacy outage" if index == 4 else None,
-                }
-                for index in range(30)
-            ]
+            return list(minute_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -2970,52 +3078,40 @@ def test_mid_hour_cutover_compacts_legacy_and_batch_minutes_once():
 
     runtime = _load(
         "_compact_status_hour",
-        extra_globals={"d1_first": d1_first, "d1_all": d1_all,
-                       "d1_run": d1_run},
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run},
     )
-    holder["batch"] = [
-        {
-            "minute_ts": target + index * MINUTE_MS,
-            "data": runtime["_status_batch_encode"]("minute", {
-                "website": {
-                    "ok": index != 52,
-                    "reason": "batch outage" if index == 52 else None,
-                },
-            }),
-        }
-        for index in range(30, 60)
-    ]
     asyncio.run(runtime["_compact_status_hour"](
         object(), current_hour, current_hour + MINUTE_MS))
+    assert [args for _sql, args in queries] == [
+        (target, target + 59 * MINUTE_MS)]
     assert len(writes) == 1
     assert "system_status_hourly_batch" in writes[0][0]
+    assert writes[0][1][0] == target
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["website"] == {
-        "checks": 60, "failures": 2, "reason": "batch outage"}
+        "checks": 60, "failures": 2, "reason": "late outage"}
 
 
-def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
+def test_day_compaction_sums_each_batch_hour_once():
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     target = current_day - DAY_MS
     writes = []
-    holder = {}
+    queries = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": target + index * HOUR_MS,
+            "system": "api", "checks": 60,
+            "failures": {3: 1, 19: 2}.get(index, 0),
+            "reason": "batch failure" if index in (3, 19) else None,
+        }
+        for index in range(24)
+    ])
 
-    async def d1_first(_env, _sql, *_args):
-        return None
-
-    async def d1_all(_env, sql, *_args):
+    async def d1_all(_env, sql, *args):
+        queries.append((sql, args))
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if "system_status_hourly_batch" in sql:
-            return holder["batch"]
-        if "system_status_hourly" in sql:
-            return [
-                {
-                    "hour_ts": target + index * HOUR_MS,
-                    "system": "api", "checks": 60,
-                    "failures": 1 if index == 3 else 0,
-                    "reason": "legacy failure" if index == 3 else None,
-                }
-                for index in range(12)
-            ]
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3023,24 +3119,12 @@ def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
 
     runtime = _load(
         "_compact_status_day",
-        extra_globals={"d1_first": d1_first, "d1_all": d1_all,
-                       "d1_run": d1_run},
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run},
     )
-    holder["batch"] = [
-        {
-            "hour_ts": target + index * HOUR_MS,
-            "data": runtime["_status_batch_encode"]("hour", {
-                "api": {
-                    "checks": 60,
-                    "failures": 2 if index == 19 else 0,
-                    "reason": "batch failure" if index == 19 else None,
-                },
-            }),
-        }
-        for index in range(12, 24)
-    ]
     asyncio.run(runtime["_compact_status_day"](
         object(), current_day, current_day + MINUTE_MS))
+    assert [args for _sql, args in queries] == [
+        (target, target + 23 * HOUR_MS)]
     assert len(writes) == 1
     assert "system_status_daily_batch" in writes[0][0]
     payload = json.loads(writes[0][1][1])
@@ -3048,23 +3132,32 @@ def test_mid_day_cutover_compacts_legacy_and_seeded_batch_hours_once():
         "checks": 1440, "failures": 3}
 
 
-def test_day_compaction_clamps_duplicate_legacy_minute_checks():
+def test_day_compaction_ignores_an_overfull_hour_batch():
+    # An hour batch holds at most 60 minute checks. One claiming more is
+    # rejected by the strict decoder instead of inflating the day bucket.
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     target = current_day - DAY_MS
     writes = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": target + index * HOUR_MS,
+            "system": "api", "checks": 60, "failures": 60,
+            "reason": "outage",
+        }
+        for index in range(23)
+    ]) + [{
+        "hour_ts": target + 23 * HOUR_MS,
+        "data": json.dumps({
+            "schemaVersion": 1,
+            "systems": {"api": {
+                "checks": 61, "failures": 61, "reason": "duplicate"}},
+        }),
+    }]
 
     async def d1_all(_env, sql, *_args):
-        if "FROM system_status_hourly WHERE" in sql:
-            return [
-                {
-                    "hour_ts": target + index * HOUR_MS,
-                    "system": "api",
-                    "checks": 61,
-                    "failures": 61,
-                    "reason": "duplicate cron delivery",
-                }
-                for index in range(24)
-            ]
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3079,8 +3172,8 @@ def test_day_compaction_clamps_duplicate_legacy_minute_checks():
 
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["api"] == {
-        "checks": 1440,
-        "failures": 1440,
+        "checks": 1380,
+        "failures": 1380,
     }
 
 
@@ -3089,9 +3182,19 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
     oldest_missing = current_hour - 8 * HOUR_MS
     newer_missing = current_hour - 2 * HOUR_MS
     discovery_args = []
+    minute_args = []
     writes = []
+    minute_batches = _status_batch_rows("minute", [
+        {
+            "minute_ts": oldest_missing + index * MINUTE_MS,
+            "system": "website", "ok": 0 if index in (10, 20) else 1,
+            "reason": "outage" if index in (10, 20) else None,
+        }
+        for index in range(60)
+    ])
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT hour_ts FROM system_status_hourly_batch" in sql
             and " IN (" in sql
@@ -3102,14 +3205,12 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
                 for candidate in args
                 if candidate not in {oldest_missing, newer_missing}
             ]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": oldest_missing,
-                "system": "website",
-                "checks": 60,
-                "failures": 2,
-                "reason": "legacy outage",
-            }]
+        # A backfilled hour is rebuilt from raw minutes, never copied from
+        # an hour record.
+        assert "system_status_hourly_batch" not in sql, sql
+        if "FROM system_status_minute_batch WHERE" in sql:
+            minute_args.append(args)
+            return list(minute_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3125,13 +3226,15 @@ def test_later_hour_compaction_backfills_oldest_missing_24h_bucket():
     assert len(discovery_args) == 24
     assert discovery_args[0] == current_hour - 24 * HOUR_MS
     assert discovery_args[-1] == current_hour - HOUR_MS
+    assert minute_args == [
+        (oldest_missing, oldest_missing + 59 * MINUTE_MS)]
     assert len(writes) == 1
     assert writes[0][1][0] == oldest_missing
     payload = json.loads(writes[0][1][1])
     assert payload["systems"]["website"] == {
         "checks": 60,
         "failures": 2,
-        "reason": "legacy outage",
+        "reason": "outage",
     }
 
 
@@ -3141,8 +3244,19 @@ def test_later_day_compaction_backfills_oldest_missing_history_bucket():
     newer_missing = current_day - 3 * DAY_MS
     discovery_args = []
     writes = []
+    hour_batches = _status_batch_rows("hour", [
+        {
+            "hour_ts": oldest_missing + index * HOUR_MS,
+            "system": "api",
+            "checks": 60,
+            "failures": 1 if index == 5 else 0,
+            "reason": "batch failure" if index == 5 else None,
+        }
+        for index in range(24)
+    ])
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT day_ts FROM system_status_daily_batch" in sql
             and " IN (" in sql
@@ -3153,17 +3267,8 @@ def test_later_day_compaction_backfills_oldest_missing_history_bucket():
                 for candidate in args
                 if candidate not in {oldest_missing, newer_missing}
             ]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [
-                {
-                    "hour_ts": oldest_missing + index * HOUR_MS,
-                    "system": "api",
-                    "checks": 60,
-                    "failures": 1 if index == 5 else 0,
-                    "reason": "legacy failure" if index == 5 else None,
-                }
-                for index in range(24)
-            ]
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3195,26 +3300,29 @@ def test_first_five_minutes_refresh_latest_hour_and_day_without_gap_scan():
     day_target = current_day - DAY_MS
     discovery_queries = []
     writes = []
+    minute_batches = _status_batch_rows("minute", [{
+        "minute_ts": hour_target,
+        "system": "website",
+        "ok": 1,
+        "reason": None,
+    }])
+    hour_batches = _status_batch_rows("hour", [{
+        "hour_ts": day_target,
+        "system": "api",
+        "checks": 60,
+        "failures": 0,
+        "reason": None,
+    }])
 
     async def d1_all(_env, sql, *_args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if " IN (" in sql:
             discovery_queries.append(sql)
             return []
-        if "FROM system_status_minute WHERE" in sql:
-            return [{
-                "minute_ts": hour_target,
-                "system": "website",
-                "ok": 1,
-                "reason": None,
-            }]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": day_target,
-                "system": "api",
-                "checks": 60,
-                "failures": 0,
-                "reason": None,
-            }]
+        if "FROM system_status_minute_batch WHERE" in sql:
+            return list(minute_batches)
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3231,17 +3339,35 @@ def test_first_five_minutes_refresh_latest_hour_and_day_without_gap_scan():
 
     assert discovery_queries == []
     assert [args[0] for _sql, args in writes] == [hour_target, day_target]
+    assert json.loads(writes[0][1][1])["systems"] == {
+        "website": {"checks": 1, "failures": 0, "reason": None}}
+    assert json.loads(writes[1][1][1])["systems"] == {
+        "api": {"checks": 60, "failures": 0}}
 
 
 def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
     current_day = (_Clock.value // DAY_MS) * DAY_MS
     repaired_hour = current_day - HOUR_MS
     writes = []
+    minute_batches = _status_batch_rows("minute", [{
+        "minute_ts": repaired_hour,
+        "system": "api",
+        "ok": 0,
+        "reason": "late outage",
+    }])
+    hour_batches = _status_batch_rows("hour", [{
+        "hour_ts": repaired_hour,
+        "system": "api",
+        "checks": 1,
+        "failures": 1,
+        "reason": "late outage",
+    }])
 
     async def noop(*_args, **_kwargs):
         return None
 
     async def d1_all(_env, sql, *args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
         if (
             "SELECT hour_ts FROM system_status_hourly_batch" in sql
             and " IN (" in sql
@@ -3250,21 +3376,10 @@ def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
                 {"hour_ts": candidate}
                 for candidate in args if candidate != repaired_hour
             ]
-        if "FROM system_status_minute WHERE" in sql:
-            return [{
-                "minute_ts": repaired_hour,
-                "system": "api",
-                "ok": 0,
-                "reason": "late outage",
-            }]
-        if "FROM system_status_hourly WHERE" in sql:
-            return [{
-                "hour_ts": repaired_hour,
-                "system": "api",
-                "checks": 1,
-                "failures": 1,
-                "reason": "late outage",
-            }]
+        if "FROM system_status_minute_batch WHERE" in sql:
+            return list(minute_batches)
+        if "FROM system_status_hourly_batch WHERE" in sql:
+            return list(hour_batches)
         return []
 
     async def d1_run(_env, sql, *args):
@@ -3286,13 +3401,20 @@ def test_repaired_yesterday_hour_rebuilds_existing_day_projection():
     assert [args[0] for _sql, args in compact_writes] == [
         repaired_hour, current_day - DAY_MS,
     ]
+    assert json.loads(compact_writes[0][1][1])["systems"] == {
+        "api": {"checks": 1, "failures": 1, "reason": "late outage"}}
+    assert json.loads(compact_writes[1][1][1])["systems"] == {
+        "api": {"checks": 1, "failures": 1}}
 
 
-def test_same_minute_batch_overlays_matching_legacy_and_keeps_disjoint_system():
+def test_minute_batch_reads_and_writes_use_only_the_batch_bucket():
     minute = (_Clock.value // MINUTE_MS) * MINUTE_MS
+    queries = []
+    writes = []
     holder = {}
 
     async def d1_all(_env, sql, *_args):
+        queries.append(sql)
         if "system_status_minute_batch" in sql:
             return [{"minute_ts": minute, "data": holder["body"]}]
         return [
@@ -3302,15 +3424,28 @@ def test_same_minute_batch_overlays_matching_legacy_and_keeps_disjoint_system():
              "reason": None},
         ]
 
-    runtime = _load("_status_minute_records", extra_globals={"d1_all": d1_all})
+    async def d1_run(_env, sql, *args):
+        writes.append((sql, args))
+
+    runtime = _load(
+        "_status_minute_records", "_write_status_minute_batch",
+        extra_globals={"d1_all": d1_all, "d1_run": d1_run})
     holder["body"] = runtime["_status_batch_encode"]("minute", {
         "website": {"ok": True, "reason": None},
     })
     rows = asyncio.run(runtime["_status_minute_records"](
         object(), minute, minute))
-    by_system = {row["system"]: row for row in rows}
-    assert by_system["website"]["ok"] == 1
-    assert by_system["api"]["ok"] == 1
+    assert rows == [
+        {"minute_ts": minute, "system": "website", "ok": 1, "reason": None}]
+
+    asyncio.run(runtime["_write_status_minute_batch"](
+        object(), minute, {"website": {"ok": False, "reason": "down"}}))
+    assert len(queries) == 1
+    assert "FROM system_status_minute_batch " in queries[0]
+    assert len(writes) == 1
+    assert writes[0][0].startswith("INSERT INTO system_status_minute_batch ")
+    assert json.loads(writes[0][1][1])["systems"] == {
+        "website": {"ok": False, "reason": "down"}}
 
 
 def test_deploy_roster_ignores_historical_mirrors():
@@ -3397,29 +3532,29 @@ def test_status_history_queries_only_exact_bounded_windows():
         },
     )
     asyncio.run(runtime["status_history"](object()))
+    assert not any(
+        LEGACY_STATUS_TABLE_RE.search(sql) for sql, _args in queries)
     table_windows = {}
     for sql, args in queries:
         for table in (
-            "system_status_daily", "system_status_daily_batch",
-            "system_status_hourly", "system_status_hourly_batch",
-            "system_status_minute", "system_status_minute_batch",
+            "system_status_daily_batch",
+            "system_status_hourly_batch",
+            "system_status_minute_batch",
         ):
             if f"FROM {table} " in sql:
+                assert table not in table_windows, table
                 table_windows[table] = args[:2]
     assert set(table_windows) == {
-        "system_status_daily", "system_status_daily_batch",
-        "system_status_hourly", "system_status_hourly_batch",
-        "system_status_minute", "system_status_minute_batch",
+        "system_status_daily_batch",
+        "system_status_hourly_batch",
+        "system_status_minute_batch",
     }
-    for table in ("system_status_daily", "system_status_daily_batch"):
-        start, end = table_windows[table]
-        assert end - start == 28 * DAY_MS
-    for table in ("system_status_hourly", "system_status_hourly_batch"):
-        start, end = table_windows[table]
-        assert 0 <= end - start <= 23 * HOUR_MS
-    for table in ("system_status_minute", "system_status_minute_batch"):
-        start, end = table_windows[table]
-        assert end - start == 59 * MINUTE_MS
+    start, end = table_windows["system_status_daily_batch"]
+    assert end - start == 28 * DAY_MS
+    start, end = table_windows["system_status_hourly_batch"]
+    assert 0 <= end - start <= 23 * HOUR_MS
+    start, end = table_windows["system_status_minute_batch"]
+    assert end - start == 59 * MINUTE_MS
 
 
 def test_free_plan_known_recurring_write_budget_keeps_incident_margin():
@@ -3463,9 +3598,7 @@ def test_free_plan_known_recurring_write_budget_keeps_incident_margin():
     assert 100_000 - recurring - privacy_transition_ceiling > 57_000
     # Steady status projection rows: 29 days + <=24 hours + 60 minutes.
     assert (29 + 24 + 60) * 1440 < 200_000
-    assert "INSERT INTO system_status_minute (" not in ENTRY_TEXT
-    assert "INSERT INTO system_status_hourly (" not in ENTRY_TEXT
-    assert "INSERT INTO system_status_daily (" not in ENTRY_TEXT
+    assert not LEGACY_STATUS_TABLE_RE.search(ENTRY_TEXT)
 
 
 def test_every_status_probe_runs_every_minute():
@@ -3483,21 +3616,48 @@ def test_every_status_probe_runs_every_minute():
         "STATUS_SYNTHETIC_HEALTHY_INTERVAL_MS"] == 60_000
 
 
-def test_legacy_hourly_cleanup_preserves_rollout_day_write_headroom():
-    sample_source = ENTRY_TEXT[
-        ENTRY_TEXT.index("async def record_status_sample"):
-        ENTRY_TEXT.index("async def status_history")
-    ]
-    prune = sample_source[
-        sample_source.index(
-            '"DELETE FROM system_status_hourly WHERE hour_ts < ?"'
-        ):
-        sample_source.index(
-            '"DELETE FROM system_status_minute WHERE minute_ts < ?"'
-        )
-    ]
-    assert "day_ts - STATUS_HISTORY_RETAIN_MS" in prune
-    assert "day_ts - STATUS_DAY_MS" not in prune
+def test_top_of_hour_retention_prunes_only_batch_status_tables():
+    now = (_Clock.value // HOUR_MS) * HOUR_MS
+    day_ts = (now // DAY_MS) * DAY_MS
+    writes = []
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    async def d1_all(_env, sql, *_args):
+        assert not LEGACY_STATUS_TABLE_RE.search(sql), sql
+        return []
+
+    async def d1_run(_env, sql, *args):
+        writes.append((" ".join(sql.split()), args))
+
+    runtime = _load(
+        "record_status_compaction",
+        extra_globals={"ensure_schema": noop, "d1_all": d1_all,
+                       "d1_run": d1_run},
+    )
+    asyncio.run(runtime["record_status_compaction"](object(), now=now))
+    retain = runtime["STATUS_HISTORY_RETAIN_MS"]
+    minute_retain = runtime["STATUS_MINUTE_RETAIN_MS"]
+    prunes = {
+        sql.split()[2]: args for sql, args in writes
+        if sql.startswith("DELETE FROM ")
+    }
+    assert prunes == {
+        "system_status_daily_batch": (day_ts - retain,),
+        "system_status_hourly_batch": (day_ts - retain,),
+        "system_status_minute_batch": (now - minute_retain,),
+        "system_status_sample_claim": (now - minute_retain,),
+        "durable_object_abort_minute": (now - retain,),
+    }
+    assert not any(
+        LEGACY_STATUS_TABLE_RE.search(sql) for sql, _args in writes)
+
+    writes.clear()
+    asyncio.run(runtime["record_status_compaction"](
+        object(), now=now + MINUTE_MS))
+    assert writes
+    assert not any(sql.startswith("DELETE FROM ") for sql, _args in writes)
 
 
 def test_status_monitor_state_upsert_skips_unchanged_heartbeats():
@@ -3820,6 +3980,13 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
                 },
             },
         },
+        ("tree", "tree?path=.forkmesh&ref=" + default_ref): {
+            "ok": True,
+            "entries": [
+                {"name": "issues", "type": "tree"},
+                {"name": "discussions", "type": "tree"},
+            ],
+        },
         ("tree", "tree?path=.forkmesh/discussions&ref=" + default_ref): {
             "ok": True,
             "entries": [{"name": "3", "type": "tree"}],
@@ -3980,6 +4147,40 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
     assert reason == "Discussions collection was not served by an eligible mirror"
     assert subrequest_charges == [1]
 
+    # Deleting the last discussion leaves no discussions folder, and the
+    # Discussions tab renders that, or an emptied folder, as zero rows.
+    missing_provenance.clear()
+    calls.clear()
+    metadata_key = ("tree", "tree?path=.forkmesh&ref=" + default_ref)
+    discussions_key = (
+        "tree", "tree?path=.forkmesh/discussions&ref=" + default_ref)
+    payloads[metadata_key] = {
+        "ok": True, "entries": [{"name": "issues", "type": "tree"}],
+    }
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert discussions_key not in calls
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
+    assert ("blobs", "blobs?path=.forkmesh/pulls/7/pull.md&ref="
+            + pulls_ref) in calls
+
+    calls.clear()
+    payloads[metadata_key] = {
+        "ok": True, "entries": [{"name": "discussions", "type": "tree"}],
+    }
+    payloads[discussions_key] = {"ok": True, "entries": []}
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert discussions_key in calls
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
+
+    calls.clear()
+    missing_provenance.add(metadata_key)
+    ok, reason = asyncio.run(probe(Env()))
+    assert ok is False
+    assert reason == (
+        "Repository metadata tree was not served by an eligible mirror")
+
     # The repository page renders both an absent metadata branch and an absent
     # ledger folder on that branch as an empty pull-request tab. Neither state
     # is evidence that the page or its eligible mirrors are unavailable.
@@ -4116,14 +4317,27 @@ def test_worker_exposes_status_route_and_schema():
     assert 'url.path in ("/api/status", "/api/status/")' in ENTRY_TEXT
     assert "async def status_history" in ENTRY_TEXT
     assert "async def record_status_sample" in ENTRY_TEXT
-    assert "CREATE TABLE IF NOT EXISTS system_status_daily" in ENTRY_TEXT
-    assert "CREATE TABLE IF NOT EXISTS system_status_hourly" in ENTRY_TEXT
+    assert not re.search(
+        r"CREATE TABLE IF NOT EXISTS system_status_(?:minute|hourly|daily)\b",
+        ENTRY_TEXT)
     assert "CREATE TABLE IF NOT EXISTS system_status_minute_batch" in ENTRY_TEXT
     assert "CREATE TABLE IF NOT EXISTS system_status_hourly_batch" in ENTRY_TEXT
     assert "CREATE TABLE IF NOT EXISTS system_status_daily_batch" in ENTRY_TEXT
     assert "idx_system_status_daily_day" not in ENTRY_TEXT
     assert "idx_system_status_hourly_hour" not in ENTRY_TEXT
     assert "idx_system_status_minute_ts" not in ENTRY_TEXT
+
+
+def test_status_code_and_runtime_schema_name_only_the_batch_status_tables():
+    for name in ("status_monitoring.py", "schema.py"):
+        source = (ROOT / "src" / name).read_text(encoding="utf-8")
+        assert not LEGACY_STATUS_TABLE_RE.search(source), name
+        for table in (
+            "system_status_minute_batch",
+            "system_status_hourly_batch",
+            "system_status_daily_batch",
+        ):
+            assert table in source, (name, table)
 
 
 def test_cron_samples_status_every_tick():
@@ -4619,7 +4833,7 @@ def test_core_mail_status_skips_rows_from_before_delivery_tracking():
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE mail_sends (send_id TEXT, sent_at INTEGER, "
                "status TEXT NOT NULL DEFAULT '', status_at INTEGER NOT NULL DEFAULT 0, "
-               "dsn TEXT NOT NULL DEFAULT '')")
+               "dsn TEXT NOT NULL DEFAULT '', cause TEXT NOT NULL DEFAULT '')")
 
     async def d1_first(_env, sql, *params):
         row = db.execute(sql, params).fetchone()
@@ -4633,15 +4847,15 @@ def test_core_mail_status_skips_rows_from_before_delivery_tracking():
     now = 2_000_000_000_000
     hour = 60 * 60 * 1000
     check = lambda: asyncio.run(module._core_mail_status(None, now))
-    db.execute("INSERT INTO mail_sends VALUES ('legacy', ?, '', 0, '')", (now - hour,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('legacy', ?, '', 0, '')", (now - hour,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('old', ?, 'delivery', 1, '2.0.0')", (now - 2 * hour,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('old', ?, 'delivery', 1, '2.0.0')", (now - 2 * hour,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('stuck', ?, 'accepted', 1, '')", (now - hour // 2 - 1,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('stuck', ?, 'accepted', 1, '')", (now - hour // 2 - 1,))
     assert check() == (False, "The most recent email has no delivery event after 30 minutes")
-    db.execute("INSERT INTO mail_sends VALUES ('fresh', ?, 'accepted', 1, '')", (now - 60_000,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('fresh', ?, 'accepted', 1, '')", (now - 60_000,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('bounced', ?, 'bounce', 1, '')", (now - 1000,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('bounced', ?, 'bounce', 1, '')", (now - 1000,))
     assert check() == (False, "The most recent email was reported as bounce")
 
 
@@ -4655,8 +4869,9 @@ def _core_mail_module(rows):
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE mail_sends (send_id TEXT, sent_at INTEGER, "
                "status TEXT NOT NULL DEFAULT '', status_at INTEGER NOT NULL DEFAULT 0, "
-               "dsn TEXT NOT NULL DEFAULT '')")
-    db.executemany("INSERT INTO mail_sends VALUES (?, ?, ?, 1, ?)", rows)
+               "dsn TEXT NOT NULL DEFAULT '', cause TEXT NOT NULL DEFAULT '')")
+    db.executemany("INSERT INTO mail_sends VALUES (?, ?, ?, 1, ?, ?)",
+                   [tuple(row) + ("",) * (5 - len(row)) for row in rows])
 
     async def d1_first(_env, sql, *params):
         row = db.execute(sql, params).fetchone()
@@ -4694,6 +4909,19 @@ def test_core_mail_status_names_the_postfix_cause(status, dsn, age_minutes,
     now = 2_000_000_000_000
     module = _core_mail_module(
         [("latest", now - age_minutes * 60_000, status, dsn)])
+    assert asyncio.run(module._core_mail_status(None, now)) == expected
+
+
+@pytest.mark.parametrize("cause,expected", [
+    ("recipient", (True, "")),
+    ("", (False, "The most recent email was reported as bounce: the "
+     "recipient's server refused it for security or policy reasons (5.7.1)")),
+])
+def test_core_mail_status_passes_a_policy_coded_missing_recipient(cause,
+                                                                  expected):
+    now = 2_000_000_000_000
+    module = _core_mail_module(
+        [("latest", now - 60_000, "bounce", "5.7.1", cause)])
     assert asyncio.run(module._core_mail_status(None, now)) == expected
 
 
@@ -4918,6 +5146,49 @@ def test_recorded_core_appears_as_a_full_status_system():
     assert all(s["id"] != "core:n8" for s in out["systems"])
 
 
+def test_core_status_carries_fresh_cpu_memory_and_disk():
+    now = _Clock.value
+    metric_rows = [
+        {"node_id": "n2", "ms": now - 30_000, "data": json.dumps(
+            {"cpuPct": 12.34, "memPct": 81, "diskPct": 140, "load1": 0.2})},
+        {"node_id": "n4", "ms": now - 30_000, "data": json.dumps(
+            {"cpuPct": None, "memPct": "x", "diskPct": -1})},
+        {"node_id": "n5", "ms": now - 10 * MINUTE_MS, "data": json.dumps(
+            {"cpuPct": 50, "memPct": 50, "diskPct": 50})},
+        {"node_id": "N/A", "ms": now, "data": "{}"},
+    ]
+    out = _run_history(
+        [], core_rows=[_core_row(name) for name in ("n2", "n4", "n5")],
+        metric_rows=metric_rows)
+    by_id = {s["id"]: s for s in out["systems"]}
+    assert by_id["core:n2"]["resources"] == {
+        "cpu": 12.3, "memory": 81.0, "disk": 100.0}
+    assert "resources" not in by_id["core:n4"]
+    assert "resources" not in by_id["core:n5"]
+    assert "resources" not in by_id["website"]
+
+
+def test_new_fleet_node_uptime_starts_at_its_first_sample():
+    cur_day = (_Clock.value // DAY_MS) * DAY_MS
+    rows = [
+        {"day_ts": cur_day - offset * DAY_MS, "system": system,
+         "checks": 1440, "failures": 0}
+        for offset in (1, 2)
+        for system in ("core:n4", "website")
+    ]
+    rows.append({"day_ts": cur_day - 5 * DAY_MS, "system": "website",
+                 "checks": 0, "failures": 0})
+    out = _run_history(rows, core_rows=[_core_row("n4")])
+    by_id = {s["id"]: s for s in out["systems"]}
+    core = by_id["core:n4"]
+    today_expected = core["days"][-1]["expectedChecks"]
+    sampled = round(2880 / (2880 + today_expected) * 100, 2)
+    assert core["uptimePct"] == sampled
+    assert core["coveragePct"] == sampled
+    assert [d["uptimePct"] for d in core["days"]][:3] == [None, None, None]
+    assert by_id["website"]["coveragePct"] < 100.0
+
+
 def test_status_only_release_reads_release_their_bodies():
     cancelled = []
     (ok, reason), issued = _release_platform_probe(cancelled=cancelled)
@@ -5091,3 +5362,41 @@ def test_a_raising_synthetic_probe_needs_the_next_minutes_probe_to_confirm():
     assert minute(3, dns) == (True, "")
     assert minute(4, dns) == failure
     assert minute(5, (True, "")) == (True, "")
+
+
+def test_core_mail_status_needs_forward_confirmed_reverse_dns_on_every_sender():
+    now = 2_000_000_000_000
+    module = _core_mail_module([("latest", now - 60_000, "delivery", "2.0.0")])
+    env = type("Env", (), {"FORKMESH_MAIL_SENDERS":
+                           "n4.next.forkmesh.com=203.0.113.4, "
+                           "n5.next.forkmesh.com=203.0.113.5"})()
+    published = {"203.0.113.4": True, "203.0.113.5": False}
+    lookups = []
+
+    def matches(host, ip):
+        lookups.append(ip)
+        return published[ip]
+    module._reverse_dns_matches = matches
+    assert asyncio.run(module._core_mail_status(env, now)) == (False, (
+        "Reverse DNS does not match for n5.next.forkmesh.com (203.0.113.5), "
+        "so Yahoo and other providers refuse its mail"))
+    published["203.0.113.5"] = True
+    assert asyncio.run(module._core_mail_status(env, now + 60_000))[0] is False
+    assert sorted(lookups) == ["203.0.113.4", "203.0.113.5"]
+    later = now + module.MAIL_REVERSE_DNS_CACHE_MS
+    assert asyncio.run(module._core_mail_status(env, later)) == (True, "")
+    assert len(lookups) == 4
+
+
+def test_reverse_dns_match_needs_the_name_to_resolve_back(monkeypatch):
+    import socket
+    module = _core_mail_module([])
+    monkeypatch.setattr(socket, "gethostbyaddr",
+                        lambda ip: ("n4.next.forkmesh.com.", [], [ip]))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port: [
+        (None, None, None, "", ("203.0.113.4", 0))])
+    assert module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.4")
+    assert not module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.9")
+    monkeypatch.setattr(socket, "gethostbyaddr",
+                        lambda ip: ("203-0-113-4.constant.com", [], [ip]))
+    assert not module._reverse_dns_matches("n4.next.forkmesh.com", "203.0.113.4")

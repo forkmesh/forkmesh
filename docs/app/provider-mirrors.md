@@ -19,6 +19,10 @@ Each feature is Off, ForkMesh → provider, provider → ForkMesh or Both ways.
 
 - **Code**: push only, from the primary core, for repositories hosted on the
   cores. No import: hosted refs move only with the owner's signed pin.
+  **Branches** (`refs`): all branches (`all`, the default) or only the
+  default branch (`default`); tags are always pushed. With "delete branches
+  and tags there" (`prune`) and `default`, every other branch on the target
+  is deleted.
 - **Issues**, **pull requests** (imported as issues labelled `pull-request`),
   **discussions** (GitHub): both ways, imported as unsigned inbox events with
   `source: "provider-mirror"`.
@@ -38,8 +42,23 @@ attempts. All tables are purged with the repository and covered by
 
 `POST /api/repo/<owner>/<repo>/provider-mirror` (owner only) with `action`:
 `get`, `save`, `toggle`, `verify`, `disconnect`, `sync`, `candidates`,
-`import`. The `provider-mirror` cron phase drains the outbox and syncs due
+`import`. `save` takes `provider`, `remote`, `token` (blank keeps the saved
+one), `resources`, `prune` (absent means off) and `refs` (`all`/`default`;
+absent keeps the saved value, anything else is `invalid_refs`). The
+`provider-mirror` cron phase drains the outbox and syncs due
 mirrors every 10 minutes.
+
+## Listed in About
+
+The public `GET /api/repo/<owner>/<repo>/about` returns `externalMirrors`:
+`{provider, label, url, role}` rows the repository page lists in the About
+rail's mirror list (under Direct access, or a Mirrors block on instances).
+A provider mirror is listed (`role: "mirror"`) only while it is active, pushes
+code, and its last check found the remote existing and public; a read-only
+mirror's `mirrorOf` is listed as `role: "upstream"`. GitHub is one more mirror
+of the repository, so a visitor who finds the ForkMesh page also finds it there.
+Built by `public_link` / `public_about_link` here and `upstream_link` /
+`external_mirrors` in `app/src/read_only_mirrors.py`.
 
 ## Security
 

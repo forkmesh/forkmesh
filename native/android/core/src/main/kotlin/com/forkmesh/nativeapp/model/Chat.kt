@@ -45,6 +45,7 @@ data class ChatMessage(
     val blocks: List<AppBlock> = emptyList(),
     val appMessageId: String = "",
     val ephemeral: Boolean = false,
+    val serverVisible: Boolean = false,
 )
 
 enum class ChatReceipt(val label: String) {
@@ -52,4 +53,8 @@ enum class ChatReceipt(val label: String) {
     SENT("Sent"),
     DELIVERED("Delivered"),
     READ("Read"),
+}
+
+data class ChatReceiptTimes(val delivered: Long? = null, val read: Long? = null) {
+    val isEmpty: Boolean get() = delivered == null && read == null
 }

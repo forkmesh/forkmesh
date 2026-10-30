@@ -47,9 +47,9 @@ QString contributionError(const NativePackageContribution &contribution)
     static const QRegularExpression browserPathPattern(
         QStringLiteral("^/[a-z0-9][a-z0-9_-]{0,63}(?:/[a-z0-9][a-z0-9_-]{0,63}){0,3}$"));
     if (contribution.browserPath.isEmpty()) {
-        if (!contribution.factory)
+        if (!contribution.factory && !contribution.chromeFactory)
             return QStringLiteral("missing page factory");
-    } else if (contribution.factory ||
+    } else if (contribution.factory || contribution.chromeFactory ||
                !browserPathPattern.match(contribution.browserPath).hasMatch() ||
                !contribution.apiPrefix.isEmpty()) {
         return QStringLiteral("invalid browser link");
@@ -70,6 +70,16 @@ QString contributionError(const NativePackageContribution &contribution)
                contribution.apiPrefix.contains(QStringLiteral("/../")) ||
                !proofPattern.match(contribution.requestProof).hasMatch()) {
         return QStringLiteral("invalid package API boundary");
+    }
+    for (const QString &proof : contribution.resourceProofs) {
+        if (!proofPattern.match(proof).hasMatch())
+            return QStringLiteral("invalid resource proof");
+    }
+    for (const QString &path : contribution.accountPaths) {
+        if (!apiPattern.match(path).hasMatch() ||
+            path.contains(QStringLiteral("//")) ||
+            path.contains(QStringLiteral("/../")))
+            return QStringLiteral("invalid account path");
     }
     return QString();
 }
@@ -198,6 +208,25 @@ QUrl nativePackageWebPageUrl(const QUrl &base, const QString &path)
     url.setPath(cleanPath);
     url.setQuery(relative.query(QUrl::FullyEncoded));
     url.setFragment(QString());
+    return url;
+}
+
+QUrl nativePackagePublicPageUrl(const QUrl &base, const QString &path)
+{
+    QUrl url = nativePackageWebPageUrl(base, path);
+    if (!url.isValid())
+        return {};
+    static const QStringList officialHosts = {
+        QStringLiteral("app.forkmesh.com"),
+        QStringLiteral("forkmesh.com"),
+        QStringLiteral("www.forkmesh.com"),
+        QStringLiteral("world.forkmesh.com"),
+    };
+    if (officialHosts.contains(url.host().toLower())) {
+        url.setScheme(QStringLiteral("https"));
+        url.setHost(QStringLiteral("forkmesh.com"));
+        url.setPort(-1);
+    }
     return url;
 }
 

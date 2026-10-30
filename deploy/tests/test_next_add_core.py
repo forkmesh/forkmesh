@@ -380,7 +380,7 @@ def test_services_prefetch_repos_while_the_release_uploads(tmp_path, monkeypatch
     (tmp_path / "dist" / ("fmnext-%s.tar.gz" % REV)).write_bytes(b"release")
     ssh = FakeSsh()
     next_add_core.FleetBackend(ssh=ssh).step_services(job)
-    assert ("install", "n4", ("daemon", "files", "start")) in calls
+    assert ("install", "n4", ("daemon", "calls", "files", "start")) in calls
     assert ("upload", REV, ["n4"]) in calls
     assert any(s == next_add_core.DAEMON_SYNC for _, s, _ in ssh.runs)
 
@@ -528,7 +528,10 @@ class Clock:
         self.now += seconds
 
 
-def test_repos_wait_until_every_peer_repository_is_synced(tmp_path):
+def test_repos_wait_until_every_peer_repository_is_synced(tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(next_add_core.FleetBackend, "register_account",
+                        lambda self, job, fleet: order.append("register"))
     fleet_path = write_fleet(tmp_path, with_n4=True)
     job, out = make_job(tmp_path, fleet_path=fleet_path, ip=N4_IP)
     peer = {"lastSyncOk": True, "repositories": {"forkmesh/forkmesh": "a",
@@ -538,6 +541,7 @@ def test_repos_wait_until_every_peer_repository_is_synced(tmp_path):
     def status(host, script, stdin):
         if host != N4_IP:
             return json.dumps(peer).encode()
+        order.append("status")
         calls["n"] += 1
         repos = {"forkmesh/forkmesh": "a"} if calls["n"] < 20 else peer["repositories"]
         return json.dumps({"lastSyncOk": True, "repositories": repos}).encode()
@@ -547,10 +551,16 @@ def test_repos_wait_until_every_peer_repository_is_synced(tmp_path):
     backend.step_repos(job)
     nudges = [r for r in ssh.runs if r[1] == next_add_core.DAEMON_SYNC]
     assert nudges and all(r[0] == N4_IP for r in nudges)
+    assert order[0] == "register" and order.count("register") == 1
+    first_sync = [r[1] for r in ssh.runs].index(next_add_core.DAEMON_SYNC)
+    assert all(r[0] != N4_IP or r[1] != next_add_core.DAEMON_STATUS
+               for r in ssh.runs[:first_sync])
     assert "serves all 2 repositories" in out.getvalue()
 
 
-def test_repos_time_out_with_the_missing_names(tmp_path):
+def test_repos_time_out_with_the_missing_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(next_add_core.FleetBackend, "register_account",
+                        lambda self, job, fleet: None)
     fleet_path = write_fleet(tmp_path, with_n4=True)
     job, _ = make_job(tmp_path, fleet_path=fleet_path, ip=N4_IP)
 
@@ -744,36 +754,93 @@ def repo(tmp_path, monkeypatch):
     return path
 
 
-def test_commit_goes_to_a_branch_and_leaves_head_and_the_checkout_alone(tmp_path, repo):
+def commit_job(tmp_path, repo):
     instances = seed_config()
     instances["fmnext-core-4"] = {"id": N4_ID, "ip": N4_IP, "ipv6": N4_V6}
     common.save_json(config() / "fleet-instances.json", instances)
     fleet_path = repo / "deploy" / "fleet.toml"
     fleet_path.write_text(next_fleet.upsert_core_block(fleet_text(), "n4", n4_block()))
     job, out = make_job(tmp_path, fleet_path=fleet_path, ip=N4_IP)
+    return job, out, fleet_path
+
+
+def test_commit_goes_to_a_branch_and_merges_it_into_the_checked_out_main(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    edited = fleet_path.read_text()
     head = git(repo, "rev-parse", "HEAD")
     backend = next_add_core.FleetBackend(repo=repo)
     backend.step_commit(job)
     commit = job.state.get("commit")
-    assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
     assert git(repo, "rev-parse", commit + "^") == head
-    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == fleet_path.read_text()
+    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == edited
     assert git(repo, "diff", "--name-only", head, commit) == "deploy/fleet.toml"
-    assert git(repo, "status", "--porcelain") == "M deploy/fleet.toml"
-    assert git(repo, "diff", "--cached", "--name-only") == ""
-    assert "merge --autostash --no-ff fleet/add-core-n4" in out.getvalue()
-    backend.step_commit(job)
-    assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
-    plain = subprocess.run(["git", "merge", "--no-ff", "-m", "merge", "fleet/add-core-n4"],
-                           cwd=repo, capture_output=True, text=True)
-    assert plain.returncode != 0 and git(repo, "rev-parse", "HEAD") == head
-    merged = subprocess.run(["git", "merge", "--autostash", "--no-ff", "-m", "merge",
-                             "fleet/add-core-n4"], cwd=repo, capture_output=True, text=True)
-    assert merged.returncode == 0, merged.stderr
+    assert git(repo, "rev-parse", "HEAD^1") == head
+    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
     assert git(repo, "status", "--porcelain") == ""
     assert git(repo, "stash", "list") == ""
-    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert fleet_path.read_text() == edited
+    assert "merged into main" in out.getvalue()
+    merged = job.state.get("merged")
+    backend.step_commit(job)
+    assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
+    assert git(repo, "rev-parse", "main") == merged
+    assert "already on main" in out.getvalue()
+
+
+def test_commit_leaves_other_changes_to_the_fleet_file_and_prints_the_merge(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    (repo / "README").write_text("unsaved\n")
+    fleet_path.write_text(fleet_path.read_text() + "# operator note\n")
+    edited = fleet_path.read_text()
+    head = git(repo, "rev-parse", "HEAD")
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "rev-parse", "fleet/add-core-n4") == job.state.get("commit")
+    assert fleet_path.read_text() == edited
+    assert (repo / "README").read_text() == "unsaved\n"
+    assert job.state.get("merged") == "" and "uncommitted" in job.state.get("merge_error")
+    assert "NOT on main" in out.getvalue()
+    assert "git -C %s merge --no-ff fleet/add-core-n4" % repo in out.getvalue()
+
+
+def test_commit_keeps_unrelated_unsaved_work_in_the_main_checkout(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    (repo / "README").write_text("unsaved\n")
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    assert git(repo, "rev-parse", "HEAD^2") == job.state.get("commit")
+    assert git(repo, "status", "--porcelain") == "M README"
+    assert (repo / "README").read_text() == "unsaved\n"
+
+
+def test_commit_moves_main_by_ref_when_no_checkout_holds_it(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    git(repo, "checkout", "-q", "--detach")
+    head = git(repo, "rev-parse", "HEAD")
+    fleet_path.write_text(fleet_text())
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    commit = job.state.get("commit")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "rev-parse", "main^1") == head
+    assert git(repo, "rev-parse", "main^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
+
+
+def test_commit_does_not_merge_a_conflict(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    edited = fleet_path.read_text()
+    fleet_path.write_text(edited.replace("10.77.0.4", "10.77.0.44"))
+    git(repo, "commit", "-qam", "main moves")
+    head = git(repo, "rev-parse", "HEAD")
+    base = git(repo, "rev-parse", "HEAD^")
+    branch = next_add_core.Git(repo)
+    commit, _ = branch.commit_file("fleet/add-core-n4", base, "deploy/fleet.toml",
+                                   edited, "add n4")
+    with pytest.raises(GuardError):
+        branch.merge_into_main(commit, "m")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == ""
 
 
 def test_commit_refuses_other_branches(repo):
@@ -852,7 +919,208 @@ def test_execute_resumes_the_unfinished_run_and_refuses_other_placement(tmp_path
     assert "already added" in str(error.value)
 
 
+REPLACE_STEPS = next_add_core.STEP_IDS[:-1] + ("remove", "commit")
+
+
+def test_replace_removes_the_old_core_after_the_new_one_serves(tmp_path):
+    job, out = make_job(tmp_path, replaces="n2")
+    backend = FakeBackend()
+    next_add_core.run(job, backend)
+    assert tuple(backend.calls) == REPLACE_STEPS
+    start = events(out)[0]
+    assert start["replaces"] == "n2" and [s["id"] for s in start["steps"]] == list(REPLACE_STEPS)
+    assert events(out)[-1]["summary"] == ("n4 is serving, in DNS; n2 is out of the fleet, "
+                                          "its instance kept")
+    assert events(out)[-1]["merged"] == "" and events(out)[-1]["merge_error"] == ""
+
+
+def test_a_failed_removal_keeps_the_new_core_serving_and_resumes(tmp_path):
+    job, out = make_job(tmp_path, replaces="n2")
+    backend = FakeBackend(fail_at="remove")
+    with pytest.raises(ToolError):
+        next_add_core.run(job, backend)
+    assert backend.contained == 0 and backend.in_dns
+    saved = next_add_core.State.load(job.state.path)
+    assert saved.status("health") == "done" and saved.status("dns") == "done"
+    result = [e for e in events(out) if e["event"] == "result"][-1]
+    assert "n4 stays in DNS" in result["notes"][0]
+    backend.calls = []
+    job.state = saved
+    next_add_core.run(job, backend)
+    assert backend.calls == ["remove", "commit"]
+
+
+def test_replace_target_must_be_another_core_in_the_fleet(tmp_path):
+    fleet = common.load_fleet(write_fleet(tmp_path))
+    assert next_add_core.check_replace(fleet, "n2", "n4") == "n2"
+    for old, new in (("n9", "n4"), ("r1", "n4"), ("n2;x", "n4"), ("", "n4"), ("n2", "n2")):
+        with pytest.raises(GuardError):
+            next_add_core.check_replace(fleet, old, new)
+
+
+def test_replace_commit_adds_the_new_core_and_retires_the_old_one(tmp_path, repo):
+    instances = seed_config()
+    instances["fmnext-core-4"] = {"id": N4_ID, "ip": N4_IP, "ipv6": N4_V6}
+    common.save_json(config() / "fleet-instances.json", instances)
+    fleet_path = repo / "deploy" / "fleet.toml"
+    job, out = make_job(tmp_path, fleet_path=fleet_path, ip=N4_IP, replaces="n2",
+                        promoted="n4")
+    head = git(repo, "rev-parse", "HEAD")
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    commit = job.state.get("commit")
+    assert git(repo, "rev-parse", commit + "^") == head
+    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
+    assert git(repo, "status", "--porcelain") == ""
+    text = git(repo, "show", commit + ":deploy/fleet.toml") + "\n"
+    assert git(repo, "show", "main:deploy/fleet.toml") + "\n" == text
+    assert 'name = "n2"' not in text and 'name = "n4"' in text
+    assert 'retired_cores = ["n2"]' in text
+    block = text[text.index('name = "n4"'):]
+    assert "rqlite_voter = false" not in block.split("[[", 1)[0]
+    assert git(repo, "log", "-1", "--format=%s", commit) == \
+        "Replace core node n2 with n4 (fmnext-core-4) in deploy/fleet.toml"
+
+
+def test_step_remove_runs_remove_core_and_records_the_promotion(tmp_path, monkeypatch):
+    import next_remove_core as rc
+    job, _ = make_job(tmp_path, replaces="n2")
+    seen = {}
+
+    def start_state(backend, fleet_file, name, destroy, execute):
+        seen["start"] = (name, destroy, execute)
+        return next_add_core.State(tmp_path / "remove-n2.json",
+                                   {"name": "n2", "allowed": True, "steps": {}}), False
+
+    def run(removal, backend):
+        seen["replaced_by"] = removal.state.get("replaced_by")
+        removal.state.set(promoted="n4", finished=True)
+    monkeypatch.setattr(rc, "start_state", start_state)
+    monkeypatch.setattr(rc, "run", run)
+    next_add_core.FleetBackend(ssh=FakeSsh()).step_remove(job)
+    assert seen == {"start": ("n2", False, True), "replaced_by": "n4"}
+    assert job.state.get("promoted") == "n4"
+
+
+def test_step_remove_refuses_when_remove_core_would(tmp_path, monkeypatch):
+    import next_remove_core as rc
+    job, _ = make_job(tmp_path, replaces="n2")
+    monkeypatch.setattr(rc, "start_state", lambda *a: (next_add_core.State(
+        tmp_path / "r.json", {"name": "n2", "allowed": False,
+                              "blocker": "would leave 2 voters"}), False))
+    monkeypatch.setattr(rc, "run", lambda *a: pytest.fail("ran a refused removal"))
+    with pytest.raises(GuardError) as error:
+        next_add_core.FleetBackend(ssh=FakeSsh()).step_remove(job)
+    assert "2 voters" in str(error.value)
+
+
+def test_options_and_resume_with_replace(tmp_path, capsys, monkeypatch):
+    seed_config()
+    fleet_path = write_fleet(tmp_path)
+    vultr, _ = vultr_fake()
+    vultr.plans = lambda: []
+    assert next_fleet.main(["--fleet", str(fleet_path), "add-core-options", "--replace",
+                            "n2", "--json"], vultr=vultr, ssh=FakeSsh()) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["replaces"] == "n2" and "error" not in data
+    assert [s["id"] for s in data["steps"]] == list(REPLACE_STEPS)
+    assert next_fleet.main(["--fleet", str(fleet_path), "add-core-options", "--replace",
+                            "n7", "--json"], vultr=vultr, ssh=FakeSsh()) == 0
+    assert "not a core" in json.loads(capsys.readouterr().out)["error"]
+    job, _ = make_job(tmp_path, fleet_path=fleet_path, replaces="n2")
+    with pytest.raises(ToolError):
+        next_add_core.run(job, FakeBackend(fail_at="mesh"))
+    assert next_fleet.main(["add-core-status", "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["replaces"] == "n2" and status["steps"]["remove"] == "pending"
+    assert [s["id"] for s in status["step_list"]] == list(REPLACE_STEPS)
+    monkeypatch.setattr(common.DeployLock, "acquire", lambda self, wait=0: self)
+    monkeypatch.setattr(common.DeployLock, "release", lambda self: None)
+    args = type("Args", (), {"execute": True, "dry_run": False, "fleet": str(fleet_path),
+                             "region": None, "plan": None, "snapshot": None,
+                             "name": None, "replace": "n3", "events": True,
+                             "command": "add-core"})()
+    with pytest.raises(ToolError) as error:
+        next_add_core.main_add_core(args, vultr=object(), ssh=FakeSsh(),
+                                    backend=FakeBackend(), out=io.StringIO())
+    assert "to replace n2" in str(error.value)
+    args.replace = None
+    backend = FakeBackend()
+    assert next_add_core.main_add_core(args, vultr=object(), ssh=FakeSsh(),
+                                       backend=backend, out=io.StringIO()) == 0
+    assert backend.calls[-2:] == ["remove", "commit"]
+
+
 def test_rqlite_ready_probe_sends_the_root_only_credentials():
     assert "-K /etc/forkmesh-next/rqlite.curlrc" in next_add_core.RQLITE_READY
     assert "/readyz" in next_add_core.RQLITE_READY
 
+
+
+def mail_vm(tmp_path, monkeypatch, published_from):
+    seed_config()
+    fleet_key(tmp_path, monkeypatch)
+    job, out = make_job(tmp_path)
+    vultr, http = vultr_fake()
+    http.routes[("POST", "/instances/%s/ipv4/reverse" % N4_ID)] = {}
+    http.routes[("DELETE", "/instances/" + N4_ID)] = {}
+
+    def creates():
+        return sum(1 for c in http.calls if c[:2] == ("POST", "/instances"))
+
+    def reverse(ip):
+        return ("n4.next.forkmesh.com" if creates() >= published_from
+                else "203-0-113-14.constant.com")
+    clock = Clock()
+    backend = next_add_core.FleetBackend(vultr=vultr, ssh=FakeSsh(), sleep=clock.sleep,
+                                         clock=clock, reverse=reverse)
+    monkeypatch.setattr(backend, "prefetch", lambda job: None)
+    monkeypatch.setattr(backend, "mail_enabled", lambda: True)
+    monkeypatch.setattr(backend, "provider", lambda job: "vultr")
+    return backend, job, http, out
+
+
+def test_vm_replaces_an_address_whose_reverse_dns_never_publishes(tmp_path, monkeypatch):
+    backend, job, http, out = mail_vm(tmp_path, monkeypatch, published_from=2)
+    backend.step_vm(job)
+    methods = [c[:2] for c in http.mutations()]
+    assert methods.count(("POST", "/instances")) == 2
+    assert methods.count(("DELETE", "/instances/" + N4_ID)) == 1
+    reverses = [c[2] for c in http.calls if c[1].endswith("/ipv4/reverse")]
+    assert reverses == [{"ip": N4_IP, "reverse": "n4.next.forkmesh.com"}] * 2
+    assert job.state.get("instance_id") == N4_ID and job.state.get("ip") == N4_IP
+    assert "deleting the empty VM" in out.getvalue()
+
+
+def test_vm_gives_up_after_three_addresses_and_keeps_the_last(tmp_path, monkeypatch):
+    backend, job, http, _ = mail_vm(tmp_path, monkeypatch, published_from=99)
+    with pytest.raises(ToolError) as error:
+        backend.step_vm(job)
+    methods = [c[:2] for c in http.mutations()]
+    assert methods.count(("POST", "/instances")) == 3
+    assert methods.count(("DELETE", "/instances/" + N4_ID)) == 2
+    assert "Vultr ticket" in str(error.value) and N4_IP in str(error.value)
+
+
+def test_vm_without_core_mail_skips_the_reverse_dns_check(tmp_path, monkeypatch):
+    backend, job, http, _ = mail_vm(tmp_path, monkeypatch, published_from=99)
+    monkeypatch.setattr(backend, "mail_enabled", lambda: False)
+    backend.step_vm(job)
+    assert not any(c[1].endswith("/ipv4/reverse") for c in http.calls)
+
+
+def test_health_needs_forward_confirmed_reverse_dns_unless_the_core_relays(
+        tmp_path, monkeypatch):
+    job, out = make_job(tmp_path)
+    backend = next_add_core.FleetBackend(ssh=FakeSsh())
+    monkeypatch.setattr(backend, "mail_enabled", lambda: True)
+    monkeypatch.setattr(backend, "provider", lambda job: "vultr")
+    monkeypatch.setattr(backend, "ptr_status", lambda ip, host: (
+        "wrong: 203-0-113-14.constant.com, want %s" % host))
+    n1 = {"name": "n1", "public_ipv4": "203.0.113.11"}
+    n4 = {"name": "n4", "public_ipv4": N4_IP}
+    with pytest.raises(ToolError) as error:
+        backend.check_mail_identity(job, {"nodes": [n1, n4]})
+    assert "mail_relay" in str(error.value) and N4_IP in str(error.value)
+    backend.check_mail_identity(job, {"nodes": [n1, dict(n4, mail_relay="n1")]})
+    assert "sends mail through n1" in out.getvalue()

@@ -426,3 +426,47 @@ def test_world_routes_imports_before_the_runtime_is_bound():
     exec(compile(ROUTES.read_text(encoding="utf-8"), str(ROUTES), "exec"),
          namespace)
     assert callable(namespace["world_floor_notes_handler"])
+
+
+def test_floor_note_mentions_and_authors_link_to_public_profiles():
+    script = f"""
+globalThis.location = {{ hostname: "app.forkmesh.com", origin: "https://app.forkmesh.com" }};
+const {{ floorNoteProfileUrl, noteTextHTML }} = await import({json.dumps(MODULE.as_uri())});
+console.log(JSON.stringify({{
+  text: noteTextHTML("hi @bob, mail me@bob.dev <i>"),
+  bot: noteTextHTML("ask @forkbot"),
+  url: floorNoteProfileUrl("@Bob"),
+  bad: floorNoteProfileUrl("x[bot]"),
+}}));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True, text=True, timeout=30, check=True)
+    out = json.loads(result.stdout)
+    assert out["text"] == (
+        'hi <a class="mention" href="https://forkmesh.com/@bob">@bob</a>, '
+        "mail me@bob.dev &lt;i&gt;")
+    assert out["bot"] == 'ask <span class="mention">@forkbot</span>'
+    assert out["url"] == "https://forkmesh.com/@bob"
+    assert out["bad"] == ""
+    module = MODULE.read_text(encoding="utf-8")
+    assert '<div class="fm-floor-note-meta"><b>${profileLinkHTML(item.author)}</b>' in module
+    assert ".fm-floor-note-text a.mention:hover" in module
+    assert ".fm-floor-note-meta b a:hover" in module
+
+
+def test_world_member_title_and_error_faces_link_to_public_profiles():
+    detail = APP[APP.index("  openWorldMemberDetail(member = {}, { returnFocus = null } = {}) {"):]
+    detail = detail[:detail.index('<p class="world-eyebrow">WORLD MEMBER / PUBLIC PROFILE</p>') + 2000]
+    assert 'String(record.accountStatus || "Guest") === "Guest"' in detail
+    assert ": worldPublicProfileUrl(name);" in detail
+    title = detail[detail.index('<h2 id="world-detail-title">'):]
+    title = title[:title.index("</h2>")]
+    assert "memberProfileUrl" in title
+    assert '<a href="${escapeHTML(' in title
+    assert "escapeHTML(name)}</a>" in title
+    assert 'target="_blank"' not in title
+    faces = APP[APP.index("const errorActorFaces = (actors, anonymous = 0) =>"):]
+    faces = faces[:faces.index("const errorSource = (item) =>")]
+    assert "worldPublicProfileUrl(actor.name)" in faces
+    assert '<a href="${escapeHTML(' in faces

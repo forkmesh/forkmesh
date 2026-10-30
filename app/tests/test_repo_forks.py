@@ -270,6 +270,11 @@ def _forks_request(owner="alice", repo="proj"):
 
 def test_forks_list_is_public_and_newest_first():
     ns = _harness(
+        repositories=[
+            {"key_bi": "bi:alice/proj", "is_private": 0},
+            {"key_bi": "bi:bob/proj", "is_private": 0},
+            {"key_bi": "bi:carol/proj", "is_private": 0},
+        ],
         forks=[
             {"parent_bi": "bi:alice/proj", "fork_bi": "bi:bob/proj",
              "account_bi": "bi:bob", "fork_owner": "bob", "fork_name": "proj",
@@ -291,6 +296,27 @@ def test_forks_list_is_public_and_newest_first():
     assert resp["data"]["forks"][0]["profileUrl"] == \
         "https://forkmesh.com/@carol"
     assert "avatarPng" not in resp["data"]["forks"][1]
+
+
+def test_forks_list_leaves_out_private_forks():
+    ns = _harness(
+        repositories=[
+            {"key_bi": "bi:alice/proj", "is_private": 0},
+            {"key_bi": "bi:bob/proj", "is_private": 0},
+            {"key_bi": "bi:carol/secret", "is_private": 1},
+        ],
+        forks=[
+            {"parent_bi": "bi:alice/proj", "fork_bi": "bi:bob/proj",
+             "account_bi": "bi:bob", "fork_owner": "bob", "fork_name": "proj",
+             "created_at": 10},
+            {"parent_bi": "bi:alice/proj", "fork_bi": "bi:carol/secret",
+             "account_bi": "bi:carol", "fork_owner": "carol",
+             "fork_name": "secret", "created_at": 20},
+        ])
+    resp = asyncio.run(ns["repo_forks_handler"](
+        object(), _forks_request(), "alice", "proj"))
+    assert [f["owner"] for f in resp["data"]["forks"]] == ["bob"]
+    assert resp["data"]["count"] == 1
 
 
 def test_forks_list_404s_for_a_private_repo():
@@ -438,7 +464,12 @@ def _web_fork_harness(runtime_mode="headless"):
     async def authorize(_env, _request, owner):
         return "PUBKEY" if owner == "mirror9" else ""
 
+    async def hosted_fork_create(_env, _request, _owner, _public, _repo):
+        # Not a hosted parent: the managed-mirror path runs.
+        return None
+
     ns = _load_functions({
+        "hosted_fork_create": hosted_fork_create,
         "re": re,
         "parse_qs": parse_qs,
         "quote": quote,

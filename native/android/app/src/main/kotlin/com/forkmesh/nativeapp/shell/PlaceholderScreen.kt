@@ -24,7 +24,7 @@ class PlaceholderScreen(private val name: String, private val icon: String) : Sc
     @Composable
     override fun Content(navigator: Navigator) {
         Column(
-            modifier = Modifier.fillMaxSize().background(Fm.colors.bgBase),
+            modifier = Modifier.fillMaxSize().background(Fm.colors.canvas),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

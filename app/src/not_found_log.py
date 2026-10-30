@@ -2,6 +2,9 @@ import ipaddress
 import re
 from urllib.parse import quote
 
+from hidden_unicode import clean_query as clean_hidden_query
+import instance_privacy
+
 
 def _bind_runtime(runtime):
     namespace = globals()
@@ -252,6 +255,8 @@ def _under_args(path, prefix):
 
 async def record(env, site, method, path, referrer="", now=None,
                  client=None, fetch_site=""):
+    if instance_privacy.active(env):
+        return False
     try:
         site = normalize_site(site)
         method = normalize_method(method)
@@ -480,7 +485,7 @@ async def _handle_post(env, request, params, admin_query, account):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True))
     back = dict(view=VIEW, sort=_first(params, "sort") or None,
                 page=_first(params, "page") or None)
 

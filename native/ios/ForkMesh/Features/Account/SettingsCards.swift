@@ -782,6 +782,27 @@ struct AppearanceCard: View {
         (mode: ThemeMode.dark, icon: "dark_mode_outlined", label: "Dark"),
     ]
 
+    private static let layouts: [(mode: LayoutMode, icon: String)] = [
+        (mode: LayoutMode.controlTower, icon: "grid_view_outlined"),
+        (mode: LayoutMode.focus, icon: "view_agenda_outlined"),
+    ]
+
+    private var layoutTrack: some View {
+        HStack(spacing: 0) {
+            ForEach(AppearanceCard.layouts, id: \.mode) { (entry: (mode: LayoutMode, icon: String)) in
+                ThemeModeSegment(
+                    icon: entry.icon,
+                    label: entry.mode.label,
+                    selected: settings.layoutMode == entry.mode,
+                    onTap: { settings.setLayoutMode(entry.mode) })
+                    .accessibilityIdentifier("appearance-layout-\(entry.mode.rawValue)")
+            }
+        }
+        .padding(3)
+        .background(fm.bgOverlay)
+        .clipShape(Capsule())
+    }
+
     private var modeTrack: some View {
         HStack(spacing: 0) {
             ForEach(AppearanceCard.modes, id: \.label) { (entry: (mode: ThemeMode, icon: String, label: String)) in
@@ -829,6 +850,23 @@ struct AppearanceCard: View {
             Text("Theme").fmText(.labelMedium, color: fm.textSecondary)
             modeTrack
                 .padding(.top, FmSpace.x2)
+            Text("Layout").fmText(.labelMedium, color: fm.textSecondary)
+                .padding(.top, FmSpace.x4)
+            layoutTrack
+                .padding(.top, FmSpace.x2)
+            SettingsNote(text: "\(settings.layoutMode.label): \(settings.layoutMode.note.lowercased()). The CRM follows it; the desktop has the same two modes.")
+                .padding(.top, FmSpace.x1)
+            Toggle(isOn: Binding<Bool>(
+                get: { settings.matchesInstanceTheme },
+                set: { (on: Bool) in settings.setMatchesInstanceTheme(on) })
+            ) {
+                Text("Match the instance's theme").fmText(.bodyMedium)
+            }
+            .tint(fm.accent)
+            .accessibilityIdentifier("appearance-match-instance-theme")
+            .padding(.top, FmSpace.x3)
+            SettingsNote(text: "Wear the colours this instance's admin picked. Your own accent and surfaces below come back when this is off.")
+                .padding(.top, FmSpace.x1)
             Text("Accent colour").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
             ThemeAccentPicker(theme: theme, dark: fm.dark, onChange: apply)

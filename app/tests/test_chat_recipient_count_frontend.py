@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
 TRANSPORT = PUBLIC / "chat-room-transport.js"
 CRYPTO = PUBLIC / "chat-crypto.js"
+SEAL = PUBLIC / "chat-seal.js"
 CHAT = PUBLIC / "chat.js"
 CHAT_CSS = PUBLIC / "chat.css"
 CHAT_TEXT = CHAT.read_text(encoding="utf-8")
@@ -63,9 +64,21 @@ def _transport_run(steps):
       import {{ createChatRoomTransport }} from {json.dumps(TRANSPORT.as_uri())};
       import {{ derivePassphraseKey, encryptObject }}
         from {json.dumps(CRYPTO.as_uri())};
+      import {{ createRoomSealStore }} from {json.dumps(SEAL.as_uri())};
       {FAKE_WEBSOCKET}
+      const items = new Map();
+      const sealStore = createRoomSealStore({{
+        storage: {{
+          getItem: (k) => (items.has(k) ? items.get(k) : null),
+          setItem: (k, v) => items.set(k, String(v)),
+          removeItem: (k) => items.delete(k),
+        }},
+        acct: "me",
+        wrappingKey: null,
+      }});
       const received = [];
       const counts = [];
+      const marks = {{}};
       const transport = createChatRoomTransport({{
         authorize: async (room) => ({{
           scope: room.scope,
@@ -74,6 +87,7 @@ def _transport_run(steps):
           webSocketUrl: "/api/chat/channels/alpha/ws",
         }}),
         allowsControllerAccess: () => true,
+        resolveSeal: (room, name) => sealStore.resolve(room.scope, name),
         onPlain: (plain) => received.push(plain),
         onHistory: (plains) => received.push(...plains),
         onRecipients: (id, count, _room, names) =>
@@ -97,7 +111,7 @@ def _transport_run(steps):
       await settle();
       {steps}
       process.stdout.write(JSON.stringify({{
-        received, counts, sent: socket.sent }}));
+        received, counts, marks, sent: socket.sent }}));
     """)
 
 
@@ -106,16 +120,19 @@ def test_outer_relay_count_reaches_the_plain_and_inner_values_are_dropped():
       const stamped = await encryptObject(
         { type: "chat", id: "m1", text: "hi", relayRecipients: 99 }, key);
       stamped.persist = true;
+      stamped.srv = true;
       stamped.recipients = 3;
       stamped.recipientNames = ["bob", "Carol", "dave", 7];
       socket.emit("message", { data: JSON.stringify(stamped) });
       const forged = await encryptObject(
         { type: "chat", id: "m2", text: "hey", relayRecipients: 42,
           relayRecipientNames: ["mallory"] }, key);
+      forged.srv = true;
       socket.emit("message", { data: JSON.stringify(forged) });
       const invalid = await encryptObject(
         { type: "chat", id: "m3", text: "yo" }, key);
       invalid.recipients = "7";
+      invalid.srv = true;
       socket.emit("message", { data: JSON.stringify(invalid) });
       await settle();
     """)
@@ -129,11 +146,12 @@ def test_outer_relay_count_reaches_the_plain_and_inner_values_are_dropped():
 
 def test_sender_ack_maps_the_frame_hash_back_to_the_message_id():
     result = _transport_run("""
+      marks.own = socket.sent.length;
       await transport.send(
         { type: "chat", id: "own-1", text: "hello" }, { persist: true });
       await transport.send({ type: "typing", id: "typing-1" });
       const { createHash } = await import("node:crypto");
-      const ref = createHash("sha256").update(socket.sent[0]).digest("hex")
+      const ref = createHash("sha256").update(socket.sent[marks.own]).digest("hex")
         .slice(0, 40);
       socket.emit("message", { data: JSON.stringify({
         kind: "forkmesh-recipients", v: 1, ref, recipients: 4,
@@ -143,7 +161,7 @@ def test_sender_ack_maps_the_frame_hash_back_to_the_message_id():
         recipients: 9 }) });
       await settle();
     """)
-    first = result["sent"][0]
+    first = result["sent"][result["marks"]["own"]]
     assert result["counts"] == [["own-1", 4, ["alice", "bob"]]]
     assert json.loads(first)["persist"] is True
     assert "recipients" not in json.loads(first)

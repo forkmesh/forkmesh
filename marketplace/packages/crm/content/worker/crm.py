@@ -24,7 +24,7 @@ PREFIX = "/api/crm"
 # matching kCrmRequestProof constant; both must stay byte-for-byte identical.
 REQUEST_PROOF = "forkmesh-crm-request-v1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
-MAX_CONTACTS = 2000
+MAX_CONTACTS = 5000
 MAX_EMAILS = 1000
 MAX_MAIL_MESSAGES = 2000
 MAX_ZOHO_IMPORT = 200
@@ -70,6 +70,7 @@ CSV_IMPORT_PING_ERRORS = 3
 CSV_IMPORT_ROW_MESSAGES = {
     "name_or_email_required": "needs a name, an email or a company",
     "invalid_email": "has an email address that is not valid",
+    "crm_full": "was not added because the CRM already holds %d contacts" % MAX_CONTACTS,
 }
 # How many data rows an import preview reads to guess each column's field and
 # show the member a few sample values before they confirm the mapping.
@@ -107,6 +108,7 @@ DEFAULT_FLOWS = (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
 CONTACTED_STAGE = "contacted"
+CONTACTED_BACKFILL = "contacted-stages"
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -243,6 +245,8 @@ SEND_STATUSES = frozenset({
     "suspension", "unsubscribe", "spam",
 })
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 PLUGIN_ID = "crm"
 
 # Founders outreach. Organization owners and admins, plus the members they put
@@ -507,9 +511,10 @@ DATA_SCHEMA_UP = [
     "ON crm_contacts(org_bi,updated_at DESC,contact_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_contacts_org_email "
     "ON crm_contacts(org_bi,email_bi) WHERE email_bi<>''",
-    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit
+    "DROP TRIGGER IF EXISTS trg_crm_contact_limit",
+    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit_5000
         BEFORE INSERT ON crm_contacts
-        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=2000
+        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=5000
         BEGIN SELECT RAISE(ABORT,'crm_contact_catalog_full'); END""",
     """CREATE TABLE IF NOT EXISTS crm_email_sends (
         send_id TEXT PRIMARY KEY,
@@ -695,9 +700,23 @@ DATA_SCHEMA_UP = [
         AFTER INSERT ON crm_list_activity
         BEGIN DELETE FROM crm_list_activity WHERE org_bi=NEW.org_bi
             AND view_id=NEW.view_id AND ts<NEW.ts-%d; END""" % LIST_ACTIVITY_KEEP_MS,
+    """CREATE TABLE IF NOT EXISTS crm_backfills (
+        org_bi TEXT NOT NULL,
+        name TEXT NOT NULL,
+        done_at INTEGER NOT NULL CHECK (done_at >= 0),
+        PRIMARY KEY (org_bi, name))""",
+    """CREATE TABLE IF NOT EXISTS crm_zoho_members (
+        org_bi TEXT NOT NULL,
+        member_bi TEXT NOT NULL,
+        member_name TEXT NOT NULL,
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY (org_bi, member_bi))""",
 ]
 # Indexes and triggers drop with their tables; children drop before contacts.
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS crm_zoho_members",
+    "DROP TABLE IF EXISTS crm_backfills",
     "DROP TABLE IF EXISTS crm_list_activity",
     "DROP TABLE IF EXISTS crm_deck_page_views",
     "DROP TABLE IF EXISTS crm_deck_sessions",
@@ -868,8 +887,27 @@ def _contacted_stage(contact, flows):
     return CONTACTED_STAGE if position < stages.index(CONTACTED_STAGE) else ""
 
 
+def _advance_contacted(contact, flows):
+    advanced = _contacted_stage(contact, flows)
+    if advanced:
+        contact["stage"] = advanced
+    return advanced
+
+
+def _stamp_contacted(contact, sent_at, flows):
+    if sent_at > _integer(contact.get("lastContactedAt")):
+        contact["lastContactedAt"] = sent_at
+    return _advance_contacted(contact, flows)
+
+
 def _pipeline_moved(data):
     return isinstance(data, dict) and ("flow" in data or "stage" in data)
+
+
+def _edit_marks_contacted(data, existing, contact):
+    return ("lastContactedAt" in data and not _pipeline_moved(data)
+            and _integer(contact.get("lastContactedAt"))
+            > _integer(existing.get("lastContactedAt")))
 
 
 async def _org_flows(runtime, org_bi):
@@ -1108,7 +1146,62 @@ def _zoho_project(runtime, zoho):
     }
 
 
-async def _record_zoho(runtime, org_bi, **changes):
+async def _member_zoho(runtime, org_bi, member_bi):
+    if not member_bi:
+        return {}
+    row = await runtime.d1_first(
+        "SELECT data FROM crm_zoho_members WHERE org_bi=? AND member_bi=?",
+        org_bi, member_bi)
+    data = await runtime.open(row.get("data")) if row else None
+    return data if isinstance(data, dict) else {}
+
+
+async def _zoho_for(runtime, org_bi, member_bi, settings=None):
+    mine = await _member_zoho(runtime, org_bi, member_bi)
+    if _zoho_connected(mine):
+        return mine, member_bi
+    settings = settings if settings is not None else await _opened_settings(runtime, org_bi)
+    zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
+    return zoho, ""
+
+
+async def _save_member_zoho(runtime, org_bi, member_bi, member_name, zoho, scope=""):
+    before = await _member_zoho(runtime, org_bi, member_bi)
+    region = zoho.get("region") if zoho.get("region") in ZOHO_REGIONS else "com"
+    record = {key: before[key] for key in ("lastSyncAt",) if key in before}
+    record.update({key: zoho[key] for key in (
+        "accountId", "clientId", "clientSecret", "refreshToken", "managed") if zoho.get(key)})
+    record["region"] = region
+    record["accountsServer"], record["mailServer"] = ZOHO_REGIONS[region]
+    record["connectedAt"] = runtime.now()
+    if scope:
+        record["scope"] = _zoho_scope(scope)
+    await runtime.d1_run(
+        "INSERT INTO crm_zoho_members(org_bi,member_bi,member_name,updated_at,data) "
+        "VALUES(?,?,?,?,?) ON CONFLICT(org_bi,member_bi) DO UPDATE SET "
+        "member_name=excluded.member_name,updated_at=excluded.updated_at,data=excluded.data",
+        org_bi, member_bi, member_name, runtime.now(), await runtime.seal(record))
+
+
+async def _zoho_mine(runtime, org_bi, member_bi):
+    mine = await _member_zoho(runtime, org_bi, member_bi)
+    return dict(_zoho_project(runtime, mine), own=True)
+
+
+async def _record_zoho(runtime, org_bi, member_bi="", **changes):
+    if member_bi:
+        zoho = await _member_zoho(runtime, org_bi, member_bi)
+        if not zoho:
+            return
+        for key, value in changes.items():
+            if value is None:
+                zoho.pop(key, None)
+            else:
+                zoho[key] = value
+        await runtime.d1_run(
+            "UPDATE crm_zoho_members SET updated_at=?,data=? WHERE org_bi=? AND member_bi=?",
+            runtime.now(), await runtime.seal(zoho), org_bi, member_bi)
+        return
     row = await runtime.d1_first("SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
     settings = await runtime.open(row.get("data")) if row else None
     if not isinstance(settings, dict) or not isinstance(settings.get("zoho"), dict):
@@ -1488,17 +1581,31 @@ async def _mail_message_project(runtime, row):
         "providerUrl": str(data.get("providerUrl") or ""),
         "receivedAt": _integer(row.get("received_at")),
         "importedAt": _integer(row.get("imported_at")),
+        "ownerBi": str(data.get("ownerBi") or ""),
+        "owner": str(data.get("owner") or ""),
     }
 
 
-async def _mail_messages(runtime, org_bi):
+def _mail_visible(message, viewer_bi):
+    return not message.get("ownerBi") or message["ownerBi"] == viewer_bi
+
+
+def _mail_public(message):
+    projected = dict(message, mine=bool(message.get("ownerBi")))
+    projected.pop("ownerBi", None)
+    return projected
+
+
+async def _mail_messages(runtime, org_bi, viewer_bi=""):
     rows = await runtime.d1_all(
         "SELECT message_id,provider,provider_message_id,box,group_key,"
         "received_at,imported_at,data FROM crm_mail_messages WHERE org_bi=? "
         "ORDER BY received_at DESC,message_id LIMIT ?",
         org_bi, MAX_MAIL_MESSAGES,
     )
-    return [await _mail_message_project(runtime, row) for row in rows or []]
+    messages = [await _mail_message_project(runtime, row) for row in rows or []]
+    return [_mail_public(message) for message in messages
+            if _mail_visible(message, viewer_bi)]
 
 
 async def _mail_message_row(runtime, org_bi, message_id):
@@ -1521,8 +1628,8 @@ async def _move_mail(runtime, row, org_bi, actor, data):
     await runtime.audit(actor, "crm.mail.move", "crm_mail_message", row["message_id"])
     return _response(runtime, {
         "ok": True,
-        "message": await _mail_message_project(
-            runtime, await _mail_message_row(runtime, org_bi, row["message_id"])),
+        "message": _mail_public(await _mail_message_project(
+            runtime, await _mail_message_row(runtime, org_bi, row["message_id"]))),
     })
 
 
@@ -1748,11 +1855,7 @@ async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
     if not isinstance(before, dict):
         return 0
     contact = dict(before)
-    if sent_at > _integer(contact.get("lastContactedAt")):
-        contact["lastContactedAt"] = sent_at
-    advanced = _contacted_stage(contact, flows)
-    if advanced:
-        contact["stage"] = advanced
+    advanced = _stamp_contacted(contact, sent_at, flows)
     if contact == before:
         return 0
     await runtime.d1_run(
@@ -1768,20 +1871,27 @@ async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
 
 async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _opened_settings(runtime, org_bi)
-    zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
-    connection, refused = _zoho_connection(runtime, settings)
+    if data.get("mailbox") == "organization":
+        zoho, owner_bi = (settings.get("zoho") if isinstance(settings.get("zoho"), dict)
+                          else {}), ""
+    elif data.get("mailbox") == "mine":
+        zoho, owner_bi = await _member_zoho(runtime, org_bi, account_bi), account_bi
+    else:
+        zoho, owner_bi = await _zoho_for(runtime, org_bi, account_bi, settings)
+    connection, refused = _zoho_connection(runtime, {"zoho": zoho})
     if not connection:
         return _response(runtime, {"error": refused}, 409)
     tried = max(_integer(zoho.get("lastSyncAt")), _integer(zoho.get("lastSyncErrorAt")))
     if data.get("auto") and runtime.now() - tried < ZOHO_AUTO_SYNC_MS:
         return _response(runtime, {"ok": True, "skipped": True, "created": 0, "updated": 0,
-                                   "outboundRecorded": 0, "contactsAdvanced": 0})
+                                   "outboundRecorded": 0, "contactsAdvanced": 0,
+                                   "mailbox": "mine" if owner_bi else "organization"})
     limit = max(1, min(MAX_ZOHO_IMPORT, _integer(data.get("limit"), 100)))
     result = await _zoho_mail_import(runtime, connection, limit)
     if not (result or {}).get("ok"):
         error = _clean((result or {}).get("error"), 120) or "zoho_unavailable"
         await _record_zoho(
-            runtime, org_bi, lastSyncError=error, lastSyncErrorAt=runtime.now(),
+            runtime, org_bi, owner_bi, lastSyncError=error, lastSyncErrorAt=runtime.now(),
             tokenRejectedAt=runtime.now() if error == "zoho_token_rejected" else None)
         return _response(runtime, {"error": error}, 502)
     created = 0
@@ -1817,6 +1927,8 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
             "hasAttachment": bool(source.get("hasAttachment")),
             "providerUrl": _https(source.get("providerUrl")),
         }
+        if owner_bi:
+            envelope.update(ownerBi=owner_bi, owner=actor)
         received_at = max(0, _integer(source.get("receivedAt")))
         await runtime.d1_run(
             "INSERT INTO crm_mail_messages(message_id,org_bi,org_name,provider,"
@@ -1894,34 +2006,44 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         zoho.pop(key, None)
     if result.get("scope"):
         zoho["scope"] = _zoho_scope(result.get("scope"))
-    settings["zoho"] = zoho
-    await runtime.d1_run(
-        "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
-        "data=? WHERE org_bi=?",
-        account_bi, actor, now, await runtime.seal(settings), org_bi,
-    )
+    if owner_bi:
+        await runtime.d1_run(
+            "UPDATE crm_zoho_members SET updated_at=?,data=? WHERE org_bi=? AND member_bi=?",
+            now, await runtime.seal(zoho), org_bi, owner_bi)
+    else:
+        settings["zoho"] = zoho
+        await runtime.d1_run(
+            "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+            "data=? WHERE org_bi=?",
+            account_bi, actor, now, await runtime.seal(settings), org_bi,
+        )
     await runtime.audit(
         actor, "crm.zoho.import", "organization", org_name,
         details={"created": created, "updated": updated,
                  "outboundRecorded": outbound_recorded,
-                 "contactsAdvanced": contacts_advanced},
+                 "contactsAdvanced": contacts_advanced,
+                 "mailbox": "mine" if owner_bi else "organization"},
     )
     if created:
         await _activity_notify(
-            runtime, org_bi, org_name, actor, "New email in the CRM mailbox", "team", True,
+            runtime, org_bi, org_name, actor,
+            "New email in your CRM mailbox" if owner_bi else "New email in the CRM mailbox",
+            "self" if owner_bi else "team", True,
             "%d new message%s" % (created, "" if created == 1 else "s"))
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
         "outboundRecorded": outbound_recorded,
         "contactsAdvanced": contacts_advanced,
-        "mail": await _mail_messages(runtime, org_bi),
-        "settings": await _settings(runtime, org_bi),
+        "mailbox": "mine" if owner_bi else "organization",
+        "mail": await _mail_messages(runtime, org_bi, account_bi),
+        "settings": await _settings(runtime, org_bi, account_bi),
     })
 
 
 async def email_channel_report(runtime, org_bi, since):
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return {"status": "not_installed"}
+    await _ensure_data_schema(runtime, org_bi)
     since = max(0, _integer(since))
     zoho = (await _opened_settings(runtime, org_bi)).get("zoho")
     zoho = zoho if isinstance(zoho, dict) else {}
@@ -1960,7 +2082,7 @@ async def email_channel_report(runtime, org_bi, since):
     closed = 0
     closed_value = 0
     contacts = await runtime.d1_all(
-        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT 2000", org_bi)
+        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT ?", org_bi, MAX_CONTACTS)
     for row in contacts or []:
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
@@ -1981,6 +2103,8 @@ async def email_channel_report(runtime, org_bi, since):
             "canSend": _zoho_connected(zoho) and _zoho_can_send(zoho),
             "lastSyncAt": _integer(zoho.get("lastSyncAt")),
             "mailServer": _https(zoho.get("mailServer")),
+            "members": _integer((await runtime.d1_first(
+                "SELECT COUNT(*) AS n FROM crm_zoho_members WHERE org_bi=?", org_bi) or {}).get("n")),
         },
     }
 
@@ -2036,8 +2160,8 @@ async def email_suggestions(runtime, org_bi, now, limit=EMAIL_SUGGESTION_LIMIT):
         else:
             outbound[contact_id] = max(outbound.get(contact_id, 0), at)
     contacts = await runtime.d1_all(
-        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT 2000",
-        org_bi)
+        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT ?",
+        org_bi, MAX_CONTACTS)
     ranked = []
     for row in contacts or []:
         contact_id = str(row.get("contact_id") or "")
@@ -2108,7 +2232,7 @@ def _redirect(runtime, location):
                        "referrer-policy": "no-referrer"})
 
 
-async def _zoho_connect(runtime, org_name, account_bi, actor):
+async def _zoho_connect(runtime, org_name, account_bi, actor, mine=False):
     client = _zoho_client(runtime)
     if not client:
         return _response(runtime, {"error": "zoho_one_click_unavailable"}, 409)
@@ -2120,10 +2244,11 @@ async def _zoho_connect(runtime, org_name, account_bi, actor):
     sealed = await runtime.seal({
         "org": org_name, "account": account_bi, "actor": actor,
         "redirect": redirect_uri, "nonce": runtime.new_id(),
-        "expires": runtime.now() + ZOHO_STATE_TTL_MS,
+        "expires": runtime.now() + ZOHO_STATE_TTL_MS, "mine": bool(mine),
     })
     state = base64.urlsafe_b64encode(str(sealed).encode("utf-8")).decode("ascii").rstrip("=")
-    await runtime.audit(actor, "crm.zoho.connect_start", "organization", org_name)
+    await runtime.audit(actor, "crm.zoho.connect_start", "organization", org_name,
+                        details={"mine": bool(mine)})
     return _response(runtime, {
         "ok": True,
         "authorizationUrl": ZOHO_REGIONS["com"][0] + "/oauth/v2/auth?" + urlencode({
@@ -2185,10 +2310,14 @@ async def _zoho_mail_account(runtime, mail_server, access_token):
 
 
 async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
-    current = await runtime.d1_first(
-        "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
-    opened = await runtime.open(current.get("data")) if current else {}
-    stored = opened.get("zoho") if isinstance(opened, dict) else None
+    mine = bool(data.get("mine"))
+    if mine:
+        stored = await _member_zoho(runtime, org_bi, account_bi)
+    else:
+        current = await runtime.d1_first(
+            "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+        opened = await runtime.open(current.get("data")) if current else {}
+        stored = opened.get("zoho") if isinstance(opened, dict) else None
     stored = stored if isinstance(stored, dict) and not stored.get("managed") else {}
     client_id = _clean(data.get("clientId"), 200) or _clean(stored.get("clientId"), 200)
     client_secret = _clean(data.get("clientSecret"), 500)
@@ -2216,6 +2345,14 @@ async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
     account_id = await _zoho_mail_account(runtime, ZOHO_REGIONS[region][1], tokens[0])
     if not account_id:
         return _response(runtime, {"error": "zoho_account_missing", "region": region}, 400)
+    if mine:
+        await _save_member_zoho(runtime, org_bi, account_bi, actor, {
+            "region": region, "accountId": account_id, "clientId": client_id,
+            "clientSecret": client_secret, "refreshToken": tokens[1]}, tokens[2])
+        await runtime.audit(actor, "crm.zoho.connect", "organization", org_name,
+                            details={"region": region, "selfClient": True, "mine": True})
+        return _response(runtime, {
+            "ok": True, "settings": await _settings(runtime, org_bi, account_bi)})
     saved = await _save_settings(runtime, org_bi, account_bi, actor, {
         "zoho": {"region": region, "accountId": account_id, "clientId": client_id,
                  "clientSecret": client_secret, "refreshToken": tokens[1]}},
@@ -2223,6 +2360,17 @@ async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
     await runtime.audit(actor, "crm.zoho.connect", "organization", org_name,
                         details={"region": region, "selfClient": True})
     return saved
+
+
+async def _zoho_disconnect(runtime, org_bi, org_name, account_bi, actor, data):
+    if not data.get("mine"):
+        return await _save_settings(runtime, org_bi, account_bi, actor, {"zohoDisconnect": True})
+    await runtime.d1_run(
+        "DELETE FROM crm_zoho_members WHERE org_bi=? AND member_bi=?", org_bi, account_bi)
+    await runtime.audit(actor, "crm.zoho.disconnect", "organization", org_name,
+                        details={"mine": True})
+    return _response(runtime, {
+        "ok": True, "settings": await _settings(runtime, org_bi, account_bi)})
 
 
 async def _zoho_callback(runtime):
@@ -2236,7 +2384,8 @@ async def _zoho_callback(runtime):
     if params.get("error") or not code:
         return _redirect(runtime, page + "&zoho=denied")
     org_bi, role = await runtime.organization(org_name, state["account"])
-    if (not org_bi or role not in MANAGER_ROLES
+    mine = bool(state.get("mine"))
+    if (not org_bi or not (mine or role in MANAGER_ROLES)
             or not await runtime.plugin_installed(org_bi, PLUGIN_ID)):
         return _redirect(runtime, page + "&zoho=forbidden")
     region = _zoho_region_of(params.get("accounts-server"))
@@ -2255,6 +2404,13 @@ async def _zoho_callback(runtime):
     account_id = await _zoho_mail_account(runtime, mail_server, tokens[0])
     if not account_id:
         return _redirect(runtime, page + "&zoho=account_missing")
+    if mine:
+        await _save_member_zoho(runtime, org_bi, state["account"], str(state.get("actor") or ""), {
+            "region": region, "accountId": account_id, "clientId": client["clientId"],
+            "refreshToken": tokens[1], "managed": True}, tokens[2] or ZOHO_SCOPES)
+        await runtime.audit(str(state.get("actor") or ""), "crm.zoho.connect",
+                            "organization", org_name, details={"region": region, "mine": True})
+        return _redirect(runtime, page + "&zoho=connected_mine")
     await _save_settings(runtime, org_bi, state["account"], str(state.get("actor") or ""), {
         "zoho": {"region": region, "accountId": account_id,
                  "clientId": client["clientId"], "refreshToken": tokens[1],
@@ -2264,7 +2420,14 @@ async def _zoho_callback(runtime):
     return _redirect(runtime, page + "&zoho=connected")
 
 
-async def _settings(runtime, org_bi):
+async def _settings(runtime, org_bi, account_bi=""):
+    data = await _org_settings(runtime, org_bi)
+    if account_bi:
+        data["zohoMine"] = await _zoho_mine(runtime, org_bi, account_bi)
+    return data
+
+
+async def _org_settings(runtime, org_bi):
     row = await runtime.d1_first(
         "SELECT updated_by_name,updated_at,data FROM crm_settings WHERE org_bi=?",
         org_bi,
@@ -2334,11 +2497,40 @@ async def _activity(runtime, org_bi, members):
     }
 
 
+async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
+    if await runtime.d1_first(
+            "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
+            org_bi, CONTACTED_BACKFILL):
+        return 0
+    flows = await _org_flows(runtime, org_bi)
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? LIMIT ?",
+        org_bi, MAX_CONTACTS)
+    sealed, changes = {}, []
+    for contact_row in rows or []:
+        before = await runtime.open(contact_row.get("data"))
+        if not isinstance(before, dict) or not _integer(before.get("lastContactedAt")):
+            continue
+        contact = dict(before)
+        if _advance_contacted(contact, flows):
+            sealed[contact_row["contact_id"]] = await runtime.seal(contact)
+            changes.append((before, contact))
+    now = runtime.now()
+    if sealed:
+        await _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed)
+        await _record_contact_changes(runtime, org_bi, account_bi, actor, changes)
+    await runtime.d1_run(
+        "INSERT OR IGNORE INTO crm_backfills(org_bi,name,done_at) VALUES(?,?,?)",
+        org_bi, CONTACTED_BACKFILL, now)
+    return len(sealed)
+
+
 async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
+    await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
     contacts = await _contacts(runtime, org_bi)
     emails = await _emails(runtime, org_bi)
-    mail = await _mail_messages(runtime, org_bi)
-    settings = await _settings(runtime, org_bi)
+    mail = await _mail_messages(runtime, org_bi, account_bi)
+    settings = await _settings(runtime, org_bi, account_bi)
     members = await _org_member_names(runtime, org_bi)
     payload = {
         "ok": True,
@@ -2386,26 +2578,84 @@ async def _unique_email_bi(runtime, org_bi, email):
     return await runtime.blind("crm-contact-v1\n" + org_bi + "\n" + email)
 
 
+async def _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                          account_bi, actor, now, contact):
+    try:
+        await runtime.d1_run(
+            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
+            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
+            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            contact_id, org_bi, org_name, email_bi, account_bi, actor,
+            account_bi, actor, now, now, await runtime.seal(contact),
+        )
+    except Exception as error:
+        if "crm_contact_catalog_full" in str(error):
+            return False
+        raise
+    return True
+
+
+def _unique_conflict(error):
+    return "UNIQUE constraint failed" in str(error)
+
+
+async def _contact_taken(runtime, org_bi, email_bi):
+    row = await runtime.d1_first(
+        "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND email_bi=?",
+        org_bi, email_bi) if email_bi else None
+    return await _contact_row(runtime, org_bi, row["contact_id"]) if row else None
+
+
+async def _contact_exists_response(runtime, row):
+    return _response(runtime, {
+        "error": "contact_email_exists",
+        "contact": await _contact_project(runtime, row),
+    }, 409)
+
+
 async def _create_contact(runtime, org_bi, org_name, account_bi, actor, data):
+    request_id = str(data.get("requestId") or "").lower()
+    request_id = request_id if CONTACT_ID_RE.fullmatch(request_id) else ""
+    if request_id:
+        replay = await _contact_row(runtime, org_bi, request_id)
+        if replay:
+            return _response(runtime, {
+                "ok": True, "replayed": True,
+                "contact": await _contact_project(runtime, replay),
+            })
     contact = _flow_placement(_contact_data(data), await _org_flows(runtime, org_bi))
     if not contact.get("name") and not contact.get("email"):
         return _response(runtime, {"error": "name_or_email_required"}, 400)
     if data.get("email") and not contact.get("email"):
         return _response(runtime, {"error": "invalid_email"}, 400)
     email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
-    if email_bi and await runtime.d1_first(
-            "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND email_bi=?",
-            org_bi, email_bi):
-        return _response(runtime, {"error": "contact_email_exists"}, 409)
-    contact_id = runtime.new_id()
+    taken = await _contact_taken(runtime, org_bi, email_bi)
+    if taken:
+        return await _contact_exists_response(runtime, taken)
+    contact_id = request_id or runtime.new_id()
     now = runtime.now()
-    await runtime.d1_run(
-        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-        "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        contact_id, org_bi, org_name, email_bi, account_bi, actor, account_bi,
-        actor, now, now, await runtime.seal(contact),
-    )
+    for attempt in range(2):
+        try:
+            inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                             email_bi, account_bi, actor, now, contact)
+            break
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            replay = await _contact_row(runtime, org_bi, contact_id) if request_id else None
+            if replay:
+                return _response(runtime, {
+                    "ok": True, "replayed": True,
+                    "contact": await _contact_project(runtime, replay),
+                })
+            taken = await _contact_taken(runtime, org_bi, email_bi)
+            if taken:
+                return await _contact_exists_response(runtime, taken)
+            if attempt:
+                raise
+            contact_id = runtime.new_id()
+    if not inserted:
+        return _response(runtime, {"error": "crm_full"}, 409)
     await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
     await _record_contact_changes(runtime, org_bi, account_bi, actor,
                                   [(None, contact)])
@@ -2422,6 +2672,8 @@ async def _update_contact(runtime, row, org_bi, account_bi, actor, data):
     contact = _contact_data(data, existing)
     if _pipeline_moved(data):
         contact = _flow_placement(contact, await _org_flows(runtime, org_bi))
+    elif _edit_marks_contacted(data, existing, contact):
+        _advance_contacted(contact, await _org_flows(runtime, org_bi))
     if not contact.get("name") and not contact.get("email"):
         return _response(runtime, {"error": "name_or_email_required"}, 400)
     if "email" in data and data.get("email") and not contact.get("email"):
@@ -2486,6 +2738,8 @@ async def _bulk_update_contacts(runtime, org_bi, org_name, account_bi, actor, da
         contact = _contact_data(edits[row["contact_id"]], existing)
         if _pipeline_moved(edits[row["contact_id"]]):
             contact = _flow_placement(contact, flows)
+        elif _edit_marks_contacted(edits[row["contact_id"]], existing, contact):
+            _advance_contacted(contact, flows)
         changes.append((existing, contact))
         sealed[row["contact_id"]] = await runtime.seal(contact)
         contacts.append(_contact_fields(
@@ -4185,7 +4439,8 @@ async def _contact_handle_index(runtime, org_bi):
 
 
 async def _upsert_contact(runtime, org_bi, org_name, account_bi, actor, supplied,
-                          view_id, now, default_source, flows, handles=None):
+                          view_id, now, default_source, flows, handles=None,
+                          retried=False):
     """Create or merge one contact row into a sheet. Only the values supplied
     are applied, so a narrow row never blanks a wider stored record.
 
@@ -4228,13 +4483,17 @@ async def _upsert_contact(runtime, org_bi, org_name, account_bi, actor, supplied
         )
         return "updated", ""
     contact_id = runtime.new_id()
-    await runtime.d1_run(
-        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-        "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        contact_id, org_bi, org_name, email_bi, account_bi, actor,
-        account_bi, actor, now, now, await runtime.seal(contact),
-    )
+    try:
+        inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                         email_bi, account_bi, actor, now, contact)
+    except Exception as error:
+        if retried or not email_bi or not _unique_conflict(error):
+            raise
+        return await _upsert_contact(runtime, org_bi, org_name, account_bi, actor,
+                                     supplied, view_id, now, default_source, flows,
+                                     handles, True)
+    if not inserted:
+        return "skipped", "crm_full"
     if handle:
         handles["index"][handle] = contact_id
     return "created", ""
@@ -4394,13 +4653,15 @@ async def _shared_contact_write(runtime, account_bi, actor, view_id, contact_id,
                 org_bi, email_bi):
             return _response(runtime, {"error": "contact_exists"}, 409)
         contact_id = runtime.new_id()
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-            "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name, email_bi, account_bi, actor, account_bi,
-            actor, now, now, await runtime.seal(contact),
-        )
+        try:
+            inserted = await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                             email_bi, account_bi, actor, now, contact)
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            return _response(runtime, {"error": "contact_exists"}, 409)
+        if not inserted:
+            return _response(runtime, {"error": "crm_full"}, 409)
         await runtime.audit(actor, "crm.shared.contact.create", "crm_contact",
                             contact_id, details={"view": view_id})
         await _record_contact_changes(runtime, org_bi, account_bi, actor,
@@ -4960,14 +5221,11 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
             **({"flow": flow_id, "stage": stage} if flow_id else {}),
         })
         contact_id = runtime.new_id()
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
-            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name,
-            await _unique_email_bi(runtime, org_bi, counterpart), account_bi,
-            actor, account_bi, actor, now, now, await runtime.seal(contact),
-        )
+        if not await _insert_contact(
+                runtime, contact_id, org_bi, org_name,
+                await _unique_email_bi(runtime, org_bi, counterpart), account_bi,
+                actor, now, contact):
+            return ({"error": "crm_full"}, 409)
         await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
         row = await _contact_row(runtime, org_bi, contact_id)
         contact_created = True
@@ -5444,6 +5702,10 @@ async def _record_external_send(runtime, org_bi, org_name, account_bi, actor, da
     )
     await runtime.audit(actor, "crm.email.link", "crm_email_send", send_id)
     contact_data = {"email": recipient}
+    if contact_id and status not in ("draft", "failed", "reject"):
+        await _mark_contacted(runtime, org_bi, account_bi, actor,
+                              await _org_flows(runtime, org_bi), contact_id,
+                              max(0, _integer(data.get("sentAt"), now)))
     if contact_id:
         contact = await _contact_row(runtime, org_bi, contact_id)
         opened = await runtime.open(contact.get("data")) if contact else None
@@ -5461,7 +5723,16 @@ async def _record_external_send(runtime, org_bi, org_name, account_bi, actor, da
     }, 201)
 
 
-async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
+async def _one_off_sent_today(runtime, org_bi, sender_bi):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM crm_email_sends "
+        "WHERE org_bi=? AND sender_bi=? AND transport='mailtrap' AND created_at>=?",
+        org_bi, sender_bi, runtime.now() - 24 * 60 * 60 * 1000)
+    return _integer((row or {}).get("n"))
+
+
+async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
+                         manager=False, role=""):
     contact_id = _clean(data.get("contactId"), 64).lower()
     if contact_id and not CONTACT_ID_RE.fullmatch(contact_id):
         return _response(runtime, {"error": "invalid_contact_id"}, 400)
@@ -5487,11 +5758,25 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         if refusal:
             return refusal
     settings = await _settings(runtime, org_bi)
-    from_email = _email(data.get("fromEmail") or settings.get("fromEmail"))
-    from_name = _clean(data.get("fromName") or settings.get("fromName"), 120)
+    chosen = data if manager else {}
+    from_email = _email(chosen.get("fromEmail") or settings.get("fromEmail"))
+    from_name = _clean(chosen.get("fromName") or settings.get("fromName"), 120)
+    token = _clean(data.get("mailtrapKey"), 2048)
+    mine = await _member_zoho(runtime, org_bi, account_bi) if not token else {}
+    zoho, _ = _zoho_connection(runtime, {"zoho": mine}) if _zoho_connected(mine) else (None, "")
+    if zoho:
+        return await _send_own_zoho(runtime, org_bi, org_name, account_bi, actor, zoho, {
+            "contact": contact, "contactId": contact_id, "contactData": contact_data,
+            "to": recipient, "fromEmail": from_email, "fromName": from_name,
+            "subject": subject, "text": text, "html": html, "flows": settings["flows"]})
+    if not await _outreach_allowed(runtime, org_bi, account_bi, role):
+        return _response(runtime, {"error": "outreach_forbidden"}, 403)
     if not from_email:
         return _response(runtime, {"error": "invalid_sender"}, 400)
-    token = _clean(data.get("mailtrapKey"), 2048)
+    if await _one_off_sent_today(runtime, org_bi, account_bi) >= OUTREACH_DAILY_LIMIT:
+        return _response(runtime, {
+            "error": "daily_limit_reached", "dailyLimit": OUTREACH_DAILY_LIMIT,
+        }, 429)
     now = runtime.now()
     send_id = runtime.new_id()
     envelope = {
@@ -5513,6 +5798,8 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         "text": text,
         "html": html,
         "category": "CRM one-off",
+        "organization": org_bi,
+        "account": account_bi,
         "custom_variables": {
             "forkmesh_crm_send_id": send_id,
             "forkmesh_crm_org_bi": org_bi,
@@ -5532,15 +5819,19 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         status, external_id, sent_at if accepted else 0, sent_at,
         await runtime.seal(envelope), org_bi, send_id,
     )
+    advanced, before = "", dict(contact_data)
     if contact:
-        contact_data["lastContactedAt"] = sent_at if accepted else _integer(
-            contact_data.get("lastContactedAt"))
+        if accepted:
+            advanced = _stamp_contacted(contact_data, sent_at, settings["flows"])
         await runtime.d1_run(
             "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
             "data=? WHERE org_bi=? AND contact_id=?",
             account_bi, actor, sent_at, await runtime.seal(contact_data), org_bi,
             contact_id,
         )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
     await runtime.audit(
         actor, "crm.email.send", "crm_email_send", send_id,
         outcome="success" if accepted else "failed",
@@ -5559,6 +5850,81 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         runtime,
         {"ok": accepted, "email": projected,
          "error": "mailtrap_send_failed" if not accepted else ""},
+        201 if accepted else 502,
+    )
+
+
+async def _send_own_zoho(runtime, org_bi, org_name, account_bi, actor, zoho, message):
+    contact, contact_id = message["contact"], message["contactId"]
+    contact_data = message["contactData"]
+    recipient, subject, text = message["to"], message["subject"], message["text"]
+    html = message["html"] or "<div>" + escape(text).replace("\n", "<br>") + "</div>"
+    now = runtime.now()
+    send_id = runtime.new_id()
+    envelope = {
+        "to": recipient, "fromEmail": message["fromEmail"], "fromName": message["fromName"],
+        "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
+        "provider": "zoho", "direction": "outbound", "sentVia": "zoho",
+    }
+    await runtime.d1_run(
+        "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+        "sender_bi,sender_name,transport,status,external_id,created_at,sent_at,"
+        "status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        send_id, org_bi, org_name, contact_id, account_bi, actor, "external",
+        "sending", "", now, 0, now, await runtime.seal(envelope),
+    )
+    result = await _zoho_send(runtime, zoho, message["fromEmail"], recipient, subject, html)
+    accepted = bool(result.get("ok"))
+    envelope["fromEmail"] = _email(result.get("fromAddress")) or message["fromEmail"]
+    envelope["mailbox"] = envelope["fromEmail"]
+    envelope["error"] = "" if accepted else _clean(result.get("error"), 500)
+    grant = {"scope": result["scope"]} if result.get("scope") else {}
+    if accepted:
+        grant.update(lastSentAt=runtime.now(), sendRefusedAt=None, tokenRejectedAt=None)
+    elif result.get("error") == "zoho_send_not_allowed":
+        grant.update(sendRefusedAt=runtime.now())
+    elif result.get("error") == "zoho_token_rejected":
+        grant.update(tokenRejectedAt=runtime.now())
+    if grant:
+        await _record_zoho(runtime, org_bi, account_bi, **grant)
+    sent_at = runtime.now()
+    await runtime.d1_run(
+        "UPDATE crm_email_sends SET status=?,external_id=?,sent_at=?,status_at=?,"
+        "data=? WHERE org_bi=? AND send_id=?",
+        "accepted" if accepted else "failed", _clean(result.get("messageId"), 200),
+        sent_at if accepted else 0, sent_at, await runtime.seal(envelope), org_bi, send_id,
+    )
+    advanced, before = "", dict(contact_data)
+    if contact and accepted:
+        advanced = _stamp_contacted(contact_data, sent_at, message["flows"])
+        await runtime.d1_run(
+            "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+            "data=? WHERE org_bi=? AND contact_id=?",
+            account_bi, actor, sent_at, await runtime.seal(contact_data), org_bi,
+            contact_id,
+        )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
+    await runtime.audit(
+        actor, "crm.email.send", "crm_email_send", send_id,
+        outcome="success" if accepted else "failed",
+        details={"transport": "zoho", "accepted": accepted},
+    )
+    if contact and accepted:
+        await _record_contact_event(runtime, org_bi, account_bi, actor,
+                                    contact_data, "contact.emailed",
+                                    {"subject": subject})
+    if accepted:
+        await _celebrate_tracked_email(runtime, actor, send_id, subject,
+                                       contact_data or {"email": recipient})
+    projected = await _email_project(
+        runtime, await _email_row(runtime, org_bi, send_id))
+    return _response(
+        runtime,
+        {"ok": accepted, "email": projected, "via": "zoho",
+         "fromEmail": envelope["fromEmail"],
+         "error": "" if accepted else _clean(result.get("error"), 120) or "send_failed"},
         201 if accepted else 502,
     )
 
@@ -5680,7 +6046,8 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, {
             "error": "daily_limit_reached", "dailyLimit": OUTREACH_DAILY_LIMIT,
         }, 429)
-    from_email, from_name = _outreach_sender(await _settings(runtime, org_bi))
+    settings = await _settings(runtime, org_bi)
+    from_email, from_name = _outreach_sender(settings)
     # The server's Mailtrap key sends outreach: an empty request key means
     # "use the host's configured sender", exactly like transactional mail.
     result = await runtime.send_mailtrap("", {
@@ -5689,6 +6056,8 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         "subject": subject,
         "text": body,
         "category": "CRM outreach",
+        "organization": org_bi,
+        "account": account_bi,
         "custom_variables": {
             "forkmesh_crm_org_bi": org_bi,
             "forkmesh_crm_outreach_template": template,
@@ -5713,13 +6082,17 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         contact = await _contact_row_by_email(runtime, org_bi, recipient)
         contact_data = await runtime.open(contact.get("data")) if contact else None
         if contact and isinstance(contact_data, dict):
-            contact_data["lastContactedAt"] = now
+            before = dict(contact_data)
+            advanced = _stamp_contacted(contact_data, now, settings["flows"])
             await runtime.d1_run(
                 "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,"
                 "updated_at=?,data=? WHERE org_bi=? AND contact_id=?",
                 account_bi, actor, now, await runtime.seal(contact_data), org_bi,
                 str(contact.get("contact_id") or ""),
             )
+            if advanced:
+                await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                              [(before, contact_data)])
     await runtime.audit(
         actor, "crm.outreach.send", "crm_outreach", template,
         outcome="success" if accepted else "failed",
@@ -6085,24 +6458,38 @@ MAIL_INK = "#101012"
 MAIL_BODY = "#5f6270"
 MAIL_FAINT = "#9a9ca8"
 MAIL_LINE = "#e4e5ea"
-MAIL_ACCENT = "#0969da"
+DECK_SANS = "-apple-system,Roboto,Arial,sans-serif"
+DECK_DISPLAY = "'FM Favorit'," + DECK_SANS
+DECK_MONO = "ui-monospace,Menlo,monospace"
+DECK_SLAB = "#0b0b0c"
+DECK_PAGE = "#ffffff"
+DECK_NIGHT_PAGE = "#18181b"
+DECK_TONES = {
+    "light": {"ink": "#101012", "grey": "#83858f", "body": "#5f6270", "faint": "#9a9ca8",
+              "line": "#e4e5ea", "accent": "#0969da", "live": "#1a7f37", "tile": "#f4f4f5"},
+    "slab": {"ink": "#f5f5f5", "grey": "#8b8b94", "body": "#a3a3a3", "faint": "#71717a",
+             "line": "#232326", "accent": "#58a6ff", "live": "#3fb950", "tile": "#141416"},
+}
+DECK_NIGHT = {"ink": "#f5f5f5", "grey": "#7d7d87", "body": "#a3a3a3", "faint": "#71717a",
+              "line": "#2a2a2e", "accent": "#58a6ff", "live": "#3fb950", "tile": "#222225"}
+DECK_WIDTH = 544
 DECK_MAIL_PROBLEM = (
-    ("01", "Work is fragmented",
+    ("Work is fragmented",
      "Tasks, transcripts, branches, pull requests and reviews live across disconnected tools."),
-    ("02", "Accountability is shallow",
+    ("Accountability is shallow",
      "Teams need model, cost, tool-use, authorship and approval evidence for every delegated "
      "change."),
-    ("03", "Control is rented",
+    ("Control is rented",
      "Code, identity, collaboration, and often the agent experience, stay bound to a central "
      "platform."),
 )
 DECK_MAIL_STEPS = (
-    ("01 · Assign", "Start from an issue or a task"),
-    ("02 · Choose", "Run Claude Code or Codex"),
-    ("03 · Isolate", "A worktree and branch per session"),
-    ("04 · Orchestrate", "Sessions in parallel"),
-    ("05 · Prove", "Capture metadata and patch"),
-    ("06 · Gate", "A human inspects and merges"),
+    ("Assign", "Start from an issue or a task"),
+    ("Choose", "Run Claude Code or Codex"),
+    ("Isolate", "A worktree and branch per session"),
+    ("Orchestrate", "Sessions in parallel"),
+    ("Prove", "Capture metadata and patch"),
+    ("Gate", "A human inspects and merges"),
 )
 DECK_MAIL_PROOF = (
     ("51,457", "Commits in the repository"),
@@ -6113,7 +6500,7 @@ DECK_MAIL_PROOF = (
 )
 DECK_MAIL_DEVICES = (
     ("Watch", "Follow, prompt, stop and review agents from the wrist.", "In build"),
-    ("AR glasses", "A 201\u2033 virtual workspace for repos, sessions and diffs.", "R&amp;D"),
+    ("AR glasses", "A 201″ virtual workspace for repos, sessions and diffs.", "R&amp;D"),
 )
 DECK_MAIL_LADDER = (
     ("20", "$0.5M ARR", "Round milestone"),
@@ -6174,9 +6561,9 @@ DECK_MAIL_ROADMAP = (
         "Security hardening, independent review and a SOC 2 program")),
 )
 DECK_MAIL_ICP = (
-    "<b>Buyer:</b> CTO, VP Engineering, Security",
-    "<b>Trigger:</b> agent throughput rises faster than reviewer trust and control",
-    "<b>Land:</b> one agent workflow, no big-bang migration",
+    ("Buyer", "CTO, VP Engineering, Security"),
+    ("Trigger", "Agent throughput rises faster than reviewer trust and control"),
+    ("Land", "One agent workflow, no big-bang migration"),
 )
 DECK_MAIL_MOTION = (
     ("Prove", "Dogfooding plus a live issue-to-agent-to-PR demo."),
@@ -6213,76 +6600,41 @@ DECK_MAIL_SOURCES = (
     ("Definitions", "Dogfooding metrics are internal Git history, not customer traction. ARR "
      "and ACV figures are forward-looking targets."),
 )
+DECK_MAIL_MATRIX_COLUMNS = ("Agent workflow", "Full forge", "Local-first")
+DECK_MAIL_MATRIX = (
+    ("Hosted AI forges", True, True, False),
+    ("Coding agents", True, False, False),
+    ("Peer-to-peer Git", False, None, True),
+    ("Self-hosted forges", False, True, True),
+    ("ForkMesh", True, True, True),
+)
 
 
-def _mail_eyebrow(text, dark=False):
-    return ('<div style="margin:0 0 14px;font:600 11px/1.4 %s;letter-spacing:.08em;'
-            'text-transform:uppercase;color:%s"><span style="display:inline-block;width:8px;'
-            'height:8px;margin-right:8px;border-radius:3px;background:%s;vertical-align:0">'
-            '</span>%s</div>') % (MAIL_MONO, "#a3a3a3" if dark else MAIL_FAINT,
-                                  "#58a6ff" if dark else MAIL_ACCENT, text)
-
-
-def _mail_heading(text, size=28, dark=False):
-    return ('<h2 class="fm-h" style="margin:0;font:700 %dpx/1.1 %s;letter-spacing:-.03em;'
-            'color:%s">%s</h2>') % (size, MAIL_DISPLAY, "#f5f5f5" if dark else MAIL_INK, text)
-
-
-def _mail_lede(text, dark=False):
-    return ('<p style="margin:12px 0 0;font:400 15px/1.6 %s;color:%s">%s</p>'
-            % (MAIL_SANS, "#a3a3a3" if dark else MAIL_BODY, text))
-
-
-def _mail_card(inner, dark=False):
+def _mail_card(inner):
     return ('<tr><td style="padding:0 0 14px"><table role="presentation" width="100%%" '
-            'cellpadding="0" cellspacing="0" class="fm-rise" style="border-collapse:separate;'
-            'background:%s;border:1px solid %s;border-radius:18px"><tr><td class="fm-pad" '
-            'style="padding:30px 32px">%s</td></tr></table></td></tr>') % (
-                "#0b0b0c" if dark else "#ffffff", "#0b0b0c" if dark else MAIL_LINE, inner)
-
-
-def _mail_image(name, width, alt, radius=12):
-    return ('<img src="%s%s" width="%d" alt="%s" style="display:block;width:100%%;'
-            'max-width:%dpx;height:auto;border:0;border-radius:%dpx;outline:none">') % (
-                EMAIL_ASSETS, name, width, escape(alt, quote=True), width, radius)
-
-
-def _mail_tone(dark):
-    return ("#f5f5f5", "#a3a3a3", "#2a2a2e", "#58a6ff") if dark else (
-        MAIL_INK, MAIL_BODY, MAIL_LINE, MAIL_ACCENT)
-
-
-def _mail_bullets(items, dark=False, top=14):
-    ink, body, _, accent = _mail_tone(dark)
-    return '<ul style="margin:%dpx 0 0;padding:0 0 0 18px">%s</ul>' % (top, "".join(
-        '<li style="margin:0 0 7px;font:400 14px/1.55 %s;color:%s">%s</li>' % (
-            MAIL_SANS, body, item.replace("<b>", '<b style="color:%s">' % ink))
-        for item in items))
-
-
-def _mail_kicker(text, dark=False):
-    return ('<div style="margin:0 0 6px;font:600 10.5px/1.4 %s;letter-spacing:.08em;'
-            'text-transform:uppercase;color:%s">%s</div>') % (
-                MAIL_MONO, _mail_tone(dark)[3], text)
-
-
-def _mail_chain(items, joiner="&rarr;"):
-    parts = ['<span style="display:inline-block;padding:4px 11px;border:1px solid %s;'
-             'border-radius:99px;white-space:nowrap">%s</span>' % (MAIL_LINE, item)
-             for item in items]
-    return ('<p style="margin:18px 0 0;font:600 12.5px/2.3 %s;color:%s">%s</p>' % (
-        MAIL_SANS, MAIL_INK, (' <span style="color:%s">%s</span> ' % (MAIL_FAINT, joiner))
-        .join(parts)))
-
-
-def _mail_note(text, dark=False):
-    return ('<p style="margin:14px 0 0;font:400 12.5px/1.5 %s;color:%s">%s</p>'
-            % (MAIL_SANS, "#6b6b74" if dark else MAIL_FAINT, text))
+            'cellpadding="0" cellspacing="0" style="border-collapse:separate;background:#ffffff;'
+            'border:1px solid %s;border-radius:18px"><tr><td class="fm-pad" '
+            'style="padding:30px 32px">%s</td></tr></table></td></tr>') % (MAIL_LINE, inner)
 
 
 def _mail_marker(slide):
     return ('<tr><td class="fm-s%d" style="height:1px;line-height:1px;font-size:1px;'
             'background-repeat:no-repeat;background-size:1px 1px">&#8203;</td></tr>' % slide)
+
+
+def _mail_night():
+    roles = "".join(".fm-%s{color:%s!important}" % (role, DECK_NIGHT[role])
+                    for role in ("ink", "grey", "body", "faint", "accent", "live"))
+    return (
+        "@media (prefers-color-scheme:dark){.fm-page{background:%s!important}%s"
+        ".fm-line{border-color:%s!important}.fm-tile{background:%s!important}"
+        ".fm-inkbg{background:%s!important}.fm-accentbg{background:%s!important}"
+        ".fm-btn1{background:#ffffff!important;background-image:none!important;"
+        "color:#111113!important;border-color:#f4f4f5!important}"
+        ".fm-btn2{background:#222225!important;color:#f5f5f5!important;"
+        "border-color:#34343a!important}}") % (
+            DECK_NIGHT_PAGE, roles, DECK_NIGHT["line"], DECK_NIGHT["tile"], DECK_NIGHT["ink"],
+            DECK_NIGHT["accent"])
 
 
 def _mail_style(beacon, deck):
@@ -6300,27 +6652,22 @@ def _mail_style(beacon, deck):
     layout = (
         "<style>@font-face{font-family:'FM Favorit';src:url(\"" + EMAIL_FONT + "\") "
         "format('woff2');font-weight:700}"
+        ":root{color-scheme:" + ("light dark" if deck else "light") + "}"
         "@media (max-width:620px){.fm-pad{padding:24px 22px!important}"
-        ".fm-h1{font-size:34px!important}.fm-h{font-size:24px!important}"
-        ".fm-plan{max-width:none!important;margin-right:0!important}}"
-        "a.fm-btn:hover,a.fm-cta:hover{opacity:.88}</style>")
+        ".fm-gut{padding-left:22px!important;padding-right:22px!important}"
+        ".fm-sec{padding-top:56px!important;padding-bottom:56px!important}"
+        ".fm-h1{font-size:42px!important}.fm-h{font-size:28px!important}"
+        ".fm-big{font-size:26px!important}"
+        ".fm-col{display:block!important;max-width:none!important;margin:0 0 10px!important}}"
+        + (_mail_night() if deck else "") + "</style>")
     motion = (
-        "<style>@keyframes fm-shine{0%,62%{background-position:180% 0}"
-        "100%{background-position:-80% 0}}"
-        ".fm-cta{background-image:linear-gradient(110deg,#1c1c1f 38%,#4a4a52 50%,#1c1c1f 62%);"
-        "background-size:250% 100%;animation:fm-shine 4.5s ease-in-out infinite}"
-        "@keyframes fm-grow{from{width:0}}"
+        "<style>@keyframes fm-grow{from{width:0}}"
         ".fm-fill{animation:fm-grow 1.8s cubic-bezier(.2,.7,.2,1) both}"
-        "@keyframes fm-live{0%{box-shadow:0 0 0 0 rgba(63,185,80,.55)}"
-        "70%,100%{box-shadow:0 0 0 9px rgba(63,185,80,0)}}"
-        ".fm-live{animation:fm-live 2.4s ease-out infinite}"
-        "@keyframes fm-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}"
-        ".fm-float{animation:fm-float 6s ease-in-out infinite}"
         + reads +
         "@supports (animation-timeline: view()){"
         ".fm-rise{animation:fm-rise linear both;animation-timeline:view();"
-        "animation-range:entry 0% cover 26%}"
-        "@keyframes fm-rise{from{opacity:.35;transform:translateY(26px) scale(.97)}"
+        "animation-range:entry 0% cover 24%}"
+        "@keyframes fm-rise{from{opacity:.3;transform:translateY(24px)}"
         "to{opacity:1;transform:none}}"
         ".fm-fill{animation:fm-grow linear both;animation-timeline:view();"
         "animation-range:entry 30% cover 45%}" + depths + "}</style>")
@@ -6334,283 +6681,422 @@ def _mail_reads():
         for mark in READ_MARKS)
 
 
-def _mail_deck_sections():
+def _deck_attr(cls):
+    return ' class="%s"' % cls if cls else ""
+
+
+def _deck_tone(slab, role):
+    return DECK_TONES["slab" if slab else "light"][role], "" if slab else "fm-" + role
+
+
+def _deck_text(text, role="body", font="400 15px/1.6", slab=False, margin="0", tag="div",
+               family=DECK_SANS, extra="", cls=""):
+    color, tone = _deck_tone(slab, role)
+    return '<%s%s style="margin:%s;font:%s %s;color:%s%s">%s</%s>' % (
+        tag, _deck_attr(" ".join(part for part in (cls, tone) if part)), margin, font, family,
+        color, ";" + extra if extra else "", text, tag)
+
+
+def _deck_strong(text, slab=False):
+    color, tone = _deck_tone(slab, "ink")
+    return text.replace("<b>", '<b%s style="font-weight:600;color:%s">' % (_deck_attr(tone), color))
+
+
+def _deck_heading(first, second="", size=36, slab=False, tag="h2", cls="fm-h", align="left",
+                  join=" ", margin="0"):
+    grey, tone = _deck_tone(slab, "grey")
+    tail = '%s<span%s style="color:%s">%s</span>' % (join, _deck_attr(tone), grey, second)
+    return _deck_text(first + (tail if second else ""), "ink", "700 %dpx/1.08" % size, slab,
+                      margin, tag, DECK_DISPLAY, "letter-spacing:-.035em;text-align:%s" % align,
+                      cls)
+
+
+def _deck_lede(text, slab=False, align="left"):
+    return _deck_text(text, "body", "400 17px/1.65", slab, "20px 0 0", "p",
+                      extra="text-align:%s" % align)
+
+
+def _deck_note(text, slab=False):
+    return _deck_text(text, "faint", "400 13px/1.6", slab, "36px 0 0", "p")
+
+
+def _deck_label(text, slab=False, top=0, role="faint"):
+    return _deck_text(text, role, "500 13px/1.4", slab, "%dpx 0 10px" % top)
+
+
+def _deck_title(text, slab=False, size=16):
+    return _deck_text(text, "ink", "600 %dpx/1.4" % size, slab)
+
+
+def _deck_display(text, slab=False, size=21, top=0):
+    return _deck_text(text, "ink", "700 %dpx/1.3" % size, slab, "%dpx 0 0" % top,
+                      family=DECK_DISPLAY, extra="letter-spacing:-.02em")
+
+
+def _deck_body(text, slab=False, margin="6px 0 0", size=15):
+    return _deck_text(_deck_strong(text, slab), "body", "400 %spx/1.6" % size, slab, margin)
+
+
+def _deck_band(inner, pad="76px 28px"):
+    return ('<tr><td class="fm-gut fm-sec" style="padding:%s"><div class="fm-rise">%s</div>'
+            '</td></tr>' % (pad, inner))
+
+
+def _deck_edge(name):
+    return ('<tr><td style="font-size:0;line-height:0"><img src="%s%s" width="600" alt="" '
+            'style="display:block;width:100%%;height:auto;border:0"></td></tr>' % (
+                EMAIL_ASSETS, name))
+
+
+def _deck_slab(inner, pad="44px 28px 52px"):
+    return (_deck_edge("slab-top.png")
+            + '<tr><td class="fm-gut" bgcolor="%s" style="background:%s;padding:%s"><div '
+              'class="fm-rise">%s</div></td></tr>' % (DECK_SLAB, DECK_SLAB, pad, inner)
+            + _deck_edge("slab-bottom.png"))
+
+
+def _deck_panel(inner, top=40, pad="32px 28px"):
+    return ('<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+            'style="margin-top:%dpx;border-collapse:separate"><tr><td bgcolor="%s" '
+            'style="background:%s;border-radius:20px;padding:%s">%s</td></tr></table>' % (
+                top, DECK_SLAB, DECK_SLAB, pad, inner))
+
+
+def _deck_image(name, width, alt, top=0, align="center"):
+    return ('<div style="margin-top:%dpx;text-align:%s;font-size:0"><img src="%s%s" width="%d" '
+            'alt="%s" style="display:inline-block;width:100%%;max-width:%dpx;height:auto;'
+            'border:0;outline:none"></div>') % (top, align, EMAIL_ASSETS, name, width,
+                                                escape(alt, quote=True), width)
+
+
+def _deck_table(rows, top=40):
+    return ('<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+            'style="margin-top:%dpx;border-collapse:collapse">%s</table>' % (top, "".join(rows)))
+
+
+def _deck_cell(inner, slab=False, extra="", rule=True):
+    line, tone = _deck_tone(slab, "line")
+    return '<td valign="top"%s style="padding:22px 0;%s%s">%s</td>' % (
+        _deck_attr(tone if rule else ""), "border-top:1px solid %s;" % line if rule else "",
+        extra, inner)
+
+
+def _deck_item(title, text, label="", slab=False):
+    return '<tr>%s</tr>' % _deck_cell(
+        (_deck_label(label, slab) if label else "") + _deck_title(title, slab)
+        + _deck_body(text, slab), slab)
+
+
+def _deck_figure(value, text, slab=False, role="ink"):
+    return '<tr>%s%s</tr>' % (
+        _deck_cell(_deck_text(value, role, "700 30px/1.05", slab, family=DECK_DISPLAY,
+                              extra="letter-spacing:-.03em;white-space:nowrap"), slab,
+                   "width:132px;padding-right:16px"),
+        _deck_cell(_deck_body(text, slab, "4px 0 0"), slab))
+
+
+def _deck_pair(key, text, slab=False, width=96):
+    return '<tr>%s%s</tr>' % (
+        _deck_cell(_deck_title(key, slab, 15), slab, "width:%dpx;padding-right:16px" % width),
+        _deck_cell(_deck_body(text, slab, "0"), slab))
+
+
+def _deck_marks(items, mark, role, slab=False, top=16, size=15):
+    color, tone = _deck_tone(slab, role)
+    return _deck_table((
+        '<tr><td valign="top"%s style="width:26px;padding:6px 0;font:600 %spx/1.6 %s;color:%s">'
+        '%s</td><td valign="top" style="padding:6px 0">%s</td></tr>' % (
+            _deck_attr(tone), size, DECK_SANS, color, mark, _deck_body(item, slab, "0", size))
+        for item in items), top)
+
+
+def _deck_path(items, slab=False, align="left"):
+    color, tone = _deck_tone(slab, "faint")
+    arrow = ' <span%s style="color:%s">&rarr;</span> ' % (_deck_attr(tone), color)
+    return _deck_text(arrow.join('<span style="white-space:nowrap">%s</span>' % item
+                                 for item in items), "body", "500 14px/1.8", slab, "32px 0 0",
+                      "p", extra="text-align:%s" % align)
+
+
+def _deck_badge(text):
+    return ('<div><span class="fm-tile fm-line fm-body" style="display:inline-block;'
+            'padding:8px 14px;border:1px solid %s;border-radius:99px;background:#ffffff;'
+            'font:500 13px/1.3 %s;color:%s">%s</span></div>') % (
+                DECK_TONES["light"]["line"], DECK_SANS, DECK_TONES["light"]["body"],
+                _deck_strong(text))
+
+
+def _deck_buttons(reply, home, subject, align="left"):
+    buttons = []
+    if reply:
+        buttons.append(
+            '<a href="mailto:%s?subject=%s" class="fm-btn1" style="display:inline-block;'
+            'margin:0 4px 10px;padding:12px 16px;border:1px solid #161616;border-radius:10px;'
+            'background:#262626;background-image:linear-gradient(180deg,#2c2c2c,#222222);'
+            'box-shadow:inset 0 1px 0 rgba(255,255,255,.17),0 1px 2px rgba(0,0,0,.16);'
+            'font:600 14px/1 %s;color:#ffffff;text-decoration:none">Reply to the founders'
+            '&nbsp; <span style="opacity:.55">&rsaquo;</span></a>' % (
+                escape(reply, quote=True), quote("Re: " + subject), DECK_SANS))
+    buttons.append(
+        '<a href="%s" class="fm-btn2" style="display:inline-block;margin:0 4px 10px;'
+        'padding:12px 16px;border:1px solid #e1e2e3;border-radius:10px;background:#ffffff;'
+        'box-shadow:inset 0 -1px 0 rgba(0,0,0,.03),0 1px 2px rgba(0,0,0,.05);'
+        'font:600 14px/1 %s;color:#292929;text-decoration:none">forkmesh.com</a>' % (
+            home, DECK_SANS))
+    return '<div style="margin:32px -4px 0;text-align:%s">%s</div>' % (align, "".join(buttons))
+
+
+def _deck_bar(share, slab=False, fill="ink", height=8):
+    track, tone = _deck_tone(slab, "tile" if not slab else "line")
+    color, fill_tone = _deck_tone(slab, fill)
+    return ('<div%s style="margin-top:12px;height:%dpx;border-radius:99px;background:%s"><div '
+            'class="fm-fill%s" style="width:%d%%;height:%dpx;border-radius:99px;background:%s">'
+            '</div></div>') % (_deck_attr(tone), height, track,
+                               (" " + fill_tone + "bg") if fill_tone else "", share, height,
+                               color)
+
+
+def _deck_check(mark, slab=False, role="ink"):
+    if mark is None:
+        return _deck_text("Partial", "faint", "500 12px/1.6", slab)
+    if not mark:
+        return _deck_text("&mdash;", "faint", "500 15px/1.6", slab)
+    return _deck_text("&#10003;", role, "700 15px/1.6", slab)
+
+
+def _deck_matrix():
+    head = '<tr><td style="padding:0 0 12px"></td>%s</tr>' % "".join(
+        '<td align="center" valign="bottom" width="72" style="padding:0 0 12px">%s</td>' %
+        _deck_text(column, "faint", "500 12px/1.3", extra="text-align:center")
+        for column in DECK_MAIL_MATRIX_COLUMNS)
     rows = []
-    rows.append('<tr><td style="padding:0 0 14px">%s</td></tr>' % _mail_image(
-        "mesh.gif", 600, "ForkMesh mirrors your repositories across independent hosts.", 18))
-    rows.append(_mail_card(
-        _mail_eyebrow("ForkMesh · Investor deck · September 2026")
-        + '<h1 class="fm-h fm-h1" style="margin:0;font:700 42px/1.04 %s;letter-spacing:-.04em;'
-          'color:%s">Code with agents.<br>Own the forge.</h1>' % (MAIL_DISPLAY, MAIL_INK)
-        + _mail_lede("ForkMesh turns Claude Code and Codex into attributable contributors on a "
+    for name, *marks in DECK_MAIL_MATRIX:
+        ours = name == "ForkMesh"
+        rows.append('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_text(name, "ink" if ours else "body",
+                                  "%d 15px/1.5" % (700 if ours else 400)), extra="padding:14px 0"),
+            "".join(_deck_cell(_deck_check(mark, role="accent" if ours else "ink"),
+                               extra="padding:14px 0;text-align:center") for mark in marks)))
+    return _deck_table([head] + rows)
+
+
+def _deck_plans():
+    columns = []
+    for index, (kicker, title, items) in enumerate(DECK_MAIL_PLANS):
+        slab = index == 1
+        columns.append(
+            '<div class="fm-col" style="display:inline-block;width:100%%;max-width:176px;'
+            'margin:0 %dpx 10px 0;vertical-align:top;text-align:left"><table role="presentation" '
+            'width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:separate"><tr>'
+            '<td%s style="padding:22px 18px;border:1px solid %s;border-radius:16px;%s">%s%s%s'
+            '</td></tr></table></div>' % (
+                0 if index == len(DECK_MAIL_PLANS) - 1 else 8,
+                "" if slab else ' class="fm-line"', DECK_SLAB if slab else
+                DECK_TONES["light"]["line"], "background:%s" % DECK_SLAB if slab else "",
+                _deck_label(kicker, slab), _deck_display(title, slab, 18),
+                _deck_marks(items, "&#10003;", "ink" if not slab else "accent", slab, 14, 14)))
+    return '<div style="margin-top:40px;font-size:0">%s</div>' % "".join(columns)
+
+
+def _mail_deck_sections(reply, home, subject):
+    slides = []
+    slides.append(_deck_band(
+        _deck_badge("<b>Raising $1.0M</b>&nbsp; · &nbsp;18-month plan")
+        + _deck_heading("Code with agents.", "Own the forge.", 56, tag="h1",
+                        cls="fm-h fm-h1", join="<br>", margin="28px 0 0")
+        + _deck_lede("ForkMesh turns Claude Code and Codex into attributable contributors on a "
                      "local-first Git platform you control.")
-        + '<p style="margin:22px 0 22px"><span style="display:inline-block;padding:11px 16px;'
-          'border-radius:12px;background:#1c1c1f;color:#ffffff;font:700 13px/1 %s">'
-          'Raising $1.0M · 18-month plan</span></p>' % MAIL_SANS
-        + _mail_image("hero.jpg", 536, "The ForkMesh desktop app on a laptop and the mobile app "
-                      "on a phone.", 12)))
-    problem = "".join(
-        '<tr><td valign="top" style="padding:14px 14px 14px 0;border-top:1px solid %s;'
-        'font:600 11px/1.6 %s;color:%s;width:28px">%s</td><td style="padding:14px 0;'
-        'border-top:1px solid %s"><div style="font:700 16px/1.35 %s;color:%s">%s</div>'
-        '<div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">%s</div></td></tr>' % (
-            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_LINE, MAIL_SANS, MAIL_INK, title,
-            MAIL_SANS, MAIL_BODY, text) for k, title, text in DECK_MAIL_PROBLEM)
-    rows.append(_mail_card(
-        _mail_eyebrow("Problem · 02") + _mail_heading("Agents work differently. The forge does not.")
-        + _mail_lede("Coding is shifting from autocomplete to delegated work, but orchestration, "
+        + _deck_buttons(reply, home, subject), "56px 28px 48px")
+        + _deck_slab(_deck_image("deck-cover.jpg", DECK_WIDTH, "The ForkMesh desktop app on a "
+                                 "laptop and the mobile app on a phone."), "28px 28px 36px"))
+    slides.append(_deck_band(
+        _deck_heading("Agents work differently.", "The forge does not.")
+        + _deck_lede("Coding is shifting from autocomplete to delegated work, but orchestration, "
                      "accountability and ownership remain fragmented across three control "
                      "planes.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:18px">%s</table>' % problem
-        + _mail_chain(("IDE / CLI", "Hosted forge", "Model vendor"))
-        + '<p style="margin:6px 0 0;font:600 14px/1.5 %s;color:%s">Three control planes, one '
-          'overloaded reviewer. More code is cheap. Trusted merges are scarce.</p>' % (
-              MAIL_SANS, MAIL_INK)))
+        + _deck_table(_deck_item(title, text) for title, text in DECK_MAIL_PROBLEM)
+        + _deck_path(("IDE / CLI", "Hosted forge", "Model vendor"))
+        + _deck_display("Three control planes, one overloaded reviewer. More code is cheap. "
+                        "Trusted merges are scarce.", size=22, top=10)))
     stats = "".join(
-        '<td valign="top" width="33%%" style="padding:0 10px 0 0"><div style="font:700 26px/1 '
-        '%s;letter-spacing:-.03em;color:%s">%s</div><div style="margin-top:8px;font:600 10px/1.45 '
-        '%s;letter-spacing:.06em;text-transform:uppercase;color:#a3a3a3">%s</div></td>' % (
-            MAIL_DISPLAY, "#58a6ff" if index == 2 else "#f5f5f5", value, MAIL_MONO, label)
+        '<td valign="top" width="33%%" style="padding:0 12px 0 0"><div class="fm-big" '
+        'style="font:700 36px/1 %s;letter-spacing:-.035em;color:%s;white-space:nowrap">%s</div>'
+        '<div style="margin-top:12px;font:400 13px/1.5 %s;color:%s">%s</div></td>' % (
+            DECK_DISPLAY, DECK_TONES["slab"]["accent" if index == 2 else "ink"], value,
+            DECK_SANS, DECK_TONES["slab"]["body"], label)
         for index, (value, label) in enumerate(DECK_MAIL_WHY_STATS))
-    why = "".join(
-        '<div style="padding:12px 0;border-top:1px solid #2a2a2e">%s<div style="font:700 15px/1.35 '
-        '%s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
-        'color:#a3a3a3">%s</div></div>' % (_mail_kicker(k, True), MAIL_SANS, title, MAIL_SANS, text)
-        for k, title, text in DECK_MAIL_WHY_FLOW)
-    rows.append(_mail_card(
-        _mail_eyebrow("Why now · 03", dark=True)
-        + _mail_heading("AI coding is already a budget line. Agent governance is next.", dark=True)
-        + _mail_lede("The winning platform will coordinate many models, preserve provenance and "
-                     "keep the system of record under customer control.", dark=True)
+    slides.append(_deck_slab(
+        _deck_heading("AI coding is already a budget line.", "Agent governance is next.",
+                      slab=True)
+        + _deck_lede("The winning platform will coordinate many models, preserve provenance and "
+                     "keep the system of record under customer control.", True)
         + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin:22px 0 18px"><tr>%s</tr></table>' % stats + why
-        + _mail_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True), dark=True))
-    steps = "".join(
-        '<div style="padding:10px 0;border-top:1px solid %s"><div style="font:600 10.5px/1.4 '
-        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div '
-        'style="margin-top:3px;font:700 14.5px/1.35 %s;color:%s">%s</div></div>' % (
-            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_SANS, MAIL_INK, title)
-        for k, title in DECK_MAIL_STEPS)
-    rows.append(_mail_card(
-        _mail_eyebrow("Product · 04")
-        + _mail_heading("One prompt becomes a reviewed, attributable pull request.")
-        + _mail_lede("ForkMesh is the orchestration and system-of-record layer around the "
+          'style="margin:44px 0 36px"><tr>%s</tr></table>' % stats
+        + _deck_table((_deck_item(title, text, label, True)
+                       for label, title, text in DECK_MAIL_WHY_FLOW), 0)
+        + _deck_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True)))
+    slides.append(_deck_band(
+        _deck_heading("One prompt becomes a reviewed,", "attributable pull request.")
+        + _deck_lede("ForkMesh is the orchestration and system-of-record layer around the "
                      "coding agents teams already choose.")
-        + '<div style="margin-top:20px;font-size:0;text-align:center">'
-          '<div style="display:inline-block;width:100%%;max-width:240px;vertical-align:top;'
-          'text-align:center"><div class="fm-float">%s</div></div>'
-          '<div style="display:inline-block;width:100%%;max-width:268px;vertical-align:top;'
-          'text-align:left;padding-left:4px">%s</div></div>' % (
-              _mail_image("agent-flow.gif", 240, "The mobile app moving one prompt from "
-                          "assignment to a reviewed merge.", 0), steps)
-        + '<p style="margin:16px 0 0;font:600 13.5px/1.6 %s;color:%s">Replace the '
-          'Copilot-bound workflow · Keep model choice · Keep forge ownership</p>' % (
-              MAIL_SANS, MAIL_INK)))
-    proof = "".join(
-        '<tr><td style="padding:11px 16px 11px 0;border-top:1px solid %s;font:700 24px/1 %s;'
-        'letter-spacing:-.03em;color:%s;white-space:nowrap;width:96px">%s</td><td '
-        'style="padding:11px 0;border-top:1px solid %s;font:400 14px/1.45 %s;color:%s">%s'
-        '</td></tr>' % (MAIL_LINE, MAIL_DISPLAY, MAIL_INK, value, MAIL_LINE, MAIL_SANS,
-                        MAIL_BODY, label) for value, label in DECK_MAIL_PROOF)
-    rows.append(_mail_card(
-        _mail_eyebrow("Product proof · 05")
-        + _mail_heading("ForkMesh is already building ForkMesh.")
-        + _mail_lede("Dogfooding proves the issue &rarr; agent &rarr; pull request &rarr; merge "
+        + _deck_panel(_deck_image("deck-flow.gif", 260, "The mobile app moving one prompt from "
+                                  "assignment to a reviewed merge."), 40, "28px 20px 12px")
+        + _deck_table(('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_text("%02d" % index, "faint", "500 13px/1.75", family=DECK_MONO),
+                       extra="width:40px;padding:18px 0"),
+            _deck_cell(_deck_body("<b>%s.</b> %s" % (verb, text), margin="0"),
+                       extra="padding:18px 0"))
+            for index, (verb, text) in enumerate(DECK_MAIL_STEPS, start=1)), 24)
+        + _deck_text("Replace the Copilot-bound workflow · Keep model choice · Keep forge "
+                     "ownership", "ink", "600 15px/1.65", margin="28px 0 0", tag="p")))
+    slides.append(_deck_band(
+        _deck_heading("ForkMesh is already", "building ForkMesh.")
+        + _deck_lede("Dogfooding proves the issue &rarr; agent &rarr; pull request &rarr; merge "
                      "loop. Numbers are from the repository's own Git history and the live "
                      "network on 13 September 2026.")
-        + '<div style="margin:20px 0 6px">%s</div>' % _mail_image(
-            "count.gif", 536, "7,416 agent branches merged into main.", 0)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % proof
-        + _mail_bullets(DECK_MAIL_PROOF_NOTES, top=16)
-        + _mail_note("Dogfooding proof, not customer traction · Round objective: repeatable "
+        + _deck_panel(
+            _deck_label("Agent branches merged into main", True)
+            + _deck_text("7,416", "ink", "700 76px/1", True, family=DECK_DISPLAY,
+                         extra="letter-spacing:-.045em")
+            + _deck_bar(100, True, "accent", 4)
+            + _deck_table((_deck_figure(value, label, True) for value, label in DECK_MAIL_PROOF),
+                          28), 40, "36px 28px 12px")
+        + "".join(_deck_body(note, margin="20px 0 0" if index else "32px 0 0")
+                  for index, note in enumerate(DECK_MAIL_PROOF_NOTES))
+        + _deck_note("Dogfooding proof, not customer traction · Round objective: repeatable "
                      "paid adoption")))
-    roadmap = []
-    for index, (kicker, title, items) in enumerate(DECK_MAIL_ROADMAP):
-        dark = index == 1
-        roadmap.append(
-            '<tr><td style="padding:%s"><table role="presentation" width="100%%" cellpadding="0" '
-            'cellspacing="0" style="border-collapse:separate;background:%s;border:1px solid %s;'
-            'border-radius:14px"><tr><td style="padding:18px 20px">%s<div style="font:700 16px/1.3 '
-            '%s;color:%s">%s</div>%s</td></tr></table></td></tr>' % (
-                "12px 0 0" if index else "18px 0 0", "#141416" if dark else "#ffffff",
-                "#141416" if dark else MAIL_LINE, _mail_kicker(kicker, dark), MAIL_SANS,
-                "#f5f5f5" if dark else MAIL_INK, title, _mail_bullets(items, dark, 10)))
-    rows.append(_mail_card(
-        _mail_eyebrow("Roadmap · 06")
-        + _mail_heading("The agent loop works. This round hardens it.")
-        + _mail_lede("Exactly what is live today, and what the capital is designed to unlock.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % "".join(roadmap)
-        + _mail_note("Milestones are targets, not current traction")))
-    devices = "".join(
-        '<tr><td style="padding:12px 0;border-top:1px solid #2a2a2e"><div style="font:700 '
-        '15px/1.35 %s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
-        'color:#a3a3a3">%s</div></td><td align="right" valign="middle" style="padding:12px 0 12px '
-        '12px;border-top:1px solid #2a2a2e"><span style="display:inline-block;padding:6px 9px;'
-        'border-radius:99px;border:1px solid %s;font:600 10.5px/1 %s;letter-spacing:.08em;'
-        'text-transform:uppercase;color:%s;white-space:nowrap">%s</span></td></tr>' % (
-            MAIL_SANS, name, MAIL_SANS, text, "#2f6b3a" if index == 0 else "#2a2a2e", MAIL_MONO,
-            "#3fb950" if index == 0 else "#6b6b74", status)
-        for index, (name, text, status) in enumerate(DECK_MAIL_DEVICES))
-    rows.append(_mail_card(
-        _mail_eyebrow("Beyond the desk · 07", dark=True)
-        + _mail_heading("Agents on your wrist. Your code in the room.", dark=True)
-        + _mail_lede("Work with agents on your watch and be connected with your code in a virtual "
-                     "world where efficiency is seen.", dark=True)
-        + '<div style="margin:20px 0 8px">%s</div>' % _mail_image(
-            "xr.jpg", 536, "AR glasses showing the ForkMesh desktop app and a Claude Code session "
-            "inside the lenses, next to a watch listing running agents.", 0)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % devices
-        + _mail_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.",
-                     True), dark=True))
-    motion = "".join(
-        '<tr><td valign="top" style="padding:12px 12px 12px 0;border-top:1px solid %s;width:14px">'
-        '<div style="width:8px;height:8px;margin-top:4px;border:2px solid %s;border-radius:50%%">'
-        '</div></td><td style="padding:12px 0;border-top:1px solid %s">%s<div style="font:400 '
-        '14px/1.5 %s;color:%s">%s</div></td></tr>' % (
-            MAIL_LINE, MAIL_ACCENT, MAIL_LINE, _mail_kicker(k), MAIL_SANS, MAIL_BODY, text)
-        for k, text in DECK_MAIL_MOTION)
-    rows.append(_mail_card(
-        _mail_eyebrow("Customer &amp; go-to-market · 08")
-        + _mail_heading("Agent-first teams are the wedge. Sovereign infrastructure expands the "
-                        "deal.")
-        + _mail_lede("A founder-led motion where every step has an observable conversion event.")
-        + '<div style="margin-top:20px">%s<div style="font:700 16px/1.3 %s;color:%s">20 to 200 '
-          'person software teams</div><div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">'
-          'Using multiple coding agents on private code, and feeling the review, provenance and '
-          'platform-control gap.</div>%s</div>' % (
-              _mail_kicker("Initial ICP hypothesis"), MAIL_SANS, MAIL_INK, MAIL_SANS, MAIL_BODY,
-              _mail_bullets(DECK_MAIL_ICP, top=12))
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:8px">%s</table>' % motion
-        + _mail_chain(("Prompt", "Agent PR", "Human-approved merge", "Paid pilot", "ARR",
-                       "Expansion"))
-        + _mail_note("Founder-led until 20 paid organizations")))
-    ladder = "".join(
-        '<tr><td style="padding:0 0 10px"><table role="presentation" width="%d%%" '
-        'cellpadding="0" cellspacing="0" style="border-collapse:separate;border:1px solid %s;'
-        'border-radius:14px;background:#ffffff"><tr><td style="padding:14px 16px;font:700 22px/1 '
-        '%s;letter-spacing:-.03em;color:%s;width:72px">%s</td><td style="padding:14px 0;'
-        'font:400 13.5px/1.4 %s;color:%s">Paid organizations</td><td align="right" '
-        'style="padding:14px 16px;font:700 16px/1.2 %s;color:%s;white-space:nowrap">%s'
-        '<div style="margin-top:4px;font:600 10px/1 %s;letter-spacing:.08em;'
-        'text-transform:uppercase;color:%s">%s</div></td></tr></table></td></tr>' % (
-            width, MAIL_ACCENT if index == 2 else MAIL_LINE, MAIL_DISPLAY, MAIL_INK, orgs,
-            MAIL_SANS, MAIL_BODY, MAIL_DISPLAY, MAIL_INK, arr, MAIL_MONO, MAIL_ACCENT, note)
-        for index, ((orgs, arr, note), width) in enumerate(zip(DECK_MAIL_LADDER, (80, 90, 100))))
-    rows.append(_mail_card(
-        _mail_eyebrow("Market · 09")
-        + _mail_heading("Paid AI coding is proven. ForkMesh sells the control layer around it.")
-        + _mail_lede("A bottom-up model is more credible than an untraceable TAM / SAM / SOM "
+    slides.append(_deck_band(
+        _deck_heading("The agent loop works.", "This round hardens it.")
+        + _deck_lede("Exactly what is live today, and what the capital is designed to unlock.")
+        + "".join(
+            _deck_label(kicker, top=48 if index else 44, role="faint" if index else "live")
+            + _deck_display(title)
+            + _deck_marks(items, "&#9675;" if index else "&#10003;",
+                          "faint" if index else "live")
+            for index, (kicker, title, items) in enumerate(DECK_MAIL_ROADMAP))
+        + _deck_note("Milestones are targets, not current traction")))
+    slides.append(_deck_slab(
+        _deck_heading("Agents on your wrist.", "Your code in the room.", slab=True)
+        + _deck_lede("Work with agents on your watch and be connected with your code in a virtual "
+                     "world where efficiency is seen.", True)
+        + _deck_image("xr.jpg", DECK_WIDTH, "AR glasses showing the ForkMesh desktop app and a "
+                      "Claude Code session inside the lenses, next to a watch listing running "
+                      "agents.", 40)
+        + _deck_table(('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_title(name, True) + _deck_body(text, True), True),
+            _deck_cell(_deck_text(status, "live" if index == 0 else "faint", "500 13px/1.6",
+                                  True), True, "padding-left:16px;text-align:right;"
+                       "white-space:nowrap"))
+            for index, (name, text, status) in enumerate(DECK_MAIL_DEVICES)), 32)
+        + _deck_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.", True)))
+    slides.append(_deck_band(
+        _deck_heading("Agent-first teams are the wedge.",
+                      "Sovereign infrastructure expands the deal.")
+        + _deck_lede("A founder-led motion where every step has an observable conversion event.")
+        + _deck_label("Initial ICP hypothesis", top=44)
+        + _deck_display("20 to 200 person software teams")
+        + _deck_body("Using multiple coding agents on private code, and feeling the review, "
+                     "provenance and platform-control gap.", margin="10px 0 0")
+        + _deck_table((_deck_pair(key, text) for key, text in DECK_MAIL_ICP), 24)
+        + _deck_label("How a team buys", top=44)
+        + _deck_table((_deck_pair(key, text) for key, text in DECK_MAIL_MOTION), 0)
+        + _deck_path(("Prompt", "Agent PR", "Human-approved merge", "Paid pilot", "ARR",
+                      "Expansion"))
+        + _deck_note("Founder-led until 20 paid organizations")))
+    slides.append(_deck_band(
+        _deck_heading("Paid AI coding is proven.", "ForkMesh sells the control layer around it.")
+        + _deck_lede("A bottom-up model is more credible than an untraceable TAM / SAM / SOM "
                      "stack: 4.7M paid Copilot subscribers today, and a $25K blended ACV "
                      "hypothesis per organization.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:20px">%s</table>' % ladder
-        + _mail_note("Microsoft FY26 Q2 · Illustrative model: price and conversion are validated "
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td '
+            'valign="bottom">%s</td><td align="right" valign="bottom" style="padding-left:16px;'
+            'white-space:nowrap">%s</td></tr></table>%s%s' % (
+                _deck_text(arr, "accent" if index == 2 else "ink", "700 30px/1.05",
+                           family=DECK_DISPLAY, extra="letter-spacing:-.03em"),
+                _deck_text(note, "faint", "500 13px/1.4"),
+                _deck_bar(share, fill="accent" if index == 2 else "ink"),
+                _deck_body("%s paid organizations" % orgs, margin="10px 0 0")))
+            for index, ((orgs, arr, note), share) in enumerate(
+                zip(DECK_MAIL_LADDER, (6, 34, 100)))))
+        + _deck_note("Microsoft FY26 Q2 · Illustrative model: price and conversion are validated "
                      "in the design-partner phase.")))
-    plans = []
-    for index, (kicker, title, items) in enumerate(DECK_MAIL_PLANS):
-        dark = index == 1
-        plans.append(
-            '<div class="fm-plan" style="display:inline-block;width:100%%;max-width:170px;'
-            'vertical-align:top;margin:0 6px 10px 0;text-align:left"><table role="presentation" width="100%%" '
-            'cellpadding="0" cellspacing="0" style="border-collapse:separate;background:%s;'
-            'border:1px solid %s;border-radius:14px"><tr><td style="padding:16px">%s<div '
-            'style="font:700 15px/1.3 %s;color:%s">%s</div>%s</td></tr></table></div>' % (
-                "#141416" if dark else "#ffffff", "#141416" if dark else MAIL_LINE,
-                _mail_kicker(kicker, dark), MAIL_SANS, "#f5f5f5" if dark else MAIL_INK, title,
-                _mail_bullets(items, dark, 10).replace("14px/1.55", "13px/1.45")))
-    rows.append(_mail_card(
-        _mail_eyebrow("Business model · 10")
-        + _mail_heading("Monetize orchestration and governance, not model lock-in.")
-        + _mail_lede("Teams bring the agents they choose. ForkMesh charges for the shared "
+    slides.append(_deck_band(
+        _deck_heading("Monetize orchestration and governance,", "not model lock-in.")
+        + _deck_lede("Teams bring the agents they choose. ForkMesh charges for the shared "
                      "workflow, the control plane and the forge.")
-        + '<div style="margin-top:20px;font-size:0">%s</div>' % "".join(plans)
-        + _mail_chain(("Land one workflow", "Expand agents and repositories",
-                       "Standardize organization-wide"))
-        + _mail_note("Usage-priced components protect margin as agent workloads scale")))
-    rivals = "".join(
-        '<tr><td style="padding:14px 0;border-top:1px solid %s"><div style="font:700 15px/1.3 '
-        '%s;color:%s">%s <span style="font-weight:400;color:%s">· %s</span></div><div '
-        'style="margin-top:4px;font:400 13.5px/1.5 %s;color:%s">Best at %s. %s.</div><div '
-        'style="margin-top:6px;font:700 12.5px/1.4 %s;color:%s">ForkMesh: %s</div></td></tr>' % (
-            MAIL_LINE, MAIL_SANS, MAIL_INK, category, MAIL_FAINT, examples, MAIL_SANS, MAIL_BODY,
-            best[0].lower() + best[1:], tradeoff, MAIL_SANS, MAIL_ACCENT, role)
-        for category, examples, best, tradeoff, role in DECK_MAIL_RIVALS)
-    rows.append(_mail_card(
-        _mail_eyebrow("Competition · 11")
-        + _mail_heading("ForkMesh owns the intersection others optimize separately.")
-        + _mail_lede("The alternatives are strong. The wedge is model-flexible agents, the full "
+        + _deck_plans()
+        + _deck_path(("Land one workflow", "Expand agents and repositories",
+                      "Standardize organization-wide"))
+        + _deck_note("Usage-priced components protect margin as agent workloads scale")))
+    slides.append(_deck_band(
+        _deck_heading("ForkMesh owns the intersection", "others optimize separately.")
+        + _deck_lede("The alternatives are strong. The wedge is model-flexible agents, the full "
                      "forge workflow and local-first ownership, together.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:18px">%s</table>' % rivals
-        + _mail_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
-    team = "".join(
-        '<div style="display:inline-block;width:100%%;max-width:258px;vertical-align:top;'
-        'margin:0 0 12px;text-align:left"><table role="presentation" cellpadding="0" '
-        'cellspacing="0"><tr><td valign="top" style="padding:0 14px 0 0"><img src="%s%s.png" '
-        'width="56" height="56" alt="" style="display:block;width:56px;height:56px;border:0;'
-        'border-radius:14px"></td><td valign="top"><div style="font:700 17px/1.2 %s;'
-        'letter-spacing:-.02em;color:%s">%s</div><div style="margin:4px 0 6px;font:600 10.5px/1 '
-        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div style="font:400 '
-        '13.5px/1.5 %s;color:%s">%s</div></td></tr></table></div>' % (
-            EMAIL_ASSETS, key, MAIL_DISPLAY, MAIL_INK, name, MAIL_MONO, MAIL_ACCENT, role,
-            MAIL_SANS, MAIL_BODY, bio) for key, name, role, bio in DECK_MAIL_TEAM)
-    rows.append(_mail_card(
-        _mail_eyebrow("Team · 12")
-        + _mail_heading("Company-building experience meets founder-problem fit.")
-        + _mail_lede("Operating experience on one side, protocol, Git and distributed-systems "
+        + _deck_matrix()
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_title('%s <span class="fm-faint" style="font-weight:400;color:%s">&nbsp;%s'
+                        '</span>' % (category, DECK_TONES["light"]["faint"], examples))
+            + _deck_body("Best at %s. %s." % (best[0].lower() + best[1:], tradeoff))
+            + _deck_text("ForkMesh: " + role, "accent", "600 14px/1.4", margin="10px 0 0"))
+            for category, examples, best, tradeoff, role in DECK_MAIL_RIVALS), 48)
+        + _deck_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
+    slides.append(_deck_band(
+        _deck_heading("Company-building experience", "meets founder-problem fit.")
+        + _deck_lede("Operating experience on one side, protocol, Git and distributed-systems "
                      "execution on the other. The pain became the protocol.")
-        + '<div style="margin-top:20px;font-size:0">%s</div>' % team))
-    funds = "".join(
-        '<tr><td style="padding:0 0 12px"><div style="font:600 13.5px/1.4 %s;color:#f5f5f5">%s'
-        '<span style="float:right;font:600 12px/1.4 %s;color:#a3a3a3">%s · %d%%</span></div>'
-        '<div style="margin-top:6px;height:8px;border-radius:99px;background:#2a2a2e">'
-        '<div class="fm-fill" style="width:%d%%;height:8px;border-radius:99px;'
-        'background:#58a6ff"></div></div></td></tr>' % (
-            MAIL_SANS, label, MAIL_MONO, amount, share, share)
-        for label, share, amount in DECK_MAIL_FUNDS)
-    targets = "".join(
-        '<li style="margin:0 0 8px;font:400 14px/1.55 %s;color:#a3a3a3"><b style="color:#f5f5f5">'
-        '%s</b>%s</li>' % (MAIL_SANS, lead, rest) for lead, rest in DECK_MAIL_TARGETS)
-    rows.append(_mail_card(
-        _mail_eyebrow("The round · 13", dark=True)
-        + _mail_heading("$1M turns product proof into enterprise pull.", dark=True)
-        + _mail_lede("An 18-month plan to win 20 paid teams and harden the control plane. "
-                     "Average budget envelope: about $55.6K per month.", dark=True)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:22px">%s</table>' % funds
-        + '<div style="margin-top:10px;padding:18px 20px;border:1px solid #2f4a6b;'
-          'border-radius:14px"><div style="margin:0 0 10px;font:600 10.5px/1.4 %s;'
-          'letter-spacing:.08em;text-transform:uppercase;color:#58a6ff"><span class="fm-live" '
-          'style="display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%%;'
-          'background:#3fb950"></span>Target · Q4 2027 · Series A readiness</div><ul '
-          'style="margin:0;padding:0 0 0 18px">%s</ul></div>' % (MAIL_MONO, targets)
-        + _mail_note("Milestones are targets, not current traction", True), dark=True))
-    sources = "".join(
-        '<tr><td valign="top" style="padding:10px 14px 10px 0;border-top:1px solid %s;'
-        'font:700 13px/1.45 %s;color:%s;width:40%%">%s</td><td style="padding:10px 0;'
-        'border-top:1px solid %s;font:400 13px/1.45 %s;color:%s">%s</td></tr>' % (
-            MAIL_LINE, MAIL_SANS, MAIL_INK, name, MAIL_LINE, MAIL_SANS, MAIL_BODY, text)
-        for name, text in DECK_MAIL_SOURCES)
-    rows.append(_mail_card(
-        _mail_eyebrow("Sources &amp; contact · 14")
-        + _mail_heading("Let's build the forge teams own.", size=30)
-        + _mail_lede("The agent-native, local-first Git platform for teams that refuse to rent "
-                     "their system of record. Raising $1.0M.")
-        + '<p style="margin:18px 0 0;font:600 15px/1.5 %s;color:%s">Just reply to this email: '
-          'it goes straight to the founders.</p>' % (MAIL_SANS, MAIL_INK)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:20px">%s</table>' % sources))
-    return rows[0] + "".join(card + _mail_marker(slide)
-                             for slide, card in enumerate(rows[1:], start=1))
+        + _deck_table('<tr>%s%s</tr>' % (
+            _deck_cell('<img src="%s%s.png" width="56" height="56" alt="" style="display:block;'
+                       'width:56px;height:56px;border:0;border-radius:14px">' % (
+                           EMAIL_ASSETS, key), extra="width:56px;padding:26px 18px 26px 0"),
+            _deck_cell(_deck_display(name, size=19)
+                       + _deck_label(role, top=4) + _deck_body(bio, margin="0"),
+                       extra="padding:26px 0"))
+            for key, name, role, bio in DECK_MAIL_TEAM)))
+    slides.append(_deck_slab(
+        _deck_heading("$1M turns product proof", "into enterprise pull.", slab=True)
+        + _deck_lede("An 18-month plan to win 20 paid teams and harden the control plane. "
+                     "Average budget envelope: about $55.6K per month.", True)
+        + _deck_table(('<tr><td style="padding:0 0 26px"><table role="presentation" '
+                       'width="100%%" cellpadding="0" cellspacing="0"><tr><td>%s</td><td '
+                       'align="right" style="padding-left:16px;white-space:nowrap">%s</td></tr>'
+                       '</table>%s</td></tr>' % (
+                           _deck_title(label, True, 15),
+                           _deck_text("%s · %d%%" % (amount, share), "body", "500 13px/1.4",
+                                      True, family=DECK_MONO),
+                           _deck_bar(share, True, "accent", 6))
+                       for label, share, amount in DECK_MAIL_FUNDS), 44)
+        + _deck_label("Targets by Q4 2027 · Series A readiness", True, 20)
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_body("<b>%s</b>%s" % (lead, rest), True, "0"), True, "padding:16px 0")
+            for lead, rest in DECK_MAIL_TARGETS), 0)
+        + _deck_note("Milestones are targets, not current traction", True)))
+    slides.append(_deck_band(
+        _deck_heading("Let's build the forge", "teams own.", 46, align="center")
+        + _deck_lede("The agent-native, local-first Git platform for teams that refuse to rent "
+                     "their system of record. Raising $1.0M.", align="center")
+        + _deck_text("Just reply to this email: it goes straight to the founders.", "ink",
+                     "600 16px/1.6", margin="24px 0 0", tag="p", extra="text-align:center")
+        + _deck_buttons(reply, home, subject, "center")
+        + _deck_label("Sources", top=64)
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_title(name, size=14) + _deck_body(text, margin="4px 0 0", size=14),
+            extra="padding:16px 0") for name, text in DECK_MAIL_SOURCES), 0),
+        "96px 28px 76px"))
+    return "".join(slide + _mail_marker(index) for index, slide in enumerate(slides, start=1))
+
+
+def _mail_logo(home, origin, token, ink, size, tone=""):
+    return ('<a href="%s" style="text-decoration:none"><img src="%s/api/crm/-/t/o/%s.png" '
+            'width="26" height="30" alt="ForkMesh" style="display:inline-block;width:26px;'
+            'height:30px;border:0;vertical-align:middle"><span%s style="margin-left:9px;'
+            'font:700 %dpx/30px %s;letter-spacing:-.035em;color:%s;vertical-align:middle">'
+            'forkmesh</span></a>') % (home, origin, token, _deck_attr(tone), size, MAIL_DISPLAY,
+                                      ink)
 
 
 async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link="",
-                              reader="", subject=""):
+                              reader="", subject="", reply=""):
     token = await _track_token(runtime, send_id)
     deck = link_kind == "deck" and DECK_LINK_MARK in link
     tracked = {}
@@ -6624,38 +7110,49 @@ async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link
         for block in re.split(r"\n\s*\n", text.strip()) if block.strip())
     first = re.split(r"\n\s*\n", text.strip())[0] if text.strip() else ""
     preheader = _clean(re.sub(r"\s+", " ", AUTO_EMAIL_URL_RE.sub("", first)), 140)
-    header = (
-        '<tr><td style="padding:4px 4px 18px"><table role="presentation" width="100%%" '
-        'cellpadding="0" cellspacing="0"><tr><td valign="middle"><a href="%s" '
-        'style="text-decoration:none"><img src="%s/api/crm/-/t/o/%s.png" width="26" height="30" '
-        'alt="ForkMesh" style="display:inline-block;width:26px;height:30px;border:0;'
-        'vertical-align:middle"><span class="fm-h" style="margin-left:9px;font:700 21px/30px %s;'
-        'letter-spacing:-.035em;color:%s;vertical-align:middle">forkmesh</span></a></td>%s</tr>'
-        '</table></td></tr>') % (
-            escape(tracked[TRACK_HOME], quote=True), origin, token, MAIL_DISPLAY, MAIL_INK,
-            ('<td align="right" valign="middle" style="font:600 12px/1 %s;color:%s">'
-             'Investor deck</td>' % (MAIL_SANS, MAIL_BODY)) if deck else "")
-    note = _mail_card('<div style="font:400 16px/1.6 %s;color:#18181b">%s</div>' % (
-        MAIL_SANS, paragraphs))
-    prepared = (" · Prepared for %s" % escape(reader)) if reader and deck else ""
-    footer = (
-        '<tr><td style="padding:8px 8px 0;font:400 12px/1.6 %s;color:%s">%s%s<br>'
-        'ForkMesh · forkmesh.com</td></tr><tr><td>%s</td></tr>') % (
-            MAIL_SANS, MAIL_FAINT, "Confidential" if deck else "Sent with ForkMesh", prepared,
-            _mail_reads())
+    home = escape(tracked[TRACK_HOME], quote=True)
+    if deck:
+        light = DECK_TONES["light"]
+        prepared = (" · Prepared for %s" % escape(reader)) if reader else ""
+        canvas, scheme, page = DECK_PAGE, "light dark", ' class="fm-page"'
+        content = (
+            '<tr><td class="fm-gut" style="padding:36px 28px 0"><table role="presentation" '
+            'width="100%%" cellpadding="0" cellspacing="0"><tr><td valign="middle">%s</td>'
+            '<td align="right" valign="middle" class="fm-faint" style="padding-left:16px;'
+            'white-space:nowrap;font:500 13px/1 %s;color:%s">Investor deck</td></tr></table>'
+            '</td></tr><tr><td class="fm-gut" style="padding:44px 28px 8px"><div class="fm-ink" '
+            'style="font:400 17px/1.7 %s;color:#27272a">%s</div></td></tr>' % (
+                _mail_logo(home, origin, token, light["ink"], 22, "fm-ink"), MAIL_SANS,
+                light["faint"], MAIL_SANS, paragraphs)
+            + _mail_deck_sections(reply, home, subject or "ForkMesh")
+            + '<tr><td class="fm-gut fm-line fm-faint" style="padding:40px 28px 56px;'
+              'border-top:1px solid %s;font:400 13px/1.7 %s;color:%s">Confidential%s<br>'
+              'ForkMesh · forkmesh.com</td></tr>' % (light["line"], MAIL_SANS, light["faint"],
+                                                     prepared))
+        outer = "0"
+    else:
+        canvas, scheme, page = "#f4f4f6", "light only", ""
+        content = (
+            '<tr><td style="padding:4px 4px 18px">%s</td></tr>' % _mail_logo(
+                home, origin, token, MAIL_INK, 21)
+            + _mail_card('<div style="font:400 16px/1.6 %s;color:#18181b">%s</div>' % (
+                MAIL_SANS, paragraphs))
+            + '<tr><td style="padding:8px 8px 0;font:400 12px/1.6 %s;color:%s">Sent with '
+              'ForkMesh<br>ForkMesh · forkmesh.com</td></tr>' % (MAIL_SANS, MAIL_FAINT))
+        outer = "28px 12px 36px"
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
         'content="width=device-width,initial-scale=1"><meta name="color-scheme" '
-        'content="light only"><meta name="supported-color-schemes" content="light"><title>'
-        + escape(subject or "ForkMesh") + '</title>' + _mail_style(beacon, deck)
-        + '</head><body style="margin:0;padding:0;background:#f4f4f6">'
-        '<div style="display:none;max-height:0;overflow:hidden;opacity:0">'
-        + escape(preheader) + '</div><table role="presentation" width="100%" cellpadding="0" '
-        'cellspacing="0" style="background:#f4f4f6"><tr><td align="center" '
-        'style="padding:28px 12px 36px"><table role="presentation" width="600" cellpadding="0" '
-        'cellspacing="0" style="width:100%;max-width:600px">'
-        + header + note + (_mail_deck_sections() if deck else "") + footer
-        + '</table></td></tr></table></body></html>')
+        'content="' + scheme + '"><meta name="supported-color-schemes" content="'
+        + scheme.replace(" only", "") + '"><title>' + escape(subject or "ForkMesh") + '</title>' + _mail_style(beacon, deck)
+        + '</head><body' + page + ' style="margin:0;padding:0;background:' + canvas
+        + '" bgcolor="' + canvas + '"><div style="display:none;max-height:0;overflow:hidden;'
+        'opacity:0">' + escape(preheader) + '</div><table' + page + ' role="presentation" '
+        'width="100%" cellpadding="0" cellspacing="0" bgcolor="' + canvas + '" style="background:'
+        + canvas + '"><tr><td align="center" style="padding:' + outer + '"><table' + page
+        + ' role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;'
+        'max-width:600px;background:' + canvas + '">' + content + '<tr><td>' + _mail_reads()
+        + '</td></tr></table></td></tr></table></body></html>')
 
 
 async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
@@ -6764,7 +7261,8 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, dict(
             fallback, ok=True, preview=True, subject=subject, text=text, to=recipient,
             fromEmail=from_email, fromName=from_name, model=model))
-    zoho, refused = _zoho_connection(runtime, await _opened_settings(runtime, org_bi))
+    record, zoho_owner = await _zoho_for(runtime, org_bi, account_bi)
+    zoho, refused = _zoho_connection(runtime, {"zoho": record})
     if refused == "zoho_one_click_unavailable":
         return _response(runtime, dict(
             fallback, error="send_failed", via="zoho",
@@ -6774,7 +7272,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     send_id = runtime.new_id()
     html = await _tracked_email_html(
         runtime, send_id, text, _track_origin(runtime), link_kind, link,
-        _contact_label(contact).split(" ")[0] if contact.get("name") else "", subject)
+        _contact_label(contact).split(" ")[0] if contact.get("name") else "", subject, from_email)
     envelope = {
         "to": recipient, "fromEmail": from_email, "fromName": from_name,
         "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
@@ -6804,7 +7302,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         elif result.get("error") == "zoho_token_rejected":
             grant.update(tokenRejectedAt=runtime.now())
         if grant:
-            await _record_zoho(runtime, org_bi, **grant)
+            await _record_zoho(runtime, org_bi, zoho_owner, **grant)
     else:
         result = await runtime.send_mailtrap("", {
             "from": {"email": from_email, "name": from_name},
@@ -6814,6 +7312,8 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
             "html": html,
             "tracked": True,
             "category": "CRM automated outreach",
+            "organization": org_bi,
+            "account": account_bi,
             "custom_variables": {
                 "forkmesh_crm_send_id": send_id,
                 "forkmesh_crm_org_bi": org_bi,
@@ -6862,12 +7362,16 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
             detail=("Zoho Mail" if zoho else "The email provider") + " rejected the send"
                    + (" (" + envelope["error"] + ")" if envelope["error"] else "") + "."),
             502)
-    contact["lastContactedAt"] = sent_at
+    before = dict(contact)
+    advanced = _stamp_contacted(contact, sent_at, flows)
     await runtime.d1_run(
         "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
         "data=? WHERE org_bi=? AND contact_id=?",
         account_bi, actor, sent_at, await runtime.seal(contact), org_bi, contact_id,
     )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact)])
     await _record_contact_event(runtime, org_bi, account_bi, actor, contact,
                                 "contact.emailed", {"subject": subject})
     await _celebrate_tracked_email(runtime, actor, send_id, subject, contact)
@@ -7488,7 +7992,7 @@ async def _save_settings(runtime, org_bi, actor_bi, actor, data, zoho_scope=""):
         org_bi, actor_bi, actor, now, await runtime.seal(settings),
     )
     await runtime.audit(actor, "crm.settings.update", "organization", org_bi)
-    return _response(runtime, {"ok": True, "settings": await _settings(runtime, org_bi)})
+    return _response(runtime, {"ok": True, "settings": await _settings(runtime, org_bi, actor_bi)})
 
 
 LEAD_FIELDS = ("name", "email", "company", "title", "phone", "website", "source",
@@ -7519,18 +8023,9 @@ async def record_lead(runtime, org_name, lead):
         return {"ok": True, "status": "exists", "contactId": prior["contact_id"]}
     contact_id = runtime.new_id()
     now = runtime.now()
-    try:
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
-            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name, email_bi, "", actor, "", actor, now,
-            now, await runtime.seal(contact),
-        )
-    except Exception as error:
-        if "crm_contact_catalog_full" in str(error):
-            return {"ok": False, "status": "crm_full"}
-        raise
+    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                 "", actor, now, contact):
+        return {"ok": False, "status": "crm_full"}
     await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
     await _record_contact_changes(runtime, org_bi, "", actor, [(None, contact)])
     return {"ok": True, "status": "created", "contactId": contact_id}
@@ -7603,6 +8098,8 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_views WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_contacts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_settings WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_backfills WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_zoho_members WHERE org_bi=?", org_bi)
 
 
 async def mailtrap_webhook_event(runtime, event, status, now):
@@ -7691,6 +8188,8 @@ def _activity_rule(resource, item, method, data):
     if (resource, shape) == ("emails", "link") and data.get("provider") == "mastodon":
         rule = ACTIVITY_MASTODON_LINK
     if data.get("preview") or resource == "settings" and set(data) <= {"tableViews"}:
+        return None
+    if resource == "zoho" and data.get("mine"):
         return None
     detail = ""
     if resource != "zoho":
@@ -7798,7 +8297,7 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "zoho":
         allowed = (("GET",) if route[0] == "zoho-callback"
-                   else ("POST",) if item in ("connect", "exchange") else ())
+                   else ("POST",) if item in ("connect", "exchange", "disconnect") else ())
     elif resource == "views" and item in ("copy", "order"):
         allowed = ("POST",)
     elif resource == "views" and item == "activity":
@@ -7882,8 +8381,10 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {
             "error": "plugin_not_installed",
@@ -7982,15 +8483,17 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 "ok": True, "deck": await _deck_detail(runtime, link)})
         return await _revoke_deck_link(runtime, link, org_bi, actor)
     if resource == "zoho":
-        if role not in MANAGER_ROLES:
+        if not data.get("mine") and role not in MANAGER_ROLES:
             return _response(runtime, {"error": "organization_admin_required"}, 403)
         if item == "exchange":
             return await _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data)
-        return await _zoho_connect(runtime, org_name, account_bi, actor)
+        if item == "disconnect":
+            return await _zoho_disconnect(runtime, org_bi, org_name, account_bi, actor, data)
+        return await _zoho_connect(runtime, org_name, account_bi, actor, bool(data.get("mine")))
     if resource == "settings":
         if method == "GET":
             return _response(runtime, {
-                "ok": True, "settings": await _settings(runtime, org_bi),
+                "ok": True, "settings": await _settings(runtime, org_bi, account_bi),
                 "canManageSettings": role in MANAGER_ROLES,
             })
         if role not in MANAGER_ROLES:
@@ -8058,13 +8561,14 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, org_name, account_bi, actor, data)
         if not item:
             return _response(runtime, {
-                "ok": True, "mail": await _mail_messages(runtime, org_bi)})
+                "ok": True, "mail": await _mail_messages(runtime, org_bi, account_bi)})
         row = await _mail_message_row(runtime, org_bi, item)
-        if not row:
+        message = await _mail_message_project(runtime, row) if row else None
+        if not message or not _mail_visible(message, account_bi):
             return _response(runtime, {"error": "mail_message_not_found"}, 404)
         if method == "GET":
             return _response(runtime, {
-                "ok": True, "message": await _mail_message_project(runtime, row)})
+                "ok": True, "message": _mail_public(message)})
         if method == "DELETE":
             await runtime.d1_run(
                 "DELETE FROM crm_mail_messages WHERE org_bi=? AND message_id=?",
@@ -8077,7 +8581,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
             return _response(runtime, {"ok": True, "emails": await _emails(runtime, org_bi)})
         return await _record_external_send(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "send":
-        return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data)
+        return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data,
+                                    manager=role in MANAGER_ROLES, role=role)
     if item == "link":
         return await _link_email(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "toot":

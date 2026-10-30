@@ -1,10 +1,13 @@
 
 #include "Tooltips.h"
 #include "GitRefusal.h"
+#include "BackgroundRunnerBadge.h"
+#include "SettingsSectionsView.h"
 #include "HomeBoard.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowNetworkInternal.h"
 #include "SystemPressure.h"
 #include "AgentCliLocator.h"
@@ -59,6 +62,14 @@
 #endif
 
 using namespace forkmesh::ui;
+
+namespace {
+
+const QStringList kRailKeptBuiltinKeys = {QStringLiteral("notes"),
+                                          QStringLiteral("calendar"),
+                                          QStringLiteral("tasks")};
+
+}
 
 QWidget *MainWindow::buildBreadcrumb()
 {
@@ -155,6 +166,7 @@ QWidget *MainWindow::buildBreadcrumb()
         showAgentAccountMenu(QStringLiteral("claude-code"), position);
     };
     tokenUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
+    attachAgentUsageHoverCard(tokenUsage, [] { return kClaudeCodeProvider; });
     {
         QSettings settings;
         auto restore = [&](bool weekly, const QString &key) {
@@ -196,6 +208,7 @@ QWidget *MainWindow::buildBreadcrumb()
     codexUsage->onContextMenu = [this](const QPoint &position) {
         showAgentAccountMenu(QStringLiteral("codex"), position);
     };
+    attachAgentUsageHoverCard(codexUsage, [] { return kCodexProvider; });
     codexUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
     refreshCodexUsageRemaining();
     QTimer::singleShot(0, this, &MainWindow::restoreUsageLimitReminders);
@@ -266,44 +279,6 @@ QWidget *MainWindow::buildBreadcrumb()
     connect(m_ledgerNavButton, &QPushButton::clicked, this,
             &MainWindow::openLedger);
 
-    m_tasksNavButton = new ActivityRailButton(QStringLiteral("list-unordered"),
-                                              QStringLiteral("Tasks"));
-    m_tasksNavButton->setObjectName("organizationTasksNavButton");
-    m_tasksNavButton->setCheckable(true);
-    m_tasksNavButton->setCursor(Qt::PointingHandCursor);
-    m_tasksNavButton->setToolTip(QStringLiteral("Organization tasks"));
-    setOcticon(m_tasksNavButton, "list-unordered", 16);
-    m_navGroup->addButton(
-        m_tasksNavButton, kOrganizationTasksSectionIndex);
-    connect(m_tasksNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kOrganizationTasksSectionIndex);
-    });
-
-    m_calendarNavButton = new ActivityRailButton(QStringLiteral("calendar"),
-                                                 QStringLiteral("Calendar"));
-    m_calendarNavButton->setObjectName("calendarNavButton");
-    m_calendarNavButton->setCheckable(true);
-    m_calendarNavButton->setCursor(Qt::PointingHandCursor);
-    m_calendarNavButton->setToolTip(QStringLiteral(
-        "Private personal and organization calendars"));
-    setOcticon(m_calendarNavButton, "calendar", 16);
-    m_navGroup->addButton(m_calendarNavButton, kCalendarSectionIndex);
-    connect(m_calendarNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kCalendarSectionIndex);
-    });
-
-    m_notesNavButton = new ActivityRailButton(QStringLiteral("note"),
-                                              QStringLiteral("Notes"));
-    m_notesNavButton->setObjectName("notesNavButton");
-    m_notesNavButton->setCheckable(true);
-    m_notesNavButton->setCursor(Qt::PointingHandCursor);
-    m_notesNavButton->setToolTip(QStringLiteral("Local and cloud Markdown notes"));
-    setOcticon(m_notesNavButton, "note", 16);
-    m_navGroup->addButton(m_notesNavButton, kNotesSectionIndex);
-    connect(m_notesNavButton, &QPushButton::clicked, this, [this] {
-        showSection(kNotesSectionIndex);
-    });
-
     m_breadcrumb = new QLabel;
     m_breadcrumb->setObjectName("breadcrumb");
     m_breadcrumb->setTextFormat(Qt::RichText);
@@ -372,9 +347,35 @@ QWidget *MainWindow::buildBreadcrumb()
     m_agentsNavButton->setCursor(Qt::PointingHandCursor);
     m_agentsNavButton->setToolTip(QStringLiteral("Agents"));
     setOcticon(m_agentsNavButton, "smart-toy", 16);
-    connect(m_agentsNavButton, &QPushButton::clicked, this,
-            &MainWindow::openAgentsOverview);
+    connect(m_agentsNavButton, &QPushButton::clicked, this, [this] {
+        openAgentsOverview();
+        if (m_repoDetailIndex >= 0 && m_repoDetailStack)
+            return;
+        m_agentsNavButton->setChecked(false);
+        showSection(kNetworkReposSectionIndex);
+        showPageNotice(QStringLiteral("Agents work inside a repository. Clone "
+                                      "or add one to start an agent."),
+                       false);
+    });
 
+    m_sessionsNavButton = new ActivityRailButton(QStringLiteral("history"),
+                                                 QStringLiteral("Sessions"));
+    m_sessionsNavButton->setObjectName(QStringLiteral("sessionsNavButton"));
+    m_sessionsNavButton->setCheckable(true);
+    m_sessionsNavButton->setCursor(Qt::PointingHandCursor);
+    m_sessionsNavButton->setToolTip(
+        QStringLiteral("Sessions: every agent session, its live transcript, "
+                       "and messages between sessions"));
+    setOcticon(m_sessionsNavButton, "history", 16);
+    m_navGroup->addButton(m_sessionsNavButton, kSessionsSectionIndex);
+    connect(m_sessionsNavButton, &QPushButton::clicked, this,
+            [this] { showSessionsPage(); });
+
+    {
+        const QStringList hidden =
+            QSettings().value(kHiddenTopBarIndicatorsSetting).toStringList();
+        m_hiddenTopBarIndicators = QSet<QString>(hidden.cbegin(), hidden.cend());
+    }
     m_agentDotMatrix = new AgentDotMatrix;
     m_agentDotMatrix->onDotClicked = [this](int sessionId) {
         if (sessionId > 0)
@@ -641,9 +642,6 @@ QWidget *MainWindow::buildBreadcrumb()
             &MainWindow::captureScreenRegion);
     attachPackageRailMenu(m_navScreenshotButton,
                           QStringLiteral("builtin:capture"));
-    // Built before syncPackageRuntime() so an installed Timers package can
-    // attach its strip on the first pass rather than after the first tick.
-    createTimersNavStrip();
     syncPackageRuntime();
 
     m_navResizeButton = new ActivityRailButton(QStringLiteral("device-desktop"),
@@ -687,6 +685,9 @@ QWidget *MainWindow::buildBreadcrumb()
     layout->setSpacing(0);
 
     auto *chrome = new WindowChromeBar;
+    chrome->onContextMenu = [this](const QPoint &globalPos) {
+        showTopBarIndicatorMenu(globalPos);
+    };
     auto *chromeRow = new QHBoxLayout(chrome);
     chromeRow->setContentsMargins(0, 0, 8, 0);
     chromeRow->setSpacing(8);
@@ -708,18 +709,17 @@ QWidget *MainWindow::buildBreadcrumb()
     identityBalanceRow->addWidget(m_nodeDotMatrix);
     identityBalanceRow->addWidget(m_chromeActionDivider, 0, Qt::AlignVCenter);
     identityBalanceRow->addWidget(m_actionRunStrip);
-    // The Timers package's clock and its chips, beside the agent/node/action
-    // indicators the top bar already carries. Hidden unless it is installed.
-    if (m_timersNavStrip)
-        identityBalanceRow->addWidget(m_timersNavStrip, 0, Qt::AlignVCenter);
     chromeRow->addLayout(identityBalanceRow);
+    chromeRow->addWidget(buildWorkflowPinStrip(QStringLiteral("top")), 0,
+                         Qt::AlignVCenter);
     chromeRow->addStretch();
 
     auto *searchCluster = new QWidget;
     auto *searchClusterRow = new QHBoxLayout(searchCluster);
     searchClusterRow->setContentsMargins(0, 0, 0, 0);
     searchClusterRow->setSpacing(8);
-    searchClusterRow->addWidget(createNavHistoryButtons());
+    QWidget *historyButtons = createNavHistoryButtons();
+    searchClusterRow->addWidget(historyButtons);
     searchClusterRow->addWidget(createGlobalSearchBox());
     chromeRow->addWidget(searchCluster, 0, Qt::AlignCenter);
     chromeRow->addStretch();
@@ -753,12 +753,38 @@ QWidget *MainWindow::buildBreadcrumb()
         [this] { return currentNativePackageId(); }, chrome);
     m_packageActionsButton->hide();
     chromeRow->addWidget(m_packageActionsButton);
+    chromeRow->addWidget(new BackgroundRunnerBadge([this] {
+        showSection(1);
+        if (!m_settingsSections)
+            return;
+        if (auto *box = m_settingsSections->findChild<QWidget *>(
+                QStringLiteral("backgroundSettings")))
+            m_settingsSections->revealWidget(box);
+    }), 0, Qt::AlignVCenter);
     // The view switcher sits just before the window controls, so it stays in
     // the top-right corner whichever view hides the rail or the status strip.
-    chromeRow->addWidget(buildViewModeButton());
+    if (!Theme::isNext()) {
+        auto *terminalButton = new QPushButton;
+        terminalButton->setObjectName(QStringLiteral("windowChromeButton"));
+        terminalButton->setProperty("terminalLauncherButton", true);
+        terminalButton->setCursor(Qt::PointingHandCursor);
+        terminalButton->setFixedSize(32, 30);
+        terminalButton->setToolTip(QStringLiteral("Show or hide terminals"));
+        terminalButton->setAccessibleName(QStringLiteral("Show or hide terminals"));
+        setOcticon(terminalButton, QStringLiteral("terminal"), 14);
+        connect(terminalButton, &QPushButton::clicked, this, [this] { toggleTerminals(); });
+        chromeRow->addWidget(terminalButton);
+    }
+    QPushButton *viewModeButton = buildViewModeButton();
+    chromeRow->addWidget(viewModeButton);
     chromeRow->addWidget(minimizeButton);
     chromeRow->addWidget(maximizeButton);
     chromeRow->addWidget(closeButton);
+    installNativePackageChromeSlots(chrome, identityBalanceRow, searchClusterRow,
+                                    chromeRow, viewModeButton);
+    forkmesh::ui::NextAccess::installTopBar(
+        *this, chromeRow, historyButtons, viewModeButton,
+        {minimizeButton, maximizeButton, closeButton});
     chrome->setMinimumWidth(0);
     chrome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto *chromeScroll = new QScrollArea;
@@ -886,8 +912,10 @@ void MainWindow::applyRailCaptionPreference()
              std::as_const(m_railGroupSeparators))
             if (separator)
                 separator->followRailCaptionPreference();
-        if (m_railSortButton)
+        if (m_railSortButton) {
             m_railSortButton->setFixedWidth(railColumnWidth());
+            refreshRailSortButton();
+        }
         if (QWidget *content = m_appNavigationRailLayout->parentWidget())
             content->setMinimumWidth(railColumnWidth());
     }
@@ -904,15 +932,18 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
     QList<QPair<QString, QWidget *>> canonical = {
         {QStringLiteral("home"), m_homeGridNavButton},
         {QStringLiteral("code"), m_railCodeButton},
+        {QStringLiteral("sessions"), m_sessionsNavButton},
         {QStringLiteral("agents"), m_agentsNavButton},
         {QStringLiteral("git"), m_railGitButton},
         {QStringLiteral("repos"), m_reposNavButton},
         {QStringLiteral("market"), m_marketNavButton},
         {QStringLiteral("ledger"), m_ledgerNavButton},
     };
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
-        canonical.append({QStringLiteral("package:%1").arg(page.id),
-                          page.navigation.data()});
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (!kRailKeptBuiltinKeys.contains(page.id))
+            canonical.append({QStringLiteral("package:%1").arg(page.id),
+                              page.navigation.data()});
+    }
     canonical += {
         {QStringLiteral("chat"), m_chatButton},
         {QStringLiteral("controlNode"), m_controlNodeNavButton},
@@ -926,11 +957,12 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
         {QStringLiteral("tour"), m_tourNavButton},
         {QStringLiteral("settings"), m_settingsNavButton},
         {QStringLiteral("screenshot"), m_navScreenshotButton},
-        {QStringLiteral("notes"), m_notesNavButton},
-        {QStringLiteral("calendar"), m_calendarNavButton},
-        {QStringLiteral("tasks"), m_tasksNavButton},
-        {QStringLiteral("notifications"), m_notificationButton},
     };
+    for (const QString &key : kRailKeptBuiltinKeys) {
+        if (QPushButton *navigation = nativePackageNavigation(key))
+            canonical.append({key, navigation});
+    }
+    canonical.append({QStringLiteral("notifications"), m_notificationButton});
     return canonical;
 }
 
@@ -1736,6 +1768,9 @@ void MainWindow::applyRailOrder()
         else
             current.append(widget);
     }
+    if (m_railHiddenHolder)
+        current += m_railHiddenHolder->findChildren<QWidget *>(
+            QString(), Qt::FindDirectChildrenOnly);
 
     QList<QPair<QString, QWidget *>> order;
     for (const auto &[key, widget] : std::as_const(canonical)) {
@@ -1774,11 +1809,18 @@ void MainWindow::applyRailOrder()
     if (!saved.isEmpty()) {
         QList<std::pair<double, QPair<QString, QWidget *>>> ranked;
         double previous = -1;
+        const int savedAgents = saved.indexOf(QStringLiteral("agents"));
         for (const auto &entry : std::as_const(order)) {
             const int at = entry.first.isEmpty() ? -1 : saved.indexOf(entry.first);
             if (at >= 0)
                 previous = at;
-            ranked.append({at >= 0 ? at : previous + 0.5, entry});
+            const bool sessionsUnsaved =
+                at < 0 && savedAgents >= 0 &&
+                entry.first == QLatin1String("sessions");
+            ranked.append({at >= 0          ? double(at)
+                           : sessionsUnsaved ? savedAgents - 0.25
+                                             : previous + 0.5,
+                           entry});
         }
         std::stable_sort(ranked.begin(), ranked.end(),
                          [](const auto &a, const auto &b) {
@@ -1810,6 +1852,18 @@ void MainWindow::applyRailOrder()
                              return railRankLess(sortMode, ranks.value(a.second),
                                                  ranks.value(b.second));
                          });
+    }
+
+    const QStringList hiddenKeys = railHiddenKeys();
+    QList<QWidget *> hidden;
+    for (auto it = order.begin(); it != order.end();) {
+        if (!it->first.isEmpty() && it->first != QLatin1String("home") &&
+            hiddenKeys.contains(it->first)) {
+            hidden.append(it->second);
+            it = order.erase(it);
+        } else {
+            ++it;
+        }
     }
 
     const RailFolders::State &folders = railFolderState();
@@ -1956,6 +2010,8 @@ void MainWindow::applyRailOrder()
     for (auto it = m_railFolderWidgets.cbegin(); it != m_railFolderWidgets.cend();
          ++it)
         it.value()->setMembers(members.value(it.key()));
+    for (QWidget *widget : std::as_const(hidden))
+        parkHiddenRailItem(widget);
     m_appNavigationRailLayout->addStretch();
     for (const QPointer<RailFolderWidget> &folder : std::as_const(stale)) {
         if (!folder)
@@ -1971,6 +2027,8 @@ bool MainWindow::isInRail(QWidget *widget) const
     if (!widget || !m_appNavigationRailLayout)
         return false;
     if (m_appNavigationRailLayout->indexOf(widget) >= 0)
+        return true;
+    if (m_railHiddenHolder && widget->parentWidget() == m_railHiddenHolder)
         return true;
     for (const QPointer<RailFolderWidget> &folder :
          std::as_const(m_railFolderWidgets))
@@ -2061,6 +2119,7 @@ bool MainWindow::handleRailEvent(QObject *watched, QEvent *event)
             QMenu *sort = buildRailSortMenu(menu);
             sort->setTitle(QStringLiteral("Sort the left rail"));
             menu->addMenu(sort);
+            addRailHiddenItemsMenu(menu);
             menu->popup(static_cast<QContextMenuEvent *>(event)->globalPos());
             return true;
         }
@@ -2194,12 +2253,155 @@ void MainWindow::showRailItemMenu(QWidget *widget, const QPoint &globalPos)
                 moveRailItemToFolder(key, QString());
             });
         addRailGroupActions(menu, key);
+        if (key != QLatin1String("home")) {
+            menu->addSeparator();
+            QAction *hide = menu->addAction(
+                QStringLiteral("Hide from left rail (keep on Home)"), this,
+                [this, key] {
+                    QTimer::singleShot(0, this,
+                                       [this, key] { setRailItemHidden(key, true); });
+                });
+            hide->setObjectName(QStringLiteral("railHideAction"));
+        }
     }
     if (menu->isEmpty()) {
         menu->deleteLater();
         return;
     }
     menu->popup(globalPos);
+}
+
+QStringList MainWindow::railHiddenKeys() const
+{
+    return QSettings().value(kRailHiddenSetting).toStringList();
+}
+
+bool MainWindow::storeRailItemHidden(const QString &key, bool hidden)
+{
+    if (key.isEmpty() || key == QLatin1String("home"))
+        return false;
+    QStringList keys = railHiddenKeys();
+    if (keys.contains(key) == hidden)
+        return false;
+    if (hidden)
+        keys.append(key);
+    else
+        keys.removeAll(key);
+    QSettings settings;
+    if (keys.isEmpty())
+        settings.remove(kRailHiddenSetting);
+    else
+        settings.setValue(kRailHiddenSetting, keys);
+    return true;
+}
+
+void MainWindow::setRailItemHidden(const QString &key, bool hidden)
+{
+    if (!storeRailItemHidden(key, hidden))
+        return;
+    applyRailOrder();
+    applyRailCaptionPreference();
+    refreshHomeGridPage();
+    if (hidden)
+        flashMessage(QStringLiteral(
+            "Hidden from the rail. It stays on Home; right-click its tile there "
+            "to put it back."));
+}
+
+void MainWindow::hideButtonKeepOnHome(QWidget *button)
+{
+    if (!button)
+        return;
+    if (isInRail(button)) {
+        setRailItemHidden(button->property("forkmeshRailKey").toString(), true);
+        return;
+    }
+    const QString key = button->property("forkmeshButtonKey").toString();
+    if (!storeRailItemHidden(key, true))
+        return;
+    moveButtonToPanel(key, kButtonPanelRail);
+    refreshHomeGridPage();
+    flashMessage(QStringLiteral(
+        "Hidden from the bar. It stays on Home; right-click its tile there to "
+        "put it in the left rail."));
+}
+
+void MainWindow::showAllHiddenRailItems()
+{
+    if (!QSettings().contains(kRailHiddenSetting))
+        return;
+    QSettings().remove(kRailHiddenSetting);
+    applyRailOrder();
+    applyRailCaptionPreference();
+    refreshHomeGridPage();
+}
+
+void MainWindow::addRailHiddenItemsMenu(QMenu *menu)
+{
+    if (!menu)
+        return;
+    QList<QPair<QString, QString>> items;
+    for (const QString &key : railHiddenKeys()) {
+        QWidget *widget = railWidgetForKey(key);
+        if (widget && isInRail(widget) && !railItemName(widget).isEmpty())
+            items.append({key, railItemName(widget)});
+    }
+    if (items.isEmpty())
+        return;
+    menu->addSeparator();
+    QMenu *shown = menu->addMenu(QStringLiteral("Hidden from the rail"));
+    shown->setObjectName(QStringLiteral("railHiddenMenu"));
+    for (const auto &[key, name] : std::as_const(items))
+        shown->addAction(QStringLiteral("Show %1").arg(name), this, [this, key] {
+            QTimer::singleShot(0, this,
+                               [this, key] { setRailItemHidden(key, false); });
+        });
+    if (items.size() > 1) {
+        shown->addSeparator();
+        shown->addAction(QStringLiteral("Show all"), this, [this] {
+            QTimer::singleShot(0, this, [this] { showAllHiddenRailItems(); });
+        });
+    }
+}
+
+QWidget *MainWindow::railHiddenHolder()
+{
+    if (!m_railHiddenHolder) {
+        m_railHiddenHolder = new QWidget(this);
+        m_railHiddenHolder->setObjectName(QStringLiteral("railHiddenItems"));
+        m_railHiddenHolder->hide();
+    }
+    return m_railHiddenHolder;
+}
+
+void MainWindow::parkHiddenRailItem(QWidget *widget)
+{
+    QWidget *holder = railHiddenHolder();
+    if (!widget || widget->parentWidget() == holder)
+        return;
+    const bool explicitlyHidden =
+        widget->isHidden() && widget->testAttribute(Qt::WA_WState_ExplicitShowHide);
+    widget->setParent(holder);
+    if (!explicitlyHidden)
+        widget->show();
+}
+
+QList<QWidget *> MainWindow::railItemWidgets() const
+{
+    QList<QWidget *> widgets;
+    if (m_appNavigationRailLayout) {
+        for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
+            QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
+            if (auto *folder = dynamic_cast<RailFolderWidget *>(widget))
+                widgets += folder->members();
+            else if (widget && !dynamic_cast<RailGroupSeparator *>(widget))
+                widgets.append(widget);
+        }
+    }
+    if (m_railHiddenHolder)
+        widgets += m_railHiddenHolder->findChildren<QWidget *>(
+            QString(), Qt::FindDirectChildrenOnly);
+    return widgets;
 }
 
 void MainWindow::showRailFolderMenu(RailFolderWidget *folder,
@@ -2370,11 +2572,6 @@ QPushButton *MainWindow::buildRailSortButton()
     button->setFocusPolicy(Qt::NoFocus);
     button->setFlat(true);
     button->setFixedSize(railColumnWidth(), kRailSortButtonHeight);
-    button->setStyleSheet(QStringLiteral(
-        "QPushButton#railSortButton { border: none; padding: 0; margin: 0;"
-        " background: transparent; min-height: 0; }"
-        "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
-        " border-radius: 3px; }"));
     setOcticon(button, QStringLiteral("sort-desc"), 12);
     m_railSortButton = button;
     refreshRailSortButton();
@@ -2399,6 +2596,23 @@ void MainWindow::refreshRailSortButton()
             .arg(summary));
     m_railSortButton->setProperty("railSortMode", RailGroups::sortModeKey(mode));
     m_railSortButton->setProperty("railGrouped", railGrouped());
+    const bool expanded = forkmesh::ui::railExpanded();
+    const QString label = expanded ? summary : QString();
+    if (m_railSortButton->text() != label)
+        m_railSortButton->setText(label);
+    m_railSortButton->setFixedHeight(expanded ? 22 : kRailSortButtonHeight);
+    const QString sheet =
+        QStringLiteral(
+            "QPushButton#railSortButton { border: none; padding: 0 0 0 %1px; margin: 0;"
+            " background: transparent; min-height: 0; text-align: %2; color: %3;"
+            " font-size: 11px; }"
+            "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
+            " border-radius: 3px; color: %4; }")
+            .arg(expanded ? 12 : 0)
+            .arg(expanded ? QStringLiteral("left") : QStringLiteral("center"))
+            .arg(Theme::hex(Theme::Role::FgMuted), Theme::hex(Theme::Role::Fg));
+    if (m_railSortButton->styleSheet() != sheet)
+        m_railSortButton->setStyleSheet(sheet);
 }
 
 QMenu *MainWindow::buildRailSortMenu(QWidget *parent)
@@ -2620,6 +2834,115 @@ void MainWindow::adoptRailGroupsFromLayout()
         saveRailGroupState();
 }
 
+namespace {
+
+constexpr int kNextRailHeadingHeight = 36;
+constexpr int kNextRailHeadingText = 24;
+constexpr int kNextRailHeadingLeft = 18;
+
+class RailGroupHeadingStyle : public QObject
+{
+public:
+    using QObject::QObject;
+
+    static void fit(RailGroupSeparator *separator)
+    {
+        const bool heading = Theme::isNext() && railExpanded();
+        if (heading && separator->height() != kNextRailHeadingHeight)
+            separator->setFixedHeight(kNextRailHeadingHeight);
+        else if (!heading && separator->height() == kNextRailHeadingHeight)
+            separator->followRailCaptionPreference();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        auto *separator = dynamic_cast<RailGroupSeparator *>(watched);
+        if (!separator)
+            return false;
+        switch (event->type()) {
+        case QEvent::Paint:
+            if (!Theme::isNext())
+                return false;
+            paint(separator);
+            return true;
+        case QEvent::Resize:
+        case QEvent::Show:
+            fit(separator);
+            return false;
+        case QEvent::DragEnter: {
+            const auto *drag = static_cast<QDragEnterEvent *>(event);
+            const bool dropping = separator->isCustom() && drag->mimeData() &&
+                                  drag->mimeData()->hasFormat(kRailItemMimeType);
+            separator->setProperty("nextDropping", dropping);
+            separator->update();
+            return false;
+        }
+        case QEvent::DragLeave:
+        case QEvent::Drop:
+            separator->setProperty("nextDropping", false);
+            separator->update();
+            return false;
+        default:
+            return false;
+        }
+    }
+
+private:
+    static void paint(RailGroupSeparator *separator)
+    {
+        QPainter painter(separator);
+        const bool dropping = separator->property("nextDropping").toBool();
+        const int width = separator->width();
+        const int height = separator->height();
+        if (!railExpanded()) {
+            const int line = qMin(20, qMax(0, width - 12));
+            painter.fillRect(QRect((width - line) / 2, height / 2, line, 1),
+                             Theme::color(dropping ? Theme::Role::Accent
+                                                   : Theme::Role::Border));
+            return;
+        }
+        QFont font = separator->font();
+        font.setPixelSize(11);
+        font.setWeight(QFont::Medium);
+        font.setCapitalization(QFont::AllUppercase);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+        painter.setFont(font);
+        painter.setPen(Theme::color(dropping ? Theme::Role::AccentFg
+                                             : Theme::Role::FgSubtle));
+        const QRect text(kNextRailHeadingLeft, height - kNextRailHeadingText,
+                         qMax(0, width - 2 * kNextRailHeadingLeft),
+                         kNextRailHeadingText);
+        painter.drawText(text, Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(font).elidedText(separator->name(),
+                                                       Qt::ElideRight,
+                                                       text.width()));
+        if (dropping)
+            painter.fillRect(QRect(text.left(), height - 2, text.width(), 1),
+                             Theme::color(Theme::Role::Accent));
+    }
+};
+
+void polishRailGroupHeading(QObject *owner, RailGroupSeparator *separator)
+{
+    auto *style = dynamic_cast<RailGroupHeadingStyle *>(owner->findChild<QObject *>(
+        QStringLiteral("railGroupHeadingStyle"), Qt::FindDirectChildrenOnly));
+    if (!style) {
+        style = new RailGroupHeadingStyle(owner);
+        style->setObjectName(QStringLiteral("railGroupHeadingStyle"));
+    }
+    if (separator->property("nextHeadingStyled").toBool()) {
+        RailGroupHeadingStyle::fit(separator);
+        return;
+    }
+    separator->setProperty("nextHeadingStyled", true);
+    separator->installEventFilter(style);
+    RailGroupHeadingStyle::fit(separator);
+    separator->update();
+}
+
+}
+
 void MainWindow::refreshRailGroupSeparators()
 {
     if (!m_appNavigationRailLayout)
@@ -2639,6 +2962,7 @@ void MainWindow::refreshRailGroupSeparators()
             settle();
             separator = next;
             any = false;
+            polishRailGroupHeading(this, next);
             continue;
         }
         any = any || !content || widget->isVisibleTo(content);
@@ -2905,6 +3229,21 @@ void MainWindow::placeMovableButtons()
 {
     if (!m_appNavigationRailLayout)
         return;
+    if (!m_buttonPanelDropHook)
+        m_buttonPanelDropHook = new RailEventHook(
+            [this](QObject *watched, QEvent *event) {
+                return handleButtonPanelDrop(watched, event);
+            },
+            this);
+    for (QBoxLayout *bar : {static_cast<QBoxLayout *>(m_repoTabRowLayout),
+                            static_cast<QBoxLayout *>(m_repoCodeBarLayout)}) {
+        QWidget *panel = bar ? bar->parentWidget() : nullptr;
+        if (!panel || panel->property("forkmeshButtonDropHooked").toBool())
+            continue;
+        panel->setProperty("forkmeshButtonDropHooked", true);
+        panel->setAcceptDrops(true);
+        panel->installEventFilter(m_buttonPanelDropHook);
+    }
     const QVariantMap placement =
         QSettings().value(kButtonPlacementSetting).toMap();
     const auto place = [&](const QString &key, QWidget *widget,
@@ -3065,6 +3404,8 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     }
     if (home.isEmpty())
         return;
+    if (panel != kButtonPanelRail)
+        storeRailItemHidden(key, false);
     QSettings settings;
     QVariantMap placement = settings.value(kButtonPlacementSetting).toMap();
     if (panel == home)
@@ -3080,10 +3421,106 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     updateRepoActivityRail();
 }
 
+#ifdef FORKMESH_WINDOW_TESTS
+QWidget *MainWindow::testRepoTabRowPanel() const
+{
+    return m_repoTabRowLayout ? m_repoTabRowLayout->parentWidget() : nullptr;
+}
+#endif
+
+QWidget *MainWindow::movableButtonForRailKey(const QString &railKey) const
+{
+    if (railKey.isEmpty())
+        return nullptr;
+    const auto matches = [&railKey](const QString &key, QWidget *widget) {
+        return widget && (key == railKey ||
+                          widget->property("forkmeshRailKey").toString() == railKey);
+    };
+    for (const auto &[key, widget] : railHomeButtons())
+        if (matches(key, widget))
+            return widget;
+    for (const auto &[key, widget] :
+         m_repoTabRowTabs + m_repoTabRowActions + m_repoCodeBarButtons)
+        if (matches(key, widget.data()))
+            return widget.data();
+    return nullptr;
+}
+
+bool MainWindow::handleButtonPanelDrop(QObject *watched, QEvent *event)
+{
+    auto *panel = qobject_cast<QWidget *>(watched);
+    if (!panel)
+        return false;
+    const QEvent::Type type = event->type();
+    if (type == QEvent::DragLeave) {
+        showButtonPanelDropZone(panel, false);
+        return false;
+    }
+    if (type == QEvent::Resize) {
+        if (QWidget *zone = panel->findChild<QWidget *>(
+                QStringLiteral("buttonPanelDropZone"), Qt::FindDirectChildrenOnly))
+            zone->setGeometry(panel->rect());
+        return false;
+    }
+    if (type != QEvent::DragEnter && type != QEvent::DragMove &&
+        type != QEvent::Drop)
+        return false;
+    auto *drop = static_cast<QDropEvent *>(event);
+    const QMimeData *mime = drop->mimeData();
+    if (!mime || !mime->hasFormat(kRailItemMimeType))
+        return false;
+    QWidget *button =
+        movableButtonForRailKey(QString::fromUtf8(mime->data(kRailItemMimeType)));
+    if (!button || !isInRail(button))
+        return false;
+    const QString key = button->property("forkmeshButtonKey").toString();
+    const QString target =
+        button->property("forkmeshButtonHome").toString() == kButtonPanelRepoCode
+            ? kButtonPanelRepoCode
+            : kButtonPanelRepoTabs;
+    QBoxLayout *layout = buttonPanelLayout(target);
+    if (key.isEmpty() || !layout || layout->parentWidget() != panel)
+        return false;
+    drop->setDropAction(Qt::MoveAction);
+    drop->accept();
+    if (type != QEvent::Drop) {
+        showButtonPanelDropZone(panel, true);
+        return true;
+    }
+    showButtonPanelDropZone(panel, false);
+    QTimer::singleShot(0, this,
+                       [this, key, target] { moveButtonToPanel(key, target); });
+    return true;
+}
+
+void MainWindow::showButtonPanelDropZone(QWidget *panel, bool show)
+{
+    QWidget *zone = panel->findChild<QWidget *>(
+        QStringLiteral("buttonPanelDropZone"), Qt::FindDirectChildrenOnly);
+    if (!show) {
+        if (zone)
+            zone->hide();
+        return;
+    }
+    if (!zone) {
+        auto *frame = new QFrame(panel);
+        frame->setObjectName(QStringLiteral("buttonPanelDropZone"));
+        frame->setAttribute(Qt::WA_TransparentForMouseEvents);
+        frame->setStyleSheet(Theme::remapSheet(QStringLiteral(
+            "QFrame#buttonPanelDropZone { background: transparent;"
+            " border: 1px dashed #2ea043; border-radius: 6px; }")));
+        zone = frame;
+    }
+    zone->setGeometry(panel->rect());
+    zone->raise();
+    zone->show();
+}
+
 void MainWindow::resetButtonPlacement()
 {
     QSettings().remove(kButtonPlacementSetting);
     QSettings().remove(kRailOrderSetting);
+    QSettings().remove(kRailHiddenSetting);
     applyRailOrder();
     applyRailCaptionPreference();
     updateRepoActivityRail();
@@ -3133,6 +3570,20 @@ void MainWindow::addButtonPlacementActions(QMenu *menu, QWidget *button)
         QTimer::singleShot(0, this,
                            [this, key, panel] { moveButtonToPanel(key, panel); });
     });
+    if (!inRail) {
+        const bool onCodeBar =
+            m_repoCodeBarLayout && m_repoCodeBarLayout->indexOf(button) >= 0;
+        QPointer<QWidget> guarded(button);
+        QAction *hide = menu->addAction(
+            onCodeBar ? QStringLiteral("Hide from Code toolbar (keep on Home)")
+                      : QStringLiteral("Hide from repository tab bar (keep on Home)"),
+            this, [this, guarded] {
+                QTimer::singleShot(0, this, [this, guarded] {
+                    hideButtonKeepOnHome(guarded);
+                });
+            });
+        hide->setObjectName(QStringLiteral("railHideAction"));
+    }
     if (!QSettings().value(kButtonPlacementSetting).toMap().isEmpty() ||
         QSettings().contains(kRailOrderSetting)) {
         QAction *reset = menu->addAction(QStringLiteral("Reset button placement"));
@@ -3281,8 +3732,10 @@ void MainWindow::updateConnectionStatus()
 
 void MainWindow::updateAdminCrownBadge()
 {
-    if (!m_isAdmin)
+    if (!m_isAdmin) {
         renderUsersSignupReferralCode(QJsonObject());
+        closeUsersDetail();
+    }
     if (!m_isAdmin && !m_usersQuarantinePayload.isEmpty()) {
         // Quarantine rows contain preserved investigation evidence that must
         // not survive an administrator signing out on a shared desktop.
@@ -3814,7 +4267,8 @@ void MainWindow::refreshNodeDotMatrix()
         }
     }
     m_nodeDotMatrix->setDots(dots);
-    m_nodeDotMatrix->setVisible(!dots.isEmpty());
+    m_nodeDotMatrix->setVisible(!dots.isEmpty() &&
+                                !topBarIndicatorHidden(QStringLiteral("nodes")));
     updateChromeDotDivider();
     if (dots.isEmpty())
         return;
@@ -3844,6 +4298,69 @@ void MainWindow::updateChromeDotDivider()
     if (m_chromeActionDivider)
         m_chromeActionDivider->setVisible((agents || nodes) && actions);
 }
+
+bool MainWindow::topBarIndicatorHidden(const QString &key) const
+{
+    return m_hiddenTopBarIndicators.contains(key);
+}
+
+void MainWindow::setTopBarIndicatorHidden(const QString &key, bool hidden)
+{
+    if (topBarIndicatorHidden(key) == hidden)
+        return;
+    if (hidden)
+        m_hiddenTopBarIndicators.insert(key);
+    else
+        m_hiddenTopBarIndicators.remove(key);
+    QStringList saved(m_hiddenTopBarIndicators.cbegin(),
+                      m_hiddenTopBarIndicators.cend());
+    saved.sort();
+    QSettings settings;
+    if (saved.isEmpty())
+        settings.remove(kHiddenTopBarIndicatorsSetting);
+    else
+        settings.setValue(kHiddenTopBarIndicatorsSetting, saved);
+    refreshAgentDotMatrix();
+    refreshNodeDotMatrix();
+    refreshActionRunStrip();
+}
+
+void MainWindow::showTopBarIndicatorMenu(const QPoint &globalPos)
+{
+    auto *menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->addSection(QStringLiteral("Show in top bar"));
+    const QList<QPair<QString, QString>> indicators = {
+        {QStringLiteral("agents"), QStringLiteral("Agents")},
+        {QStringLiteral("nodes"), QStringLiteral("Nodes")},
+        {QStringLiteral("actions"), QStringLiteral("Actions")},
+    };
+    for (const auto &indicator : indicators) {
+        QAction *action = menu->addAction(indicator.second);
+        action->setCheckable(true);
+        action->setChecked(!topBarIndicatorHidden(indicator.first));
+        connect(action, &QAction::toggled, this,
+                [this, key = indicator.first](bool shown) {
+                    setTopBarIndicatorHidden(key, !shown);
+                });
+    }
+    addNativePackageChromeMenuActions(menu);
+    menu->popup(globalPos);
+}
+
+#ifdef FORKMESH_WINDOW_TESTS
+bool MainWindow::testTopBarIndicatorShown(const QString &key) const
+{
+    const QWidget *widget = nullptr;
+    if (key == QLatin1String("agents"))
+        widget = m_agentDotMatrix;
+    else if (key == QLatin1String("nodes"))
+        widget = m_nodeDotMatrix;
+    else if (key == QLatin1String("actions"))
+        widget = m_actionRunStrip;
+    return widget && !widget->isHidden();
+}
+#endif
 
 void MainWindow::setNodeDotRepoStates(
     const QHash<QString, NodeDotRepoState> &states)
@@ -6347,6 +6864,12 @@ void MainWindow::ensureSectionBuilt(int index)
     if (!placeholder ||
         !placeholder->property("forkmeshDeferredSection").toBool())
         return;
+    QElapsedTimer buildTimer;
+    buildTimer.start();
+    struct BuildTime {
+        QElapsedTimer &timer;
+        ~BuildTime() { forkmesh::PageSwitchTrace::instance().addBuild(timer.elapsed()); }
+    } buildTime{buildTimer};
 
     QWidget *section = nullptr;
     switch (index) {
@@ -6372,11 +6895,8 @@ void MainWindow::ensureSectionBuilt(int index)
     case 11: section = buildNetworkReposSection(); break;
     case 12: section = buildNetworkDiagnosticsSection(); break;
     case 14: section = buildControlNodeSection(); break;
-    case 15: section = buildOrganizationTasksSection(); break;
-    case 16: section = buildNotesSection(); break;
     case 17: section = buildUsersSection(); break;
     case 18: section = buildFilesSection(); break;
-    case 19: section = buildCalendarSection(); break;
     case kMarketSectionIndex: section = buildMarketSection(); break;
     case kLedgerSectionIndex: section = buildLedgerSection(); break;
     case kTeamSectionIndex: section = buildTeamSection(); break;
@@ -6388,6 +6908,8 @@ void MainWindow::ensureSectionBuilt(int index)
     case kHomeGridSectionIndex: section = buildHomeGridSection(); break;
     case kGovernorSectionIndex: section = buildGovernorSection(); break;
     case kProjectSettingsSectionIndex: section = buildProjectSettingsSection(); break;
+    case kSessionsSectionIndex: section = buildSessionsSection(); break;
+    case kTerminalsSectionIndex: section = buildTerminalsSection(); break;
     default: break;
     }
     if (!section)
@@ -6446,6 +6968,10 @@ void MainWindow::showSection(int index)
         return showNetworkTab(kNetworkNodesTab);
     if (index == 5)
         index = 0;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("section %1").arg(index), [this, index]() -> QWidget * {
+            return m_sectionStack ? m_sectionStack->widget(index) : nullptr;
+        });
     ensureSectionBuilt(index);
     if (index != 1 && m_voiceTestRecording)
         stopMicTest();
@@ -6483,16 +7009,6 @@ void MainWindow::showSection(int index)
             refreshNodesTable();
     } else if (index == kControlNodeSectionIndex) {
         refreshControlNode();
-    } else if (index == kOrganizationTasksSectionIndex) {
-        // Load the list once — on startup, or here if that pull never landed.
-        // Coming back to the page later reuses it; Refresh is the way to ask
-        // the relay again.
-        if (!m_organizationTasksLoaded)
-            refreshOrganizationTasks();
-        refreshOrganizationTaskAgentRows();
-        refreshChatUserDirectory();
-    } else if (index == kNotesSectionIndex) {
-        refreshNotes();
     } else if (index == kUsersSectionIndex) {
         refreshUsersPage();
     } else if (index == kFilesSectionIndex) {
@@ -6509,8 +7025,8 @@ void MainWindow::showSection(int index)
             m_homeGridBoard->setFocus(Qt::OtherFocusReason);
     } else if (index == kGovernorSectionIndex) {
         refreshGovernorPage();
-    } else if (index == kCalendarSectionIndex) {
-        refreshCalendar();
+    } else if (index == kSessionsSectionIndex) {
+        refreshSessionsPage();
     } else if (index == kMarketSectionIndex) {
         refreshMarketPage();
         refreshAccountPackages(true);
@@ -6550,6 +7066,16 @@ void MainWindow::refreshCurrentNetworkTab()
     if (tabIndex >= 0 && tabIndex <= kNetworkHostsTab)
         refreshNetworkDiagnostics();
     refreshNetworkTab(tabIndex);
+}
+
+int MainWindow::startupLandingSection() const
+{
+    if (m_repoDetailIndex >= 0 || m_pendingRestoreRepoIndex >= 0)
+        return 0;
+    for (const RepoMenuEntry &entry : std::as_const(m_repoMenuEntries))
+        if (entry.index >= 0)
+            return 0;
+    return kHomeGridSectionIndex;
 }
 
 void MainWindow::clearRepoDetail()

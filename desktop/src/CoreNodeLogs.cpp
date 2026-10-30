@@ -1037,6 +1037,13 @@ bool isKnownBootNoise(const JournalEntry &entry)
             message.contains(QLatin1String("failed with exit status")));
 }
 
+bool isCaddyReloadNoise(const JournalEntry &entry)
+{
+    return entry.message.contains(
+               QLatin1String("setting HTTP/3 Alt-Svc header")) &&
+           entry.message.contains(QLatin1String("no port can be announced"));
+}
+
 bool isBacklogEntry(const JournalEntry &entry, qint64 nowMs)
 {
     return entry.realtimeMs > 0 && nowMs - entry.realtimeMs > kBacklogAlertMs;
@@ -1087,6 +1094,9 @@ Classified classifyEntry(const JournalEntry &entry, const QString &source)
         result.severity = Severity::Error;
     if (source == QLatin1String("ssh") || isKnownBootNoise(entry))
         result.severity = Severity::Info;
+    if (source == QLatin1String("web") && isCaddyReloadNoise(entry) &&
+        result.severity == Severity::Error)
+        result.severity = Severity::Warning;
     result.forward = entry.valid && !message.trimmed().isEmpty();
     return result;
 }
@@ -1551,8 +1561,25 @@ QString inkFor(const QString &ink, const QString &text, bool bold)
              text.toHtmlEscaped());
 }
 
+QString padHtml(int count)
+{
+    return QStringLiteral("&nbsp;").repeated(qMax(0, count));
+}
+
+QString paddedPlain(const QString &raw, qsizetype from, qsizetype to,
+                    const QMap<qsizetype, int> &pads)
+{
+    QString html;
+    for (auto it = pads.lowerBound(from); it != pads.cend() && it.key() < to; ++it) {
+        html += raw.mid(from, it.key() - from).toHtmlEscaped() + padHtml(it.value());
+        from = it.key();
+    }
+    return html + raw.mid(from, to - from).toHtmlEscaped();
+}
+
 QString markedHtml(const QString &raw, const QList<Rule> &rules,
-                   const Palette &p, bool dark)
+                   const Palette &p, bool dark,
+                   const QMap<qsizetype, int> &pads = {})
 {
     QList<Mark> marks;
     for (int order = 0; order < rules.size(); ++order) {
@@ -1579,13 +1606,46 @@ QString markedHtml(const QString &raw, const QList<Rule> &rules,
     for (const Mark &mark : std::as_const(marks)) {
         if (mark.start < at)
             continue;
-        html += raw.mid(at, mark.start - at).toHtmlEscaped();
+        html += paddedPlain(raw, at, mark.start, pads);
         html += inkFor(mark.ink, raw.mid(mark.start, mark.end - mark.start),
                        mark.bold);
         at = mark.end;
     }
-    html += raw.mid(at).toHtmlEscaped();
+    html += paddedPlain(raw, at, raw.size(), pads);
     return html;
+}
+
+QMap<qsizetype, int> webColumnPads(const QString &body)
+{
+    static const QRegularExpression access(QStringLiteral(
+        "^([A-Z]+) (\\S+) -> [1-5][0-9]{2}(?: degraded)?( [0-9]+ms)?"
+        "( [0-9]+(?:\\.[0-9])? (?:B|KB|MB|GB))?(?= \\x{00B7} | \\(|$)"));
+    const QRegularExpressionMatch match = access.match(body);
+    QMap<qsizetype, int> pads;
+    if (!match.hasMatch())
+        return pads;
+    constexpr int methodWidth = 7;
+    constexpr int urlWidth = 64;
+    constexpr int durationWidth = 6;
+    constexpr int sizeWidth = 7;
+    constexpr int statsWidth = 2 + durationWidth + sizeWidth;
+    pads[match.capturedEnd(1)] += methodWidth - match.capturedLength(1);
+    pads[match.capturedEnd(2)] += urlWidth - match.capturedLength(2);
+    const qsizetype statusEnd = match.capturedEnd(2) + 7;
+    int used = int(match.capturedEnd(0) - statusEnd);
+    if (match.capturedLength(3) > 0) {
+        const int pad = durationWidth + 1 - match.capturedLength(3);
+        pads[match.capturedStart(3)] += pad;
+        used += qMax(0, pad);
+    }
+    if (match.capturedLength(4) > 0) {
+        const int pad = sizeWidth + 1 - match.capturedLength(4);
+        pads[match.capturedStart(4)] += pad;
+        used += qMax(0, pad);
+    }
+    if (match.capturedEnd(0) < body.size())
+        pads[match.capturedEnd(0)] += statsWidth - used;
+    return pads;
 }
 
 QString mutedInk(const QRegularExpressionMatch &, const Palette &p, bool)
@@ -1746,8 +1806,10 @@ QList<Rule> bodyRules(const QString &badge)
             QStringLiteral("\\b(([0-9]+(?:\\.[0-9]+)?)%)"));
         rules = {{&percent, percentInk, true}};
     } else if (badge == QLatin1String("WEB")) {
+        static const QRegularExpression method(
+            QStringLiteral("^([A-Z]+)(?= \\S+ -> [1-5][0-9]{2}\\b)"));
         static const QRegularExpression host(QStringLiteral(
-            "^[A-Z]+ ([a-z0-9.-]+\\.[a-z]{2,})(?=/)"));
+            "^[A-Z]+ ([^\\s/]+)(?=/\\S* -> [1-5][0-9]{2}\\b)"));
         static const QRegularExpression size(
             QStringLiteral("(?<=ms )([0-9]+(?:\\.[0-9])? (?:B|KB|MB|GB))\\b"));
         static const QRegularExpression client(QStringLiteral(
@@ -1757,7 +1819,8 @@ QList<Rule> bodyRules(const QString &badge)
         static const QRegularExpression agent(QStringLiteral(
             "-> [^\\x{00B7}]*\\x{00B7} [^\\x{00B7}]* \\x{00B7} ([^\\x{00B7}]+?)"
             "(?= \\(logged [^)]*, replayed\\)$|$)"));
-        rules = {{&host, mutedInk, false},
+        rules = {{&method, linkInk, true},
+                 {&host, mutedInk, false},
                  {&size, mutedInk, false},
                  {&client, textInk, true},
                  {&via, mutedInk, false},
@@ -1808,13 +1871,20 @@ QString nodeLineHtml(const QString &message, bool dark, const QString &unitAccen
                                             : sqlKeywordInk({}, p, dark);
     const QString body = message.mid(match.capturedEnd());
     const QString badge = nodeLineBadge(message, false);
+    const auto column = [](const QString &text, int width) {
+        return padHtml(width - int(text.size())) + QLatin1Char(' ');
+    };
     QString html = inkFor(p.muted, QStringLiteral("Node"), false);
     html += QLatin1Char(' ') + inkFor(nodeInk(match.captured(1)), match.captured(1), true);
-    html += QLatin1Char(' ') + inkFor(p.muted, match.captured(2), false);
-    html += QLatin1Char(' ') +
+    html += column(match.captured(1), 3) + inkFor(p.muted, match.captured(2), false);
+    html += column(match.captured(2), 6) +
             inkFor(unitAccent.isEmpty() ? p.text : unitAccent, match.captured(3), true);
-    html += QLatin1Char(' ') + inkFor(severityInk, severity + QLatin1Char(':'), true);
-    html += QLatin1Char(' ') + markedHtml(body, bodyRules(badge), p, dark);
+    html += column(match.captured(3), 12) +
+            inkFor(severityInk, severity + QLatin1Char(':'), true);
+    html += column(severity, 5) +
+            markedHtml(body, bodyRules(badge), p, dark,
+                       badge == QLatin1String("WEB") ? webColumnPads(body)
+                                                     : QMap<qsizetype, int>());
     return withEmojiFont(html);
 }
 

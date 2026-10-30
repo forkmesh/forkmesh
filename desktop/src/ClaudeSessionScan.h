@@ -1,9 +1,11 @@
 #pragma once
 
+#include <QHash>
 #include <QJsonObject>
 #include <QList>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 struct ExternalClaudeSession {
     QString uuid;           // jsonl file stem == the CLI's session id
@@ -11,14 +13,35 @@ struct ExternalClaudeSession {
     QString cwd;            // working directory the session runs in
     QString gitBranch;      // git branch recorded in the transcript (may be empty)
     QString title;          // the session's AI-generated title, when present
+    QString firstPrompt;
+    QString model;
+    QString entrypoint;
+    qint64 createdMs = 0;
     qint64 lastActivityMs = 0; // transcript mtime — last time it produced output
+    qint64 bytes = 0;
 };
 
 namespace ClaudeSessionScan {
 
 QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
                                   const QSet<QString> &excludeCwds,
-                                  qint64 activeWindowMs);
+                                  qint64 activeWindowMs,
+                                  const QStringList &ownConfigDirs = {});
+
+QList<ExternalClaudeSession> listAll(const QStringList &configDirs,
+                                     const QString &repoLocalPath,
+                                     bool anyFolder,
+                                     const QStringList &skipRoots = {});
+
+void readMeta(ExternalClaudeSession &s);
+
+QString promptTitle(const QString &prompt);
+
+QString desktopConfigRoot();
+
+QHash<QString, QString> desktopTitles(const QString &desktopRoot);
+
+QString projectKey(const QString &cwd);
 
 QList<QJsonObject> readEvents(const QString &path, qint64 fromOffset,
                               qint64 *newOffset);

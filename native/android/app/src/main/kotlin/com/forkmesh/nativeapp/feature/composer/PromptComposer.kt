@@ -2,7 +2,9 @@
 
 package com.forkmesh.nativeapp.feature.composer
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.ui.theme.FmType
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.content.MediaType
@@ -17,11 +19,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalTextToolbar
+import com.forkmesh.nativeapp.composer.QuickPromptAction
 import com.forkmesh.nativeapp.composer.PromptPaste
 import com.forkmesh.nativeapp.composer.PromptPasteRules
 import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
-import com.forkmesh.nativeapp.ui.kit.FmUserActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
@@ -86,7 +88,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
@@ -527,7 +528,7 @@ fun PromptComposer(
                             .padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("/${name.name}", style = Fm.text.bodySmall.copy(color = colors.text, fontFamily = FontFamily.Monospace))
+                        Text("/${name.name}", style = Fm.text.bodySmall.copy(color = colors.text, fontFamily = FmType.mono))
                         Spacer(Modifier.width(FmSpace.x3))
                         Text(
                             name.description,
@@ -543,7 +544,7 @@ fun PromptComposer(
         Column(
             Modifier
                 .fillMaxWidth()
-                .fmGlass(RoundedCornerShape(ComposerRadius), tint = colors.surface)
+                .fmGlass(RoundedCornerShape(ComposerRadius), tint = if (com.forkmesh.nativeapp.ui.kit.LocalFmBackdrop.current != null) null else colors.surface)
                 .padding(FmSpace.x3),
         ) {
             header?.invoke()
@@ -607,7 +608,7 @@ fun PromptComposer(
                 CompositionLocalProvider(LocalTextToolbar provides pasteToolbar) {
                 BasicTextField(
                     value = field,
-                    onValueChange = FmUserActivity.typing { next ->
+                    onValueChange = FmSafeInput.typing { next ->
                         if (next.text.length <= maxLength) {
                             if (next.text.length != field.text.length && !dictation.listening) FmSoundCues.play(SoundCue.KEYSTROKE)
                             field = next
@@ -800,10 +801,12 @@ private fun ModelMenu(
     val c = Fm.colors
     FmDropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         for (choice in choices) {
-            val chosen = choice.alias == selected?.alias
-            val detail = listOf(if (choice.provider == "codex") "Codex" else "Claude Code", choice.note)
-                .filter { it.isNotEmpty() }
-                .joinToString(" · ")
+            val chosen = choice.alias == selected?.alias && choice.provider == selected.provider
+            val detail = if (choice.provider == QuickPromptAction.PROVIDER) {
+                choice.note
+            } else {
+                listOf(if (choice.provider == "codex") "Codex" else "Claude Code", choice.note).filter { it.isNotEmpty() }.joinToString(" · ")
+            }
             DropdownMenuItem(
                 text = {
                     Column {

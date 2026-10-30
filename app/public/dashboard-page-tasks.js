@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["tasks"] = (core) => {
-  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, loadingHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state } = core;
+  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, issuePersonNameHtml, loadingHtml, publicProfileUrl, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, watchIssueActorAvatars } = core;
   // ---------------------------------------------------------------------------
   // Organization tasks. The dashboard uses the same encrypted catalog and
   // lifecycle endpoints as desktop and World; authorization always remains on
@@ -722,7 +722,7 @@
     const history = Array.isArray(task.completionHistory) ? task.completionHistory : [];
     if (!history.length) return "";
     const items = [...history].reverse().map((entry) => `<li class="border-t border-border pt-3 first:border-t-0 first:pt-0">
-      <div class="flex flex-wrap items-center gap-2 text-xs"><strong class="text-foreground">${escapeHtml(entry.completedBy ? `@${entry.completedBy}` : "Completed")}</strong><time class="text-muted-foreground">${escapeHtml(taskDate(entry.completedAt))}</time><span class="task-label">QA: ${escapeHtml(entry.qaStatus || "unknown")}</span>${entry.qaReviewer ? `<span class="text-muted-foreground">reviewed by @${escapeHtml(entry.qaReviewer)}${entry.qaReviewedAt ? ` · ${escapeHtml(taskDate(entry.qaReviewedAt))}` : ""}</span>` : ""}${entry.undoneAt ? `<span class="task-label">Reopened by ${escapeHtml(entry.undoneBy ? `@${entry.undoneBy}` : "a member")} · ${escapeHtml(taskDate(entry.undoneAt))}</span>` : ""}</div>
+      <div class="flex flex-wrap items-center gap-2 text-xs"><strong class="text-foreground">${entry.completedBy ? taskPersonHtml(entry.completedBy) : "Completed"}</strong><time class="text-muted-foreground">${escapeHtml(taskDate(entry.completedAt))}</time><span class="task-label">QA: ${escapeHtml(entry.qaStatus || "unknown")}</span>${entry.qaReviewer ? `<span class="text-muted-foreground">reviewed by @${escapeHtml(entry.qaReviewer)}${entry.qaReviewedAt ? ` · ${escapeHtml(taskDate(entry.qaReviewedAt))}` : ""}</span>` : ""}${entry.undoneAt ? `<span class="task-label">Reopened by ${escapeHtml(entry.undoneBy ? `@${entry.undoneBy}` : "a member")} · ${escapeHtml(taskDate(entry.undoneAt))}</span>` : ""}</div>
       ${entry.note ? `<div class="mt-2 text-xs leading-5 text-muted-foreground">${taskMarkdownHtml(entry.note)}</div>` : '<p class="mt-2 text-xs leading-5 text-muted-foreground">No completion note</p>'}
     </li>`).join("");
     return taskDetailCard("history", `Completion history (${history.length})`, `<ol class="grid gap-3">${items}</ol>`, true);
@@ -773,6 +773,15 @@
     return names;
   }
 
+  function taskMentionLinkHtml(name) {
+    if (typeof watchIssueActorAvatars === "function") watchIssueActorAvatars();
+    return `<a class="task-mention" href="${escapeHtml(publicProfileUrl(name))}" data-issue-person="${escapeHtml(name)}"${name === state.tasksView.actor ? ' data-me="true"' : ""}>@${escapeHtml(name)}</a>`;
+  }
+
+  function taskPersonHtml(name) {
+    return name ? issuePersonNameHtml(`@${name}`, "") : "";
+  }
+
   function taskMentionHtml(value) {
     const text = String(value || "");
     let out = "";
@@ -781,14 +790,14 @@
       const start = match.index + match[1].length;
       const name = match[2].toLowerCase();
       out += escapeHtml(text.slice(cursor, start));
-      out += `<span class="task-mention"${name === state.tasksView.actor ? ' data-me="true"' : ""}>@${escapeHtml(name)}</span>`;
+      out += taskMentionLinkHtml(name);
       cursor = start + 1 + match[2].length;
     }
     return out + escapeHtml(text.slice(cursor));
   }
 
   function taskMarkdownHtml(value) {
-    const html = renderMarkdown(String(value || ""), { repo: null });
+    const html = renderMarkdown(String(value || ""), { repo: null, mentions: false });
     let literal = 0;
     return `<div class="task-markdown ${MD_BODY_CLASS}">${html.split(/(<[^>]*>)/).map((part, index) => {
       if (index % 2) {
@@ -798,8 +807,7 @@
       }
       if (literal) return part;
       return part.replace(new RegExp(TASK_MENTION_SOURCE, "gi"), (whole, prefix, name) => {
-        const lower = name.toLowerCase();
-        return `${prefix}<span class="task-mention"${lower === state.tasksView.actor ? ' data-me="true"' : ""}>@${lower}</span>`;
+        return `${prefix}${taskMentionLinkHtml(name.toLowerCase())}`;
       });
     }).join("")}</div>`;
   }
@@ -848,7 +856,7 @@
     if (entry.kind === "comment") {
       return `<li class="task-timeline-item" data-kind="comment">
         <span class="task-timeline-marker" data-task-assignee-avatar="${escapeHtml(entry.actor)}" title="${escapeHtml(who)}">${initial}</span>
-        <div class="task-comment"><div class="task-comment-head"><strong>${escapeHtml(who)}</strong><span>commented</span>${taskTimeHtml(entry.at)}</div><div class="task-comment-body">${taskMarkdownHtml(entry.body)}</div>${entry.readBy ? `<p class="task-comment-hint">${entry.readBy.length ? `✓ Read by ${escapeHtml(entry.readBy.map((name) => `@${name}`).join(", "))}` : "Not read yet"}</p>` : ""}</div>
+        <div class="task-comment"><div class="task-comment-head"><strong>${entry.actor ? taskPersonHtml(entry.actor) : escapeHtml(who)}</strong><span>commented</span>${taskTimeHtml(entry.at)}</div><div class="task-comment-body">${taskMarkdownHtml(entry.body)}</div>${entry.readBy ? `<p class="task-comment-hint">${entry.readBy.length ? `✓ Read by ${escapeHtml(entry.readBy.map((name) => `@${name}`).join(", "))}` : "Not read yet"}</p>` : ""}</div>
       </li>`;
     }
     const style = TASK_EVENT_STYLES[entry.kind] || { icon: "dot", label: entry.kind.replaceAll("_", " ") || "updated this task", tone: "" };
@@ -857,7 +865,7 @@
     else if (entry.body && entry.body !== task.title) detail = ` — <span class="task-timeline-copy">${taskMentionHtml(entry.body)}</span>`;
     return `<li class="task-timeline-item" data-kind="${escapeHtml(entry.kind)}">
       <span class="task-timeline-marker"${style.tone ? ` data-tone="${style.tone}"` : ""}><i data-lucide="${escapeHtml(style.icon)}" class="h-3 w-3"></i></span>
-      <p class="task-timeline-line"><strong>${escapeHtml(who)}</strong> ${escapeHtml(style.label)}${detail} · ${taskTimeHtml(entry.at)}</p>
+      <p class="task-timeline-line"><strong>${entry.actor ? taskPersonHtml(entry.actor) : escapeHtml(who)}</strong> ${escapeHtml(style.label)}${detail} · ${taskTimeHtml(entry.at)}</p>
     </li>`;
   }
 
@@ -934,7 +942,7 @@
     const departments = [...new Set([...(state.tasksView.departments.length ? state.tasksView.departments : ["general", "engineering"]), ...(task.department ? [task.department] : [])])];
     const teams = [...new Set([...(state.tasksView.teams || []), ...(task.team ? [task.team] : [])])];
     const priority = Number(task.priority ?? 50);
-    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}@${escapeHtml(task.createdBy)}` : "—";
+    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}${taskPersonHtml(task.createdBy)}` : "—";
     return taskPropsHtml([
       ["Status", `${taskRingHtml(task)}${task.deletedAt ? '<span>In trash</span>' : statusEnabled ? taskPropSelectHtml("status", "Status", statusChoices, status, true) : `<span>${escapeHtml(taskStatusLabel(task))}</span>`}`],
       ["Priority", `${taskPriorityHtml(task)}${access.priority ? `<input type="number" min="1" max="99" step="1" inputmode="numeric" class="task-prop-input task-prop-number" data-task-prop="priority" aria-label="Priority" value="${escapeHtml(String(priority))}" />` : `<span class="tabular-nums">P${escapeHtml(String(priority))}</span>`}<span class="text-muted-foreground">${TASK_PRIORITY_LABELS[taskPriorityLevel(task)]}</span>`],
@@ -1034,8 +1042,8 @@
     if (taskRemindOpenId !== task.id || !taskCanRemind(task)) return "";
     const wait = taskReminderWaitMs(task);
     const hint = wait
-      ? `@${escapeHtml(task.lastReminder.by || "someone")} reminded @${escapeHtml(task.assignee)} ${escapeHtml(relativeTimeLabel(task.lastReminder.at) || "just now")}. You can send another in ${Math.ceil(wait / 60000)} min.`
-      : `Ping @${escapeHtml(task.assignee)} to check in and share how this task is going.`;
+      ? `${task.lastReminder.by ? taskPersonHtml(task.lastReminder.by) : "@someone"} reminded ${taskPersonHtml(task.assignee)} ${escapeHtml(relativeTimeLabel(task.lastReminder.at) || "just now")}. You can send another in ${Math.ceil(wait / 60000)} min.`
+      : `Ping ${taskPersonHtml(task.assignee)} to check in and share how this task is going.`;
     return taskDetailCard("bell-ring", "Ask for a check-in", `<p class="task-comment-hint">${hint}</p>
       <input data-task-remind-note maxlength="${TASK_REMINDER_NOTE_MAX}" autocomplete="off" value="${escapeHtml(taskReminderNotes.get(task.id) || "")}" placeholder="Optional note, like “Can you share an update before standup?”" class="task-input mt-3" />
       <div class="task-checkin-states mt-3"><button type="button" class="task-action-button" data-tone="primary" data-task-remind-send${taskRemindBusy || wait ? " disabled" : ""}><i data-lucide="send" class="h-3.5 w-3.5"></i>Send reminder</button><button type="button" class="task-action-button" data-task-remind-cancel>Cancel</button></div>${taskNoticeHtml(task, "remind")}`, true, true);
@@ -1195,7 +1203,7 @@
           ${taskNoticeHtml(task, "actions")}
           ${taskQuickCommentHtml(task)}
         </header>
-        ${task.deletedAt ? taskDetailCard("trash-2", "In trash", `<p>Deleted ${escapeHtml(taskDate(task.deletedAt))}${task.deletedBy ? ` by @${escapeHtml(task.deletedBy)}` : ""}</p>${task.deleteReason ? `<p class="mt-1 text-xs text-muted-foreground">${escapeHtml(task.deleteReason)}</p>` : ""}<p class="mt-2 text-xs text-muted-foreground">Restorable until ${escapeHtml(taskDate(task.purgeAt))}; after that it is purged with its replies, check-ins, QA reviews and attachments.</p>`, true, true) : ""}
+        ${task.deletedAt ? taskDetailCard("trash-2", "In trash", `<p>Deleted ${escapeHtml(taskDate(task.deletedAt))}${task.deletedBy ? ` by ${taskPersonHtml(task.deletedBy)}` : ""}</p>${task.deleteReason ? `<p class="mt-1 text-xs text-muted-foreground">${escapeHtml(task.deleteReason)}</p>` : ""}<p class="mt-2 text-xs text-muted-foreground">Restorable until ${escapeHtml(taskDate(task.purgeAt))}; after that it is purged with its replies, check-ins, QA reviews and attachments.</p>`, true, true) : ""}
         ${taskCheckinHtml(task)}
         ${taskRemindHtml(task)}
         ${taskDetailCard("align-left", "Description", task.details ? taskMarkdownHtml(task.details) : '<p class="text-muted-foreground">No details provided.</p>', true)}
@@ -1219,7 +1227,7 @@
         ]))}
         ${taskPropsGroupHtml("Quality assurance", taskPropsHtml([
           ["Status", `<span class="task-state"${qaTone ? ` data-tone="${qaTone}"` : ""}${qa.status === "passed" ? ' data-state="done"' : ""}>${escapeHtml(qaLabel)}</span>`],
-          qa.reviewer && ["Reviewer", `@${escapeHtml(qa.reviewer)}`],
+          qa.reviewer && ["Reviewer", taskPersonHtml(qa.reviewer)],
           qa.requestedAt && ["Requested", escapeHtml(taskDate(qa.requestedAt))],
           qa.reviewedAt && ["Reviewed", escapeHtml(taskDate(qa.reviewedAt))],
         ]) + (qa.howToTest ? `<div class="task-props-note"><strong>How to test</strong>${taskMarkdownHtml(qa.howToTest)}</div>` : ""))}
@@ -1229,7 +1237,7 @@
           ["Status", `<span class="capitalize">${escapeHtml(task.bountyRequest.status || "requested")}</span>`],
         ])) : ""}
         ${checkin ? taskPropsGroupHtml("Latest check-in", `<div class="flex flex-wrap items-center gap-2">${taskCheckinChipHtml(checkin.state).trim() || `<span class="capitalize">${escapeHtml(String(checkin.state || "").replaceAll("_", " "))}</span>`}<span class="text-xs text-muted-foreground">${escapeHtml(taskDate(checkin.at))}</span></div><p class="task-props-note">${escapeHtml(checkin.note || "No note")}</p>`) : ""}
-        ${task.lastReminder ? taskPropsGroupHtml("Last reminder", `<p class="task-props-note"><strong>@${escapeHtml(task.lastReminder.by || "someone")}</strong> asked for a check-in · ${escapeHtml(taskDate(task.lastReminder.at))}</p><p class="task-props-note">${escapeHtml(task.lastReminder.note || "No note")}</p><p class="task-props-note text-muted-foreground">${escapeHtml(taskReminderStatus(task.lastReminder))}</p>`) : ""}
+        ${task.lastReminder ? taskPropsGroupHtml("Last reminder", `<p class="task-props-note"><strong>${task.lastReminder.by ? taskPersonHtml(task.lastReminder.by) : "@someone"}</strong> asked for a check-in · ${escapeHtml(taskDate(task.lastReminder.at))}</p><p class="task-props-note">${escapeHtml(task.lastReminder.note || "No note")}</p><p class="task-props-note text-muted-foreground">${escapeHtml(taskReminderStatus(task.lastReminder))}</p>`) : ""}
       </aside>
     </article>`;
     window.lucide?.createIcons();

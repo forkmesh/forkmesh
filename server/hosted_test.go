@@ -31,6 +31,7 @@ type fakeHostedApp struct {
 	answer  func(node string, reported map[string]hostedCopyState) hostedReplicaResponse
 	reports map[string][]map[string]hostedCopyState
 	pushes  map[string][]map[string]hostedPushReport
+	archive map[string][]map[string]hostedArchiveReport
 }
 
 func (f *fakeHostedApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,10 @@ func (f *fakeHostedApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.pushes = map[string][]map[string]hostedPushReport{}
 	}
 	f.pushes[node] = append(f.pushes[node], request.PushMirrors)
+	if f.archive == nil {
+		f.archive = map[string][]map[string]hostedArchiveReport{}
+	}
+	f.archive[node] = append(f.archive[node], request.ArchiveSyncs)
 	answer := f.answer
 	f.mu.Unlock()
 	response := answer(node, request.Repositories)
@@ -329,7 +334,7 @@ func TestHostedRejectsBadGrantsAndSources(t *testing.T) {
 		{Node: "fmnext-n1", URL: "https://user:pw@example.test/v1/runner/alice/proj.git", Grant: testHostedGrant},
 		{Node: "fmnext-n1", URL: "https://example.test/v1/runner/alice/proj.git", Grant: "short"},
 	} {
-		if err := replica.hosted.fetchFromPeers(ctx, dir, []hostedSource{source}); err == nil ||
+		if err := replica.hosted.fetchFromPeers(ctx, dir, []hostedSource{source}, nil); err == nil ||
 			!strings.Contains(err.Error(), "invalid source") {
 			t.Fatalf("source %+v was not refused: %v", source, err)
 		}
@@ -337,6 +342,7 @@ func TestHostedRejectsBadGrantsAndSources(t *testing.T) {
 	for raw, want := range map[string]bool{
 		"https://github.com/owner/repo.git":      true,
 		"https://codeberg.org/owner/repo":        true,
+		"https://gitea.com/owner/repo":           true,
 		"http://github.com/owner/repo.git":       false,
 		"https://evil.example/owner/repo.git":    false,
 		"https://github.com:8443/owner/repo.git": false,

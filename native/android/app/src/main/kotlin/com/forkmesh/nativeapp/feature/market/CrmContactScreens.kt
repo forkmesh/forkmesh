@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,9 +34,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.feature.account.settings.ThemeSegmentTrack
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.format.relativeTime
@@ -72,8 +76,10 @@ import com.forkmesh.nativeapp.ui.kit.FmTextField
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -89,26 +95,32 @@ internal fun ColumnScope.CrmSection(title: String, trailing: (@Composable () -> 
 private fun DetailLine(label: String, value: String, icon: String, url: String? = null) {
     if (value.isEmpty()) return
     val context = LocalContext.current
+    val dense = crmDense()
     Row(
-        Modifier.fillMaxWidth().combinedClickableCompat({ if (url != null) crmOpen(context, url) else crmCopy(context, value) }, { crmCopy(context, value) })
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = if (dense) 36.dp else 44.dp)
+            .combinedClickableCompat({ if (url != null) crmOpen(context, url) else crmCopy(context, value) }, { crmCopy(context, value) })
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        FmIcon(icon, size = 18.dp, tint = Fm.colors.textSecondary)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
-            Text(value, style = Fm.text.bodyMedium, color = if (url != null) Fm.colors.accent else Fm.colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        }
+        FmIcon(icon, size = 16.dp, tint = Fm.colors.textSecondary, modifier = Modifier.width(20.dp))
+        Text(label, Modifier.width(78.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+        Text(
+            value, Modifier.weight(1f), style = Fm.text.bodyMedium, color = if (url != null) Fm.colors.accent else Fm.colors.textPrimary,
+            maxLines = if (url != null) 1 else 2, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
+
+private enum class CrmContactTab(val title: String) { OVERVIEW("Overview"), ACTIVITY("Activity"), NOTES("Notes") }
 
 @Composable
 private fun RowScopeAction(label: String, icon: String, tint: Color, enabled: Boolean, modifier: Modifier, onTap: () -> Unit) {
     Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = if (enabled) 0.12f else 0.05f))
-            .combinedClickableCompat({ if (enabled) onTap() }).padding(vertical = 10.dp),
+        modifier.heightIn(min = if (crmDense()) 44.dp else 54.dp).clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = if (enabled) 0.12f else 0.05f))
+            .combinedClickableCompat({ if (enabled) onTap() }).padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         FmIcon(icon, size = 20.dp, tint = if (enabled) tint else Fm.colors.textDisabled)
         Text(label, style = Fm.text.labelSmall, color = if (enabled) tint else Fm.colors.textDisabled, maxLines = 1)
@@ -123,6 +135,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
     private var menu by mutableStateOf(false)
     private var flowMenu by mutableStateOf(false)
     private var confirmDelete by mutableStateOf(false)
+    private var tab by mutableStateOf(CrmContactTab.OVERVIEW)
 
     @Composable
     override fun Content(navigator: Navigator) {
@@ -130,6 +143,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val runner = remember { CrmRunner(scope, model) }
+        val dense = crmDense()
         LaunchedEffect(Unit) {
             loading = true
             if (model.organization != ref.organization) model.organization = ref.organization
@@ -149,7 +163,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val data = model.data
         val contact = model.contact(ref.contactId)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             val plugin = rememberScreenPluginMenu()
             ToolsAppBar(contact?.displayName ?: "Contact", navigator, pluginMenu = contact == null) {
                 if (contact != null) {
@@ -191,19 +205,24 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
                     val flow = data.flow(contact.flow)
                     val tint = CrmColors.stage(contact.stage, flow)
                     Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                            .background(Brush.linearGradient(listOf(tint.copy(alpha = 0.2f), Fm.colors.bgRaised))).padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(tint.copy(alpha = 0.16f), Fm.colors.bgRaised))).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CrmAvatar(contact.name.ifEmpty { contact.email }, 60)
-                            Spacer(Modifier.width(14.dp))
+                            CrmAvatar(contact.name.ifEmpty { contact.email }, if (dense) 46 else 56)
+                            Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(contact.displayName, style = Fm.text.titleLarge.copy(fontWeight = FontWeight.Bold), color = Fm.colors.textPrimary, maxLines = 2)
-                                if (contact.subtitle.isNotEmpty()) Text(contact.subtitle, style = Fm.text.bodyMedium, color = Fm.colors.textSecondary, maxLines = 2)
+                                Text(
+                                    contact.displayName, maxLines = 2,
+                                    style = (if (dense) Fm.text.titleMedium else Fm.text.titleLarge).copy(fontWeight = FontWeight.Bold), color = Fm.colors.textPrimary,
+                                )
+                                if (contact.subtitle.isNotEmpty()) {
+                                    Text(contact.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    CrmChip(flow.name, Fm.colors.textSecondary, icon = CrmFlowIcon.symbol(flow.icon))
                                     CrmChip(CrmStageLabel.title(contact.stage), tint)
+                                    CrmChip(flow.name, Fm.colors.textSecondary, icon = CrmFlowIcon.symbol(flow.icon))
                                     if (contact.value > 0) CrmChip(CrmText.money(contact.value), CrmColors.green, icon = "payments")
                                 }
                             }
@@ -216,96 +235,125 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
                         RowScopeAction("Contacted", "mark_email_read", Color(0xFF0D9488), true, Modifier.weight(1f)) { runner.run({ markContacted(listOf(contact.id)) }) { ok -> if (ok) runner.status.show("Marked as contacted now.") } }
                         RowScopeAction("Deck", "slideshow", CrmColors.orange, true, Modifier.weight(1f)) { runner.run({ deckLink(contact) }) { link -> if (link != null) navigator.push(CrmDeckScreen(model, link)) } }
                     }
-                    CrmSection("Pipeline") {
-                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            (if (contact.stage in flow.stages) flow.stages else flow.stages + contact.stage).forEach { stage ->
-                                val active = stage == contact.stage
-                                CrmChip(CrmStageLabel.title(stage), CrmColors.stage(stage, flow), icon = if (active) "check" else null, filled = active, onTap = {
-                                    if (!active) runner.run({ move(contact, stage) })
-                                })
-                            }
-                        }
-                        Box {
-                            FmListRow("Pipeline", subtitle = flow.name, onTap = { flowMenu = true }, minHeight = 48.dp)
-                            FmDropdownMenu(expanded = flowMenu, onDismissRequest = { flowMenu = false }) {
-                                data.flows.forEach { target ->
-                                    FmDropdownMenuItem(target.name, onClick = { flowMenu = false; runner.run({ moveFlow(contact, target.id) }) }, icon = if (target.id == contact.flow) "check" else CrmFlowIcon.symbol(target.icon))
-                                }
-                            }
-                        }
-                        DetailLine("Last contacted", if (contact.lastContactedAt > 0) relativeTime(contact.lastContactedAt) else "Never", "schedule")
-                    }
-                    if (data.listViews.isNotEmpty()) {
-                        CrmSection("Lists") {
-                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                data.listViews.forEach { view ->
-                                    val member = view.id in contact.views
-                                    CrmChip(view.name, Fm.colors.accent, icon = if (member) "check" else "add", filled = member, onTap = {
-                                        runner.run({ bulk(if (member) CrmBulkAction.RemoveList(view.id) else CrmBulkAction.AddList(view.id), listOf(contact.id)) })
-                                    })
-                                }
-                            }
-                        }
-                    }
-                    CrmSection("Details") {
-                        DetailLine("Email", contact.email, "mail", if (contact.email.isNotEmpty()) "mailto:${contact.email}" else null)
-                        DetailLine("Phone", contact.phone, "call", "tel:" + contact.phone.filter { !it.isWhitespace() })
-                        DetailLine("Website", contact.website, "public", CrmText.profileUrl("website", contact.website))
-                        DetailLine("Location", contact.location, "place")
-                        DetailLine("LinkedIn", contact.linkedin, "work", CrmText.profileUrl("linkedin", contact.linkedin))
-                        DetailLine("GitHub", contact.github, "code", CrmText.profileUrl("github", contact.github))
-                        DetailLine("Mastodon", contact.mastodon, "forum", CrmText.profileUrl("mastodon", contact.mastodon))
-                        DetailLine("Bluesky", contact.bluesky, "cloud", CrmText.profileUrl("bluesky", contact.bluesky))
-                        DetailLine("X", contact.twitter, "alternate_email", CrmText.profileUrl("twitter", contact.twitter))
-                        DetailLine("Next step", contact.nextStep, "subdirectory_arrow_right")
-                        DetailLine("Owner", contact.owner, "person")
-                        DetailLine("Source", contact.source, "input")
-                        if (contact.tags.isNotEmpty()) {
-                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                contact.tags.forEach { CrmChip("#$it", CrmColors.purple) }
-                            }
-                        }
-                    }
-                    if (contact.fields.isNotEmpty()) {
-                        CrmSection("More") {
-                            contact.fields.keys.sorted().forEach { key -> DetailLine(CrmColumnCatalog.label(key), contact.fields[key].orEmpty(), "label") }
-                        }
-                    }
-                    if (contact.notes.isNotEmpty()) {
-                        CrmSection("Notes") { Text(contact.notes, Modifier.padding(14.dp), style = Fm.text.bodyMedium, color = Fm.colors.textPrimary) }
-                    }
-                    val emails = data.activityFor(contact.id)
-                    val decks = data.decksFor(contact.id)
-                    var logMenu by remember { mutableStateOf(false) }
-                    CrmSection("Timeline", trailing = {
-                        if (contact.email.isNotEmpty()) {
-                            Box {
-                                CrmChip("Log", Fm.colors.accent, icon = "add", onTap = { logMenu = true })
-                                FmDropdownMenu(expanded = logMenu, onDismissRequest = { logMenu = false }) {
-                                    FmDropdownMenuItem("Email I sent", onClick = { logMenu = false; runner.run({ logEmail(contact.email, "Email to ${contact.displayName}", contact.id) }) }, icon = "outbox")
-                                    FmDropdownMenuItem("Email I received", onClick = { logMenu = false; runner.run({ logEmail(contact.email, "Email from ${contact.displayName}", contact.id, "inbound") }) }, icon = "inbox")
-                                }
-                            }
-                        }
-                    }) {
-                        decks.forEach { link -> CrmDeckRowView(link, null) { navigator.push(CrmDeckScreen(model, link)) } }
-                        emails.forEach { email -> CrmEmailRowView(email, null) { navigator.push(CrmEmailScreen(model, email)) } }
-                        if (emails.isEmpty() && decks.isEmpty()) Text("No emails or deck views yet.", Modifier.padding(14.dp), style = Fm.text.bodySmall, color = Fm.colors.textTertiary)
-                    }
-                    val duplicates = data.duplicatesOf(contact)
-                    if (duplicates.isNotEmpty()) {
-                        CrmSection("Possible duplicates") {
-                            duplicates.forEach { other ->
-                                Box(Modifier.combinedClickableCompat({ navigator.push(CrmMergeScreen(model, other, contact.id)) })) {
-                                    CrmContactRowContent(other, data.flow(other.flow), showStage = true)
-                                }
-                            }
-                        }
-                    }
-                    Text(
-                        "Added ${shortDate(contact.createdAt)} by ${contact.createdBy.ifEmpty { "someone" }} · updated ${relativeTime(contact.updatedAt)} by ${contact.updatedBy.ifEmpty { contact.createdBy }}",
-                        Modifier.padding(vertical = 8.dp), style = Fm.text.labelSmall, color = Fm.colors.textTertiary,
+                    ThemeSegmentTrack(
+                        CrmContactTab.entries, tab,
+                        label = { it.title },
+                        icon = { null },
+                        tag = { "crm-contact-tab-${it.name.lowercase()}" },
+                        description = { it.title },
+                        onPick = { tab = it },
                     )
+                    when (tab) {
+                        CrmContactTab.OVERVIEW -> {
+                            CrmSection("Details") {
+                                DetailLine("Email", contact.email, "mail", if (contact.email.isNotEmpty()) "mailto:${contact.email}" else null)
+                                DetailLine("Phone", contact.phone, "call", "tel:" + contact.phone.filter { !it.isWhitespace() })
+                                DetailLine("Website", contact.website, "public", CrmText.profileUrl("website", contact.website))
+                                DetailLine("Location", contact.location, "place")
+                                DetailLine("LinkedIn", contact.linkedin, "work", CrmText.profileUrl("linkedin", contact.linkedin))
+                                DetailLine("GitHub", contact.github, "code", CrmText.profileUrl("github", contact.github))
+                                DetailLine("Mastodon", contact.mastodon, "forum", CrmText.profileUrl("mastodon", contact.mastodon))
+                                DetailLine("Bluesky", contact.bluesky, "cloud", CrmText.profileUrl("bluesky", contact.bluesky))
+                                DetailLine("X", contact.twitter, "alternate_email", CrmText.profileUrl("twitter", contact.twitter))
+                                DetailLine("Next step", contact.nextStep, "subdirectory_arrow_right")
+                                DetailLine("Owner", contact.owner, "person")
+                                DetailLine("Source", contact.source, "input")
+                                if (contact.tags.isNotEmpty()) {
+                                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        contact.tags.forEach { CrmChip("#$it", CrmColors.purple) }
+                                    }
+                                }
+                            }
+                            CrmSection("Pipeline") {
+                                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    (if (contact.stage in flow.stages) flow.stages else flow.stages + contact.stage).forEach { stage ->
+                                        val active = stage == contact.stage
+                                        CrmChip(CrmStageLabel.title(stage), CrmColors.stage(stage, flow), icon = if (active) "check" else null, filled = active, onTap = {
+                                            if (!active) runner.run({ move(contact, stage) })
+                                        })
+                                    }
+                                }
+                                Box {
+                                    FmListRow("Pipeline", subtitle = flow.name, onTap = { flowMenu = true }, minHeight = if (dense) 40.dp else 48.dp)
+                                    FmDropdownMenu(expanded = flowMenu, onDismissRequest = { flowMenu = false }) {
+                                        data.flows.forEach { target ->
+                                            FmDropdownMenuItem(target.name, onClick = { flowMenu = false; runner.run({ moveFlow(contact, target.id) }) }, icon = if (target.id == contact.flow) "check" else CrmFlowIcon.symbol(target.icon))
+                                        }
+                                    }
+                                }
+                                DetailLine("Last contacted", if (contact.lastContactedAt > 0) relativeTime(contact.lastContactedAt) else "Never", "schedule")
+                            }
+                            if (data.listViews.isNotEmpty()) {
+                                CrmSection("Lists") {
+                                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        data.listViews.forEach { view ->
+                                            val member = view.id in contact.views
+                                            CrmChip(view.name, Fm.colors.accent, icon = if (member) "check" else "add", filled = member, onTap = {
+                                                runner.run({ bulk(if (member) CrmBulkAction.RemoveList(view.id) else CrmBulkAction.AddList(view.id), listOf(contact.id)) })
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        CrmContactTab.ACTIVITY -> {
+                            val emails = data.activityFor(contact.id)
+                            val decks = data.decksFor(contact.id)
+                            var logMenu by remember { mutableStateOf(false) }
+                            CrmSection("Timeline", trailing = {
+                                if (contact.email.isNotEmpty()) {
+                                    Box {
+                                        CrmChip("Log", Fm.colors.accent, icon = "add", onTap = { logMenu = true })
+                                        FmDropdownMenu(expanded = logMenu, onDismissRequest = { logMenu = false }) {
+                                            FmDropdownMenuItem("Email I sent", onClick = { logMenu = false; runner.run({ logEmail(contact.email, "Email to ${contact.displayName}", contact.id) }) }, icon = "outbox")
+                                            FmDropdownMenuItem("Email I received", onClick = { logMenu = false; runner.run({ logEmail(contact.email, "Email from ${contact.displayName}", contact.id, "inbound") }) }, icon = "inbox")
+                                        }
+                                    }
+                                }
+                            }) {
+                                decks.forEach { link -> CrmDeckRowView(link, null) { navigator.push(CrmDeckScreen(model, link)) } }
+                                emails.forEach { email -> CrmEmailRowView(email, null) { navigator.push(CrmEmailScreen(model, email)) } }
+                                if (emails.isEmpty() && decks.isEmpty()) Text("No emails or deck views yet.", Modifier.padding(14.dp), style = Fm.text.bodySmall, color = Fm.colors.textTertiary)
+                            }
+                            CrmContactInvoices(ref.organization, contact, navigator)
+                            val duplicates = data.duplicatesOf(contact)
+                            if (duplicates.isNotEmpty()) {
+                                CrmSection("Possible duplicates") {
+                                    duplicates.forEach { other ->
+                                        Row(Modifier.combinedClickableCompat({ navigator.push(CrmMergeScreen(model, other, contact.id)) }), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.weight(1f)) { CrmContactRowContent(other, data.flow(other.flow), showStage = true) }
+                                            FmIcon("merge", size = 18.dp, tint = Fm.colors.accent, modifier = Modifier.padding(end = 14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        CrmContactTab.NOTES -> {
+                            CrmSection("Notes") {
+                                if (contact.notes.isEmpty()) {
+                                    FmListRow(
+                                        "Add a note",
+                                        leading = { FmIcon("edit_note", size = 20.dp, tint = Fm.colors.accent) },
+                                        titleColor = Fm.colors.accent,
+                                        showChevron = false,
+                                        onTap = { navigator.push(ContactEditorScreen(model, contact)) },
+                                        minHeight = 44.dp,
+                                    )
+                                } else {
+                                    Text(contact.notes, Modifier.padding(14.dp), style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
+                                }
+                            }
+                            if (contact.fields.isNotEmpty()) {
+                                CrmSection("More") {
+                                    contact.fields.keys.sorted().forEach { key -> DetailLine(CrmColumnCatalog.label(key), contact.fields[key].orEmpty(), "label") }
+                                }
+                            }
+                            Text(
+                                "Added ${shortDate(contact.createdAt)} by ${contact.createdBy.ifEmpty { "someone" }}\nUpdated ${relativeTime(contact.updatedAt)} by ${contact.updatedBy.ifEmpty { contact.createdBy }}",
+                                Modifier.padding(vertical = 8.dp, horizontal = 4.dp), style = Fm.text.labelSmall, color = Fm.colors.textSecondary,
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(40.dp))
                 }
             }
@@ -329,6 +377,10 @@ internal fun CrmEmailRowView(email: CrmActivity, who: String?, onTap: () -> Unit
         Column(Modifier.weight(1f)) {
             Text(email.subject.ifEmpty { "(no subject)" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.Medium), color = Fm.colors.textPrimary)
             Text(listOf(who ?: email.to, email.sender, relativeTime(email.at)).filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 1, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+            val engagement = if (email.incoming) "" else email.engagementLine
+            if (engagement.isNotEmpty()) {
+                Text(engagement, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Medium), color = Fm.colors.accent)
+            }
         }
         CrmChip(email.status, tint)
     }
@@ -373,26 +425,108 @@ class ContactEditorScreen(private val model: CrmModel, private val original: Crm
     private var stageMenu by mutableStateOf(false)
     private var flowMenu by mutableStateOf(false)
     private var ownerMenu by mutableStateOf(false)
+    private var moreOpen by mutableStateOf(false)
+    private var submitting by mutableStateOf(false)
+    private val requestId = CrmModel.newRequestId()
+
+    init {
+        model.clearError()
+    }
+
+    override fun onDisposed() {
+        model.clearError()
+    }
+
+    private val moreFilled: Int
+        get() = listOf(edit.owner, edit.source, edit.tags, edit.website, edit.location, edit.linkedin, edit.github, edit.mastodon, edit.bluesky, edit.twitter)
+            .count { it.isNotEmpty() } + edit.fields.values.count { it.isNotEmpty() }
 
     @Composable
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
+        val haptics = FmHaptics.current
+        val scroll = rememberScrollState()
         val data = model.data
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar(title, navigator) {
-                FmTextButton(onClick = {
-                    val next = edit.copy(value = value.trim().toLongOrNull() ?: 0)
-                    runner.run({ save(next, original, addTo) }) { saved -> if (saved != null) navigator.pop() }
-                }, enabled = runner.busy == 0 && edit.isValid) { Text(if (runner.busy > 0) "Saving…" else "Save") }
+        @Suppress("UNUSED_EXPRESSION") CrmRevision.value
+        fun submit(work: CrmModel.() -> CrmContact?, done: (CrmContact) -> Unit) {
+            if (submitting) return
+            submitting = true
+            scope.launch {
+                val saved = withContext(Dispatchers.IO) { model.work() }
+                submitting = false
+                CrmRevision.bump()
+                if (saved != null) {
+                    haptics.commit()
+                    done(saved)
+                } else {
+                    haptics.failure()
+                    scroll.animateScrollTo(0)
+                }
             }
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                FmSectionHeader("Person")
+        }
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
+            ToolsAppBar(title, navigator) {
+                Box(Modifier.testTag("crm-contact-save")) {
+                    FmTextButton(onClick = {
+                        val next = edit.copy(value = value.trim().toLongOrNull() ?: 0)
+                        submit({ save(next, original, addTo, if (original == null) requestId else "") }) { navigator.pop() }
+                    }, enabled = !submitting && runner.busy == 0 && edit.isValid) {
+                        if (submitting) FmCircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text("Save", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Column(Modifier.verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val found = model.existing
+                if (found != null && original == null) {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Fm.colors.bgRaised).padding(vertical = 4.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CrmAvatar(found.name.ifEmpty { found.email }, 36)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("${found.displayName} is already in the CRM", style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+                                Text(found.email.ifEmpty { "Same email address" }, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+                            }
+                        }
+                        FmListRow(
+                            "Open ${found.displayName}",
+                            leading = { FmIcon("account_circle", size = 20.dp, tint = Fm.colors.accent) },
+                            titleColor = Fm.colors.accent,
+                            onTap = { navigator.push(ContactScreen(CrmContactRef(model.organization, found.id))) },
+                            minHeight = 44.dp,
+                        )
+                        FmListRow(
+                            if (addTo == null) "Add these details to them" else "Add these details and the list",
+                            leading = { FmIcon("move_to_inbox", size = 20.dp, tint = if (submitting) Fm.colors.textDisabled else Fm.colors.accent) },
+                            titleColor = if (submitting) Fm.colors.textDisabled else Fm.colors.accent,
+                            showChevron = false,
+                            onTap = {
+                                val next = edit.copy(value = value.trim().toLongOrNull() ?: 0)
+                                submit({ addDetails(next, found, addTo) }) {
+                                    runner.status.show("Added the details to ${found.displayName}.")
+                                    navigator.pop()
+                                }
+                            },
+                            minHeight = 44.dp,
+                        )
+                    }
+                    Text(
+                        "Adding fills only what their record is missing; nothing they already have is overwritten.",
+                        Modifier.padding(horizontal = 4.dp), style = Fm.text.labelSmall, color = Fm.colors.textSecondary,
+                    )
+                } else if (model.errorText.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FmIcon("warning", size = 18.dp, tint = Fm.colors.danger)
+                        Text(model.errorText, style = Fm.text.bodyMedium, color = Fm.colors.danger)
+                    }
+                }
+                FmSectionHeader("Contact")
                 FmTextField(edit.name, { edit = edit.copy(name = it) }, hint = "Name", autofocus = original == null)
                 FmTextField(edit.email, { edit = edit.copy(email = it) }, hint = "Email")
                 FmTextField(edit.company, { edit = edit.copy(company = it) }, hint = "Company")
                 FmTextField(edit.title, { edit = edit.copy(title = it) }, hint = "Title")
                 FmTextField(edit.phone, { edit = edit.copy(phone = it) }, hint = "Phone")
+                if (!edit.isValid) Text("A name or an email is enough to save.", style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                 FmSectionHeader("Pipeline", Modifier.padding(top = 8.dp))
                 val flows = data?.flows.orEmpty()
                 val flow = data?.flow(edit.flow) ?: model.flow
@@ -415,46 +549,57 @@ class ContactEditorScreen(private val model: CrmModel, private val original: Crm
                 }
                 FmTextField(value, { value = it.filter(Char::isDigit) }, hint = "Deal value")
                 FmTextField(edit.nextStep, { edit = edit.copy(nextStep = it) }, hint = "Next step")
-                Box {
-                    FmTextField(edit.owner, { edit = edit.copy(owner = it) }, hint = "Owner", trailing = {
-                        if (data?.members?.isNotEmpty() == true) FmIconButton("person_add", "Pick a member", onPressed = { ownerMenu = true })
-                    })
-                    FmDropdownMenu(expanded = ownerMenu, onDismissRequest = { ownerMenu = false }) {
-                        data?.members.orEmpty().forEach { member -> FmDropdownMenuItem(member, onClick = { ownerMenu = false; edit = edit.copy(owner = member) }) }
+                FmListRow(
+                    "More details",
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (moreFilled > 0) Text("$moreFilled filled", style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+                            FmIcon(if (moreOpen) "expand_less" else "expand_more", size = 18.dp, tint = Fm.colors.textTertiary)
+                        }
+                    },
+                    showChevron = false,
+                    onTap = { moreOpen = !moreOpen },
+                    minHeight = 48.dp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (moreOpen) {
+                    Box {
+                        FmTextField(edit.owner, { edit = edit.copy(owner = it) }, hint = "Owner", trailing = {
+                            if (data?.members?.isNotEmpty() == true) FmIconButton("person_add", "Pick a member", onPressed = { ownerMenu = true })
+                        })
+                        FmDropdownMenu(expanded = ownerMenu, onDismissRequest = { ownerMenu = false }) {
+                            data?.members.orEmpty().forEach { member -> FmDropdownMenuItem(member, onClick = { ownerMenu = false; edit = edit.copy(owner = member) }) }
+                        }
+                    }
+                    FmTextField(edit.source, { edit = edit.copy(source = it) }, hint = "Source")
+                    FmTextField(edit.tags, { edit = edit.copy(tags = it) }, hint = "Tags, comma separated")
+                    CrmLastContactedField(edit.lastContactedAt) { edit = edit.copy(lastContactedAt = it) }
+                    FmTextField(edit.website, { edit = edit.copy(website = it) }, hint = "Website")
+                    FmTextField(edit.location, { edit = edit.copy(location = it) }, hint = "Location")
+                    FmTextField(edit.linkedin, { edit = edit.copy(linkedin = it) }, hint = "LinkedIn")
+                    FmTextField(edit.github, { edit = edit.copy(github = it) }, hint = "GitHub")
+                    FmTextField(edit.mastodon, { edit = edit.copy(mastodon = it) }, hint = "Mastodon (@name@server)")
+                    FmTextField(edit.bluesky, { edit = edit.copy(bluesky = it) }, hint = "Bluesky")
+                    FmTextField(edit.twitter, { edit = edit.copy(twitter = it) }, hint = "X / Twitter")
+                    val known = data?.customFieldKeys().orEmpty()
+                    (known + edit.fields.keys.sorted().filter { it !in known }).forEach { key ->
+                        FmTextField(edit.fields[key].orEmpty(), { edit = edit.copy(fields = edit.fields + (key to it)) }, hint = CrmColumnCatalog.label(key))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FmTextField(newField, { newField = it }, Modifier.weight(1f), hint = "New field")
+                        FmTextField(newValue, { newValue = it }, Modifier.weight(1f), hint = "Value")
+                        FmIconButton("add_circle", "Add field", onPressed = {
+                            val key = CrmText.slug(newField).replace('-', '_')
+                            if (key.isNotEmpty() && !CrmColumnCatalog.isBuiltIn(key)) {
+                                edit = edit.copy(fields = edit.fields + (key to newValue))
+                                newField = ""
+                                newValue = ""
+                            }
+                        })
                     }
                 }
-                FmTextField(edit.source, { edit = edit.copy(source = it) }, hint = "Source")
-                FmTextField(edit.tags, { edit = edit.copy(tags = it) }, hint = "Tags, comma separated")
-                CrmLastContactedField(edit.lastContactedAt) { edit = edit.copy(lastContactedAt = it) }
-                FmSectionHeader("Online", Modifier.padding(top = 8.dp))
-                FmTextField(edit.website, { edit = edit.copy(website = it) }, hint = "Website")
-                FmTextField(edit.location, { edit = edit.copy(location = it) }, hint = "Location")
-                FmTextField(edit.linkedin, { edit = edit.copy(linkedin = it) }, hint = "LinkedIn")
-                FmTextField(edit.github, { edit = edit.copy(github = it) }, hint = "GitHub")
-                FmTextField(edit.mastodon, { edit = edit.copy(mastodon = it) }, hint = "Mastodon (@name@server)")
-                FmTextField(edit.bluesky, { edit = edit.copy(bluesky = it) }, hint = "Bluesky")
-                FmTextField(edit.twitter, { edit = edit.copy(twitter = it) }, hint = "X / Twitter")
-                FmSectionHeader("More fields", Modifier.padding(top = 8.dp))
-                val known = data?.customFieldKeys().orEmpty()
-                (known + edit.fields.keys.sorted().filter { it !in known }).forEach { key ->
-                    FmTextField(edit.fields[key].orEmpty(), { edit = edit.copy(fields = edit.fields + (key to it)) }, hint = CrmColumnCatalog.label(key))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FmTextField(newField, { newField = it }, Modifier.weight(1f), hint = "New field")
-                    FmTextField(newValue, { newValue = it }, Modifier.weight(1f), hint = "Value")
-                    FmIconButton("add_circle", "Add field", onPressed = {
-                        val key = CrmText.slug(newField).replace('-', '_')
-                        if (key.isNotEmpty() && !CrmColumnCatalog.isBuiltIn(key)) {
-                            edit = edit.copy(fields = edit.fields + (key to newValue))
-                            newField = ""
-                            newValue = ""
-                        }
-                    })
-                }
                 FmSectionHeader("Notes", Modifier.padding(top = 8.dp))
-                FmTextField(edit.notes, { edit = edit.copy(notes = it) }, hint = "Notes", minLines = 3, maxLines = 12)
-                CrmErrorLine(model, runner)
-                CrmRunnerStatus(runner, model)
+                FmTextField(edit.notes, { edit = edit.copy(notes = it) }, hint = "Notes", minLines = 2, maxLines = 10)
                 Spacer(Modifier.height(40.dp))
             }
         }
@@ -476,7 +621,7 @@ class CrmMergeScreen(private val model: CrmModel, private val contact: CrmContac
         val duplicates = data.duplicatesOf(contact)
         val others = data.contacts.filter { it.id != contact.id && it !in duplicates && it.matches(query) }
         val candidates = if (query.isEmpty()) duplicates + others.take(40) else duplicates.filter { it.matches(query) } + others
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Merge ${contact.displayName}", navigator)
             Text(
                 "Its details fill the blanks of the contact you keep, its email history and deck links move over, and then it is deleted.",
@@ -513,7 +658,7 @@ class CrmOwnerScreen(private val model: CrmModel, private val ids: List<String>)
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Owner of ${ids.size} contact${if (ids.size == 1) "" else "s"}", navigator) {
                 FmTextButton(onClick = { runner.run({ bulk(CrmBulkAction.Owner(owner.trim()), ids) }) { ok -> if (ok) navigator.pop() } }) { Text("Apply") }
             }
@@ -546,7 +691,7 @@ class CrmEmailScreen(private val model: CrmModel, private val email: CrmActivity
             fetched = true
         }
         val shown = detail ?: email
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Email", navigator) {
                 if (shown.providerUrl.startsWith("https://")) FmIconButton("open_in_new", "Open in mailbox", onPressed = { crmOpen(context, shown.providerUrl) }, color = Fm.colors.textPrimary)
                 Box {
@@ -574,6 +719,30 @@ class CrmEmailScreen(private val model: CrmModel, private val email: CrmActivity
                     }
                 }
                 if (shown.error.isNotEmpty()) Text(shown.error, style = Fm.text.bodySmall, color = Fm.colors.danger)
+                if (!shown.incoming && shown.engagementLine.isNotEmpty()) {
+                    Text("Reading", style = Fm.text.labelMedium, color = Fm.colors.textSecondary)
+                    CrmCard(Modifier.fillMaxWidth()) {
+                        Column {
+                            val read = shown.readLabel.ifEmpty { if (shown.silentClient) "${shown.mailClient} doesn't report it" else "Not reported" }
+                            val slides = shown.slideCount > 0
+                            val reach = if (slides && shown.slideReached > 0) {
+                                "Slide ${shown.slideReached} of ${shown.slideCount}" + if (shown.slideTitle.isEmpty()) "" else " · ${shown.slideTitle}"
+                            } else {
+                                shown.scrollLabel.ifEmpty { "Not reported" }
+                            }
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Opens", "${shown.opens}")
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Clicks", "${shown.clicks}")
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Read for", read)
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow(if (slides) "Reached" else "Scrolled", reach)
+                            if (shown.mailClient.isNotEmpty()) com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Mail app", shown.mailClient)
+                        }
+                    }
+                    Text(
+                        "Read time and scroll come from mail apps that run CSS animations, such as Apple Mail without Mail Privacy Protection. Gmail and protected inboxes report opens and clicks only.",
+                        style = Fm.text.bodySmall,
+                        color = Fm.colors.textSecondary,
+                    )
+                }
                 when {
                     shown.plainBody.isNotEmpty() -> Text(shown.plainBody, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
                     !fetched -> FmCircularProgressIndicator()
@@ -626,7 +795,7 @@ class CrmComposeScreen(private val model: CrmModel, start: CrmEmailDraft, outrea
             "outreach" -> draft.isValid && (outreach?.remaining ?: 0) > 0
             else -> draft.isValid
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(contact?.let { "Email ${it.displayName}" } ?: "New email", navigator) {
                 FmTextButton(onClick = {
                     when (mode) {

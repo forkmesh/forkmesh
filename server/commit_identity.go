@@ -3,6 +3,7 @@ package mirrornode
 import (
 	"os"
 	"strings"
+	"unicode"
 )
 
 const noreplyEmailDomain = "users.noreply.forkmesh.com"
@@ -28,7 +29,8 @@ func commitIdentityEmail(fallback string) string {
 
 func cleanIdentityValue(value string, limit int) string {
 	value = strings.TrimSpace(value)
-	if value == "" || len(value) > limit || strings.ContainsAny(value, "\x00\r\n<>") {
+	if value == "" || len(value) > limit || strings.ContainsAny(value, "<>") ||
+		strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return ""
 	}
 	return value

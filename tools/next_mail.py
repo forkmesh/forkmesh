@@ -27,6 +27,9 @@ SELECTOR = "fmnext"
 DKIM_NAME = "%s._domainkey.%s" % (SELECTOR, MAIL_DOMAIN)
 TXT_NAMES = (MAIL_DOMAIN, DKIM_NAME)
 SPF_KEEP = ("include:zohomail.com",)
+SENDER = "founders@forkmesh.com"
+FALLBACK_RELAY = "[live.smtp.mailtrap.io]:587"
+FALLBACK_TOKEN = "MAILTRAP_API_TOKEN"
 SIGN_HEADERS = ("From", "Sender", "Reply-To", "Subject", "Date", "Message-ID",
                 "To", "Cc", "MIME-Version", "Content-Type",
                 "Content-Transfer-Encoding", "In-Reply-To", "References",
@@ -146,24 +149,59 @@ def rdns(fleet, runner):
                                 n["instance_id"], i, mail_host(n)))
 
 
-def main_cf(node):
+def relay_for(fleet, node):
+    name = node.get("mail_relay")
+    if not name or not fleet:
+        return None
+    relay = next((n for n in cores(fleet) if n["name"] == name), None)
+    if relay is None or relay is node or relay.get("mail_relay"):
+        raise GuardError("%s relays via %s, which is not a direct-sending core"
+                         % (node["name"], name))
+    return relay
+
+
+def relay_clients(fleet, node):
+    if not fleet:
+        return []
+    return [n for n in cores(fleet) if n.get("mail_relay") == node["name"]]
+
+
+FALLBACK_CF = """smtp_fallback_relay = {relay}
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+smtp_tls_policy_maps = hash:/etc/postfix/tls_policy
+""".format(relay=FALLBACK_RELAY)
+
+TLS_POLICY = "%s secure\n" % FALLBACK_RELAY
+
+
+def main_cf(node, fleet=None, fallback=False):
+    relay = relay_for(fleet, node)
+    clients = sorted(n["wg_ip"] for n in relay_clients(fleet, node))
+    interfaces = ("127.0.0.1, [::1], " + node["wg_ip"]) if clients else (
+        "loopback-only")
+    networks = " ".join(["127.0.0.0/8", "[::1]/128"] +
+                        [ip + "/32" for ip in clients])
     return """compatibility_level = 3.6
 myhostname = {host}
 myorigin = {domain}
 mydestination =
-relayhost =
-inet_interfaces = loopback-only
+relayhost = {relayhost}
+inet_interfaces = {interfaces}
 inet_protocols = all
 smtp_address_preference = ipv4
-mynetworks = 127.0.0.0/8 [::1]/128
+mynetworks = {networks}
 smtpd_relay_restrictions = permit_mynetworks, reject
 smtpd_recipient_restrictions = permit_mynetworks, reject
-smtpd_client_event_limit_exceptions =
+smtpd_client_event_limit_exceptions = {exceptions}
 smtpd_client_message_rate_limit = 300
 anvil_rate_time_unit = 3600s
 local_transport = error:local delivery is disabled
 alias_maps =
 alias_database =
+sender_canonical_maps = regexp:/etc/postfix/sender_canonical
 disable_vrfy_command = yes
 smtpd_banner = $myhostname ESMTP
 message_size_limit = 10485760
@@ -177,9 +215,20 @@ milter_protocol = 6
 milter_default_action = tempfail
 smtpd_milters = unix:opendkim/opendkim.sock
 non_smtpd_milters = $smtpd_milters
+internal_mail_filter_classes = bounce
 maximal_queue_lifetime = 2d
 bounce_queue_lifetime = 1d
-""".format(host=mail_host(node), domain=MAIL_DOMAIN)
+""".format(host=mail_host(node), domain=MAIL_DOMAIN,
+           relayhost=("[%s]:25" % relay["wg_ip"]) if relay else "",
+           interfaces=interfaces, networks=networks,
+           exceptions=" ".join(ip + "/32" for ip in clients)) + (
+               FALLBACK_CF if fallback else "")
+
+
+SENDER_CANONICAL = """if !/^(founders|no-reply)@forkmesh\\.com$/
+/@([a-z0-9-]+\\.)*forkmesh\\.com$/ {sender}
+endif
+""".format(sender=SENDER)
 
 
 OPENDKIM_CONF = """Syslog yes
@@ -187,6 +236,7 @@ UMask 007
 Mode s
 Canonicalization relaxed/relaxed
 Domain {domain}
+SubDomains yes
 Selector {selector}
 KeyFile /etc/opendkim/keys/{selector}.private
 Socket local:/var/spool/postfix/opendkim/opendkim.sock
@@ -230,10 +280,25 @@ ExecStart=
 ExecStart=/usr/sbin/opendkim -x /etc/opendkim.conf
 """
 
+POSTFIX_DROPIN = """[Unit]
+Wants=wg-quick@wg0.service
+After=wg-quick@wg0.service
+"""
 
-def install_script(node):
+
+def fallback_token():
+    try:
+        return common.credential("secrets.env", FALLBACK_TOKEN)
+    except ToolError:
+        return ""
+
+
+def install_script(node, fleet=None, fallback=False):
     host = mail_host(node)
-    files = {"/etc/postfix/main.cf": main_cf(node),
+    files = {"/etc/postfix/main.cf": main_cf(node, fleet, fallback),
+             "/etc/postfix/tls_policy": TLS_POLICY,
+             "/etc/systemd/system/postfix.service.d/fmnext.conf": POSTFIX_DROPIN,
+             "/etc/postfix/sender_canonical": SENDER_CANONICAL,
              "/etc/opendkim.conf": OPENDKIM_CONF,
              "/etc/systemd/system/opendkim.service.d/fmnext.conf": OPENDKIM_DROPIN,
              "/etc/cloud/cloud.cfg.d/99-fmnext-hostname.cfg":
@@ -255,7 +320,8 @@ echo "postfix postfix/mailname string {domain}" | debconf-set-selections
 apt-get install -y --no-install-recommends postfix opendkim
 {writes}
 install -d -m 0750 -o opendkim -g opendkim /etc/opendkim /etc/opendkim/keys
-umask 077
+postmap /etc/postfix/tls_policy
+{fallback}umask 077
 cat > /etc/opendkim/keys/{selector}.private
 chown opendkim:opendkim /etc/opendkim/keys/{selector}.private
 chmod 0600 /etc/opendkim/keys/{selector}.private
@@ -272,8 +338,21 @@ systemctl restart opendkim postfix fmnext-mail-events
 sleep 2
 systemctl is-active opendkim postfix fmnext-mail-events
 """.format(host=host, name=node["name"], ip=node["public_ipv4"],
-           domain=MAIL_DOMAIN,
+           domain=MAIL_DOMAIN, fallback=FALLBACK_SCRIPT if fallback else "",
            selector=SELECTOR, writes=writes, agent=AGENT_PATH)
+
+
+FALLBACK_SCRIPT = """IFS= read -r FMNEXT_FALLBACK_TOKEN
+(umask 077; printf '%s api:%s\\n' '{relay}' "$FMNEXT_FALLBACK_TOKEN" > /etc/postfix/sasl_passwd)
+unset FMNEXT_FALLBACK_TOKEN
+chmod 0600 /etc/postfix/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+chmod 0600 /etc/postfix/sasl_passwd.db
+""".format(relay=FALLBACK_RELAY)
+
+
+def install_input(token, key):
+    return (token.encode() + b"\n" if token else b"") + key
 
 
 def install(fleet, name, ssh, runner):
@@ -283,14 +362,20 @@ def install(fleet, name, ssh, runner):
         raise GuardError("mail runs on the cores only")
     if not key_path().exists():
         raise ToolError("run next_mail.py dkim --execute first")
+    token = fallback_token()
+    if "\n" in token or "'" in token:
+        raise GuardError("%s must be one line without quotes" % FALLBACK_TOKEN)
+    runner.say("%s: fallback relay %s" % (
+        name, FALLBACK_RELAY if token else "off (%s not in secrets.env)" % FALLBACK_TOKEN))
     next_ids.push_expectation(fleet, ssh, runner, name, rescan=IDS_PATHS,
                               allow=IDS_ALLOW, reason="core mail install",
                               minutes=30)
     runner.step("%s: hostname %s, postfix (loopback only) and opendkim"
                 % (name, mail_host(node)),
                 lambda: runner.say(ssh.run(
-                    node["public_ipv4"], install_script(node),
-                    input_bytes=key_path().read_bytes()).stdout.decode()))
+                    node["public_ipv4"], install_script(node, fleet, bool(token)),
+                    input_bytes=install_input(token, key_path().read_bytes())
+                    ).stdout.decode()))
 
 
 def restart(fleet, name, ssh, runner, timeout=900):
@@ -344,12 +429,18 @@ def restart(fleet, name, ssh, runner, timeout=900):
 def check(fleet, name, ssh):
     import next_ids
     node = next_ids.target(fleet, name)
+    relay = relay_for(fleet, node)
+    probe = ("timeout 8 bash -c '</dev/tcp/{ip}/25' && echo relay-{name}-open "
+             "|| echo relay-{name}-unreachable\n".format(
+                 ip=relay["wg_ip"], name=relay["name"]) if relay else "")
     out = ssh.run(node["public_ipv4"], """hostname -f
 systemctl is-active postfix opendkim
 ss -ltnH 'sport = :25'
 timeout 8 bash -c '</dev/tcp/gmail-smtp-in.l.google.com/25' && echo outbound-25-open || echo outbound-25-blocked
+{probe}postconf -h relayhost
+postconf -h smtp_fallback_relay
 postqueue -p | tail -1
-""", check=False, timeout=60).stdout.decode()
+""".format(probe=probe), check=False, timeout=60).stdout.decode()
     print(out.strip())
     for ip in (node["public_ipv4"], node.get("public_ipv6")):
         if ip:

@@ -134,7 +134,7 @@ def test_the_generated_registry_hands_the_route_to_the_website(tmp_path):
 
 
 def test_the_design_system_owns_design_in_the_real_catalog():
-    assert build_app_plugins.www_routes() == ("design",)
+    assert build_app_plugins.www_routes() == ("design", "feed", "invoice")
     assert "design" not in static_routes.CORE_RESERVED_ROUTE_PREFIXES
     assert static_routes.external_site_route("/design") is None
 

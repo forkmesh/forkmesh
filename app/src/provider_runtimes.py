@@ -5,6 +5,8 @@ Split out of entry.py so Cloudflare's startup-memory validation (error
 through a _LazyModule proxy on the first request that needs it.
 """
 
+from hidden_unicode import clean_value as clean_hidden_unicode
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by this domain."""
@@ -72,7 +74,7 @@ class _OrganizationDiscordRuntime:
         if not str(raw or "").strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")
@@ -160,8 +162,24 @@ class _OrganizationDiscordRuntime:
             "prompt": "consent",
         })
 
-    def oauth_transaction_cookie(self):
-        return _cookie_value(self.request, DISCORD_OAUTH_TRANSACTION_COOKIE)
+    def oauth_transaction_cookie(self, state=""):
+        state = str(state or "").lower()
+        values = []
+        header = self.request.headers.get("cookie") or ""
+        for part in header.split(";"):
+            key, sep, value = part.strip().partition("=")
+            value = value.strip().lower()
+            if (
+                sep
+                and (key == DISCORD_OAUTH_TRANSACTION_COOKIE
+                     or key.startswith(DISCORD_OAUTH_TRANSACTION_COOKIE + "_"))
+                and _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(value)
+                and value not in values
+            ):
+                values.append(value)
+        if _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(state):
+            return state if state in values else ""
+        return values[0] if len(values) == 1 else ""
 
     def oauth_start_response(self, data, transaction):
         cookie = _discord_oauth_transaction_cookie(transaction)
@@ -195,7 +213,8 @@ class _OrganizationDiscordRuntime:
             "cache-control": "no-store, max-age=0, must-revalidate",
             "referrer-policy": "no-referrer",
             "x-content-type-options": "nosniff",
-            "set-cookie": _clear_discord_oauth_transaction_cookie(),
+            "set-cookie": _clear_discord_oauth_transaction_cookie(
+                self.query("state")),
         })
 
     async def discord_guild(self, guild_id):
@@ -359,7 +378,7 @@ class _AccountPlanRuntime:
         if not str(raw or "").strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")

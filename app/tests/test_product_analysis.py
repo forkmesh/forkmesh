@@ -22,6 +22,19 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+
+
+def _entry_function(name):
+    import ast
+    import ipaddress
+    entry = SRC / "entry.py"
+    tree = ast.parse(entry.read_text(encoding="utf-8"), filename=str(entry))
+    node = next(item for item in tree.body
+                if isinstance(item, ast.FunctionDef) and item.name == name)
+    namespace = {"ipaddress": ipaddress}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(entry), "exec"),
+         namespace)
+    return namespace[name]
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
@@ -175,6 +188,7 @@ class Harness:
             "method_name": lambda request: str(request.method).upper(),
             "_transient_client_address": lambda request: (
                 request.headers.get("cf-connecting-ip") or ""),
+            "_client_source_bucket": _entry_function("_client_source_bucket"),
             "_login_locked_until": login_locked_until,
             "_login_record_fail": login_record_fail,
             "_login_clear": login_clear,
@@ -323,6 +337,41 @@ def test_locked_source_gets_429_before_the_password_is_compared():
     response = harness.call(harness.request(
         method="POST", ip="198.51.100.9", body="action=login&username=founder"
         "&password=correct+horse+battery+staple"))
+    assert response.status == 303
+
+
+def test_one_ipv6_64_shares_one_login_budget():
+    harness = Harness()
+    for index in range(10):
+        harness.call(harness.request(
+            method="POST", ip="2001:db8:7:8::%x" % (index + 1),
+            body="action=login&username=founder&password=nope"))
+    response = harness.call(harness.request(
+        method="POST", ip="2001:db8:7:8:abcd::1", body="action=login"
+        "&username=founder&password=correct+horse+battery+staple"))
+    assert response.status == 429
+    response = harness.call(harness.request(
+        method="POST", ip="2001:db8:7:9::1", body="action=login"
+        "&username=founder&password=correct+horse+battery+staple"))
+    assert response.status == 303
+
+
+def test_the_shared_credential_has_a_global_failure_cap():
+    harness = Harness()
+    cap = harness.module.PRODUCT_ANALYSIS_GLOBAL_MAX_FAILS
+    for index in range(cap):
+        harness.call(harness.request(
+            method="POST", ip="198.18.%d.%d" % (index // 200, index % 200 + 1),
+            body="action=login&username=founder&password=nope"))
+    response = harness.call(harness.request(
+        method="POST", ip="203.0.113.99", body="action=login"
+        "&username=founder&password=correct+horse+battery+staple"))
+    assert response.status == 429
+    assert "Too many failed attempts" in response.body
+    harness.clock["now"] += harness.module.PRODUCT_ANALYSIS_GLOBAL_WINDOW_MS
+    response = harness.call(harness.request(
+        method="POST", ip="203.0.113.99", body="action=login"
+        "&username=founder&password=correct+horse+battery+staple"))
     assert response.status == 303
 
 

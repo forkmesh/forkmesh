@@ -161,6 +161,42 @@ async def sync(env, org_bi, org, create=True):
     return mapped
 
 
+async def dissolve(env, org_bi):
+    mapped = await _mapped(env, org_bi)
+    for channel_id in mapped.values():
+        before = await d1_first(
+            env, "SELECT key_version FROM chat_channels WHERE channel_id=?",
+            channel_id)
+        rows = await d1_all(
+            env, "SELECT data FROM chat_channel_members WHERE channel_id=?",
+            channel_id)
+        for table in ("chat_channel_webhooks", "chat_channel_invites",
+                      "chat_channel_members", "chat_channel_reads"):
+            await d1_run(
+                env, "DELETE FROM %s WHERE channel_id=?" % table, channel_id)
+        await d1_run(
+            env, "DELETE FROM chat_channels WHERE channel_id=? "
+            "AND created_by_bi=?", channel_id, org_bi)
+        version = int((before or {}).get("key_version") or 1)
+        for revoke in (_revoke_chat_channel_room,
+                       _revoke_office_channel_room):
+            try:
+                await revoke(env, channel_id, version)
+            except Exception:
+                pass
+        for row in rows or []:
+            record = await decrypt_row(env, row.get("data")) or {}
+            name = str(record.get("username") or "")
+            if name:
+                try:
+                    await notify_account_event(env, name, "private-channels")
+                except Exception:
+                    pass
+    await d1_run(
+        env, "DELETE FROM org_office_channels WHERE org_bi=?", org_bi)
+    return len(mapped)
+
+
 async def rooms_for(env, org_bi, account_bi, mapped):
     if not mapped:
         return {}

@@ -56,16 +56,21 @@ can log in as `build` on the Mac.
 
 - The source lives in one fixed folder, `~/ci/tree`, because Xcode keys
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
-  of `native/ios/`, `codemagic.yaml`, `conformance/`, and the files outside
-  them that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, the vault, people and secure-drive fixtures under
+  of `native/ios/`, `codemagic.yaml`, `conformance/`, the changelog the build
+  bundles (`changelog/` and `tools/changelog.py`, which
+  `native/ios/tools/changelog_stamp.py` loads), and the files outside them
+  that the ForkMeshCore tests read (`app/src/apns.py`,
+  `app/src/app_runtime.py`, the browser call-segmentation models in
+  `app/public/assets/call-segmentation/` that `CallSegmentTests` compares
+  against the bundled ones, the vault, people and secure-drive fixtures under
   `marketplace/packages/*/tests/fixtures/`, and the two performance playbooks
   `docs/native/PERFORMANCE_CHECKS.md` and
   `docs/marketplace/video-mix-dj-studio-performance.md`).
 - `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
   `tools/test_mac_adhoc_deploy.py` finds those files itself: in every test file
-  that builds the repository root from `#filePath` (or calls a helper defined
-  in one), each string literal or `Type.constant` from `Sources/` passed as a
+  that builds the repository root from `#filePath` (or calls a `func` defined
+  in one; a local `let map` there once made every `.map(` call count, and
+  flagged `DiffImagesTests`, which only names `office/public/logo.svg`), each string literal or `Type.constant` from `Sources/` passed as a
   call's first argument that names an existing repository path with a `/` in
   it. Each must be covered by `MAC_IOS_FETCH_SCRIPT` in
   `tools/forkmesh-release-host.py`, so a new test that reads a file outside
@@ -77,6 +82,19 @@ can log in as `build` on the Mac.
   hand and missed it; `DjVitalsTests` (the DJ studio playbook) would have
   failed the next build the same way, and `SecureDriveInteropTests` skipped
   silently without its fixtures.
+- The 2026-10-21 19:53 ad hoc build of `9edbec22155b` failed in "Bundle the
+  changelog": the one-changelog change made `changelog_stamp.py` load
+  `tools/changelog.py` and read `changelog/changelog.json`, neither of which
+  the sparse checkout held. `test_the_mac_checkout_holds_every_file_the_build_steps_read`
+  now finds every `ROOT / "..."` path (with `ROOT` the repository root) in the
+  `native/ios/tools/*.py` scripts `codemagic.yaml` runs and checks
+  `MAC_IOS_FETCH_SCRIPT` covers it.
+- The 2026-10-28 App Store build of `d55f97daed95` (iOS 1.5.0) failed in "Test
+  ForkMeshCore": the `FMCodeInsight` tests find `native/fixtures/insight/` by
+  walking up from their own `#filePath`, which the guard test neither matched
+  (it looked for `#file`) nor resolved (it only tried paths from the repository
+  root). It now follows walk-up lookups from the test's folder, and the sparse
+  checkout holds `/native/fixtures/`.
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
   20 s apart) because a core may advertise a commit before it holds every blob,
@@ -416,32 +434,26 @@ systemctl --user daemon-reload && systemctl --user enable --now forkmesh-mac-adh
 
 ## What's new changelog
 
-Every ad hoc build bundles a plain-language changelog that the app shows from
-the version row of the You hub ([NAVIGATION.md](NAVIGATION.md)).
+Every build bundles the ForkMesh changelog, `changelog/changelog.json`, the
+same file forkmesh.com/changelog shows ([../changelog.md](../changelog.md)).
+The app shows it from the version row of the You hub
+([NAVIGATION.md](NAVIGATION.md)).
 
-- **Generator.** `tools/mobile_changelog.py` (tests
-  `tools/test_mobile_changelog.py`) reads the previous builds from
-  `state/mac-adhoc/published.json`, then `git log --no-merges` from the previous
-  build's commit (or its start time when the commit is gone). It drops merges,
-  docs, tests, chores, code-name subjects and other-platform commits, groups by
-  area (Market, Calls, Projects, Chat, Agents, World, Settings, iPhone,
-  Android, Desktop, Server, Other improvements), uses past tense, caps lines at
-  140 characters, 8 per section and 24 per build, and dedupes. No network or
-  model calls.
-- **Hand-written notes.** `native/changelog/notes.json`, per platform and
-  build number; a note for build N applies to the first published build
-  numbered N or later. `"replace": true` replaces the generated lines.
-- **Wiring.** The shortcut (`mac_adhoc_deploy.write_changelog`) and the Actions
-  workflow write `steps/changelog.json` on the desktop (the Mac's checkout has
-  no history). `mac_adhoc_build.sh` exports `FORKMESH_CHANGELOG_DRAFT`; the
-  step "Bundle the changelog" runs `native/ios/tools/changelog_stamp.py` with
-  the picked build number and writes `ForkMesh/Resources/Changelog.json`.
-  Without a draft the build ships with no notes; a failed draft never stops a
-  build.
+- **iOS.** The step "Bundle the changelog" runs
+  `native/ios/tools/changelog_stamp.py`, which exports the file from the
+  build's own checkout (`tools/changelog.py export --platform ios`) into
+  `ForkMesh/Resources/Changelog.json`. A missing or broken file ships no
+  notes and never stops a build.
 - **Android.** `-Pforkmesh.changelog=<file>` bundles the file as the
   `changelog.json` asset (`bundleChangelog`); otherwise the empty placeholder
   `app/src/changelog/changelog.json` ships. The release host's APK build
-  generates it from the previous `v*` tag.
+  passes `tools/changelog.py export --platform android`.
+
+Until 2026-10-21 the shortcut (`mac_adhoc_deploy.write_changelog`) generated
+each ad hoc build's notes from `git log` since the previous build in
+`state/mac-adhoc/published.json` and sent them to the Mac as
+`steps/changelog.json`; that history now lives in the shared file, and the
+generator only drafts lines (`tools/changelog.py draft`).
 
 ## Swift rules the Mac archive enforces
 
@@ -457,6 +469,16 @@ compile. Keep to these:
   `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
   `any Tip` ternary; it now builds in `pressable`, `described`, `tipped` and
   `body`, with the hint as a plain computed property.
+- Inside a long modifier chain, a plain type error is often reported only as
+  "unable to type-check this expression in reasonable time". Never give a
+  `body` local the name of a property its closures use: the 2026-10-22 ad hoc
+  build of `e4d1620af4e6` failed on `ChatChannelSidebar.body`, where
+  `let groups: [MemberGroup]` (added in `fe664f0c09`) hid the
+  `@State groups: ChannelGroupsStore?` that the group alerts call
+  `groups?.update` on. The local is now `memberGroups`, and the body is split
+  into `list`, `peopleSheets`, `channelSheets`, `alerts` and `dialogs`, with
+  typed `movingKey` and `shown(_:)` bindings instead of inline
+  `Binding(get:set:)` closures.
 - Pass `popoverTip` a concrete tip type, never `any Tip`: an existential picks
   the iOS 26 overload (`popoverTip(_:isPresented:attachmentAnchor:arrowEdge:action:)`)
   and the archive fails on availability. To choose between tips, branch in a

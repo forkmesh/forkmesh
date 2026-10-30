@@ -6,12 +6,15 @@ import re
 
 
 CHANNEL_BODY_MAX_BYTES = 64 * 1024
-MAX_CHAT_CHANNELS = 100
+MAX_CHAT_CHANNELS_PER_CREATOR = 20
+CHANNEL_CREATE_WINDOW_MS = 60 * 60 * 1000
+CHANNEL_CREATE_MAX_PER_WINDOW = 5
 MAX_CHANNEL_MEMBERS = 500
 MAX_CHANNEL_TOPIC_LENGTH = 200
 MAX_CHANNEL_WEBHOOKS = 10
 MAX_WEBHOOK_NAME_LENGTH = 80
 MAX_WEBHOOK_TEXT_LENGTH = 8000
+WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS = 10 * 60 * 1000
 CHANNEL_NAME_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")
 # Everything a channel manager may PATCH from the settings panel. Each one is
@@ -24,6 +27,9 @@ MEMBERS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/members/?$")
 ROOM_ACCESS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/room-access/?$")
+CALL_ENGINE_FMM = "fmm"
+CALL_TICKET_RE = re.compile(
+    r"^/api/chat/channels/([0-9a-f]{32})/call-ticket/?$")
 HISTORY_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/history/?$")
 PENDING_RE = re.compile(
@@ -33,12 +39,16 @@ WEBHOOKS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/?$")
 WEBHOOK_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/([0-9a-f]{32})/?$")
-WEBHOOK_DELIVERY_RE = re.compile(
+WEBHOOK_DELIVERY_RE = re.compile(r"^/api/chat/webhooks/?$")
+WEBHOOK_PATH_TOKEN_RE = re.compile(
     r"^/api/chat/webhooks/([0-9a-f]{64})/?$")
+TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
+WEBHOOK_TOKEN_HEADER = "x-forkmesh-webhook-token"
 INVITE_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/invite/?$")
 INVITE_TOKEN_RE = re.compile(
     r"^/api/chat/invites/([0-9a-f]{64})/?$")
+INVITE_ACTION_RE = re.compile(r"^/api/chat/invites/(preview|accept)/?$")
 HISTORY_MAX_MESSAGES = 200
 NOTICES_KIND = "notices"
 OFFICE_KIND = "office"
@@ -232,6 +242,13 @@ async def _mark_read(runtime, channel_id, account_bi):
         pass
 
 
+async def _channel_name_bi(runtime, name, visibility, creator_bi):
+    if visibility == "private":
+        return await runtime.blind(
+            "chat-channel-private-name:" + str(creator_bi or "") + ":" + name)
+    return await runtime.blind("chat-channel-name:" + name)
+
+
 async def _create_channel(runtime, account_bi, actor, data):
     name = str((data or {}).get("name") or "").strip().lower()
     if not CHANNEL_NAME_RE.fullmatch(name):
@@ -272,19 +289,24 @@ async def _create_channel(runtime, account_bi, actor, data):
             continue
         initial_members.append((member_bi, canonical))
 
-    name_bi = await runtime.blind("chat-channel-name:" + name)
+    name_bi = await _channel_name_bi(runtime, name, visibility, account_bi)
     existing = await runtime.d1_first(
         "SELECT 1 AS one FROM chat_channels WHERE name_bi=?", name_bi)
     if existing:
         return _response(
             runtime, {"error": "channel_name_taken"}, status=409)
-    count = await runtime.d1_first(
-        "SELECT COUNT(*) AS n FROM chat_channels WHERE channel_id NOT IN "
-        "(SELECT channel_id FROM org_office_channels) "
-        "AND channel_id NOT IN (?,?,?)", *EVERYONE_IDS)
-    if int((count or {}).get("n") or 0) >= MAX_CHAT_CHANNELS:
+    recent = await runtime.channel_creations_since(
+        actor, runtime.now() - CHANNEL_CREATE_WINDOW_MS)
+    if int(recent or 0) >= CHANNEL_CREATE_MAX_PER_WINDOW:
         return _response(
-            runtime, {"error": "too_many_channels"}, status=429)
+            runtime, {"error": "too_many_new_channels"}, status=429)
+    own = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM chat_channels WHERE created_by_bi=? "
+        "AND channel_id NOT IN (SELECT channel_id FROM org_office_channels) "
+        "AND channel_id NOT IN (?,?,?)", account_bi, *EVERYONE_IDS)
+    if int((own or {}).get("n") or 0) >= MAX_CHAT_CHANNELS_PER_CREATOR:
+        return _response(
+            runtime, {"error": "too_many_own_channels"}, status=429)
 
     now = runtime.now()
     channel_id = runtime.new_id()
@@ -388,19 +410,12 @@ async def _update_channel(runtime, actor, channel_id, data, row=None,
             if name in EVERYONE_NAMES:
                 return _response(
                     runtime, {"error": "channel_name_taken"}, status=409)
-            name_bi = await runtime.blind("chat-channel-name:" + name)
-            taken = await runtime.d1_first(
-                "SELECT channel_id FROM chat_channels WHERE name_bi=?",
-                name_bi,
-            )
-            if taken and str(taken.get("channel_id") or "") != channel_id:
-                return _response(
-                    runtime, {"error": "channel_name_taken"}, status=409)
             record["name"] = name
             changes.append(
                 ("chat.channel.rename", "channel_manager_renamed_channel"))
 
     rotate = False
+    moved_scope = False
     if "visibility" in payload:
         visibility = str(payload.get("visibility") or "").strip().lower()
         if visibility not in {"private", "public"}:
@@ -410,11 +425,25 @@ async def _update_channel(runtime, actor, channel_id, data, row=None,
             # Closing an open channel has to lock out everyone who already
             # holds its passphrase, exactly as removing a member does.
             rotate = visibility == "private"
+            moved_scope = True
             record["visibility"] = visibility
             changes.append((
                 "chat.channel.visibility.update",
                 "channel_manager_changed_visibility",
             ))
+
+    if changes and (moved_scope or any(
+            action == "chat.channel.rename" for action, _ in changes)):
+        name_bi = await _channel_name_bi(
+            runtime, str(record.get("name") or ""), _visibility(record),
+            str(row.get("created_by_bi") or ""))
+        taken = await runtime.d1_first(
+            "SELECT channel_id FROM chat_channels WHERE name_bi=?",
+            name_bi,
+        )
+        if taken and str(taken.get("channel_id") or "") != channel_id:
+            return _response(
+                runtime, {"error": "channel_name_taken"}, status=409)
 
     if "topic" in payload:
         raw_topic = payload.get("topic")
@@ -947,6 +976,17 @@ def _webhook_text(data):
     return value.strip()[:MAX_WEBHOOK_TEXT_LENGTH]
 
 
+def _webhook_request_token(runtime):
+    token = ""
+    header = getattr(runtime, "header", None)
+    if callable(header):
+        token = str(header(WEBHOOK_TOKEN_HEADER) or "")
+    if not token:
+        token = str(runtime.query_params().get("token") or "")
+    token = token.strip().lower()
+    return token if TOKEN_RE.fullmatch(token) else ""
+
+
 async def _deliver_webhook(runtime, token, data):
     token_bi = await runtime.blind("chat-webhook-token:" + token)
     row = await runtime.d1_first(
@@ -963,9 +1003,8 @@ async def _deliver_webhook(runtime, token, data):
         channel = await runtime.open(row.get("channel_data"))
     except Exception:
         return _response(runtime, {"error": "not_found"}, status=404)
-    if _visibility(channel) != "public":
-        return _response(
-            runtime, {"error": "public_channel_required"}, status=409)
+    if _is_notices(channel) or _is_office(channel):
+        return _response(runtime, {"error": "not_found"}, status=404)
     text = _webhook_text(data)
     if not text:
         return _response(runtime, {"error": "empty_webhook"}, status=400)
@@ -983,15 +1022,30 @@ async def _deliver_webhook(runtime, token, data):
         "channel": "#" + str((channel or {}).get("name") or "channel"),
         "text": text,
         "webhook": True,
+        "serverVisible": True,
     }
     await runtime.deliver_webhook(
         channel_id, int(row.get("key_version") or 1), plain)
+    notify_public = False
     try:
-        await runtime.d1_run(
-            "UPDATE chat_channel_webhooks SET last_used_at=? WHERE webhook_id=?",
+        notify_public = bool(await runtime.d1_first(
+            "UPDATE chat_channel_webhooks SET last_used_at=? "
+            "WHERE webhook_id=? AND NOT EXISTS ("
+            "SELECT 1 FROM chat_channel_webhooks "
+            "WHERE channel_id=? AND last_used_at>?) "
+            "RETURNING webhook_id",
             now,
             webhook_id,
-        )
+            channel_id,
+            now - WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS,
+        ))
+        if not notify_public:
+            await runtime.d1_run(
+                "UPDATE chat_channel_webhooks SET last_used_at=? "
+                "WHERE webhook_id=?",
+                now,
+                webhook_id,
+            )
     except Exception:
         # The encrypted room write is already durable. Do not make the sender
         # retry (and duplicate a live delivery) for display-only metadata.
@@ -1012,8 +1066,9 @@ async def _deliver_webhook(runtime, token, data):
                 username = member["username"]
                 if username and username not in recipients:
                     recipients.append(username)
-        else:
-            for username in await runtime.public_webhook_recipients():
+        elif notify_public:
+            for username in await runtime.public_webhook_recipients(
+                    channel_id):
                 if username and username not in recipients:
                     recipients.append(username)
         for recipient in recipients:
@@ -1140,6 +1195,33 @@ async def _room_access(runtime, account_bi, actor, channel_id, is_admin):
     payload = dict(access or {})
     payload["channel"] = _channel_payload(row, record, can_manage)
     return _response(runtime, payload)
+
+
+def _call_engines(data):
+    engines = (data or {}).get("engines") if isinstance(data, dict) else None
+    if not isinstance(engines, list):
+        return set()
+    return {str(e) for e in engines[:8] if isinstance(e, str)}
+
+
+async def _call_ticket(runtime, account_bi, channel_id, is_admin, data=None):
+    row, record = await _readable_channel(
+        runtime, account_bi, channel_id, is_admin)
+    if not row:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    if _visibility(record) == "public" or _is_notices(record):
+        return _response(
+            runtime, {"error": "private_channel_required"}, status=409)
+    key_version = int(row.get("key_version") or 1)
+    ticket = await runtime.call_ticket(channel_id, account_bi, key_version)
+    if not ticket:
+        return _response(
+            runtime, {"error": "calls_unavailable"}, status=503)
+    if CALL_ENGINE_FMM in _call_engines(data):
+        media = await runtime.call_fm_media(channel_id, account_bi, ticket)
+        if media:
+            ticket["fmm"] = media
+    return _response(runtime, ticket)
 
 
 def _invite_payload(runtime, row, record):
@@ -1315,17 +1397,23 @@ async def handle(runtime, path):
     channel = CHANNEL_RE.fullmatch(normalized_path)
     members = MEMBERS_RE.fullmatch(normalized_path)
     room_access = ROOM_ACCESS_RE.fullmatch(normalized_path)
+    call_ticket = CALL_TICKET_RE.fullmatch(normalized_path)
     history = HISTORY_RE.fullmatch(normalized_path)
     pending = PENDING_RE.fullmatch(normalized_path)
     webhooks = WEBHOOKS_RE.fullmatch(normalized_path)
     webhook = WEBHOOK_RE.fullmatch(normalized_path)
     delivery = WEBHOOK_DELIVERY_RE.fullmatch(normalized_path)
     invite = INVITE_RE.fullmatch(normalized_path)
-    invite_token = INVITE_TOKEN_RE.fullmatch(normalized_path)
+    invite_action = INVITE_ACTION_RE.fullmatch(normalized_path)
+    if (
+        WEBHOOK_PATH_TOKEN_RE.fullmatch(normalized_path)
+        or INVITE_TOKEN_RE.fullmatch(normalized_path)
+    ):
+        return _response(runtime, {"error": "token_path_retired"}, status=410)
     if not (
         collection or channel or members or room_access or history
         or pending or webhooks or webhook or delivery or invite
-        or invite_token
+        or invite_action or call_ticket
     ):
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
@@ -1346,7 +1434,10 @@ async def handle(runtime, path):
                 status=405,
                 allow="POST",
             )
-        return await _deliver_webhook(runtime, delivery.group(1), data)
+        token = _webhook_request_token(runtime)
+        if not token:
+            return _response(runtime, {"error": "not_found"}, status=404)
+        return await _deliver_webhook(runtime, token, data)
 
     account_bi, account = await runtime.session(data)
     actor = str((account or {}).get("name") or "").strip().lower()
@@ -1360,19 +1451,23 @@ async def handle(runtime, path):
     if collection and method == "POST":
         return await _create_channel(runtime, account_bi, actor, data)
 
-    if invite_token:
-        if method == "GET":
+    if invite_action:
+        if method != "POST":
+            return _response(
+                runtime,
+                {"error": "method_not_allowed"},
+                status=405,
+                allow="POST",
+            )
+        token = str((data or {}).get("token") or "").strip().lower()
+        if not TOKEN_RE.fullmatch(token):
+            return _response(
+                runtime, {"error": "invite_not_found"}, status=404)
+        if invite_action.group(1) == "preview":
             return await _invite_preview(
-                runtime, account_bi, invite_token.group(1), is_admin)
-        if method == "POST":
-            return await _accept_invite(
-                runtime, account_bi, actor, invite_token.group(1), is_admin)
-        return _response(
-            runtime,
-            {"error": "method_not_allowed"},
-            status=405,
-            allow="GET, POST",
-        )
+                runtime, account_bi, token, is_admin)
+        return await _accept_invite(
+            runtime, account_bi, actor, token, is_admin)
 
     if channel and method in {"PATCH", "DELETE"}:
         channel_id = channel.group(1)
@@ -1394,7 +1489,7 @@ async def handle(runtime, path):
 
     matched_resource = (
         members or room_access or history or pending or webhooks or webhook
-        or invite)
+        or invite or call_ticket)
     if channel:
         return _response(
             runtime,
@@ -1428,6 +1523,17 @@ async def handle(runtime, path):
                 runtime, account_bi, actor, channel_id, data)
         return await _remove_member(runtime, actor, channel_id, data)
 
+    if call_ticket:
+        if method != "POST":
+            return _response(
+                runtime,
+                {"error": "method_not_allowed"},
+                status=405,
+                allow="POST",
+            )
+        return await _call_ticket(
+            runtime, account_bi, channel_id, is_admin, data)
+
     if webhooks and method in {"GET", "POST"}:
         _row, record, denied = await _require_manager(
             runtime,
@@ -1442,9 +1548,6 @@ async def handle(runtime, path):
             return denied
         if method == "GET":
             return await _list_webhooks(runtime, channel_id)
-        if _visibility(record) != "public":
-            return _response(
-                runtime, {"error": "public_channel_required"}, status=409)
         return await _create_webhook(
             runtime, account_bi, actor, channel_id, data)
 
@@ -1462,9 +1565,6 @@ async def handle(runtime, path):
         if denied is not None:
             return denied
         if method == "POST":
-            if _visibility(record) != "public":
-                return _response(
-                    runtime, {"error": "public_channel_required"}, status=409)
             return await _rotate_webhook(
                 runtime, actor, channel_id, webhook_id)
         return await _delete_webhook(

@@ -129,9 +129,12 @@ public:
         qint64 lastSeenMs = 0;
         QString approval;
         qint64 accountCheckedMs = 0;
+        bool userConfirmed = false;
     };
 
     enum class AccountCheck { Owned, NotOwned, Unreachable };
+
+    static bool userVerified(const Device &device);
 
     // `signer` returns the base64url Ed25519 signature of this desktop's
     // identity key (publicKey) over the given bytes.
@@ -257,6 +260,7 @@ private:
         QByteArray relayPending;
         qint64 lastHeardMs = 0;
         qint64 accountCheckedMs = 0;
+        qint64 pendingSinceMs = 0;
         bool accountCheckInFlight = false;
         bool relayed() const { return !relaySession.isEmpty(); }
     };
@@ -275,10 +279,13 @@ private:
     void handleFrame(Connection &conn, const QByteArray &payload);
     void handleAuth(Connection &conn, const QByteArray &payload);
     void requestPairing(Connection &conn);
+    void expirePairing(int connectionId);
     void pairDevice(Connection &conn, const QString &approval);
     void admitStored(Connection &conn);
     bool needsAccountCheck(const Connection &conn) const;
     bool admitsBeforeCheck(const Connection &conn) const;
+    bool claimsUnconfirmedUser(const Connection &conn) const;
+    void confirmClaimedUser(Connection &conn);
     void settleAccountCheck(Connection &conn, AccountCheck verdict);
     void refuseRelayed(Connection &conn, const QString &reason);
     void recheckAccount(int connectionId);

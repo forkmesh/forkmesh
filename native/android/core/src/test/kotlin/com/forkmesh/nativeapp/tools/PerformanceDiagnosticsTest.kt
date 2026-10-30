@@ -65,6 +65,27 @@ class PerformanceDiagnosticsTest {
         expect(clean.contains("2026-10-13 19:20:15 took 420 ms"))
     }
 
+    fun testScrubsConversationAndRoomNames() {
+        val raw = """
+            relay.send.edit {"type":"edit","conversation":"#layoffs-plan","to":"node-9"}
+            stall conversation=#layoffs-plan room=secret-room channel=@pat took 300 ms
+        """.trimIndent()
+        val clean = DiagnosticsBundle.scrub(raw)
+        for (leaked in listOf("layoffs-plan", "secret-room", "@pat", "node-9")) expect(!clean.contains(leaked), leaked)
+        expect(clean.contains("took 300 ms"))
+    }
+
+    fun testThePerformanceReportIsScrubbed() {
+        val report = DiagnosticsBundle.report(
+            listOf("screen" to "chat conversation=#layoffs-plan", "note" to "token=abc123def from pat@example.com"),
+            null,
+            emptyList(),
+            emptyList(),
+            now,
+        )
+        for (leaked in listOf("layoffs-plan", "abc123def", "pat@example.com")) expect(!report.contains(leaked), leaked)
+    }
+
     fun testReportAndPromptLeaveLogsOutWhenAsked() {
         val log = AppLog(now = { now })
         log.add(LogCategory.entries.first(), "secret line")
@@ -80,6 +101,27 @@ class PerformanceDiagnosticsTest {
         expect(DiagnosticsBundle.prompt("", report, includeLogs = true).contains("secret line"))
         val long = DiagnosticsBundle.prompt("x", "line\n".repeat(5000), includeLogs = true)
         expect(long.length <= DiagnosticsBundle.MAX_PROMPT_CHARS && long.endsWith("[cut to fit the prompt]"))
+    }
+
+    fun testStallsAreGroupedByNameAndByTheScreenThatWasShowing() {
+        val utc = java.time.ZoneOffset.UTC
+        val noon = java.time.LocalDateTime.of(2026, 10, 17, 12, 0, 0).toInstant(utc).toEpochMilli()
+        val events = listOf(
+            PerformanceEvent(PerformanceEventKind.Frame, "frame", 354_000, noon + 30_000, mapOf("screen" to "Inbox > Shortcuts")),
+            PerformanceEvent(PerformanceEventKind.EventLoop, "ui-isolate blocked", 324_000, noon + 30_000, mapOf("screen" to "Inbox > Shortcuts")),
+            PerformanceEvent(PerformanceEventKind.Operation, "api.GET /api/tasks", 2_000_000, noon + 10_000),
+            PerformanceEvent(PerformanceEventKind.EventLoop, "ui-isolate blocked", 250_000, noon),
+        )
+        val report = DiagnosticsBundle.report(emptyList(), null, events, emptyList(), noon + 60_000, utc)
+        expect(
+            report.contains(
+                "## Stalls by screen\n2x     total 678ms max 354ms last 12:00:30 Inbox > Shortcuts\n" +
+                    "1x     total 250ms max 250ms last 12:00:00 not recorded\n",
+            ),
+            report,
+        )
+        expect(report.contains("## Stalls by name\n2x     total 574ms max 324ms last 12:00:30 eventLoop ui-isolate blocked\n1x     total 354ms max 354ms last 12:00:30 frame\n"), report)
+        expect(report.contains("## Slow operations by name\n1x     total 2000ms max 2000ms operation api.GET /api/tasks\n"), report)
     }
 }
 
@@ -100,12 +142,28 @@ class AppChangelogTest {
         assertEq(0, AppChangelog.parse("not json").entries.size)
     }
 
-    fun testTheRunningBuildComesFirst() {
+    fun testTheBundledChangelogIsShownAsItIs() {
         assertEq(listOf("10401", "10400"), AppChangelog.load(sample, "1.4.1", "10401").entries.map { it.build })
-        val newer = AppChangelog.load(sample, "1.4.2", "10402")
-        assertEq(listOf("10402", "10401", "10400"), newer.entries.map { it.build })
-        expect(newer.entries[0].sections.isEmpty())
+        assertEq(listOf("10401", "10400"), AppChangelog.load(sample, "1.4.2", "10402").entries.map { it.build })
         assertEq(listOf(AppChangelog.Entry("1.4.1", "10401")), AppChangelog.load("""{"entries": []}""", "1.4.1", "10401").entries)
+    }
+
+    fun testSharedEntriesUseTheirTitleOrDate() {
+        val shared = """
+            {"schema": 1, "entries": [
+              {"version": "", "build": "", "date": "2026-10-21", "title": "", "pitch": "",
+               "sections": [{"title": "Chat", "items": ["Stick stickers on messages."]}]},
+              {"version": "0.7.0", "build": "", "date": "2026-07", "title": "The Living Code City",
+               "pitch": "A shared world.", "sections": [{"title": "Highlights", "items": ["Everyone enters the World."]}]}
+            ]}
+        """.trimIndent()
+        val log = AppChangelog.load(shared, "1.4.1", "303")
+        assertEq(2, log.entries.size)
+        assertEq("October 21, 2026", log.entries[0].formattedDate(Locale.US))
+        assertEq("", log.entries[0].detail(Locale.US))
+        assertEq("The Living Code City", log.entries[1].heading)
+        assertEq("A shared world.", log.entries[1].pitch)
+        assertEq("Version 0.7.0 · July 2026", log.entries[1].detail(Locale.US))
     }
 
     fun testLabelsAndDates() {

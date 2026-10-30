@@ -121,6 +121,7 @@ optional_secrets = [
   "AUTOSCALE_IDS_SUBMASTER",
   "AUTOSCALE_CERTSYNC_SECRET",
   "OFFICE_TURN_SECRET",
+  "FORKMESH_CALLS_SECRET",
 ]
 
 [production]
@@ -133,6 +134,7 @@ API_ORIGIN = "https://app.forkmesh.com"
 APP_ORIGIN = "https://app.forkmesh.com"
 WWW_ORIGIN = "https://forkmesh.com"
 WORLD_ORIGIN = "https://world.forkmesh.com"
+WORLD_MESH_HEX_SLOTS = "0"
 CORS_ALLOWED_ORIGINS = "https://forkmesh.com,https://www.forkmesh.com,https://app.forkmesh.com,https://world.forkmesh.com"
 DISCORD_OAUTH_REDIRECT_URI = "https://app.forkmesh.com/api/integrations/discord/callback"
 DISCORD_BUGS_GUILD_ID = "1531610390574665809"
@@ -153,6 +155,15 @@ relay_min_port = 49160
 relay_max_port = 49999
 user_quota = 12
 total_quota = 1200
+
+[calls]
+enabled = true
+udp_port = 3479
+http_port = 7881
+# FM Media (QUIC and WebTransport) beside the WebRTC SFU; off until clients
+# exist (docs/deploy/calls.md "FM Media").
+fmm = false
+fmm_port = 4433
 
 [dns]
 # Leaderless DNS health on the core nodes (app/host/forkmesh_host/
@@ -187,10 +198,14 @@ operator_public_key = "qUPEQcNjLAkc3B0ET_fpiA9pCI73F210j63I9kOynsU"
 # Per-detector severity overrides ("info" | "alert" | "lockdown"), e.g.
 # listener_unexpected = "lockdown". Defaults: docs/IDS.md.
 severity = {}
-# Direct mail from the IDS itself (works when every app is sealed or down):
-# loads FMNEXT_IDS_MAIL_TOKEN (a Mailtrap sending token) and
-# FMNEXT_IDS_ALERT_EMAIL (the recipient) from secrets.env as credentials.
-direct_mail = false
+# Direct mail from the IDS itself for lockdown, test and unrecorded
+# incidents (works when every app is sealed or down): it submits to the
+# node's own Postfix on 127.0.0.1:25 (relay and Mailtrap fallback apply); in
+# a lockdown, whose firewall stops Postfix sending, it posts to the Mailtrap
+# API as root with the fallback relay's token from /etc/postfix/sasl_passwd.
+# No extra secret. mail_from empty: founders@forkmesh.com. docs/IDS.md.
+direct_mail = true
+mail_to = "security@forkmesh.com"
 mail_from = ""
 # Optional signed webhook to the operator desktop (https only).
 webhook_url = ""
@@ -216,16 +231,7 @@ reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCr
 access_log = true
 
 [hosted]
-retired_cores = ["n1"]
-
-[[nodes]]
-name = "n2"
-role = "core"
-label = "fmnext-core-2"
-instance_id = "9485844e-e8a2-4760-bfd9-497ed4a7b7f6"
-wg_ip = "10.77.0.2"
-wg_pubkey = "ju2Pcr0WX/MOpn7qdHmy1Af91HaBakjxx92ovt8GmWI="
-rqlite_id = "n2"
+retired_cores = ["n1", "n2"]
 
 [[nodes]]
 name = "n3"
@@ -235,6 +241,7 @@ instance_id = "840f8e63-9050-4c36-b8c4-b9e1db2bd142"
 wg_ip = "10.77.0.3"
 wg_pubkey = "Ab8pL/fq7/2LiPVGedKusFdi7rr9aki9vFTT2zU+ax0="
 rqlite_id = "n3"
+mail_relay = "n4"
 
 [[nodes]]
 name = "n4"
@@ -244,6 +251,16 @@ instance_id = "d493c0e6-aaff-4259-a996-5eee9fbb887c"
 wg_ip = "10.77.0.4"
 wg_pubkey = "5+V9EYpw2A7JjF/5tQeX2o2cDHiiBgCHyu00dlXw73U="
 rqlite_id = "n4"
+
+[[nodes]]
+name = "n5"
+role = "core"
+label = "fmnext-core-5"
+instance_id = "1963e65c-46bf-4f1a-bf87-b19f92d50c6c"
+wg_ip = "10.77.0.5"
+wg_pubkey = "nUtPbbiGai9xczJDKg1u9h13tUjlLFye/koaLwShWWY="
+rqlite_id = "n5"
+mail_relay = "n4"
 
 [[runners]]
 name = "r1"

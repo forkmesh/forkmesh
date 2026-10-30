@@ -33,7 +33,11 @@ function text(value, limit = 160) {
 }
 
 function escapeHTML(value, limit = 500) {
-  return text(value, limit)
+  return escapeHTMLRun(text(value, limit));
+}
+
+function escapeHTMLRun(value) {
+  return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -44,8 +48,29 @@ function escapeHTML(value, limit = 500) {
 // The same handle shape the relay pings on, so what is highlighted here is
 // exactly what gets a notification. An email address is never a mention.
 const TASK_MENTION_RE = /(^|[^A-Za-z0-9._%+-])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)/gi;
+const TASK_ACCOUNT_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const TASK_BOT_NAMES = new Set(["forkbot", "agent", "claude", "codex"]);
 
-function mentionHTML(value, limit = 2000, viewer = "") {
+export function officeTaskProfileUrl(name) {
+  const handle = String(name || "").trim().replace(/^@/, "").toLowerCase();
+  if (!TASK_ACCOUNT_NAME_RE.test(handle) || TASK_BOT_NAMES.has(handle)) return "";
+  const host = String(globalThis.location?.hostname || "").toLowerCase();
+  const origin = ["app.forkmesh.com", "forkmesh.com", "world.forkmesh.com"].includes(host)
+    ? "https://forkmesh.com"
+    : String(globalThis.location?.origin || "");
+  return `${origin}/@${encodeURIComponent(handle)}`;
+}
+
+export function officeTaskProfileHTML(name) {
+  const handle = text(name, 64).replace(/^@/, "");
+  const label = `@${escapeHTML(handle, 64)}`;
+  const url = officeTaskProfileUrl(handle);
+  return url
+    ? `<a class="world-task-profile-link" href="${escapeHTML(url)}">${label}</a>`
+    : label;
+}
+
+export function mentionHTML(value, limit = 2000, viewer = "") {
   const source = text(value, limit);
   let out = "";
   let cursor = 0;
@@ -56,14 +81,18 @@ function mentionHTML(value, limit = 2000, viewer = "") {
     match = TASK_MENTION_RE.exec(source)
   ) {
     const start = match.index + match[1].length;
-    out += escapeHTML(source.slice(cursor, start), limit);
+    out += escapeHTMLRun(source.slice(cursor, start));
     const name = match[2].toLowerCase();
-    out += `<mark class="world-task-mention"${
+    const mark = `<mark class="world-task-mention"${
       viewer && name === viewer ? ' data-self="true"' : ""
     }>@${escapeHTML(name, 64)}</mark>`;
+    const url = officeTaskProfileUrl(name);
+    out += url
+      ? `<a class="world-task-mention-link" href="${escapeHTML(url)}">${mark}</a>`
+      : mark;
     cursor = start + 1 + match[2].length;
   }
-  return out + escapeHTML(source.slice(cursor), limit);
+  return out + escapeHTMLRun(source.slice(cursor));
 }
 
 // Every recorded thing that has happened to one task, keyed by kind so the
@@ -800,7 +829,7 @@ export function createWorldOfficeTasksController({
       <span>Private comments (${task.replyCount}) · newest 50 retained
         ${task.replyCount ? `<button type="button" data-world-office-task-replies="${task.id}">${replies.length ? "Hide comments" : "Load comments"}</button>` : ""}
       </span>
-      ${replies.length ? `<ol>${replies.map((reply) => `<li><strong>@${escapeHTML(text(reply.author, 64))}</strong> ${mentionHTML(reply.body, 2000, actor)}</li>`).join("")}</ol>` : ""}
+      ${replies.length ? `<ol>${replies.map((reply) => `<li><strong>${officeTaskProfileHTML(reply.author)}</strong> ${mentionHTML(reply.body, 2000, actor)}</li>`).join("")}</ol>` : ""}
       <textarea maxlength="2000" rows="2" name="body" placeholder="Comment with context, a decision, or a blocker — type @name to ping…"></textarea>
       <button type="submit" ${busyTaskId === task.id ? "disabled" : ""}>Comment</button>
     </form>`;
@@ -882,6 +911,10 @@ export function createWorldOfficeTasksController({
         : task.assigneeKind === "agent"
           ? "Bot"
           : "Unassigned";
+    const assigneeHTML =
+      task.assigneeKind === "user"
+        ? officeTaskProfileHTML(task.assignee)
+        : escapeHTML(assigneeLabel);
     const checkinState = checkinLabel(task.lastCheckin?.state);
     const qaLabel =
       qaVerdict === "pass"
@@ -968,7 +1001,7 @@ export function createWorldOfficeTasksController({
               canManage && !doneTask && !activeTask
                 ? `<label class="world-task-inline-editor" title="Edit priority">
                     <span class="world-visually-hidden">Priority for ${escapeHTML(task.title)}</span>
-                    P<input type="number" min="1" max="99" value="${task.priority}"
+                    P<input name="world-task-priority" type="number" min="1" max="99" value="${task.priority}"
                       data-world-task-priority="${task.id}" aria-label="Priority for ${escapeHTML(task.title)}" />
                   </label>`
                 : `P${task.priority}`
@@ -979,13 +1012,13 @@ export function createWorldOfficeTasksController({
               canManage && !doneTask && !activeTask
                 ? `<label class="world-task-inline-editor" title="Change assignee">
                     <span class="world-visually-hidden">Assignee for ${escapeHTML(task.title)}</span>
-                    <select data-world-task-assignee="${task.id}" aria-label="Assignee for ${escapeHTML(task.title)}">
+                    <select name="world-task-assignee" data-world-task-assignee="${task.id}" aria-label="Assignee for ${escapeHTML(task.title)}">
                       <option value="agent" ${task.assigneeKind === "agent" ? "selected" : ""}>Bot</option>
                       <option value="unassigned" ${task.assigneeKind === "unassigned" ? "selected" : ""}>Unassigned</option>
                       ${organizationMembers.map((name) => `<option value="user:${escapeHTML(name)}" ${task.assigneeKind === "user" && task.assignee === name ? "selected" : ""}>@${escapeHTML(name)}</option>`).join("")}
                     </select>
                   </label>`
-                : escapeHTML(assigneeLabel)
+                : assigneeHTML
             }
           </span>
           <span class="world-task-cell-agent" role="cell" title="${escapeHTML(agentLabel)}">${escapeHTML(agentLabel)}</span>
@@ -1023,7 +1056,7 @@ export function createWorldOfficeTasksController({
               <span data-tone="${activeTask ? "active" : doneTask ? "done" : "ready"}">
                 ${statusIcon}${statusLabel}
               </span>
-              <span>${escapeHTML(assigneeLabel)}</span>
+              <span>${assigneeHTML}</span>
               <span data-tone="department">${escapeHTML(task.department)}</span>
               ${task.team ? `<span>${escapeHTML(task.team)}</span>` : ""}
               ${task.kind === "bid" ? '<span data-tone="bid">SOL bid</span>' : ""}
@@ -1075,7 +1108,7 @@ export function createWorldOfficeTasksController({
                 <summary>Add completion notes</summary>
                 <label class="world-office-task-completion-editor">
                   <span>What was changed, decided, and verified?</span>
-                  <textarea
+                  <textarea name="world-office-task-completion-note"
                     maxlength="4000"
                     rows="3"
                     data-world-office-task-completion-note="${task.id}"
@@ -1285,20 +1318,20 @@ export function createWorldOfficeTasksController({
                 : ""
             }
             <small>
-              ${escapeHTML(
+              ${
                 bid
-                  ? `${task.bountyRequest.amountSol} SOL bounty requested · bidder @${bidder}`
+                  ? `${escapeHTML(`${task.bountyRequest.amountSol} SOL bounty requested · bidder`)} ${officeTaskProfileHTML(bidder)}`
                   : task.assigneeKind === "user"
-                    ? `@${task.assignee}`
-                    : task.assigneeKind === "unassigned"
-                      ? "Unassigned"
-                      : "Bot",
-              )}
+                    ? officeTaskProfileHTML(task.assignee)
+                    : escapeHTML(
+                        task.assigneeKind === "unassigned" ? "Unassigned" : "Bot",
+                      )
+              }
               · ${escapeHTML(task.department)}
               ${task.team ? ` / ${escapeHTML(task.team)}` : ""}
               ${botTask && task.agentSessionId ? " · queued on a node" : ""}
               ${qaLabel ? ` · ${escapeHTML(qaLabel)}` : ""}
-              ${task.qa.reviewer ? ` by @${escapeHTML(task.qa.reviewer)}` : ""}
+              ${task.qa.reviewer ? ` by ${officeTaskProfileHTML(task.qa.reviewer)}` : ""}
               ${doneTask ? " · done" : ""}
               ${checkinState ? ` · last check-in: ${escapeHTML(checkinState)}` : ""}
             </small>
@@ -1327,7 +1360,7 @@ export function createWorldOfficeTasksController({
               (own || canManage) && !doneTask
                 ? `<label class="world-office-task-completion-editor">
                     <span>What I did to complete this task</span>
-                    <textarea
+                    <textarea name="world-office-task-completion-note"
                       maxlength="4000"
                       rows="3"
                       data-world-office-task-completion-note="${task.id}"
@@ -1838,7 +1871,9 @@ export function createWorldOfficeTasksController({
   async function refresh({ quiet = false, force = false } = {}) {
     if ((!monitoring && !force) || typeof fetchJSON !== "function") return false;
     if (refreshPromise && !force) return refreshPromise;
-    if (!getSession()?.sessionToken) {
+    const session = getSession();
+    const visitor = session?.visitor === true;
+    if (!session?.sessionToken || visitor) {
       tasks = [];
       actor = "";
       canManage = false;
@@ -1849,8 +1884,17 @@ export function createWorldOfficeTasksController({
       proofs = [];
       initiatives = [];
       loading = false;
-      if (!quiet) setStatus("Sign in to access organization marketing tasks.");
-      physicalState("locked", "Organization access required");
+      if (!quiet) {
+        setStatus(
+          visitor
+            ? "This Office's task wall belongs to its own World's members. Visitors can look around."
+            : "Sign in to access organization marketing tasks.",
+        );
+      }
+      physicalState(
+        "locked",
+        visitor ? "Members of this World only" : "Organization access required",
+      );
       render();
       if (!officeActive) stopMonitoring();
       return false;
@@ -2738,7 +2782,7 @@ export function createWorldOfficeTasksController({
   function stopActiveForDeparture() {
     if (!ownActiveTasks().length) return false;
     const sessionToken = String(getSession()?.sessionToken || "");
-    if (!sessionToken) return false;
+    if (!sessionToken || getSession()?.visitor === true) return false;
     // Leaving and re-entering the Office fires this again each time, so a
     // failing stop is backed off rather than re-posted on every departure.
     const key = "POST:/api/tasks/stop-active";

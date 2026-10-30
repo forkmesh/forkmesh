@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.alpha
 import com.forkmesh.nativeapp.market.InstallAllPlan
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,15 +32,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.market.MarketCardAction
-import com.forkmesh.nativeapp.market.MarketFilter
 import com.forkmesh.nativeapp.market.MarketModel
 import com.forkmesh.nativeapp.market.MarketPackage
-import com.forkmesh.nativeapp.market.MarketPlatform
-import com.forkmesh.nativeapp.market.MarketPrice
-import com.forkmesh.nativeapp.market.MarketSort
 import com.forkmesh.nativeapp.market.MarketText
 import com.forkmesh.nativeapp.market.MarketUninstall
-import com.forkmesh.nativeapp.market.PackageInstallMode
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
@@ -76,74 +69,6 @@ internal fun MarketInstallAll(plan: InstallAllPlan, busy: Boolean, onClick: () -
 }
 
 @Composable
-internal fun MarketControls(model: MarketModel, version: Int, onChanged: () -> Unit) {
-    @Suppress("UNUSED_EXPRESSION") version
-    val options = model.options
-    fun set(next: com.forkmesh.nativeapp.market.MarketOptions) {
-        model.options = next
-        onChanged()
-    }
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MarketChoiceChip(
-            label = if (options.sort == MarketSort.FEATURED) "Sort" else options.sort.title,
-            icon = "sort",
-            selected = options.sort != MarketSort.FEATURED,
-            choices = MarketSort.entries.map { it.title to (it == options.sort) },
-            onPick = { set(options.copy(sort = MarketSort.entries[it])) },
-        )
-        listOf(MarketFilter.INSTALLED, MarketFilter.NOT_INSTALLED).forEach { status ->
-            MarketChip(status.title, selected = model.filter == status, onClick = {
-                model.filter = if (model.filter == status) MarketFilter.ALL else status
-                onChanged()
-            })
-        }
-        val categories = model.categories
-        MarketChoiceChip(
-            label = options.category.ifEmpty { "Category" },
-            selected = options.category.isNotEmpty(),
-            choices = listOf("Any category" to options.category.isEmpty()) + categories.map { it to (it == options.category) },
-            onPick = { set(options.copy(category = if (it == 0) "" else categories[it - 1])) },
-        )
-        MarketChoiceChip(
-            label = if (options.price == MarketPrice.ANY) "Price" else options.price.title,
-            selected = options.price != MarketPrice.ANY,
-            choices = MarketPrice.entries.map { it.title to (it == options.price) },
-            onPick = { set(options.copy(price = MarketPrice.entries[it])) },
-        )
-        MarketChoiceChip(
-            label = if (options.platform == MarketPlatform.ANY) "Platform" else options.platform.title,
-            selected = options.platform != MarketPlatform.ANY,
-            choices = MarketPlatform.entries.map { it.title to (it == options.platform) },
-            onPick = { set(options.copy(platform = MarketPlatform.entries[it])) },
-        )
-        val modes = PackageInstallMode.entries
-        MarketChoiceChip(
-            label = options.mode?.title ?: "Installs for",
-            selected = options.mode != null,
-            choices = listOf("Anyone" to (options.mode == null)) + modes.map { it.title to (it == options.mode) },
-            onPick = { set(options.copy(mode = if (it == 0) null else modes[it - 1])) },
-        )
-        val types = model.types
-        MarketChoiceChip(
-            label = if (options.type.isEmpty()) "Type" else MarketText.typeLabel(options.type),
-            selected = options.type.isNotEmpty(),
-            choices = listOf("Any type" to options.type.isEmpty()) + types.map { MarketText.typeLabel(it) to (it == options.type) },
-            onPick = { set(options.copy(type = if (it == 0) "" else types[it - 1])) },
-        )
-        if (options.activeFilters > 0 || model.filter != MarketFilter.ALL) {
-            MarketChip("Clear", icon = "close", selected = false, onClick = {
-                model.filter = MarketFilter.ALL
-                set(options.cleared())
-            })
-        }
-    }
-}
-
-@Composable
 private fun MarketChip(label: String, selected: Boolean, icon: String? = null, dropdown: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val c = Fm.colors
     val shape = RoundedCornerShape(FmRadius.full)
@@ -163,19 +88,6 @@ private fun MarketChip(label: String, selected: Boolean, icon: String? = null, d
         if (icon != null) FmIcon(icon, size = 18.dp, tint = tint)
         Text(label, style = Fm.text.labelMedium, color = if (selected) c.accent else c.textPrimary, maxLines = 1)
         if (dropdown) FmIcon("arrow_drop_down", size = 18.dp, tint = tint)
-    }
-}
-
-@Composable
-private fun MarketChoiceChip(label: String, selected: Boolean, choices: List<Pair<String, Boolean>>, onPick: (Int) -> Unit, icon: String? = null) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        MarketChip(label, selected, icon = icon, dropdown = true, onClick = { open = true })
-        FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            choices.forEachIndexed { index, (title, chosen) ->
-                FmDropdownMenuItem(title, onClick = { open = false; onPick(index) }, icon = if (chosen) "check" else null)
-            }
-        }
     }
 }
 

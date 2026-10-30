@@ -1,9 +1,17 @@
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
+
+import apply_instance_brand  # noqa: E402
+import instance_features  # noqa: E402
+
 DASHBOARD = ROOT / "public" / "dashboard"
 SHELL = (DASHBOARD / "shell.html").read_text(encoding="utf-8")
 HEADER = (DASHBOARD / "partials" / "header.html").read_text(encoding="utf-8")
@@ -11,6 +19,7 @@ PROFILE = (DASHBOARD / "partials" / "views" / "profile-overview.html").read_text
 HELPERS = (DASHBOARD / "js" / "02-helpers.js").read_text(encoding="utf-8")
 CONTENT = (DASHBOARD / "js" / "06-repo-content.js").read_text(encoding="utf-8")
 DETAIL = (DASHBOARD / "js" / "08-repo-detail-network.js").read_text(encoding="utf-8")
+BRAND_JS = (ROOT / "public" / "instance-brand.js").read_text(encoding="utf-8")
 
 
 def _node(script):
@@ -117,6 +126,10 @@ function repoApiBase(repo) { return `/api/repo/${repo.owner}/${repo.name}`; }
 function applyRepoFeatures(value) { calls.push(["features", value]); }
 function applyRepoAboutDescription(repo, value) { calls.push(["about", value]); }
 function applyRepoAboutWebsite(value) { calls.push(["website", value]); }
+function seedRepoFirstViewReads(repo) { calls.push(["reads", repo.name]); }
+function $() { return null; }
+function formatSize(value) { return String(value); }
+function formatCount(value) { return String(value); }
 %s
 %s
 applyRepoFirstViewAbout({ owner: "Acme", name: "Tool" });
@@ -131,7 +144,109 @@ console.log(JSON.stringify({ first, other, broken: calls }));
                                "info": {"about": "Hello", "website": "https://e.test"}})),
        _function(CONTENT, "repoFirstViewSeed"), _function(CONTENT, "applyRepoFirstViewAbout"))
     out = _node(script)
-    assert out["first"] == [["features", {"issues": False}], ["about", "Hello"],
+    assert out["first"] == [["features", {"issues": False}], ["reads", "Tool"], ["about", "Hello"],
                             ["website", "https://e.test"]]
     assert out["other"] == [] and out["broken"] == []
 
+
+def test_scrollbar_and_mono_font_do_not_move_the_first_paint():
+    style = SHELL.split("<style>", 1)[1]
+    assert ".view.overflow-y-auto {\n        scrollbar-gutter: stable;" in style
+    head = SHELL.split("</head>", 1)[0]
+    for name in ("DejaVuSansMono-latin.woff2", "DejaVuSansMono-Bold-latin.woff2"):
+        assert ('<link rel="preload" href="/assets/fonts/%s" as="font" type="font/woff2" crossorigin />'
+                % name) in head
+        assert head.index(name) < head.index("@font-face")
+
+
+def test_readme_and_stacked_about_wait_for_the_file_table():
+    markup = DETAIL.split("detail.innerHTML = `", 1)[1]
+    assert '<section data-repo-readme class="hidden mt-4' in markup
+    tree = CONTENT.split("  async function loadRepositoryTree(", 1)[1].split(
+        "\n  async function loadRepositoryBlob(", 1)[0]
+    hide = tree.index('readmePanel?.classList.add("hidden");')
+    fetch = tree.index("await fetchRepoJson(")
+    assert hide < fetch
+    assert tree.index('contentGrid?.setAttribute("data-repo-tree-pending", "")') < fetch
+    assert tree.count('readmePanel?.classList.remove("hidden");') == 2
+    assert tree.rstrip().endswith(
+        '} finally {\n      contentGrid?.removeAttribute("data-repo-tree-pending");\n    }\n  }')
+    style = SHELL.split("<style>", 1)[1]
+    assert "[data-repo-tree-pending] > [data-repo-about-rail]" in style
+
+
+def test_tab_counters_keep_one_width_from_placeholder_to_count():
+    ssr = (ROOT / "host" / "forkmesh_host" / "repo_ssr.py").read_text(encoding="utf-8")
+    assert 'data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full' in DETAIL
+    assert """COUNT = ('<span data-dashboard-repo-tab-count="%s" '
+         'style="min-width:1.75rem" class="rounded-full""" in ssr
+
+
+def test_first_view_reads_answer_the_rail_in_the_takeover_frame():
+    seed = CONTENT.split("  function seedRepoFirstViewReads(repo) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "if (repoFirstViewReadsTaken) return false;" in seed
+    assert "if (seed.tree?.commit !== seed.commit) return false;" in seed
+    assert "mergeRepoReadSeeds({" in seed and "base: repoApiBase(repo).toLowerCase()," in seed
+    schedule = CONTENT.split("  function scheduleRepoAboutRail(repo) {", 1)[1].split("\n  }\n", 1)[0]
+    assert schedule.index("loadRepoAboutRail(repo);") < schedule.index("requestIdleCallback")
+    assert 'if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {' in schedule
+    for name in ("renderRepoAboutLanguages", "renderRepoAboutRoster", "renderRepoAboutContributors"):
+        body = _function(CONTENT, name)
+        assert "setHtmlIfChanged(" in body and ".innerHTML =" not in body, name
+    script = """
+%s
+const element = { dataset: {}, writes: 0, set innerHTML(value) { this.writes += 1; this.html = value; } };
+setHtmlIfChanged(element, "<b>a</b>");
+setHtmlIfChanged(element, "<b>a</b>");
+setHtmlIfChanged(element, "<b>b</b>");
+console.log(JSON.stringify({ writes: element.writes, html: element.html }));
+""" % _function(CONTENT, "setHtmlIfChanged")
+    assert _node(script) == {"writes": 2, "html": "<b>b</b>"}
+
+
+def test_folder_list_does_not_claim_empty_while_loading():
+    explorer = (DASHBOARD / "js" / "05-repo-list-explorer.js").read_text(encoding="utf-8")
+    body = _function(explorer, "renderRepoExplorer")
+    assert body.index("if (entries === null) {") < body.index("No files in this folder.")
+    tree = CONTENT.split("  async function loadRepositoryTree(", 1)[1].split(
+        "\n  async function loadRepositoryBlob(", 1)[0]
+    assert "renderRepoExplorer(repo, path, null);" in tree
+    style = SHELL.split("<style>", 1)[1]
+    assert "[data-repo-tree-pending] [data-repo-code-explorer]:not(.hidden) ~ [data-repo-code-main]" in style
+
+
+def test_disabled_plugins_are_hidden_by_the_instance_stylesheet():
+    env = SimpleNamespace(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="status")
+    css = instance_features.chrome_css(env)
+    assert css.startswith(":root{--instance-plugins:ready}\n")
+    assert '[data-instance-plugin~="world"]' in css
+    assert ':is(header, nav, aside, footer) a[href="/world"]' in css
+    assert ':is(header, nav, aside, footer) a[href^="https://world.forkmesh.com"]' in css
+    assert 'a[href="/status"]' not in css
+    assert "/api/" not in css
+    for rule in css.strip().split("\n")[1:]:
+        assert (":has(" in rule) == rule.startswith(":is(header, nav, aside, footer) li:has(")
+    assert instance_features.chrome_css(SimpleNamespace()) == ":root{--instance-plugins:ready}\n"
+    runtime = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
+    assert "+ instance_features.chrome_css(self.env), status=200," in runtime
+    start = BRAND_JS.split("const start = () => {", 1)[1]
+    assert start.lstrip().startswith("if (!pluginsStyled()) hidePlugins(null);")
+    assert '.getPropertyValue("--instance-plugins").trim() === "ready"' in BRAND_JS
+
+
+def test_brand_tool_puts_the_instance_name_beside_the_logo():
+    page = ('<html><head></head><body><header data-app-header><button>x</button>'
+            '<a data-dashboard-logo class="brand flex items-center" href="/dashboard" aria-label="Home">'
+            '<img src="/assets/logo.svg" alt="" /></a><a class="brand" href="/x">y</a></header>'
+            '<main><a class="brand" href="/">z</a></main></body></html>')
+    out = apply_instance_brand.brand_page(page, "Acme <Code>")
+    header = out.split("<header", 1)[1].split("</header>", 1)[0]
+    assert header.count("data-instance-name-label") == 1
+    assert ('style="display:inline-flex;align-items:center"><img src="/assets/logo.svg" alt="" />'
+            '<span data-instance-name-label style="margin-left:8px;font-weight:700;white-space:nowrap">'
+            'Acme &lt;Code&gt;</span></a>') in header
+    again = apply_instance_brand.brand_page(out, "Beta")
+    assert again.count("data-instance-name-label") == 1 and ">Beta</span></a>" in again
+    assert "data-instance-name-label" not in apply_instance_brand.brand_page(
+        "<html><head></head><body><main>no header</main></body></html>", "Acme")
+    assert 'if (document.querySelector("[data-instance-name-label]")) return;' in BRAND_JS

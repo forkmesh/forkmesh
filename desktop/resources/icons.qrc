@@ -1,11 +1,13 @@
 <RCC>
     <qresource prefix="/icons/octicons">
         <file alias="alert.svg">icons/octicons/alert.svg</file>
+        <file alias="apps.svg">icons/octicons/apps.svg</file>
         <file alias="arrow-left.svg">icons/octicons/arrow-left.svg</file>
         <file alias="bell.svg">icons/octicons/bell.svg</file>
         <file alias="book.svg">icons/octicons/book.svg</file>
         <file alias="broadcast.svg">icons/octicons/broadcast.svg</file>
         <file alias="calendar.svg">icons/octicons/calendar.svg</file>
+        <file alias="check.svg">icons/octicons/check.svg</file>
         <file alias="check-circle.svg">icons/octicons/check-circle.svg</file>
         <file alias="check-white.svg">icons/octicons/check-white.svg</file>
         <file alias="chevron-down.svg">icons/octicons/chevron-down.svg</file>
@@ -102,6 +104,7 @@
         <file alias="flame.svg">icons/forkmesh/flame.svg</file>
         <file alias="brain.svg">icons/forkmesh/brain.svg</file>
         <file alias="shield.svg">icons/forkmesh/shield.svg</file>
+        <file alias="spade.svg">icons/forkmesh/spade.svg</file>
     </qresource>
     <!-- VS Code codicons (CC BY 4.0, see icons/LICENSE-codicons.txt), used where
          octicons has no equivalent glyph. tintedOcticonPixmap falls back to this
@@ -137,6 +140,7 @@
     </qresource>
     <qresource prefix="/app">
         <file alias="forkmesh.png">icons/forkmesh.png</file>
+        <file alias="forkmesh.svg">icons/forkmesh.svg</file>
         <file alias="membership/patreon-supporter.png">../../www/public/assets/membership/patreon-supporter.png</file>
         <file alias="membership/patreon-pro.png">../../www/public/assets/membership/patreon-pro.png</file>
         <file alias="membership/patreon-builder.png">../../www/public/assets/membership/patreon-builder.png</file>
@@ -189,5 +193,12 @@
     </qresource>
     <qresource prefix="/shortcuts">
         <file alias="scrub-term.sh">../../.forkmesh/shortcuts/scrub-term.sh</file>
+    </qresource>
+    <qresource prefix="/starter-shortcuts">
+        <file alias="review-changes.md">../../marketplace/packages/shortcuts/content/shortcuts/review-changes.md</file>
+        <file alias="audit-user-experience.md">../../marketplace/packages/shortcuts/content/shortcuts/audit-user-experience.md</file>
+        <file alias="clean-up-stale-code.md">../../marketplace/packages/shortcuts/content/shortcuts/clean-up-stale-code.md</file>
+        <file alias="refresh-documentation.md">../../marketplace/packages/shortcuts/content/shortcuts/refresh-documentation.md</file>
+        <file alias="propose-feature-removal.md">../../marketplace/packages/shortcuts/content/shortcuts/propose-feature-removal.md</file>
     </qresource>
 </RCC>

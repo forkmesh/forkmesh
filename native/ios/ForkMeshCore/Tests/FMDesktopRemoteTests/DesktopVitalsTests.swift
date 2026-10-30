@@ -30,6 +30,27 @@ final class DesktopVitalsTests: XCTestCase {
         XCTAssertEqual(vitals.values(.disk).count, DesktopVitals.seconds)
     }
 
+    @MainActor func testTokenTotalsAndAgentReadingsFollowEachSample() async {
+        let channel = FakeRemoteChannel()
+        channel.replies["diag.watch"] = ["memory": [40.0]]
+        let vitals = DesktopVitals(channel: channel)
+        let agent = vitals.agentTokens(7)
+        await vitals.watch()
+        channel.emit("diag.vitals", ["memory": 40.0])
+        XCTAssertEqual(vitals.tokenTotals, [])
+
+        channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 1_000, "tokensOut": 50, "agentTokens": ["7": [900, 40]]])
+        XCTAssertEqual(vitals.tokenTotals, [1_000, 50])
+        XCTAssertEqual(agent.totals, [900, 40])
+        channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 4_000, "tokensOut": 80, "agentTokens": ["7": [3_900, 70], "x": [1, 2]]])
+        XCTAssertEqual(vitals.tokenTotals, [4_000, 80])
+        XCTAssertIdentical(vitals.agentTokens(7), agent)
+        XCTAssertEqual(agent.totals, [3_900, 70])
+
+        await vitals.unwatch()
+        XCTAssertEqual(vitals.tokenTotals, [])
+    }
+
     @MainActor func testOlderDesktopLeavesTheChartsEmpty() async {
         let channel = FakeRemoteChannel()
         channel.failures["diag.watch"] = LocalControlException("unsupported")

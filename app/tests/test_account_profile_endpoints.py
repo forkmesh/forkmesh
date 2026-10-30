@@ -136,7 +136,8 @@ def test_signup_email_validation_requires_well_formed_domain_and_tld():
         ENTRY_TEXT.index("async def _account_signup"):
         ENTRY_TEXT.index("async def _account_reserve")
     ]
-    assert "if not valid_account_email(email):" in signup_body
+    assert ("if (email or not email_optional) and not "
+            "valid_account_email(email):") in signup_body
     assert "valid_email_required" in signup_body
 
 
@@ -435,7 +436,8 @@ def test_public_profile_page_injects_verified_link_tags():
     assert '<link rel=\\"me\\" href=\\"%s\\">' in body
     assert 'application/activity+json' in body
     assert '/ap/users/%s' in body
-    assert '<title>@%s · ForkMesh</title>' in body
+    assert '"<title>@%s · %s</title>" % (' in body
+    assert "instance_features.display_name(self.env)" in body
     assert "origin = _ap_origin(self.env)" in body
     # Eligibility mirrors the fediverse actor: active + not private (node
     # accounts included, matching _ap_user_federates).
@@ -603,7 +605,6 @@ def test_hard_delete_removes_account_identity_and_owned_namespace_state():
         "DELETE FROM issue_inbox WHERE repo_bi=?",
         "DELETE FROM pull_inbox WHERE repo_bi=?",
         "DELETE FROM discussion_inbox WHERE repo_bi=?",
-        "DELETE FROM host_presence WHERE repo_bi=?",
         "DELETE FROM clone_rr WHERE repo_bi=?",
         "DELETE FROM repo_first_hosted WHERE repo_bi=?",
         "DELETE FROM mirror_repository_integrity WHERE repo_bi=?",
@@ -621,6 +622,7 @@ def test_hard_delete_removes_account_identity_and_owned_namespace_state():
         "purge_catalog_related_caches()",
     ):
         assert required in delete_body
+    assert "host_presence" not in delete_body
 
 
 def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
@@ -666,6 +668,9 @@ def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
         "UPDATE notifications SET recipient_bi=? WHERE recipient_bi=?",
         "UPDATE catalog_rate SET owner_bi=? WHERE owner_bi=?",
         "purge_catalog_related_caches()",
+        '"moderation_roles", "moderation_blocks"',
+        '"UPDATE OR IGNORE " + table + " SET account_bi=? "',
+        "UPDATE moderation_queue SET author_bi=? WHERE author_bi=?",
     ):
         assert required in rename_body
 
@@ -688,12 +693,12 @@ def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
         "UPDATE issue_inbox SET repo_bi=? WHERE repo_bi=?",
         "UPDATE pull_inbox SET repo_bi=? WHERE repo_bi=?",
         "UPDATE discussion_inbox SET repo_bi=? WHERE repo_bi=?",
-        "UPDATE host_presence SET repo_bi=? WHERE repo_bi=?",
         "UPDATE clone_rr SET repo_bi=? WHERE repo_bi=?",
         "UPDATE repo_first_hosted SET repo_bi=? WHERE repo_bi=?",
         "UPDATE funds_received SET key=?, name=? WHERE scope='project' AND key=?",
     ):
         assert required in repo_move_body
+    assert "host_presence" not in repo_move_body
 
 
 def test_worker_exposes_password_reset_flow():

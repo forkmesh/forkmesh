@@ -100,8 +100,9 @@ def test_caller_posts_a_missed_call_line():
 
 def test_incoming_call_frames_are_filtered_by_device_and_call_id():
     source = _function_source(CALLS, "handleFrame")
-    assert "from === selfId" in source
-    assert "plain.to && plain.to !== selfId" in source
+    assert 'typeof selfId === "function" ? selfId() : selfId' in source
+    assert "from === self" in source
+    assert "plain.to && plain.to !== self" in source
     assert 'call.callId !== callId' in source
 
 
@@ -109,8 +110,16 @@ def test_ring_times_out_and_resends_invites():
     assert "RING_TIMEOUT_MS = 45000" in CALLS
     assert "INVITE_RESEND_MS = 3000" in CALLS
     start = _function_source(CALLS, "start")
-    assert "call.inviteTimer = setIntervalImpl(ring, INVITE_RESEND_MS)" in start
-    assert "onMissed(missed.channelKey, missed.media)" in start
+    assert 'timer("invite", ring, INVITE_RESEND_MS, true)' in start
+    assert 'timer("ring", hangUp, RING_TIMEOUT_MS)' in start
+
+
+def test_hanging_up_an_unanswered_call_posts_a_missed_call_line():
+    source = _function_source(CALLS, "hangUp")
+    assert 'call?.role === "caller" && call.phase === "ringing-out"' in source
+    assert 'reason: "missed"' in source
+    assert "onMissed(missed.channelKey, missed.media)" in source
+    assert 'hangupBtn?.addEventListener("click", hangUp)' in CALLS
 
 
 def test_add_person_starts_a_private_group_channel():

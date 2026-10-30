@@ -1190,6 +1190,46 @@
         display: none;
       }
 
+      .hero-install-mode {
+        display: inline-flex;
+        flex: 0 0 auto;
+        padding: 2px;
+        border: 1px solid var(--home-line);
+        border-radius: 999px;
+        background: var(--home-surface-2);
+      }
+
+      .hero-install-mode-option {
+        padding: 0.2rem 0.5rem;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--home-muted);
+        font: inherit;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        line-height: 1;
+        cursor: pointer;
+        transition:
+          background-color 150ms ease,
+          color 150ms ease;
+      }
+
+      .hero-install-mode-option:hover {
+        color: var(--home-ink);
+      }
+
+      .hero-install-mode-option[aria-pressed="true"] {
+        background: var(--home-surface);
+        color: var(--home-ink);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+
+      .hero-install-mode-option:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
       .hero-agent-copy {
         position: relative;
         display: inline-flex;
@@ -4570,43 +4610,22 @@
         background: #3fb950;
       }
 
-      #instances .inst-empty {
-        margin: 1.75rem auto 0;
+      #instances .inst-list > li[hidden] {
+        display: none;
+      }
+
+      #instances .inst-add {
+        border-style: dashed;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      #instances .inst-add .inst-logo {
+        border: 1px dashed var(--btn-secondary-border);
+        background: transparent;
         color: var(--home-muted);
-        font-family: var(--landing-body-font);
-      }
-
-      #instances .inst-empty[hidden] {
-        display: none;
-      }
-
-      #instances .inst-actions {
-        display: flex;
-        justify-content: center;
-        margin-top: 1.75rem;
-      }
-
-      #instances .inst-start {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.375rem;
-        padding: 0.625rem 1rem;
-        border: 1px solid var(--btn-secondary-border);
-        border-radius: 999px;
-        background: var(--btn-secondary-fill);
-        box-shadow: var(--btn-secondary-shadow);
-        color: var(--btn-secondary-fg);
-        font-family: var(--landing-body-font);
-        font-weight: 600;
-        text-decoration: none;
-      }
-
-      #instances .inst-start:hover {
-        background: var(--btn-secondary-fill-hover);
-      }
-
-      #instances .inst-start[hidden] {
-        display: none;
+        font-size: 1.375rem;
+        font-weight: 400;
       }
 
       #ecosystem {
@@ -8108,6 +8127,22 @@
               <code class="hero-agent-command"
                 >curl -fsSL https://forkmesh.com/install.sh | bash</code
               >
+              <div class="hero-install-mode" role="group" aria-label="Install type">
+                <button
+                  type="button"
+                  class="hero-install-mode-option"
+                  aria-pressed="true"
+                  data-install-command="curl -fsSL https://forkmesh.com/install.sh | bash"
+                  title="Prebuilt binary, ready in seconds"
+                >Binary</button>
+                <button
+                  type="button"
+                  class="hero-install-mode-option"
+                  aria-pressed="false"
+                  data-install-command="curl -fsSL https://forkmesh.com/install.sh | FORKMESH_FROM_SOURCE=1 bash"
+                  title="Compile from source (installs a C++ and Qt 6 toolchain, takes a few minutes)"
+                >Source</button>
+              </div>
               <button
                 type="button"
                 id="hero-agent-copy"
@@ -9399,11 +9434,20 @@
             a hexagon of their own in the ForkMesh World. Start one here, or
             list one you already run from its admin console.
           </p>
-          <ul class="inst-list" role="list" aria-label="Federated instances" data-instances-list></ul>
-          <p class="inst-empty" data-instances-empty hidden>No instance has joined yet. Yours can be the first.</p>
-          <div class="inst-actions">
-            <a class="inst-start" href="/start" data-instances-start data-forkmesh-product-action="home-start-instance">Start an instance <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
-          </div>
+          <ul class="inst-list" role="list" aria-label="Federated instances" data-instances-list>
+            <li data-instances-pinned="git.owaspblt.org">
+              <a class="inst-card" href="https://git.owaspblt.org/BLT" rel="noopener">
+                <span class="inst-logo" aria-hidden="true"><img src="/assets/owasp-blt-logo.svg" alt="" width="40" height="40" loading="lazy" decoding="async" /></span>
+                <span class="inst-text"><span class="inst-name">OWASP BLT</span><span class="inst-host">git.owaspblt.org/BLT</span></span>
+              </a>
+            </li>
+            <li data-instances-add>
+              <a class="inst-card inst-add" href="/start" data-forkmesh-product-action="home-start-instance">
+                <span class="inst-logo" aria-hidden="true">+</span>
+                <span class="inst-text"><span class="inst-name">Add your instance</span><span class="inst-host">On your own server and domain</span></span>
+              </a>
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -9883,6 +9927,20 @@
         const button = document.getElementById("hero-agent-copy");
         if (!button) return;
         const status = document.querySelector("[data-hero-copy-status]");
+        const command = document.querySelector(".hero-agent-command");
+        const modes = document.querySelectorAll(".hero-install-mode-option");
+        modes.forEach((mode) => {
+          mode.addEventListener("click", () => {
+            const text = mode.dataset.installCommand || "";
+            modes.forEach((other) => other.setAttribute("aria-pressed", String(other === mode)));
+            button.dataset.copy = text;
+            if (command) {
+              command.textContent = text;
+              command.scrollLeft = command.scrollWidth;
+            }
+            button.classList.remove("is-copied");
+          });
+        });
         let timer = 0;
         button.addEventListener("click", async () => {
           const text = button.dataset.copy || "";
@@ -10128,9 +10186,11 @@
         const section = document.querySelector("[data-instances-section]");
         if (!section) return;
         const list = section.querySelector("[data-instances-list]");
-        const empty = section.querySelector("[data-instances-empty]");
+        const pinned = list.querySelector("[data-instances-pinned]");
+        const add = list.querySelector("[data-instances-add]");
+        const pinnedHost = pinned ? pinned.getAttribute("data-instances-pinned") : "";
         const onInstance = Boolean(document.querySelector("script[data-instance-brand]"));
-        if (onInstance) section.querySelector("[data-instances-start]").hidden = true;
+        if (onInstance) add.hidden = true;
         const el = (tag, className, text) => {
           const node = document.createElement(tag);
           if (className) node.className = className;
@@ -10147,7 +10207,7 @@
         };
         const card = (instance) => {
           const url = safeUrl(instance.url);
-          if (!url) return null;
+          if (!url || url.hostname === pinnedHost) return null;
           const name = String(instance.name || url.hostname).slice(0, 40);
           const item = el("li");
           const link = el("a", "inst-card");
@@ -10186,8 +10246,7 @@
               .filter((instance) => instance && instance.listed === true)
               .map(card)
               .filter(Boolean);
-            list.replaceChildren(...cards);
-            empty.hidden = cards.length > 0;
+            list.replaceChildren(...[pinned, ...cards, add].filter(Boolean));
             section.hidden = onInstance && !cards.length;
           })
           .catch(() => {

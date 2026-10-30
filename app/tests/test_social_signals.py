@@ -6,6 +6,7 @@ import ast
 import copy
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -233,7 +234,9 @@ def test_cli_signs_revokes_merges_verifies_and_recommends(tmp_path):
     run = lambda *args, **kw: subprocess.run(  # noqa: E731
         [sys.executable, str(TOOL), *args], capture_output=True, text=True, check=False, cwd=ROOT, timeout=120, **kw)
     created = run("keygen", "--out", str(seed))
-    assert created.returncode == 0 and seed.stat().st_mode & 0o077 == 0
+    assert created.returncode == 0
+    if os.name != "nt":
+        assert seed.stat().st_mode & 0o077 == 0
     assert run("keygen", "--out", str(seed)).returncode != 0, "keygen must never overwrite a seed"
     unsigned = tmp_path / "star.json"
     unsigned.write_text(json.dumps({"kind": "star", "subject": social._repository("cli"), "issuedAt": 1000}))

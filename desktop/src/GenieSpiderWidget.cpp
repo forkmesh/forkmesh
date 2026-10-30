@@ -891,6 +891,7 @@ void GenieSpiderWidget::throwFrom(const QPointF &foot, const QPointF &velocity)
     capSpeed(m_vx, m_vy);
     m_flight = 0;
     m_thrown = true;
+    m_placing = true;
     m_trail.clear();
     m_longPress->stop();
     setCursor(Qt::OpenHandCursor);
@@ -1026,8 +1027,11 @@ void GenieSpiderWidget::wander()
 
 void GenieSpiderWidget::tick()
 {
-    const QWindow *handle = window() ? window()->windowHandle() : nullptr;
-    if (handle && !handle->isExposed()) {
+    const QWidget *top = window();
+    const QWindow *handle = top ? top->windowHandle() : nullptr;
+    const Qt::ApplicationState state = QGuiApplication::applicationState();
+    if ((handle && !handle->isExposed()) || (top && top->isMinimized()) ||
+        state == Qt::ApplicationHidden || state == Qt::ApplicationSuspended) {
         pace(500);
         return;
     }
@@ -1270,6 +1274,10 @@ void GenieSpiderWidget::settle()
     m_thrown = false;
     m_fraction = homeFraction();
     emit moved();
+    if (m_placing) {
+        m_placing = false;
+        emit placed();
+    }
 }
 
 void GenieSpiderWidget::paintEvent(QPaintEvent *)
@@ -1369,6 +1377,7 @@ void GenieSpiderWidget::mouseReleaseEvent(QMouseEvent *event)
     capSpeed(m_vx, m_vy);
     m_trail.clear();
     m_thrown = true;
+    m_placing = true;
     m_flight = 0;
     if (m_vx == 0 && m_vy == 0 && m_y >= floorAt(m_x) - 0.5)
         settle();

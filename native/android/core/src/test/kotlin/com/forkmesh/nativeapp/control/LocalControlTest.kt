@@ -20,6 +20,7 @@ import com.forkmesh.nativeapp.testing.assertFails
 import com.forkmesh.nativeapp.testing.expect
 import java.io.File
 import java.net.ServerSocket
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -32,7 +33,7 @@ class LocalControlTest {
         private var transcript = ByteArray(0)
         private var sendCounter = 0L
         private var receiveCounter = 0L
-        val requests = ArrayList<Map<String, Any?>>()
+        val requests: MutableList<Map<String, Any?>> = Collections.synchronizedList(ArrayList())
         var clientKey = ""
         var transcriptError: String? = null
         var followAnswer: Map<String, Any?>? = null
@@ -1017,6 +1018,16 @@ class LocalControlTest {
         assertEq(null, UnifiedAgentRow.fromDesktop(older.sessions.first(), ControlTransport.Lan, "studio").unread)
         val running = LocalAgentRow.fromJson(row(3, mapOf("status" to "running", "unread" to true)))
         assertEq(0L, UnifiedAgentRow.fromDesktop(running, ControlTransport.Relay, "studio").finishedAtMs)
+    }
+
+    fun testDesktopRowsCarryTheirOpenBackgroundTasks() {
+        val busy = LocalAgentRow.fromJson(mapOf("id" to 7, "status" to "running", "backgroundTasks" to 2))
+        assertEq(2, busy.backgroundTasks)
+        assertEq(0, LocalAgentRow.fromJson(mapOf("id" to 8, "status" to "done")).backgroundTasks)
+        assertEq(0, LocalAgentRow.fromJson(mapOf("id" to 9, "status" to "done", "backgroundTasks" to -3)).backgroundTasks)
+        val unified = UnifiedAgentRow.fromDesktop(busy, ControlTransport.Lan, "studio")
+        assertEq(2, unified.backgroundTasks)
+        assertEq(2, com.forkmesh.nativeapp.agents.AgentLineChips.facts(unified).backgroundTasks)
     }
 
     fun testCloudRowsSurviveTheListWindowAndFailedRefresh() {

@@ -10,12 +10,12 @@ What this adds over runner Actions:
 
 | Feature | Runner Actions | Instance Actions |
 | --- | --- | --- |
-| Triggers | push to the default branch | push (any branch, `paths`), `schedule`, `workflow_dispatch` with inputs, `issues`, `issue_comment` |
+| Triggers | push to the default branch | push (any branch, `paths`), `pull_request`, `schedule`, `workflow_dispatch` with inputs, `issues`, `issue_comment` |
 | Desktop check | queues only while the owner's desktop is offline | always queues (`ACTIONS_INSTANCE_RUNNER` set) |
 | Step options | `run`, workflow `env` | plus job/step `env`, `working-directory`, `if`, `timeout-minutes` |
 | Secrets | none | repository and organization secrets, masked in logs |
 | Push back | never | fast-forward push to the triggering branch with an `actions-push` grant |
-| Job API | none | read the event, comment on, label, open and close issues |
+| Job API | none | read the event, comment on, label, assign, open and close issues |
 | Logs | 16 KiB tail | full log up to 1 MiB, reported every 5 seconds |
 | Web control | none | Run workflow (with inputs), cancel, re-run |
 
@@ -113,9 +113,9 @@ Every step gets the runner Actions environment plus:
 | Variable | Value |
 | --- | --- |
 | `FORKMESH_BEFORE` | the push's previous commit (`before`), empty when unknown |
-| `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
+| `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `pull_request`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
 | `FORKMESH_EVENT_PATH`, `GITHUB_EVENT_PATH` | JSON event payload file |
-| `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs only) |
+| `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs, and outside issue jobs scoped to their issue; see Secrets) |
 | `FORKMESH_API_URL` | instance origin, e.g. `https://git.example.org` |
 | `GITHUB_REPOSITORY` | `<owner>/<repo>` |
 | `GITHUB_SHA`, `GITHUB_REF`, `GITHUB_REF_NAME` | commit and ref |
@@ -129,8 +129,14 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - push: `{ref, before, after, repository:{full_name}, pusher:{name}}`
 - schedule: `{schedule: "<cron>"}`
 - workflow_dispatch: `{inputs:{...}, ref, sender:{login}}`
-- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login}}`
-- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login}}, sender:{login}}`
+- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login, verified}}`
+- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login, verified}, verified}, sender:{login, verified}}`
+
+`verified` is `true` only when the inbox bound the author to an account (the
+signed-in session or an account-bound key, `docs/app/notification-email.md`).
+Then `login` is that account. Otherwise `login` is the signing key, never a
+username the client chose. A workflow that acts for the commenter (assigning
+them, for example) must check `comment.user.verified`.
 
 ### Checkout and pushing back
 
@@ -253,6 +259,89 @@ the app, so the app records it from the runner's report (`pushed_commit`)
 and never sees it in `core_push.record_accepted_push`; any proxy that relays
 the header must skip `push` triggers when `actions` is true.
 
+## Pull requests
+
+A workflow that lists `pull_request` in `on:` runs on every open pull
+request: same-repository branches, `pr/<account>/` contributor branches and
+patch-backed pulls from forks or the web alike. `on.pull_request.branches`
+filters the base branch.
+
+### Threat model
+
+A pull request is code from anyone. Running it must not reach secrets, write
+to the repository, change which workflow runs, or let one contributor spend
+the runner without a maintainer agreeing.
+
+| Threat | Mitigation |
+| --- | --- |
+| The run reads secrets or the job token | A `pull_request` lease never carries `secrets`, `jobToken`, `apiUrl`, a bot identity or a push grant, whatever the row's `trusted` says (`runner_actions.lease`); the Go runner drops them again before validating (`runnerActionsJob.dropPrivileges`). Rows are inserted with `trusted=0`. |
+| The pull request edits the workflow to run something else | The runner reads workflow files from the base branch commit recorded at enqueue (`baseCommit`, else the base tip), never from the head (`planJob`). The head is only the checkout. |
+| The pull request edits `.forkmesh/` (workflows, required checks) | An unapproved run carries `gateWorkflowChanges`; the runner diffs merge-base..head and, when anything under `.forkmesh/` changed, runs nothing and reports `approvalRequired: "workflows"`. The app turns the job into `waiting`. This applies to trusted authors too. |
+| Anyone can open a pull request and use the runner | Runs start only for approved authors: the repository owner, an account owning its node, organization writers, and the per-repository allowlist `repo_action_trusted_authors`. Others are queued as `waiting` (awaiting approval). |
+| An approval is reused for code the maintainer never saw | Approval names the head commit (`POST .../pulls/<n>/checks {action: "approve", head}`), answers `409 stale_head` for any other commit, and a new head cancels the older `waiting`/`queued` jobs and needs a new approval unless the author is trusted. |
+| A claimed author name | The author is the account the pull's signing key belongs to (`_git_push_account_for_pubkey`), never `authorName`. An unknown key is untrusted and cannot be allowlisted from the pull. |
+| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days. |
+
+Residual risk: an approved or trusted run executes arbitrary code as the
+runner's job user with public network access; a sandbox escape is out of scope
+here and is the same risk as any push run. Runs check out the head, not a
+merge result.
+
+### Flow
+
+1. **Sync** (`app/src/pull_actions.py`, `sync_repo`). Every minute
+   (`actions-schedule` cron, `sync_all`, only repositories whose catalog lists
+   `pull_request`) and when someone opens the pull page (at most every 15 s
+   per repository), the app reads the newest 20 pull records from
+   `forkmesh/pulls` (and per-pull `forkmesh/pull/<n>` branches), and for each
+   open pull its head: `headOid` (fetched by the runner as
+   `refs/pr/<n>/head`), or the branch tip for a `derive: branch` pull.
+2. **Enqueue** (`runner_actions.enqueue_pull`). One job per catalog workflow
+   with `pull_request`, per `(pull, head, workflow)`; `branch` is
+   `pull/<n>`, `ref` the pull ref, `before_oid`/`base_oid` the base tip,
+   `approval` `''` (trusted author) or `author`. The base branch's catalog
+   decides, so a pull request cannot add itself a trigger.
+3. **Approve.** `GET /api/repo/<o>/<r>/pulls/<n>/checks` returns the current
+   head's runs, `approval {required, reason, author, authorTrust, approvedBy}`
+   and `canApprove`. `POST` with `approve` (`head`), `trust` or `untrust`
+   (`account` must be the verified author) is for writers only. The Actions tab
+   also approves or rejects one run (`actions/control` `approve`/`reject`).
+   Every decision and refusal is audited (`actions.pull_approve`,
+   `actions.trust_author`, `actions.untrust_author`,
+   `repository.actions_control`).
+4. **Lease** adds `pullNumber`, `pullRef`, `baseRef`, `baseCommit`, `before`
+   (the base commit, so `git diff "$FORKMESH_BEFORE"...HEAD` lists the pull's
+   changes) and `gateWorkflowChanges` (true unless approved).
+5. **Run.** The runner fetches the pull ref into its cache, plans from the base
+   commit, checks out the head and sets `FORKMESH_PULL_NUMBER`,
+   `FORKMESH_BASE_REF`, `FORKMESH_BASE_SHA`, `GITHUB_BASE_REF`,
+   `GITHUB_HEAD_REF`. The event payload follows GitHub's `pull_request` shape
+   (`action`, `number`, `pull_request {number, title, head {sha, ref}, base
+   {sha, ref}, user {login}}`, `sender`).
+
+Columns (migration `0280_actions_pull_requests.sql`): `repo_action_jobs`
+`pull_number`, `approval`, `approved_by`, `base_branch`, `base_oid`, status
+`waiting`; table `repo_action_trusted_authors (owner, repo, account, added_by,
+added_at)`. Snapshot runs carry `pullNumber` (also in the public summary) and
+show a waiting job as `awaiting-approval`.
+
+On the pull request page the readiness panel and the Checks tab list each
+workflow with a status chip, duration and a link to its run; while a run
+waits, maintainers get *Approve and run* (bound to the head commit shown) and
+*Always run for @author*, the author is told nothing is needed from them, and
+an allowlisted author's Checks tab offers *Stop running automatically*. The
+Actions tab shows a runner card (running / queued / awaiting-approval counts),
+a pull request chip on pull request runs, Approve and Reject on a waiting run,
+and on a fork without workflows a pointer to the parent repository.
+
+Required checks are separate: `.forkmesh/required-checks.json` needs signed
+`forkmesh-check-v1` attestations, which instance runners do not produce yet, so
+a repository that adds it locks every merge.
+
+Tests: `app/tests/test_pull_request_actions.py`,
+`app/tests/test_pull_request_checks_frontend.py`,
+`server/runner_actions_pull_test.go`.
+
 ## Job API
 
 `Authorization: Bearer $FORKMESH_TOKEN`. The token is random, stored as a
@@ -262,11 +351,12 @@ reaches only that job's repository. Responses are JSON.
 | Method and path | Body | Does |
 | --- | --- | --- |
 | `GET /api/actions/job/event` | | the job's event payload |
-| `GET /api/actions/job/issues/<n>` | | `{number, title, body, state, labels, author}` |
+| `GET /api/actions/job/issues/<n>` | | `{number, title, body, state, labels, assignees, author}` |
 | `POST /api/actions/job/issues` | `{title, body, labels}` | opens an issue, returns `{number}` |
 | `POST /api/actions/job/issues/<n>/comments` | `{body}` | comments |
 | `POST /api/actions/job/issues/<n>/labels` | `{add: [], remove: []}` | changes labels |
 | `POST /api/actions/job/issues/<n>/state` | `{state: "open" \| "closed"}` | opens or closes |
+| `POST /api/actions/job/issues/<n>/assignees` | `{add: [], remove: []}` | assigns and unassigns accounts |
 
 Issue changes are signed by the instance's Actions bot account
 (`<owner>-actions`, an organization writer created at install). Issue events
@@ -281,7 +371,9 @@ dict on both Pyodide and the host, so `x` and `d` are read as keys, which
 keeps the `test_host_js_surface` inventory free of attribute chains on it).
 Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
-repository's node owner) with `authorName: <org>-actions`, handed to
+repository's public address: an organization alias such as `acme/app`, the key
+browsers and the desktop sign with, not the backing account the alias resolves
+to) with `authorName: <org>-actions`, handed to
 `_accept_issue_submission` in `entry.py` — the same validation, inbox row and
 side effects as a web submission (it is the former POST body of
 `issues_handler`). The job token is the authority, so structural events
@@ -290,6 +382,43 @@ current labels from the repository and sends the full new list. Reading an
 issue goes through the repository's gateway (`blobs` of
 `.forkmesh/issues/{open,closed}/<n>/issue-<n>.json`). A repository whose
 `issues` feature is off refuses every write, like the web.
+
+### Assigning
+
+`POST issues/<n>/assignees` (`change_assignees`) lets a workflow assign
+without committing ledger events to git itself. A commit made that way never
+passes through the issue inbox, so it raised no "issue assigned" notification.
+
+- Each change is one signed `claim` event (`assignee`, `claimState`
+  `assigned` or `released`), the event the web's self-assignment writes. A
+  claim moves one name and leaves everyone else alone, so it never overwrites
+  an assignment made at the same time, and the Go intake, the desktop and the
+  reconciler already fold it. The job token is the authority, so
+  `_accept_issue_submission` skips the self-claim session check for a job,
+  as it skips the manager check for labels.
+- The inbox sends `issue_assigned` to an account a claim assigns when it is not
+  the claim's own author, so a job's assignment notifies the assignee and a
+  self-claim does not notify its author.
+- `add` and `remove` take account names (`@` and case are dropped), at most 10
+  in all per call. An account in both is a `400`. Every name in `add` must be
+  an existing account, otherwise `422 unknown_account` and nothing changes.
+- The current list is read from the repository first. A name already assigned
+  (or not assigned, for `remove`) is skipped, so repeating a call changes
+  nothing and answers `changed: false`. A claim still in the inbox is not in
+  that list yet; a repeat in that window queues a second claim with the same
+  effect, and the notification is deduplicated per issue and assignee.
+- Answer: `{ok, number, assignees, assigned, unassigned, changed}`, where
+  `assignees` is the list after the change. A missing issue is
+  `404 issue_not_found`; an unknown route is still `404 not_found`, which is
+  how a workflow can tell an instance without this endpoint.
+- Every accepted change, refusal for an unknown account and failed submission
+  is written to `sensitive_audit_log` as `actions.issue_assignees` (actor the
+  bot, target `<owner>/<repo>#<n>`, the job id and workflow path in details).
+- Limits are the comment endpoint's: each claim is one inbox submission, under
+  the same `inbox_full` and per-author `author_quota` limits. The first refusal
+  stops the call and is returned as is.
+- Scope is the job token's: a trusted job, its own repository only, while the
+  job is leased or running.
 
 The bot is a `node`-kind account holding the derived public key, with the
 organization role `maintainer` (repository permission `maintain`, which is at
@@ -300,7 +429,8 @@ but no membership, and its bot name is `forkmesh-actions`.
 (`forkmesh-actions comment 12 "Thanks!"`); `install-instance.sh` installs it
 as `/usr/local/bin/forkmesh-actions`. Subcommands: `event` (prints
 `$FORKMESH_EVENT_PATH`, else `GET event`), `issue <n>`, `comment <n>
-<body|->`, `label <n> --add a,b --remove c`, `close <n>`, `reopen <n>`,
+<body|->`, `label <n> --add a,b --remove c`, `assign <n> a,b`,
+`unassign <n> a,b`, `close <n>`, `reopen <n>`,
 `open-issue <title> <body|-> [labels]` (`-` reads standard input). It needs
 curl and builds JSON with jq, or python3 when jq is missing
 (`FORKMESH_ACTIONS_JSON=python` forces that path, for tests). The token is
@@ -325,10 +455,22 @@ name and update time only. Every change is audited. Repository secrets win
 over organization secrets with the same name. The repository Settings page
 has an Actions secrets section.
 
-Secrets, the job token and the push grant go only to **trusted** jobs: every
-event except a `pull_request` from someone without write access, on a runner
-row with `actions_trusted=1`. The runner masks every secret value of four or
-more bytes as `***` line by line, and the app masks again on report.
+Secrets, the job token and the push grant go only to **trusted** jobs, on a
+runner row with `actions_trusted=1`. Untrusted are: a `pull_request` from
+someone without write access; an `issues` or `issue_comment` event whose
+author is not a verified repository writer (a claimed name never counts);
+and any run on a `pr/<account>/` contributor branch, whoever queued it.
+The runner masks every secret value of four or more bytes as `***` line by
+line, and the app masks again on report.
+
+An untrusted `issues` or `issue_comment` job on a trusted runner still gets
+a job token, so triage and `/assign` workflows work on outside reports, but
+never secrets, a push grant or the bot's commit identity. Because a workflow
+may paste the outside text into a run step, that token is scoped in the job
+API: it reads the event and the issue that started the job, and may comment
+on, label, or assign and unassign the event's own verified sender on that
+issue only. Any other issue, opening an issue, closing or reopening, and
+assigning anyone else answer 403.
 
 ## Queue, lease, report
 

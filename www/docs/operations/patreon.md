@@ -34,6 +34,10 @@ PATREON_CREATOR_ACCESS_TOKEN
 - Callbacks redirect to `/dashboard/settings/account?patreon=<outcome>`.
 - Webhooks verify `X-Patreon-Signature` (hex HMAC-MD5 of the raw body).
 - Members are matched by linked Patreon user, then by email blind index.
+  The email match counts only when the account has confirmed that email;
+  signup accepts an unconfirmed address, so otherwise anyone who registered a
+  patron's email first would receive their tier. An unconfirmed match stays
+  unmatched until the patron links through OAuth.
 - Entitled cents map to roles: 1–999 `supporting_member`; 1000–4999 adds
   `pro_member`; 5000–9999 adds `builder_member`; 10000+ adds `studio_member`.
   Higher tiers inherit every lower role.

@@ -326,6 +326,97 @@ def test_verified_self_delete_forgets_known_actor():
     assert ("forget", actor) in log
 
 
+def _signed_request(activity, key_actor, key_suffix="#main-key"):
+    body = json.dumps(activity)
+    names = ["(request-target)", "host", "digest", "date"]
+    headers = {
+        "host": "forkmesh.com",
+        "digest": ap.digest_header_value(body.encode()),
+        "date": ap.http_date(1750000000000),
+        "signature": ap.build_signature_header(
+            key_actor + key_suffix, names, "c2ln"),
+    }
+    return FakeRequest("https://forkmesh.com/ap/inbox", body,
+                       headers=headers)
+
+
+def test_same_host_key_cannot_self_delete_another_actor():
+    log = []
+    ns = _inbox_env(log, known_remote=True, signature_verified=True)
+    victim = "https://mastodon.social/users/victim"
+    attacker = "https://mastodon.social/users/attacker"
+    resp = _run(ns["ap_inbox_handler"](None, _signed_request(
+        {"type": "Delete", "actor": victim, "object": victim}, attacker)))
+    assert resp.status == 401
+    assert resp.data["error"] == "actor_mismatch"
+    assert not any(e[0] == "forget" for e in log if isinstance(e, tuple))
+
+
+def test_same_host_key_cannot_undo_another_actors_follow():
+    log = []
+    ns = _inbox_env(log, signature_verified=True)
+
+    async def _ap_handle_undo(env, request, activity):
+        log.append(("undo", activity.get("actor")))
+        return FakeResponse({"ok": True}, status=202)
+
+    ns["_ap_handle_undo"] = _ap_handle_undo
+    victim = "https://mastodon.social/users/victim"
+    attacker = "https://mastodon.social/users/attacker"
+    undo = {"type": "Undo", "actor": victim, "object": {
+        "type": "Follow", "actor": victim,
+        "object": "https://forkmesh.com/ap/repos/forkmesh/forkmesh"}}
+    resp = _run(ns["ap_inbox_handler"](None, _signed_request(undo, attacker)))
+    assert resp.status == 401
+    assert resp.data["error"] == "actor_mismatch"
+    assert not any(e[0] == "undo" for e in log if isinstance(e, tuple))
+
+    log.clear()
+    resp = _run(ns["ap_inbox_handler"](None, _signed_request(undo, victim)))
+    assert resp.status == 202
+    assert ("undo", victim) in log
+
+
+def test_a_key_under_the_actors_own_path_still_signs_for_it():
+    log = []
+    ns = _inbox_env(log, signature_verified=True)
+
+    async def _ap_handle_undo(env, request, activity):
+        log.append(("undo", activity.get("actor")))
+        return FakeResponse({"ok": True}, status=202)
+
+    ns["_ap_handle_undo"] = _ap_handle_undo
+    actor = "https://goblin.technology/users/alice"
+    undo = {"type": "Undo", "actor": actor, "object": {
+        "type": "Follow", "actor": actor,
+        "object": "https://forkmesh.com/ap/repos/forkmesh/forkmesh"}}
+    resp = _run(ns["ap_inbox_handler"](None, _signed_request(
+        undo, actor, "/main-key")))
+    assert resp.status == 202
+    assert ("undo", actor) in log
+
+    log.clear()
+    resp = _run(ns["ap_inbox_handler"](None, _signed_request(
+        undo, "https://goblin.technology/users/alicex", "/main-key")))
+    assert resp.status == 401
+    assert resp.data["error"] == "actor_mismatch"
+
+
+def test_a_key_path_cannot_climb_out_of_the_claimed_actor():
+    log = []
+    ns = _inbox_env(log, signature_verified=True)
+    victim = "https://mastodon.social/users/victim"
+    undo = {"type": "Undo", "actor": victim, "object": {
+        "type": "Follow", "actor": victim,
+        "object": "https://forkmesh.com/ap/repos/forkmesh/forkmesh"}}
+    for suffix in ("/../attacker#main-key", "/%2e%2e/attacker#main-key",
+                   "/./../attacker#main-key"):
+        resp = _run(ns["ap_inbox_handler"](None, _signed_request(
+            undo, victim, suffix)))
+        assert resp.status == 401
+        assert resp.data["error"] == "key_actor_mismatch"
+
+
 def test_signature_freshness_must_be_valid_and_covered():
     actor = "https://mastodon.social/users/known"
 

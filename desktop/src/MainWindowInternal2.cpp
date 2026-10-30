@@ -6,6 +6,7 @@
 #include "MainWindowNextAccess.h"
 
 #include <QCache>
+#include <QMutex>
 
 namespace forkmesh::ui {
 
@@ -315,7 +316,7 @@ bool resolveThemeIsDark()
     const QString pref = QSettings().value(kThemeSetting, "system").toString();
     if (pref == "light")
         return false;
-    if (pref == "dark")
+    if (pref == "dark" || pref == kHalloweenTheme)
         return true;
     if (pref.startsWith(kMarketplaceThemePrefix))
         return QSettings().value(kThemeBaseDarkSetting, true).toBool();
@@ -509,7 +510,7 @@ QPixmap restartProgressPixmap(const QColor &color, double angleDeg, int size,
     return pm;
 }
 
-QByteArray forkMeshAvatarPng(const QString &seed)
+static QByteArray renderForkMeshAvatarPng(const QString &seed)
 {
     const QByteArray h =
         QCryptographicHash::hash(seed.toUtf8(), QCryptographicHash::Sha256);
@@ -847,6 +848,21 @@ QByteArray forkMeshAvatarPng(const QString &seed)
     QBuffer buffer(&png);
     buffer.open(QIODevice::WriteOnly);
     img.save(&buffer, "PNG");
+    return png;
+}
+
+QByteArray forkMeshAvatarPng(const QString &seed)
+{
+    static QMutex mutex;
+    static QCache<QString, QByteArray> cache(512);
+    {
+        const QMutexLocker lock(&mutex);
+        if (const QByteArray *hit = cache.object(seed))
+            return *hit;
+    }
+    const QByteArray png = renderForkMeshAvatarPng(seed);
+    const QMutexLocker lock(&mutex);
+    cache.insert(seed, new QByteArray(png));
     return png;
 }
 
@@ -1628,10 +1644,14 @@ void applyStoredOcticon(QPushButton *button)
         return;
     const int size = button->property("forkmeshOcticonSize").toInt();
     const qreal rotation = button->property("forkmeshOcticonRotation").toReal();
-    const QColor color = Theme::iconColorOverride(
+    QColor color = Theme::iconColorOverride(
         button->objectName(),
         QColor(Theme::iconColorForButton(button->objectName(),
                                          currentThemeIsDark())));
+    bool hasRole = false;
+    const int role = button->property("nextIconRole").toInt(&hasRole);
+    if (hasRole && Theme::isNext())
+        color = Theme::color(static_cast<Theme::Role>(role));
     const int px = size > 0 ? size : 16;
     if (rotation != 0.0) {
         QIcon icon;
@@ -1646,8 +1666,13 @@ void applyStoredOcticon(QPushButton *button)
         QIcon icon = themedOcticon(name, color, px);
         if (const char *checked = Theme::checkedIconColorForButton(
                 button->objectName(), currentThemeIsDark()))
-            icon.addPixmap(tintedOcticonPixmap(name, QColor(checked), px),
-                           QIcon::Normal, QIcon::On);
+            icon.addPixmap(
+                tintedOcticonPixmap(name,
+                                    hasRole && Theme::isNext()
+                                        ? Theme::color(Theme::Role::AccentFg)
+                                        : Theme::remapColor(QColor(checked)),
+                                    px),
+                QIcon::Normal, QIcon::On);
         button->setIcon(icon);
     }
     button->setIconSize(QSize(px, px));
@@ -1759,7 +1784,7 @@ int railItemWidth()
 
 int railColumnWidth()
 {
-    return railExpanded() ? kRailExpandedItemWidth : railCompactItemWidth();
+    return railExpanded() ? railExpandedItemWidth() : railCompactItemWidth();
 }
 
 int railWidth()

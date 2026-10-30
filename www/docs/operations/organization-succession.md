@@ -39,7 +39,14 @@ Approvals cannot exceed the eligible roster; owner and successor cannot approve.
 2. An hourly job sends one warning before the deadline; it never opens a case.
 3. After the threshold, a current member calls `POST .../activate` to open grace.
 4. During grace the owner may `cancel` or `check-in`; other current members
-   `approve` (idempotent; removed members' approvals stop counting).
+   `approve` (idempotent; removed members' approvals stop counting). Only
+   members who already held an approving role when grace opened may approve:
+   opening the case records that roster in `org_succession_case_approvers`
+   (a trigger on the case insert, migration 0295), and both the approval
+   insert and the completion check require the approver to be in it. An
+   account added or promoted during grace gets
+   `approver_joined_after_grace_opened`, so an administrator cannot reach the
+   threshold with accounts made for the purpose.
 5. After grace, a member calls `POST .../finalize`. One transaction rechecks
    deadline, owner, successor, and current approvers before changing the roles;
    any change fails closed.

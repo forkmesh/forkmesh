@@ -1,5 +1,6 @@
 import FMApi
 import FMBase
+import FMCrypto
 import Foundation
 import Observation
 
@@ -35,6 +36,24 @@ public struct ChatAttachment: Equatable, Sendable {
     public var kind: ChatAttachmentKind { ChatAttachmentKind.of(fileName: fileName, mime: mime) }
 }
 
+public enum ChatMediaFile {
+    public static func name(for attachment: ChatAttachment) -> String {
+        let digest = String(Sha256.hex(Array(attachment.messageId.utf8)).prefix(24))
+        let safe = attachment.fileName
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+            .replacingOccurrences(of: "..", with: "_")
+        return "\(digest)-\(safe)"
+    }
+
+    public static func url(for attachment: ChatAttachment, in directory: URL) -> URL? {
+        let folder = directory.standardizedFileURL
+        let url = folder.appendingPathComponent(name(for: attachment)).standardizedFileURL
+        guard url.deletingLastPathComponent().standardizedFileURL.path == folder.path else { return nil }
+        return url
+    }
+}
+
 public struct ChatThreadSummary: Equatable, Sendable {
     public let rootId: String
     public let replyCount: Int
@@ -54,6 +73,16 @@ public struct ReactionChip: Equatable, Sendable, Identifiable {
     public var id: String { value }
     public var emoji: String { ReactionCatalog.emoji(for: value) }
     public var label: String { ReactionCatalog.label(for: value) }
+}
+
+public struct StickerChip: Equatable, Sendable, Identifiable {
+    public let sticker: StickerEntry
+    public let count: Int
+    public let names: [String]
+    public let mine: Bool
+
+    public var id: String { sticker.slug }
+    public var countLabel: String { count > 1 ? "\u{00D7}\(count)" : "" }
 }
 
 public struct ChatTypingPeer: Equatable, Sendable {
@@ -82,15 +111,14 @@ public final class ChatExtras {
     @ObservationIgnored private var lastTypingSent: [String: Date] = [:]
 
     public private(set) var revision = 0
-    public private(set) var privateChannels: Set<String> = []
     public private(set) var hiddenChannels: Set<String> = []
-    public private(set) var inviteNotice: ChatNotice?
 
     private var replies: [String: [ChatMessage]] = [:]
     private var replyRoot: [String: String] = [:]
     private var rootChannel: [String: String] = [:]
     private var reactionState: [String: [String: [String: String]]] = [:]
     private var reactionOrder: [String: [String]] = [:]
+    private var stickerState: [String: [String: [String: String]]] = [:]
     private var editedText: [String: String] = [:]
     private var typingState: [String: [String: ChatTypingPeer]] = [:]
     private var files: [String: ChatAttachment] = [:]
@@ -112,8 +140,6 @@ public final class ChatExtras {
         revision &+= 1
         onChange?()
     }
-
-    public func clearInviteNotice() { inviteNotice = nil }
 
     public func replies(to rootId: String) -> [ChatMessage] { replies[rootId] ?? [] }
 
@@ -208,6 +234,16 @@ public final class ChatExtras {
         }
     }
 
+    public func stickers(for messageId: String, selfId roomSelfId: String? = nil) -> [StickerChip] {
+        guard let state = stickerState[messageId] else { return [] }
+        let me = roomSelfId ?? selfId
+        return StickerCatalog.entries.compactMap { sticker in
+            guard let placers = state[sticker.slug], !placers.isEmpty else { return nil }
+            let names = placers.keys.sorted().map { placers[$0] ?? "" }.filter { !$0.isEmpty }
+            return StickerChip(sticker: sticker, count: placers.count, names: names, mine: placers[me] != nil)
+        }
+    }
+
     public func attachment(for messageId: String) -> ChatAttachment? { files[messageId] }
 
     public func attachments(in messageIds: [String]) -> [ChatAttachment] { messageIds.compactMap { files[$0] } }
@@ -245,20 +281,15 @@ public final class ChatExtras {
         }
     }
 
-    public func isPrivate(_ channel: String) -> Bool { privateChannels.contains(channel) }
-
     public func apply(_ frame: JSONObject) {
         let type = frame["type"]?.text ?? ""
         let senderId = frame["senderId"]?.text ?? ""
         let conversation = ChatFrameText.conversation(of: frame)
         if conversation == "#team" { return }
         switch type {
-        case "chat", "dm":
+        case "chat":
             rememberFile(frame)
-            stopTyping(senderId, target: conversation.hasPrefix("@") ? "@\(senderId)" : conversation)
-            if frame["private"]?.isTrue == true, conversation.hasPrefix("#"), !hiddenChannels.contains(conversation) {
-                if privateChannels.insert(conversation).inserted { changed() }
-            }
+            stopTyping(senderId, target: conversation)
         case "thread-reply":
             applyReply(frame, senderId: senderId)
         case "reaction":
@@ -269,15 +300,13 @@ public final class ChatExtras {
             applyDelete(frame, senderId: senderId)
         case "typing":
             applyTyping(frame, senderId: senderId, conversation: conversation)
-        case "invite":
-            applyInvite(frame)
         case "channel":
             let name = ChatExtras.normalizedChannel(frame["name"]?.text ?? "")
             if !name.isEmpty, name != "#team", !hiddenChannels.contains(name) { onChannelJoined?(name) }
         case "history":
             applyHistory(frame)
         case ChatLookFrames.type:
-            applyLook(frame, senderId: senderId, conversation: relayConversation(frame, senderId: senderId))
+            applyLook(frame, senderId: senderId, conversation: conversation.hasPrefix("#") ? conversation : "")
         default:
             break
         }
@@ -324,6 +353,16 @@ public final class ChatExtras {
         reactionState[messageId]?[value]?[selfId] == nil
     }
 
+    public nonisolated static func stickerFields(added: Bool, messageId: String, sticker: StickerEntry, selfId: String) -> JSONObject {
+        var fields = reactionFields(added: added, messageId: messageId, value: sticker.fallback, selfId: selfId)
+        fields[StickerCatalog.field] = .string(sticker.slug)
+        return fields
+    }
+
+    public func stickerAdds(messageId: String, slug: String, selfId: String) -> Bool {
+        stickerState[messageId]?[slug]?[selfId] == nil
+    }
+
     public func roomAuthor(of id: String, conversation: String) -> String? { author(of: id, conversation: conversation) }
 
     private func holdEdit(_ frame: JSONObject, target: String) {
@@ -350,14 +389,6 @@ public final class ChatExtras {
         replyRoot.removeValue(forKey: target)
         recordRemoved(target)
         onRemoved?(conversation, target)
-    }
-
-    private func relayConversation(_ frame: JSONObject, senderId: String) -> String {
-        let conversation = ChatFrameText.conversation(of: frame)
-        guard conversation.hasPrefix("@") else { return conversation }
-        if !senderId.isEmpty && senderId == selfId { return conversation }
-        guard !senderId.isEmpty, (frame["to"]?.text ?? "") == selfId, !selfId.isEmpty else { return "" }
-        return "@\(senderId)"
     }
 
     private func applyLook(_ frame: JSONObject, senderId: String, conversation: String, selfId lookSelfId: String? = nil) {
@@ -399,7 +430,9 @@ public final class ChatExtras {
         let shown = ChatFrameText.shownSender(frame).isEmpty ? senderId : ChatFrameText.shownSender(frame)
         let message = ChatMessage(
             id: id, conversation: channel, senderId: shown,
-            senderName: ChatFrameText.bounded(frame["sender"], ChatLimits.maxDisplayNameChars),
+            senderName: ChatFrameText.bounded(
+                frame["sender"],
+                ChatFrameText.botName(frame) == nil ? ChatLimits.maxDisplayNameChars : ChatLimits.maxDisplayNameChars * 3),
             text: ChatFrameText.bounded(frame["text"], ChatLimits.maxTextChars), timestamp: Date(epochMillis: millis),
             isSelf: !shown.isEmpty && shown == me,
             fileName: ChatFrameText.bounded(frame["fileName"], ChatLimits.maxFileNameChars))
@@ -415,7 +448,6 @@ public final class ChatExtras {
         replies[rootId] = list
         replyRoot[id] = rootId
         rootChannel[rootId] = channel
-        if frame["private"]?.isTrue == true { privateChannels.insert(channel) }
         rememberFile(frame)
         changed()
     }
@@ -426,8 +458,12 @@ public final class ChatExtras {
         let reactorId = frame["reactorId"]?.text ?? senderId
         if target.isEmpty || raw.isEmpty || raw.count > 16 || reactorId.isEmpty { return }
         if !senderId.isEmpty && reactorId != senderId { return }
-        let value = ReactionCatalog.value(forEmoji: raw)
         let name = String((frame["reactorName"]?.text ?? frame["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
+        if let sticker = StickerCatalog.entry(frame[StickerCatalog.field]?.text ?? "") {
+            applySticker(sticker.slug, target: target, reactorId: reactorId, name: name, added: frame["added"]?.isTrue == true)
+            return
+        }
+        let value = ReactionCatalog.value(forEmoji: raw)
         var state = reactionState[target] ?? [:]
         var order = reactionOrder[target] ?? []
         var reactors = state[value] ?? [:]
@@ -444,6 +480,20 @@ public final class ChatExtras {
         order = order.filter { state[$0] != nil }
         reactionState[target] = state.isEmpty ? nil : state
         reactionOrder[target] = order.isEmpty ? nil : order
+        changed()
+    }
+
+    private func applySticker(_ slug: String, target: String, reactorId: String, name: String, added: Bool) {
+        var state = stickerState[target] ?? [:]
+        var placers = state[slug] ?? [:]
+        if added {
+            if placers[reactorId] != nil || placers.count >= ChatExtras.maxReactorsPerReaction { return }
+            placers[reactorId] = name
+        } else if placers.removeValue(forKey: reactorId) == nil {
+            return
+        }
+        state[slug] = placers.isEmpty ? nil : placers
+        stickerState[target] = state.isEmpty ? nil : state
         changed()
     }
 
@@ -471,8 +521,9 @@ public final class ChatExtras {
             list.removeAll { $0.id == target }
             replies[root] = list.isEmpty ? nil : list
             replyRoot.removeValue(forKey: target)
-        } else if let author = authorOf?(ChatFrameText.conversation(of: frame), target), author != senderId {
-            return
+        } else {
+            guard !senderId.isEmpty, let author = authorOf?(ChatFrameText.conversation(of: frame), target), author == senderId
+            else { return }
         }
         forget(target)
         changed()
@@ -483,6 +534,7 @@ public final class ChatExtras {
         editedText.removeValue(forKey: id)
         reactionState.removeValue(forKey: id)
         reactionOrder.removeValue(forKey: id)
+        stickerState.removeValue(forKey: id)
         if let file = files.removeValue(forKey: id) {
             fileBytes -= file.data.count
             fileOrder.removeAll { $0 == id }
@@ -495,8 +547,8 @@ public final class ChatExtras {
     }
 
     private func applyTyping(_ frame: JSONObject, senderId: String, conversation: String) {
-        let target = conversation.hasPrefix("@") ? "@\(senderId)" : conversation
-        applyTyping(frame, senderId: senderId, target: target, selfId: selfId)
+        if !conversation.hasPrefix("#") { return }
+        applyTyping(frame, senderId: senderId, target: conversation, selfId: selfId)
     }
 
     private func applyTyping(_ frame: JSONObject, senderId: String, target: String, selfId me: String) {
@@ -512,26 +564,17 @@ public final class ChatExtras {
         typingState[target] = peers.isEmpty ? nil : peers
     }
 
-    private func applyInvite(_ frame: JSONObject) {
-        if (frame["to"]?.text ?? "") != selfId || selfId.isEmpty { return }
-        let channel = ChatExtras.normalizedChannel(String((frame["channel"]?.text ?? "").prefix(120)))
-        if channel.isEmpty || channel == "#team" || hiddenChannels.contains(channel) { return }
-        privateChannels.insert(channel)
-        onChannelJoined?(channel)
-        let sender = frame["sender"]?.text ?? "Someone"
-        inviteNotice = ChatNotice("\(sender) invited you to private room \(channel).")
-        changed()
-    }
-
     private func applyHistory(_ frame: JSONObject) {
         let to = frame["to"]?.text ?? ""
         if !to.isEmpty && to != selfId { return }
+        let sender = frame["senderId"]?.text ?? ""
+        if sender.isEmpty { return }
         for entry in frame["entries"]?.objects.prefix(ChatLimits.historyEntriesPerChannel) ?? [] {
             let type = entry["type"]?.text ?? ""
             if type != "chat" && type != "thread-reply" { continue }
             let channel = entry["channel"]?.text ?? ""
             if !channel.hasPrefix("#") || channel == "#team" || hiddenChannels.contains(channel) { continue }
-            if entry["private"]?.isTrue == true && !privateChannels.contains(channel) { continue }
+            if entry["private"]?.isTrue == true || (entry["senderId"]?.text ?? "") != sender { continue }
             sink?.applyFrame(entry)
         }
     }
@@ -571,17 +614,6 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func createPrivateChannel(_ raw: String) -> String? {
-        guard ChatExtras.validChannelName(raw) else { return nil }
-        let name = ChatExtras.normalizedChannel(raw).lowercased()
-        hiddenChannels.remove(name)
-        privateChannels.insert(name)
-        onChannelJoined?(name)
-        changed()
-        return name
-    }
-
-    @discardableResult
     public func addPublicChannel(_ raw: String) -> String? {
         guard ChatExtras.validChannelName(raw), let sink else { return nil }
         let name = ChatExtras.normalizedChannel(raw).lowercased()
@@ -598,7 +630,6 @@ public final class ChatExtras {
     public func removeChannel(_ channel: String) {
         if channel == "#general" { return }
         hiddenChannels.insert(channel)
-        privateChannels.remove(channel)
         looks.removeValue(forKey: channel)
         lookEventLists.removeValue(forKey: channel)
         for (root, owner) in rootChannel where owner == channel {
@@ -610,12 +641,33 @@ public final class ChatExtras {
         changed()
     }
 
-    public func restoreChannels(privateChannels: [String], hiddenChannels: [String]) {
+    public func resetForProjectSwitch() {
+        pendingEdits = [:]
+        pendingEditOrder = []
+        removedOrder = []
+        lastTypingSent = [:]
+        hiddenChannels = []
+        replies = [:]
+        replyRoot = [:]
+        rootChannel = [:]
+        reactionState = [:]
+        reactionOrder = [:]
+        stickerState = [:]
+        editedText = [:]
+        typingState = [:]
+        files = [:]
+        fileOrder = []
+        fileBytes = 0
+        hiddenMessageSet = []
+        removedSet = []
+        looks = [:]
+        lookEventLists = [:]
+        hiddenMessageOrder = []
+        revision &+= 1
+    }
+
+    public func restoreChannels(hiddenChannels: [String]) {
         self.hiddenChannels.formUnion(hiddenChannels)
-        for channel in privateChannels where !self.hiddenChannels.contains(channel) {
-            self.privateChannels.insert(channel)
-            onChannelJoined?(channel)
-        }
         changed()
     }
 
@@ -623,10 +675,7 @@ public final class ChatExtras {
         frame["conversation"] = .string(conversation)
         if conversation.hasPrefix("#") {
             frame["channel"] = .string(conversation)
-            if privateChannels.contains(conversation) { frame["private"] = true }
             if persist { frame["persist"] = true }
-        } else if conversation.hasPrefix("@") {
-            frame["to"] = .string(String(conversation.dropFirst()))
         }
     }
 
@@ -639,30 +688,15 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func sendPrivateChat(_ channel: String, text: String) -> Bool {
-        let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
-        guard let sink, !body.isEmpty, channel.hasPrefix("#") else { return false }
-        var frame = sink.makeFrame("chat")
-        frame["text"] = .string(body)
-        routed(&frame, conversation: channel, persist: true)
-        frame["private"] = true
-        sink.applyFrame(frame)
-        if sink.sendFrame(frame) { return true }
-        takeBack(frame["id"]?.text ?? "", conversation: channel)
-        return false
-    }
-
-    @discardableResult
     public func sendText(conversation: String, text: String) async -> Bool {
-        if privateChannels.contains(conversation) { return sendPrivateChat(conversation, text: text) }
-        guard let sink else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         return await sink.sendMessage(String(text.prefix(ChatLimits.maxTextChars)), to: conversation)
     }
 
     @discardableResult
     public func sendBotReply(channel: String, rootId: String, text: String) -> Bool {
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
-        guard let sink, !body.isEmpty, channel.hasPrefix("#"), !privateChannels.contains(channel) else { return false }
+        guard let sink, !body.isEmpty, channel.hasPrefix("#") else { return false }
         let root = String(rootId.prefix(ChatLimits.maxRootIdChars))
         var frame: JSONObject = [
             "type": .string(root.isEmpty ? "chat" : "thread-reply"),
@@ -717,6 +751,26 @@ public final class ChatExtras {
     }
 
     @discardableResult
+    public func toggleSticker(conversation: String, messageId: String, slug: String) -> Bool {
+        guard let sink, !messageId.isEmpty, let sticker = StickerCatalog.entry(slug) else { return false }
+        let me = sink.selfId
+        let added = stickerAdds(messageId: messageId, slug: slug, selfId: me)
+        var frame = sink.makeFrame("reaction")
+        for (key, value) in ChatExtras.stickerFields(added: added, messageId: messageId, sticker: sticker, selfId: me) {
+            frame[key] = value
+        }
+        frame["reactorName"] = .string(frame["sender"]?.text ?? "")
+        routed(&frame, conversation: conversation, persist: true)
+        sink.applyFrame(frame)
+        if sink.sendFrame(frame) { return true }
+        var undo = sink.makeFrame("reaction")
+        for (key, value) in frame where key != "id" && key != "ts" { undo[key] = value }
+        undo["added"] = .bool(!added)
+        sink.applyFrame(undo)
+        return false
+    }
+
+    @discardableResult
     public func edit(conversation: String, messageId: String, text: String) -> Bool {
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
         guard let sink, !body.isEmpty, !messageId.isEmpty else { return false }
@@ -745,7 +799,7 @@ public final class ChatExtras {
 
     @discardableResult
     public func sendTyping(conversation: String, active: Bool) -> Bool {
-        guard let sink, conversation.hasPrefix("#") || conversation.hasPrefix("@") else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         let now = clock.now
         if active {
             if let last = lastTypingSent[conversation], now.timeIntervalSince(last) < ChatLimits.typingResend { return false }
@@ -761,26 +815,15 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func invite(peerId: String, to channel: String) -> Bool {
-        guard let sink, !peerId.isEmpty, peerId != sink.selfId, privateChannels.contains(channel), channel != "#team" else {
-            return false
-        }
-        var frame = sink.makeFrame("invite")
-        frame["to"] = .string(peerId)
-        frame["channel"] = .string(channel)
-        return sink.sendFrame(frame)
-    }
-
-    @discardableResult
     public func sendFile(conversation: String, fileName: String, mime: String, data: Data) -> Bool {
         let name = String(fileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxFileNameChars))
-        guard let sink, !name.isEmpty, !data.isEmpty, data.count <= ChatFileLimits.maxSendBytes else { return false }
-        var frame = sink.makeFrame(conversation.hasPrefix("@") ? "dm" : "chat")
+        guard let sink, !name.isEmpty, !data.isEmpty, data.count <= ChatFileLimits.maxSendBytes, conversation.hasPrefix("#")
+        else { return false }
+        var frame = sink.makeFrame("chat")
         frame["fileName"] = .string(name)
         frame["fileMime"] = .string(String(mime.prefix(ChatLimits.maxMimeChars)))
         frame["file"] = .string(data.base64EncodedString())
         routed(&frame, conversation: conversation, persist: true)
-        if frame["channel"] == nil { frame.removeValue(forKey: "persist") }
         let id = frame["id"]?.text ?? ""
         store(ChatAttachment(messageId: id, fileName: name, mime: mime, data: data))
         sink.applyFrame(frame)
@@ -792,7 +835,7 @@ public final class ChatExtras {
 
     @discardableResult
     public func sendLook(conversation: String, change: ChatLookChange) -> Bool {
-        guard let sink, conversation.hasPrefix("#") || conversation.hasPrefix("@") else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         var frame = sink.makeFrame(ChatLookFrames.type)
         for (key, value) in ChatLookFrames.fields(change) { frame[key] = value }
         routed(&frame, conversation: conversation, persist: true)
@@ -839,6 +882,8 @@ public final class ChatExtras {
 
     public func snapshotReactionOrder() -> [String: [String]] { reactionOrder }
 
+    public func snapshotStickers() -> [String: [String: [String: String]]] { stickerState }
+
     public func snapshotEdits() -> [String: String] { editedText }
 
     public func snapshotLooks() -> [String: ChatLook] { looks.filter { !$0.value.isEmpty } }
@@ -878,7 +923,7 @@ public final class ChatExtras {
 
     public func restore(
         replies restoredReplies: [ChatMessage], roots: [String: String], reactions: [String: [String: [String: String]]],
-        order: [String: [String]], edits: [String: String]
+        order: [String: [String]], edits: [String: String], stickers: [String: [String: [String: String]]] = [:]
     ) {
         for reply in restoredReplies {
             guard let root = roots[reply.id], replyRoot[reply.id] == nil, !hiddenChannels.contains(reply.conversation),
@@ -897,6 +942,10 @@ public final class ChatExtras {
         for (id, state) in reactions where reactionState[id] == nil {
             reactionState[id] = state
             reactionOrder[id] = (order[id] ?? Array(state.keys.sorted())).filter { state[$0] != nil }
+        }
+        for (id, state) in stickers where stickerState[id] == nil {
+            let known = state.filter { StickerCatalog.entry($0.key) != nil && !$0.value.isEmpty }
+            if !known.isEmpty { stickerState[id] = known }
         }
         for (id, text) in edits where editedText[id] == nil { editedText[id] = text }
         changed()

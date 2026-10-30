@@ -163,6 +163,15 @@ def test_batched_blobs_use_direct_https_gateway():
     route = _method_source("Default", "_route")
     gateway = (ROOT.parent / "tools" / "mirror_gateway.py").read_text(
         encoding="utf-8")
-    assert "'blobs'" in route
+    runtime = ast.parse((ENTRY.parent / "app_runtime.py").read_text(
+        encoding="utf-8"))
+    read_actions = next(
+        ast.literal_eval(node.value.args[0])
+        for node in runtime.body
+        if isinstance(node, ast.Assign)
+        and any(getattr(t, "id", None) == "REPO_HOST_READ_ACTIONS"
+                for t in node.targets))
+    assert "blobs" in read_actions
+    assert "action in REPO_HOST_READ_ACTIONS" in route
     assert "_https_mirror_proxy" in route
     assert "list(paths)[:60]" in gateway

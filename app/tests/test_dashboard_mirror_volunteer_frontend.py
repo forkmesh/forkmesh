@@ -115,6 +115,7 @@ def test_success_is_confirmed_on_the_re_rendered_card():
 
 def _steps_for(repository, node):
     script = (
+        "const desktopBrand = () => \"ForkMesh \";\n"
         "const escapeHtml = (v) => String(v).replace(/[&<>\"']/g, (c) => "
         "({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\n"
         "%s\nconsole.log(JSON.stringify(externalMirrorHandoffSteps(%s, %s)));"
@@ -128,10 +129,12 @@ def test_handoff_steps_walk_from_install_to_a_hosted_mirror():
     assert len(steps) == 5
     assert "Install the ForkMesh desktop app" in steps[0]
     assert 'href="/dashboard/settings/nodes"' in steps[0]
-    assert "Remote clone URL" in steps[1]
-    assert "https://github.com/acme/spidertest" in steps[2]
+    assert "Remote clone URL" not in "\n".join(steps)
+    assert "https://github.com/acme/spidertest" in steps[1]
+    assert "git" in steps[1]
+    assert "Import folder" in steps[2]
     assert "spidertest" in steps[2]
-    assert "Publish" in steps[3]
+    assert "Private" in steps[3]
     assert "Volunteer to mirror" in steps[4]
 
 
@@ -179,3 +182,15 @@ def test_relay_refuses_a_user_account_volunteering_itself():
     assert '_account_kind(node_rec) != "node"' in fn
     assert "await _account_owns_node(env, actor, node)" in fn
     assert 'account.get("status") != "active"' in fn
+
+
+def test_without_a_node_a_supported_forge_listing_is_imported_and_hosted_here():
+    import re as _re
+    from _dashboard_bundle import assembled_dashboard_js as _js
+    text = _js()
+    start = _re.search(r"\n  async function volunteerForExternalMirror\(", text).start()
+    body = text[start:text.index("\n  }\n", start)]
+    no_node = body[body.index("if (!node) {"):body.index("openExternalMirrorHandoff(repository)")]
+    assert "hostedImportAllowed(original)" in no_node
+    assert "await createHostedRepository({" in no_node
+    assert "importUrl: original," in no_node

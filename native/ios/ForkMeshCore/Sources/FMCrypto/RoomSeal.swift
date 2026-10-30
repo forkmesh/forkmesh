@@ -42,6 +42,11 @@ public enum RoomSealOpen: Equatable, Sendable {
         if !node.isEmpty { plain["senderId"] = .string(node) }
         return plain
     }
+
+    public var senderKid: String? {
+        if case .opened(_, let kid, _, _) = self { return kid }
+        return nil
+    }
 }
 
 public final class RoomSeal: @unchecked Sendable {
@@ -59,6 +64,7 @@ public final class RoomSeal: @unchecked Sendable {
     public let keyring: ChatKeyring
     public let trust: ChatTrustStore
     public let version: Int64
+    public let nodeIdentity: DeviceIdentity?
 
     private let store: SecureStore?
     private let lock = NSLock()
@@ -67,7 +73,8 @@ public final class RoomSeal: @unchecked Sendable {
 
     public init(
         room roomName: String, scope trustScope: String? = nil, policy: ChatTrustPolicy, acct: String?, node: String?,
-        participants: Set<String>? = nil, keyring: ChatKeyring, store: SecureStore? = nil, version: Int64? = nil
+        participants: Set<String>? = nil, keyring: ChatKeyring, store: SecureStore? = nil, version: Int64? = nil,
+        nodeIdentity: DeviceIdentity? = nil
     ) throws {
         let trimmed = roomName.dartTrimmed
         if trimmed.isEmpty { throw CryptoArgumentError("A chat room is required.") }
@@ -82,17 +89,19 @@ public final class RoomSeal: @unchecked Sendable {
         self.keyring = keyring
         self.trust = keyring.trust(scopeName.isEmpty ? trimmed : scopeName)
         self.store = store
+        self.nodeIdentity = nodeIdentity
         self.salt = Sha256.hash(Array("ForkMesh chat e2ee salt v3:\(trimmed)".utf8))
     }
 
     public static func loadOrCreate(
         _ roomName: String, scope: String? = nil, policy: ChatTrustPolicy = .open, acct: String, node: String,
-        participants: Set<String>? = nil, secureStore: SecureStore, now: Int64 = Date().epochMillis
+        participants: Set<String>? = nil, secureStore: SecureStore, nodeIdentity: DeviceIdentity? = nil,
+        now: Int64 = Date().epochMillis
     ) throws -> RoomSeal {
         let keyring = try ChatKeyring.shared(secureStore, now: now)
         let seal = try RoomSeal(
             room: roomName, scope: scope, policy: policy, acct: acct, node: node, participants: participants,
-            keyring: keyring, store: secureStore)
+            keyring: keyring, store: secureStore, nodeIdentity: nodeIdentity)
         seal.trust.room = seal.room
         return seal
     }
@@ -151,15 +160,33 @@ public final class RoomSeal: @unchecked Sendable {
         ])
     }
 
+    public static func nodeBindingMessage(_ room: String, _ kid: String, _ idk: String, _ acct: String) -> [UInt8] {
+        ChatV3.lines(["forkmesh-chat-e2ee-node-v1", room, kid, idk, acct])
+    }
+
     public static func bundle(
-        room: String, acct: String, node: String, keyring: ChatKeyring, prekey: ChatPrekey
+        room: String, acct: String, node: String, keyring: ChatKeyring, prekey: ChatPrekey,
+        nodeIdentity: DeviceIdentity? = nil
     ) throws -> JSONObject {
         let spk = prekey.json
         let signature = try keyring.sign(bundleMessage(room, keyring.kid, keyring.idk, acct, node, spk))
-        return [
+        var frame: JSONObject = [
             "type": .string(keyType), "v": .int(ChatV3.version), "kid": .string(keyring.kid), "idk": .string(keyring.idk),
             "acct": .string(acct), "node": .string(node), "spk": .object(spk), "sig": .string(ChatV3.b64u(signature)),
         ]
+        if let nodeIdentity {
+            guard nodeIdentity.nodeId == node else { throw CryptoArgumentError("The node key does not match the node id.") }
+            frame["nsig"] = .string(nodeIdentity.sign(nodeBindingMessage(room, keyring.kid, keyring.idk, acct)))
+        }
+        return frame
+    }
+
+    public static func verifyNodeBinding(_ frame: JSONObject, room: String) -> Bool {
+        guard let node = frame["node"]?.stringValue, let nodeKey = ChatV3.unb64u(node, length: Ed25519.publicKeyBytes),
+            let kid = frame["kid"]?.stringValue, let idk = frame["idk"]?.stringValue,
+            let acct = frame["acct"]?.stringValue, let signature = ChatV3.bytes64u(frame["nsig"], ChatV3.signatureBytes)
+        else { return false }
+        return Ed25519.verify(publicKey: nodeKey, message: nodeBindingMessage(room, kid, idk, acct), signature: signature)
     }
 
     public static func verifyBundle(_ frame: JSONObject, room: String, now: Int64) -> Bool {
@@ -185,8 +212,11 @@ public final class RoomSeal: @unchecked Sendable {
 
     public func keyFrame(now: Int64 = Date().epochMillis) -> JSONObject {
         keyring.rotateIfNeeded(now: now)
+        if policy == .open && nodeIdentity?.nodeId != node { return [:] }
         guard let acct, let node, let prekey = keyring.newestPrekey(),
-            let frame = try? RoomSeal.bundle(room: room, acct: acct, node: node, keyring: keyring, prekey: prekey)
+            let frame = try? RoomSeal.bundle(
+                room: room, acct: acct, node: node, keyring: keyring, prekey: prekey,
+                nodeIdentity: policy == .open ? nodeIdentity : nil)
         else { return [:] }
         _ = trust.accept(
             kid: keyring.kid, idk: keyring.idk, acct: acct, node: node, spk: prekey, policy: policy,
@@ -223,6 +253,7 @@ public final class RoomSeal: @unchecked Sendable {
             let kid = frame["kid"]?.stringValue, let idk = frame["idk"]?.stringValue,
             let acct = frame["acct"]?.stringValue, let node = frame["node"]?.stringValue
         else { return nil }
+        if policy == .open && !RoomSeal.verifyNodeBinding(frame, room: room) { return nil }
         if let participants, !participants.contains(acct) { return nil }
         return trust.accept(
             kid: kid, idk: idk, acct: acct, node: node, spk: spk, policy: policy, ownKid: keyring.kid, now: now)
@@ -422,6 +453,7 @@ public final class RoomSeal: @unchecked Sendable {
             senderIdk = record.idk
             senderAcct = record.acct
             senderNode = record.node
+            if policy == .open && ChatV3.unb64u(record.node, length: Ed25519.publicKeyBytes) == nil { return .invalid }
         }
         if senderIdk != idk { return .invalid }
         guard let message = RoomSeal.sealedMessage(room, frame),

@@ -42,8 +42,11 @@ def test_the_page_reads_the_public_api_and_builds_nodes_safely():
     assert '/^\\/ecosystem\\/([a-z0-9][a-z0-9-]{0,63})\\/?$/' in script
     for label in ("ForkMesh relationship", "What it does",
                   "Why we're watching", "ForkMesh integrations",
-                  "Last reviewed: ", '"Compatible"', '"Integration"'):
+                  "Last reviewed: ", '"Compatible"', '"Integration"',
+                  "Compared with ForkMesh"):
         assert label in script
+    assert 'el("table", "eco-compare")' in script
+    assert "<dt>Compared with ForkMesh</dt>" in PAGE
 
 
 def test_the_landing_page_has_the_ecosystem_section_before_support():

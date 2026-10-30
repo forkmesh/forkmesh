@@ -13,6 +13,7 @@ import {
   sealKeyFrame,
   unsealFrame,
 } from "./chat-seal.js";
+import { isPrivateRelayFrame, serverPlain } from "./chat-frame-auth.js";
 import { moderateChatPlain } from "./chat-moderation.js";
 
 const INITIAL_RECONNECT_MS = 2000;
@@ -110,10 +111,6 @@ function roomKeyForAccess(access) {
 
 export function createChatRoomTransport({
   authorize,
-  // Public channels intentionally let controller-side integrations read and
-  // author application frames. Everything else remains fail-closed behind the
-  // device-to-device seal. This decision comes from authenticated channel
-  // metadata, never from a frame supplied by the relay.
   allowsControllerAccess = () => false,
   isDirectRoom = () => false,
   // Resolves this device's automatic E2EE identity and the public keys it has
@@ -467,14 +464,6 @@ export function createChatRoomTransport({
       }, 25);
     }
 
-    // The one place a room-layer plaintext becomes an application frame.
-    // Protected rooms accept only recipient-sealed frames; public rooms also
-    // accept ordinary frames so ForkBot, MCP, and webhooks can participate.
-    //
-    // Every frame this drops takes onSealed with it, because all three ways a
-    // room can be out of step look identical to a reader — an empty room:
-    //   kid  -> the content key was not wrapped for this device
-    //   ""   -> the frame was not recipient-sealed at all
     releaseHeldReceipt = (id) => {
       const envelope = heldReceipts.get(String(id || ""));
       if (!envelope || stale()) return false;
@@ -490,7 +479,7 @@ export function createChatRoomTransport({
         const plain = authenticatedPlain(result);
         if (plain?.type === E2EE_RESET_TYPE) {
           if (direct) scheduleResealFor(result.kid);
-        } else if (plain) {
+        } else if (plain && (direct || !isPrivateRelayFrame(plain))) {
           plains.push(await moderateChatPlain(plain));
         }
       }
@@ -533,8 +522,9 @@ export function createChatRoomTransport({
       }
       if (framed.type === "sealed" || framed.type === "e2ee-key") {
         if (!isSealedFrame(framed)) return null;
-      } else if (controllerReadable) {
-        return { plain: framed };
+      } else if (!direct && envelope?.srv === true) {
+        const injected = serverPlain(framed);
+        return injected && !isPrivateRelayFrame(injected) ? { plain: injected } : null;
       } else {
         onSealed("", room);
         return null;
@@ -549,6 +539,7 @@ export function createChatRoomTransport({
       }
       if (result.status === "own") {
         const own = result.plain ? authenticatedPlain(result) : null;
+        if (own && !direct && isPrivateRelayFrame(own)) return null;
         return own ? { plain: own, ack: false } : null;
       }
       if (result.status === "noSession") {
@@ -570,6 +561,7 @@ export function createChatRoomTransport({
         if (direct) scheduleResealFor(result.kid);
         return { plain: null, ack: true };
       }
+      if (!direct && isPrivateRelayFrame(plain)) return { plain: null, ack: true };
       if (direct) {
         if (framed.kid === seal.keyId && envelope.persist === true) {
           rememberOutbox(
@@ -811,12 +803,11 @@ export function createChatRoomTransport({
       const activeSocket = socket;
       const seal = currentSeal;
       const room = currentRoom;
+      if (!seal || (!isDirectRoom(room) && isPrivateRelayFrame(plain))) return false;
       const moderated = await moderateChatPlain(plain);
-      const rotationBefore = seal ? seal.rotation : 0;
-      const sealed = currentControllerReadable
-        ? null
-        : await sealFrame(moderated, seal, currentAccess?.roomName);
-      if (sealed && seal.rotation !== rotationBefore) {
+      const rotationBefore = seal.rotation;
+      const sealed = await sealFrame(moderated, seal, currentAccess?.roomName);
+      if (seal.rotation !== rotationBefore) {
         const advertiseKey = currentKey;
         const advertiseSocket = socket;
         encryptObject(await sealKeyFrame(seal), advertiseKey).then((advert) => {
@@ -829,7 +820,7 @@ export function createChatRoomTransport({
       // persist is decided from the frame the caller wrote, not the sealed
       // wrapper, so retention keeps working in a room whose types the relay
       // can no longer read.
-      const envelope = await encryptObject(sealed || moderated, currentKey);
+      const envelope = await encryptObject(sealed, currentKey);
       if (persist) envelope.persist = true;
       // The relay only sees ciphertext, and edits, reactions and key
       // advertisements are retained too. Marking the frames a person would
@@ -838,12 +829,16 @@ export function createChatRoomTransport({
       if (persist && NOTIFY_TYPES.has(plain && plain.type)) {
         envelope.notify = true;
       }
+      if (!persist && plain?.type === "call-invite" && isDirectRoom(room)) {
+        envelope.ring = true;
+        if (plain.call) envelope.call = String(plain.call);
+      }
       const text = JSON.stringify(envelope);
       const ref = persist ? await frameRef(text) : "";
       if (persist && plain?.id) rememberRecipientRef(ref, String(plain.id));
       if (activeSocket !== socket || !this.connected) return false;
       activeSocket.send(text);
-      if (persist && sealed && room === outboxRoom && isDirectRoom(room)) {
+      if (persist && room === outboxRoom && isDirectRoom(room)) {
         rememberOutbox(ref, moderated, sealed, envelope.notify === true);
       }
       return true;

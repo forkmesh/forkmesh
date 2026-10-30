@@ -97,6 +97,32 @@ int widthFor(int columns, const QString &caption)
     return columns <= 0 ? 0 : qMax(columns * kPitch, captionWidth(caption));
 }
 
+QTimer *animationClock()
+{
+    static QPointer<QTimer> clock;
+    if (!clock) {
+        clock = new QTimer(QCoreApplication::instance());
+        clock->setInterval(kAnimationIntervalMs);
+    }
+    return clock;
+}
+
+void holdAnimationClock(bool *held, bool want)
+{
+    static int holders = 0;
+    if (!held || *held == want)
+        return;
+    *held = want;
+    holders = qMax(0, holders + (want ? 1 : -1));
+    if (!QCoreApplication::instance())
+        return;
+    QTimer *clock = animationClock();
+    if (holders > 0 && !clock->isActive())
+        clock->start();
+    else if (holders == 0 && clock->isActive())
+        clock->stop();
+}
+
 } // namespace forkmesh::ui::ChromeDotGrid
 
 namespace forkmesh::ui {
@@ -626,10 +652,13 @@ bool requestFirewallCanPrompt()
 QList<BackoffNetworkAccessManager::FirewallRuleEntry>
 defaultApprovedFirewallRules()
 {
-    QFile file(kDefaultApprovedFirewallRulesResource);
-    if (!file.open(QIODevice::ReadOnly))
-        return {};
-    return BackoffNetworkAccessManager::parseFirewallRuleList(file.readAll());
+    static const QList<BackoffNetworkAccessManager::FirewallRuleEntry> rules = [] {
+        QFile file(kDefaultApprovedFirewallRulesResource);
+        if (!file.open(QIODevice::ReadOnly))
+            return QList<BackoffNetworkAccessManager::FirewallRuleEntry>();
+        return BackoffNetworkAccessManager::parseFirewallRuleList(file.readAll());
+    }();
+    return rules;
 }
 
 void seedDefaultApprovedFirewallRules(QSettings &settings, QStringList *rules)
@@ -1994,7 +2023,7 @@ QString runningClientDir()
 
 QString workingClientDir()
 {
-    const QString baked = QStringLiteral(FORKMESH_SOURCE_DIR);
+    const QString baked = forkmesh::sourceDir();
     if (!baked.isEmpty() && QDir(baked).exists("CMakeLists.txt"))
         return baked;
     return runningClientDir();
@@ -2257,6 +2286,14 @@ QIcon agentStatusModelIcon(const AgentSession &session)
                                         Qt::CaseInsensitive) == 0)
         return agentControlIcon(7);
     return agentModelIcon(session.provider, session.model);
+}
+
+QIcon agentFaceIcon(const QString &provider, const QString &model)
+{
+    AgentSession session;
+    session.provider = provider;
+    session.model = model;
+    return agentStatusModelIcon(session);
 }
 
 } // namespace forkmesh::ui

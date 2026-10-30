@@ -71,6 +71,7 @@ open class ApiService(
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
+        const val BUG_REPORT_INBOX_MISSING = "This relay cannot list reported bugs yet. Update the relay and try again."
         const val CACHE_TTL_MS = 60_000L
         const val ACCOUNT_STATUS_TTL_MS = 120_000L
         const val OFFLINE_REPO_TTL_MS = 60_000L
@@ -603,10 +604,15 @@ open class ApiService(
         return BugReportResult.failure("ForkMesh could not accept the report. Try again in a moment.")
     }
 
-    open fun bugReportInbox(status: String = "", offset: Int = 0): BugReportInbox {
+    private fun wasCancelled(error: Throwable): Boolean =
+        error is InterruptedException || error is java.io.InterruptedIOException && error !is java.net.SocketTimeoutException ||
+            error is java.nio.channels.ClosedByInterruptException || error is java.util.concurrent.CancellationException
+
+    open fun bugReportInbox(status: String = "", offset: Int = 0, limit: Int = 0): BugReportInbox {
         val query = LinkedHashMap<String, String>()
         if (status.isNotEmpty()) query["status"] = status
         if (offset > 0) query["offset"] = offset.toString()
+        if (limit > 0) query["limit"] = limit.toString()
         val response = try {
             exchange(
                 "GET",
@@ -614,11 +620,15 @@ open class ApiService(
                 withAuth(mapOf("Accept" to "application/json")),
                 timeoutMs = 20_000,
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (wasCancelled(error)) return BugReportInbox.CANCELLED_LOAD
             return BugReportInbox.failure("Could not reach ForkMesh. Check your connection and try again.")
         }
         if (response.status == 401 || response.status == 403) {
             return BugReportInbox.failure("Only ForkMesh administrators can read reported bugs.")
+        }
+        if (response.status == 404 || response.status == 405) {
+            return BugReportInbox.failure(BUG_REPORT_INBOX_MISSING)
         }
         val decoded = if (response.status in 200..299) runCatching { Json.parse(response.text()) }.getOrNull() else null
         @Suppress("UNCHECKED_CAST")
@@ -641,7 +651,10 @@ open class ApiService(
         }
         when (response.status) {
             401, 403 -> return BugReportStatusChange.failure("Only ForkMesh administrators can triage reported bugs.")
-            404 -> return BugReportStatusChange.failure("That report no longer exists.")
+            404 -> return BugReportStatusChange.failure(
+                if (errorCode(response.text()) == "report_missing") "That report no longer exists." else BUG_REPORT_INBOX_MISSING,
+            )
+            405 -> return BugReportStatusChange.failure(BUG_REPORT_INBOX_MISSING)
         }
         val decoded = if (response.ok) runCatching { Json.parse(response.text()) }.getOrNull() else null
         @Suppress("UNCHECKED_CAST")
@@ -670,7 +683,11 @@ open class ApiService(
         return when (response.status) {
             in 200..299 -> BugReportFile(ok = true, data = response.body, contentType = response.header("content-type") ?: "")
             401, 403 -> BugReportFile.failure("Only ForkMesh administrators can open report attachments.")
-            404, 410 -> BugReportFile.failure("That attachment is no longer available.")
+            410 -> BugReportFile.failure("That attachment is no longer available.")
+            404 -> BugReportFile.failure(
+                if (errorCode(response.text()) == "attachment_missing") "That attachment is no longer available." else BUG_REPORT_INBOX_MISSING,
+            )
+            405 -> BugReportFile.failure(BUG_REPORT_INBOX_MISSING)
             else -> BugReportFile.failure("The attachment could not be downloaded. Try again in a moment.")
         }
     }
@@ -679,6 +696,11 @@ open class ApiService(
         val data = asMap(getJson(base("/api/chat/direct-messages", linkedMapOf("limit" to "10"))))
             ?: return com.forkmesh.nativeapp.push.UnreadDirectMessage()
         return com.forkmesh.nativeapp.push.unreadDirectMessage(data["conversations"])
+    }
+
+    open fun directMessagePartner(conversation: String): String {
+        val data = asMap(getJson(base("/api/chat/direct-messages", linkedMapOf("limit" to "50")))) ?: return ""
+        return com.forkmesh.nativeapp.push.CallRings.partner(data["conversations"], conversation)
     }
 
     open fun accountAvatarPng(name: String): String {
@@ -1432,6 +1454,12 @@ open class ApiService(
         jsonMaps(asList(getRepoRead(owner, name, "branches")))
             .map(RepoBranch::fromJson).filter { it.name.isNotEmpty() }
 
+    open fun remoteForks(owner: String, name: String): List<com.forkmesh.nativeapp.model.RemoteFork> =
+        com.forkmesh.nativeapp.model.RemoteFork.list(getRepoRead(owner, name, "remote-forks"))
+
+    open val instanceHost: String
+        get() = com.forkmesh.nativeapp.model.RemoteFork.instanceHost(settings.serverUrl)
+
     open fun mirrors(owner: String, name: String): List<RepoMirror> = mirrorSet(owner, name).mirrors
 
     open fun mirrorSet(owner: String, name: String): RepoMirrorSet {
@@ -1612,6 +1640,30 @@ open class ApiService(
         return null
     }
 
+    open fun pullCommits(owner: String, name: String, number: Int): String {
+        val folder = ".forkmesh/pulls/$number"
+        for (ref in listOf(PULL_LEDGER_REF, "forkmesh/pull/$number")) {
+            val listing = try {
+                tree(owner, name, path = folder, ref = ref)
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            val files = listing.entries.filter { !it.isDirectory }.map { it.name }.toSet()
+            if ("pull.md" !in files && "commits.mbox" !in files) continue
+            if ("commits.mbox" !in files) return ""
+            return try {
+                blob(owner, name, "$folder/commits.mbox", ref = ref).content
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ""
+            }
+        }
+        return ""
+    }
+
     private fun cachedPull(repoKey: String, number: Int): PublishedPull? {
         val entry = synchronized(pullsCache) { pullsCache[repoKey] } ?: return null
         if (clock() - entry.createdAt >= CACHE_TTL_MS) return null
@@ -1732,6 +1784,11 @@ open class ApiService(
             signed = (meta["sig"] ?: "").isNotEmpty(),
             events = events,
             branchBacked = meta["derive"] == "branch",
+            author = meta["author"] ?: "",
+            authorName = meta["authorName"] ?: "",
+            createdMs = dartIntTryParse(meta["ts"] ?: meta["createdAt"] ?: "") ?: 0L,
+            mergedMs = dartIntTryParse(meta["mergedAt"] ?: "") ?: 0L,
+            mergedBy = meta["mergedBy"] ?: "",
         )
     }
 

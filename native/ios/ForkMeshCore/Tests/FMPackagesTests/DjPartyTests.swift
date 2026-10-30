@@ -92,6 +92,32 @@ final class DjPartyTests: XCTestCase {
         XCTAssertEqual(DjAutomix.step(a: early, b: ending, favoured: .b, queued: true), .wait)
     }
 
+    func testAQueuedSongPlaysAtOnceOnlyWhenNothingPlays() {
+        let empty = DjAutomixDeck(loaded: false)
+        let cued = DjAutomixDeck(loaded: true, duration: 200)
+        let live = DjAutomixDeck(loaded: true, playing: true, position: 20, duration: 200)
+        XCTAssertNil(DjAutomix.playNow(a: live, b: empty, crossfader: 0))
+        XCTAssertNil(DjAutomix.playNow(a: cued, b: live, crossfader: -1))
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: empty, crossfader: 0), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: empty, crossfader: 0.4), .b)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: empty, crossfader: 0), .b)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: empty, crossfader: -1), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: cued, crossfader: 0.2), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: cued, crossfader: 0.8), .b)
+    }
+
+    func testAutomixNeverMixesOutOfARepeatingDeck() {
+        let cued = DjAutomixDeck(loaded: true, duration: 200)
+        let empty = DjAutomixDeck(loaded: false)
+        let repeating = DjAutomixDeck(loaded: true, playing: true, position: 196, duration: 200, repeats: true)
+        XCTAssertEqual(DjAutomix.step(a: repeating, b: cued, favoured: .a, queued: true), .wait)
+        XCTAssertEqual(DjAutomix.step(a: repeating, b: empty, favoured: .a, queued: true), .wait)
+        let idle = DjAutomixDeck(loaded: true, duration: 200, repeats: true)
+        XCTAssertEqual(DjAutomix.step(a: idle, b: empty, favoured: .a, queued: false), .start(.a))
+        let ending = DjAutomixDeck(loaded: true, playing: true, position: 194, duration: 200)
+        XCTAssertEqual(DjAutomix.step(a: ending, b: idle, favoured: .a, queued: false), .mix(from: .a, to: .b, seconds: 6))
+    }
+
     func testAutomixReplaysPlayedSongsOnceTheQueueRunsOut() {
         let library = [
             DjPlayedSong(id: "aaaaaaaaaaa", title: "Newest", author: "", plays: 3, last: 500),
@@ -119,5 +145,51 @@ final class DjPartyTests: XCTestCase {
         let ending = DjAutomixDeck(loaded: true, playing: true, position: 191, duration: 200)
         let cued = DjAutomixDeck(loaded: true, duration: 180)
         XCTAssertEqual(DjAutomix.step(a: ending, b: cued, favoured: .a, queued: true), .mix(from: .a, to: .b, seconds: 8))
+    }
+    func testAnEndReportedOneSecondIntoASongDoesNotMakeAutomixLoadAnotherSong() {
+        let spentA = DjAutomixDeck(loaded: true, position: 129, duration: 129)
+        let started = DjAutomixDeck(loaded: true, playing: true, position: 1.2, duration: 245)
+        XCTAssertEqual(DjEnd.judge(position: 1.2, duration: 245, doubtedSince: nil, intended: true, at: 10), .doubted)
+        XCTAssertEqual(DjAutomix.step(a: spentA, b: started, favoured: .b, queued: true), .preload(.a))
+        let believed = DjAutomixDeck(loaded: true, position: 245, duration: 245)
+        XCTAssertEqual(DjAutomix.step(a: spentA, b: believed, favoured: .b, queued: true), .preload(.b))
+        XCTAssertEqual(DjEnd.judge(position: 2.5, duration: 245, doubtedSince: 10, intended: true, at: 11.3), .doubted)
+        XCTAssertEqual(DjEnd.judge(position: 4.2, duration: 245, doubtedSince: 10, intended: true, at: 13), .failed)
+        XCTAssertEqual(DjEnd.judge(position: 4.2, duration: 245, doubtedSince: 10, intended: false, at: 13), .doubted)
+    }
+
+    func testARealEndIsBelievedNearTheEndOrWhenTheLengthIsUnknown() {
+        XCTAssertEqual(DjEnd.judge(position: 243.9, duration: 245, doubtedSince: nil, intended: true, at: 0), .ended)
+        XCTAssertEqual(DjEnd.judge(position: 245, duration: 245, doubtedSince: nil, intended: true, at: 0), .ended)
+        XCTAssertEqual(DjEnd.judge(position: 1, duration: 0, doubtedSince: nil, intended: true, at: 0), .ended)
+    }
+
+    func testRepeatSkipsTheSilenceAtTheFrontAndBackOfASong() {
+        let quiet = DjWaveBar(level: 0.04, hue: 0)
+        let loud = DjWaveBar(level: 0.8, hue: 0)
+        let bars = Array(repeating: quiet, count: 30) + Array(repeating: loud, count: 1900) + Array(repeating: quiet, count: 70)
+        let span = DjRepeat.span(bars, duration: 100)
+        XCTAssertEqual(span?.start ?? -1, 1.5, accuracy: 0.001)
+        XCTAssertEqual(span?.end ?? -1, 96.5, accuracy: 0.001)
+        let flat = DjRepeat.span(Array(repeating: quiet, count: 2000), duration: 100)
+        XCTAssertEqual(flat, DjRepeatSpan(start: 0, end: 99.75))
+        XCTAssertEqual(DjRepeat.span([], duration: 100), DjRepeatSpan(start: 0, end: 99.75))
+        let blip = DjRepeat.span(Array(repeating: quiet, count: 1000) + [loud] + Array(repeating: quiet, count: 999), duration: 100)
+        XCTAssertEqual(blip, DjRepeatSpan(start: 0, end: 99.75))
+        let toTheEnd = DjRepeat.span(Array(repeating: loud, count: 2000), duration: 100)
+        XCTAssertEqual(toTheEnd, DjRepeatSpan(start: 0, end: 99.75))
+        XCTAssertNil(DjRepeat.span(bars, duration: 0))
+        XCTAssertNil(DjRepeat.span(bars, duration: .nan))
+    }
+
+    func testRepeatWrapsWhenTheSoundEndsAndAimsJustBeforeIt() {
+        let span = DjRepeatSpan(start: 1.5, end: 96.5)
+        XCTAssertEqual(DjRepeat.step(position: 50, span: span, rate: 1), .wait)
+        XCTAssertEqual(DjRepeat.step(position: 96.5, span: span, rate: 1), .wrap)
+        XCTAssertEqual(DjRepeat.step(position: 98, span: span, rate: 1), .wrap)
+        guard case let .after(seconds) = DjRepeat.step(position: 96.2, span: span, rate: 1.5) else { return XCTFail("expected a timed wrap") }
+        XCTAssertEqual(seconds, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(DjRepeat.step(position: 96.2, span: span, rate: 0.4), .wait)
+        XCTAssertEqual(DjRepeat.step(position: 98, span: span, rate: 0), .wait)
     }
 }

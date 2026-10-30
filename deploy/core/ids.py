@@ -44,7 +44,8 @@ Response (the ``Responder`` state machine; normal -> lockdown, sticky):
   ``security_incidents`` (local rqlite, else a peer's over WireGuard; the
   runner posts it, signed, to ``/api/runners/security-incident``); unsealed
   core apps page the admins (Pings/APNs + Mailtrap, forkmesh_host.ids_alerts);
-  optional direct Mailtrap mail and a signed webhook to the desktop;
+  optional direct mail (local Postfix; Mailtrap in a lockdown) and a
+  signed webhook to the desktop;
 * **lockdown** on a core: ``seal-restart`` over the unseal socket (DATA_KEY
   leaves memory and the process), the marker file (units carry
   ``ConditionPathExists=!`` on it, so nothing restarts, not even after a
@@ -70,6 +71,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import email.message
+import email.utils
 import fnmatch
 import hashlib
 import hmac
@@ -79,6 +82,7 @@ import os
 import pwd
 import re
 import select
+import smtplib
 import socket
 import stat
 import subprocess
@@ -115,6 +119,20 @@ SYSTEMD_EXECUTORS = ("/usr/lib/systemd/systemd-executor",
                      "/lib/systemd/systemd-executor")
 SUSPICIOUS_EXE_DIRS = ("/tmp/", "/dev/shm/", "/var/tmp/", "/run/user/",
                        "memfd:")
+GIT_HOOKS = ("pre-receive", "update", "post-receive", "post-update",
+             "reference-transaction", "proc-receive", "push-to-checkout")
+FORKMESH_HOOK_MARKERS = (b"# Managed-By: ForkMesh", b"FORKMESH_PUSH_INPUT")
+CONTEXT_ENV = ("SSH_CONNECTION", "SSH_CLIENT", "SSH_ORIGINAL_COMMAND",
+               "REMOTE_ADDR", "REMOTE_PORT", "HTTP_X_FORWARDED_FOR",
+               "HTTP_X_REAL_IP", "HTTP_USER_AGENT", "GIT_PROTOCOL",
+               "GIT_DIR", "GIT_QUARANTINE_PATH", "SUDO_USER", "LOGNAME")
+CONTEXT_PARENTS = 6
+CONTEXT_CHILDREN = 5
+CONTEXT_CONNECTIONS = 10
+CONTEXT_BYTES = 3400
+TCP_STATES = {"01": "established", "02": "syn-sent", "03": "syn-recv",
+              "04": "fin-wait1", "05": "fin-wait2", "06": "time-wait",
+              "08": "close-wait", "0A": "listen"}
 MAIL_URL = "https://send.api.mailtrap.io/api/send"
 
 
@@ -849,6 +867,145 @@ def cgroup_units(text):
     return []
 
 
+SECRET_PATTERNS = (
+    (re.compile(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1***@"),
+    (re.compile(r"(?i)(authorization:\s*(?:\w+\s+)?)\S+"), r"\1***"),
+    (re.compile(r"(?i)((?:token|password|passwd|secret|api[_-]?key|key)"
+                r"[=:])[^\s&]+"), r"\1***"),
+    (re.compile(r"(?i)(--(?:token|password|secret|api-key)[ =])\S+"),
+     r"\1***"))
+
+
+def redact(text):
+    for pattern, replacement in SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def process_argv(proc, pid):
+    raw = _read("%s/%s/cmdline" % (proc, pid), 8192) or ""
+    return [arg for arg in raw.split("\0") if arg]
+
+
+def _readlink(path):
+    try:
+        return os.readlink(path)
+    except OSError:
+        return ""
+
+
+def process_environment(proc, pid):
+    raw = _read("%s/%s/environ" % (proc, pid), 1 << 17) or ""
+    found = {}
+    for item in raw.split("\0"):
+        key, sep, value = item.partition("=")
+        if sep and key in CONTEXT_ENV:
+            found[key] = redact(value)[:160]
+    return found
+
+
+def process_started(proc, pid):
+    fields = (_read("%s/%s/stat" % (proc, pid), 4096) or "").rpartition(
+        ")")[2].split()
+    boot = re.search(r"^btime (\d+)$", _read("%s/stat" % proc, 1 << 16) or "",
+                     re.M)
+    try:
+        return int(boot.group(1)) + int(fields[19]) / os.sysconf(
+            "SC_CLK_TCK")
+    except (AttributeError, IndexError, ValueError, OSError):
+        return None
+
+
+def socket_inodes(proc, pid, limit=1024):
+    fd_dir = "%s/%s/fd" % (proc, pid)
+    try:
+        fds = os.listdir(fd_dir)[:limit]
+    except OSError:
+        return []
+    inodes = []
+    for fd in fds:
+        target = _readlink(os.path.join(fd_dir, fd))
+        if target.startswith("socket:[") and target.endswith("]"):
+            inodes.append(target[8:-1])
+    return inodes
+
+
+def connection_table(proc_net):
+    rows = {}
+    for name in ("tcp", "tcp6", "udp", "udp6"):
+        text = _read(os.path.join(proc_net, name), 4 << 20) or ""
+        for line in text.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 10 or parts[9] == "0":
+                continue
+            try:
+                local = (_hex_address(parts[1]), _hex_port(parts[1]))
+                remote = (_hex_address(parts[2]), _hex_port(parts[2]))
+            except (ValueError, IndexError):
+                continue
+            state = TCP_STATES.get(parts[3], "") if name.startswith(
+                "tcp") else ""
+            rows[parts[9]] = (name.rstrip("6"), local, remote, state)
+    return rows
+
+
+def _endpoint(address, port):
+    return ("[%s]:%d" if ":" in address else "%s:%d") % (address, port)
+
+
+def _public_peer(row):
+    try:
+        remote = ipaddress.ip_address(row[2][0])
+    except ValueError:
+        return False
+    return not (remote.is_loopback or remote.is_unspecified)
+
+
+def read_small_regular(path, limit=1 << 16):
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+        return None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        return os.read(fd, limit)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def _is_git(exe):
+    exe = exe.replace(" (deleted)", "")
+    return exe == "/usr/bin/git" or exe.startswith("/usr/lib/git-core/")
+
+
+def fit_detail(detail, limit=CONTEXT_BYTES):
+    def size():
+        return len(json.dumps(detail, sort_keys=True, default=str))
+    for key in ("children", "connections", "environment", "parents"):
+        while size() > limit and detail.get(key):
+            value = detail[key]
+            if isinstance(value, dict):
+                value.pop(sorted(value)[-1])
+            else:
+                value.pop()
+            if not value:
+                detail.pop(key)
+    for key in ("cmdline", "verdict", "cwd"):
+        if size() > limit and isinstance(detail.get(key), str):
+            detail[key] = detail[key][:max(40, len(detail[key]) - (
+                size() - limit))]
+    return detail
+
+
 class ProcessMonitor:
     def __init__(self, cfg, proc="/proc", user_of=uid_name):
         processes = cfg.get("processes") or {}
@@ -877,6 +1034,169 @@ class ProcessMonitor:
         return events
 
     def check(self, info, infos, allow_ptrace=False, allow_processes=False):
+        events = self._check(info, infos, allow_ptrace, allow_processes)
+        if events:
+            self.annotate(events, info, infos)
+        return events
+
+    def annotate(self, events, info, infos):
+        context, short, verdict = self.context(info, infos)
+        for event in events:
+            event["summary"] = ("%s; %s" % (event["summary"], short))[:300]
+            event["detail"].update(context, verdict=verdict)
+            fit_detail(event["detail"])
+
+    def _ancestors(self, info, infos):
+        chain, seen = [], {info["pid"]}
+        ppid = info.get("ppid") or 0
+        while ppid > 1 and ppid not in seen and len(chain) < CONTEXT_PARENTS:
+            seen.add(ppid)
+            parent = infos.get(ppid) or process_info(self.proc, str(ppid))
+            if parent is None:
+                break
+            chain.append(parent)
+            ppid = parent.get("ppid") or 0
+        return chain
+
+    def _describe(self, info, argv=None):
+        argv = process_argv(self.proc, info["pid"]) if argv is None else argv
+        text = "pid %d %s as %s" % (info["pid"], info.get("exe") or "?",
+                                    self.user_of(info.get("uid", "?")))
+        if argv:
+            text += ": " + redact(" ".join(argv))
+        return text[:260]
+
+    def _connections(self, chain):
+        tables, found = {}, []
+        for item in chain:
+            pid = item["pid"]
+            inodes = socket_inodes(self.proc, pid)
+            if not inodes:
+                continue
+            netns = _readlink("%s/%d/ns/net" % (self.proc, pid)) or str(pid)
+            if netns not in tables:
+                tables[netns] = connection_table("%s/%d/net" % (self.proc,
+                                                                pid))
+            rows = [tables[netns][i] for i in inodes if i in tables[netns]]
+            rows.sort(key=lambda r: (not _public_peer(r), r[3] == "listen"))
+            for proto, local, remote, state in rows[:4]:
+                found.append("pid %d %s %s -> %s%s" % (
+                    pid, proto, _endpoint(*local), _endpoint(*remote),
+                    " " + state if state else ""))
+        return found[:CONTEXT_CONNECTIONS]
+
+    def context(self, info, infos):
+        pid = info["pid"]
+        argv = process_argv(self.proc, pid)
+        cwd = _readlink("%s/%d/cwd" % (self.proc, pid))
+        chain = self._ancestors(info, infos)
+        context = {}
+        if argv:
+            context["cmdline"] = redact(" ".join(argv))[:300]
+        if cwd:
+            context["cwd"] = cwd[:200]
+        if info.get("ppid"):
+            context["ppid"] = info["ppid"]
+        started = process_started(self.proc, pid)
+        if started:
+            context["started"] = "%s UTC (%.0f s before this scan)" % (
+                time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(started)),
+                max(0, time.time() - started))
+        if chain:
+            context["parents"] = [self._describe(p) for p in chain]
+        children = sorted((c for c in infos.values()
+                           if c.get("ppid") == pid), key=lambda c: c["pid"])
+        if children:
+            context["children"] = [self._describe(c) for c in
+                                   children[:CONTEXT_CHILDREN]]
+        environment = {}
+        for item in [info] + chain:
+            for key, value in process_environment(self.proc,
+                                                  item["pid"]).items():
+                environment.setdefault(key, value)
+        if environment:
+            context["environment"] = environment
+        connections = self._connections([info] + chain)
+        if connections:
+            context["connections"] = connections
+        short, verdict = self.explain(info, argv, cwd, chain)
+        return context, short, verdict
+
+    def _hook(self, info, argv, cwd):
+        for arg in argv[1:3]:
+            if arg.startswith("-"):
+                continue
+            if os.path.basename(arg) not in GIT_HOOKS:
+                return None
+            path = arg if arg.startswith("/") else os.path.normpath(
+                os.path.join(cwd or "/", arg))
+            text = read_small_regular("%s/%d/root%s" % (self.proc,
+                                                        info["pid"], path))
+            return path, text
+        return None
+
+    def explain(self, info, argv, cwd, chain):
+        parents = [(p, process_argv(self.proc, p["pid"])) for p in chain]
+        receive = next((p for p, a in parents[:3] if _is_git(
+            p.get("exe") or "") and any(x.endswith("receive-pack")
+                                        for x in a)), None)
+        hook = self._hook(info, argv, cwd)
+        if hook and receive:
+            path, text = hook
+            name = os.path.basename(path)
+            if text is not None and any(m in text for m in
+                                        FORKMESH_HOOK_MARKERS):
+                return ("likely benign: ForkMesh's own %s hook during a "
+                        "git push" % name,
+                        "Likely benign. This is ForkMesh's own %s hook (%s, "
+                        "it carries ForkMesh's marker), run by git "
+                        "receive-pack (pid %d) while a push lands. Its "
+                        "command line, parent and hook file all match. "
+                        "Cross-check the push in the mirror-node journal "
+                        "around this time; an attacker could imitate these "
+                        "facts." % (name, path, receive["pid"]))
+            return ("needs a look: a %s hook ForkMesh did not write ran "
+                    "during a git push" % name,
+                    "Needs a look. git receive-pack (pid %d) ran the %s hook "
+                    "%s, which %s. Read that file and find who installed it."
+                    % (receive["pid"], name, path,
+                       "could not be read" if text is None else
+                       "has no ForkMesh marker"))
+        sandbox = next((p for p, _ in parents if os.path.basename(
+            (p.get("exe") or "").replace(" (deleted)", "")) == "bwrap"),
+            None)
+        if sandbox and argv[1:] == ["-c", "exit 0"]:
+            return ("likely benign: the Actions sandbox self-test",
+                    "Likely benign. The mirror-node daemon checks that "
+                    "bubblewrap works by running /bin/sh -c 'exit 0' inside "
+                    "it (bwrap pid %d) before it runs Actions jobs."
+                    % sandbox["pid"])
+        if sandbox:
+            return ("probably an Actions job step in its sandbox",
+                    "Probably an Actions job step. It runs inside a "
+                    "bubblewrap sandbox (bwrap pid %d), which is how the "
+                    "daemon runs workflow steps. Check which workflow ran "
+                    "at this time." % sandbox["pid"])
+        if parents and _is_git(parents[0][0].get("exe") or "") and \
+                argv[1:2] == ["-c"]:
+            return ("needs a look: git ran a shell command",
+                    "Needs a look. git (pid %d: %s) ran a shell command, "
+                    "which git does for an ssh command, credential helper, "
+                    "alias or hook set in its config or environment. Find "
+                    "which setting this is." % (
+                        parents[0][0]["pid"],
+                        redact(" ".join(parents[0][1]))[:160]))
+        if not argv and not cwd:
+            return ("unexplained: it exited before the IDS could read it",
+                    "Unexplained. The process exited before the IDS could "
+                    "read its command line or working directory. Read the "
+                    "unit's journal around this time.")
+        return ("unexplained: no known ForkMesh source matches",
+                "Unexplained. No known ForkMesh source (its own git hooks, "
+                "the Actions sandbox) matches this process. Treat it as "
+                "suspicious until its parents and command line explain it.")
+
+    def _check(self, info, infos, allow_ptrace=False, allow_processes=False):
         events = []
         user = self.user_of(info["uid"])
         exe = info.get("exe") or ""
@@ -1321,15 +1641,17 @@ def mask_address(address):
 
 class Alerter:
     """Fan-out of an incident: journal, rqlite (core) or the app API
-    (runner), direct Mailtrap mail and a signed webhook (both optional)."""
+    (runner), direct mail (Postfix or Mailtrap) and a signed webhook
+    (both optional)."""
 
     def __init__(self, cfg, rqlite=None, opener=None, credential=None,
-                 sign_request=None):
+                 sign_request=None, smtp=None):
         self.cfg = cfg
         self.rqlite = rqlite
         self.opener = opener or urllib.request.urlopen
         self.credential = credential or read_credential
         self.sign_request = sign_request
+        self.smtp = smtp or smtplib.SMTP
 
     def record(self, incident):
         if self.rqlite is None:
@@ -1371,39 +1693,100 @@ class Alerter:
         except (OSError, ValueError, urllib.error.URLError) as error:
             return False, type(error).__name__
 
-    def mail(self, incident):
-        mail = self.cfg.get("mail") or {}
+    def locked_down(self):
+        return os.path.exists(os.path.join(self.cfg.get("state_dir") or "",
+                                           "LOCKDOWN"))
+
+    def mail_token(self, mail):
         token = self.credential(mail.get("token_credential", ""))
-        to = self.credential(mail.get("to_credential", ""))
-        if not token or "@" not in to:
-            return False, "not configured"
-        subject = "[fmnext-ids %s] %s: %s" % (
-            incident["severity"], incident["node"], incident["summary"])
-        payload = {"from": {"email": mail.get("from") or
-                            "no-reply@forkmesh.com", "name": "ForkMesh IDS"},
-                   "to": [{"email": to}], "subject": subject[:200],
-                   "text": json.dumps(incident, indent=2, sort_keys=True,
-                                      default=str)[:6000],
-                   "category": "Security alert"}
+        path = mail.get("token_file") or ""
+        if token or not path:
+            return token
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    _relay, _, login = line.strip().partition(" ")
+                    user, _, secret = login.partition(":")
+                    if user == "api" and secret:
+                        return secret
+        except OSError:
+            pass
+        return ""
+
+    def mail_smtp(self, mail, sender, to, subject, text):
+        host, _, port = str(mail.get("smtp") or "").rpartition(":")
+        if host not in ("127.0.0.1", "::1", "localhost") or not port.isdigit():
+            return False, "no smtp"
+        domain = sender.rpartition("@")[2] or "localhost"
+        message = email.message.EmailMessage()
+        message["From"] = email.utils.formataddr(("ForkMesh IDS", sender))
+        message["To"] = to
+        message["Subject"] = subject
+        message["Date"] = email.utils.formatdate(usegmt=True)
+        message["Message-ID"] = email.utils.make_msgid(domain=domain)
+        message["Auto-Submitted"] = "auto-generated"
+        message["X-ForkMesh-Kind"] = "security_alert"
+        message["Feedback-ID"] = "security_alert:forkmesh"
+        message.set_content(text)
+        try:
+            with self.smtp(host, int(port), timeout=15) as client:
+                refused = client.send_message(
+                    message, from_addr="no-reply@%s" % domain, to_addrs=[to])
+        except (OSError, smtplib.SMTPException) as error:
+            return False, "smtp %s" % type(error).__name__
+        if refused:
+            return False, "smtp refused"
+        return True, "smtp %s" % message["Message-ID"]
+
+    def mail_api(self, mail, sender, to, subject, text):
+        token = self.mail_token(mail)
+        if not token:
+            return False, "no mailtrap token"
+        payload = {"from": {"email": sender, "name": "ForkMesh IDS"},
+                   "to": [{"email": to}], "subject": subject,
+                   "text": text, "category": "Security alert"}
         request = urllib.request.Request(
             mail.get("url") or MAIL_URL, data=json.dumps(payload).encode(),
             method="POST", headers={"content-type": "application/json",
                                     "authorization": "Bearer " + token})
-        note = {"kind": "ids_direct", "to": mask_address(to),
-                "subject": subject[:200], "body": payload["text"][:400],
-                "from": payload["from"]["email"]}
         try:
             with self.opener(request, timeout=15) as response:
-                ok = 200 <= response.status < 300
-                note.update(result="accepted" if ok else "rejected",
-                            status=response.status)
-                result = ok, "mail %d" % response.status
+                return (200 <= response.status < 300,
+                        "mail %d" % response.status)
         except urllib.error.HTTPError as error:
-            note.update(result="rejected", status=error.code)
-            result = False, "mail %d" % error.code
+            return False, "mail %d" % error.code
         except (OSError, urllib.error.URLError) as error:
-            note.update(result="failed", error=type(error).__name__)
-            result = False, type(error).__name__
+            return False, type(error).__name__
+
+    def mail(self, incident):
+        mail = self.cfg.get("mail") or {}
+        to = mail.get("to") or self.credential(mail.get("to_credential", ""))
+        if "@" not in to:
+            return False, "not configured"
+        sender = mail.get("from") or "founders@forkmesh.com"
+        subject = ("[fmnext-ids %s] %s: %s" % (
+            incident["severity"], incident["node"], incident["summary"]))[:200]
+        text = json.dumps(incident, indent=2, sort_keys=True,
+                          default=str)[:6000]
+        routes = [("postfix", self.mail_smtp), ("mailtrap", self.mail_api)]
+        if self.locked_down():
+            routes.reverse()
+        note = {"kind": "ids_direct", "to": mask_address(to),
+                "subject": subject, "body": text[:400], "from": sender}
+        tried = []
+        result = False, "not configured"
+        for name, send in routes:
+            ok, detail = send(mail, sender, to, subject, text)
+            if detail in ("no smtp", "no mailtrap token"):
+                continue
+            tried.append("%s: %s" % (name, detail))
+            result = ok, detail
+            if ok:
+                note["via"] = name
+                break
+        note["result"] = "accepted" if result[0] else (
+            "failed" if tried else "not configured")
+        note["tried"] = tried
         note["mailLog"] = self.mail_log(note, incident)
         return result
 

@@ -45,6 +45,7 @@ import json
 import re
 
 import hosted_repos as _hosted_repos
+import instance_features
 
 
 HOSTED_SOURCE = "hosted-web"
@@ -57,8 +58,20 @@ HOSTED_PUSH_SCHEME = "fmp1"
 # without a trip back to the browser, short enough that a credential pasted
 # into a shell history or a .git/config does not outlive the work.
 HOSTED_PUSH_TTL_MS = 7 * 24 * 60 * 60 * 1000
+GIT_PASSWORD_AUTH_SETTING = "GIT_PASSWORD_AUTH"
 HOSTED_PUSH_PASSWORD_RE = re.compile(
     r"^fmp1\.([A-Za-z0-9_-]{24,64})\.([0-9]{10,16})\.([0-9a-f]{64})$")
+# A credential the SSH gateway relays a key-authenticated session with
+# (ssh_gateway_routes.py): the same Basic shape, bound to the SSH key instead
+# of a browser session, to one operation, and to minutes instead of days. The
+# relayed HTTPS request then runs the ordinary permission, branch-protection,
+# contributor-namespace and bookkeeping path, exactly like a stock git push.
+SSH_GIT_PREFIX = "forkmesh-ssh-git-v1"
+SSH_GIT_SCHEME = "fms1"
+SSH_GIT_TTL_MS = 30 * 60 * 1000
+SSH_GIT_PASSWORD_RE = re.compile(
+    r"^fms1\.(sk_[A-Za-z0-9_-]{16,80})\.([0-9]{10,16})\.([0-9a-f]{64})$")
+SSH_GIT_ACCESS = ("read", "push")
 # The same character set the create modal validates client-side.
 HOSTED_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 HOSTED_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
@@ -108,6 +121,44 @@ def hosted_push_password(env, account, owner, repo, session_id, expires_at):
     ))
 
 
+def ssh_git_mac(env, account, owner, repo, key_id, access, expires_at):
+    """Keyed MAC binding an SSH relay credential to key, repo and access."""
+    message = "\n".join((
+        SSH_GIT_PREFIX, str(account or "").lower(), str(owner or "").lower(),
+        str(repo or "").lower(), key_id, access, str(int(expires_at)),
+    ))
+    return hmac.new(
+        _account_session_secret(env), message.encode(), "sha256",
+    ).hexdigest()
+
+
+def ssh_git_password(env, account, owner, repo, key_id, access, expires_at):
+    """The Basic password the SSH gateway relays one session with."""
+    if access not in SSH_GIT_ACCESS:
+        raise ValueError("invalid access")
+    return ".".join((
+        SSH_GIT_SCHEME, key_id, str(int(expires_at)),
+        ssh_git_mac(env, account, owner, repo, key_id, access, expires_at),
+    ))
+
+
+async def _ssh_key_account_matches(env, key_id, account):
+    """True while `key_id` is an active SSH key belonging to `account`.
+
+    Read from the primary, like the session check: a revoked key stops a
+    relayed session at its next request.
+    """
+    row = await d1_first_primary(
+        env,
+        "SELECT account_bi FROM account_ssh_keys "
+        "WHERE key_id=? AND revoked_at=0",
+        key_id,
+    )
+    if not row:
+        return False
+    return str(row.get("account_bi") or "") == await blind_index(env, account)
+
+
 def _basic_credentials(header):
     """Split one HTTP Basic header into (username, password), or ("", "")."""
     value = clean_string(header or "", 600).strip()
@@ -122,8 +173,8 @@ def _basic_credentials(header):
     if not separator:
         return "", ""
     return (
-        clean_string(username, MAX_NODE_NAME).strip().lower(),
-        clean_string(password, 200).strip(),
+        clean_string(username, 254).strip().lower(),
+        password[:256],
     )
 
 
@@ -134,7 +185,7 @@ def has_hosted_push_credential(header):
     body; this lets it keep doing that without also turning away a plain
     ``git push`` that is about to authenticate.
     """
-    return bool(_basic_credentials(header)[1])
+    return bool(_basic_credentials(header)[1].strip())
 
 
 async def _session_account_matches(env, session_id, account):
@@ -158,8 +209,44 @@ async def _session_account_matches(env, session_id, account):
     return str(row.get("account_bi") or "") == await blind_index(env, account)
 
 
+def git_password_auth_enabled(env):
+    value = str(getattr(env, GIT_PASSWORD_AUTH_SETTING, "") or "").strip()
+    return value.lower() not in ("0", "false", "off", "no")
+
+
+async def _account_name_for_email(env, email):
+    row = await d1_first(
+        env, "SELECT data FROM users WHERE email_bi=?",
+        await blind_index(env, email))
+    rec = await decrypt_row(env, row.get("data")) if row else None
+    if not rec or rec.get("status") != "active":
+        return ""
+    return clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+
+
+async def _password_git_account(env, identifier, password, request=None):
+    if not git_password_auth_enabled(env) or not identifier or not password:
+        return ""
+    if request is not None:
+        attempt_keys = await _login_attempt_keys(env, request, identifier)
+    else:
+        attempt_keys = [await blind_index(env, "login-local:" + identifier)]
+    _name_bi, rec, error = await _account_password_record(
+        env, {"identifier": identifier, "password": password})
+    if error or not rec:
+        for attempt_key in attempt_keys:
+            await _login_record_fail(env, attempt_key)
+        return ""
+    if rec.get("totp_enrolled"):
+        return ""
+    for attempt_key in attempt_keys:
+        await _login_clear(env, attempt_key)
+    name = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+    return name if valid_node_name(name) else ""
+
+
 async def verify_hosted_push_credential(env, owner, repo, header, method="",
-                                        access="push"):
+                                        access="push", request=None):
     """Return the account authorized to push by a Basic credential, or "".
 
     ``access="read"`` checks read permission instead (a private hosted
@@ -169,7 +256,32 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
     session minting it was live and belonged to the named account; the push
     permission itself is re-derived here, so revoking ownership or an
     organization role revokes the credential's reach immediately.
+
+    Only full write access answers here; a contributor's namespaced push is
+    authorized by ``verify_hosted_push_access`` alone.
     """
+    account, _prefix = await _verify_hosted_credential(
+        env, owner, repo, header, method, access, request=request)
+    return account
+
+
+async def verify_hosted_push_access(env, owner, repo, header, method="",
+                                    alias="", request=None):
+    """Authorize a Basic-credential push: ``(account, ref_prefix)``.
+
+    ``ref_prefix`` is "" for an owner or organization writer (the ordinary
+    push rules apply) and ``refs/heads/pr/<account>/`` for a contributor on a
+    repository the operator opened to contributor pushes; the gateway then
+    refuses every ref outside it. ``("", "")`` is a refusal.
+    """
+    return await _verify_hosted_credential(
+        env, owner, repo, header, method, "push", contributor=True,
+        alias=alias, request=request)
+
+
+async def _verify_hosted_credential(env, owner, repo, header, method, access,
+                                    contributor=False, alias="",
+                                    request=None):
     owner = safe_segment(owner)
     repo = safe_segment(repo)
     account, password = _basic_credentials(header)
@@ -190,28 +302,75 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
                 "git.read_authorize" if access == "read"
                 else "git.push_authorize",
                 "repository", owner + "/" + repo, "denied", audit_details)
-        return ""
+        return "", ""
 
-    if not owner or not repo or not account or not valid_node_name(account):
+    if not owner or not repo or not account:
         return await denied()
-    match = HOSTED_PUSH_PASSWORD_RE.match(password)
-    if not match:
-        return await denied()
-    session_id, expires_raw, mac = match.groups()
-    try:
-        expires_at = int(expires_raw)
-    except (TypeError, ValueError):
-        return await denied()
-    expected = hosted_push_mac(
-        env, account, owner, repo, session_id, expires_at)
-    if not hmac.compare_digest(expected, mac):
-        return await denied()
-    if expires_at <= int(Date.now()):
-        return await denied(audit=True)
-    try:
-        await ensure_schema(env)
-        if not await _session_account_matches(env, session_id, account):
+    match = HOSTED_PUSH_PASSWORD_RE.match(password.strip())
+    ssh_match = None if match else SSH_GIT_PASSWORD_RE.match(password.strip())
+    if not match and not ssh_match:
+        try:
+            await ensure_schema(env)
+            account = await _password_git_account(
+                env, account, password, request)
+        except Exception:
+            account = ""
+        if not account:
+            return await denied()
+        audit_details["credential"] = "password"
+    elif ssh_match:
+        session_id, expires_raw, mac = ssh_match.groups()
+        try:
+            expires_at = int(expires_raw)
+        except (TypeError, ValueError):
+            return await denied()
+        audit_details["credential"] = "ssh-key"
+        ssh_access = "read" if access == "read" else "push"
+        owners = [owner] + (
+            [alias] if alias and alias.lower() != owner.lower() else [])
+        if not any(
+                hmac.compare_digest(ssh_git_mac(
+                    env, account, route_owner, repo, session_id, ssh_access,
+                    expires_at), mac)
+                for route_owner in owners):
+            return await denied()
+        if expires_at > int(Date.now()) + SSH_GIT_TTL_MS + 60 * 1000:
+            return await denied()
+        if expires_at <= int(Date.now()):
             return await denied(audit=True)
+        try:
+            await ensure_schema(env)
+            if not await _ssh_key_account_matches(env, session_id, account):
+                return await denied(audit=True)
+        except Exception:
+            return await denied(audit=True)
+    else:
+        if "@" in account:
+            try:
+                account = await _account_name_for_email(env, account)
+            except Exception:
+                account = ""
+        if not account or not valid_node_name(account):
+            return await denied()
+        session_id, expires_raw, mac = match.groups()
+        try:
+            expires_at = int(expires_raw)
+        except (TypeError, ValueError):
+            return await denied()
+        expected = hosted_push_mac(
+            env, account, owner, repo, session_id, expires_at)
+        if not hmac.compare_digest(expected, mac):
+            return await denied()
+        if expires_at <= int(Date.now()):
+            return await denied(audit=True)
+        try:
+            await ensure_schema(env)
+            if not await _session_account_matches(env, session_id, account):
+                return await denied(audit=True)
+        except Exception:
+            return await denied(audit=True)
+    prefix = ""
+    try:
         if access == "read":
             allowed = await _hosted_read_allowed(env, owner, repo, account)
         else:
@@ -219,19 +378,89 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
                 await _account_owns_node(env, account, owner)
                 or await _org_write_allowed(env, owner, repo, account)
             )
+            if not allowed and contributor and await contributor_push_allowed(
+                    env, owner, repo, account, alias=alias):
+                prefix = contributor_ref_prefix(account)
+                allowed = bool(prefix)
     except Exception:
         return await denied(audit=True)
     if not allowed:
         return await denied(audit=True)
+    if prefix:
+        audit_details["refPrefix"] = prefix
     await _audit_sensitive_action(
         env, account,
         "git.read_authorize" if access == "read" else "git.push_authorize",
         "repository", owner + "/" + repo, "success", audit_details)
-    return account
+    return account, prefix
+
+
+CONTRIBUTOR_PUSH_ENV = "HOSTED_GIT_CONTRIBUTOR_PUSH"
+CONTRIBUTOR_REF_ROOT = "refs/heads/pr/"
+CONTRIBUTOR_BRANCH_ROOT = "pr/"
+_CONTRIBUTOR_ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+_CONTRIBUTOR_ENTRY_RE = re.compile(
+    r"^(\*|[a-z0-9][a-z0-9._-]{0,62}/(\*|[a-z0-9._-]{1,100}))$")
+
+
+def contributor_push_patterns(env):
+    raw = str(getattr(env, CONTRIBUTOR_PUSH_ENV, "") or "")
+    patterns = []
+    for item in re.split(r"[\s,]+", raw.strip().lower()):
+        if item and _CONTRIBUTOR_ENTRY_RE.fullmatch(item):
+            patterns.append(item)
+    return patterns
+
+
+def contributor_push_enabled(env, owners, repo):
+    repo = str(repo or "").strip().lower()
+    patterns = contributor_push_patterns(env)
+    if not repo or not patterns:
+        return False
+    for owner in owners:
+        owner = str(owner or "").strip().lower()
+        if not owner:
+            continue
+        for pattern in patterns:
+            if pattern in ("*", owner + "/*", owner + "/" + repo):
+                return True
+    return False
+
+
+def contributor_ref_prefix(account):
+    account = str(account or "").strip().lower()
+    if (
+        not _CONTRIBUTOR_ACCOUNT_RE.fullmatch(account)
+        or ".." in account
+        or account.endswith((".", ".lock"))
+    ):
+        return ""
+    return CONTRIBUTOR_REF_ROOT + account + "/"
+
+
+async def contributor_push_allowed(env, owner, repo, account, alias=""):
+    if not contributor_ref_prefix(account):
+        return False
+    if not contributor_push_enabled(env, (alias, owner), repo):
+        return False
+    try:
+        if await _repo_is_private(env, owner, repo):
+            return False
+        _bi, rec = await _account_row(env, account)
+    except Exception:
+        return False
+    if not isinstance(rec, dict):
+        return False
+    return (
+        rec.get("status") == "active"
+        and _account_kind(rec) == "user"
+        and rec.get("email_verified") is True
+    )
 
 
 async def record_hosted_push_state(env, owner, repo, endpoint=None,
-                                   pusher="", state="", notify=True):
+                                   pusher="", state="", notify=True,
+                                   forced=None):
     """Pin the refs digest the hosting node signs after a hosted push.
 
     A public read is routed only against an authenticated refs attestation
@@ -266,7 +495,8 @@ async def record_hosted_push_state(env, owner, repo, endpoint=None,
         # routing digest (default branch + tags) alone: the other cores fetch
         # when their copy is behind it (hosted_repos.replicas).
         try:
-            await _note_core_push(env, key_bi, endpoint.get("node", ""))
+            await _note_core_push(env, key_bi, endpoint.get("node", ""),
+                                  forced)
         except Exception:
             pass
     digest = clean_string(state, 64).strip().lower()
@@ -454,6 +684,36 @@ async def record_hosted_stats(env, owner, repo, digest, stats):
     if not changed:
         return False
     record.update(changed)
+    _, owner_rec = await _account_row(env, owner)
+    if not owner_rec:
+        return False
+    encrypted = await encrypt_row(env, record)
+    await _contribution_write_catalog_state(
+        env, record, row.get("owner_bi"), owner_rec, key_bi, encrypted)
+    await edge_cache_delete(CATALOG_CACHE_KEY)
+    await _bump_catalog_rev(env)
+    return True
+
+
+async def record_hosted_branch_count(env, owner, repo, count):
+    owner = safe_segment(owner)
+    repo = safe_segment(repo)
+    try:
+        count = int(count)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if not owner or not repo or count < 1:
+        return False
+    key_bi = await blind_index(env, owner + "/" + repo)
+    row = await d1_first(
+        env, "SELECT owner_bi,data FROM repositories WHERE key_bi=?", key_bi)
+    if not row:
+        return False
+    record = await decrypt_row(env, row.get("data"))
+    if (not isinstance(record, dict) or record.get("source") != HOSTED_SOURCE
+            or str(record.get("branchCount") or "") == str(count)):
+        return False
+    record["branchCount"] = str(count)
     _, owner_rec = await _account_row(env, owner)
     if not owner_rec:
         return False
@@ -696,17 +956,58 @@ async def _mint_push_credential(env, request):
             await _account_owns_node(env, actor, node)
             or await _org_write_allowed(env, node, name, actor)
         )
-    if not allowed:
+    prefix = ""
+    if not allowed and await contributor_push_allowed(
+            env, node, name, actor, alias=owner if owner != node else ""):
+        prefix = contributor_ref_prefix(actor)
+    if not allowed and not prefix:
         return json_response(
-            {"error": "forbidden"}, status=403, cache_control="no-store")
+            {"error": "forbidden",
+             "message": await _push_refusal_message(
+                 env, node, owner, name, actor)},
+            status=403, cache_control="no-store")
     if not _request_account_session_id(request, data):
         return _session_required_response()
     grant = await _hosted_push_grant(
         env, request, data, owner, name, actor, mac_owner=node)
     if grant is None:
         return _unavailable_response()
+    if prefix:
+        grant = _contributor_instructions(grant, prefix)
+    else:
+        grant["access"] = "write"
     return json_response(
         {"ok": True, "push": grant}, cache_control="no-store")
+
+
+async def _push_refusal_message(env, node, owner, name, actor):
+    if contributor_push_enabled(env, (owner, node), name):
+        try:
+            _bi, rec = await _account_row(env, actor)
+        except Exception:
+            rec = None
+        if isinstance(rec, dict) and rec.get("email_verified") is not True:
+            return ("Contributor pushes need a verified email address. "
+                    "Verify it under Settings, Account, then try again.")
+        return "Contributor pushes are not available to this account."
+    return ("You cannot push to this repository. Ask its owner for write "
+            "access, or for contributor pushes to be enabled.")
+
+
+def _contributor_instructions(grant, prefix):
+    branch_prefix = prefix[len("refs/heads/"):]
+    example = branch_prefix + "my-change"
+    grant = dict(grant)
+    grant["access"] = "contributor"
+    grant["refPrefix"] = prefix
+    grant["branchPrefix"] = branch_prefix
+    grant["commands"] = [
+        "git clone " + grant["remoteUrl"],
+        "git switch -c " + example,
+        'git commit -am "Describe the change"',
+        "git push origin " + example,
+    ]
+    return grant
 
 
 async def hosted_repository_handler(env, request, path):
@@ -716,6 +1017,10 @@ async def hosted_repository_handler(env, request, path):
         if method_name(request) == "GET":
             return await _hosted_settings(env, request)
         return await _create_empty_repository(env, request)
+    if route == "/api/hosted-repositories/visibility":
+        if method_name(request) != "POST":
+            return json_response({"error": "method_not_allowed"}, status=405)
+        return await _change_visibility(env, request)
     if route == "/api/hosted-repositories/push-credential":
         return await _mint_push_credential(env, request)
     if route == _hosted_repos.REPLICAS_PATH:
@@ -745,7 +1050,8 @@ def hosted_core_owners(env):
     return _hosted_repos.core_owners(env)
 HOSTED_API_READ_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit", "compare",
-    "merge-preview", "branches", "search", "stats", "sizes",
+    "merge-preview", "branches", "search", "stats", "sizes", "pulse",
+    "issue-index", "issue-search",
 })
 
 
@@ -808,6 +1114,15 @@ class _ReplicaRuntime:
     async def open(self, value):
         return await decrypt_row(self.env, value)
 
+    async def fork_parent(self, owner, name):
+        return await _public_node_parent(self.env, owner, name)
+
+    async def fork_parent_alias(self, owner, name):
+        return await _node_repo_alias(self.env, owner, name)
+
+    async def seal(self, record):
+        return await encrypt_row(self.env, record)
+
     async def pin_initial(self, owner, name, digest):
         """Pin the first content a core reports (initial commit or import)."""
         key_bi = await blind_index(self.env, owner + "/" + name)
@@ -853,6 +1168,26 @@ class _ReplicaRuntime:
 
     async def record_push_mirror(self, owner, name, aliases, report):
         return await provider_mirror_record_push(
+            self.env, owner, name, report, tuple(aliases or ()))
+
+    async def archive_sync_keys(self):
+        try:
+            rows = await d1_all(
+                self.env,
+                "SELECT repo_bi FROM repo_archive_syncs WHERE active=1")
+        except Exception:
+            return set()
+        return {str(row.get("repo_bi") or "") for row in rows or []}
+
+    async def archive_sync(self, owner, name, aliases, keys):
+        for candidate in [owner] + list(aliases or []):
+            key = await blind_index(self.env, candidate.lower() + "/" + name)
+            if key in keys:
+                return await archive_sync_config(self.env, candidate, name)
+        return None
+
+    async def record_archive_sync(self, owner, name, aliases, report):
+        return await archive_sync_record(
             self.env, owner, name, report, tuple(aliases or ()))
 
     async def d1_all(self, sql, *args):
@@ -952,13 +1287,14 @@ async def _notify_cores(env, owner, name):
             pass
 
 
-async def _note_core_push(env, key_bi, node):
+async def _note_core_push(env, key_bi, node, forced=None):
     runtime = _ReplicaRuntime(env)
     await _hosted_repos.ensure_tables(runtime)
     row = await _hosted_repos.find_by_key(runtime, key_bi)
     if not row:
         return
-    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()))
+    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()),
+                                  forced)
     record = await decrypt_row(env, row.get("data"))
     if isinstance(record, dict):
         await _notify_cores(env, record.get("owner", ""), record.get("name", ""))
@@ -970,6 +1306,10 @@ async def _hosted_read_allowed(env, owner, repo, account):
         return False
     try:
         if await _account_owns_node(env, account, owner):
+            return True
+        shared_with = globals().get("_repo_shared_with")
+        if callable(shared_with) and await shared_with(
+                env, owner, repo, account):
             return True
         rows = await d1_all(
             env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
@@ -1029,6 +1369,7 @@ async def _hosted_settings(env, request):
             "repositoriesPerAccount": _hosted_repos.max_per_account(env),
             "repositoryBytes": _hosted_repos.max_bytes(env),
         }
+    body["contributorPush"] = contributor_push_patterns(env)
     if actor and core:
         runtime = _ReplicaRuntime(env, request)
         await ensure_schema(env)
@@ -1037,6 +1378,82 @@ async def _hosted_settings(env, request):
             runtime, await blind_index(env, actor))
         body["organizations"] = await _creatable_organizations(env, actor)
     return json_response(body, cache_control="no-store")
+
+
+async def _change_visibility(env, request):
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        return _error("invalid_json", 400)
+    actor = await _authed_account_name(env, request, data)
+    if not actor:
+        return _session_required_response()
+    owner = clean_string(data.get("owner", ""), MAX_NODE_NAME).strip().lower()
+    name = clean_string(data.get("name", ""), 100).strip()
+    visibility = str(data.get("visibility") or "").strip().lower()
+    if visibility not in ("public", "private") or not owner or not name:
+        return _error("invalid_request", 400)
+    if not _hosted_repos.enabled(env):
+        return _error("core_hosting_required", 409,
+                      "Visibility changes on the web need core hosting.")
+    runtime = _ReplicaRuntime(env, request)
+    await ensure_schema(env)
+    await _hosted_repos.ensure_tables(runtime)
+    key_bi = await blind_index(env, owner + "/" + name)
+    row = await _hosted_repos.find_by_key(runtime, key_bi)
+    if not row:
+        return _error("node_held", 409,
+                      "This repository is held by its owner's node; change "
+                      "its visibility there.")
+    hosted = await decrypt_row(env, row.get("data")) or {}
+    allowed = await _account_owns_node(env, actor, owner)
+    organization = str(hosted.get("organization") or "")
+    if not allowed and organization:
+        org_bi, org_row = await _org_row(env, organization)
+        allowed = bool(org_row) and team_permission_rank(
+            await _org_permission(env, org_bi, actor)
+        ) >= team_permission_rank("admin")
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.visibility", "repository",
+            owner + "/" + name, "denied", {"visibility": visibility})
+        return _error("forbidden", 403)
+    catalog = await d1_first(
+        env, "SELECT data FROM repositories WHERE key_bi=?", key_bi)
+    record = await decrypt_row(env, (catalog or {}).get("data"))
+    if not isinstance(record, dict):
+        return _error("not_found", 404)
+    previous = "private" if record.get("visibility") == "private" else "public"
+    if previous != visibility:
+        now = int(Date.now())
+        prior = record
+        record = safe_catalog_record({
+            **record, "visibility": visibility, "updatedAt": str(now)})
+        owner_bi = await blind_index(env, owner)
+        _unused, owner_rec = await _account_row(env, owner)
+        if visibility == "private":
+            await invalidate_public_catalog_snapshots(env, owner, name)
+        await _contribution_write_catalog_state(
+            env, record, owner_bi, owner_rec or {}, key_bi,
+            await encrypt_row(env, record))
+        await _index_repo_fork_edge(env, record, prior, owner_bi, key_bi)
+        await _hosted_repos.set_visibility(runtime, row["id"], visibility)
+        forget_closed = globals().get("_forget_repo_closed")
+        if callable(forget_closed):
+            forget_closed(owner, name)
+        _https_mirror_public_context_cache_clear()
+        await edge_cache_delete(CATALOG_CACHE_KEY)
+        await _bump_catalog_rev(env)
+        await schedule_public_catalog_republish(env, owner, name)
+        await _notify_cores(env, owner, name)
+    await _audit_sensitive_action(
+        env, actor, "repository.visibility", "repository", owner + "/" + name,
+        "success", {"from": previous, "to": visibility})
+    return json_response(
+        {"ok": True, "owner": owner, "name": name, "visibility": visibility,
+         "changed": previous != visibility}, cache_control="no-store")
 
 
 def _error(code, status, message="", **extra):
@@ -1102,9 +1519,11 @@ async def core_repository_target(env, runtime, actor, owner, name,
 
 
 def core_catalog_record(target, visibility, description, origin, maintainer,
-                        now):
+                        now, forked_from=""):
     public_owner = target["organization"] or target["owner"]
+    extra = {"forkedFrom": forked_from} if forked_from else {}
     return safe_catalog_record({
+        **extra,
         "owner": target["owner"],
         "name": target["name"],
         "visibility": visibility,
@@ -1120,7 +1539,7 @@ def core_catalog_record(target, visibility, description, origin, maintainer,
 
 async def store_core_repository(env, runtime, target, record, *, actor,
                                 repo_id, visibility, init, endpoint, now,
-                                imported=False):
+                                imported=False, fork=None):
     owner, name = target["owner"], target["name"]
     organization = target["organization"]
     encrypted = await encrypt_row(env, record)
@@ -1136,6 +1555,7 @@ async def store_core_repository(env, runtime, target, record, *, actor,
         "aliases": [organization] if organization else [],
         "init": init,
         "createdBy": actor,
+        **({"fork": fork} if fork else {}),
     })
     await _hosted_repos.insert(
         runtime, repo_id, target["key_bi"], target["owner_bi"],
@@ -1158,7 +1578,9 @@ async def store_core_repository(env, runtime, target, record, *, actor,
         owner + "/" + name, "success",
         {"source": HOSTED_SOURCE, "hostedNode": endpoint.get("node", ""),
          "visibility": visibility, "organization": organization,
-         "import": bool(imported), "initialized": bool(init)})
+         "import": bool(imported), "initialized": bool(init),
+         **({"forkOf": _hosted_repos.fork_parent_key({"fork": fork})}
+            if fork else {})})
     await _notify_cores(env, owner, name)
 
 
@@ -1196,8 +1618,10 @@ async def _create_core_repository(env, request, data, actor):
     if used >= limit:
         return _error(
             "hosted_quota_exceeded", 429,
-            "This account already hosts %d repositories on ForkMesh, the "
-            "limit. Delete one, or host more from your own node." % limit,
+            instance_features.rename(
+                env, "This account already hosts %d repositories on ForkMesh, "
+                "the limit. Delete one, or host more from your own node."
+                % limit),
             limit=limit, used=used)
     limited = await catalog_rate_check(env, target["owner_bi"])
     if limited is not None:
@@ -1265,6 +1689,202 @@ async def _create_core_repository(env, request, data, actor):
     }, status=201, cache_control="no-store")
 
 
+def _fork_response(owner, name, parent_owner, parent_name, now, status=201,
+                   existing=False):
+    return json_response({
+        "ok": True, "created": True, "queued": False, "hosted": True,
+        "existing": existing,
+        "fork": {
+            "requestId": "",
+            "sourceOwner": parent_owner.lower(),
+            "sourceName": parent_name.lower(),
+            "owner": owner,
+            "name": name,
+            "forkedFrom": (parent_owner + "/" + parent_name).lower(),
+            "status": "completed",
+            "url": "/" + owner + "/" + name,
+            "createdAt": int(now),
+        },
+    }, status=status, cache_control="no-store")
+
+
+async def _public_node_parent(env, owner, repo):
+    if not _hosted_repos.enabled(env):
+        return None
+    owner = safe_segment(str(owner or "").lower())
+    repo = safe_segment(repo)
+    if not owner or not repo:
+        return None
+    try:
+        row = await d1_first(
+            env, "SELECT is_private,data FROM repositories WHERE key_bi=?",
+            await blind_index(env, owner + "/" + repo))
+        record = await decrypt_row(env, row.get("data")) if row else None
+        if (not isinstance(record, dict)
+                or int(row.get("is_private") or 0)
+                or record.get("visibility") != "public"
+                or record.get("source") == HOSTED_SOURCE
+                or not _hosted_repos.fork_clone_url(record.get("cloneUrl"))
+                or await _repo_is_private(env, owner, repo)):
+            return None
+    except Exception:
+        return None
+    return record
+
+
+async def _node_repo_alias(env, owner, repo):
+    owner = safe_segment(str(owner or "").lower())
+    repo = safe_segment(str(repo or "").lower())
+    if not owner or not repo:
+        return ""
+    try:
+        rows = await d1_all(
+            env,
+            "SELECT r.org_bi AS org_bi,o.name AS name FROM org_repos r "
+            "JOIN orgs o ON o.org_bi=r.org_bi "
+            "WHERE r.node_owner=? AND r.repo=? ORDER BY r.created_at,o.name",
+            owner, repo)
+        for row in rows or []:
+            name = str(row.get("name") or "").strip().lower()
+            if (valid_node_name(name) and name != owner
+                    and str(row.get("org_bi") or "")
+                    == await blind_index(env, "org:" + name)):
+                return name
+    except Exception:
+        return ""
+    return ""
+
+
+async def hosted_fork_create(env, request, node, public_owner, repo):
+    parent_row = await _hosted_row(env, node, repo)
+    upstream = None
+    if not parent_row:
+        upstream = await _public_node_parent(env, node, repo)
+        if upstream is None:
+            return None
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        data = {}
+    actor_bi, account = await _account_session_record(env, request, data)
+    actor = clean_string(
+        (account or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not actor_bi or not account or not valid_node_name(actor):
+        return _error("unauthorized", 401)
+    if (account.get("status") != "active"
+            or _account_kind(account) != "user"):
+        return _error("forbidden", 403)
+    if account.get("email_verified") is not True:
+        return _error(
+            "email_verification_required", 403,
+            "Verify your email address under Settings, Account, to fork.")
+    if upstream is not None:
+        mirrors = globals().get("_web_fork_eligible_nodes")
+        managed = globals().get("_web_fork_create")
+        if callable(managed) and (
+                data.get("targetNode") or (callable(mirrors) and await mirrors(
+                    env, actor, account))):
+            return await managed(env, request, public_owner, repo, data)
+    runtime = _ReplicaRuntime(env, request)
+    await _hosted_repos.ensure_tables(runtime)
+    if upstream is None:
+        parent = await decrypt_row(env, parent_row.get("data"))
+        parent_id = str(parent_row.get("id") or "")
+        if (not isinstance(parent, dict)
+                or not _hosted_repos.ID_RE.fullmatch(parent_id)
+                or parent_row.get("visibility") != "public"
+                or await _repo_is_private(env, node, repo)):
+            return _error("fork_unavailable", 403,
+                          "Only public repositories can be forked here.")
+        parent_name = str(parent.get("name") or repo)
+        parent_fork = _hosted_repos.fork_of(dict(parent, id=parent_id))
+        parent_upstream = _hosted_repos.fork_upstream(parent)
+        network = (parent_fork[1] if parent_fork else parent_upstream[1]
+                   if parent_upstream else parent_id)
+        fork_spec = {"of": parent_id, "network": network}
+    else:
+        parent = upstream
+        parent_name = str(parent.get("name") or repo)
+        parent_owner = str(parent.get("owner") or node).lower()
+        fork_spec = {
+            "upstream": {
+                "owner": parent_owner, "name": parent_name,
+                "cloneUrl": _hosted_repos.fork_clone_url(
+                    parent.get("cloneUrl")),
+            },
+            "network": _hosted_repos.upstream_network(
+                parent_owner, parent_name),
+        }
+        if not _hosted_repos.fork_upstream({"fork": fork_spec}):
+            return _error("fork_unavailable", 403,
+                          "Only public repositories can be forked here.")
+    parent_key = _hosted_repos.fork_parent_key({"fork": fork_spec})
+    now = int(Date.now())
+    creator_bi = await blind_index(env, actor)
+    for row in await _hosted_repos.rows_for_creator(runtime, creator_bi):
+        record = await decrypt_row(env, row.get("data"))
+        if _hosted_repos.fork_parent_key(record) == parent_key:
+            return _fork_response(
+                str(record.get("owner") or actor),
+                str(record.get("name") or parent_name),
+                public_owner, parent_name, now, status=200, existing=True)
+    if actor == node or actor == str(public_owner or "").lower():
+        return _error("fork_of_own_repository", 409,
+                      "This repository is already yours; push to it "
+                      "directly.")
+    name = clean_string(
+        data.get("name", "") or parent_name, MAX_REPO_SEGMENT).strip()
+    if (not safe_segment(name) or not HOSTED_NAME_RE.match(name)
+            or not _hosted_repos.valid_name(name)):
+        return _error("invalid_name", 400)
+    limit = _hosted_repos.max_forks_per_account(env)
+    used = await _hosted_repos.count_for_creator(
+        runtime, creator_bi, forks=True)
+    if used >= limit:
+        return _error(
+            "fork_quota_exceeded", 429,
+            "This account already has %d forks here, the limit. Delete one "
+            "to fork another repository." % limit, limit=limit, used=used)
+    problem, target = await core_repository_target(
+        env, runtime, actor, actor, name, "")
+    if problem:
+        if problem[0] == "repository_exists":
+            return _error(
+                "fork_name_taken", 409,
+                "You already have a repository named %s. Fork under another "
+                "name." % name)
+        return _error(*problem)
+    limited = await catalog_rate_check(env, target["owner_bi"])
+    if limited is not None:
+        return limited
+    origin = _request_origin(request)
+    repo_id = "hr" + bytes(_random_bytes(12)).hex()
+    candidates = await _core_candidates(env, repo_id)
+    if not origin or not candidates:
+        return _unavailable_response()
+    endpoint = candidates[0]
+    maintainer = clean_string(endpoint.get("publicKey", ""), 120)
+    if not maintainer:
+        return _unavailable_response()
+    record = core_catalog_record(
+        target, "public", clean_string(parent.get("description", ""), 240),
+        origin, maintainer, now,
+        forked_from=str(public_owner or node) + "/" + parent_name)
+    if not record:
+        return _error("invalid_name", 400)
+    await store_core_repository(
+        env, runtime, target, record, actor=actor, repo_id=repo_id,
+        visibility="public", init=None, endpoint=endpoint, now=now,
+        fork=fork_spec)
+    index_edge = globals().get("_index_repo_fork_edge")
+    if callable(index_edge):
+        await index_edge(env, record, None, target["owner_bi"],
+                         target["key_bi"])
+    return _fork_response(actor, name, public_owner or node, parent_name, now)
+
+
 async def hosted_push_candidates(env, owner, repo):
     """Push endpoints for a core-hosted repository, or None if it is not one."""
     row = await _hosted_row(env, owner, repo)
@@ -1290,8 +1910,8 @@ async def hosted_push_limit(env, request, owner, repo, method):
     if size >= limit or announced > limit:
         return json_response({
             "error": "repository_quota_exceeded",
-            "message": (
-                "This repository has reached the %d MB ForkMesh hosting "
+            "message": instance_features.rename(
+                env, "This repository has reached the %d MB ForkMesh hosting "
                 "limit. Move it to your own node to grow further."
                 % (limit // (1024 * 1024))),
             "limitBytes": limit,
@@ -1333,7 +1953,8 @@ async def hosted_private_read(env, request, owner, repo, operation):
     account = ""
     if has_hosted_push_credential(authorization):
         account = await verify_hosted_push_credential(
-            env, owner, repo, authorization, method, access="read")
+            env, owner, repo, authorization, method, access="read",
+            request=request)
     else:
         try:
             account = await _authed_account_name(env, request, {})

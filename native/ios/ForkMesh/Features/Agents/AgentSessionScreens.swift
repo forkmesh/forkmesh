@@ -147,13 +147,20 @@ struct AgentSessionDetailScreen: View {
     private var session: AgentSession { model.session }
 
     var body: some View {
+        let blocks: [TranscriptBlock] = AgentTranscriptFormat.blocks(model.bodyText)
         ScrollView {
             VStack(alignment: .leading, spacing: FmSpace.x3) {
                 summaryCard
                 DesktopSessionOpsCard(session: session, repo: model.repo)
-                transcriptCard
+                transcriptCard(blocks)
             }
             .padding(FmSpace.x5)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            AgentPromptDeck(deck: PromptDeck(blocks: blocks), accessibilityPrefix: "agent-session-prompt-deck")
+                .padding(.horizontal, FmSpace.x5)
+                .padding(.vertical, FmSpace.x1)
+                .background(fm.canvas)
         }
         .fmRefreshable { await model.load() }
         .background(fm.canvas)
@@ -264,7 +271,7 @@ struct AgentSessionDetailScreen: View {
         }
     }
 
-    @ViewBuilder private var transcriptBody: some View {
+    @ViewBuilder private func transcriptBody(_ blocks: [TranscriptBlock]) -> some View {
         if model.isLoading && model.transcript == nil && model.error == nil {
             FmLinearProgressIndicator()
         } else if let error = model.error {
@@ -284,14 +291,14 @@ struct AgentSessionDetailScreen: View {
                         .fmText(.labelMedium, color: fm.textSecondary)
                     AgentAttachmentStrip(refs: model.attachments, loader: AgentAttachmentsSupport.loader())
                 }
-                AgentTranscriptBlocksView(blocks: AgentTranscriptFormat.blocks(model.bodyText), repo: RepoRef(owner: model.repo.owner, name: model.repo.name))
+                AgentTranscriptBlocksView(blocks: blocks, repo: RepoRef(owner: model.repo.owner, name: model.repo.name))
             }
         }
     }
 
-    private var transcriptCard: some View {
+    private func transcriptCard(_ blocks: [TranscriptBlock]) -> some View {
         FmCard(radius: FmRadius.lg) {
-            transcriptBody
+            transcriptBody(blocks)
         }
     }
 }
@@ -343,6 +350,14 @@ struct LaunchedAgentSessionScreen: View {
         VStack(spacing: 0) {
             ScrollView {
                 content.padding(FmSpace.x4)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                AgentPromptDeck(
+                    deck: PromptDeck(said: model.displayHistory.filter(\.isTask).map(\.text)),
+                    accessibilityPrefix: "session-prompt-deck")
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x1)
+                    .background(fm.canvas)
             }
             .fmRefreshable { await model.refresh() }
         }

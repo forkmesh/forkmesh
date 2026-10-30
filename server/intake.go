@@ -60,6 +60,7 @@ type collaborationItem struct {
 	TitleIfNew     string           `json:"titleIfNew"`
 	Event          map[string]any   `json:"event"`
 	Pull           map[string]any   `json:"pull"`
+	Revision       map[string]any   `json:"revision"`
 	Meta           map[string]any   `json:"meta"`
 	AttachmentData []map[string]any `json:"attachmentData"`
 	FediverseID    string           `json:"fediverseMentionId"`
@@ -148,6 +149,13 @@ func (d *Daemon) handleCollaboration(w http.ResponseWriter, request *http.Reques
 		}
 	}
 	d.collaborationWriteMu.Unlock()
+	if errors.Is(err, errDiscussionLocked) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"ok": false, "error": "discussion_locked", "number": number,
+			"servedBy": d.gateway.Node.Name,
+		})
+		return
+	}
 	if errors.Is(err, errIssueUnknown) {
 		w.Header().Set("Retry-After", "30")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -208,7 +216,7 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 		return number, commitCollaboration(ctx, dir, ".forkmesh/issues",
 			fmt.Sprintf("issue #%d: direct mirror intake", number))
 	case "pulls":
-		if len(item.Event) == 0 && len(item.Pull) == 0 {
+		if len(item.Event) == 0 && len(item.Pull) == 0 && len(item.Revision) == 0 {
 			return 0, errors.New("pull or pull event is required")
 		}
 		branch := "forkmesh/pulls"
@@ -228,6 +236,11 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 			}
 			return 0, commitCollaboration(ctx, dir, branchReviewsRoot,
 				"branch "+safeHeader(item.Branch)+": direct mirror intake")
+		}
+		if isPullSynchronize(item) {
+			if _, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, item.Number, item.Event); !ok {
+				return item.Number, nil
+			}
 		}
 		wrote, number, err := writePullItem(dir, item)
 		if err != nil || !wrote {
@@ -479,7 +492,7 @@ func (d *Daemon) ackCollaboration(ctx context.Context, repo Repository,
 		return nil
 	}
 	query.Set("ids", strings.Join(parts, ","))
-	state, err := refsSHA256(ctx, repo.GitDir)
+	state, err := routingRefsSHA256(ctx, repo.GitDir)
 	if err != nil {
 		return err
 	}
@@ -763,6 +776,10 @@ func writeIssueItem(root string, item collaborationItem) (bool, int, error) {
 			if eventType != "open" && eventID != "" && stringValue(existing["id"]) == eventID {
 				return true, candidateNumber, nil
 			}
+			if eventType != "open" && eventSig != "" && eventSig != "relay-placeholder" &&
+				stringValue(existing["sig"]) == eventSig {
+				return true, candidateNumber, nil
+			}
 		}
 		if candidateNumber == number {
 			existingPath, issue = path, candidate
@@ -916,6 +933,9 @@ func foldIssueEvents(target, source map[string]any) bool {
 		if key := issueEventKey(event); key != "" {
 			seen[key] = true
 		}
+		if signature := stringValue(event["sig"]); signature != "" {
+			seen["sig:"+signature] = true
+		}
 		kind := stringValue(event["type"])
 		if at := issueInt64(event["ts"]); at > latest[kind] {
 			latest[kind] = at
@@ -929,10 +949,14 @@ func foldIssueEvents(target, source map[string]any) bool {
 			continue
 		}
 		key := issueEventKey(event)
-		if key == "" || seen[key] {
+		signature := stringValue(event["sig"])
+		if key == "" || seen[key] || (signature != "" && seen["sig:"+signature]) {
 			continue
 		}
 		seen[key] = true
+		if signature != "" {
+			seen["sig:"+signature] = true
+		}
 		incoming = append(incoming, event)
 	}
 	if len(incoming) == 0 {
@@ -1083,6 +1107,12 @@ func materializePullInbox(ctx context.Context, repo Repository,
 			}
 			item.Number = candidate
 		}
+		if isPullSynchronize(item) {
+			if _, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, item.Number, item.Event); !ok {
+				ids = append(ids, item.ID)
+				continue
+			}
+		}
 		wrote, number, err := writePullItem(dir, item)
 		if err != nil {
 			return ids, err
@@ -1118,8 +1148,17 @@ func materializePullInbox(ctx context.Context, repo Repository,
 func commitPullIntake(ctx context.Context, repo Repository, dir string,
 	item collaborationItem, number int, message string) error {
 	head := ""
-	if len(item.Pull) != 0 {
+	if len(item.Pull) != 0 || len(item.Revision) != 0 {
 		head, _ = recordPullHead(ctx, repo.GitDir, dir, number)
+	}
+	if isPullSynchronize(item) {
+		if target, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, number, item.Event); ok {
+			synced, err := applyPullSynchronize(ctx, repo.GitDir, dir, number, target)
+			if err != nil {
+				return err
+			}
+			head = synced
+		}
 	}
 	if err := commitCollaboration(ctx, dir, ".forkmesh/pulls", message); err != nil {
 		return err
@@ -1219,6 +1258,9 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 	if err := os.MkdirAll(base, 0700); err != nil {
 		return false, 0, err
 	}
+	if len(item.Revision) != 0 {
+		return writePullRevision(base, item)
+	}
 	if len(item.Event) != 0 {
 		number := item.Number
 		pullDir := filepath.Join(base, strconv.Itoa(number))
@@ -1296,6 +1338,114 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 	return true, number, nil
 }
 
+func writePullRevision(base string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	revision := item.Revision
+	pullDir := filepath.Join(base, strconv.Itoa(number))
+	recordPath := filepath.Join(pullDir, "pull.md")
+	raw, err := os.ReadFile(recordPath)
+	if number <= 0 || err != nil {
+		return false, number, nil
+	}
+	matter, ok := parseFrontMatter(raw)
+	sig := safeHeader(stringValue(revision["sig"]))
+	if !ok || sig == "" {
+		return true, number, nil
+	}
+	if matter.values["sig"] == sig {
+		return true, number, nil
+	}
+	ts := issueNumber(revision["ts"])
+	stored, _ := strconv.Atoi(matter.values["ts"])
+	if matter.values["status"] != "open" || matter.values["derive"] == "branch" ||
+		safeHeader(stringValue(revision["author"])) != matter.values["author"] ||
+		ts <= stored {
+		return true, number, nil
+	}
+	current, _ := strconv.Atoi(matter.values["revision"])
+	if current < 1 {
+		current = 1
+	}
+	archive := filepath.Join(pullDir, "revisions", strconv.Itoa(current))
+	if err := os.MkdirAll(archive, 0700); err != nil {
+		return false, number, err
+	}
+	for _, name := range []string{"pull.md", "changes.patch", "commits.mbox"} {
+		content, err := os.ReadFile(filepath.Join(pullDir, name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, number, err
+		}
+		if err := os.WriteFile(filepath.Join(archive, name), content, 0600); err != nil {
+			return false, number, err
+		}
+	}
+	replacements := map[string]string{
+		"title":           safeHeader(stringValue(revision["title"])),
+		"base":            safeHeader(stringValue(revision["base"])),
+		"head":            safeHeader(stringValue(revision["head"])),
+		"ts":              strconv.Itoa(ts),
+		"sig":             sig,
+		"revision":        strconv.Itoa(current + 1),
+		"creationBaseOid": safeHeader(stringValue(revision["creationBaseOid"])),
+		"creationHeadOid": safeHeader(stringValue(revision["creationHeadOid"])),
+		"headBaseOid":     "",
+		"headOid":         "",
+	}
+	if replacements["title"] == "" {
+		replacements["title"] = matter.values["title"]
+	}
+	if description, ok := revision["description"].(string); ok && description != "" {
+		matter.body = []string{"", description, ""}
+	}
+	order := []string{"revision", "creationBaseOid", "creationHeadOid"}
+	if err := os.WriteFile(recordPath, matter.encode(replacements, order), 0600); err != nil {
+		return false, number, err
+	}
+	for name, key := range map[string]string{"changes.patch": "patch", "commits.mbox": "commits"} {
+		path := filepath.Join(pullDir, name)
+		content := stringValue(revision[key])
+		if content == "" {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, number, err
+			}
+			continue
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			return false, number, err
+		}
+	}
+	return true, number, writePullRevisionEvent(pullDir, revision, current+1)
+}
+
+func writePullRevisionEvent(pullDir string, revision map[string]any, number int) error {
+	entries, _ := os.ReadDir(pullDir)
+	index := 2
+	for _, entry := range entries {
+		if value, err := strconv.Atoi(strings.SplitN(entry.Name(), "-", 2)[0]); err == nil && value >= index {
+			index = value + 1
+		}
+	}
+	short := safeHeader(stringValue(revision["sig"]))
+	if len(short) > 16 {
+		short = short[:16]
+	}
+	event := map[string]any{
+		"type":       "revision",
+		"id":         "revision-" + strconv.Itoa(number) + "-" + short,
+		"author":     revision["author"],
+		"authorName": revision["authorName"],
+		"ts":         revision["ts"],
+		"state":      strconv.Itoa(number),
+		"sig":        revision["revisionSig"],
+		"body":       "",
+	}
+	path := filepath.Join(pullDir, fmt.Sprintf("%04d-revision.md", index))
+	return os.WriteFile(path, []byte(pullEventMarkdown(event)), 0600)
+}
+
 var pullLifecycleStatus = map[string]string{"status": "closed", "delete": "deleted"}
 
 func applyPullLifecycleEvent(pullDir string, event map[string]any) error {
@@ -1361,8 +1511,14 @@ func pullMarkdown(number int, pull map[string]any) string {
 		"authorName: " + safeHeader(stringValue(pull["authorName"])),
 		"sig: " + safeHeader(stringValue(pull["sig"])),
 	}
-	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig"} {
-		if value := safeHeader(stringValue(pull[key])); value != "" {
+	for _, key := range []string{"authorClaimedName", "creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
+		value := safeHeader(stringValue(pull[key]))
+		if key == "aiModel" {
+			if runes := []rune(value); len(runes) > 80 {
+				value = strings.TrimSpace(string(runes[:80]))
+			}
+		}
+		if value != "" {
 			lines = append(lines, key+": "+value)
 		}
 	}
@@ -1372,7 +1528,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 
 func pullEventMarkdown(event map[string]any) string {
 	lines := []string{"---"}
-	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "sig"} {
+	for _, key := range []string{"type", "id", "author", "authorName", "authorClaimedName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "target", "appliedCommit", "patchset", "ref", "before", "after", "commits", "forced", "sig"} {
 		if value, ok := event[key]; ok && fmt.Sprint(value) != "" {
 			lines = append(lines, key+": "+safeHeader(fmt.Sprint(value)))
 		}
@@ -1407,6 +1563,10 @@ func materializeDiscussionInbox(ctx context.Context, repo Repository,
 			continue
 		}
 		wrote, number, err := writeDiscussionItem(dir, item)
+		if errors.Is(err, errDiscussionLocked) {
+			ids = append(ids, item.ID)
+			continue
+		}
 		if err != nil {
 			return ids, err
 		}
@@ -1463,12 +1623,18 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 	if typeName == "answer" && number > 0 {
 		return writeDiscussionAnswer(filepath.Join(base, strconv.Itoa(number)), item)
 	}
+	if (typeName == "status" || typeName == "delete") && number > 0 {
+		return writeDiscussionModeration(filepath.Join(base, strconv.Itoa(number)), item)
+	}
 	if typeName != "comment" || number <= 0 {
 		return false, number, nil
 	}
 	dir := filepath.Join(base, strconv.Itoa(number))
 	if !fileExists(filepath.Join(dir, "discussion.md")) {
 		return false, number, nil
+	}
+	if discussionStatus(dir) != "open" {
+		return false, number, errDiscussionLocked
 	}
 	entries, _ = os.ReadDir(dir)
 	index := 2
@@ -1486,6 +1652,118 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 		stringValue(item.Event["body"]), "",
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%04d-comment.md", index))
+	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
+}
+
+var errDiscussionLocked = errors.New("discussion is closed to new replies")
+
+const discussionDeleteTarget = "#discussion"
+
+var discussionStatuses = map[string]bool{"open": true, "closed": true, "archived": true}
+
+func discussionStatus(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "discussion.md"))
+	if err != nil {
+		return "open"
+	}
+	opened, ok := parseFrontMatter(raw)
+	if !ok {
+		return "open"
+	}
+	switch status := strings.TrimSpace(opened.values["status"]); status {
+	case "closed", "archived":
+		return status
+	}
+	return "open"
+}
+
+func removeDiscussionFolder(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("discussion folder %s holds %s, which is not a plain file", dir, entry.Name())
+		}
+	}
+	for _, entry := range entries {
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Remove(dir)
+}
+
+func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	approved, _ := item.Meta["ownerApproved"].(bool)
+	if approved && stringValue(item.Event["type"]) == "delete" &&
+		safeHeader(stringValue(item.Event["target"])) == discussionDeleteTarget &&
+		!fileExists(filepath.Join(dir, "discussion.md")) {
+		return true, number, nil
+	}
+	if !approved || !fileExists(filepath.Join(dir, "discussion.md")) {
+		return false, number, nil
+	}
+	if stringValue(item.Event["type"]) == "delete" {
+		target := safeHeader(stringValue(item.Event["target"]))
+		if target == "" {
+			return false, number, nil
+		}
+		if target == discussionDeleteTarget {
+			return true, number, removeDiscussionFolder(dir)
+		}
+		entries, _ := os.ReadDir(dir)
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), "-comment.md") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			if comment, ok := parseFrontMatter(raw); ok && comment.values["id"] == target {
+				return true, number, os.Remove(path)
+			}
+		}
+		return true, number, nil
+	}
+	status := strings.TrimSpace(stringValue(item.Event["status"]))
+	if !discussionStatuses[status] {
+		return false, number, nil
+	}
+	path := filepath.Join(dir, "discussion.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, number, nil
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return false, number, nil
+	}
+	closing := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			closing = i
+			break
+		}
+	}
+	if closing < 0 {
+		return false, number, nil
+	}
+	replaced := false
+	for i := 1; i < closing; i++ {
+		if strings.HasPrefix(lines[i], "status:") {
+			lines[i] = "status: " + status
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines[:closing], append([]string{"status: " + status}, lines[closing:]...)...)
+	}
 	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }
 
@@ -1559,8 +1837,11 @@ func writeDiscussionAnswer(dir string, item collaborationItem) (bool, int, error
 		[]byte(strings.Join(lines, "\n")), 0600)
 }
 
+var headerLineBreaks = strings.NewReplacer("\r", " ", "\n", " ", "\v", " ", "\f", " ",
+	"\x1c", " ", "\x1d", " ", "\x1e", " ", "\u0085", " ", "\u2028", " ", "\u2029", " ")
+
 func safeHeader(value string) string {
-	return strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(value))
+	return strings.TrimSpace(headerLineBreaks.Replace(value))
 }
 
 func firstNonEmpty(values ...string) string {

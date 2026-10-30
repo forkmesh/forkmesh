@@ -2,9 +2,6 @@ package com.forkmesh.nativeapp.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -42,7 +39,7 @@ abstract class Screen {
     }
 }
 
-class Navigator(root: Screen) {
+open class Navigator(root: Screen) {
     val stack = mutableStateListOf(root)
 
     internal var onRemoved: (Screen) -> Unit = {}
@@ -51,9 +48,14 @@ class Navigator(root: Screen) {
 
     val depth: Int get() = stack.size
 
-    fun push(screen: Screen) {
+    open fun push(screen: Screen) {
         FmSoundCues.play(SoundCue.NAVIGATE)
         stack.add(screen)
+    }
+
+    fun pick(screen: Screen) {
+        popToRoot()
+        push(screen)
     }
 
     fun pop(): Boolean {
@@ -95,6 +97,10 @@ class Navigator(root: Screen) {
     }
 }
 
+class PaneListNavigator(private val tab: Navigator) : Navigator(tab.stack.first()) {
+    override fun push(screen: Screen) = tab.pick(screen)
+}
+
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("no Navigator in composition") }
 
 val LocalScreen = staticCompositionLocalOf<Screen?> { null }
@@ -119,19 +125,18 @@ fun NavigatorHost(navigator: Navigator, onExit: () -> Unit) {
     BackHandler {
         if (!navigator.handleBack()) onExit()
     }
-    var lastDepth = navigator.depth
     AnimatedContent(
         targetState = navigator.top,
         transitionSpec = {
-            val forward = navigator.depth >= lastDepth
-            lastDepth = navigator.depth
-            val duration = FmMotion.normal
+            val from = navigator.stack.indexOf(initialState)
+            val to = navigator.stack.indexOf(targetState)
+            val forward = from >= 0 && (to > from || to < 0)
             if (forward) {
-                (slideInHorizontally(tween(duration)) { it / 4 } + fadeIn(tween(duration))) togetherWith
-                    fadeOut(tween(duration))
+                (slideInHorizontally(FmMotion.push()) { it } togetherWith slideOutHorizontally(FmMotion.push()) { -it * 3 / 10 })
+                    .apply { targetContentZIndex = 1f }
             } else {
-                fadeIn(tween(duration)) togetherWith
-                    (slideOutHorizontally(tween(duration)) { it / 4 } + fadeOut(tween(duration)))
+                (slideInHorizontally(FmMotion.push()) { -it * 3 / 10 } togetherWith slideOutHorizontally(FmMotion.push()) { it })
+                    .apply { targetContentZIndex = -1f }
             }
         },
         label = "navigator",

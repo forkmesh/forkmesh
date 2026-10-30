@@ -617,3 +617,99 @@ def test_the_settings_card_and_code_button_ship_in_the_bundle():
     defined = re.findall(r"\n  (?:async )?function (\w+)\(", bundle)
     duplicates = {name for name in defined if defined.count(name) > 1}
     assert not {name for name in duplicates if "ForgeMirror" in name}
+
+
+def test_push_refs_setting_is_saved_returned_and_sent_to_the_daemon():
+    db = _db()
+    _install(db)
+    view = _connect().body["mirror"]
+    assert view["refs"] == "all"
+    config = asyncio.run(mirror.push_config(object(), "alice", "engine"))
+    assert config["refs"] == "all"
+    first_revision = config["revision"]
+
+    _Date.clock[0] += 1000
+    saved = _call({"action": "save", "provider": "github",
+                   "remote": "octo/engine", "token": "", "prune": True,
+                   "refs": "default"})
+    assert saved.status == 200, saved.body
+    assert saved.body["mirror"]["refs"] == "default"
+    assert saved.body["mirror"]["prune"] is True
+    config = asyncio.run(mirror.push_config(object(), "alice", "engine"))
+    assert config["refs"] == "default" and config["prune"] is True
+    assert config["revision"] != first_revision
+    assert _call({"action": "get"}).body["mirror"]["refs"] == "default"
+
+    _Date.clock[0] += 1000
+    _call({"action": "save", "provider": "github", "remote": "octo/engine",
+           "token": "", "prune": True})
+    assert asyncio.run(mirror.push_config(
+        object(), "alice", "engine"))["refs"] == "default"
+    bad = _call({"action": "save", "provider": "github",
+                 "remote": "octo/engine", "token": "", "refs": "feature"})
+    assert bad.status == 400 and bad.body["error"] == "invalid_refs"
+    assert _call({"action": "get"}).body["mirror"]["refs"] == "default"
+
+    _Date.clock[0] += 1000
+    _call({"action": "save", "provider": "github", "remote": "octo/engine",
+           "token": "", "refs": "ALL"})
+    assert asyncio.run(mirror.push_config(
+        object(), "alice", "engine"))["refs"] == "all"
+
+
+def test_records_saved_before_the_refs_setting_push_every_branch():
+    db = _db()
+    _install(db)
+    _connect()
+    row, record = asyncio.run(mirror._load(object(), _bi("alice/engine")))
+    record.pop("refs", None)
+    asyncio.run(mirror._store(object(), _bi("alice/engine"), record))
+    assert _call({"action": "get"}).body["mirror"]["refs"] == "all"
+    assert asyncio.run(mirror.push_config(
+        object(), "alice", "engine"))["refs"] == "all"
+
+
+def test_the_mirror_form_offers_the_branches_choice():
+    public = ROOT / "public"
+    content = (public / "dashboard" / "js" / "06-repo-content.js").read_text(
+        "utf-8")
+    form = content.split("function renderRepoForgeMirrorResourceRows", 1)[
+        1].split("function renderRepoForgeMirrorForm", 1)[0]
+    assert "data-repo-forge-mirror-refs" in form
+    assert '<option value="all"' in form and "All branches" in form
+    assert '<option value="default"' in form
+    assert "Only the default branch" in form
+    submit = content.split("async function handleRepoForgeMirrorSubmit", 1)[
+        1].split("\n  }\n", 1)[0]
+    assert 'querySelector("[data-repo-forge-mirror-refs]")' in submit
+    assert "refs:" in submit
+    bundle = (public / "dashboard.js").read_text("utf-8")
+    assert "data-repo-forge-mirror-refs" in bundle
+
+
+def test_about_lists_only_an_active_public_code_mirror():
+    db = _db()
+    _install(db)
+    assert asyncio.run(mirror.public_about_link(
+        object(), "alice", "engine")) is None
+    _connect({"code": {"direction": "off"}})
+    assert asyncio.run(mirror.public_about_link(
+        object(), "alice", "engine")) is None
+    _connect({"code": {"direction": "push"}})
+    assert asyncio.run(mirror.public_about_link(
+        object(), "alice", "engine")) == {
+        "provider": "github", "label": "GitHub",
+        "url": "https://github.com/octo/engine", "role": "mirror"}
+    _call({"action": "toggle", "active": False})
+    assert asyncio.run(mirror.public_about_link(
+        object(), "alice", "engine")) is None
+    row = {"active": 1}
+    record = {"provider": "github", "remote": {"path": "octo/engine"},
+              "resources": {"code": {"direction": "push"}},
+              "status": {"remoteExists": True, "remotePrivate": True}}
+    assert mirror.public_link(row, record) is None
+    record["status"]["remotePrivate"] = False
+    assert mirror.public_link(row, record)["url"] == \
+        "https://github.com/octo/engine"
+    record["status"]["remoteExists"] = False
+    assert mirror.public_link(row, record) is None

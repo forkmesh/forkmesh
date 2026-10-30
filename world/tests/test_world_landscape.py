@@ -152,7 +152,8 @@ def test_desert_plots_ring_the_hexagonal_city_with_start_world_signs():
         "const DESERT_HEXES = Object.freeze(",
         "const WORLD_HEX_PITCH = CONTINUOUS_CITY_RADIUS * 2 + WORLD_ROAD_WIDTH;",
         "CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH + DESERT_PLOT_APOTHEM;",
-        "centers: DESERT_HEXES.map((hex) => [hex.x, -hex.z]),",
+        "centers: DESERT_HEXES\n        .filter((_, side) => !petals.has(side))\n"
+        "        .map((hex) => [hex.x, -hex.z]),",
         "function createDesertPlots(THREE, interactive)",
         'sand.name = "forkmesh-desert-plot-sand";',
         "sand.userData.ground = true;",
@@ -276,10 +277,10 @@ def test_leaderboard_contents_are_always_mounted_in_the_open_district():
     )
     assert "leaderboardInterior.visible = false" not in district
     assert "leaderboardInterior.add(\n    createDistrictGroundCircle" in district
-    # Boards mount on their own circle, and every circle mounts on the open
+    # Boards mount on the one billboard ring, and the ring mounts on the open
     # district interior, so nothing is hidden behind a cover or a gate.
     assert "leaderboardInterior.add(group);" in scene
-    assert "circle.group.add(object);" in scene
+    assert "ring.group.add(object);" in scene
     assert "updateLeaderboardCircleOccupancy" not in scene
     assert "leaderboardCoverContainsWorldPoint" not in scene
 
@@ -460,11 +461,19 @@ def test_a_quadcopter_left_at_the_office_parks_outside_its_keep_out_box():
         )
         for side in range(6)
     ]
+    junctions = [
+        (
+            math.cos(math.pi / 6 + corner * math.pi / 3) * 740 / math.sqrt(3) * loop,
+            -45 + math.sin(math.pi / 6 + corner * math.pi / 3) * 740 / math.sqrt(3) * loop,
+        )
+        for loop in (1, 2)
+        for corner in range(6)
+    ]
 
     def reachable_on_foot(point):
         return any(
             inside_rounded_hex(point, x, z, 375, 80) for x, z in tiles
-        )
+        ) or any(math.hypot(point["x"] - x, point["z"] - z) <= 16 for x, z in junctions)
 
     for key in ("insideTower", "rearCorner", "openTown", "offSurface"):
         assert clear_of_the_tower(parked[key]), key

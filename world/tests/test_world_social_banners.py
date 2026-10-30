@@ -136,9 +136,9 @@ def test_banner_package_removal_cleans_every_world_contribution():
         "record.instance.dispose?.();",
     ):
         assert contract in lifecycle, contract
-    assert "billboardFeedRecords.delete(record.feed);" in scene
-    assert "billboardSpinners.splice(spinnerIndex, 1);" in scene
-    assert "relayoutBillboardCircle(circle);" in scene
+    assert "if (!shared.length) feedRecords.delete(record.feed);" in scene
+    assert "spinning.delete(record.spinner);" in scene
+    assert "record.object.removeFromParent();\n    relayout();" in scene
     assert "installedWorldPackageIds: () =>" in scene
     assert "worldPackageCatalog: () =>" in scene
     for module_path in (X_MODULE_PATH, REDDIT_MODULE_PATH):

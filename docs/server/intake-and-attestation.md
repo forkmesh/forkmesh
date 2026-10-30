@@ -23,6 +23,44 @@ source desktop lives in the desktop's `desktop/src/UpstreamCheckoutSync.cpp`.
 - **Acknowledge.** `ackCollaboration` acknowledges exactly the row ids it wrote,
   with a signed `forkmesh-repostate-v1` statement of the refs digest after the
   commit. The relay records that as an attested state for the repository.
+- **Fleet wake.** Once an acknowledgement drains at least one row, the relay
+  also rings a `commits` doorbell for the repository
+  (`_wake_mirrors_after_intake` in `app/src/entry.py`, through
+  `schedule_repo_mirror_wake`, or `notify_repo_mirrors` when the doorbell
+  object cannot be reached). Every mirror and instance watcher then fetches
+  the commit the drainer just wrote.
+
+### Why intake wakes the fleet (2026-10-21)
+
+Issues deleted on forkmesh.com stayed listed on a mirror. The relay sent the
+`issues` doorbell when the delete was queued, so every node fetched at once,
+before the draining node had committed anything. The draining node then
+committed the delete, but nothing announced that commit: acknowledgements
+woke nobody, and a Go node's catalog publish is a `remote-clone` publish,
+which never rings `commits`. The other mirrors served the old tree until
+their next safety fetch, then every 30 minutes. Pull and discussion intake
+(including close and delete) had the same gap.
+
+The wake carries no refs digest. The acknowledgement signs the routing digest
+(default branch and tags), but mirrors check convergence against the digest
+of every head and tag (`refsSHA256`). A routing digest as the target would
+never match and would keep a mirror retrying, so the wake asks for one fetch
+and leaves no target. The doorbell object keeps a pending wake that carries a
+digest instead of replacing it with a wake that has none
+(`_mirror_wake_fetch`).
+
+The daemon's relay safety fetch (`relaySafetySyncInterval`) went from 30 to
+5 minutes at the same time. It covers a lost doorbell. The 30 minutes were
+set on 2026-08-19 to spare the Cloudflare ingress Durable Object's free-plan
+allowance. The served stack no longer runs on Cloudflare, and a fetch with
+nothing new is a ref advertisement. The 5 minutes reach mirrors only with a
+rebuilt node binary. The relay wake works as soon as the app is deployed.
+
+Tests: `test_every_mirror_drain_ack_wakes_the_fleet_to_fetch_the_new_commit`,
+`test_intake_wake_is_a_stateless_commits_doorbell_with_a_direct_fallback`
+(`app/tests/test_collaboration_mirror_materialization.py`),
+`test_stateless_commit_wake_keeps_a_pending_convergence_target`
+(`app/tests/test_cron_runner.py`).
 
 ### Organization aliases
 
@@ -196,7 +234,7 @@ How the merged tree is built:
    opening event (`sig:<signature>` or `unsigned:<author>:<ts>:<title>`). A
    legacy placeholder (sig `relay-placeholder`, or an unsigned untitled
    opening) has no identity. An unreadable record (missing, unparsable, over
-   2 MiB, no valid opening) is kept at its path and its number is never
+   16 MiB, no valid opening) is kept at its path and its number is never
    reused.
 3. **Numbers.** Each identity has a *claim* (`intakeNumber` when a merge moved
    it, else its number; lowest over copies) and a *floor* (highest number any

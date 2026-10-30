@@ -114,8 +114,11 @@ import * as botsRuntime from "./runtime/bots.js";
 import * as cameraRuntime from "./runtime/camera.js";
 import * as avatarSelectionRuntime from "./runtime/avatar-selection.js";
 import * as remotePlayersRuntime from "./runtime/remote-players.js";
+import * as avatarVoiceRuntime from "./runtime/avatar-voice.js";
+import * as genieSpiderRuntime from "./runtime/genie-spider.js";
 import * as networkRuntime from "./runtime/network.js";
 import { instanceHexArrival } from "./instance-hexes.js";
+import * as territoryRuntime from "./instance-territory.js";
 import * as repositoryCatalogRuntime from "./runtime/repository-catalog.js";
 import * as repositoryRecordsRuntime from "./runtime/repository-records.js";
 import * as effectsRuntime from "./runtime/effects.js";
@@ -170,13 +173,11 @@ export async function createWorldScene({
   onDrinkWater = () => {},
   onFederatedWorldTravel = () => {},
   onInstanceHexagonSelect = () => {},
+  onNeighbourDoor = () => {},
+  onNeighbourBugSelect = () => {},
   onSystemCapacityTableSelect = () => {},
-  onQaBoardNearby = () => {},
-  onQaBoardAway = () => {},
-  onLeaderboardCircleNearby = () => {},
-  onLeaderboardCircleAway = () => {},
-  onSocialCircleNearby = () => {},
-  onSocialCircleAway = () => {},
+  onBillboardNearby = () => {},
+  onBillboardAway = () => {},
   onQaVerdict = () => {},
   onQaAction = () => {},
   onRendererStateChange = () => {},
@@ -208,6 +209,11 @@ export async function createWorldScene({
   onJetpackChange = () => {},
   onGymState = () => {},
   onStartHereSelect = () => {},
+  territory = null,
+  onTerritoryCross = () => {},
+  onTerritoryLinkSelect = () => {},
+  onTerritoryBugSelect = () => {},
+  onTerritoryNotice = () => {},
 }) {
   const fns = {};
   const ctx = new (class WorldSceneContext {
@@ -237,9 +243,6 @@ export async function createWorldScene({
     get bikeRide() { return bikeRide; } set bikeRide(value) { bikeRide = value; }
     get bikeSeatPosition() { return bikeSeatPosition; }
     get bikeStates() { return bikeStates; } set bikeStates(value) { bikeStates = value; }
-    get billboardCircleOrigin() { return billboardCircleOrigin; } set billboardCircleOrigin(value) { billboardCircleOrigin = value; }
-    get billboardIslandBounds() { return billboardIslandBounds; } set billboardIslandBounds(value) { billboardIslandBounds = value; }
-    get billboardSpinners() { return billboardSpinners; } set billboardSpinners(value) { billboardSpinners = value; }
     get bootQualityTier() { return bootQualityTier; }
     get botAgents() { return botAgents; }
     get bulletinFace() { return bulletinFace; }
@@ -478,8 +481,6 @@ export async function createWorldScene({
     get pointerLast() { return pointerLast; }
     get pointerStart() { return pointerStart; }
     get primaryPointerId() { return primaryPointerId; } set primaryPointerId(value) { primaryPointerId = value; }
-    get proximityBoards() { return proximityBoards; }
-    get proximityBoardWorldPosition() { return proximityBoardWorldPosition; }
     get pushSurges() { return pushSurges; }
     get qaBoardFace() { return qaBoardFace; }
     get qaBoardFrame() { return qaBoardFrame; }
@@ -498,7 +499,6 @@ export async function createWorldScene({
     get raycaster() { return raycaster; }
     get reflectionCamera() { return reflectionCamera; }
     get reflectionTarget() { return reflectionTarget; }
-    get relayoutBillboardCircle() { return relayoutBillboardCircle; } set relayoutBillboardCircle(value) { relayoutBillboardCircle = value; }
     get remoteDetailFrustum() { return remoteDetailFrustum; }
     get remoteDetailMatrix() { return remoteDetailMatrix; }
     get remoteDetailSphere() { return remoteDetailSphere; }
@@ -649,6 +649,8 @@ export async function createWorldScene({
     billboardCirclesDistrict.functions({
       THREE,
       ctx,
+      onBillboardNearby,
+      onBillboardAway,
     }),
   );
   Object.assign(
@@ -889,6 +891,23 @@ export async function createWorldScene({
   );
   Object.assign(
     fns,
+    avatarVoiceRuntime.functions({
+      THREE,
+      identity,
+      ctx,
+    }),
+  );
+  Object.assign(
+    fns,
+    genieSpiderRuntime.functions({
+      THREE,
+      reducedMotion,
+      ctx,
+      fns,
+    }),
+  );
+  Object.assign(
+    fns,
     networkRuntime.functions({
       THREE,
       identity,
@@ -923,6 +942,7 @@ export async function createWorldScene({
       fns,
     }),
   );
+  fns.onNeighbourDoor = onNeighbourDoor;
   Object.assign(
     fns,
     pointerRuntime.functions({
@@ -937,6 +957,7 @@ export async function createWorldScene({
       onFederatedWorldTravel,
       onFediverseProfile,
       onInstanceHexagonSelect,
+      onNeighbourBugSelect,
       onFloorTap,
       onForkbotChat,
       onLandmarkSelect,
@@ -965,8 +986,22 @@ export async function createWorldScene({
       onWorldBulletinSelect,
       onWorldDiscordBoardSelect,
       onWorldGeneralChatSelect,
+      onTerritoryLinkSelect,
+      onTerritoryBugSelect,
       ctx,
       fns,
+    }),
+  );
+  Object.assign(
+    fns,
+    territoryRuntime.functions({
+      THREE,
+      ctx,
+      fns,
+      territory,
+      onTerritoryCross,
+      onTerritoryLinkSelect,
+      onTerritoryNotice,
     }),
   );
   Object.assign(
@@ -1011,7 +1046,6 @@ export async function createWorldScene({
     beginGymExercise,
     beginOfficeExit,
     beginRepositoryDistrictReveal,
-    billboardCircle,
     buildSkyEnvironment,
     clearFocus,
     completeAgentTask,
@@ -1073,6 +1107,7 @@ export async function createWorldScene({
     performGymRep,
     pickWorldObject,
     placeBillboardOnIsland,
+    tickBillboardSpinners,
     playEmote,
     playHandshake,
     playRewardEvent,
@@ -1102,6 +1137,22 @@ export async function createWorldScene({
     scheduleGpuWarmup,
     setAgentBotAccess,
     setAvatarFaceImage,
+    setAvatarFaceCanvas,
+    setAvatarRig,
+    setAvatarSpeech,
+    setPrivacyBubbles,
+    setAvatarOnAir,
+    playAvatarReaction,
+    avatarScreenPoint,
+    playGenieSpiderAct,
+    reactGenieSpider,
+    setGenieSpiderEnabled,
+    genieSpiderState,
+    genieSpiderActs,
+    voiceAvatarIds,
+    avatarNear,
+    avatarFacePhoto,
+    avatarFaceKey,
     setAvatarFediverseProfile,
     setAvatarRecentPublicMessage,
     setBeachScene,
@@ -1147,6 +1198,7 @@ export async function createWorldScene({
     setTouchMovement,
     setTriangleView,
     setWorldElementEnabled,
+    shiftPlayer,
     showAgentTaskBubble,
     showChatBubble,
     showMemberChatBubble,
@@ -1516,7 +1568,11 @@ export async function createWorldScene({
     camera,
     forceFullDetail: (avatar) =>
       avatar === activeAvatarSelection ||
-      avatar.userData.badgeDetail === "reading",
+      avatar.userData.badgeDetail === "reading" ||
+      Boolean(avatar.userData.voiceRig) ||
+      Boolean(avatar.userData.rigFaceTexture) ||
+      avatar.userData.wordBadge?.visible === true ||
+      avatar.userData.onAirSign?.visible === true,
     gpuBusy: () =>
       programPacer.stats.paced
         ? programPacer.busy()
@@ -1704,13 +1760,10 @@ export async function createWorldScene({
   });
   await sceneSlice();
 
-  let billboardIslandBounds, billboardCircleOrigin, billboardSpinners,
-    relayoutBillboardCircle;
   billboardCirclesDistrict.build({
-    THREE,
     animated,
-    ctx,
     placeBillboardOnIsland,
+    tickBillboardSpinners,
     worldBulletin,
     worldDiscordBoard,
     worldGeneralChatBoard,
@@ -2080,7 +2133,6 @@ export async function createWorldScene({
   const officeDisplaysDistrictParts = await officeDisplaysDistrict.build({
     THREE,
     animated,
-    billboardCircle,
     compactRenderer,
     ctx,
     interactive,
@@ -2088,17 +2140,9 @@ export async function createWorldScene({
     officeClockInTexture,
     officeFloorAccent,
     officeInterior,
-    onLeaderboardCircleAway,
-    onLeaderboardCircleNearby,
-    onQaBoardAway,
-    onQaBoardNearby,
-    onSocialCircleAway,
-    onSocialCircleNearby,
     sceneSlice,
-    worldQaBoard,
   });
   const {
-    proximityBoards,
     officeAttendanceBoard,
     officeClockInBoard,
     reflectionTarget,
@@ -2208,7 +2252,6 @@ export async function createWorldScene({
   const diagnosticsDrawingBuffer = new THREE.Vector2();
   const officeDoorLocalPosition = new THREE.Vector3();
   const officeReceptionLocalPosition = new THREE.Vector3();
-  const proximityBoardWorldPosition = new THREE.Vector3();
   const localPointLightPosition = new THREE.Vector3();
   scene.traverse((object) => {
     if (object.isPointLight) localPointLights.add(object);
@@ -2483,6 +2526,7 @@ export async function createWorldScene({
   const geometryDeduper = createGeometryDeduper(THREE);
 
   await sceneSlice("scene-systems", "Scene systems & input");
+  fns.installInstanceTerritory();
   setTheme("world");
   // Every district is in the scene now, so the walkable surfaces the ground
   // probe reads are complete and worth holding on to.
@@ -2612,7 +2656,18 @@ export async function createWorldScene({
     setTouchMovement,
     setTouchInteractionActive,
     setSpawn,
+    shiftPlayer,
     instanceHexArrival,
+    territoryArrival: fns.territoryArrival,
+    updateTerritoryBugs: fns.updateTerritoryBugs,
+    territoryForkmeshShift: fns.territoryForkmeshShift,
+    territoryOwnerAt: fns.territoryOwnerAt,
+    prepareTerritoryVisit: fns.prepareTerritoryVisit,
+    enterTerritoryVisit: fns.enterTerritoryVisit,
+    leaveTerritoryVisit: fns.leaveTerritoryVisit,
+    leaveOwnTerritory: fns.leaveOwnTerritory,
+    enterOwnTerritory: fns.enterOwnTerritory,
+    updateTerritoryVisitBugs: fns.updateTerritoryVisitBugs,
     travelToRegion,
     visitNeighborhoodHome,
     campfireSeatsReady,
@@ -2671,6 +2726,22 @@ export async function createWorldScene({
     setAvatarFediverseProfile,
     setAvatarRecentPublicMessage,
     setAvatarFaceImage,
+    setAvatarFaceCanvas,
+    setAvatarRig,
+    setAvatarSpeech,
+    setPrivacyBubbles,
+    setAvatarOnAir,
+    playAvatarReaction,
+    avatarScreenPoint,
+    playGenieSpiderAct,
+    reactGenieSpider,
+    setGenieSpiderEnabled,
+    genieSpiderState,
+    genieSpiderActs,
+    voiceAvatarIds,
+    avatarNear,
+    avatarFacePhoto,
+    avatarFaceKey,
     updateArrivalStats,
     updateMemberLounge,
     updateLeaderboards,

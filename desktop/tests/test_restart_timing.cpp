@@ -114,6 +114,73 @@ int main(int argc, char **argv)
     check(!lastBuildProgress(QStringLiteral("-- Configuring done\n")).isValid(),
           "output without a progress line leaves the activity alone");
 
+    const QStringList compiled = compiledSources(QStringLiteral(
+        "[0/2] Re-checking globbed directories...\n"
+        "[1/3] Building CXX object CMakeFiles/forkmesh.dir/src/MainWindowGenie.cpp.o\n"
+        "[2/3] Building CXX object CMakeFiles/forkmesh-package-crm.dir/home/f/marketplace/packages/crm/content/desktop/CrmFeature.cpp.o\r\n"
+        "[ 50%] Building CXX object CMakeFiles/forkmesh.dir/src/MainWindowGenie.cpp.o\n"
+        "[3/3] Linking CXX executable forkmesh\n"));
+    check(compiled == QStringList({QStringLiteral("src/MainWindowGenie.cpp"),
+                                   QStringLiteral("home/f/marketplace/packages/crm/content/desktop/CrmFeature.cpp")}),
+          "each recompiled source is listed once, without its object suffix");
+    check(compiledSources(QStringLiteral(
+              "[1/2] Generating ForkMeshBuildCommit.h\n"
+              "[2/2] Re-checking globbed directories...\n")).isEmpty(),
+          "a build that compiled nothing lists no sources");
+    check(rebuiltSummary({}) ==
+              QStringLiteral("No source changes since the last build; restarting the same build."),
+          "a no-op build says so");
+    check(rebuiltSummary({QStringLiteral("src/A.cpp")}) ==
+              QStringLiteral("Rebuilt 1 changed file: A.cpp"),
+          "one rebuilt file is named");
+    check(rebuiltSummary({QStringLiteral("src/A.cpp"), QStringLiteral("src/B.cpp"),
+                          QStringLiteral("src/C.cpp"), QStringLiteral("src/D.cpp"),
+                          QStringLiteral("src/E.cpp"), QStringLiteral("src/F.cpp"),
+                          QStringLiteral("src/G.cpp")}) ==
+              QStringLiteral("Rebuilt 7 changed files: A.cpp, B.cpp, C.cpp, D.cpp, E.cpp and 2 more"),
+          "a long list names the first five and counts the rest");
+
+    constexpr qint64 gib = 1024LL * 1024 * 1024;
+    check(ccacheEnvironment(QStringLiteral("/mine"), QStringLiteral("/fast/ccache"),
+                            QStringLiteral("/home/u/.cache"), 100 * gib)
+              .isEmpty(),
+          "a compile cache the desktop was started with is kept");
+    const QMap<QString, QString> fast = ccacheEnvironment(
+        QString(), QStringLiteral("/fast/ccache"), QStringLiteral("/home/u/.cache"), gib);
+    check(fast.value(QStringLiteral("CCACHE_DIR")) == QStringLiteral("/fast/ccache") &&
+              fast.value(QStringLiteral("CCACHE_MAXSIZE")) == QStringLiteral("40G"),
+          "the restart shares the fast disk's compile cache with agent builds");
+    const QMap<QString, QString> own = ccacheEnvironment(
+        QString(), QString(), QStringLiteral("/home/u/.cache"), 26 * gib);
+    check(own.value(QStringLiteral("CCACHE_DIR")) ==
+                  QStringLiteral("/home/u/.cache/forkmesh/rebuild-ccache") &&
+              own.value(QStringLiteral("CCACHE_MAXSIZE")) == QStringLiteral("6G"),
+          "without a fast disk the restart keeps its own cache sized from free space");
+    check(ccacheEnvironment(QString(), QString(), QStringLiteral("/c"), 500 * gib)
+                  .value(QStringLiteral("CCACHE_MAXSIZE")) == QStringLiteral("20G"),
+          "the restart's own cache has a ceiling");
+    check(ccacheEnvironment(QString(), QString(), QStringLiteral("/c"), gib)
+                  .value(QStringLiteral("CCACHE_MAXSIZE")) == QStringLiteral("2G"),
+          "the restart's own cache has a floor");
+    check(ccacheEnvironment(QString(), QString(), QString(), gib).isEmpty(),
+          "no cache home leaves ccache's own default");
+
+    const CcacheCounts counts = ccacheCounts(QStringLiteral(
+        "# src/A.cpp\ncache_miss\ndirect_cache_miss\nlocal_storage_miss\n"
+        "# src/B.cpp\ndirect_cache_hit\nlocal_storage_hit\n"
+        "# src/C.cpp\npreprocessed_cache_hit\nlocal_storage_hit\n"
+        "# src/D.cpp\ncould_not_use_precompiled_header\n"));
+    check(counts.hits == 2 && counts.misses == 1,
+          "the stats log counts each compile once as a hit or a miss");
+    check(withCcacheSummary(QStringLiteral("Rebuilt 3 changed files: A.cpp, B.cpp, C.cpp"),
+                            counts) ==
+              QStringLiteral("Rebuilt 3 changed files: A.cpp, B.cpp, C.cpp"
+                             " · compile cache: 2 of 3 hit"),
+          "the summary says how many compiles came from the cache");
+    check(withCcacheSummary(QStringLiteral("No source changes"), {}) ==
+              QStringLiteral("No source changes"),
+          "a build that compiled nothing adds no cache line");
+
     check(countdownText(60, QStringLiteral("compiling 412/1210"), 190'000, 30'000) ==
               QStringLiteral("60% · compiling 412/1210 · ~3m 10s left"),
           "the countdown says what the restart is doing and what is left");

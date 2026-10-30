@@ -54,7 +54,7 @@ def test_worker_reauthorizes_and_hard_deletes_only_unverified_non_admin_users():
     assert '_has_role(env, actor, "platform_administrator")' in handler
     assert '_account_kind(target_rec) != "user"' in handler
     assert 'target_rec.get("email_verified") is True' in handler
-    assert "if await _is_admin(env, target)" in handler
+    assert "if await _is_admin_flag(env, target)" in handler
     assert "_delete_account_namespace(env, target_bi, target_rec)" in handler
     assert '"accountDeleted": True' in handler
     assert '"admin.unverified_account_delete"' in handler

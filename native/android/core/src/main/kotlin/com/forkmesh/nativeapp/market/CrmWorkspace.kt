@@ -406,7 +406,42 @@ data class CrmMailMessage(
     }
 }
 
-data class CrmZohoStatus(val connected: Boolean, val region: String, val lastSyncAt: Long, val oneClick: Boolean)
+data class CrmZohoStep(val key: String, val action: String, val text: String)
+
+data class CrmZohoStatus(
+    val connected: Boolean,
+    val region: String,
+    val lastSyncAt: Long,
+    val oneClick: Boolean,
+    val accountId: String = "",
+    val clientId: String = "",
+    val hasClientSecret: Boolean = false,
+    val managed: Boolean = false,
+    val canSend: Boolean = connected,
+    val lastSentAt: Long = 0,
+    val lastSyncError: String = "",
+    val steps: List<CrmZohoStep> = emptyList(),
+) {
+    companion object {
+        fun fromJson(json: JsonMap?): CrmZohoStatus {
+            val connected = json.bool("connected")
+            return CrmZohoStatus(
+                connected = connected,
+                region = json.str("region", "com"),
+                lastSyncAt = json.long("lastSyncAt"),
+                oneClick = json.bool("oneClick"),
+                accountId = json.str("accountId"),
+                clientId = json.str("clientId"),
+                hasClientSecret = json.bool("hasClientSecret"),
+                managed = json.bool("managed"),
+                canSend = json.optBool("canSend") ?: connected,
+                lastSentAt = json.long("lastSentAt"),
+                lastSyncError = json.str("lastSyncError"),
+                steps = json.maps("steps").map { CrmZohoStep(it.str("key"), it.str("action"), it.str("text")) }.filter { it.text.isNotEmpty() },
+            )
+        }
+    }
+}
 
 data class CrmSettings(
     val providerName: String,
@@ -437,7 +472,7 @@ data class CrmSettings(
             return CrmSettings(
                 json.str("providerName"), json.str("providerUrlTemplate"), json.str("fromName"), json.str("fromEmail"),
                 json.str("mailProvider", "zoho"), boxes.ifEmpty { DEFAULT_BOXES },
-                CrmZohoStatus(zoho.bool("connected"), zoho.str("region", "com"), zoho.long("lastSyncAt"), zoho.bool("oneClick")),
+                CrmZohoStatus.fromJson(zoho),
                 json.bool("mailtrapConfigured"), json.str("updatedBy"), json.long("updatedAt"), json.strings("removedColumns"),
             )
         }

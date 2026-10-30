@@ -20,21 +20,42 @@ final class DirectTrustUITests: XCTestCase {
             ChatDeviceInfo(kid: "gone", acct: "pat", node: "pat-old", state: .blocked, firstSeen: base),
         ]
         let banners = DirectTrustNotices.pending(conversation: Self.conversation, devices: devices, name: "pat")
-        XCTAssertEqual(banners.map(\.kid), ["mine-2", "pat-2"])
-        XCTAssertEqual(banners.map(\.kind), [.ownDevice(kid: "mine-2"), .pendingDevice(kid: "pat-2")])
-        XCTAssertEqual(banners[0].text, "A new device was added to your account. Approve it if it is yours, otherwise block it.")
+        XCTAssertEqual(banners.count, 1, "every waiting device shares one banner")
+        XCTAssertEqual(banners[0].kind, .pendingDevices(kids: ["mine-2", "pat-2"]))
+        XCTAssertEqual(banners[0].timestamp, base.addingTimeInterval(30))
         XCTAssertEqual(
-            banners[1].text, "A new device for pat wants to join this chat. Check the safety number, then approve or block.")
+            banners[0].text, "2 new devices want to join this chat. Check the safety number, then approve or block.")
         XCTAssertTrue(banners.allSatisfy(\.asksApproval))
+
+        let mine = DirectTrustNotices.pending(
+            conversation: Self.conversation, devices: devices.filter { $0.kid != "pat-2" }, name: "pat")
+        XCTAssertEqual(mine.map(\.kind), [.ownDevices(kids: ["mine-2"])])
+        XCTAssertEqual(mine[0].text, "A new device was added to your account. Approve it if it is yours, otherwise block it.")
+        let theirs = DirectTrustNotices.pending(
+            conversation: Self.conversation, devices: devices.filter { $0.kid != "mine-2" }, name: "pat")
+        XCTAssertEqual(theirs.map(\.kind), [.pendingDevices(kids: ["pat-2"])])
+        XCTAssertEqual(
+            theirs[0].text, "A new device for pat wants to join this chat. Check the safety number, then approve or block.")
+        let more = devices + [
+            ChatDeviceInfo(kid: "pat-3", acct: "pat", node: "pat-3", state: .pending, firstSeen: base.addingTimeInterval(90))
+        ]
+        let several = DirectTrustNotices.pending(
+            conversation: Self.conversation, devices: more.filter { $0.kid != "mine-2" }, name: "pat")
+        XCTAssertEqual(several.map(\.kids), [["pat-2", "pat-3"]])
+        XCTAssertEqual(
+            several[0].text, "2 new devices for pat want to join this chat. Check the safety number, then approve or block.")
+        XCTAssertEqual(DirectTrustText.ownDevices(3).prefix(14), "3 new devices ")
+        XCTAssertEqual(DirectTrustText.blockTitle(1), "Block this device?")
+        XCTAssertEqual(DirectTrustText.blockTitle(2), "Block these 2 devices?")
 
         let changedAt = base.addingTimeInterval(45)
         let lines = DirectTrustNotices.notices(
             conversation: Self.conversation, devices: devices, name: "pat", safetyChanged: true, changedAt: changedAt)
-        XCTAssertEqual(lines.map(\.kind), [.ownDevice(kid: "mine-2"), .safetyNumberChanged, .pendingDevice(kid: "pat-2")])
+        XCTAssertEqual(lines.map(\.kind), [.pendingDevices(kids: ["mine-2", "pat-2"]), .safetyNumberChanged])
         XCTAssertEqual(lines[1].text, "Your safety number with pat changed")
-        XCTAssertNil(lines[1].kid)
+        XCTAssertEqual(lines[1].kids, [])
         XCTAssertFalse(lines[1].asksApproval)
-        XCTAssertEqual(Set(lines.map(\.id)).count, 3)
+        XCTAssertEqual(Set(lines.map(\.id)).count, 2)
         let quiet = DirectTrustNotices.notices(
             conversation: Self.conversation, devices: devices, name: "pat", safetyChanged: false, changedAt: changedAt)
         XCTAssertFalse(quiet.contains { $0.kind == .safetyNumberChanged })
@@ -50,7 +71,7 @@ final class DirectTrustUITests: XCTestCase {
                 continuesGroup: false, queued: false, deletable: false)
         }
         let notice = DirectTrustNotice(
-            id: "trust-x", conversation: Self.conversation, kind: .pendingDevice(kid: "k"), text: "line",
+            id: "trust-x", conversation: Self.conversation, kind: .pendingDevices(kids: ["k"]), text: "line",
             timestamp: base.addingTimeInterval(60))
         let items = ChatConversationLayout.items(rows: rows, events: [], notices: [notice], group: false)
         XCTAssertEqual(items.map(\.id), ["time-m0", "m0", "trust-x", "m120"])
@@ -211,10 +232,10 @@ extension DirectMessagesTests {
 
         let injected = try peerSeal("injected", node: "pat-new")
         connection.receive(text: JSON.encode(try crypto.encrypt(injected.keyFrame())))
-        let pending = await waitUntil { hub.trustBanners(conversation).map(\.kid) == [injected.keyId] }
+        let pending = await waitUntil { hub.trustBanners(conversation).map(\.kids) == [[injected.keyId]] }
         XCTAssertTrue(pending)
         XCTAssertEqual(hub.trustBanners(conversation).first?.text, DirectTrustText.pendingDevice("pat"))
-        XCTAssertTrue(hub.conversationItems.contains { $0.id == "trust-\(conversation)-\(injected.keyId)" })
+        XCTAssertTrue(hub.conversationItems.contains { $0.id == "trust-\(conversation)-devices" })
 
         let before = hub.trustRevision
         await hub.approveDevice(conversation, kid: injected.keyId)
@@ -291,15 +312,15 @@ extension DirectMessagesTests {
         _ = await service.open(conversation)
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await roomCrypto()
-        let pat = try peerSeal("peer")
+        let pat = try peerSeal("peer", node: harness.node("pat-node"))
         _ = await teach(pat, from: connection, crypto)
         connection.receive(text: JSON.encode(try crypto.encrypt(pat.keyFrame())))
         let known = await waitUntil { service.deviceKeys(conversation) == [pat.keyId] }
         XCTAssertTrue(known)
         XCTAssertEqual(hub.conversationSubtitle, "Offline")
-        try await harness.sendProtected([
-            "type": "hello", "id": "hello-2", "senderId": "pat-node", "sender": "Patricia", "ts": .int(Date().epochMillis),
-        ])
+        try await harness.sendProtected(
+            ["type": "hello", "id": "hello-2", "senderId": "pat-node", "sender": "Patricia", "ts": .int(Date().epochMillis)],
+            signedIn: false)
         let online = await waitUntil { hub.conversationSubtitle == "Online" }
         XCTAssertTrue(online, "a roster node with no owner still matches the device the DM trusts")
         await service.closeAll()

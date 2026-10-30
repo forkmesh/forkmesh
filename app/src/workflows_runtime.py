@@ -3,7 +3,9 @@ import hmac
 import json
 import re
 from urllib.parse import parse_qsl, urlparse
+from hidden_unicode import clean_value as clean_hidden_unicode
 
+import instance_features
 import workflow_files as files
 import workflow_desktop as desktop
 import workflow_formats as formats
@@ -157,7 +159,7 @@ async def _session_account(env, request, data=None, digest=""):
 async def _body(request, limit=BODY_MAX_BYTES):
     try:
         raw = await bounded_request_text(request, limit)
-        data = json.loads(raw or "{}")
+        data = clean_hidden_unicode(json.loads(raw or "{}"))
     except Exception:
         return None, ""
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -173,7 +175,7 @@ def _hook_path(workflow_id, token):
 def _summary(row, record):
     workflow = record or {}
     trigger = engine.trigger_node(workflow)
-    return {
+    out = {
         "id": row["workflow_id"],
         "name": workflow.get("name") or "Untitled workflow",
         "active": bool(row.get("active")),
@@ -186,6 +188,9 @@ def _summary(row, record):
         "createdAt": int(row.get("created_at") or 0),
         "updatedAt": int(row.get("updated_at") or 0),
     }
+    if desktop.has_desktop_steps(workflow):
+        out["runsOn"] = desktop.RUNS_ON
+    return out
 
 
 def _detail(row, record):
@@ -337,7 +342,8 @@ async def _credentials_for(env, owner_bi, workflow):
 
 async def _http(method, url, headers, body):
     init = {"method": method, "headers": dict(headers, **{
-        "User-Agent": USER_AGENT}), "redirect": "follow"}
+        "User-Agent": instance_features.user_agent(USER_AGENT, "workflows")}),
+        "redirect": "follow"}
     if body is not None:
         init["body"] = body
     try:
@@ -695,7 +701,8 @@ async def _import_url(url):
     try:
         response = await js_fetch_with_timeout(
             source, {"method": "GET", "redirect": "follow", "headers": {
-                "User-Agent": USER_AGENT, "Accept": "application/json"}},
+                "User-Agent": instance_features.user_agent(USER_AGENT, "workflows"),
+                "Accept": "application/json"}},
             IMPORT_TIMEOUT_SECONDS)
     except Exception:
         response = None

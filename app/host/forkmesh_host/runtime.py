@@ -22,6 +22,7 @@ from .ffi import JsObject
 from .workers import ExecutionContext
 
 CRON_EXPRESSION = "* * * * *"
+READ_ONLY_POLL_SECONDS = 1.0
 
 
 def vm_rss_kib():
@@ -113,6 +114,11 @@ class HostRuntime:
         self.env.HOST_BACKGROUND = self.background
         self.env.HOST_STOPPING = asyncio.Event()
         self._warm_task = None
+        self.read_only_override = None
+        self._read_only_on = False
+        self._read_only_task = None
+        if hasattr(self.env.DB, "read_only_probe"):
+            self.env.DB.read_only_probe = lambda: self.read_only
 
     # -- vault ---------------------------------------------------------
     @property
@@ -126,6 +132,35 @@ class HostRuntime:
         it serves nothing, like a sealed node, whatever the vault says."""
         membership = getattr(self.durable, "membership", None)
         return bool(getattr(membership, "self_quarantined", False))
+
+    @property
+    def read_only(self):
+        if self.read_only_override is not None:
+            return bool(self.read_only_override)
+        membership = getattr(self.durable, "membership", None)
+        return bool(getattr(membership, "read_only", False))
+
+    def sync_read_only(self):
+        active = self.read_only and not self.sealed
+        if active == self._read_only_on:
+            return False
+        self._read_only_on = active
+        self._set_queues(not active and not self.sealed)
+        if active:
+            print("read-only mode ON: no rqlite leader; serving reads from "
+                  "the local copy and refusing writes (docs/PLAN.md)",
+                  flush=True)
+        else:
+            print("read-only mode OFF: writes are back", flush=True)
+        return True
+
+    async def read_only_loop(self):
+        while True:
+            await asyncio.sleep(READ_ONLY_POLL_SECONDS)
+            try:
+                self.sync_read_only()
+            except Exception as error:
+                print("read-only sync failed: %r" % (error,), flush=True)
 
     async def _on_quarantine(self, quarantined):
         if quarantined:
@@ -182,16 +217,46 @@ class HostRuntime:
         if self.sealed:
             raise RuntimeError("host is sealed")
         ctx = self.context()
-        with d1_caller.request_scope(request):
+        self._remember_instance()
+        from . import privacy
+        with d1_caller.request_scope(request, privacy.active(self.env)):
             if self._db_scope is not None:
                 with self._db_scope():
-                    return await self.entrypoint(ctx).fetch(request)
-            return await self.entrypoint(ctx).fetch(request)
+                    response = await self.entrypoint(ctx).fetch(request)
+            else:
+                response = await self.entrypoint(ctx).fetch(request)
+        return self._instance_error_text(response)
+
+    def _remember_instance(self):
+        features = sys.modules.get("instance_features")
+        if features is not None and hasattr(features, "remember_instance"):
+            features.remember_instance(self.env)
+
+    def _instance_error_text(self, response):
+        features = sys.modules.get("instance_features")
+        try:
+            status = int(getattr(response, "status", 0) or 0)
+        except (TypeError, ValueError):
+            return response
+        if features is None or status < 400 or not features.branded(self.env):
+            return response
+        content_type = str(response.headers.get("content-type") or "").lower()
+        body = getattr(response, "_body", None)
+        if "json" not in content_type or not isinstance(body, (bytes, str)):
+            return response
+        renamed = features.rename_error_body(self.env, body)
+        if renamed is not body:
+            response._body = renamed
+            if response.headers.has("content-length"):
+                response.headers.set("content-length", str(len(
+                    renamed if isinstance(renamed, bytes) else renamed.encode("utf-8"))))
+        return response
 
     async def scheduled(self, scheduled_time=None, cron=CRON_EXPRESSION):
         if self.sealed:
             raise RuntimeError("host is sealed")
         ctx = self.context()
+        self._remember_instance()
         controller = JsObject(
             scheduledTime=int(scheduled_time or _js.Date.now()),
             cron=cron, type="scheduled")
@@ -216,7 +281,7 @@ class HostRuntime:
             now = time.time()
             await asyncio.sleep(minute - (now % minute) + 0.05)
             scheduled = int(time.time() // minute * minute * 1000)
-            if self.sealed:
+            if self.sealed or self.read_only:
                 continue
             try:
                 await self.scheduled(scheduled)
@@ -243,6 +308,8 @@ class HostRuntime:
                 self.config.environ):
             self._warm_task = loop.create_task(background.warm_caches(self))
             self._track(self._warm_task)
+        if self._read_only_task is None:
+            self._read_only_task = loop.create_task(self.read_only_loop())
         if self._maintenance_task is None:
             self._maintenance_task = loop.create_task(
                 self.maintenance_loop())
@@ -270,10 +337,11 @@ class HostRuntime:
 
     async def stop(self, timeout=10.0):
         for task in (self._cron_task, self._maintenance_task,
-                     self._warm_task):
+                     self._warm_task, self._read_only_task):
             if task is not None:
                 task.cancel()
         self._cron_task = self._maintenance_task = self._warm_task = None
+        self._read_only_task = None
         if self.dns is not None:
             await self.dns.stop()
         if self.ids_alerts is not None:

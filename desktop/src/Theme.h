@@ -171,8 +171,11 @@ inline QString remapSheet(const QString &sheet)
 
 inline const char *checkedIconColorForButton(const QString &objectName, bool dark)
 {
-    if (objectName == QStringLiteral("promptCloudButton"))
+    if (objectName == QStringLiteral("promptCloudButton") ||
+        objectName == QStringLiteral("promptWorktreeCheck"))
         return dark ? "#58a6ff" : "#0969da";
+    if (objectName == QStringLiteral("promptVibeCheck"))
+        return dark ? "#d2a8ff" : "#8250df";
     return nullptr;
 }
 
@@ -279,6 +282,15 @@ QPushButton#onboardingCloseButton {
     border-radius: 15px; padding: 0; font-size: 22px; font-weight: 400;
 }
 QPushButton#onboardingCloseButton:hover { background: #30363d; color: #f0f6fc; }
+#onboardingTrackRow { background: transparent; }
+QPushButton#onboardingTrackButton {
+    background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 10px; padding: 11px 14px; text-align: left;
+    font-size: 12px; font-weight: 600;
+}
+QPushButton#onboardingTrackButton:hover { border-color: #58a6ff; color: #f0f6fc; }
+QPushButton#onboardingTrackButton:focus { border-color: #58a6ff; }
+QPushButton#onboardingTrackButton:pressed { background-color: #161b22; }
 #calendarAgentCard {
     background-color: #161b22;
     border: 1px solid #30363d;
@@ -612,7 +624,9 @@ QPushButton#repoTab:checked { color: #e6edf3; border-bottom: 2px solid #fd8c73; 
 #settingsNav::item { color: #8b949e; padding: 6px 10px; border-radius: 6px; margin: 1px 0; }
 #settingsNav::item:hover { background-color: #161b22; color: #e6edf3; }
 #settingsNav::item:selected { background-color: rgba(56, 139, 253, 0.15); color: #e6edf3; }
-#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #e6edf3; }
+#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #e6edf3; padding: 1px 6px; border-radius: 6px; }
+#settingsSectionTitle[settingsLit="true"] { color: #58a6ff; background-color: rgba(56, 139, 253, 0.15); }
+#sectionLabel[settingsLit="true"] { color: #58a6ff; }
 #settingsSectionRule { background-color: #21262d; }
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
@@ -682,15 +696,29 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#teammateRail, #teammateRailContent { background-color: #0d1117; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #0d1117; }
+#sideRailColumn { border-left: 1px solid #30363d; }
+#sideRailScroll QScrollBar:vertical { width: 6px; }
+#sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #30363d; }
+QLabel#sideRailBrowserTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
+QFrame#sideRailSeparator { color: #30363d; background-color: #30363d; border: none; max-height: 1px; }
+QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
+    background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 0;
+}
+QPushButton[sideRailTool="true"]:hover, QToolButton#sideRailItem:hover { background-color: #161b22; }
+QPushButton[sideRailTool="true"]:checked { background-color: #1f2a37; border-color: #58a6ff; }
+QPushButton#sideRailAddButton {
+    background: transparent; border: 1px dashed #484f58; border-radius: 10px; padding: 0;
+}
+QPushButton#sideRailAddButton:hover { background-color: #161b22; border-color: #58a6ff; }
+QLabel#terminalsTitle { font-size: 15px; font-weight: 600; }
+QLabel#terminalsAgentStatus, QLabel#terminalsEmpty { color: #8b949e; }
 #packageRail, #packageRailContent { background-color: #0d1117; }
 #packageRail { border-left: 1px solid #30363d; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
-#teammateRail { border-left: 1px solid #30363d; }
-#teammateRail QScrollBar:vertical { width: 6px; }
-#teammateRail QScrollBar::handle:vertical { border-radius: 3px; }
 QPushButton#teammateRailAvatar {
     background: transparent; border: none; border-radius: 10px; padding: 0;
 }
@@ -819,6 +847,12 @@ QPushButton#runnerSignInBadge[severity="expiring"] {
 QPushButton#runnerSignInBadge[severity="expiring"]:hover {
     background-color: #bb8009;
 }
+QPushButton#backgroundRunnerBadge {
+    background: transparent; border: 1px solid #30363d; border-radius: 6px;
+    color: #8b949e; font-size: 12px; padding: 0 8px;
+}
+QPushButton#backgroundRunnerBadge:hover { background-color: #161b22; color: #e6edf3; }
+QPushButton#backgroundRunnerBadge[severity="error"] { border-color: #da3633; }
 
 #agentsNavBadge {
     color: #656d76; font-size: 13px; font-weight: 600;
@@ -1070,18 +1104,16 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(139,148,158,0.55); border: none; border-radius: 1px;
-}
-#promptResizeGrip {
-    background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(57,211,83,0.65); }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptResetButton, QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border-radius: 3px; }
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
+}
+QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border: 1px solid #58a6ff; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(88,166,255,0.10); border-color: #58a6ff; }
+QPushButton#promptVibeCheck:checked { background: rgba(163,113,247,0.16); border-color: #a371f7; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #0d1117;
@@ -1114,6 +1146,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
 }
 #issueSearch {
     background-color: #0d1117; border: 1px solid #30363d;
@@ -1883,38 +1918,16 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(139,148,158,0.55); border: none; border-radius: 1px;
-}
-#promptResizeGrip {
-    background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(57,211,83,0.65); }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptResetButton, QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border-radius: 3px; }
-QCheckBox#promptWorktreeCheck { background: transparent; spacing: 0; padding: 0; }
-QCheckBox#promptWorktreeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(139,148,158,0.7); background: transparent;
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
 }
-QCheckBox#promptWorktreeCheck::indicator:checked {
-    border-color: #2ea043; background: #2ea043;
-}
-QCheckBox#promptVibeCheck {
-    background: transparent; spacing: 3px; padding: 0 0 0 2px;
-    font-size: 10px; color: rgba(139,148,158,0.9);
-}
-QCheckBox#promptVibeCheck:checked { color: #d2a8ff; }
-QCheckBox#promptVibeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(139,148,158,0.7); background: transparent;
-}
-QCheckBox#promptVibeCheck::indicator:checked {
-    border-color: #a371f7; background: #a371f7;
-}
+QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border: 1px solid #58a6ff; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(88,166,255,0.10); border-color: #58a6ff; }
+QPushButton#promptVibeCheck:checked { background: rgba(163,113,247,0.16); border-color: #a371f7; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #0d1117;
@@ -1943,6 +1956,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,
@@ -2524,6 +2540,15 @@ QPushButton#onboardingCloseButton {
     border-radius: 15px; padding: 0; font-size: 22px; font-weight: 400;
 }
 QPushButton#onboardingCloseButton:hover { background: #d0d7de; color: #1f2328; }
+#onboardingTrackRow { background: transparent; }
+QPushButton#onboardingTrackButton {
+    background-color: #f6f8fa; color: #424a53; border: 1px solid #d0d7de;
+    border-radius: 10px; padding: 11px 14px; text-align: left;
+    font-size: 12px; font-weight: 600;
+}
+QPushButton#onboardingTrackButton:hover { border-color: #0969da; color: #1f2328; }
+QPushButton#onboardingTrackButton:focus { border-color: #0969da; }
+QPushButton#onboardingTrackButton:pressed { background-color: #eaeef2; }
 #calendarAgentCard {
     background-color: #f6f8fa;
     border: 1px solid #d0d7de;
@@ -2793,7 +2818,9 @@ QPushButton#repoTab:checked { color: #1f2328; border-bottom: 2px solid #fd8c73; 
 #settingsNav::item { color: #656d76; padding: 6px 10px; border-radius: 6px; margin: 1px 0; }
 #settingsNav::item:hover { background-color: #f6f8fa; color: #1f2328; }
 #settingsNav::item:selected { background-color: rgba(9, 105, 218, 0.1); color: #1f2328; }
-#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #1f2328; }
+#settingsSectionTitle { font-size: 17px; font-weight: 600; color: #1f2328; padding: 1px 6px; border-radius: 6px; }
+#settingsSectionTitle[settingsLit="true"] { color: #0969da; background-color: rgba(9, 105, 218, 0.1); }
+#sectionLabel[settingsLit="true"] { color: #0969da; }
 #settingsSectionRule { background-color: #d8dee4; }
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
@@ -2863,15 +2890,29 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#teammateRail, #teammateRailContent { background-color: #ffffff; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel, #sideRailTerminalPanel { background-color: #ffffff; }
+#sideRailBrowserHandle:hover, #sideRailTerminalHandle:hover { background-color: #d0d7de; }
+#sideRailScroll QScrollBar:vertical { width: 6px; }
+#sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
+QLabel#sideRailBrowserTitle { color: #656d76; font-size: 9px; font-weight: 600; }
+QFrame#sideRailSeparator { color: #d0d7de; background-color: #d0d7de; border: none; max-height: 1px; }
+QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
+    background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 0;
+}
+QPushButton[sideRailTool="true"]:hover, QToolButton#sideRailItem:hover { background-color: #f6f8fa; }
+QPushButton[sideRailTool="true"]:checked { background-color: #ddf4ff; border-color: #0969da; }
+QPushButton#sideRailAddButton {
+    background: transparent; border: 1px dashed #afb8c1; border-radius: 10px; padding: 0;
+}
+QLabel#terminalsTitle { font-size: 15px; font-weight: 600; }
+QPushButton#sideRailAddButton:hover { background-color: #f6f8fa; border-color: #0969da; }
+QLabel#terminalsAgentStatus, QLabel#terminalsEmpty { color: #57606a; }
 #packageRail, #packageRailContent { background-color: #ffffff; }
 #packageRail { border-left: 1px solid #d0d7de; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #656d76; font-size: 9px; font-weight: 600; }
-#teammateRail { border-left: 1px solid #d0d7de; }
-#teammateRail QScrollBar:vertical { width: 6px; }
-#teammateRail QScrollBar::handle:vertical { border-radius: 3px; }
+#sideRailColumn { border-left: 1px solid #d0d7de; }
 QPushButton#teammateRailAvatar {
     background: transparent; border: none; border-radius: 10px; padding: 0;
 }
@@ -3066,6 +3107,12 @@ QPushButton#runnerSignInBadge[severity="expiring"] {
 QPushButton#runnerSignInBadge[severity="expiring"]:hover {
     background-color: #7d4e00;
 }
+QPushButton#backgroundRunnerBadge {
+    background: transparent; border: 1px solid #d0d7de; border-radius: 6px;
+    color: #656d76; font-size: 12px; padding: 0 8px;
+}
+QPushButton#backgroundRunnerBadge:hover { background-color: #f6f8fa; color: #1f2328; }
+QPushButton#backgroundRunnerBadge[severity="error"] { border-color: #cf222e; }
 
 #agentsNavBadge {
     color: #8b949e; font-size: 13px; font-weight: 600;
@@ -3306,18 +3353,16 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(87,96,106,0.55); border: none; border-radius: 1px;
-}
-#promptResizeGrip {
-    background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(26,127,55,0.65); }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptResetButton, QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border-radius: 3px; }
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
+}
+QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border: 1px solid #0969da; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(9,105,218,0.10); border-color: #0969da; }
+QPushButton#promptVibeCheck:checked { background: rgba(130,80,223,0.16); border-color: #8250df; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #ffffff;
@@ -3350,6 +3395,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
 }
 #issueSearch {
     background-color: #ffffff; border: 1px solid #d0d7de;
@@ -4105,38 +4153,16 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(87,96,106,0.55); border: none; border-radius: 1px;
-}
-#promptResizeGrip {
-    background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(26,127,55,0.65); }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptResetButton, QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border-radius: 3px; }
-QCheckBox#promptWorktreeCheck { background: transparent; spacing: 0; padding: 0; }
-QCheckBox#promptWorktreeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(87,96,106,0.7); background: transparent;
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
 }
-QCheckBox#promptWorktreeCheck::indicator:checked {
-    border-color: #1a7f37; background: #1a7f37;
-}
-QCheckBox#promptVibeCheck {
-    background: transparent; spacing: 3px; padding: 0 0 0 2px;
-    font-size: 10px; color: rgba(87,96,106,0.9);
-}
-QCheckBox#promptVibeCheck:checked { color: #8250df; }
-QCheckBox#promptVibeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(87,96,106,0.7); background: transparent;
-}
-QCheckBox#promptVibeCheck::indicator:checked {
-    border-color: #8250df; background: #8250df;
-}
+QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border: 1px solid #0969da; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(9,105,218,0.10); border-color: #0969da; }
+QPushButton#promptVibeCheck:checked { background: rgba(130,80,223,0.16); border-color: #8250df; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #ffffff;
@@ -4165,6 +4191,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,

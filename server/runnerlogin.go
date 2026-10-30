@@ -493,6 +493,9 @@ func (b *runnerBackend) startLogin(login runnerLogin) (loginProcess, error) {
 		dir = "/"
 	}
 	env := terminalEnvironmentFrom(b.box.environment())
+	if err := b.box.openPersistentHome(); err != nil {
+		return nil, fmt.Errorf("the job user's home could not be opened: %v", err)
+	}
 	signIn := !login.terminal()
 	if signIn {
 		b.box.accounts.beginLogin(provider)
@@ -504,6 +507,7 @@ func (b *runnerBackend) startLogin(login runnerLogin) (loginProcess, error) {
 		if signIn {
 			b.box.accounts.endLogin(provider, false)
 		}
+		b.box.closePersistentHome()
 		return nil, err
 	}
 	return &sandboxLogin{loginProcess: process, box: b.box, provider: provider, signIn: signIn}, nil
@@ -524,6 +528,7 @@ func (l *sandboxLogin) Wait() int {
 		if l.signIn {
 			l.box.accounts.endLogin(l.provider, code == 0)
 		}
+		l.box.closePersistentHome()
 	})
 	return code
 }

@@ -577,6 +577,20 @@ void MainWindow::auditAgentGuardrailEvent(
     }
 }
 
+QString MainWindow::agentTaskProgress(int sessionId)
+{
+    auto tracker = m_agentTaskTrackers.find(sessionId);
+    if (tracker == m_agentTaskTrackers.end()) {
+        const auto events = m_streamEvents.constFind(sessionId);
+        if (events == m_streamEvents.constEnd())
+            return {};
+        tracker = m_agentTaskTrackers.insert(sessionId, {});
+        for (const QJsonObject &event : *events)
+            feedAgentTaskTracker(*tracker, event);
+    }
+    return forkmesh::agenttasks::progressText(*tracker);
+}
+
 void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
 {
     // Agent output is untrusted data. Strip provider credentials before it can
@@ -594,6 +608,9 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         ev.insert(forkmesh::agents::resumeAccountKey(), accountId);
     }
     const QString type = ev.value(QStringLiteral("type")).toString();
+    if (auto tracker = m_agentTaskTrackers.find(sessionId);
+        tracker != m_agentTaskTrackers.end())
+        feedAgentTaskTracker(*tracker, ev);
     // The speaker rows caption their bubble with when it was said; the CLIs'
     // stream events carry no time, so stamp them as they arrive (and persist).
     if ((type == QLatin1String("_local_user") || type == QLatin1String("assistant") ||
@@ -606,6 +623,8 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         ev.insert(QStringLiteral("_ts"),
                   double(QDateTime::currentMSecsSinceEpoch()));
     m_streamEvents[sessionId].append(ev);
+    if (m_sessionsUi)
+        noteSessionsPageEvent(sessionId, ev);
     // Every run's events pass through here; the sonifier ignores the ones
     // nobody switched Listen on for.
     if (m_agentSonifier)
@@ -667,9 +686,15 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     if (forkmesh::agentclitasks::isTaskEvent(ev) && !isExternalSession(sessionId))
         trackAgentCliTask(sessionId, ev);
 
+    if (const forkmesh::transcripttools::TokenStep step = m_sessionTokenMeter[sessionId].add(ev);
+        step.in > 0 || step.out > 0) {
+        QPair<qint64, qint64> &flow = m_sessionTokenFlow[sessionId];
+        flow.first += step.in;
+        flow.second += step.out;
+    }
     if (ev.value(QStringLiteral("type")).toString() == QLatin1String("assistant")) {
-        const qint64 out = m_sessionOutputTokens[sessionId].add(
-            ev.value(QStringLiteral("message")).toObject());
+        const QJsonObject message = ev.value(QStringLiteral("message")).toObject();
+        const qint64 out = m_sessionOutputTokens[sessionId].add(message);
         if (out > 0) {
             m_sessionTokens[sessionId] += out;
             if (AgentSession *as = findAgentSession(sessionId))
@@ -781,6 +806,7 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
             if (contextWindow > 0)
                 as->contextWindow = contextWindow;
             m_sessionTokens[sessionId] = as->totalTokens;
+            m_sessionTokenFlow[sessionId] = {as->promptTokens, as->completionTokens};
             if (m_agentStore && !isExternalSession(sessionId))
                 scheduleAgentSessionSave(sessionId); // per-token-batch event
             updateAgentTokenCell(sessionId);
@@ -795,7 +821,19 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         if (limitsById.isEmpty())
             limitsById =
                 ev.value(QStringLiteral("rate_limits_by_limit_id")).toObject();
-        applyCodexRateLimits(limits, limitsById);
+        if (!limits.isEmpty() || !limitsById.isEmpty()) {
+            m_pendingCodexRateLimits = limits;
+            m_pendingCodexRateLimitsByLimitId = limitsById;
+            if (!m_codexRateLimitsApplyScheduled) {
+                m_codexRateLimitsApplyScheduled = true;
+                QTimer::singleShot(2000, this, [this] {
+                    m_codexRateLimitsApplyScheduled = false;
+                    applyCodexRateLimits(
+                        std::exchange(m_pendingCodexRateLimits, {}),
+                        std::exchange(m_pendingCodexRateLimitsByLimitId, {}));
+                });
+            }
+        }
         // Claude Code reports one window per event, under its own key. Reading
         // it here rather than in the transcript view means a run that hits the
         // limit while another session is on screen still starts the countdown.
@@ -811,8 +849,15 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     // NOT a wait: it's handled below as a successful completion. Only genuine
     // input-required states — a permission prompt here, or an AskUserQuestion
     // multiple-choice handled above — mark the session "Waiting".
-    if (type == QLatin1String("control_request"))
-        notifyAgentWaiting(sessionId, /*needsPermission=*/true);
+    if (type == QLatin1String("control_request")) {
+        const QJsonObject request = ev.value(QStringLiteral("request")).toObject();
+        notifyAgentWaiting(
+            sessionId,
+            request.value(QStringLiteral("subtype")).toString() ==
+                    QLatin1String("can_use_tool") &&
+                request.value(QStringLiteral("tool_name")).toString() !=
+                    QLatin1String("AskUserQuestion"));
+    }
 
     if (type == QLatin1String("system")
         && ev.value(QStringLiteral("subtype")).toString() == QLatin1String("init"))
@@ -927,35 +972,41 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     }
 
     if (sessionId == m_selectedAgentSessionId && m_agentTranscript) {
-        if (m_agentTranscriptRenderSession == sessionId) {
-            // The replay queue is an implicit-shared snapshot. Extend it with
-            // live events that arrive while its time-sliced render is running,
-            // rather than abandoning the partial view and starting over.
-            m_agentTranscriptRenderEvents.append(ev);
+        if (m_agentTranscriptRenderSession == sessionId)
             return;
-        }
         const int rendered = m_renderedTranscriptSession == sessionId
                                  ? m_renderedTranscriptCount
                                  : -1;
-        const int have = m_streamEvents.value(sessionId).size();
-        if (QApplication::activeModalWidget()) {
-        } else if (rendered == have - 1) {
-            if (ev.value(QStringLiteral("type")).toString() == QLatin1String("_local_user"))
-                m_agentTranscript->addUserTurn(ev.value(QStringLiteral("text")).toString(),
-                                               ClaudeTranscriptView::eventTime(ev));
-            else
-                m_agentTranscript->handleEvent(ev);
-            const bool streamingOnly =
-                type == QLatin1String("stream_event") ||
-                type == QLatin1String("_codex_agent_delta") ||
-                type == QLatin1String("_codex_tool_delta") ||
-                type == QLatin1String("_codex_usage") ||
-                type == QLatin1String("_codex_rate_limits");
+        const QList<QJsonObject> events = m_streamEvents.value(sessionId);
+        const int have = events.size();
+        constexpr int kLiveCatchUpEvents = 32;
+        if (QApplication::activeModalWidget() || rendered == have) {
+        } else if (rendered >= 0 && rendered < have &&
+                   have - rendered <= kLiveCatchUpEvents) {
+            bool streamingOnly = true;
+            for (int i = rendered; i < have; ++i) {
+                const QJsonObject &pending = events.at(i);
+                const QString pendingType =
+                    pending.value(QStringLiteral("type")).toString();
+                if (pendingType == QLatin1String("_local_user"))
+                    m_agentTranscript->addUserTurn(
+                        pending.value(QStringLiteral("text")).toString(),
+                        ClaudeTranscriptView::eventTime(pending));
+                else
+                    m_agentTranscript->handleEvent(pending);
+                streamingOnly = streamingOnly &&
+                    (pendingType == QLatin1String("stream_event") ||
+                     pendingType == QLatin1String("_codex_agent_delta") ||
+                     pendingType == QLatin1String("_codex_tool_delta") ||
+                     pendingType == QLatin1String("_codex_usage") ||
+                     pendingType == QLatin1String("_codex_rate_limits"));
+            }
             if (!streamingOnly)
                 refreshAgentFilesPanel(sessionId);
             m_renderedTranscriptCount = have;
         } else {
-            renderTranscriptForSession(sessionId);
+            if (!renderTranscriptTail(sessionId))
+                renderTranscriptForSession(sessionId);
             refreshAgentFilesPanel(sessionId);
         }
     }
@@ -1311,11 +1362,15 @@ bool MainWindow::publishAgentHandoffBranch(const AgentCloudHandoff &plan,
     return true;
 }
 
-void MainWindow::moveAgentSessionToCloud(int sessionId)
+void MainWindow::moveAgentSessionToCloud(int sessionId, const QString &toKey,
+                                         const QString &toLabel)
 {
+    const bool toDesktop = !toKey.isEmpty();
+    const QString destination =
+        toDesktop ? toLabel : QStringLiteral("the cloud");
     if (m_agentCloudHandoffsInFlight.contains(sessionId)) {
-        flashMessage(QStringLiteral("This session is already on its way to the "
-                                    "cloud."));
+        flashMessage(QStringLiteral("This session is already on its way to "
+                                    "another device."));
         return;
     }
     const AgentCloudHandoff plan = agentCloudHandoff(sessionId);
@@ -1325,7 +1380,8 @@ void MainWindow::moveAgentSessionToCloud(int sessionId)
     }
     if (!m_networkAccess) {
         flashMessage(QStringLiteral("ForkMesh is offline, so this session "
-                                    "cannot be handed to the cloud yet."),
+                                    "cannot be handed to %1 yet.")
+                         .arg(destination),
                      true);
         return;
     }
@@ -1367,7 +1423,7 @@ void MainWindow::moveAgentSessionToCloud(int sessionId)
     }
     url.setQuery(query);
 
-    const QJsonObject body{
+    QJsonObject body{
         {QStringLiteral("provider"), plan.provider},
         {QStringLiteral("model"), plan.model},
         {QStringLiteral("prompt"), plan.prompt},
@@ -1382,6 +1438,8 @@ void MainWindow::moveAgentSessionToCloud(int sessionId)
         // handoff instead of claiming the work straight back.
         {QStringLiteral("fromDevice"), machineNodeName()},
     };
+    if (toDesktop)
+        body.insert(QStringLiteral("toKey"), toKey);
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/json"));
@@ -1390,7 +1448,8 @@ void MainWindow::moveAgentSessionToCloud(int sessionId)
     QNetworkReply *reply = m_networkAccess->post(
         request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, sessionId, branch = plan.branch] {
+            [this, reply, sessionId, branch = plan.branch, toDesktop,
+             destination] {
         const bool networkOk = reply->error() == QNetworkReply::NoError;
         const QJsonObject payload =
             QJsonDocument::fromJson(reply->readAll()).object();
@@ -1399,11 +1458,16 @@ void MainWindow::moveAgentSessionToCloud(int sessionId)
         if (!networkOk || payload.value(QStringLiteral("ok")).toBool() != true) {
             const QString message =
                 payload.value(QStringLiteral("message")).toString().trimmed();
+            const QString why =
+                message.isEmpty()
+                    ? QStringLiteral("the relay rejected the handoff")
+                    : message;
             flashMessage(
-                QStringLiteral("The cloud did not take this session: %1")
-                    .arg(message.isEmpty()
-                             ? QStringLiteral("the relay rejected the handoff")
-                             : message),
+                toDesktop
+                    ? QStringLiteral("This session was not sent to %1: %2")
+                          .arg(destination, why)
+                    : QStringLiteral("The cloud did not take this session: %1")
+                          .arg(why),
                 true);
             updateAgentActionState();
             return;
@@ -1420,6 +1484,8 @@ void MainWindow::finishAgentCloudHandoff(int sessionId, const QString &branch,
     const bool stopped = stopAgentSessionById(sessionId);
     const QString targetNode =
         payload.value(QStringLiteral("targetNode")).toString().trimmed();
+    const QString targetDevice =
+        payload.value(QStringLiteral("targetDevice")).toString().trimmed();
     if (AgentSession *session = findAgentSession(sessionId)) {
         session->status = AgentStatus::Stopped;
         session->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
@@ -1428,7 +1494,12 @@ void MainWindow::finishAgentCloudHandoff(int sessionId, const QString &branch,
             m_agentStore->saveSession(*session);
             m_agentStore->appendLog(
                 *session,
-                targetNode.isEmpty()
+                !targetDevice.isEmpty()
+                    ? QStringLiteral("==> Sent to the desktop %1 on %2. It "
+                                     "continues the work from there; this "
+                                     "device is no longer running it.\n")
+                          .arg(targetDevice, branch)
+                : targetNode.isEmpty()
                     ? QStringLiteral("==> Moved to the cloud on %1. A node "
                                      "serving this repository picks the work "
                                      "up from there; this device is no longer "
@@ -1440,9 +1511,11 @@ void MainWindow::finishAgentCloudHandoff(int sessionId, const QString &branch,
                           .arg(branch, targetNode));
         }
     }
-    noteAgentSessionNotice(
-        sessionId,
-        QStringLiteral("Moved to the cloud on %1.").arg(branch));
+    const QString moved =
+        targetDevice.isEmpty()
+            ? QStringLiteral("Moved to the cloud on %1.").arg(branch)
+            : QStringLiteral("Sent to %1 on %2.").arg(targetDevice, branch);
+    noteAgentSessionNotice(sessionId, moved);
     scheduleAgentSessionsPush();
     reloadAgents();
     // The continuation is a cloud row now; show it without waiting for the
@@ -1455,12 +1528,116 @@ void MainWindow::finishAgentCloudHandoff(int sessionId, const QString &branch,
     flashMessage(
         stopped
             ? QStringLiteral("Stopped here — %1")
-                  .arg(message.isEmpty()
-                           ? QStringLiteral("moved to the cloud on ") + branch
-                           : message)
-            : (message.isEmpty()
-                   ? QStringLiteral("Moved to the cloud on %1.").arg(branch)
-                   : message));
+                  .arg(message.isEmpty() ? moved : message)
+            : (message.isEmpty() ? moved : message));
+}
+
+void MainWindow::loadAgentHandoffDesktops(int sessionId)
+{
+    if (m_agentHandoffDesktopsLoading)
+        return;
+    const AgentCloudHandoff plan = agentCloudHandoff(sessionId, false);
+    if (!plan.ok) {
+        m_agentHandoffDesktopsError = plan.blocker;
+        return;
+    }
+    if (!m_networkAccess) {
+        m_agentHandoffDesktopsError = QStringLiteral(
+            "ForkMesh is offline, so it cannot list your other desktops.");
+        return;
+    }
+    RepositoryRecord addressed;
+    addressed.owner = plan.owner;
+    addressed.name = plan.name;
+    QUrl url = agentsApiUrl(addressed);
+    url.setPath(url.path() + QStringLiteral("/%1/handoff").arg(sessionId));
+    const QUrlQuery query = signedInboxQuery(
+        repoSegment(accountOwner().trimmed().toLower(), QStringLiteral("owner")));
+    if (query.isEmpty()) {
+        m_agentHandoffDesktopsError = QStringLiteral(
+            "This device could not sign the request for your desktops.");
+        return;
+    }
+    url.setQuery(query);
+    m_agentHandoffDesktopsLoading = true;
+    m_agentHandoffDesktopsTriedMs = QDateTime::currentMSecsSinceEpoch();
+    m_agentHandoffDesktopsError.clear();
+    QNetworkReply *reply = m_networkAccess->get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        const bool networkOk = reply->error() == QNetworkReply::NoError;
+        const QJsonObject payload =
+            QJsonDocument::fromJson(reply->readAll()).object();
+        reply->deleteLater();
+        m_agentHandoffDesktopsLoading = false;
+        if (networkOk && payload.value(QStringLiteral("ok")).toBool()) {
+            m_agentHandoffDesktops = forkmesh::agents::handoffDesktops(payload);
+            m_agentHandoffDesktopsLoadedMs = QDateTime::currentMSecsSinceEpoch();
+        } else {
+            const QString message =
+                payload.value(QStringLiteral("message")).toString().trimmed();
+            m_agentHandoffDesktopsError =
+                message.isEmpty()
+                    ? QStringLiteral("Your desktops could not be listed.")
+                    : message;
+        }
+        const QList<QPointer<QMenu>> menus = m_agentHandoffDesktopMenus;
+        m_agentHandoffDesktopMenus.clear();
+        for (const QPointer<QMenu> &menu : menus)
+            if (menu)
+                fillAgentHandoffDesktopMenu(
+                    menu, menu->property("agentSessionId").toInt());
+    });
+}
+
+void MainWindow::fillAgentHandoffDesktopMenu(QMenu *menu, int sessionId)
+{
+    if (!menu)
+        return;
+    menu->clear();
+    menu->setProperty("agentSessionId", sessionId);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool fresh = m_agentHandoffDesktopsLoadedMs > 0 &&
+                       now - m_agentHandoffDesktopsLoadedMs < 5 * 60 * 1000;
+    if (!fresh && now - m_agentHandoffDesktopsTriedMs > 10 * 1000)
+        loadAgentHandoffDesktops(sessionId);
+    if (m_agentHandoffDesktopsLoading &&
+        !m_agentHandoffDesktopMenus.contains(menu))
+        m_agentHandoffDesktopMenus.append(menu);
+    const auto note = [menu](const QString &text) {
+        QAction *action = menu->addAction(text);
+        action->setObjectName(QStringLiteral("agentListSendToDesktopNote"));
+        action->setEnabled(false);
+    };
+    if (m_agentHandoffDesktopsLoadedMs <= 0) {
+        note(m_agentHandoffDesktopsLoading ||
+                     m_agentHandoffDesktopsError.isEmpty()
+                 ? QStringLiteral("Looking for your other desktops\u2026")
+                 : m_agentHandoffDesktopsError);
+        return;
+    }
+    if (m_agentHandoffDesktops.isEmpty()) {
+        note(QStringLiteral("No other desktop is signed in to this account"));
+        return;
+    }
+    const bool inFlight = m_agentCloudHandoffsInFlight.contains(sessionId);
+    for (const forkmesh::agents::HandoffDesktop &desktop :
+         std::as_const(m_agentHandoffDesktops)) {
+        QAction *action = menu->addAction(desktop.label);
+        action->setObjectName(QStringLiteral("agentListSendToDesktopTarget"));
+        action->setData(desktop.key);
+        action->setEnabled(!inFlight);
+        action->setToolTip(
+            inFlight ? QStringLiteral("This session is already on its way to "
+                                      "another device.")
+                     : QStringLiteral("%1. Continue this session on %2.")
+                           .arg(forkmesh::agents::handoffDesktopSeenText(
+                                    desktop.lastSeenMs, now),
+                                desktop.label));
+        connect(action, &QAction::triggered, this,
+                [this, sessionId, key = desktop.key, label = desktop.label] {
+            moveAgentSessionToCloud(sessionId, key, label);
+        });
+    }
 }
 
 // Right-click on a row of the Agents list. The move is offered on every row so
@@ -1579,6 +1756,41 @@ QMenu *MainWindow::buildAgentListContextMenu(int sessionId, QWidget *parent)
             : blocker);
     connect(toCloud, &QAction::triggered, this,
             [this, sessionId] { moveAgentSessionToCloud(sessionId); });
+    QMenu *toDesktop =
+        menu->addMenu(QStringLiteral("Send to another desktop"));
+    toDesktop->setObjectName(QStringLiteral("agentListSendToDesktopMenu"));
+    toDesktop->setToolTipsVisible(true);
+    toDesktop->menuAction()->setObjectName(
+        QStringLiteral("agentListSendToDesktopAction"));
+    toDesktop->menuAction()->setEnabled(blocker.isEmpty());
+    toDesktop->menuAction()->setToolTip(
+        blocker.isEmpty()
+            ? QStringLiteral("Commit and publish this session's branch, have "
+                             "one of this account's other desktops continue "
+                             "it, and stop running it here")
+            : blocker);
+    connect(toDesktop, &QMenu::aboutToShow, this, [this, toDesktop, sessionId] {
+        fillAgentHandoffDesktopMenu(toDesktop, sessionId);
+    });
+    QAction *toClaude = menu->addAction(QStringLiteral("Open in Claude app"));
+    toClaude->setObjectName(QStringLiteral("agentListOpenInClaudeAction"));
+    const QString claudeBlocker = claudeDesktopBlocker(sessionId);
+    toClaude->setEnabled(claudeBlocker.isEmpty());
+    toClaude->setToolTip(claudeBlocker.isEmpty()
+                             ? QStringLiteral("Show this agent's Claude Code session in "
+                                              "the Claude desktop app's Code tab")
+                             : claudeBlocker);
+    connect(toClaude, &QAction::triggered, this,
+            [this, sessionId] { addAgentToClaudeDesktop(sessionId, true); });
+    if (!isCloudSession(sessionId) && !isExternalSession(sessionId)) {
+        QAction *rename = menu->addAction(QStringLiteral("Rename\u2026"));
+        rename->setObjectName(QStringLiteral("agentListRenameAction"));
+        rename->setToolTip(QStringLiteral(
+            "Rename this session; a running Claude Code session takes the new "
+            "name too"));
+        connect(rename, &QAction::triggered, this,
+                [this, sessionId] { renameAgentSessionInteractive(sessionId); });
+    }
     addAgentTaskLinkActions(menu, sessionId);
     menu->addSeparator();
     addAgentFolderMenu(menu, sessionId);
@@ -1710,8 +1922,11 @@ void MainWindow::completeAgentSessionWhenSubprocessesExit(int sessionId)
 void MainWindow::trackAgentCliTask(int sessionId, const QJsonObject &event)
 {
     forkmesh::agentclitasks::Ledger &ledger = m_agentCliTasks[sessionId];
+    const int before = ledger.openBackground();
     const forkmesh::agentclitasks::Change change = ledger.apply(event);
     const bool settled = ledger.openBackground() == 0;
+    if (ledger.openBackground() != before)
+        notifyLocalControlAgentsChanged();
     if (ledger.isEmpty())
         m_agentCliTasks.remove(sessionId);
     if (change != forkmesh::agentclitasks::Change::Closed || !settled ||
@@ -2072,9 +2287,10 @@ void MainWindow::updateAgentStatusCell(int sessionId)
     AgentSession *s = findAgentSession(sessionId);
     if (!s)
         return;
+    noteClaudeDesktopCandidate(*s);
     syncOrgTaskAgentStatus(sessionId);
     if (!s->orgTaskId.isEmpty())
-        refreshOrganizationTaskAgentRows();
+        notifyPackagesAgentSessionsChanged();
     if (auto it = m_streamSessionInfo.find(sessionId); it != m_streamSessionInfo.end())
         it->status = s->status;
     if (!m_agentTable)
@@ -2335,6 +2551,14 @@ void MainWindow::animateRunningAgentIcons()
             if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn))
                 m_agentTable->viewport()->update(
                     m_agentTable->visualItemRect(issueItem));
+        if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn)) {
+            const QString progress = agentTaskProgress(s->id);
+            if (issueItem->data(kAgentTaskProgressRole).toString() != progress) {
+                issueItem->setData(kAgentTaskProgressRole, progress);
+                issueItem->setText(agentTitleWithProgress(
+                    issueItem->data(kAgentTitleBaseRole).toString(), progress));
+            }
+        }
         if (m_agentListView == AgentListView::Compact)
             if (QTableWidgetItem *issueItem = m_agentTable->item(r, kAgentIssueColumn)) {
                 const QString ticker =
@@ -2435,7 +2659,7 @@ void MainWindow::onScannerTick()
             continue;
         anyActive = true;
     }
-    refreshAgentDotMatrix();
+    refreshAgentDots();
     if (!anyActive && m_scannerTimer)
         m_scannerTimer->stop();
 }

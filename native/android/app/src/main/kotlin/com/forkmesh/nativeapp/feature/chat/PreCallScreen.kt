@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.view.Gravity
 import android.view.ViewGroup
@@ -85,6 +86,11 @@ private fun testClipFailure(error: Throwable): String = when (error.message) {
     else -> "The test clip could not start."
 }
 
+private val CLIP_AUDIO: AudioAttributes = AudioAttributes.Builder()
+    .setUsage(AudioAttributes.USAGE_MEDIA)
+    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+    .build()
+
 private fun clearFolder(folder: File) {
     folder.listFiles()?.forEach { if (it.isFile) it.delete() }
 }
@@ -137,6 +143,7 @@ internal fun PreCallScreen(precall: PreCall) {
     val previewing = peers?.previewing?.collectAsState()?.value == true
     val faces = peers?.facesSupported?.collectAsState()?.value == true
     val thumbs = peers?.backgrounds?.collectAsState()?.value
+    val quality = peers?.quality?.collectAsState()?.value
 
     fun cancel() {
         DirectCallFeature.closePreCall()
@@ -340,7 +347,11 @@ internal fun PreCallScreen(precall: PreCall) {
             PreviewPhase.READY -> Unit
         }
         Column(
-            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -382,6 +393,9 @@ internal fun PreCallScreen(precall: PreCall) {
                         .background(Color.Black.copy(alpha = .55f))
                         .padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
                 )
+            }
+            if (quality != null && previewing && phase == PreviewPhase.READY && clipPhase != ClipPhase.PLAYING && clipPhase != ClipPhase.DONE) {
+                CallQualityWidget(quality, video = video, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
         Column(
@@ -472,6 +486,11 @@ private fun ClipReview(
     onDone: () -> Unit,
     onFailed: () -> Unit,
 ) {
+    val context = LocalContext.current
+    DisposableEffect(clip.file.path, playToken) {
+        val held = CallSpeaker.hold(context)
+        onDispose { if (held) CallSpeaker.release(context) }
+    }
     Box(Modifier.fillMaxSize().background(CALL_BACKDROP)) {
         if (clip.video) {
             key(clip.file.path, playToken) {
@@ -480,6 +499,7 @@ private fun ClipReview(
                         FrameLayout(host).apply {
                             setBackgroundColor(android.graphics.Color.BLACK)
                             val player = VideoView(host)
+                            player.setAudioAttributes(CLIP_AUDIO)
                             player.setOnPreparedListener { player.start() }
                             player.setOnCompletionListener { onDone() }
                             player.setOnErrorListener { _, _, _ ->
@@ -505,6 +525,7 @@ private fun ClipReview(
             DisposableEffect(clip.file.path, playToken) {
                 val player = runCatching {
                     MediaPlayer().apply {
+                        setAudioAttributes(CLIP_AUDIO)
                         setDataSource(clip.file.absolutePath)
                         setOnCompletionListener { onDone() }
                         prepare()

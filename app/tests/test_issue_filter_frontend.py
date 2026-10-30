@@ -872,7 +872,7 @@ def test_opening_a_different_repo_resets_the_issue_view_state():
         'items: []',
         'query: ""',
         'author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: ""',
-        'type: "", sort: "recently_updated"',
+        'type: "", sort: issueDefaultSort(),',
     ):
         assert marker in reset
     assert 'state.pullsView = { filter: "open", query: "" };' in render
@@ -982,3 +982,24 @@ assert.equal(people.find((entry) => entry.value === "dave").note, "Active on 2 i
 assert.deepEqual(issuePickerCandidates("labels").map((entry) => entry.value), ["bug", "ui"]);
 assert.deepEqual(issuePickerCandidates("milestone").map((entry) => entry.value), ["v1"]);
 """)
+
+
+def test_label_filter_lives_in_the_address_bar():
+    """A label-filtered issue list can be linked: the list writes ?label=
+    back to the address (replaceState, list route only) and reads it on load."""
+    start = DASHBOARD_JS.index("function syncIssueLabelAddress()")
+    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderRepoIssues()", start)]
+    assert "/issues\\/?$/.test(location.pathname)" in body
+    assert 'params.set("label", label)' in body and 'params.delete("label")' in body
+    assert "history.replaceState(" in body
+    render = DASHBOARD_JS[DASHBOARD_JS.index("function renderRepoIssues()"):]
+    assert render.index("syncIssueLabelAddress();") < render.index("const filtered")
+    assert 'label: String(routeQuery.get("label") || "").trim()' in DASHBOARD_JS
+
+
+def test_hacktoberfest_label_gets_a_pumpkin_that_respects_reduced_motion():
+    start = DASHBOARD_JS.index("function issueLabelSwatch(label)")
+    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderCollectionViewsFooter()", start)]
+    assert "hacktoberfest" in body and "<animateTransform" in body
+    assert "prefers-reduced-motion: reduce" in body
+    assert "issueLabelSwatch(label), label, count" in DASHBOARD_JS

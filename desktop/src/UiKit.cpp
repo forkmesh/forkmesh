@@ -3,25 +3,39 @@
 #include "DesignTokens.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QChildEvent>
 #include <QComboBox>
+#include <QDialogButtonBox>
+#include <QEnterEvent>
 #include <QFontMetrics>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSet>
 #include <QStyle>
+#include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QSvgRenderer>
 #include <QTableView>
+#include <QTextDocument>
 #include <QTimerEvent>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
+
+#include <algorithm>
 
 namespace forkmesh::ui::kit {
 
@@ -367,9 +381,80 @@ InlineNotice::InlineNotice(QWidget *parent) : QFrame(parent)
     hide();
 }
 
+CountdownCloseButton::CountdownCloseButton(QWidget *parent) : QPushButton(parent)
+{
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setAttribute(Qt::WA_Hover, true);
+}
+
+void CountdownCloseButton::setProgress(qreal progress)
+{
+    if (qFuzzyCompare(progress + 2.0, m_progress + 2.0))
+        return;
+    m_progress = progress;
+    update();
+}
+
+qreal CountdownCloseButton::progress() const
+{
+    return m_progress;
+}
+
+void CountdownCloseButton::setRingColor(const QColor &color)
+{
+    m_ringColor = color;
+    update();
+}
+
+QSize CountdownCloseButton::sizeHint() const
+{
+    return QSize(20, 20);
+}
+
+QSize CountdownCloseButton::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+void CountdownCloseButton::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const qreal side = qMin(width(), height());
+    const QRectF box((width() - side) / 2.0, (height() - side) / 2.0, side, side);
+    const QColor iconColor = Theme::color(underMouse() ? Theme::Role::Fg
+                                                       : Theme::Role::FgMuted);
+    const int iconPx = 12;
+    const QPixmap icon =
+        tintedIcon(QStringLiteral("x"), iconColor, iconPx, devicePixelRatioF());
+    painter.drawPixmap(QPointF(box.center().x() - iconPx / 2.0,
+                               box.center().y() - iconPx / 2.0),
+                       icon);
+    if (m_progress < 0.0)
+        return;
+    const qreal stroke = 1.5;
+    const QRectF ring = box.adjusted(stroke, stroke, -stroke, -stroke);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(Theme::color(Theme::Role::Border), stroke));
+    painter.drawEllipse(ring);
+    QPen pen(m_ringColor.isValid() ? m_ringColor
+                                   : Theme::color(Theme::Role::AccentFg),
+             stroke);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    const int span = -qRound(qBound(0.0, m_progress, 1.0) * 360.0 * 16.0);
+    if (span != 0)
+        painter.drawArc(ring, 90 * 16, span);
+}
+
 QPushButton *InlineNotice::addAction(const QString &label, const QString &octicon)
 {
-    auto *button = new QPushButton(label, this);
+    return placeAction(new QPushButton(label, this), label, octicon);
+}
+
+QPushButton *InlineNotice::placeAction(QPushButton *button, const QString &label,
+                                       const QString &octicon)
+{
     button->setObjectName(QStringLiteral("ghostButton"));
     button->setProperty("buttonSize", QStringLiteral("xs"));
     button->setCursor(Qt::PointingHandCursor);
@@ -388,7 +473,8 @@ QPushButton *InlineNotice::addAction(const QString &label, const QString &octico
 
 QPushButton *InlineNotice::addCloseButton()
 {
-    QPushButton *button = addAction(QString(), QStringLiteral("x"));
+    m_close = new CountdownCloseButton(this);
+    QPushButton *button = placeAction(m_close, QString(), QString());
     button->setToolTip(QStringLiteral("Clear"));
     button->setAccessibleName(QStringLiteral("Clear notice"));
     button->setProperty("noticeAction", QStringLiteral("clear"));
@@ -398,6 +484,84 @@ QPushButton *InlineNotice::addCloseButton()
 QList<QPushButton *> InlineNotice::actions() const
 {
     return m_actions;
+}
+
+void InlineNotice::startCountdown(int durationMs, int elapsedMs,
+                                  std::function<void()> done)
+{
+    stopCountdown();
+    if (durationMs <= 0)
+        return;
+    m_countdownDone = std::move(done);
+    m_countdown = new QVariantAnimation(this);
+    m_countdown->setStartValue(0.0);
+    m_countdown->setEndValue(1.0);
+    m_countdown->setDuration(durationMs);
+    connect(m_countdown, &QVariantAnimation::valueChanged, this,
+            [this](const QVariant &value) {
+                if (m_close)
+                    m_close->setProgress(value.toReal());
+            });
+    connect(m_countdown, &QVariantAnimation::finished, this, [this] {
+        const std::function<void()> done = m_countdownDone;
+        if (done)
+            done();
+    });
+    if (m_close) {
+        const Tone ringTone = m_tone == Tone::Neutral ? Tone::Accent : m_tone;
+        m_close->setRingColor(Theme::color(toneRole(ringTone)));
+        m_close->setToolTip(QStringLiteral("Clears in %1 s. Hover to keep it.")
+                                .arg((durationMs + 999) / 1000));
+    }
+    m_countdown->start();
+    m_countdown->setCurrentTime(qBound(0, elapsedMs, durationMs));
+    if (underMouse())
+        m_countdown->pause();
+}
+
+void InlineNotice::stopCountdown()
+{
+    if (m_countdown) {
+        m_countdown->disconnect(this);
+        m_countdown->stop();
+        m_countdown->deleteLater();
+        m_countdown = nullptr;
+    }
+    m_countdownDone = nullptr;
+    if (m_close) {
+        m_close->setProgress(-1.0);
+        m_close->setToolTip(QStringLiteral("Clear"));
+    }
+}
+
+int InlineNotice::countdownElapsed() const
+{
+    return m_countdown ? m_countdown->currentTime() : 0;
+}
+
+bool InlineNotice::countdownRunning() const
+{
+    return m_countdown &&
+           m_countdown->state() == QAbstractAnimation::Running;
+}
+
+bool InlineNotice::countdownPaused() const
+{
+    return m_countdown && m_countdown->state() == QAbstractAnimation::Paused;
+}
+
+void InlineNotice::enterEvent(QEnterEvent *event)
+{
+    QFrame::enterEvent(event);
+    if (countdownRunning())
+        m_countdown->pause();
+}
+
+void InlineNotice::leaveEvent(QEvent *event)
+{
+    QFrame::leaveEvent(event);
+    if (countdownPaused())
+        m_countdown->resume();
 }
 
 void InlineNotice::showMessage(const QString &text, Tone tone)
@@ -414,6 +578,7 @@ void InlineNotice::showMessage(const QString &text, Tone tone)
 
 void InlineNotice::clear()
 {
+    stopCountdown();
     m_text->clear();
     hide();
 }
@@ -626,6 +791,35 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
     return wrapper;
 }
 
+void addPasswordReveal(QLineEdit *edit)
+{
+    if (!edit)
+        return;
+    const QColor tint = edit->palette().color(QPalette::PlaceholderText);
+    auto *reveal = edit->addAction(
+        QIcon(tintedIcon(QStringLiteral("eye"), tint, 16,
+                         edit->devicePixelRatioF())),
+        QLineEdit::TrailingPosition);
+    reveal->setObjectName(QStringLiteral("passwordReveal"));
+    reveal->setCheckable(true);
+    reveal->setToolTip(QStringLiteral("Show password"));
+    QObject::connect(reveal, &QAction::toggled, edit, [edit, reveal](bool on) {
+        edit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
+        reveal->setToolTip(on ? QStringLiteral("Hide password")
+                              : QStringLiteral("Show password"));
+    });
+}
+
+QString cellDisplayText(const QString &text, int maxChars)
+{
+    if (maxChars <= 0 || text.size() <= maxChars)
+        return text;
+    qsizetype keep = maxChars;
+    if (text.at(keep - 1).isHighSurrogate())
+        --keep;
+    return text.left(keep) + QChar(0x2026);
+}
+
 namespace {
 
 const char kFloatingSurface[] = "floatingSurface";
@@ -708,6 +902,76 @@ void syncHeaderAlignment(QTableView *table, bool next)
     }
 }
 
+class DataTableRowDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        const auto *view = qobject_cast<const QAbstractItemView *>(option.widget);
+        if (view && view->selectionBehavior() == QAbstractItemView::SelectRows) {
+            opt.state &= ~QStyle::State_MouseOver;
+            QWidget *viewport = view->viewport();
+            if (viewport && viewport->underMouse()) {
+                const QModelIndex hovered =
+                    view->indexAt(viewport->mapFromGlobal(QCursor::pos()));
+                if (hovered.isValid() && hovered.row() == index.row() &&
+                    hovered.parent() == index.parent())
+                    opt.state |= QStyle::State_MouseOver;
+            }
+        }
+        QStyledItemDelegate::paint(painter, opt, index);
+    }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text = cellDisplayText(option->text);
+    }
+};
+
+void syncDataTableRows(QTableView *table, bool next, QVariantMap *state)
+{
+    QAbstractItemDelegate *current = table->itemDelegate();
+    if (next) {
+        state->insert(QStringLiteral("elide"), static_cast<int>(table->textElideMode()));
+        state->insert(QStringLiteral("hover"),
+                      table->viewport()->testAttribute(Qt::WA_Hover));
+        if (QHeaderView *horizontal = table->horizontalHeader())
+            state->insert(QStringLiteral("stretchLast"), horizontal->stretchLastSection());
+        table->setTextElideMode(Qt::ElideRight);
+        table->viewport()->setAttribute(Qt::WA_Hover, true);
+        if (QHeaderView *horizontal = table->horizontalHeader())
+            horizontal->setStretchLastSection(true);
+        if (current && qstrcmp(current->metaObject()->className(),
+                               "QStyledItemDelegate") == 0) {
+            state->insert(QStringLiteral("delegate"),
+                          QVariant::fromValue<QObject *>(current));
+            table->setItemDelegate(new DataTableRowDelegate(table));
+        }
+        return;
+    }
+    table->setTextElideMode(static_cast<Qt::TextElideMode>(
+        state->value(QStringLiteral("elide"), static_cast<int>(Qt::ElideRight)).toInt()));
+    table->viewport()->setAttribute(
+        Qt::WA_Hover, state->value(QStringLiteral("hover")).toBool());
+    if (QHeaderView *horizontal = table->horizontalHeader();
+        horizontal && state->contains(QStringLiteral("stretchLast")))
+        horizontal->setStretchLastSection(
+            state->value(QStringLiteral("stretchLast")).toBool());
+    auto *original = qobject_cast<QAbstractItemDelegate *>(
+        state->value(QStringLiteral("delegate")).value<QObject *>());
+    if (original && dynamic_cast<DataTableRowDelegate *>(current)) {
+        table->setItemDelegate(original);
+        current->deleteLater();
+    }
+}
+
 void syncDataTable(QTableView *table, bool next)
 {
     if (!table->property(kDataTable).toBool())
@@ -733,9 +997,14 @@ void syncDataTable(QTableView *table, bool next)
                 fitted.append(column);
             }
             horizontal->setHighlightSections(false);
+            const int fitRows = horizontal->resizeContentsPrecision();
+            state.insert(QStringLiteral("fitRows"), fitRows);
+            if (fitRows < 0 || fitRows > kDataTableFitRows)
+                horizontal->setResizeContentsPrecision(kDataTableFitRows);
         }
         state.insert(QStringLiteral("fitted"), fitted);
         state.insert(QStringLiteral("wordWrap"), table->wordWrap());
+        syncDataTableRows(table, true, &state);
         table->setProperty(kDataTableState, state);
         table->setWordWrap(false);
         table->setShowGrid(false);
@@ -745,7 +1014,8 @@ void syncDataTable(QTableView *table, bool next)
             vertical->setDefaultSectionSize(kDataTableRowHeight);
         }
     } else if (!next && stored.isValid()) {
-        const QVariantMap state = stored.toMap();
+        QVariantMap state = stored.toMap();
+        syncDataTableRows(table, false, &state);
         table->setShowGrid(state.value(QStringLiteral("grid")).toBool());
         table->setWordWrap(state.value(QStringLiteral("wordWrap"), true).toBool());
         table->setAlternatingRowColors(
@@ -758,6 +1028,9 @@ void syncDataTable(QTableView *table, bool next)
         if (horizontal) {
             horizontal->setHighlightSections(
                 state.value(QStringLiteral("highlight")).toBool());
+            if (state.contains(QStringLiteral("fitRows")))
+                horizontal->setResizeContentsPrecision(
+                    state.value(QStringLiteral("fitRows")).toInt());
             const QVariantList fitted = state.value(QStringLiteral("fitted")).toList();
             for (const QVariant &column : fitted) {
                 if (column.toInt() < horizontal->count())
@@ -779,6 +1052,203 @@ void syncStockWidget(QWidget *widget, bool next)
     }
 }
 
+const char kMessageCard[] = "nextMessageCard";
+const char kMessageCardDressed[] = "nextMessageCardDressed";
+const char kMessageHeading[] = "nextMessageHeading";
+
+QHash<QWidget *, QPointer<QWidget>> &messageScrims()
+{
+    static QHash<QWidget *, QPointer<QWidget>> scrims;
+    return scrims;
+}
+
+QMessageBox *messageCard(QObject *watched)
+{
+    if (!watched->isWidgetType() || !static_cast<QWidget *>(watched)->isWindow())
+        return nullptr;
+    auto *box = qobject_cast<QMessageBox *>(watched);
+    return box && box->property(kMessageCard).toBool() ? box : nullptr;
+}
+
+void prepareMessageCard(QObject *watched)
+{
+    if (!watched->isWidgetType() || !static_cast<QWidget *>(watched)->isWindow())
+        return;
+    auto *box = qobject_cast<QMessageBox *>(watched);
+    if (!box || box->testAttribute(Qt::WA_WState_Created) ||
+        box->property(kMessageCard).isValid())
+        return;
+    box->setProperty(kMessageCard, true);
+    box->setAttribute(Qt::WA_TranslucentBackground, true);
+    box->setAttribute(Qt::WA_StyledBackground, true);
+    Qt::WindowFlags flags = box->windowFlags();
+    flags.setFlag(Qt::FramelessWindowHint, true);
+#ifndef Q_OS_MACOS
+    flags.setFlag(Qt::NoDropShadowWindowHint, true);
+#endif
+    box->overrideWindowFlags(flags);
+}
+
+QString messageGist(QString text)
+{
+    text = text.trimmed();
+    while (!text.isEmpty() && QStringLiteral(".!?:\u2026").contains(text.back()))
+        text.chop(1);
+    return text.trimmed();
+}
+
+void dressMessageCard(QMessageBox *box)
+{
+    if (box->property(kMessageCardDressed).toBool())
+        return;
+    box->setProperty(kMessageCardDressed, true);
+    const QString title = box->windowTitle().trimmed();
+    if (!title.isEmpty() && box->informativeText().isEmpty() &&
+        messageGist(title).compare(messageGist(box->text()), Qt::CaseInsensitive) != 0 &&
+        title != QApplication::applicationDisplayName()) {
+        const Qt::TextFormat format = box->textFormat();
+        box->setInformativeText(box->text());
+        if (format == Qt::RichText) {
+            box->setText(title.toHtmlEscaped());
+        } else {
+            box->setTextFormat(Qt::PlainText);
+            box->setText(title);
+        }
+        if (auto *info = box->findChild<QLabel *>(
+                QStringLiteral("qt_msgbox_informativelabel")))
+            info->setTextFormat(format);
+    }
+    box->setProperty(kMessageHeading, !box->informativeText().isEmpty());
+}
+
+void hideMessageScrim(QWidget *box)
+{
+    if (QPointer<QWidget> scrim = messageScrims().take(box))
+        scrim->deleteLater();
+}
+
+void showMessageScrim(QMessageBox *box)
+{
+    QWidget *host = box->parentWidget() ? box->parentWidget()->window() : nullptr;
+    if (!host || host == box || !host->isVisible() ||
+        messageScrims().contains(box))
+        return;
+    auto *scrim = new QWidget(host);
+    scrim->setObjectName(QStringLiteral("messageCardScrim"));
+    scrim->setAttribute(Qt::WA_StyledBackground, true);
+    scrim->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    scrim->setGeometry(host->rect());
+    scrim->show();
+    scrim->raise();
+    messageScrims().insert(box, scrim);
+    QObject::connect(box, &QObject::destroyed, scrim,
+                     [box] { hideMessageScrim(box); });
+}
+
+void fitMessageScrims(QObject *watched)
+{
+    if (messageScrims().isEmpty() || !watched->isWidgetType())
+        return;
+    auto *host = static_cast<QWidget *>(watched);
+    if (!host->isWindow())
+        return;
+    for (const QPointer<QWidget> &scrim : std::as_const(messageScrims())) {
+        if (scrim && scrim->parentWidget() == host)
+            scrim->setGeometry(host->rect());
+    }
+}
+
+bool isMessageBlockText(const QString &text)
+{
+    if (text.contains(QLatin1Char('\n')))
+        return true;
+    if (!Qt::mightBeRichText(text))
+        return false;
+    static const QRegularExpression blocks(
+        QStringLiteral("<(br|p|li|ul|ol|table|pre|div)\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    return text.contains(blocks);
+}
+
+QList<QWidget *> messageCardRows(QMessageBox *box)
+{
+    QList<QWidget *> rows;
+    auto *grid = qobject_cast<QGridLayout *>(box->layout());
+    if (!grid)
+        return rows;
+    QList<std::pair<std::pair<int, int>, QWidget *>> cells;
+    for (int index = 0; index < grid->count(); ++index) {
+        QWidget *widget = grid->itemAt(index)->widget();
+        if (!widget || widget->objectName() == QLatin1String("qt_msgboxex_icon_label"))
+            continue;
+        int row = 0, column = 0, rowSpan = 0, columnSpan = 0;
+        grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
+        cells.append({{row, column}, widget});
+    }
+    std::stable_sort(cells.begin(), cells.end(),
+                     [](const auto &left, const auto &right) { return left.first < right.first; });
+    for (const auto &cell : std::as_const(cells))
+        rows.append(cell.second);
+    return rows;
+}
+
+void layoutMessageCard(QMessageBox *box)
+{
+    if (!box->iconPixmap().isNull())
+        box->setIconPixmap(QPixmap());
+    if (auto *icon = box->findChild<QLabel *>(QStringLiteral("qt_msgboxex_icon_label")))
+        icon->hide();
+    box->setContentsMargins(0, 0, 0, 0);
+    const QList<QWidget *> rows = messageCardRows(box);
+    if (!rows.isEmpty()) {
+        delete box->layout();
+        auto *column = new QVBoxLayout(box);
+        column->setSizeConstraint(QLayout::SetNoConstraint);
+        column->setContentsMargins(24, 24, 24, 24);
+        column->setSpacing(8);
+        for (QWidget *row : rows) {
+            if (qobject_cast<QDialogButtonBox *>(row))
+                column->addSpacing(12);
+            column->addWidget(row);
+        }
+    }
+    auto *heading = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_label"));
+    auto *body = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_informativelabel"));
+    const bool centered = !(heading && isMessageBlockText(heading->text())) &&
+                          !(body && isMessageBlockText(body->text()));
+    const Qt::Alignment alignment =
+        (centered ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignTop;
+    if (heading)
+        heading->setAlignment(alignment);
+    if (body) {
+        body->setContentsMargins(0, 0, 0, 0);
+        body->setAlignment(alignment);
+    }
+    if (QCheckBox *check = box->checkBox(); check && box->layout())
+        box->layout()->setAlignment(check, centered ? Qt::AlignHCenter : Qt::AlignLeft);
+    if (auto *buttons = box->findChild<QDialogButtonBox *>(
+            QStringLiteral("qt_msgbox_buttonbox"))) {
+        buttons->setCenterButtons(true);
+        const QList<QAbstractButton *> all = buttons->buttons();
+        int width = 0;
+        for (QAbstractButton *button : all) {
+            button->setMinimumWidth(0);
+            width = std::max(width, button->sizeHint().width());
+        }
+        for (QAbstractButton *button : all)
+            button->setMinimumWidth(std::max(width, 96));
+    }
+    showMessageScrim(box);
+}
+
+void paintMessageCard(QMessageBox *box)
+{
+    QStyleOption option;
+    option.initFrom(box);
+    QPainter painter(box);
+    box->style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, box);
+}
+
 class StockPolish final : public QObject
 {
 public:
@@ -791,8 +1261,27 @@ protected:
         case QEvent::Polish:
             if (watched->isWidgetType())
                 syncStockWidget(static_cast<QWidget *>(watched), Theme::isNext());
+            if (QMessageBox *box = messageCard(watched))
+                dressMessageCard(box);
+            break;
+        case QEvent::Show:
+            if (QMessageBox *box = messageCard(watched))
+                layoutMessageCard(box);
+            break;
+        case QEvent::Hide:
+            if (messageCard(watched))
+                hideMessageScrim(static_cast<QWidget *>(watched));
+            break;
+        case QEvent::Resize:
+            fitMessageScrims(watched);
+            break;
+        case QEvent::Paint:
+            if (QMessageBox *box = messageCard(watched))
+                paintMessageCard(box);
             break;
         case QEvent::ChildAdded:
+            if (Theme::isNext())
+                prepareMessageCard(watched);
             if (Theme::isNext() && qobject_cast<QComboBox *>(watched)) {
                 QObject *child = static_cast<QChildEvent *>(event)->child();
                 if (child && child->isWidgetType()) {

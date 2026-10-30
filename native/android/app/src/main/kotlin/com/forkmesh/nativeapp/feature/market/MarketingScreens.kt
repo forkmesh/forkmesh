@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +48,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.forkmesh.nativeapp.feature.composer.PhotoPicker
@@ -205,7 +208,7 @@ private class MarketingScreenImpl(section: MarketingSection) : Screen() {
         }
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val overview = model.overview
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Marketing", navigator) {
                     FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)
@@ -438,6 +441,7 @@ private fun MarketingReadyPostCard(model: MarketingModel, runner: MarketingRunne
         value = post?.let { withContext(Dispatchers.Default) { readyBitmap(it) } }
     }
     val working = model.isWorking("ready-post")
+    var link by remember(post?.id) { mutableStateOf("") }
     MarketingHeader("Ready for X")
     FmCard(Modifier.fillMaxWidth(), padding = PaddingValues(12.dp), margin = PaddingValues(horizontal = 16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -487,7 +491,13 @@ private fun MarketingReadyPostCard(model: MarketingModel, runner: MarketingRunne
                             }
                         }), icon = "download")
                     }
-                    FmToneButton("Mark posted", onPressed = if (working) null else ({ runner.run({ closeReadyPost("posted") }) }), icon = "check", tone = FmTone.Success)
+                }
+                FmTextField(
+                    link, { link = it }, Modifier.fillMaxWidth(), hint = "Link to the post (optional)", enabled = !working,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FmToneButton("Mark posted", onPressed = if (working) null else ({ runner.run({ closeReadyPost("posted", link.trim()) }) }), icon = "check", tone = FmTone.Success)
                     FmToneButton("Skip", onPressed = if (working) null else ({ runner.run({ closeReadyPost("skipped") }) }), icon = "skip_next")
                 }
                 FmInlineStatus(notice)

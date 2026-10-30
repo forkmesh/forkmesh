@@ -46,7 +46,7 @@ public enum OfficeFrames {
     public static func isOffice(_ conversation: String) -> Bool { conversation.hasPrefix(prefix) }
 
     public static func validChannelId(_ id: String) -> Bool {
-        id.count == 32 && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+        id.utf8.count == 32 && id.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
     public static func validName(_ name: String) -> Bool {
@@ -136,15 +136,18 @@ public enum OfficeFrames {
         let rawText = plain["text"]?.text ?? ""
         if rawText.count > ChatLimits.maxTextChars { return nil }
         let senderId = String(ChatFrameText.shownSender(plain).prefix(64))
-        var sender = String((plain["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
+        let nameLimit = ChatFrameText.botName(plain) == nil ? ChatLimits.maxDisplayNameChars : ChatLimits.maxDisplayNameChars * 3
+        var sender = String((plain["sender"]?.text ?? "").prefix(nameLimit))
         if sender.isEmpty { sender = "Office visitor" }
         let fileName = String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
         if rawText.isEmpty && fileName.isEmpty { return nil }
         let ts = plain["ts"]?.doubleValue.map { Date(epochMillis: Int64($0)) } ?? Date(epochMillis: 0)
-        return ChatMessage(
+        var message = ChatMessage(
             id: id, conversation: conversation, senderId: senderId, senderName: sender, text: rawText, timestamp: ts,
             isSelf: !selfId.isEmpty && senderId == selfId, fileName: fileName, recipients: recipients,
             app: AppsChat.message(plain, channelId: channelId))
+        message.serverVisible = ChatFrameText.isIntegration(senderId) && plain["serverVisible"]?.isTrue == true
+        return message
     }
 
     public static func webSocketURL(_ path: String, origin: URL) -> URL? {
@@ -222,6 +225,7 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingOrder: [String] = []
     @ObservationIgnored private var ackedCounts: [String: Int] = [:]
     @ObservationIgnored private var sequence = 0
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
@@ -231,7 +235,16 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingDeleteOrder: [String] = []
     @ObservationIgnored private var removedIds: Set<String> = []
     @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
+    @ObservationIgnored public var onRoomOpened: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var nodeOwners: ChatNodeOwners? {
+        didSet {
+            guard let nodeOwners, nodeOwners !== oldValue else { return }
+            nodeOwners.addAnswerObserver { [weak self] node, account in self?.ownerConfirmed(node, account) }
+        }
+    }
+    @ObservationIgnored let guestLines = GuestLineRenames()
+    @ObservationIgnored private var heldForOwner: [String: [(JSONObject, String, Bool, Int?)]] = [:]
 
     public private(set) var rooms: [OfficeRoom] = []
     public private(set) var loading = false
@@ -243,12 +256,12 @@ public final class OfficeChannelService {
     public init(
         api: ChatAccountCalling, connector: WebSocketConnector, secureStore: SecureStore,
         origin: @escaping @MainActor () -> URL?, selfId: @escaping @MainActor () -> String,
-        displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock()
+        displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock(), nodeIdentity: DeviceIdentity? = nil
     ) {
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
-        seals = RoomSealCache(secureStore: secureStore)
+        seals = RoomSealCache(secureStore: secureStore, nodeIdentity: nodeIdentity)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
@@ -264,19 +277,31 @@ public final class OfficeChannelService {
     public var historySnapshot: [String: [ChatMessage]] { history }
 
     public func restore(_ messages: [ChatMessage]) {
-        var changed = false
+        var added: [String: [ChatMessage]] = [:]
+        var ids: [String: Set<String>] = [:]
+        var order: [String] = []
         for message in messages where OfficeFrames.isOffice(message.conversation) && !isGone(message.id) {
             if isExpired?(retentionKey(message.conversation), message.timestamp) == true { continue }
-            var list = history[message.conversation] ?? []
-            if list.contains(where: { $0.id == message.id }) { continue }
-            var at = list.count
-            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
-            list.insert(message, at: at)
-            if list.count > OfficeFrames.maxMessagesPerRoom { list.removeFirst(list.count - OfficeFrames.maxMessagesPerRoom) }
-            history[message.conversation] = list
+            let conversation = message.conversation
+            if ids[conversation] == nil {
+                ids[conversation] = Set((history[conversation] ?? []).map(\.id))
+                order.append(conversation)
+            }
+            guard ids[conversation, default: []].insert(message.id).inserted else { continue }
+            added[conversation, default: []].append(message)
+        }
+        var next = history
+        var changed = false
+        for conversation in order {
+            guard let incoming = added[conversation] else { continue }
+            let list = RelayService.merging(next[conversation] ?? [], incoming)
+            next[conversation] = Array(list.suffix(OfficeFrames.maxMessagesPerRoom))
             changed = true
         }
-        if changed { onChange?() }
+        if changed {
+            history = next
+            onChange?()
+        }
     }
 
     public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
@@ -287,10 +312,13 @@ public final class OfficeChannelService {
     }
 
     public func refresh() async {
-        loading = true
-        defer { loading = false }
+        let shows = rooms.isEmpty && !loading
+        if shows { loading = true }
+        defer { if shows { loading = false } }
+        let started = generation
         do {
             let payload = try await api.accountApiCall("GET", "/api/chat/channels", nil)
+            if generation != started { return }
             let next = OfficeFrames.rooms(from: payload)
             let live = Set(next.map(\.id))
             for (id, socket) in sockets where !live.contains(id) {
@@ -306,11 +334,13 @@ public final class OfficeChannelService {
                     }
                 }
             }
+            if lastError != nil { lastError = nil }
+            if rooms == next { return }
             rooms = next
-            lastError = nil
             onRooms?(next)
         } catch {
-            lastError = "\(error)"
+            let message = "\(error)"
+            if lastError != message { lastError = message }
         }
     }
 
@@ -343,6 +373,7 @@ public final class OfficeChannelService {
 
     public func loadHistory(_ conversation: String) async {
         guard let room = room(for: conversation) else { return }
+        let started = generation
         do {
             let since = lastTs[room.id] ?? 0
             let payload = try await api.accountApiCall("GET", "/api/chat/channels/\(room.id)/history?since=\(since)", nil)
@@ -351,6 +382,7 @@ public final class OfficeChannelService {
             if roomName.isEmpty || passphrase.isEmpty { return }
             let crypto = await derive(roomName, passphrase)
             let seal = try await seal(for: roomName)
+            if generation != started { return }
             PerformanceMonitorService.section("chat.office.history") {
                 for entry in payload["messages"]?.objects ?? [] {
                     let ts = entry["ts"]?.int64Value ?? 0
@@ -358,7 +390,9 @@ public final class OfficeChannelService {
                     guard let envelope = JSON.parseObject(entry["body"]?.text ?? "") as JSONObject?, !envelope.isEmpty,
                         let plain = crypto.decrypt(envelope)
                     else { continue }
-                    accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true)
+                    accept(
+                        plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true,
+                        serverInjected: envelope["srv"]?.boolValue == true)
                 }
             }
         } catch {
@@ -367,7 +401,8 @@ public final class OfficeChannelService {
     }
 
     private func accept(
-        _ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil, history: Bool = false
+        _ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil, history: Bool = false,
+        serverInjected: Bool = false
     ) {
         var plain = frame
         if RoomSeal.isKeyFrame(plain) {
@@ -380,12 +415,84 @@ public final class OfficeChannelService {
             return
         }
         if RoomSeal.isSealedFrame(plain) {
-            guard let opened = seal.open(plain, now: clock.nowMillis, history: history).authenticatedPlain else { return }
-            plain = opened
-        } else if room.isPrivate && !room.serverVisible {
+            let result = seal.open(plain, now: clock.nowMillis, history: history)
+            guard let opened = result.authenticatedPlain else { return }
+            plain = GroupCallE2ee.annotate(opened, kid: result.senderKid, acct: result.senderAcct)
+            acceptPerson(plain, acct: result.senderAcct ?? "", room: room, live: live, recipients: recipients)
+        } else if serverInjected, let integration = ChatFrameText.integrationFrame(plain) {
+            plain = GroupCallE2ee.annotate(integration, kid: nil, acct: nil)
+            acceptPlain(plain, room: room, live: live, recipients: recipients)
+        }
+    }
+
+    nonisolated static func ownerClaim(_ plain: JSONObject, acct: String) -> String {
+        let claimed = RelayService.ownerClaim(plain)
+        return claimed.isEmpty ? ChatNodeOwners.normalized(acct) : claimed
+    }
+
+    private func acceptPerson(_ plain: JSONObject, acct: String, room: OfficeRoom, live: Bool, recipients: Int?) {
+        let senderId = plain["senderId"]?.text ?? ""
+        if senderId.isEmpty || senderId == selfId() {
+            acceptPlain(
+                ChatFrameText.asBotLine(plain, via: String(displayName().prefix(ChatLimits.maxDisplayNameChars))), room: room,
+                live: live, recipients: recipients)
             return
         }
-        acceptPlain(plain, room: room, live: live, recipients: recipients)
+        let claim = OfficeChannelService.ownerClaim(plain, acct: acct)
+        if !claim.isEmpty, let nodeOwners, nodeOwners.cached(senderId) == nil {
+            let first = heldForOwner[senderId] == nil
+            var list = heldForOwner[senderId] ?? []
+            list.append((plain, room.id, live, recipients))
+            if list.count > 256 { list.removeFirst(list.count - 256) }
+            heldForOwner[senderId] = list
+            if !first { return }
+            let started = generation
+            Task { [weak self] in
+                _ = await nodeOwners.account(for: senderId)
+                guard let self, started == self.generation else { return }
+                for (frame, roomId, wasLive, count) in self.heldForOwner.removeValue(forKey: senderId) ?? [] {
+                    guard let held = self.rooms.first(where: { $0.id == roomId }) else { continue }
+                    self.acceptPlain(
+                        self.personFrame(frame, senderId: senderId, claim: claim), room: held, live: wasLive, recipients: count)
+                }
+            }
+            return
+        }
+        acceptPlain(personFrame(plain, senderId: senderId, claim: claim), room: room, live: live, recipients: recipients)
+    }
+
+    private func personFrame(_ plain: JSONObject, senderId: String, claim: String) -> JSONObject {
+        if !claim.isEmpty && nodeOwners?.isVerified(node: senderId, claim: claim) == true {
+            var out = plain
+            if (out["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { out["sender"] = .string(claim) }
+            return ChatFrameText.asBotLine(out, via: claim)
+        }
+        if !claim.isEmpty && ChatFrameText.botName(plain) == nil {
+            guestLines.note(plain, node: senderId, claim: claim, owners: nodeOwners)
+        }
+        return ChatFrameText.asBotLine(RelayService.asGuest(plain, senderId: senderId), via: guestChatName(senderId))
+    }
+
+    private func ownerConfirmed(_ node: String, _ account: String) {
+        let lines = guestLines.confirmed(node: node, account: account)
+        if lines.isEmpty { return }
+        let names = Dictionary(lines.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
+        let guest = guestChatName(node)
+        var changed = false
+        for (conversation, list) in history {
+            var renamed = list
+            var touched = false
+            for index in renamed.indices where renamed[index].senderId == node && renamed[index].senderName == guest {
+                guard let name = names[renamed[index].id] else { continue }
+                renamed[index].senderName = name
+                touched = true
+            }
+            if touched {
+                history[conversation] = renamed
+                changed = true
+            }
+        }
+        if changed { onChange?() }
     }
 
     private func acceptPlain(_ plain: JSONObject, room: OfficeRoom, live: Bool, recipients: Int?) {
@@ -504,6 +611,7 @@ public final class OfficeChannelService {
         guard let room = room(for: conversation) else { return false }
         if sockets[room.id] != nil { return true }
         guard let base = origin() else { return false }
+        let started = generation
         do {
             let access = try await api.accountApiCall("GET", "/api/chat/channels/\(room.id)/room-access", nil)
             let roomName = access["room"]?.text ?? ""
@@ -518,6 +626,10 @@ public final class OfficeChannelService {
             let seal = try await seal(for: roomName)
             let connection = try await connector.connect(
                 url: url, options: WebSocketOptions(connectTimeout: RelayService.connectTimeout, pingInterval: RelayService.pingInterval))
+            guard generation == started, rooms.contains(where: { $0.id == room.id }) else {
+                await connection.close(code: WebSocketStatus.normalClosure, reason: "")
+                return false
+            }
             let socket = OfficeRoomSocket(roomId: room.id, crypto: crypto, seal: seal, connection: connection)
             sockets[room.id] = socket
             connected.insert(room.id)
@@ -531,6 +643,7 @@ public final class OfficeChannelService {
                 self?.dropped(room.id, connection)
             }
             advertise(socket)
+            onRoomOpened?(room.conversation, roomName)
             return true
         } catch {
             lastError = "\(error)"
@@ -556,7 +669,9 @@ public final class OfficeChannelService {
             return
         }
         guard let plain = socket.crypto.decrypt(envelope) else { return }
-        accept(plain, room: room, seal: socket.seal, live: true, recipients: OfficeFrames.recipients(envelope))
+        accept(
+            plain, room: room, seal: socket.seal, live: true, recipients: OfficeFrames.recipients(envelope),
+            serverInjected: envelope["srv"]?.boolValue == true)
     }
 
     private func rememberSent(_ ref: String, id: String) {
@@ -617,6 +732,29 @@ public final class OfficeChannelService {
         for socket in Array(sockets.values) { await close(socket) }
     }
 
+    public func clear() async {
+        generation &+= 1
+        heldForOwner = [:]
+        guestLines.clear()
+        await closeAll()
+        sockets = [:]
+        connected = []
+        rooms = []
+        history = [:]
+        receipts = [:]
+        cryptos = [:]
+        lastTs = [:]
+        seen = [:]
+        pendingRefs = [:]
+        pendingOrder = []
+        ackedCounts = [:]
+        pendingDeletes = [:]
+        pendingDeleteOrder = []
+        removedIds = []
+        lastError = nil
+        seals.removeAll()
+    }
+
     func frame(_ room: OfficeRoom, text: String, bot: Bool) -> JSONObject {
         sequence += 1
         let me = selfId()
@@ -652,7 +790,7 @@ public final class OfficeChannelService {
         guard let socket = sockets[room.id] else { return nil }
         let plain = frame(room, text: body, bot: asBot)
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
+            let framed = try socket.seal.seal(plain, now: clock.nowMillis)
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             envelope["notify"] = true
@@ -664,7 +802,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
-                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
+                if socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error
@@ -678,6 +816,36 @@ public final class OfficeChannelService {
 
     public var currentSelfId: String { selfId() }
 
+    @discardableResult
+    public func sendLiveFrame(_ conversation: String, type: String, fields: JSONObject) async -> Bool {
+        guard let room = room(for: conversation), room.isPrivate, !room.readOnly else { return false }
+        if sockets[room.id] == nil, !(await open(conversation)) { return false }
+        guard let socket = sockets[room.id] else { return false }
+        var plain = frame(room, text: "", bot: false)
+        plain["type"] = .string(type)
+        plain.removeValue(forKey: "text")
+        for (key, value) in fields { plain[key] = value }
+        do {
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            try await socket.connection.send(text: JSON.encode(envelope))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func callTicket(_ conversation: String, engines: JSONObject = [:]) async throws -> GroupCallTicket? {
+        guard let room = room(for: conversation), room.isPrivate else { return nil }
+        return GroupCallTicket(json: try await api.accountApiCall("POST", "/api/chat/channels/\(room.id)/call-ticket", engines))
+    }
+
+    public func callIdentity(_ conversation: String) async -> GroupCallIdentity? {
+        guard let room = room(for: conversation), room.isPrivate else { return nil }
+        if sockets[room.id] == nil, !(await open(conversation)) { return nil }
+        guard let seal = sockets[room.id]?.seal, let acct = seal.acct, !acct.isEmpty else { return nil }
+        return GroupCallIdentity(call: seal.room, acct: acct, kid: seal.keyring.kid, seed: seal.keyring.callSigningSeed())
+    }
+
     public func postFrame(_ conversation: String, type: String, fields: JSONObject) async -> JSONObject? {
         guard let room = room(for: conversation), !room.readOnly else { return nil }
         if sockets[room.id] == nil, !(await open(conversation)) { return nil }
@@ -687,7 +855,7 @@ public final class OfficeChannelService {
         plain.removeValue(forKey: "text")
         for (key, value) in fields { plain[key] = value }
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
+            let framed = try socket.seal.seal(plain, now: clock.nowMillis)
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             if type == "chat" || type == "thread-reply" { envelope["notify"] = true }
@@ -699,7 +867,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
-                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
+                if socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error

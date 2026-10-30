@@ -111,12 +111,15 @@ func meshErrorText(_ error: Error) -> String {
     return "\(error)"
 }
 
-/// Where the room's history lives between launches: Application Support.
-public func defaultMeshHistoryFile() -> URL? {
+public func defaultMeshHistoryFile(project: String) -> URL? {
     guard let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
         return nil
     }
-    return directory.appendingPathComponent("local_mesh_history.json")
+    return directory.appendingPathComponent(meshHistoryFileName(project: project))
+}
+
+public func meshHistoryFileName(project: String) -> String {
+    "local_mesh_history-\(ChatHistoryCodec.scopeName(serverUrl: project, room: meshConversation)).json"
 }
 
 public enum MeshLinkKind: String, Equatable, Sendable {
@@ -155,17 +158,28 @@ final class MeshLink {
 final class MeshPeer {
     var name = ""
     var nodeName = ""
-    var ownerUser = ""
     var platform = ""
     var version = ""
     var nodeId = ""
-    var controlNode = ""
     var address: MeshAddress?
     var port = 0
     var lastSeenMs: Int64 = 0
     var unlinkedSinceMs: Int64 = 0
     var linked = false
+}
+
+final class MeshHeard {
+    var address: MeshAddress
+    var port: Int
+    var lastSeenMs: Int64 = 0
+    var unlinkedSinceMs: Int64 = 0
     var control = false
+    var kid = ""
+
+    init(address: MeshAddress, port: Int) {
+        self.address = address
+        self.port = port
+    }
 }
 
 @MainActor
@@ -176,6 +190,7 @@ public final class LocalMeshService {
     nonisolated static let handshakeTimeoutSeconds: TimeInterval = 10
     nonisolated static let forwardMemory = 4096
     nonisolated static let resealOwnLimit = 32
+    nonisolated public static let readableNotice = "Anyone nearby with ForkMesh open can read #mesh."
     nonisolated static let maxKnownBundles = 64
     nonisolated static let maxDirectChannelChars = 80
 
@@ -183,7 +198,7 @@ public final class LocalMeshService {
     @ObservationIgnored let identity: DeviceIdentity
     @ObservationIgnored let secureStore: SecureStore
     @ObservationIgnored let native: MeshNativeTransport
-    @ObservationIgnored let historyFileSource: () -> URL?
+    @ObservationIgnored let historyFileSource: @MainActor () -> URL?
     @ObservationIgnored let clock: Clock
     @ObservationIgnored let platformName: String
     @ObservationIgnored public let listeners = Listeners()
@@ -218,6 +233,11 @@ public final class LocalMeshService {
     @ObservationIgnored private var forwardedOrder: [String] = []
     @ObservationIgnored private var knownBundles: [String: JSONObject] = [:]
     @ObservationIgnored private var knownBundleOrder: [String] = []
+    @ObservationIgnored private var ownSealed: [String: JSONObject] = [:]
+    @ObservationIgnored private var heard: [String: MeshHeard] = [:]
+    @ObservationIgnored private var heardOrder: [String] = []
+    @ObservationIgnored private(set) var beaconId = ""
+    @ObservationIgnored private var resumeInProject = false
     @ObservationIgnored private var dialing = Set<String>()
     @ObservationIgnored private var queued = Set<String>()
     @ObservationIgnored private var historyFile: URL?
@@ -225,8 +245,7 @@ public final class LocalMeshService {
     @ObservationIgnored private var historySaveTask: Task<Void, Never>?
     @ObservationIgnored private var beaconCount = 0
     @ObservationIgnored public var isExpired: ChatExpiry?
-    @ObservationIgnored public var wakeTokenProvider: (@MainActor () async -> String)?
-    @ObservationIgnored public var wakeSender: (@MainActor ([String]) async -> Void)?
+    @ObservationIgnored public var projectScope: @MainActor () -> String = { "" }
     @ObservationIgnored public var onIncoming: (@MainActor (ChatMessage, Int) -> Void)?
     @ObservationIgnored public var onDirectSealed: (@MainActor (String, JSONObject, String) -> Void)?
     @ObservationIgnored public var onDirectAck: (@MainActor (String, String, String) -> Void)?
@@ -234,10 +253,6 @@ public final class LocalMeshService {
     @ObservationIgnored public var onLinkAuthenticated: (@MainActor (String) -> Void)?
     @ObservationIgnored public var onLinkClosed: (@MainActor (String) -> Void)?
     @ObservationIgnored public var rememberedBeaconTargets: (@MainActor () -> [MeshAddress])?
-    @ObservationIgnored private var ownWakeToken = ""
-    @ObservationIgnored private var wakeRefreshing = false
-    @ObservationIgnored private var wakeTokens: [String: String] = [:]
-    @ObservationIgnored private var wakeOrder: [String] = []
 
     public private(set) var messages: [ChatMessage] = []
     public private(set) var running = false
@@ -253,6 +268,8 @@ public final class LocalMeshService {
     @ObservationIgnored public var addressSweepEnabled = LocalMeshService.defaultAddressSweep
     @ObservationIgnored public var networkEnabled = true
     @ObservationIgnored public var bluetoothEnabled = true
+    @ObservationIgnored public var waitsForRoom = false
+    @ObservationIgnored public var onFirstRoomOpen: (@MainActor () -> Void)?
     @ObservationIgnored var loopbackIsLocalNetwork = false
     @ObservationIgnored var linkReplaceAfterMs = 10_000
     @ObservationIgnored var linkStableMs = 5_000
@@ -271,7 +288,7 @@ public final class LocalMeshService {
         identity: DeviceIdentity,
         secureStore: SecureStore,
         transport: MeshNativeTransport? = nil,
-        historyFile: (() -> URL?)? = nil,
+        historyFile: (@MainActor () -> URL?)? = nil,
         platform: String = AppBuild.currentPlatform,
         clock: Clock = SystemClock()
     ) {
@@ -375,19 +392,28 @@ public final class LocalMeshService {
             nodeKey: identity.publicKeyB64url, account: accountProvider?() ?? "", displayName: settings.displayName)
     }
 
-    private var name: String { dartPrefix(persona.name, meshMaxNameChars) }
+    private var name: String {
+        let display = settings.displayName.dartTrimmed
+        let account = (accountProvider?() ?? "").dartTrimmed
+        if display.isEmpty || display.lowercased() == account.lowercased() {
+            return dartPrefix(guestChatName(identity.publicKeyB64url), meshMaxNameChars)
+        }
+        return dartPrefix(display, meshMaxNameChars)
+    }
 
     public var displayName: String { name }
 
     public func controlHosts() -> [MeshControlHost] {
         var hosts: [MeshControlHost] = []
-        for id in peerIds {
-            guard let peer = peers[id], peer.control, !peer.controlNode.isEmpty, let address = peer.address, peer.port > 0
+        var named = Set<String>()
+        for id in heardOrder {
+            guard let entry = heard[id], entry.control, entry.port > 0, let peer = peers[entry.kid], !peer.nodeId.isEmpty,
+                named.insert(peer.nodeId).inserted
             else { continue }
             hosts.append(
                 MeshControlHost(
-                    nodeId: peer.controlNode, address: address, port: peer.port, name: peer.name, nodeName: peer.nodeName,
-                    ownerUser: peer.ownerUser, platform: peer.platform))
+                    nodeId: peer.nodeId, address: entry.address, port: entry.port, name: peer.name, nodeName: peer.nodeName,
+                    platform: peer.platform))
         }
         return hosts
     }
@@ -404,9 +430,9 @@ public final class LocalMeshService {
             let shown = peer.nodeId.isEmpty ? id : peer.nodeId
             list.append(
                 Member(
-                    id: shown, name: peer.name.isEmpty ? (peer.ownerUser.isEmpty ? shown : peer.ownerUser) : peer.name,
+                    id: shown, name: peer.name.isEmpty ? shown : peer.name,
                     online: peer.linked || now - peer.lastSeenMs <= Int64(peerTimeoutMs), platform: peer.platform,
-                    version: peer.version, owner: peer.ownerUser, nodeName: peer.nodeName))
+                    version: peer.version, nodeName: peer.nodeName))
         }
         return list
     }
@@ -425,6 +451,10 @@ public final class LocalMeshService {
     }
 
     public func roomOpened() async {
+        if waitsForRoom {
+            waitsForRoom = false
+            onFirstRoomOpen?()
+        }
         await native.roomOpened()
         if !running {
             _ = await start()
@@ -442,17 +472,19 @@ public final class LocalMeshService {
     @discardableResult
     public func start() async -> Bool {
         if running { return true }
+        if waitsForRoom { return false }
         let store = secureStore
         let node = nodeId
-        let named = (accountProvider?() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let account = named.isEmpty ? node : named
+        let nodeKey = identity
+        let scope = meshSealScope
         let keys: (RoomCrypto, RoomSeal)
         do {
             keys = try await Task.detached(priority: .userInitiated) {
                 (
                     RoomCrypto.shared(meshRoomName),
                     try RoomSeal.loadOrCreate(
-                        meshRoomName, scope: meshRoomName, policy: .open, acct: account, node: node, secureStore: store)
+                        meshRoomName, scope: scope, policy: .open, acct: node, node: node, secureStore: store,
+                        nodeIdentity: nodeKey)
                 )
             }.value
         } catch {
@@ -469,7 +501,7 @@ public final class LocalMeshService {
         running = true
         beaconCount = 0
         groupSendRefused = 0
-        refreshWakeToken()
+        renewBeaconId()
         networkActive = openListener()
         if networkActive {
             await openDiscovery()
@@ -518,7 +550,6 @@ public final class LocalMeshService {
             _ = await start()
             return
         }
-        refreshWakeToken()
         closeListener()
         closeDiscovery()
         networkActive = openListener()
@@ -534,10 +565,57 @@ public final class LocalMeshService {
             return
         }
         closeDiscovery()
+        renewBeaconId()
         if !networkActive { networkActive = openListener() }
         if networkActive { await openDiscovery() }
         await announce()
         notifyListeners()
+    }
+
+    var meshSealScope: String {
+        let project = projectScope().trimmingCharacters(in: .whitespacesAndNewlines)
+        return project.isEmpty ? meshRoomName : "\(meshRoomName)\n\(project)"
+    }
+
+    private func renewBeaconId() {
+        beaconId = MeshBeacon.randomId()
+        heard.removeAll()
+        heardOrder.removeAll()
+    }
+
+    public func leaveProject() async {
+        let wasRunning = running
+        await stop()
+        historySaveTask?.cancel()
+        historySaveTask = nil
+        crypto = nil
+        seal = nil
+        history = []
+        historyFile = nil
+        historyLoaded = false
+        messages = []
+        unread = 0
+        seenIds.removeAll()
+        seenOrder.removeAll()
+        forwarded.removeAll()
+        forwardedOrder.removeAll()
+        knownBundles.removeAll()
+        knownBundleOrder.removeAll()
+        ownSealed.removeAll()
+        queued.removeAll()
+        peers.removeAll()
+        peerIds.removeAll()
+        heard.removeAll()
+        heardOrder.removeAll()
+        localNetworkBlocked = false
+        resumeInProject = resumeInProject || wasRunning
+        notifyListeners()
+    }
+
+    public func enterProject() async {
+        if !resumeInProject { return }
+        resumeInProject = false
+        _ = await start()
     }
 
     public func announce() async {
@@ -735,8 +813,8 @@ public final class LocalMeshService {
     }
 
     private func beaconDatagram(reply: Bool = false) -> [UInt8]? {
-        guard let crypto, let server, let seal else { return nil }
-        let beacon = MeshBeacon(nodeId: seal.keyId, port: server.port, timestampMs: clock.nowMillis, reply: reply)
+        guard let crypto, let server, !beaconId.isEmpty else { return nil }
+        let beacon = MeshBeacon(nodeId: beaconId, port: server.port, timestampMs: clock.nowMillis, reply: reply)
         guard let envelope = try? crypto.encrypt(beacon.toJSON()) else { return nil }
         return Array(JSON.encode(.object(envelope)).utf8)
     }
@@ -805,6 +883,11 @@ public final class LocalMeshService {
         for address in rememberedBeaconTargets?() ?? [] where !linkedAddresses.contains(address.address) {
             if targets[address.address] == nil { targetOrder.append(address.address) }
             targets[address.address] = address
+        }
+        for id in heardOrder {
+            guard let entry = heard[id], linkForPeer(entry.kid) == nil else { continue }
+            if targets[entry.address.address] == nil { targetOrder.append(entry.address.address) }
+            targets[entry.address.address] = entry.address
         }
         for id in peerIds {
             guard let address = peers[id]?.address, linkForPeer(id) == nil else { continue }
@@ -879,7 +962,7 @@ public final class LocalMeshService {
     }
 
     private func onDatagram(_ datagram: MeshDatagram) async {
-        guard running, let crypto, let seal else { return }
+        guard running, let crypto else { return }
         diagnostics.datagramsIn += 1
         if !isLocalNetworkAddress(datagram.address) {
             diagnostics.offNetworkIn += 1
@@ -893,43 +976,65 @@ public final class LocalMeshService {
             diagnostics.undecryptableIn += 1
             return
         }
-        let ownKid = seal.keyId
-        if beacon.nodeId == ownKid {
+        if beacon.nodeId == beaconId {
             diagnostics.ownBeaconsIn += 1
             return
         }
-        if seal.trust.record(beacon.nodeId)?.state == .blocked { return }
+        let now = clock.nowMillis
         diagnostics.peerBeaconsIn += 1
-        diagnostics.lastBeaconMs = clock.nowMillis
-        let known = peers[beacon.nodeId]
-        let who = (known?.name.isEmpty ?? true) ? dartPrefix(beacon.nodeId, 8) : (known?.name ?? "")
+        diagnostics.lastBeaconMs = now
+        let entry = rememberHeard(beacon.nodeId, address: datagram.address, port: beacon.port)
+        let who = peers[entry.kid].map(\.name).flatMap { $0.isEmpty ? nil : $0 } ?? dartPrefix(beacon.nodeId, 8)
         diagnostics.lastBeaconFrom = "\(who) \(datagram.address.address):\(beacon.port)\(beacon.reply ? " (reply)" : "")"
-
-        rememberPeer(beacon.nodeId, [:], linked: false)
-        guard let peer = peers[beacon.nodeId] else { return }
-        let controlChanged = peer.control != beacon.control || peer.controlNode != beacon.node
-        peer.control = beacon.control
-        peer.controlNode = beacon.node
-        let moved = peer.address?.address != datagram.address.address || peer.port != beacon.port
-        peer.address = datagram.address
-        peer.port = beacon.port
-        if (moved && peer.control) || controlChanged { notifyListeners() }
-        if linkForPeer(beacon.nodeId) != nil {
-            peer.unlinkedSinceMs = 0
+        let controlChanged = entry.control != beacon.control
+        entry.control = beacon.control
+        entry.lastSeenMs = now
+        if controlChanged && !entry.kid.isEmpty { notifyListeners() }
+        if let peer = peers[entry.kid], linkForPeer(entry.kid) != nil {
+            entry.unlinkedSinceMs = 0
+            peer.lastSeenMs = now
             return
         }
         if !beacon.reply, let answer = beaconDatagram(reply: true), discovery != nil {
             sendDatagram(answer, datagram.address, datagram.port, count: { diagnostics.unicastSent += 1 })
         }
-        let now = clock.nowMillis
-        if peer.unlinkedSinceMs == 0 { peer.unlinkedSinceMs = now }
-        if ownKid.utf16.lexicographicallyPrecedes(beacon.nodeId.utf16)
-            || now - peer.unlinkedSinceMs >= Int64(beaconIntervalMs / 2)
+        if entry.unlinkedSinceMs == 0 { entry.unlinkedSinceMs = now }
+        if beaconId.utf16.lexicographicallyPrecedes(beacon.nodeId.utf16)
+            || now - entry.unlinkedSinceMs >= Int64(beaconIntervalMs / 2)
         {
             let address = datagram.address
             let port = beacon.port
             Task { await self.connectToPeer(address, port: port) }
         }
+    }
+
+    private func rememberHeard(_ id: String, address: MeshAddress, port: Int) -> MeshHeard {
+        if let entry = heard[id] {
+            if entry.address != address || entry.port != port {
+                entry.kid = ""
+                entry.address = address
+                entry.port = port
+            }
+            return entry
+        }
+        let entry = MeshHeard(address: address, port: port)
+        heard[id] = entry
+        heardOrder.append(id)
+        while heardOrder.count > maxLinks {
+            heard.removeValue(forKey: heardOrder.removeFirst())
+        }
+        return entry
+    }
+
+    private func bindHeard(_ address: MeshAddress, port: Int, kid: String) {
+        if kid.isEmpty || port <= 0 { return }
+        var bound = false
+        for entry in heard.values where entry.address == address && entry.port == port && entry.kid != kid {
+            entry.kid = kid
+            entry.unlinkedSinceMs = 0
+            bound = bound || entry.control
+        }
+        if bound { notifyListeners() }
     }
 
     @discardableResult
@@ -1115,6 +1220,7 @@ public final class LocalMeshService {
         if !links.contains(where: { $0 === link }) { return }
         rememberPeer(kid, [:], linked: false)
         if let peer = peers[kid], peer.address == nil, let socket = link.socket { peer.address = socket.remoteAddress }
+        if link.outbound, let socket = link.socket { bindHeard(socket.remoteAddress, port: socket.remotePort, kid: kid) }
         if let bundle = ownBundle() { _ = await writeLink(link, bundle) }
         for known in knownBundleOrder where known != kid {
             if let bundle = knownBundles[known] { _ = await writeLink(link, bundle) }
@@ -1225,13 +1331,11 @@ public final class LocalMeshService {
             guard direct != nil else { return }
         }
         rememberPeer(senderKid, plain, linked: direct != nil)
-        rememberWake(senderId, plain)
         if type == "hello", let direct, let peer = peers[senderKid], let socket = direct.socket {
             if case .int(let port)? = plain["port"], port > 0 && port <= 65535 {
-                let moved = peer.address != socket.remoteAddress || peer.port != Int(port)
                 peer.address = socket.remoteAddress
                 peer.port = Int(port)
-                if moved && peer.control { notifyListeners() }
+                bindHeard(socket.remoteAddress, port: Int(port), kid: senderKid)
             } else if peer.address == nil {
                 peer.address = socket.remoteAddress
             }
@@ -1262,19 +1366,40 @@ public final class LocalMeshService {
         guard let seal else { return }
         let own = history.filter { dartString($0["senderId"]) == nodeId && dartString($0["type"]) == "chat" }
         for entry in own.suffix(LocalMeshService.resealOwnLimit) {
-            guard let sealed = try? seal.seal(entry, for: [kid], now: clock.nowMillis) else { continue }
-            rememberForwarded(dartString(sealed["sig"]))
+            let id = dartString(entry["id"])
+            let sealed: JSONObject
+            if queued.contains(id) {
+                guard let fresh = try? seal.seal(entry, for: [kid], now: clock.nowMillis) else { continue }
+                sealed = fresh
+                rememberForwarded(dartString(sealed["sig"]))
+            } else if let earlier = ownSealed[id], RoomSeal.wrappedKeyIds(earlier).contains(kid) {
+                sealed = earlier
+            } else {
+                continue
+            }
             let targets = link.map { [$0] } ?? links.filter { $0.authenticated && $0.keyKnown }
             var wrote = false
             for target in targets where target.authenticated {
                 if await writeLink(target, sealed) { wrote = true }
             }
-            if wrote && queued.remove(dartString(entry["id"])) != nil {
+            if wrote && queued.remove(id) != nil {
+                rememberOwnSealed(entry, sealed)
                 scheduleHistorySave()
                 notifyListeners()
             }
         }
         await advertiseIfRotated()
+    }
+
+    private func rememberOwnSealed(_ plain: JSONObject, _ sealed: JSONObject) {
+        guard dartString(plain["type"]) == "chat", dartString(plain["senderId"]) == nodeId else { return }
+        let id = dartString(plain["id"])
+        if id.isEmpty { return }
+        ownSealed[id] = sealed
+        if ownSealed.count > historyLimit {
+            let kept = Set(history.map { dartString($0["id"]) })
+            ownSealed = ownSealed.filter { kept.contains($0.key) }
+        }
     }
 
     private func ownBundle() -> JSONObject? {
@@ -1339,6 +1464,7 @@ public final class LocalMeshService {
         let written = await writeLink(link, sealed)
         let forOthers = RoomSeal.wrappedKeyIds(sealed).contains { $0 != seal.keyId }
         if written && forOthers && queued.remove(dartString(plain["id"])) != nil {
+            rememberOwnSealed(plain, sealed)
             scheduleHistorySave()
             notifyListeners()
         }
@@ -1384,6 +1510,7 @@ public final class LocalMeshService {
             if await writeLink(link, sealed) { wrote = true }
         }
         let forOthers = RoomSeal.wrappedKeyIds(sealed).contains { $0 != seal.keyId }
+        if wrote && forOthers { rememberOwnSealed(plain, sealed) }
         if wrote && forOthers && queued.remove(dartString(plain["id"])) != nil {
             scheduleHistorySave()
             notifyListeners()
@@ -1452,51 +1579,8 @@ public final class LocalMeshService {
             "platform": .string(platformName),
             "version": .string(RelayService.clientVersion),
         ]
-        persona.stamp(&frame)
-        if type == "hello" || type == "chat" || type == "wake", meshWakeTokenUsable(ownWakeToken, now: clock.nowMillis) {
-            frame["wake"] = .string(ownWakeToken)
-        }
+        frame["accountKind"] = .string(persona.accountKind)
         return frame
-    }
-
-    public func refreshWakeToken() {
-        guard !wakeRefreshing, let provider = wakeTokenProvider else { return }
-        if let expires = meshWakeTokenExpiry(ownWakeToken), expires - clock.nowMillis > meshWakeRefreshBeforeMs { return }
-        wakeRefreshing = true
-        Task { [weak self] in
-            let token = await provider()
-            guard let self else { return }
-            self.wakeRefreshing = false
-            guard meshWakeTokenUsable(token, now: self.clock.nowMillis), token != self.ownWakeToken else { return }
-            self.ownWakeToken = token
-            if self.running && !self.links.isEmpty { await self.sendToAll(self.envelope("wake")) }
-        }
-    }
-
-    func wakeTargets() -> [String] {
-        let now = clock.nowMillis
-        let tokens = wakeOrder.reversed().compactMap { wakeTokens[$0] }.filter {
-            $0 != ownWakeToken && meshWakeTokenUsable($0, now: now)
-        }
-        return Array(tokens.prefix(meshWakeMaxTokens))
-    }
-
-    private func rememberWake(_ senderId: String, _ plain: JSONObject) {
-        if senderId.isEmpty || senderId == nodeId { return }
-        let token = dartString(plain["wake"])
-        guard let expires = meshWakeTokenExpiry(token), expires > clock.nowMillis else { return }
-        if let known = wakeTokens[senderId], (meshWakeTokenExpiry(known) ?? 0) >= expires { return }
-        wakeTokens[senderId] = token
-        wakeOrder.removeAll { $0 == senderId }
-        wakeOrder.append(senderId)
-        while wakeOrder.count > meshWakeMaxTokens { wakeTokens.removeValue(forKey: wakeOrder.removeFirst()) }
-    }
-
-    private func wakePeers() {
-        guard let wakeSender else { return }
-        let tokens = wakeTargets()
-        if tokens.isEmpty { return }
-        Task { await wakeSender(tokens) }
     }
 
     @discardableResult
@@ -1511,7 +1595,6 @@ public final class LocalMeshService {
         queued.insert(id)
         diagnostics.chatOut += 1
         await sendToAll(message)
-        wakePeers()
         appendMessage(toMessage(message))
         notifyListeners()
         return id
@@ -1539,8 +1622,6 @@ public final class LocalMeshService {
         if !senderName.isEmpty { peer.name = senderName }
         let nodeName = field("nodeName")
         if !nodeName.isEmpty { peer.nodeName = nodeName }
-        let owner = field("ownerUser")
-        if !owner.isEmpty { peer.ownerUser = owner }
         let platform = field("platform")
         if !platform.isEmpty { peer.platform = platform }
         let version = field("version")
@@ -1553,7 +1634,9 @@ public final class LocalMeshService {
             peer.unlinkedSinceMs = 0
         }
         peer.lastSeenMs = clock.nowMillis
-        if existing == nil || linked || (namedChanged && peer.control) { notifyListeners() }
+        if existing == nil || linked || (namedChanged && heard.values.contains { $0.kid == peerId && $0.control }) {
+            notifyListeners()
+        }
     }
 
     @discardableResult
@@ -1574,6 +1657,12 @@ public final class LocalMeshService {
                 changed = true
             }
         }
+        for id in heardOrder {
+            guard let entry = heard[id], now - entry.lastSeenMs > Int64(peerTimeoutMs) else { continue }
+            heard.removeValue(forKey: id)
+            changed = changed || entry.control
+        }
+        heardOrder.removeAll { heard[$0] == nil }
         if changed { notifyListeners() }
     }
 
@@ -1614,7 +1703,12 @@ public final class LocalMeshService {
         if historyLoaded { return }
         historyLoaded = true
         historyFile = historyFileSource()
-        guard let file = historyFile, let data = try? Data(contentsOf: file) else { return }
+        guard let file = historyFile, FileManager.default.fileExists(atPath: file.path) else { return }
+        guard let data = try? Data(contentsOf: file) else {
+            historyFile = nil
+            historyLoaded = false
+            return
+        }
         // An unreadable file is a room with no history, not a room that cannot open.
         guard case .object(let root)? = try? JSON.parse(data),
             let version = root["v"], version.numEquals(Int64(historyFileVersion))
@@ -1629,7 +1723,6 @@ public final class LocalMeshService {
                 continue
             }
             history.append(entry)
-            rememberWake(dartString(entry["senderId"]), entry)
             if queuedIds.contains(id) && entry["senderId"] == .string(nodeId) { queued.insert(id) }
             appendMessage(toMessage(entry), countUnread: false)
         }
@@ -1656,9 +1749,11 @@ public final class LocalMeshService {
         ]
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let temp = file.appendingPathExtension("tmp")
-            try JSON.encodeData(.object(root)).write(to: temp)
-            _ = rename(temp.path, file.path)
+            #if os(iOS)
+            try JSON.encodeData(.object(root)).write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+            #else
+            try JSON.encodeData(.object(root)).write(to: file, options: [.atomic])
+            #endif
             ChatFiles.excludeFromBackup(file)
         } catch {}
     }

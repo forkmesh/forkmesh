@@ -465,7 +465,7 @@ test("header search filters the repo page's agent sessions", async ({ page }) =>
     let body = { ok: true };
     if (url.pathname === "/api/repositories") {
       body = { ok: true, repositories: REPOSITORIES };
-    } else if (url.pathname.endsWith("/agent-bots")) {
+    } else if (/\/agent-(bots|sessions)$/.test(url.pathname)) {
       agentReads.push(url.pathname);
       body = {
         ok: true,

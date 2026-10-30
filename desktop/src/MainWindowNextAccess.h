@@ -1,12 +1,18 @@
 #pragma once
 
+#include <QList>
 #include <QString>
 
 class MainWindow;
+class QHBoxLayout;
 class QMenu;
+class QPushButton;
 class QWidget;
 
 namespace forkmesh::ui {
+
+class SessionSidePanels;
+enum class LayoutMode;
 
 int railColumnWidth();
 
@@ -21,6 +27,15 @@ struct NextAccess {
     static void toggleRailExpanded(MainWindow &window);
     static QWidget *overlayParent(MainWindow &window);
     static QWidget *railToggleButton(MainWindow &window);
+    static QWidget *railResizeHandle(MainWindow &window);
+    static void setRailWidth(MainWindow &window, int width, bool remember);
+    static QWidget *buildSidebarHeader(MainWindow &window);
+    static QWidget *buildSidebarFooter(MainWindow &window);
+    static void refreshSidebarChrome(MainWindow &window);
+    static void installTopBar(MainWindow &window, QHBoxLayout *row,
+                              QWidget *history, QWidget *before,
+                              const QList<QPushButton *> &windowButtons);
+    static void showPingsPopover(MainWindow &window, QWidget *anchor);
 
     static void installWelcome(MainWindow &window);
     static bool maybeShowWelcome(MainWindow &window);
@@ -40,7 +55,14 @@ struct NextAccess {
 
     static void installWorkspace(MainWindow &window);
     static void syncWorkspace(MainWindow &window);
+    static void applyLayoutMode(MainWindow &window, LayoutMode mode);
     static void workspaceCommand(MainWindow &window, int command);
+    static void workspaceSessionStarted(MainWindow &window, int sessionId);
+    static void fillSessionSidePanels(MainWindow &window, SessionSidePanels *panels,
+                                      int sessionId);
+    static void feedSessionSidePanels(MainWindow &window, SessionSidePanels *panels,
+                                      int sessionId);
+    static void sessionStarted(MainWindow &window, int sessionId);
     static void fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which);
     static void placeWorkspaceComposer(MainWindow &window, bool overDetail);
 };

@@ -53,6 +53,9 @@ import com.forkmesh.nativeapp.ci.RepoRef
 import com.forkmesh.nativeapp.collab.CollabChip
 import com.forkmesh.nativeapp.collab.CollabTone
 import com.forkmesh.nativeapp.collab.badgeTone
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.navigation.ProfileLinks
+import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.ui.kit.ComposeIdentityBar
 import com.forkmesh.nativeapp.ui.kit.FmAlertDialog
 import com.forkmesh.nativeapp.ui.kit.FmCard
@@ -414,9 +417,11 @@ internal fun TimelineTile(
     body: String = "",
     onTap: (() -> Unit)? = null,
     repo: RepoRef? = null,
+    profile: String? = null,
 ) {
     val colors = Fm.colors
     val shape = RoundedCornerShape(FmRadius.lg)
+    val account = profile?.let(ProfileLinks::account)
     Row(
         modifier
             .padding(bottom = 10.dp)
@@ -433,7 +438,15 @@ internal fun TimelineTile(
             Text(title, fontWeight = FmType.emphasis)
             if (author.isNotEmpty()) {
                 Spacer(Modifier.height(2.dp))
-                Text(author, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                if (account != null) {
+                    Text(
+                        author,
+                        modifier = Modifier.clickable(onClickLabel = "View $author") { NavigationFeature.open(Route.Profile(account)) },
+                        style = Fm.text.bodySmall.copy(color = colors.accent),
+                    )
+                } else {
+                    Text(author, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                }
             }
             if (body.trim().isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))

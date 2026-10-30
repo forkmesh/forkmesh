@@ -4,9 +4,10 @@
 Repository API paths for a name this relay has never held are the open web's
 most-repeated question: crawlers, stale links and polling clients walk
 /api/repo/<owner>/<repo>/... forever, and each probe used to pay a blind index
-plus a D1 read before its 404. Only the CLOSED answer may be memoized — a
-public repository must never be served from a cached verdict, a publish must be
-visible to its own isolate immediately, and a database failure must not stick.
+plus a D1 read before its 404. The CLOSED answer is memoized on a short TTL; a
+public verdict is reused only while catalog_rev and this isolate's repositories
+writes stand still, a publish must be visible to its own isolate immediately,
+and a database failure must not stick.
 
 Same AST-extraction harness as the other entry.py unit tests: pull the two
 functions out and stub the D1/crypto/JS primitives they call.
@@ -31,12 +32,20 @@ class _Clock:
 
 
 class _Harness:
-    def __init__(self, rows=None, fail=False):
+    def __init__(self, rows=None, fail=False, rev=None):
         self.rows = rows or {}
         self.fail = fail
         self.reads = 0
         self.clock = _Clock()
         self.memo = {}
+        self.open_memo = {}
+        self.rev = rev
+        self.generations = {"repositories": 0}
+
+        async def catalog_rev_current(env, now=None):
+            if isinstance(self.rev, Exception):
+                raise self.rev
+            return self.rev
 
         async def ensure_schema(env):
             return None
@@ -73,6 +82,13 @@ class _Harness:
             "REPO_CLOSED_MEMO_TTL_MS": 5000,
             "REPO_CLOSED_MEMO_MAX": 4,
         }
+        if rev is not None:
+            self.ns.update({
+                "_REPO_OPEN_MEMO": self.open_memo,
+                "REPO_OPEN_MEMO_TTL_MS": 30000,
+                "_catalog_rev_current": catalog_rev_current,
+                "_D1_WATCH_GENERATIONS": self.generations,
+            })
         exec(compile(module, str(ENTRY), "exec"), self.ns)
 
     def is_private(self, owner="alice", repo="ghost"):
@@ -137,3 +153,46 @@ def test_the_memo_is_bounded():
     for index in range(6):
         h.is_private("alice", "ghost%d" % index)
     assert len(h.memo) <= 4
+
+
+def test_a_public_verdict_is_reused_while_the_catalog_stands_still():
+    h = _Harness(rows=_public_row("alice", "proj"), rev=7)
+    for _ in range(5):
+        assert h.is_private("alice", "proj") is False
+    assert h.reads == 1
+    h.clock.ms += 30001
+    assert h.is_private("alice", "proj") is False
+    assert h.reads == 2, "the verdict is re-read once the TTL lapses"
+
+
+def test_a_catalog_change_elsewhere_re_reads_the_public_verdict():
+    h = _Harness(rows=_public_row("alice", "proj"), rev=7)
+    assert h.is_private("alice", "proj") is False
+    h.rows["bi:alice/proj"] = {"is_private": 1, "data": {}}
+    h.rev = 8
+    assert h.is_private("alice", "proj") is True
+    assert h.reads == 2
+
+
+def test_a_local_repositories_write_re_reads_the_public_verdict():
+    h = _Harness(rows=_public_row("alice", "proj"), rev=7)
+    assert h.is_private("alice", "proj") is False
+    h.rows["bi:alice/proj"] = {"is_private": 1, "data": {}}
+    h.generations["repositories"] += 1
+    assert h.is_private("alice", "proj") is True
+    assert h.reads == 2
+
+
+def test_forgetting_drops_a_public_verdict_too():
+    h = _Harness(rows=_public_row("alice", "proj"), rev=7)
+    assert h.is_private("alice", "proj") is False
+    h.rows["bi:alice/proj"] = {"is_private": 1, "data": {}}
+    h.forget("alice", "proj")
+    assert h.is_private("alice", "proj") is True
+
+
+def test_an_unknown_catalog_rev_never_memoizes_a_public_verdict():
+    h = _Harness(rows=_public_row("alice", "proj"), rev=RuntimeError("down"))
+    for expected_reads in (1, 2):
+        assert h.is_private("alice", "proj") is False
+        assert h.reads == expected_reads

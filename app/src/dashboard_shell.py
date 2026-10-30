@@ -45,6 +45,7 @@ PLUGIN_NAV_MARKER = "<!-- forkmesh:plugin-navigation -->"
 PAGE_TOKEN_RE = re.compile(r"<!--#page ([a-z]+)-->")
 
 THEME_TOKEN_RE = re.compile(r"/\*#theme (dark|light)\*/")
+SEASON_TOKEN_RE = re.compile(r"/\*#season ([a-z]+) (dark|light)\*/")
 THEME_PATH = "dashboard/theme.json"
 
 # Root-relative first-party script and stylesheet references, with an optional
@@ -95,7 +96,7 @@ PAGES = {
         "route": "/dashboard/repos",
         "asset": "dashboard/repos/index.html",
         "title": "Repositories - ForkMesh",
-        "description": "Browse repositories mirrored by ForkMesh desktop nodes and open them live from their hosts.",
+        "description": "Browse repositories hosted and mirrored on ForkMesh and open them live from their hosts.",
     },
     "new-repo": {
         "view": "new-repo",
@@ -114,15 +115,6 @@ PAGES = {
         "asset": "dashboard/network/index.html",
         "title": "Network - ForkMesh",
         "description": "Relay health, connected nodes, and live network activity on ForkMesh.",
-    },
-    "chat": {
-        "view": "chat",
-        "section": "chat",
-        "nav": "chat",
-        "route": "/dashboard/chat",
-        "asset": "dashboard/chat/index.html",
-        "title": "Chat - ForkMesh",
-        "description": "ForkMesh public #general chat is controller-readable so ForkBot and MCP can participate.",
     },
     # The referral program keeps its own top-level public URL (/referral is
     # linked from the site header, the site footer and the privacy page) and is
@@ -293,7 +285,7 @@ PAGES = {
         "route": None,
         "asset": "dashboard/repo.html",
         "title": "Repository - ForkMesh",
-        "description": "Inspect a repository mirrored by ForkMesh desktop nodes: files, issues, pulls, and mirrors.",
+        "description": "Inspect a ForkMesh repository: files, issues, pulls, discussions, and mirrors.",
     },
 }
 
@@ -386,6 +378,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard.js",
     "dashboard-chat.js",
     "dashboard-plugin-host.js",
+    "season.js",
     # Shared site chrome, on nearly every marketing/auth page.
     "site-header.js",
     "site-footer.js",
@@ -401,6 +394,8 @@ CACHE_BUSTED_ASSETS = (
     "docs-page.js",
     "docs-page.css",
     # Per-page site bundles.
+    "market-package.js",
+    "market-package.css",
     "auth-mesh.js",
     "login.js",
     "signup.js",
@@ -420,6 +415,7 @@ CACHE_BUSTED_ASSETS = (
     "chat.css",
     # Away + custom status helper (chat page and dashboard).
     "user-status.js",
+    "username-autocomplete.js",
     "dashboard-composer.js",
     "dashboard-composer.css",
     # Per-page dashboard chunks (dashboard_bundle.LAZY_CHUNKS).
@@ -435,6 +431,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-achievements.js",
     "dashboard-page-notes.js",
     "dashboard-page-referrals.js",
+    "dashboard-page-repo-activity.js",
     "dashboard-page-tasks.js",
 )
 
@@ -552,10 +549,19 @@ def theme_declarations(theme, mode):
     return "\n        ".join(lines)
 
 
+def season_declarations(theme, season, mode):
+    colors = (theme.get("seasons") or {}).get(season) or {}
+    return "\n        ".join(
+        "--dashboard-%s-rgb: %s;" % (name, values[mode])
+        for name, values in colors.items())
+
+
 def apply_theme(shell, read):
     theme = json.loads(read(THEME_PATH))
-    return THEME_TOKEN_RE.sub(
+    shell = THEME_TOKEN_RE.sub(
         lambda m: theme_declarations(theme, m.group(1)), shell)
+    return SEASON_TOKEN_RE.sub(
+        lambda m: season_declarations(theme, m.group(1), m.group(2)), shell)
 
 
 def compose_page_from_reader(
@@ -573,15 +579,9 @@ def compose_page_from_reader(
         "title": meta["title"],
         "description": meta["description"],
         "section": meta["section"],
-        "chatscript": (
-            '<script src="/dashboard-chat.js?v=${version}" defer></script>'
-            if page_id == "chat" else ""
-        ),
         "pluginscript": plugin_script,
-        "geniescript": (
-            "" if page_id == "chat"
-            else '    <script src="/genie-spider.js?v=${version}" defer></script>'
-        ),
+        "geniescript":
+            '    <script src="/genie-spider.js?v=${version}" defer></script>',
         # The repository page starts its first reads from the top of <head>
         # (partials/repo-early-reads.html, docs/PERF_REPO_PAGE.md).
         "earlyreads": (

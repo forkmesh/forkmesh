@@ -51,7 +51,11 @@ the core nodes' app host, like the World.
   `kind: "office"`, named `office/<org>/<room>`, mapped in
   `org_office_channels`. Membership follows org membership and team gates and
   is resynced on every `/api/office/session` and after member or team
-  changes; removal rotates the room key. These channels cannot be managed
+  changes; removal rotates the room key. Deleting the organization runs
+  `org_office_chat.dissolve` before the roster goes: it removes the office
+  `chat_channels` rows with their members, reads, invites and webhooks, the
+  `org_office_channels` mapping, and closes the live rooms, so former members
+  keep no channel to read. These channels cannot be managed
   from `/chat` and do not count toward the channel limit. The panel uses the
   site's chat modules (transport, seal, moderation, retention, rich text) and
   the account event channel for unread counts. "Message nearby" and knocks
@@ -186,6 +190,15 @@ Counter package through same-origin `api.calories`.
 - Private rooms: everyone inside at full volume, nobody outside.
 - Meeting tables connect exactly the people seated, wherever they are.
 - Focus status blocking calls is a client courtesy, not access control.
+- Live quality widget (2026-10-22): while you talk with someone nearby, or
+  with your microphone on, a pill under the room name shows signal bars, a
+  voice waveform (you up, nearby people down) and the round-trip time; click
+  it for a minute of network and video charts. It is the call widget from
+  `app/public/call-quality-meter.js` (see `docs/app/chat-direct-calls.md`,
+  "Live quality widget"), bundled like the chat modules, reading every mesh
+  peer connection. A round button next to the pill turns red when the call has a
+  problem; pressing it explains the problem, the fixes and an AI prompt that
+  learns from earlier calls on this device ("Diagnostics" in the same page).
 
 ## Status lines
 
@@ -272,6 +285,12 @@ Extras a client may set (validated in `EXTRAS`): `status`, `task`, `meeting`,
   account replaces the first.
 - **Revocation:** each socket rechecks session, account status, membership
   and teams every 30 s and is closed with 4003 when any lapses.
+- **Tasks:** `/api/tasks` (`world/src/world_office_tasks.py`) answers only
+  organization insiders (owner, admin, maintainer, member, auditor); a guest
+  gets the same 403 `org_member_required` as an outsider, and an auditor may
+  only read (`read_only_role` on every other method). Why: the board holds
+  organization-private work, including the `security` department tasks filed
+  from private vulnerability reports.
 - **Limits:** frames over 16 KiB close the socket (1009); more than 120
   frames in a burst (60/s refill) closes it (1008). Per-action token buckets
   for movement, signalling, extras, chat, whiteboard ops and cursors. At most
@@ -364,7 +383,15 @@ Office chat bundles `app/public/chat-seal.js` and the ML-KEM-768 port
 `app/public/chat-mlkem.js`, about 8 KB gzip more than the v2 seal, which took
 the bundle from just under 130 KB to about 137 KB. Chat protocol v4
 (2026-10-16, the per-message ratchet for DMs, its Web Lock and the opened-frame
-cache) adds about 3 KB gzip, so the budget is 144 KB.
+cache) adds about 3 KB gzip, so the budget is 144 KB. The chat relay hardening
+(2026-10-22, [../app/chat-relay-hardening.md](../app/chat-relay-hardening.md))
+adds `app/public/chat-frame-auth.js` (frame authentication, node-owner checks,
+bot "via" labels and the guest-name hash), about 1 KB gzip, so the budget is
+148 KB. The live quality widget (2026-10-22, `app/public/call-quality-meter.js`)
+adds about 5.5 KB gzip, taking the bundle to about 150 KB, so the budget is
+152 KB. Its diagnostics button, panel and self-improving prompt (2026-10-22)
+add about 5 KB gzip, taking the bundle to about 155 KB, so the budget is
+156 KB.
 
 ## Operations
 

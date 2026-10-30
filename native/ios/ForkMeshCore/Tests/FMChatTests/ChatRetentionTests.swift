@@ -32,9 +32,13 @@ final class ChatRetentionCodecTests: XCTestCase {
             [
                 "#general": [message("g-old", "#general", base - 2 * day), message("g-new", "#general", base - 2 * hour)],
                 "#fast": [message("f-old", "#fast", base - 2 * hour), message("f-new", "#fast", base - 60_000)],
-                "@peer": [message("d-edge", "@peer", base - day), message("d-new", "@peer", base - day + 1)],
+                "direct:\(String(repeating: "a", count: 32))": [
+                    message("d-edge", "direct:\(String(repeating: "a", count: 32))", base - day),
+                    message("d-new", "direct:\(String(repeating: "a", count: 32))", base - day + 1),
+                ],
+                "@peer": [message("p-new", "@peer", base - 60_000)],
             ], retention: retention, now: now)
-        XCTAssertEqual(Set(kept.map(\.id)), ["g-new", "f-new", "d-new"])
+        XCTAssertEqual(Set(kept.map(\.id)), ["g-new", "f-new", "d-new"], "a relay @peer conversation is never saved")
         XCTAssertEqual(ChatHistoryCodec.bounded(["#general": [message("g-old", "#general", 0)]]).count, 1)
     }
 }
@@ -51,8 +55,8 @@ final class ChatRetentionHubTests: XCTestCase {
         let (hub, h, _) = try await hub()
         hub.applyRetention(ChatRetention(defaultMs: day))
         let now = Date().epochMillis
-        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "stale"], id: "stale-1", ts: now - 2 * day))
-        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "fresh"], id: "fresh-1", ts: now - 2 * hour))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "stale"], id: "stale-1", ts: now - 2 * day))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "fresh"], id: "fresh-1", ts: now - 2 * hour))
         let arrived = await waitUntil { h.relay.messages("#general").contains { $0.id == "fresh-1" } }
         XCTAssertTrue(arrived)
         XCTAssertEqual(hub.rows.map(\.message.id), ["fresh-1"])
@@ -62,10 +66,10 @@ final class ChatRetentionHubTests: XCTestCase {
     func testAShorterPreferencePrunesAtOnce() async throws {
         let (hub, h, _) = try await hub()
         let now = Date().epochMillis
-        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "root"], id: "root-1", ts: now - 2 * hour))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "root"], id: "root-1", ts: now - 2 * hour))
         try await h.sendProtected(
             peerFrame("thread-reply", ["channel": "#general", "rootId": "root-1", "text": "reply"], id: "reply-1", ts: now - 2 * hour))
-        try h.sendPlain(peerFrame("chat", ["channel": "#random", "text": "other"], id: "other-1", ts: now - 2 * hour))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#random", "text": "other"], id: "other-1", ts: now - 2 * hour))
         let arrived = await waitUntil {
             hub.rows.count == 1 && hub.extras.replies(to: "root-1").count == 1 && h.relay.messages("#random").count == 1
         }
@@ -138,17 +142,19 @@ final class ChatRetentionHubTests: XCTestCase {
         let room = "chat-channel:\(roomId):v1"
         let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "office-pass") }.value
         let now = Date().epochMillis
-        let older = try crypto.encrypt(
-            ["type": "chat", "id": "o-1", "senderId": "peer", "sender": "Pat", "text": "older", "ts": .int(now - 2 * hour)])
-        let recent = try crypto.encrypt(
-            ["type": "chat", "id": "o-2", "senderId": "peer", "sender": "Pat", "text": "recent", "ts": .int(now - 60_000)])
+        let store = InMemorySecureStore()
+        let me = try Identity.fromSeed(Ed25519.generateSeed())
+        let peer = try OfficePeer(room: room, crypto: crypto)
+        try peer.learnPhone(store: store, identity: me)
+        let older = try peer.envelope(["type": "chat", "id": "o-1", "sender": "Pat", "text": "older", "ts": .int(now - 2 * hour)])
+        let recent = try peer.envelope(["type": "chat", "id": "o-2", "sender": "Pat", "text": "recent", "ts": .int(now - 60_000)])
         api.replies["GET /api/chat/channels/\(roomId)/history"] = [
             "room": .string(room), "passphrase": "office-pass",
-            "messages": [["ts": .int(now - 2 * hour), "body": .string(JSON.encode(older))], ["ts": .int(now - 60_000), "body": .string(JSON.encode(recent))]],
+            "messages": .array(try peer.history([(now - 2 * hour, older), (now - 60_000, recent)])),
         ]
         let office = OfficeChannelService(
-            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
-            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+            api: api, connector: FakeWebSocketConnector(), secureStore: store,
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { me.nodeId }, displayName: { "Me" }, nodeIdentity: me)
         hub.office = office
         await office.refresh()
         XCTAssertEqual(hub.retentionKey("#office/lobby"), "channel:\(roomId)")

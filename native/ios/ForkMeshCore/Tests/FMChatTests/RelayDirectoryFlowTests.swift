@@ -832,6 +832,51 @@ final class AddProjectModelTests: XCTestCase {
     }
 
     @MainActor
+    func testAnInstanceAlreadyInAProjectOffersThatProjectInsteadOfASecond() async throws {
+        let relays = directory()
+        let tea = try XCTUnwrap(relays.addNamed("Tea"))
+        XCTAssertNotNil(relays.attach(tea.id, to: try XCTUnwrap(RelayProfile.tryParse("relay.acme.dev"))))
+        let seen = Counter()
+        let model = AddProjectModel(relays: relays, probe: probe { request in
+            seen.hit(request.url)
+            return versionResponse()
+        })
+        model.name = "Coffee"
+        model.host = "https://relay.acme.dev/"
+        await model.check()
+        XCTAssertEqual(seen.count, 0)
+        XCTAssertEqual(model.result?.status, .duplicate)
+        XCTAssertEqual(
+            model.result?.message, "That instance already belongs to the project Tea. An instance can only be in one project.")
+        XCTAssertEqual(model.known?.id, tea.id)
+        XCTAssertEqual(model.createLabel, "Open Tea")
+        let count = relays.relays.count
+        XCTAssertEqual(model.create()?.id, tea.id)
+        XCTAssertEqual(relays.relays.count, count)
+        XCTAssertEqual(directoryModel(relays).added(InstanceDirectoryEntry(id: "relay.acme.dev", name: "Acme"))?.id, tea.id)
+    }
+
+    @MainActor
+    func testAttachingAnInstanceOwnedByAnotherProjectIsRefused() async throws {
+        let device = ChatDevice()
+        let relays = device.settings.relays
+        let tea = try XCTUnwrap(relays.addNamed("Tea"))
+        let coffee = try XCTUnwrap(relays.addNamed("Coffee"))
+        let instance = try XCTUnwrap(RelayProfile.tryParse("relay.acme.dev"))
+        XCTAssertNotNil(relays.attach(tea.id, to: instance))
+        let api = TracingApi()
+        let switcher = RelaySwitchController(
+            settings: device.settings,
+            auth: AuthService.create(settings: device.settings, identity: device.identity, http: FakeHTTPClient { _ in HTTPResponse(status: 500) }),
+            api: api, relay: FakeRelaySocket(api, connects: true))
+        let result = await switcher.attach(coffee.id, to: instance)
+        XCTAssertFalse(result.ok)
+        XCTAssertEqual(result.error, "relay.acme.dev already belongs to the project Tea. An instance can only be in one project.")
+        XCTAssertFalse(try XCTUnwrap(relays.byId(coffee.id)).hasInstance)
+        XCTAssertTrue(api.trace.isEmpty)
+    }
+
+    @MainActor
     func testAnInstanceIsCheckedBeforeTheProjectIsCreated() async throws {
         let relays = directory()
         let model = AddProjectModel(relays: relays, probe: probe { _ in versionResponse() })
@@ -861,6 +906,88 @@ final class AddProjectModelTests: XCTestCase {
         XCTAssertEqual(model.name, "Acme Code")
         let created = try XCTUnwrap(model.create())
         XCTAssertEqual(created.label, "Acme Code")
+    }
+
+    private let listing: JSONValue = [
+        "ok": true,
+        "instances": [
+            [
+                "id": "a", "name": "Acme Code", "url": "https://relay.acme.dev/", "status": "online", "listed": true,
+                "logo": "/api/start/instances/0123456789abcdef0123456789abcdef/logo?v=7",
+            ],
+            ["id": "b", "name": "Hidden", "url": "https://hidden.dev/", "listed": false],
+            ["id": "c", "name": "Plain", "url": "http://plain.dev/", "listed": true],
+            ["id": "d", "name": "Odd logo", "url": "https://odd.dev", "listed": true, "logo": "https://evil.dev/x.png"],
+            ["id": "e", "name": "ForkMesh copy", "url": "https://app.forkmesh.com/", "listed": true],
+        ],
+    ]
+
+    @MainActor
+    func directoryModel(_ relays: RelayDirectory, branded: Bool = false) -> AddProjectModel {
+        let http = FakeHTTPClient { [listing] request in
+            if request.url.path == "/api/start/instances" { return HTTPResponse(status: 200, json: listing) }
+            if request.url.path == "/api/instance" {
+                return versionResponse(
+                    body: ["ok": true, "name": "Acme Code", "branded": .bool(branded), "logo": "/instance-logo.png"])
+            }
+            return versionResponse()
+        }
+        return AddProjectModel(relays: relays, probe: RelayProbe(http: http), directory: InstanceDirectory(http: http))
+    }
+
+    @MainActor
+    func testTheDirectoryListsListedHttpsInstancesAfterForkMesh() async throws {
+        let model = directoryModel(directory())
+        await model.loadInstances()
+        XCTAssertEqual(model.instances.map(\.id), ["app.forkmesh.com", "relay.acme.dev", "odd.dev"])
+        XCTAssertEqual(
+            model.instances[1].logoUrl,
+            "https://app.forkmesh.com/api/start/instances/0123456789abcdef0123456789abcdef/logo?v=7")
+        XCTAssertTrue(model.instances[1].online)
+        XCTAssertEqual(model.instances[2].logoUrl, "")
+        XCTAssertFalse(model.instances[2].online)
+    }
+
+    @MainActor
+    func testAnUnreachableDirectoryStillOffersForkMesh() async throws {
+        let http = FakeHTTPClient { _ in HTTPResponse(status: 503, text: "down") }
+        let model = AddProjectModel(
+            relays: directory(), probe: RelayProbe(http: http), directory: InstanceDirectory(http: http))
+        await model.loadInstances()
+        XCTAssertEqual(model.instances, [InstanceDirectory.flagship])
+    }
+
+    @MainActor
+    func testQuickAddChecksTheInstanceAndOffersItsLogo() async throws {
+        let relays = directory()
+        let model = directoryModel(relays)
+        await model.loadInstances()
+        XCTAssertEqual(model.logoCandidates, [])
+        let acme = try XCTUnwrap(model.instances.first { $0.id == "relay.acme.dev" })
+        await model.quickAdd(acme)
+        XCTAssertEqual(model.host, "relay.acme.dev")
+        XCTAssertEqual(model.name, "Acme Code")
+        XCTAssertTrue(model.canCreate)
+        XCTAssertEqual(
+            model.logoCandidates,
+            [
+                "https://relay.acme.dev/instance-logo.png",
+                "https://app.forkmesh.com/api/start/instances/0123456789abcdef0123456789abcdef/logo?v=7",
+                "https://relay.acme.dev/favicon.ico", "https://relay.acme.dev/favicon/favicon.ico",
+            ])
+        let created = try XCTUnwrap(model.create(logo: "acme.png"))
+        XCTAssertEqual(created.id, "relay.acme.dev")
+        XCTAssertNotNil(model.added(acme))
+        model.host = "elsewhere.dev"
+        XCTAssertEqual(model.logoCandidates, [])
+    }
+
+    @MainActor
+    func testABrandedInstanceSkipsTheStockFavicons() async throws {
+        let model = directoryModel(directory(), branded: true)
+        model.host = "relay.acme.dev"
+        await model.check()
+        XCTAssertEqual(model.logoCandidates, ["https://relay.acme.dev/instance-logo.png"])
     }
 }
 

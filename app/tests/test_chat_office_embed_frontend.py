@@ -11,7 +11,8 @@ CHAT = (ROOT / "public" / "chat.js").read_text(encoding="utf-8")
 
 
 def test_office_embed_is_selected_before_first_paint():
-    assert 'dataset.chatEmbed = "office"' in HTML
+    assert 'if (chatEmbed === "office" || chatEmbed === "world")' in HTML
+    assert "document.documentElement.dataset.chatEmbed = chatEmbed;" in HTML
     assert 'chatQuery.get("embed") === "office"' in CHAT
     assert 'html[data-chat-embed="office"]' in CSS
 
@@ -82,3 +83,10 @@ def test_office_embed_has_actionable_session_and_relay_failures():
         CHAT.index("async function fetchRoomAccess(")
     ]
     assert 'response.status === 401 ? "auth"' in request
+
+
+def test_world_embed_shows_one_conversation_without_the_room_list():
+    for selector in (".chat-site-header", ".chat-rooms-pane", ".chat-people-pane"):
+        assert f'html[data-chat-embed="world"] {selector}' in HTML
+    assert 'html[data-chat-embed="world"] .chat-panes' in HTML
+    assert "const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;" in CHAT

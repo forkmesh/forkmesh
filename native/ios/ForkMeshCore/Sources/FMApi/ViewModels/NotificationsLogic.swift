@@ -20,6 +20,7 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "pull_submitted": return "call_merge_rounded"
     case "issue_assigned": return "assignment_ind_outlined"
     case "repo_shared": return "folder_special_outlined"
+    case "security_advisory": return "gpp_maybe_outlined"
     case "bounty_funded", "bounty_paid", "tip_sent": return "payments_outlined"
     case "release_published": return "new_releases_outlined"
     case "host_online": return "cloud_done_outlined"
@@ -47,6 +48,8 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "hackathon_reward": return "card_giftcard_outlined"
     case "badge": return "emoji_events_outlined"
     case "package_review": return "rate_review_outlined"
+    case "reaction": return "add_reaction_outlined"
+    case "pull_attention": return "rate_review_outlined"
     default: return notificationLineIcon
     }
 }
@@ -59,10 +62,11 @@ public func notificationToneForKind(_ kind: String) -> PingTone {
     switch kind.dartTrimmed.lowercased() {
     case "error", "error_group", "operational_alert", "security_alert", "local_failure": return .danger
     case "agent-done", "agent_done", "host_online", "repository_hosted", "badge": return .success
-    case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval": return .warning
+    case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval", "pull_attention": return .warning
     case "mention", "subscribed", "repo", "repo_shared", "repo_activity", "code_push", "pending_inbox",
          "mirror", "mirror_request", "calendar_invitation", "calendar_reminder", "calendar_rsvp",
-         "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review":
+         "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review",
+         "reaction":
         return .info
     case "action", "organization_task_started", "organization_task_activity", "organization_task_update",
          "pull", "pull_submitted", "review_requested", "pull_review_requested", "bounty_funded", "bounty_paid",
@@ -427,6 +431,7 @@ public func pingOpenLabel(_ target: NotificationTapTarget) -> String? {
 
 public enum PingDetailCopy {
     public static let title = "Ping"
+    public static let backToList = "All pings"
     public static let deleteLabel = "Delete ping"
     public static let deleteTitle = "Delete this ping?"
     public static let deleteBody = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

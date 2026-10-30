@@ -55,7 +55,7 @@ def test_chat_backend_starts_with_user_display_name_not_node_name():
     assert "QString chatDisplayName() const;" in header
     assert "QString nodeOwnerDisplayName() const;" in header
     assert "void updateChatIdentity();" in header
-    assert "new ServerNode(chatDisplayName(), machineNodeName()," in setup
+    assert "new ServerNode(chatDisplayName(), sharedNodeName()," in setup
     assert "nodeOwnerDisplayName()," in setup
     assert "m_profileIdentity.publicKey()" in setup
 
@@ -70,7 +70,7 @@ def test_chat_identity_pushes_user_name_and_user_avatar():
 
     assert "const QString name = chatDisplayName();" in body
     assert "m_backend->setUserName(name);" in body
-    assert "m_backend->setNodeIdentity(machineNodeName(), nodeOwnerDisplayName());" in body
+    assert "m_backend->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());" in body
     assert "const QByteArray avatar = effectiveUserAvatar();" in body
     assert "m_backend->setAvatar(avatar);" in body
     assert "effectiveAvatar()" not in body
@@ -187,9 +187,16 @@ def test_chat_mentions_highlight_and_open_user_profiles():
     assert mention_profiles_body.index("member : directory") < (
         mention_profiles_body.index("member : roster")
     )
+    open_profile_body = _body(
+        messages,
+        "bool MainWindow::openUserProfile",
+        "void MainWindow::showChatSenderProfile",
+    )
     assert "connect(row, &MessageRow::mentionClicked" in create_row_body
-    assert "chatMentionProfileUrl" in create_row_body
-    assert "QDesktopServices::openUrl(url)" in create_row_body
+    assert "openUserProfile(account, name)" in create_row_body
+    assert "m_chatDirectoryUsers.contains(key)" in open_profile_body
+    assert "chatMentionProfileUrl" in open_profile_body
+    assert "QDesktopServices::openUrl(url)" in open_profile_body
     assert 'url.setPath(QStringLiteral("/@")' in messages
     assert 'QStringLiteral("app.forkmesh.com")' in messages
     assert 'QStringLiteral("forkmesh.com")' in messages
@@ -221,7 +228,8 @@ def test_chat_composer_stays_visible_and_rooms_scroll_independently():
 
     for list_name in ("m_channelList", "m_dmList"):
         assert f"{list_name}->setMinimumHeight(0);" in body
-        assert f"{list_name}->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);" in body
+        assert f"{list_name}->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);" in body
+        assert f"fitToRows({list_name});" in body
         assert f"{list_name}->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);" in body
 
     assert "m_messageScroll->setMinimumHeight(0);" in body
@@ -275,7 +283,13 @@ def test_desktop_composer_bridges_forkbot_like_the_web_chat():
     chat_backend = (QT_SRC / "ChatBackend.h").read_text(encoding="utf-8")
 
     assert "void maybeAskForkbot(const QString &conversation, const QString &text," in header
-    assert "maybeAskForkbot(m_currentConversation, text);" in messages
+    assert "sendChatText(m_currentConversation, text)" in messages
+    send_text = _body(
+        messages,
+        "bool MainWindow::sendChatText(",
+        "void MainWindow::insertEmojiIntoComposer(",
+    )
+    assert "maybeAskForkbot(conversation, text);" in send_text
     assert "maybeAskForkbot(m_currentConversation, text, m_activeChatThreadRootId);" in messages
     bridge = _body(
         messages,

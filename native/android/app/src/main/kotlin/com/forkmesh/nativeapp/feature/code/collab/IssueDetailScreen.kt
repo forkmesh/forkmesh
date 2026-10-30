@@ -410,6 +410,7 @@ private fun IssueTimelineView(events: List<IssueEvent>, mentions: List<IssueMent
                     author = entry.event.displayAuthor,
                     body = entry.event.body,
                     repo = repo,
+                    profile = entry.event.authorName,
                 )
                 is IssueTimelineEntry.Mention -> TimelineTile(
                     icon = "link",

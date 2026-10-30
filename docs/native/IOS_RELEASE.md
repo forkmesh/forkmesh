@@ -12,10 +12,15 @@ the app must follow. Building on the office Mac instead of Codemagic is in
 `CURRENT_PROJECT_VERSION` for every target (an extension or watch app whose
 version differs from the app's is rejected at upload).
 
-- `ios-native-release` builds with one past the highest build number App Store
-  Connect holds for the app, or the xcconfig's number if higher, written into
-  its clone only. `asc_bundle_ids.py latest-build` reads the highest numeric
-  `version` among the 200 most recent builds.
+- Build numbers count per version and start at 0: `ios-native-release` builds
+  with one past the highest build App Store Connect holds for the
+  `MARKETING_VERSION` it ships (after any rename to a version the store still
+  accepts), 0 when that version has none, or the xcconfig's number if higher,
+  written into its clone only. `asc_bundle_ids.py next-build VERSION` reads the
+  builds filtered by `preReleaseVersion.version`. Apple only needs a build
+  number to be unique within its version, and lookups for TestFlight and App
+  Review already filter by version and build. Since 1.5.0 (2026-10-28); before
+  that the number ran on across versions (1.4.1 ended at 21).
 - `ios-native-adhoc` also goes one past the last ad hoc build, counted on the
   build Mac in `~/ci/ios-adhoc-build` (`FORKMESH_ADHOC_BUILD_FILE`).
 - A failed upload spends its build number.
@@ -89,8 +94,11 @@ project files on Linux so store mistakes fail in `swift test`:
   FMCrypto, FMPush).
 - `APNS_BUNDLE_ID` in `app/src/apns.py` matches the app's bundle id.
 - `ForkMesh-Info.plist` answers `ITSAppUsesNonExemptEncryption`.
-- On iPhone the app is portrait only; the `~ipad` list keeps all four
-  orientations, which iPad multitasking requires.
+- On iPhone, `UISupportedInterfaceOrientations` lists portrait and both
+  landscapes. iPhone Duo scales a portrait-only app on its inner display, so
+  the app must declare landscape there. While it runs, `FmOrientationLock`
+  still keeps every other iPhone in portrait (NAVIGATION.md §7.1). The `~ipad`
+  list keeps all four orientations, which iPad multitasking requires.
 - No `PrivacyInfo.xcprivacy` is named in the project file (synchronized groups
   include them). Each manifest declares every required-reason API category its
   bundle's sources use (for example DiskSpace for `LocalModelStore`). The share,
@@ -273,6 +281,14 @@ python3 tools/asc_bundle_ids.py has-watch   # exit 0 when an enabled watch is re
 An ad hoc profile covers only devices registered when it is minted, so build
 again afterwards. A watch lists as platform IOS, class APPLE_WATCH.
 
+When Apple publishes a new Program License Agreement, every App Store Connect
+call answers 403 `FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` until the team's Account
+Holder accepts it at https://developer.apple.com/account, and no build can get
+past "Register the bundle ids". The API key's role can't accept it. Apple
+puts the answer on several lines, and the deploy summary shows only the first,
+so `asc_bundle_ids.py` turns this refusal into one line that says what to do
+and names the Account Holder (`tools/test_asc_bundle_ids_errors.py`).
+
 ## App icon
 
 `tools/render_logo.py` draws the app icon from `logo.svg` into every file in
@@ -283,7 +299,24 @@ icon). Run it after changing `logo.svg` (needs pycairo and Pillow);
 `Logo.imageset` holds `logo.svg` with `preserves-vector-representation`.
 
 The same run writes the Android launcher icons (`mipmap-*/ic_launcher.png`,
-`drawable-nodpi/fm_logo.png`). To check the committed icons are current, run
+`drawable-nodpi/fm_logo.png`) and the Android adaptive icon layers
+(`mipmap-*/ic_launcher_{foreground,monochrome}.png`, used by
+`mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml`);
+`--android` writes only those. The adaptive background is
+`@android:color/transparent` and the legacy `ic_launcher.png` is a transparent
+cutout, so the launcher shows the hexagon itself rather than a rounded tile
+behind it. The foreground is the cube at 86% of the 72 dp visible area, which
+keeps the hexagon inside the 66 dp safe circle every launcher mask leaves
+uncut; the monochrome layer keeps only the white strokes for themed icons
+(the system draws the themed backing). Until 2026-10-20 Android had only the
+square PNG, which launchers shrink into a white circle with a border; from
+then until 2026-10-21 the adaptive icon carried the iOS tile gradient as its
+background. The iOS and watch icons keep the tile: Apple rejects an app icon
+with an alpha channel and masks every icon to its own shape, so the hexagon
+cannot stand alone there. The fediverse avatar
+(`www/public/assets/fediverse-avatar.png`) is a transparent cutout too; the
+`apple-touch-icon.png` keeps the tile because iOS fills a transparent one
+with black. To check the committed icons are current, run
 the script and confirm `git status` shows no change. The phone and watch
 targets are the only app icon sets (`ASSETCATALOG_COMPILER_APPICON_NAME =
 AppIcon`); widgets, extensions and `codemagic.yaml` set no icon of their own,

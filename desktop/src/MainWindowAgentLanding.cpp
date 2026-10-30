@@ -631,7 +631,7 @@ bool MainWindow::postOrgTaskForSession(const AgentSession &session,
             flashMessage(QStringLiteral("Created an organization task for agent "
                                         "session #%1.")
                              .arg(sessionId));
-            if (m_organizationTasksLoaded)
+            if (m_organizationTaskStore && m_organizationTaskStore->loaded())
                 refreshOrganizationTasks();
         }
     });
@@ -1138,6 +1138,7 @@ QList<int> MainWindow::releaseTrackedWorktree(const QString &worktreePath)
         }
         released.append(it.key());
         m_sessionWorkdirCache.remove(it.key()); // about to vanish — don't cache it
+        retireStreamCwd(it.value());
         it = m_streamWorktree.erase(it);
     }
     return released;
@@ -1159,6 +1160,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
     const QString wtPath = m_streamWorktree.take(sessionId);
     if (wtPath.isEmpty())
         return;
+    retireStreamCwd(wtPath);
     // A run started without a worktree works in the repository's own checkout,
     // whose .git is a directory rather than a worktree's pointer file. That
     // folder is the operator's, never ours to remove.
@@ -1193,6 +1195,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
                       .arg(wtPath));
         return;
     }
+    endOutsideAgentsIn(wtPath);
     QThread *worker = QThread::create([wtPath, repoPath, agentRoot]() {
         if (!repoPath.isEmpty()) {
             QProcess::execute(QStringLiteral("git"),
@@ -1201,7 +1204,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
         }
         forkmesh::safedelete::removeTree(wtPath, agentRoot, nullptr,
                                          forkmesh::safedelete::Allow::OwnWorktree);
-        forkmesh::agentscratch::remove(forkmesh::agentscratch::folderFor(wtPath));
+        forkmesh::agentscratch::removeAll(wtPath);
         forkmesh::agentscratch::sweepOrphans(agentRoot);
         if (!repoPath.isEmpty()) {
             QProcess::execute(QStringLiteral("git"),

@@ -68,6 +68,33 @@ public enum ReactionCatalog {
     }
 }
 
+public struct StickerEntry: Equatable, Sendable {
+    public let slug: String
+    public let text: String
+    public let rgb: UInt32
+    public let tilt: Double
+    public let fallback: String
+}
+
+public enum StickerCatalog {
+    public static let field = "sticker"
+
+    public static let entries: [StickerEntry] = [
+        StickerEntry(slug: "lgtm", text: "LGTM", rgb: 0x8250DF, tilt: -6, fallback: "\u{2705}"),
+        StickerEntry(slug: "ship-it", text: "Ship it", rgb: 0x0969DA, tilt: 5, fallback: "\u{1F680}"),
+        StickerEntry(slug: "nice", text: "Nice!", rgb: 0xBF3989, tilt: -4, fallback: "\u{1F44D}"),
+        StickerEntry(slug: "thanks", text: "Thanks!", rgb: 0xBC4C00, tilt: 6, fallback: "\u{1F64F}"),
+        StickerEntry(slug: "on-it", text: "On it", rgb: 0x57606A, tilt: -5, fallback: "\u{1F440}"),
+        StickerEntry(slug: "wow", text: "Wow!", rgb: 0xCF222E, tilt: 4, fallback: "\u{1F62E}"),
+        StickerEntry(slug: "love-it", text: "Love it", rgb: 0xD6336C, tilt: -3, fallback: "\u{2764}\u{FE0F}"),
+        StickerEntry(slug: "party", text: "Party!", rgb: 0x9A6700, tilt: 7, fallback: "\u{1F389}"),
+    ]
+
+    public static func entry(_ slug: String) -> StickerEntry? { entries.first { $0.slug == slug } }
+
+    public static func rank(_ slug: String) -> Int { entries.firstIndex { $0.slug == slug } ?? entries.count }
+}
+
 @MainActor
 public protocol ChatFrameSink: AnyObject {
     var selfId: String { get }
@@ -82,10 +109,61 @@ extension RelayService: ChatFrameSink {}
 public enum ChatFrameText {
     public static let botField = "bot"
 
+    public static let integrationPrefix = "app:"
+    public static let integrationName = "Integration"
+    static let personFields = [
+        "ownerUser", "owner", "acct", "accountKind", "private", "to", botField, "nodeName", "userStatus", "timeZone", "dg",
+        "solana", "reactorId",
+    ]
+
     public static func shownSender(_ frame: JSONObject) -> String {
+        botName(frame) ?? frame["senderId"]?.text ?? ""
+    }
+
+    public static func botName(_ frame: JSONObject) -> String? {
         let bot = (frame[botField]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !bot.isEmpty { return String(bot.prefix(64)) }
-        return frame["senderId"]?.text ?? ""
+        if bot.isEmpty || bot.hasPrefix(integrationPrefix) || isNodeKey(bot) { return nil }
+        return String(bot.prefix(64))
+    }
+
+    public static let botVia = " \u{00B7} via "
+
+    public static func asBotLine(_ frame: JSONObject, via: String) -> JSONObject {
+        guard let bot = botName(frame) else { return frame }
+        let through = via.trimmingCharacters(in: .whitespacesAndNewlines)
+        var out = frame
+        out["sender"] = .string(String((bot + botVia + (through.isEmpty ? "Guest" : through)).prefix(ChatLimits.maxDisplayNameChars * 3)))
+        return out
+    }
+
+    public static func isNodeKey(_ value: String) -> Bool {
+        value.count == 43 && (try? B64.decodeUnpadded(value))?.count == 32
+    }
+
+    public static func isIntegration(_ senderId: String) -> Bool { senderId.hasPrefix(integrationPrefix) }
+
+    public static func integrationFrame(_ frame: JSONObject) -> JSONObject? {
+        guard (frame["type"]?.text ?? "") == "chat", isRelayAllowed(frame) else { return nil }
+        let channel = frame["channel"]?.text ?? ""
+        if !channel.isEmpty && !channel.hasPrefix("#") { return nil }
+        var name = ""
+        for key in [botField, "sender"] where name.isEmpty {
+            name = String((frame[key]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+        }
+        if name.isEmpty || name.hasPrefix(integrationPrefix) { name = integrationName }
+        var out = frame
+        for key in personFields { out.removeValue(forKey: key) }
+        out["senderId"] = .string(integrationPrefix + name)
+        out["sender"] = .string(name)
+        return out
+    }
+
+    public static func isRelayAllowed(_ frame: JSONObject) -> Bool {
+        let type = frame["type"]?.text ?? ""
+        if ["dm", "invite", "cove-invite", "cove-open"].contains(type) { return false }
+        if frame["private"]?.isTrue == true { return false }
+        for key in ["conversation", "channel"] where (frame[key]?.text ?? "").hasPrefix("@") { return false }
+        return true
     }
     public static func bounded(_ value: JSONValue?, _ max: Int) -> String {
         String((value?.text ?? "").prefix(max))

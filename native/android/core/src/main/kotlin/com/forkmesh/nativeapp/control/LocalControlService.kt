@@ -86,6 +86,9 @@ data class LocalAgentRow(
     val prompt: String = "",
     val stoppable: Boolean = false,
     val unread: Boolean? = null,
+    val backgroundTasks: Int = 0,
+    val tokensIn: Int = maxOf(session.promptTokens, 0),
+    val tokensOut: Int = maxOf(session.completionTokens, 0),
 ) {
     val repoLabel: String get() = if (owner.isEmpty()) name else "$owner/$name"
 
@@ -100,14 +103,20 @@ data class LocalAgentRow(
     val canContinue: Boolean get() = !session.isActive && !session.merged
 
     companion object {
-        fun fromJson(json: JsonMap): LocalAgentRow = LocalAgentRow(
-            owner = jsonText(json["repositoryOwner"]),
-            name = jsonText(json["repositoryName"]),
-            session = AgentSession.fromJson(json),
-            prompt = jsonText(json["prompt"]),
-            stoppable = json["stoppable"] == true,
-            unread = json["unread"] as? Boolean,
-        )
+        fun fromJson(json: JsonMap): LocalAgentRow {
+            val session = AgentSession.fromJson(json)
+            return LocalAgentRow(
+                owner = jsonText(json["repositoryOwner"]),
+                name = jsonText(json["repositoryName"]),
+                session = session,
+                prompt = jsonText(json["prompt"]),
+                stoppable = json["stoppable"] == true,
+                unread = json["unread"] as? Boolean,
+                backgroundTasks = maxOf((json["backgroundTasks"] as? Number)?.toInt() ?: 0, 0),
+                tokensIn = maxOf((json["tokensIn"] as? Number)?.toInt() ?: session.promptTokens, 0),
+                tokensOut = maxOf((json["tokensOut"] as? Number)?.toInt() ?: session.completionTokens, 0),
+            )
+        }
     }
 }
 

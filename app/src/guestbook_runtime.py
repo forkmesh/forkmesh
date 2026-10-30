@@ -65,7 +65,7 @@ class _AgentGuestbookRuntime:
         # Production always supplies CF-Connecting-IP. Keep stripped-proxy and
         # local/self-host traffic in one conservative bucket instead of making
         # missing attribution an unlimited bypass.
-        subject = address[:64] or "unattributed"
+        subject = _client_source_bucket(address)[:64] or "unattributed"
         visitor_bi = await blind_index(
             self.env, str(scope) + "\n" + subject)
         now = int(Date.now())

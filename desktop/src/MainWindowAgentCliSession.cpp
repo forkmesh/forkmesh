@@ -21,6 +21,7 @@
 #include "AgentRuntimeRegistry.h"
 #include "AgentResumeIdentity.h"
 #include "AgentWorktree.h"
+#include "WorktreeInclude.h"
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
@@ -29,6 +30,8 @@
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QFutureWatcher>
+#include <QtConcurrent>
 #include <QComboBox>
 #include <QDebug>
 #include <QScrollArea>
@@ -70,8 +73,22 @@ constexpr int kExitAfterSighup = 128 + 1;
 const QString kExternalClaudeFolderName = QStringLiteral("External Claude Code");
 const QString kExternalClaudeMemberPrefix = QStringLiteral("claude:");
 
+void appendBoundedStreamRaw(QString &buf, const QString &piece)
+{
+    constexpr qsizetype kMax = 400000;
+    constexpr qsizetype kKeep = 300000;
+    if (buf.size() + piece.size() > kMax && piece.size() >= kKeep) {
+        buf = piece.right(kKeep);
+        return;
+    }
+    buf.append(piece);
+    if (buf.size() > kMax)
+        buf.remove(0, buf.size() - kKeep);
+}
+
 struct ExternalTranscriptRead {
     bool full = false;
+    bool redraw = false;
     qint64 newOffset = 0;
     qint64 addedTokens = 0;
     QList<QJsonObject> events;
@@ -183,6 +200,18 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         // conversation receives the bounded saved transcript below instead of
         // sending an unsafe resume request to an incompatible runtime.
         resumeId.clear();
+    }
+    QString directWorkdir = repoPath;
+    if (session.directCheckout && session.claudeImported()) {
+        const QString repoRoot = QDir(repoPath).absolutePath();
+        const QString cwd = QDir(session.claudeImportCwd).absolutePath();
+        if (cwd.startsWith(repoRoot + QLatin1Char('/')) && QFileInfo(cwd).isDir())
+            directWorkdir = cwd;
+    }
+    QString claudeImportPath;
+    if (!codex && session.claudeImported() && resumeId == session.claudeImportId) {
+        claudeImportPath = session.claudeImportPath;
+        session.claudeImportBytes = -1;
     }
     QList<QJsonObject> events = m_streamEvents.value(sid);
     QString handoffAccount;
@@ -345,6 +374,20 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
                      originalTaskPrompt,
                      steer.isEmpty() ? continueWhereLeftOffPrompt() : steer);
     }
+    if (!claudeImportPath.isEmpty() && m_agentStore) {
+        QString saved = m_agentStore->readLog(session).trimmed();
+        constexpr int kMaxImportedTranscriptChars = 48 * 1024;
+        if (saved.size() > kMaxImportedTranscriptChars)
+            saved = QStringLiteral("[Earlier transcript omitted]\n") +
+                    saved.right(kMaxImportedTranscriptChars);
+        resumeFallbackPrompt =
+            QStringLiteral(
+                "This conversation was started in Claude Code outside ForkMesh and "
+                "could not be resumed natively. Its saved transcript is below; carry "
+                "on from where it left off.\n---\n%1\n---\n\nLatest user "
+                "instruction:\n%2")
+                .arg(saved, steer.isEmpty() ? continueWhereLeftOffPrompt() : steer);
+    }
     m_streamSessionInfo[sid] = session;
     m_agentCliTasks.remove(sid);
     m_agentResultAwaitingCliTasks.remove(sid);
@@ -367,10 +410,7 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         const QString line = redactProviderCredentials(
             rawLine, providerCredentialValues);
         noteAgentActivity(sid, line.size()); // pulse the list's night-rider light
-        QString &buf = m_streamRaw[sid];
-        buf.append(line).append(QLatin1String("\n\n"));
-        if (buf.size() > 400000)
-            buf.remove(0, buf.size() - 300000);
+        appendBoundedStreamRaw(m_streamRaw[sid], line + QLatin1String("\n\n"));
         if (sid == m_selectedAgentSessionId)
             appendAgentRawLog(line + QStringLiteral("\n\n"));
     };
@@ -382,12 +422,10 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         if (text.isEmpty())
             return;
         noteAgentActivity(sid, text.size());
-        QString &buf = m_streamRaw[sid];
-        buf.append(QLatin1String("[stderr] ")).append(text);
-        if (!buf.endsWith(QLatin1Char('\n')))
-            buf += QLatin1Char('\n');
-        if (buf.size() > 400000)
-            buf.remove(0, buf.size() - 300000);
+        QString piece = QLatin1String("[stderr] ") + text;
+        if (!piece.endsWith(QLatin1Char('\n')))
+            piece += QLatin1Char('\n');
+        appendBoundedStreamRaw(m_streamRaw[sid], piece);
         if (sid == m_selectedAgentSessionId)
             appendAgentRawLog(QStringLiteral("[stderr] ") + text);
     };
@@ -541,6 +579,10 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
     plan.sessionStrength = sessionStrength;
     plan.runAccountEnv = runAccountEnv;
     plan.guardrails = guardrails;
+    plan.claudeImportPath = claudeImportPath;
+    plan.claudeConfigDir = runAccount.configDir.isEmpty()
+                               ? agentAccountDefaultConfigDir(QStringLiteral("claude-code"))
+                               : runAccount.configDir;
     auto launch = [this, plan](const QString &workdir) {
         launchCliRuntime(plan, workdir);
     };
@@ -559,8 +601,8 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         }
         // Tracked like a worktree so the run's cwd reads as ForkMesh's own;
         // cleanupStreamWorktree() refuses to delete a primary checkout.
-        m_streamWorktree[sid] = repoPath;
-        launch(repoPath);
+        m_streamWorktree[sid] = directWorkdir;
+        launch(directWorkdir);
         return;
     }
     startCliTranscriptWorktree(sid, repoPath, worktreeName, issueNumber,
@@ -763,6 +805,8 @@ void MainWindow::handleCliRuntimeEvent(
         return;
     }
     applyTranscriptEvent(sid, ev);
+    if (m_streamSessions.contains(sid))
+        handleClaudeControlEvent(sid, ev);
 }
 
 bool MainWindow::desktopStopping() const
@@ -997,7 +1041,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        codexEnv << forkmesh::agentscratch::environment(scratch);
+        codexEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
@@ -1047,10 +1091,22 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
                                 "on branch %1 in %2\n")
                      .arg(branchName, workdir));
     auto begin = [this, sid, live, workdir, env, prompt, autoMode, resumeId,
-                  resumeFallbackPrompt, sessionMode,
-                  sessionStrength, guardrails](const QString &chosenModel) {
+                  resumeFallbackPrompt, sessionMode, sessionStrength, guardrails,
+                  importPath = plan.claudeImportPath,
+                  configDir = plan.claudeConfigDir](const QString &chosenModel) {
         if (m_streamSessions.value(sid) != live)
             return;
+        if (!importPath.isEmpty() && !resumeId.isEmpty()) {
+            QString why;
+            if (!ClaudeSessionImport::stage(importPath, configDir, workdir, resumeId, &why))
+                applyTranscriptEvent(
+                    sid, QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_notice")},
+                                     {QStringLiteral("level"), QStringLiteral("warning")},
+                                     {QStringLiteral("text"),
+                                      QStringLiteral("Could not hand the Claude Code "
+                                                     "conversation to this run: %1.")
+                                          .arg(why)}});
+        }
         const QString effort = sessionStrength;
         if (AgentSession *as = findAgentSession(sid)) {
             as->model = chosenModel;
@@ -1066,7 +1122,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        launchEnv << forkmesh::agentscratch::environment(scratch);
+        launchEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
@@ -1108,6 +1164,14 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         runtimeLaunch.memoryLimitMb = jailMb;
         runtimeLaunch.resumeFallbackPrompt = resumeFallbackPrompt;
         runtimeLaunch.options = agentRunLaunchOptions(sid, false);
+        if (!importPath.isEmpty())
+            runtimeLaunch.options.insert(QStringLiteral("forkSession"), true);
+        runtimeLaunch.options.insert(QStringLiteral("hostControl"), true);
+        if (const AgentSession *named = findAgentSession(sid)) {
+            const QString title = claudeInitialSessionTitle(*named);
+            if (!title.isEmpty())
+                runtimeLaunch.options.insert(QStringLiteral("sessionTitle"), title);
+        }
         noteAgentRunToolConfig(sid, runtimeLaunch.options);
         const QStringList gateEnv = agentNetworkGateEnv(sid);
         QString claudeSettings;
@@ -1116,9 +1180,11 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
             claudeSettings = forkmesh::agentnet::claudeHookSettings(agentRunGatesCommands(sid));
         }
         claudeSettings = forkmesh::agentrules::claudeSettingsWithAllowRules(
-            claudeSettings, agentRunRules(sid).allowedToolRules);
+            forkmesh::agentrules::claudeSettingsWithReadGuard(claudeSettings),
+            agentRunRules(sid).allowedToolRules);
         if (!claudeSettings.isEmpty())
             runtimeLaunch.options.insert(QStringLiteral("claudeSettings"), claudeSettings);
+        addAgentRunMcpConfig(sid, runtimeLaunch.options);
         live->setGuardrails(guardrails);
         live->startRuntime(runtimeLaunch);
     };
@@ -1166,6 +1232,39 @@ void MainWindow::failCliTranscriptLaunch(int sid, const QString &why)
     maybeStartQueuedRebuild();
 }
 
+void MainWindow::copyWorktreeIncludes(
+    int sid, const QString &repoPath, const QString &wtPath,
+    const std::function<void(const QString &)> &launch)
+{
+    namespace include = forkmesh::worktreeinclude;
+    if (!QFileInfo(QDir(repoPath).filePath(QLatin1String(include::kFileName))).isFile()) {
+        launch(wtPath);
+        return;
+    }
+    auto *watcher = new QFutureWatcher<include::Result>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, sid, watcher, wtPath, launch] {
+                const include::Result result = watcher->result();
+                watcher->deleteLater();
+                if (AgentSession *as = findAgentSession(sid);
+                    as && (result.copied > 0 || !result.errors.isEmpty())) {
+                    QString line = QStringLiteral("== .worktreeinclude: copied %1 file%2")
+                                       .arg(result.copied)
+                                       .arg(result.copied == 1 ? QString()
+                                                               : QStringLiteral("s"));
+                    if (!result.errors.isEmpty())
+                        line += QStringLiteral("; could not copy %1")
+                                    .arg(result.errors.join(QStringLiteral(", ")));
+                    m_agentStore->appendLog(*as, line + QLatin1Char('\n'));
+                }
+                if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
+                    return;
+                launch(wtPath);
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [repoPath, wtPath] { return include::apply(repoPath, wtPath); }));
+}
+
 void MainWindow::startCliTranscriptWorktree(
     int sid, const QString &repoPath, const QString &worktreeName,
     int issueNumber, const QString &branchName, const QString &baseRef,
@@ -1204,8 +1303,8 @@ void MainWindow::startCliTranscriptWorktree(
         auto *add = new QProcess(this);
         add->setWorkingDirectory(repoPath);
         connect(add, &QProcess::finished, this,
-                [this, sid, add, wtPath, script, launch, failLaunch, runAdd,
-                 firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
+                [this, sid, add, wtPath, repoPath, script, launch, failLaunch,
+                 runAdd, firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
                     const QString out = QString::fromUtf8(
                                             add->readAllStandardOutput())
                                             .trimmed();
@@ -1222,7 +1321,7 @@ void MainWindow::startCliTranscriptWorktree(
                         m_streamWorktree[sid] = wtPath;
                         m_taskWorkItemSessionWorktree.insert(sid, wtPath);
                         attachOrgTaskWorkItemForSession(sid);
-                        launch(wtPath);
+                        copyWorktreeIncludes(sid, repoPath, wtPath, launch);
                         return;
                     }
                     if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
@@ -1454,7 +1553,16 @@ void MainWindow::stopAllRunningAgents()
         return;
     }
     m_agentQueue.clear();
+    stopAgentSessions(ids);
+    flashMessage(QStringLiteral("Stopped %1 agent session%2.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
+}
+
+void MainWindow::stopAgentSessions(const QList<int> &ids)
+{
     for (const int sessionId : std::as_const(ids)) {
+        m_agentQueue.removeAll(sessionId);
         if (AgentRunner *runner = runnerForSession(sessionId))
             runner->stop();
         stopStreamSession(sessionId, /*refreshUi=*/false);
@@ -1477,9 +1585,6 @@ void MainWindow::stopAllRunningAgents()
     if (m_selectedAgentSessionId > 0)
         showAgentSession(m_selectedAgentSessionId);
     updateAgentActionState();
-    flashMessage(QStringLiteral("Stopped %1 agent session%2.")
-                     .arg(ids.size())
-                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
 }
 
 bool MainWindow::isStoppableAgentSession(int sessionId) const
@@ -1708,6 +1813,14 @@ void MainWindow::startAllStoppedAgents()
         flashMessage(QStringLiteral("No stopped agents to start."));
         return;
     }
+    startAgentSessions(ids);
+    flashMessage(QStringLiteral("Started %1 agent session%2.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
+}
+
+void MainWindow::startAgentSessions(const QList<int> &ids)
+{
     for (const int sessionId : std::as_const(ids))
         continueAgentSession(sessionId, /*deferRefresh=*/true);
     scheduleAgentSessionsPush();
@@ -1716,9 +1829,6 @@ void MainWindow::startAllStoppedAgents()
         showAgentSession(m_selectedAgentSessionId);
     processAgentQueue();
     updateAgentActionState();
-    flashMessage(QStringLiteral("Started %1 agent session%2.")
-                     .arg(ids.size())
-                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
 }
 
 QList<int> MainWindow::updatableAgentSessionIds() const
@@ -1877,6 +1987,13 @@ QSet<QString> MainWindow::ownStreamCwds() const
     return out;
 }
 
+void MainWindow::retireStreamCwd(const QString &path)
+{
+    if (path.trimmed().isEmpty() || QFileInfo(path + QStringLiteral("/.git")).isDir())
+        return;
+    m_retiredStreamCwds.insert(QDir(path).absolutePath());
+}
+
 int MainWindow::externalTempIdFor(const QString &uuid)
 {
     auto it = m_externalTempId.constFind(uuid);
@@ -1898,14 +2015,19 @@ void MainWindow::scanExternalClaudeSessions()
         return;
     constexpr qint64 kActiveWindowMs = 90 * 1000; // written within 90s == "running"
     const QString repoKey = repo.owner + QLatin1Char('/') + repo.name;
-    const QSet<QString> streamCwds = ownStreamCwds();
+    const QSet<QString> streamCwds = ownStreamCwds() | m_retiredStreamCwds;
+    QStringList accountDirs;
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            accountDirs.append(profile.configDir);
     const quint64 generation = ++m_externalClaudeScanGeneration;
     m_externalClaudeScanInFlight = true;
     runOffThread<QList<ExternalClaudeSession>>(
-        [repoPath = repo.localPath, streamCwds,
+        [repoPath = repo.localPath, streamCwds, accountDirs,
          activeWindowMs = kActiveWindowMs]() {
             return ClaudeSessionScan::scan(repoPath, streamCwds,
-                                           activeWindowMs);
+                                           activeWindowMs, accountDirs);
         },
         [this, generation, repoKey](QList<ExternalClaudeSession> sessions) {
             if (generation != m_externalClaudeScanGeneration)
@@ -1920,6 +2042,13 @@ void MainWindow::scanExternalClaudeSessions()
                 return;
             if (QSettings().value(kExcludeExternalClaudeSetting, true).toBool())
                 return;
+            const QHash<QString, int> imported = importedClaudeSessionAgents();
+            if (!imported.isEmpty())
+                sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
+                                              [&imported](const ExternalClaudeSession &s) {
+                                                  return imported.contains(s.uuid);
+                                              }),
+                               sessions.end());
             m_externalClaude = std::move(sessions);
             for (const ExternalClaudeSession &ext :
                  std::as_const(m_externalClaude)) {
@@ -1966,6 +2095,7 @@ void MainWindow::applyExternalClaudeScan()
     if (isExternalSession(m_selectedAgentSessionId) &&
         m_externalSurfaced.contains(m_selectedAgentSessionId))
         renderExternalTranscript(m_selectedAgentSessionId, /*full=*/false);
+    scheduleSessionsPageRefresh();
 }
 
 bool MainWindow::externalIsLive(const QString &uuid) const
@@ -2068,7 +2198,13 @@ void MainWindow::fileExternalSessionInFolder(const QString &repoKey,
             !surfaced.contains(stale))
             m_agentFolders.assign(repoKey, stale, QString());
     m_agentFolders.assign(repoKey, member, folderId);
-    m_agentFolders.save();
+    if (m_agentFoldersSaveQueued)
+        return;
+    m_agentFoldersSaveQueued = true;
+    QTimer::singleShot(0, this, [this] {
+        m_agentFoldersSaveQueued = false;
+        m_agentFolders.save();
+    });
 }
 
 void MainWindow::surfaceExternalSession(const QString &uuid)
@@ -2194,6 +2330,7 @@ void MainWindow::onExternalClaudeTick()
 {
     if (!m_agentStore)
         return;
+    syncImportedClaudeSessions();
     if (QSettings().value(kExcludeExternalClaudeSetting, true).toBool()) {
         if (m_externalClaudeScanInFlight) {
             ++m_externalClaudeScanGeneration;
@@ -2248,17 +2385,20 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
         return;
     }
 
+    const bool redraw = full && m_renderedExternalSession == sessionId &&
+                        m_renderedCloudSession != sessionId;
     if (full) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         ++m_externalTranscriptRenderGeneration;
         m_externalTranscriptRenderSession = -1;
         m_externalTranscriptRenderEvents.clear();
-        m_agentTranscript->clear();
+        if (!redraw) {
+            m_agentTranscript->clear();
+            m_agentTranscript->setBulkPopulate(false);
+        }
         m_renderedTranscriptSession = -1;
         m_renderedExternalSession = sessionId;
-        m_agentTranscript->setBulkPopulate(false);
     }
 
     const qint64 offset = full ? -1 : m_externalReadOffset.value(sessionId, 0);
@@ -2267,13 +2407,14 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
     m_externalTranscriptReads.insert(sessionId);
     m_externalTranscriptReadFull.insert(sessionId, full);
     runOffThread<ExternalTranscriptRead>(
-        [ext, offset, full, providerCredentialValues] {
+        [ext, offset, full, redraw, providerCredentialValues] {
             const forkmesh::BackgroundScope activity(
                 QStringLiteral("agents"),
                 QStringLiteral("read external agent transcript"),
                 forkmesh::ActionTelemetry::Execution::Worker);
             ExternalTranscriptRead result;
             result.full = full;
+            result.redraw = redraw;
             const qint64 start =
                 full ? ClaudeSessionScan::tailStartOffset(ext.path, 400 * 1024)
                      : offset;
@@ -2333,8 +2474,12 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
             m_externalTranscriptRenderFull = result.full;
             m_externalTranscriptRenderTokens = result.addedTokens;
             m_externalTranscriptRenderRaw = std::move(result.raw);
-            m_agentTranscript->setBulkPopulate(result.full);
             if (result.full)
+                m_agentTranscript->setBatchHoldsFrame(result.redraw, false);
+            m_agentTranscript->setBulkPopulate(result.full);
+            if (result.redraw)
+                m_agentTranscript->clear();
+            else if (result.full)
                 m_agentTranscript->jumpToBottom();
             renderExternalTranscriptSlice(generation);
         });

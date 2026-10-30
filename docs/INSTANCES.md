@@ -23,6 +23,15 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Let your coding agent do it.** A card under "Set up from a file" holds a
+  read-only one-line prompt with a Copy button
+  (`data-start-agent-prompt`, `data-start-agent-copy`) that points a coding
+  agent at `app/public/forkmesh-agent.md` (served at
+  `/forkmesh-agent.md`), plus links to read it, download it as
+  `FORKMESH.md`, and the user guide `www/docs/coding-agents.md`. The agent
+  writes the settings file and the person uploads it here, so SSH secrets
+  are typed by nobody but them. The card has no section number; the six
+  numbered sections are unchanged.
 - **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
   three surface families (Slate, the ForkMesh default, Zinc and Stone), a
   dark/light preview switch and Shuffle, over a live mock of a repository
@@ -31,6 +40,14 @@ extra organization owners); optional mail provider; listing choices
   page sends `theme: ""` so the instance keeps the ForkMesh colours; a preset
   loaded from a settings file is sent by name until edited; anything else is
   sent as the full `{"dark": {...}, "light": {...}}` object (about 1.2 KB).
+  Above the toolbar, theme cards drawn from
+  `app/public/instance-themes/themes.json` (see [Named themes](#named-themes))
+  offer Default and every ready theme, with planned ones shown as "Coming
+  soon". Picking a named theme hides the colour toolbar and "Customize every
+  colour", paints the preview with that theme's colours and sends its id
+  (`"blt"`); Default brings the toolbar back. A settings file may name a
+  ready theme the same way. If the catalogue cannot be fetched, the page
+  shows only the colour toolbar, as before.
   The browser only builds the colours: the launch API cleans them with
   `instance_theme.clean`, the installer checks their shape, and
   `instance-bootstrap` writes the `instance_settings` row on the server, so
@@ -115,6 +132,13 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   address. A Cloudflare-proxied name is detected; the SSL/TLS mode must be
   Full (strict). Caddy trusts `Cf-Connecting-Ip` only from Cloudflare's
   published ranges.
+- A new instance launched from the start page (its settings carry
+  `launchId`) removes itself unless the admin signs in within five minutes
+  (`arm_first_login_timeout`, `forkmesh-instance-first-login-cleanup.timer`),
+  so an abandoned launch does not leave a server running. A manual
+  `--config` install has no `launchId` and is never armed: the operator runs
+  it unattended, and forum.example.org came within four minutes of
+  removing itself after a detached install finished with nobody watching.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first. See
   [Updates build beside the running version](#updates-build-beside-the-running-version).
@@ -156,6 +180,52 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   request and status paths. See
   [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
+
+## Tor onion service
+
+Setting `onionService` (a boolean, default `false`, kept in `instance.json`)
+serves the instance over Tor too, so blocking its domain or IP address does
+not block it ([app/forum-reach.md](app/forum-reach.md)). To turn it on for a
+running instance, add `"onionService": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh
+--update`; `false` (or removing the key) turns it off.
+
+| Piece | Where |
+| --- | --- |
+| Package | `tor` joins the `packages` step |
+| Hidden service | `/etc/tor/torrc.d/forkmesh-instance.conf`: `HiddenServiceDir /var/lib/tor/forkmesh-instance/`, `HiddenServicePort 80 127.0.0.1:8091`; `/etc/tor/torrc` gets one `%include /etc/tor/torrc.d/*.conf` line if it has none |
+| Onion site | `/etc/caddy/conf.d/forkmesh-onion.caddy`: `http://<addr>.onion:8091`, bound to `127.0.0.1`, the same gateway paths and app as the HTTPS site, `Host` set to the onion name |
+| Advertisement | `/etc/caddy/site.d/forkmesh-onion-location.caddy`: `Onion-Location: http://<addr>.onion{uri}` on the HTTPS site, which Tor Browser offers to switch to |
+| App | `FORKMESH_PUBLIC_HOSTS=<domain>,<addr>.onion` (the host allowlist in `request_guard.py` answers the onion name) and `FORKMESH_VAR_INSTANCE_ONION=<addr>.onion` in the unit; `/api/instance` answers `onion: "<addr>.onion"` (`null` without one) and `instance-brand.js` adds a "Tor .onion" link to the footer badge |
+
+- The step runs after `configure` and before `services`, inside the
+  `configure` progress step, so the start page's step list is unchanged.
+  The address is read from `/var/lib/tor/forkmesh-instance/hostname` (v3,
+  56 base32 characters); the setup stops if Tor does not write one within
+  two minutes.
+- **Plain HTTP on purpose.** Tor encrypts and authenticates the connection
+  to the onion address end to end, and no public CA issues `.onion`
+  certificates cheaply. Caddy listens only on loopback, so the onion site
+  is reachable only through Tor. The onion site drops the app's
+  `upgrade-insecure-requests` CSP directive (it would send Tor Browser to
+  `https://` for every asset) and the HSTS header.
+- **Idempotent.** Each run rewrites the torrc snippet and the two Caddy
+  files; Tor restarts only when its configuration changed or it is not
+  running, and Caddy reloads only when its files changed. `--update`
+  keeps the same address.
+- **The key is the address.** `/var/lib/tor/forkmesh-instance/` holds
+  `hs_ed25519_secret_key`; whoever has it can serve that address. Back the
+  folder up (root only, mode 0700, owner `debian-tor`) to move the address
+  to a new server; turning the setting off removes the site files but
+  keeps the key, so turning it back on keeps the address.
+- **Egress and the allowlist.** The app makes no outbound calls for this:
+  `FORKMESH_EGRESS_PRODUCTION_ALLOW` is unchanged, and only the host
+  allowlist gains the onion name. The web firewall (`webFirewall`) is
+  unaffected: Tor dials out, and port 8091 is loopback only.
+- **Visitors share one address.** Every onion visitor reaches the app from
+  `127.0.0.1` (`Cf-Connecting-Ip`), so per-IP rate limits are shared among
+  them; probe bans never apply to non-global addresses.
+- Tests: `app/tests/test_install_instance_onion.py`.
 
 ## Updates build beside the running version
 
@@ -219,7 +289,8 @@ such an instance silently replaced the fork's program with upstream's. Now:
 - `build-info.json` gets `daemon: {state, builtTree, sourceTree,
   builtCommit}`. `state` is `current` when the recorded `server/` tree equals
   the running source's, `stale` when `server/` changed since, `release` or
-  `unknown`. The installer warns on `stale`.
+  `unknown`. The installer warns on `stale`, and the admin console's Update
+  page says "The git node program was built from older server code".
 
 Building on the server was rejected: a 1 GB instance would need a ~250 MB
 pinned Go toolchain and a memory-hungry build in the middle of an unattended
@@ -229,6 +300,230 @@ keeps serving with the older program until the operator rebuilds it
 (`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
 from the running commit on a build machine, copy it over, run
 `FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
+
+## Building the instance from its own repository
+
+An instance can be updated from a repository it hosts itself, so that a
+merged pull request deploys. Everything is opt-in:
+
+1. **Publish the platform code as an organization repository** linked as a
+   fork of the instance's platform mirror (`/<owner>/forkmesh`), with the
+   default branch protected and Actions off (the repository's workflows are
+   the platform's, not jobs for this server):
+
+   ```sh
+   git clone --bare --single-branch -b <integration-branch> \
+     /root/platform-src /root/acme-platform.git
+   git -C /root/acme-platform.git branch -m <integration-branch> main
+   cd /opt/forkmesh-instance/src/app/host
+   /opt/forkmesh-instance/venv/bin/python -m forkmesh_host instance-repo \
+     --owner alice --organization acme --name acme-platform \
+     --from /root/acme-platform.git --fork-of acme/forkmesh \
+     --protect-default-branch --actions off --no-hooks \
+     --env-file /etc/forkmesh-instance/app.env \
+     --db sqlite:/var/lib/forkmesh-instance/app.db \
+     --data-dir /var/lib/forkmesh-instance/data
+   systemctl restart forkmesh-mirror-node
+   ```
+
+   The repository must be public, because the updater fetches it without
+   credentials.
+2. **Point the instance at it.** In `/etc/forkmesh-instance/instance.json`
+   set `"sourceUrl": "https://code.example.org/acme/acme-platform.git"` and
+   `"sourceRef": "main"`, then run one update (console button, or
+   `bash /opt/forkmesh-instance/src/www/public/install-instance.sh --update`).
+   The installer keeps the platform mirror on its own upstream: it follows
+   `platformUrl` when set, else the ForkMesh release source whenever
+   `sourceUrl` is on the instance's domain (before, `sourceUrl` also became
+   the mirror's upstream label and `INSTANCE_UPSTREAM`).
+3. **Turn on "Update when a pull request is merged"** on the console's Update
+   page ([app/server-update.md](app/server-update.md#update-when-a-pull-request-is-merged)).
+
+From then on: a contributor opens a pull request, an organization owner or
+admin who is not the author approves it, an owner merges it, and the instance
+updates itself; `build-info.json` and the Update page show the merged commit.
+The protected branch ([app/branch-protection.md](app/branch-protection.md))
+is what keeps unreviewed code from deploying: nobody can push, edit or merge
+into it any other way. The console refuses to turn automatic updates on, and
+a merge files no update, while the source branch is not protected.
+The operator's `instance-repo` stays a root-only bypass and never triggers
+an update.
+
+## Named themes
+
+Customers wanted more than an accent colour and a radius, so an instance can
+also wear a whole named theme: its own colours for both modes plus a
+stylesheet that changes shape and weight (radius, headings, labels, the active
+navigation row). The themes are hard-coded and ship with the code; nobody can
+upload CSS.
+
+- **Catalogue:** `app/public/instance-themes/themes.json`, one entry per
+  theme: `id`, `name`, `description`, `status` (`ready` or `planned`),
+  `palette`, and for a ready theme `colors` (`dark` and `light`, any
+  `instance_theme.THEME_TOKENS` name to `#rrggbb`, which adds `cta`,
+  `cta-foreground`, `success` and `attention` to the custom-colour tokens)
+  and `stylesheet`, a file beside it (`blt.css`). `palette` is read in a fixed
+  order: primary, background, surface, second accent, text, then any extra
+  swatches, eight at most (the loader drops the rest). The cards on the
+  start page and in Settings draw only the palette,
+  as one colour block with primary three times as wide as the rest (a mock
+  screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
+  and are refused by the API. Today all five are ready: `default` (the
+  ForkMesh colours), `blt`, `cloudflare`, `google` and `github`. An entry
+  may also name `colorMode` (`dark`, `light` or `system`, see
+  [Colour mode](#colour-mode)); without one it is `dark`.
+- **Storage:** choosing a theme stores `{"preset": "<id>"}` in the
+  `instance_settings` theme row (optionally with `dark`/`light` colour
+  overrides on top), not a copy of its colours, so polishing a theme in the
+  catalogue reaches every instance that uses it on its next update.
+  `"default"` stores `{}`. `instance_theme.clean` accepts the id as a string
+  anywhere a preset name was accepted before (start settings file, launch
+  API, installer, bootstrap). An object with `preset` plus colour overrides
+  is accepted by the launch API and `PUT /api/instance/theme`, not by the
+  installer's settings file, which takes a theme name or a
+  `{dark, light}` colour object.
+- **Apps:** `GET /api/instance` also returns `themeColors`
+  (`instance_theme.colours`): the named theme's colours for each mode with the
+  stored overrides on top, `{}` for the default theme. The desktop and the
+  phone apps read it for their "Match the instance's theme" setting, so they
+  never need the catalogue or the stylesheet.
+- **Rendering:** `/instance-theme.css` writes the theme's colour tokens, then
+  its stylesheet, then any overrides. `/instance-theme.css?preset=<id>`
+  renders a ready theme without saving it, for the settings preview; an
+  unknown or planned id answers 404. The catalogue is loaded once from disk
+  when `instance_theme` is imported; a missing or broken file leaves only
+  the colour presets. A stylesheet over 64 KB or containing `</` is ignored.
+- **Who can change it:** the start page picks a theme at launch (its cards
+  come from `themes.json`; a settings file naming a theme waits for that
+  read, so the name is not skipped as unknown while it loads). After that
+  an admin changes it in Settings → Instance theme, shown only to an admin
+  on a branded instance. Its cards come from `GET /api/instance` (`themes`,
+  and `theme.preset` for the current one). Clicking a ready card previews it
+  on that page only, by pointing `link[data-instance-theme]` at
+  `/instance-theme.css?preset=<id>`; leaving the section or "Cancel preview"
+  puts the instance's own sheet back. "Apply to instance" sends
+  `PUT /api/instance/theme` with `{theme, password}` and updates the page's
+  cached instance document, so re-entering the section shows the new
+  current theme. The password field is cleared on success, failure, cancel,
+  leaving the section and `pagehide`, and the form carries a hidden
+  `autocomplete="username"` field so a browser does not save a password
+  without an account name. The admin console offers the same choice under Platform, **Site theme**
+  (`?view=site-theme`: one radio per ready theme, "Keep the custom colours"
+  when the stored theme has its own, and the colour mode), behind the
+  console's own sign-in and CSRF check, recording `admin.console_save_theme`
+  in the audit log; picking a named theme there drops any custom colour
+  overrides, so the theme is seen as designed. The route checks the session is an admin, then the account password with its
+  own attempt budget (`instance-theme-v1` blind index, the login lockout
+  rules), and records `instance.theme` in the sensitive-action audit log
+  either way. Repository share cards take their accent from the stored
+  colours, else from the named theme's.
+- **BLT:** modelled on the OWASP BLT API explorer: charcoal surfaces
+  (`#141414`/`#1c1c1e`) in dark and white in light, signal red (`#dc2626`)
+  for primary, links, focus and the create button, green kept for success,
+  8/12/16 px radii, 800-weight headings, filled status labels and a
+  red-tinted active navigation row.
+- **Cloudflare:** modelled on the Cloudflare dashboard: true-black flat
+  surfaces (`#000000`/`#0a0a0a`) with `#262626` hairlines in dark, white in
+  light; Cloudflare orange (`#f38020`) for primary, selection, checkboxes and
+  the tab underline; blue (`#4693ff` dark, `#0051c3` light) for links, focus
+  and the create button, as on "Add record"; 6/8/10 px radii, 600-weight
+  headings, transparent secondary buttons and a grey-filled active
+  navigation row.
+- **Google:** modelled on Drive, Gmail and Gemini (Material 3): tonal
+  surfaces (`#131314`, `#1e1f20`, `#2d2f31` in dark; `#f8fafd` and white in
+  light), Google's dark-mode blue `#8ab4f8` (light `#0b57d0`) for primary,
+  links and filled create buttons, and Google's own green, yellow and red
+  for status, drawn as tonal labels. A first version used the pastel
+  `#a8c7fa` and the light "Compose" container for buttons and read as dull.
+  Pill buttons and a pill active row in the secondary container colour
+  (`#004a77` / `#c2e7ff`) for list navigation; the workspace tiles and plugin
+  icons keep their corners and only take the colour. Menus follow Drive's:
+  no border, a soft shadow, 40 px full-bleed rows, 20 px icons and
+  edge-to-edge dividers. Letter avatars (profile, header, settings,
+  organisation) are filled Google blue `#1a73e8` with white initials, as in
+  Gmail, and profile badges are tinted blue, red, yellow and green in turn.
+  12/16/24 px radii, regular-weight headings and
+  Google Sans when the visitor has it installed (Roboto or the system font
+  otherwise; no font is downloaded).
+- **GitHub (follows system):** GitHub's default light and default dark
+  themes, picked from each visitor's system setting (`colorMode: system`).
+  Light: white canvas, `#f6f8fa` header and subtle surfaces, `#d0d7de`
+  borders, `#1f2328` text, `#59636e` muted text, `#0969da` links and focus,
+  `#1f883d` create button, `#1a7f37` success, `#9a6700` attention,
+  `#d1242f` danger. Dark: `#0d1117` canvas under a `#010409` header,
+  `#151b23` subtle surfaces and popovers, `#3d444d` borders, `#f0f6fc` text,
+  `#9198a1` muted text, `#4493f8` links, `#1f6feb` focus ring, `#238636`
+  create button, `#3fb950`, `#d29922` and `#f85149` for status. Its
+  stylesheet sets GitHub's system font stack (no font is downloaded), 6 px
+  radii, 600-weight headings, pill labels and GitHub's faint border on the
+  green button. forum.example.org, a GitHub forum mirror, asked for
+  it in October 2026 so the mirror reads like the forum its visitors know.
+- **Adding a theme:** add its entry and stylesheet, set `status` to `ready`
+  when it is finished, and check it with `/instance-theme.css?preset=<id>`
+  before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
+  define every theme token in both modes.
+
+### When an update restarts the git node
+
+`--update` restarts `forkmesh-mirror-node` only when `daemon_digest` changes:
+the binary, the systemd unit, the gateway tools in
+`/usr/local/share/forkmesh/tools`, the node config without its `version`
+field, and the gateway config fields the installer itself writes
+(`routerPublicKey`, `publicOrigin`, `dashboard.canonicalOrigin`, the
+`forkmesh` repository entries). Before 2026-10-21 the digest hashed the raw
+node config, whose `version` is the source commit, and the raw gateway config,
+which the running daemon rewrites on every ref change; every deploy therefore
+restarted the node and its gateway, and on a single-server instance pull request pages
+showed "unavailable until a reachable mirror host serves …" for about 40 s.
+The gateway tools were not in the digest at all, so a gateway code change only
+took effect because of that spurious restart. The cost now is that the
+`version` label in the catalog stays at the commit of the last real restart
+when an update changed nothing the node runs.
+
+## Colour mode
+
+The dashboard has always opened dark unless the visitor picked light in
+Settings, Appearance. An instance can instead open in light, or follow each
+visitor's `prefers-color-scheme`, without a flash of the wrong theme.
+
+- **Setting:** the theme document's `mode` (`dark`, `light`, `system`), else
+  the preset's `colorMode`, else `dark` (`instance_theme.color_mode`).
+  `clean` keeps `mode` only when it differs from the preset's own, so
+  `{"preset": "github"}` already follows the system. The installer's
+  settings file takes `"theme": "github"`; an object with `mode` goes
+  through the console page, the launch API or `PUT /api/instance/theme`.
+- **Visitor's choice wins:** Settings, Appearance offers System, Dark and
+  Light. Dark or Light is stored as before (`forkmesh.dashboard.theme`,
+  `forkmesh.theme`, the `forkmesh_theme` cookie); System stores `system`, so
+  that visitor follows the system even on an instance whose default is
+  dark. With nothing stored, the instance's mode decides. The public site
+  reads the same keys: `site-header.js` and `home-theme.js` follow the
+  system for `system` (the homepage's own light default applies only when
+  nothing is stored), and `static-page.js` resolves it without writing a
+  fixed theme back over it.
+- **First paint:** the shell's head script resolves a stored choice
+  (`system` through `matchMedia`) and sets `data-dashboard-theme` and
+  `data-dashboard-theme-resolved`. `/instance-theme.css` (render-blocking,
+  linked by `tools/apply_instance_brand.py` at the end of `<head>`) writes
+  `--instance-color-mode` when the mode is not dark, and the brand tool puts
+  a small inline script (`data-instance-color-mode`, `MODE_TAG`) right after
+  that link. A script after a stylesheet runs only once the stylesheet has
+  loaded, so it can read the variable and switch the page before anything
+  is painted; it also follows a later system change. The dashboard bundle
+  (`02-helpers.js` `readDashboardTheme`) reads the same variable, so its
+  boot keeps that choice instead of going back to dark.
+- **Without JavaScript** (Tor Browser's safest level, script blockers):
+  nothing sets `data-dashboard-theme-resolved`, so the stylesheet's own
+  `@media (prefers-color-scheme: light){html:not([data-dashboard-theme-resolved]){...}}`
+  block applies the light tokens: `theme.json`'s light values, the shell's
+  light link colours (`BASE_LIGHT_HEX`), then the preset's and the
+  instance's own. The server-rendered first views (repository, issue list
+  and issue pages, `repo_ssr*.py`) draw only with those tokens, so they come
+  out light or dark correctly; rules keyed on `[data-dashboard-theme="light"]`
+  wait for the script. The forum home page and the lite pages
+  (`read_surfaces.py`) carry their own GitHub light and dark palette behind
+  a media query and need no script either; they ignore the visitor's stored
+  choice, because they are cached by URL.
 
 ## Private admin console path
 
@@ -268,7 +563,8 @@ path:
 - Not leaked: `/api/instance` has no admin field; `robots.txt` and the
   sitemaps do not list it; only an admin's own account answer
   (`_account_public_payload`, sent to the signed-in account at login and
-  session refresh, and `POST /api/accounts/admin-session`) carries
+  session refresh, the `account` block of `GET /api/accounts/sessions`, and
+  `POST /api/accounts/admin-session`) carries
   `adminUrl`, which the dashboard shows as **Admin console** in the account
   menu and as the shield button. Error pages and refusals never name it.
 - The admin JSON APIs stay at `/api/admin/...` and `/api/accounts/admin-*`:
@@ -429,7 +725,7 @@ Labelling and read-only:
   (`mirrorOfFor` checks `sameRelay`), so a forkmesh.com fleet node that copied
   an instance config cannot mark the canonical repository read-only there.
 - The app refuses writes with HTTP 403 `read_only_mirror` (`file-edit`,
-  `branches/ops`, `pulls`, `pulls/<n>/merge|update`), and a `git push` gets
+  `branches/ops`, `branches/delete`, `pulls`, `pulls/<n>/merge|update`), and a `git push` gets
   `remote: This repository is a read-only mirror of
   https://forkmesh.com/forkmesh/forkmesh. Send changes upstream there, or
   fork this repository and change your fork.` (git prints a `text/plain`
@@ -456,6 +752,31 @@ runs the bootstrap. Without the setting nothing changes. An installed
 instance is converted with `python -m forkmesh_host instance-single-org --org
 <org>` (idempotent, `--off` to switch back); the full command and the rules
 are in [app/server-update.md](app/server-update.md).
+
+**Web ports and ufw.** When ufw is active, the installer opens port 80 or
+443 only if no ufw rule mentions that port at all. A port the operator has
+narrowed, for example `ufw allow proto tcp from <cidr> to any port 80,443`,
+is left exactly as it is on every `--update`. With `"webFirewall":
+"cloudflare"` in `/etc/forkmesh-instance/instance.json` the installer keeps
+80 and 443 open to Cloudflare's published address ranges only: it allows
+the current ranges, removes the ones Cloudflare retired and then the plain
+`80/tcp` and `443/tcp` allow rules, and refreshes the list weekly
+(`forkmesh-web-firewall.timer`). Nothing changes when the list cannot be
+fetched. SSH is never touched. The instance must then be reached through
+Cloudflare's proxy. Switching back to `"open"` removes the timer but leaves
+the narrow rules for the operator to remove.
+
+**Local Caddy and runner firewall changes.** `--update` rewrites
+`/etc/caddy/Caddyfile` and the runner's `/etc/forkmesh-runner/jobs.nft`.
+Keep local changes in the files they include, which the installers never
+touch: `/etc/caddy/conf.d/*.caddy` (top level), `/etc/caddy/site.d/*.caddy`
+(directives inside the instance's site block) and
+`/etc/forkmesh-runner/jobs.d/*.nft`. A runner rule that lets a job reach
+a private address must come before the built-in reject rules, so use
+`insert rule inet forkmesh_runner output ...` there; an `add rule` lands
+after them and never matches. When a `jobs.d` file does not parse, the
+firewall loads its built-in rules (`jobs-base.nft`) alone instead of none,
+and the log says so.
 
 ## Importing a repository on the server (`instance_repo.py`)
 
@@ -630,9 +951,11 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   object (the start page's picker), or later with `PUT /api/instance/theme`
   by an admin. The installer passes an object to `instance-bootstrap` as
   JSON and refuses one with other modes, odd token names or non-hex values.
+  See [Named themes](#named-themes) for whole-look themes such as BLT.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless turned on. A disabled
+  pages and others) are off on an instance unless turned on; the platform
+  changelog is on unless turned off. A disabled
   plugin's routes answer 404 before any other route; tagged UI
   (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
@@ -669,6 +992,39 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
+- **ForkMesh's own sites** (install setting `"whiteLabel": true`, off by
+  default; `apply_instance_brand --white-label`, `INSTANCE_WHITE_LABEL=1`;
+  `apply_instance_brand.offsite_chrome`, `instance_features.OFFSITE_CHROME`):
+  the brand tool removes header and
+  sidebar links to forkmesh.com pages (Marketplace `forkmesh.com/market`,
+  Pricing, Membership), app.forkmesh.com and Patreon from every built page,
+  points the sidebar's Home at `/` and the header and sidebar World links at
+  `/world` (which the World plugin's rule hides while it is off). The links
+  are gone at the first paint and for a reader without JavaScript, where
+  before `instance-brand.js` hid them only after `/api/instance` answered.
+  `/instance-theme.css` also hides any such link the dashboard draws later in
+  `header`, `nav`, `aside` or `footer`, except inside the Powered by badge,
+  which stays only while `poweredBy` is on. forkmesh.com is untouched.
+
+## Home page
+
+An admin chooses a home repository from the admin console, Platform → Home
+page (`instance_console.render_home`, `save_home`; `app/src/instance_home.py`).
+It is one `instance_settings` row (`k = 'home'`,
+`{"repository": "owner/name"}`), CSRF-checked and audited as
+`admin.console_save_home`; an empty field turns the page off. `GET
+/api/instance` reports it as `home` (`{"repository": ...}` or `null`; always
+`null` on forkmesh.com).
+
+With a home repository set, `/` is a forum front page rendered by the host
+(`app/host/forkmesh_host/read_surfaces.py`): the repository's README with one
+`dir="auto"` section per heading, the latest threads from its issue index,
+its labels, links to its Atom feeds and lite view, and a slot for the
+repository's mirror line. It needs no JavaScript and makes no request to
+another site. Without one, or while the repository is not public, `/`
+redirects to `/dashboard` as before. example sets `example/forum`.
+Details: [app/feeds-and-lite.md](app/feeds-and-lite.md).
+
 ## Plugins
 
 An admin turns optional plugins on and off from the admin console, Platform →
@@ -681,16 +1037,47 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
+| `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
+| `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
+| `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
-`blog`, `status`, `ios-testers`, `website`) needs forkmesh.com's own
+`blog`, `status`, `ios-testers`, `website`, `instance-launcher`) needs
+forkmesh.com's own
 accounts, ledger, keys or content. The page lists them under "forkmesh.com
 services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `/api/instance` reports each plugin's `scope` (`instance` or `forkmesh`) and
 `note`. An operator who really wants one can still name it in
 `INSTANCE_PLUGINS`; a saved choice keeps it as it is.
 
+- **On by default.** `changelog`, `issue-ai-prompt` and `fediverse-ui` are
+  in `DEFAULT_ON`: each stays on until an admin switches it off, including
+  on an instance that saved its choice before the plugin existed.
+- **The changelog on an instance.** `/changelog` was part of `website`
+  until 2026-10-21, so instances answered 404 and hid the sidebar's
+  Resources → Changelog link. The page is the static
+  `www/public/changelog.html`, which loads `/changelog.js` and reads
+  `/changelog.json`, the `changelog/changelog.json` of the commit the
+  instance runs ([changelog.md](changelog.md)), so it needs nothing from
+  forkmesh.com. `build_site_assets.stage_app` copies the page and script
+  into `app/dist` (`BACKEND_ASSETS`, like `blog.html`) and the file next to
+  them; `/changelog.json` is a plain static file, served even with the
+  plugin off, since it is the platform's public release notes; with `WWW_ORIGIN` set to
+  the instance's own origin, `external_site_delivery` answers `local` and
+  `_serve_site_document` serves that copy. forkmesh.com's app origin still
+  308s `/changelog` to forkmesh.com. The brand pass renames the platform
+  word on it as on every other page.
+- **The Company group.** About, Careers and Press are `website` pages, so
+  their links were already hidden on an instance, but the sidebar kept the
+  "Company" title over an empty group. The group (`sidebarGroupCompany` in
+  `app/public/dashboard/partials/sidebar.html`, and the Company group of the
+  site header menu in `www/public/site-header.js`) now carries
+  `data-instance-plugin="website"`, so `chrome_css` hides the whole group,
+  title included, from the first paint while `website` is off. forkmesh.com
+  serves neither `instance-theme.css` nor `instance-brand.js`, so it keeps
+  the group.
 - **Where the choice lives.** Saving writes the `instance_settings` row
   `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
   `admin.console_save_plugins` with the plugins turned on and off. Until the
@@ -698,6 +1085,33 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
   once the row exists it wins. The installer never writes the row and
   `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
   admin's choice.
+- **Plugins that start on (`DEFAULT_ON`).** `issue-ai-prompt` and
+  `fediverse-ui` were always shown before they became switches, and
+  `changelog` is available without ForkMesh services, so they stay on unless
+  an admin turns them off. A saved row from before them lists only
+  `enabled`; `parse` adds every `DEFAULT_ON` plugin the row does not name in
+  its `disabled` list, so an upgrade keeps both on. Saving writes the
+  `DEFAULT_ON` plugins left off as `disabled`
+  (`{"enabled": [...], "disabled": ["fediverse-ui"]}`). The install setting
+  follows the same rule: `INSTANCE_PLUGINS` does not need to name them, and
+  `-fediverse-ui` in it turns one off. A future plugin that changes something
+  instances already show joins `DEFAULT_ON` the same way, so no update ever
+  removes it silently.
+- **Opt-in plugins (`OPT_IN`).** forkmesh.com itself (an unbranded core)
+  normally runs every plugin. A plugin in `OPT_IN` changes how pages look or
+  behave enough that it should be a choice everywhere: it starts off on
+  instances like any other plugin, and on a core it is on only when
+  `FORKMESH_CORE_PLUGINS` (a comma list in the core's environment) names it.
+- **Not only hidden.** The dashboard asks `instancePluginOff(id)`
+  (`02-helpers.js`, from the `/api/instance` the page already fetched) and
+  leaves the prompt, the Fediverse thread and the watch menu out of its
+  markup; `loadFederatedReplies` never calls `fedi-comments` while
+  `fediverse-ui` is off. The server-rendered issue page and About rail ask
+  `repo_ssr_issue.plugins_off()`, which reads
+  `instance_features.switched_off()` for the env the runtime last remembered
+  (`remember_instance`), and the issue render cache is keyed by it. Until the
+  dashboard has the instance document, `chrome_css` (`PLUGIN_ELEMENTS`)
+  hides the same elements, so nothing flashes in.
 - **How it applies.** Every request on an instance passes
   `Default._instance_plugins_load` before the plugin gate. It reads the row
   at most every 30 seconds (`CACHE_MS`) into a process cache that
@@ -778,15 +1192,16 @@ What does not work on an instance: the rewards and ledger parts (World
 store, wallet, central fund, pending rewards), community ads, the ForkMesh
 blog board, the `forkmesh/forkmesh` mirror and agent-bot boards (they read
 that repository, which an instance does not have under that name), Discord,
-and the relay federation towers. The World shows those boards empty.
+and the relay federation towers. Their boards and buildings are hidden in
+the instance's hexagon (below).
 
 The World asks `/api/instance` once (`instanceInfo()` in `world.js`) and
 does not request what the instance has switched off, so a visitor's console
 stays clean: with `rewards` off it skips `/api/accounts/central-fund` and
 `/api/rewards/pending`; with `ads` off the community placement and
 `/api/ads/serve`; and on any instance (`branded: true`) the forkmesh.com
-directory `/api/start/instances`, which only forkmesh.com fills (only the
-home portal is drawn). `instancePluginOff` and `instanceKeepsDirectory` in
+directory `/api/start/instances`, which only forkmesh.com fills (the
+ForkMesh World next door is drawn from `/api/instance` instead). `instancePluginOff` and `instanceKeepsDirectory` in
 `world-instance-portals.js` decide. `/api/accounts/central-fund` belongs to
 the `rewards` plugin on the server too, so it answers 404 rather than 503.
 The one error left for a signed-out visitor is the 401 from
@@ -799,6 +1214,265 @@ when a visitor clicks a portal or the site menu. An embedded browser that
 loads `_blank` windows in the same tab, or a tool that drives the active tab
 of a shared browser, can look like the World navigating away on its own; a
 plain browser left on `/world/` stays there.
+
+### An instance World is its own hexagon
+
+Before this, an instance's World was the whole ForkMesh World (town, Office
+tower, beach, coaster, districts, desert plots) filled with the instance's
+data, so visitors took it for a copy of world.forkmesh.com. Now the instance
+World is one hexagon of its own, placed where the directory put it, with the
+ForkMesh World across the road.
+
+**What is drawn.** `territoryFromInstance()` (`world-territory.js`) turns
+`/api/instance` into the hexagon's settings whenever `branded` is true. The
+World then hides every ForkMesh element through the same element registry
+the Elements panel uses (`TERRITORY_HIDDEN_ELEMENTS`, passed with the
+visitor's own choices as `initialDisabledElements`): the town terrain and
+landscaping, the Office tower and its garden, causeways, beach, bikes,
+coaster, zip line, quadcopters and drone race, gym and swing, the
+leaderboard district, the Start Here and QA boards, the bulletin, chat and
+Discord boards, the blog banner, the Mastodon kiosk, ForkBot and agent bots,
+the mirror-node yard and the desert plots. It keeps what comes from the
+instance's own data: the Members Circle and its members, and the repository
+portal ring. On the hexagon `scene/instance-territory.js` builds a fresh
+starter world: ground, a road around the hexagon with a centre line, a plaza
+with a sign carrying the instance name and logo (`/instance-logo.*` when the
+installer wrote one, else `/assets/logo.svg`) and the logo on the ground,
+benches, lamps and trees. Fresh visitors arrive on the plaza
+(`TERRITORY_FRESH_SPAWN`) instead of at the campfire. The Office stays
+reachable at `/office`; its tower is not in the hexagon, and the tower's
+walls and door zone are switched off with it (`territoryWalkActive()`).
+
+**Style.** `style` is `meadow` (green ground, stone plaza) or `security`
+(dark ground, red accents, padlocks and a shield over the sign, terminal
+green lettering). `accent` overrides the accent colour; empty takes the
+instance theme's dark `primary`, then the style's own. The palettes are in
+`TERRITORY_STYLES`.
+
+**Buildings that link out.** `objects` lists up to 12 houses
+`{type: "house", label, url, position: [x, z], color}`; `position` is
+measured from the plaza centre, within 300 on each axis, and must stay
+inside the hexagon: at most 330 from its centre (the plaza sits 85 in front
+of it), the reach the ForkMesh World draws a neighbour scene to
+(`NEIGHBOUR_SCENE_REACH`). Clicking a house leaves the World for `url`
+(https only, no credentials) in the same tab, after the "Entering …" notice
+(`openTerritoryLink`). Nothing opens by walking.
+
+The neighbour scene (`/api/world/neighbour-scene`) is served from the
+instance's own `PUBLIC_BASE_URL` and answers 404 without one, so a request's
+`Host` header never picks the address the server fetches the bug list from.
+Until an operator saves World settings the route falls through to the
+existing handler, so `WORLD_NEIGHBOUR_SCENE` and the default scene still
+apply. Every answer is edge-cached (600 s, or 60 s when the bug list could
+not be read), so anonymous requests do not each repeat the database reads
+and the bug-list fetch.
+
+**Bug terrarium.** `bugs: {repo, ref, path, title, limit, position}` draws a
+glass enclosure with up to 60 crawling bugs. The list is a JSON file in one
+of the instance's own repositories, read through
+`/api/repo/<owner>/<name>/raw?path=...&ref=...`: an array of
+`{domain, name, url, favicon, count}` (`count` optional). `favicon` is a
+path next to the list (`favicons/<domain>.png`; png, ico, gif, jpg or webp)
+and is drawn on the bug's back, so the visitor's browser only ever loads
+same-origin files: no third-party favicon service learns who looks at the
+terrarium. A path that leaves the repository, an absolute address or an
+SVG favicon is dropped (`territoryFaviconURL`). Clicking a bug shows its
+domain, name and count with a link to `url` (https only) in a small card.
+
+**Settings.** The `instance_settings` row `world` holds them
+(`app/src/instance_world.py`, cleaned on save, defaults when missing or
+invalid) and `/api/instance` reports them as `world`. Admins edit them as
+JSON under Platform → World in the admin console (`save_world`, CSRF-checked
+and audited as `admin.console_save_world`).
+
+**The ForkMesh World next door is live.** The hexagon stands on one of the
+ForkMesh town's desert petals: the petal the hub publishes for it in
+`/api/world/mesh`, else slot n's petal n + 1 (`territoryPetal`). ForkMesh's
+own World is the same code, so its town, petals, roads, Office tower,
+coaster, beach and other scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) are moved
+beside the instance hexagon and are walkable and solid, with nothing
+reloading at the border (world federation, [world/federation.md](world/federation.md)).
+Stepping onto ForkMesh's ground moves the walker's presence to ForkMesh's
+relay over a visit socket with a visitor token, so they are `name@<this
+host>` there; the Office runs against ForkMesh's API (`setOfficeOwner`),
+giving visitors its lobby and rooftop. Pieces that would show the
+instance's own data inside ForkMesh's town stay off
+(`TERRITORY_HIDDEN_ELEMENTS`) while the walker stands in the instance.
+
+**Stepping into the ForkMesh World.** Crossing the road's midline onto
+ForkMesh's ground (`territoryOwnerAt()`) puts the page in the ForkMesh World
+without a reload, the way world.forkmesh.com enters an instance: the address
+stays the same and the walker stays signed in to this instance, visiting
+ForkMesh with a visa. `enterMeshWorld()` asks the scene to
+`leaveOwnTerritory()`, which moves ForkMesh's scenery back to its own place,
+hides the instance hexagon and its clicks, switches on the hidden ForkMesh
+pieces the visitor had not switched off themselves, and gives back the
+town's walk surface. The walker is recentred by the hub's offset, the page
+lays the mesh out from the hub (`placeWorldMesh`, so the instance shows as
+the hub's neighbouring hexagon), town reads go to ForkMesh through the
+federation client (`meshRoot`), its residents arrive over the visit socket,
+and the notice reads `Entering ForkMesh · world.forkmesh.com`. Stepping back
+onto the instance's land returns home: `placeTerritoryNeighbour()` calls
+`enterOwnTerritory()`, which puts the hexagon, its clicks, the hidden list
+and ForkMesh's place next door back. The saved position stays in the
+instance's frame, so a reload on ForkMesh's ground switches again. Until
+2026-10-22 ForkMesh's ground next door only moved the walker's presence:
+the town stayed the instance's, without ForkMesh's members, boards or bots,
+so walking from the instance into ForkMesh did not enter it the way walking
+from ForkMesh into the instance does.
+
+**What ForkMesh's World draws.** From a distance forkmesh.com draws the
+instance hexagon from `GET /api/world/neighbour-scene`
+(`app/src/instance_world_scene.py`: ground, plaza, sign, lamps, houses with
+their links and the terrarium with up to 32 bugs and their favicons). A
+ForkMesh walker who steps onto it, without a reload, stands in this World as
+it draws itself: the page builds the hexagon with the same code from this
+instance's `/api/instance` settings, moves ForkMesh's town next door, and
+reads the Members Circle, repository portals and other town content from
+this instance ([world/README.md](world/README.md), Standing in an instance's
+hexagon). Their World opens a visit socket to this instance's relay with a
+visa, and they appear here as `name@world.forkmesh.com`.
+
+**Crossing the road (address arrivals).** The instance installs no
+crossings (`crossings` stays empty), so walking never navigates; the
+in-place switch above replaced it. `checkTerritoryCrossing()` still runs
+after every walking step and would navigate when a step entered the land of
+a listed crossing tile (`crossedInto`), going to
+`<home>?from=<instance domain>&slot=<n>&pos=<x>,<z>`, where `home` is the
+directory's `portal.home` or `https://world.forkmesh.com/world/`. The
+reverse direction (walking from world.forkmesh.com into an instance) is the
+world-mesh flowers' job since upstream main's world-mesh topology
+([world/README.md](world/README.md)); the territory turns off the mesh
+neighbours (`placeWorldMesh`) so the two layouts never overlap. `pos` is
+the crossing point relative to the instance hexagon's centre, rounded to a
+tenth and within 400, in the same frame on both sides. On arrival
+`territoryArrival()` reads the three parameters (a domain, `forkmesh`, a
+slot 0-11, two short numbers; anything else is ignored), the visitor is
+placed on the matching road edge, 14 units in, facing away from the road
+(`edgeArrival`), the saved position is not restored, and the parameters are
+removed from the address. Sign-ins do not cross: each World has its own
+accounts and its session cookie is per origin, so the URL carries no token
+and the visitor is told "Visiting from <origin> as a guest" unless they are
+already signed in there. A crossing waits four seconds before it can fire
+again.
+
+**What needs forkmesh.com.** On the instance alone: the hexagon, the
+ForkMesh hexagons next door, crossing into world.forkmesh.com and the
+portal obelisk work as soon as this is deployed. world.forkmesh.com only
+parses `from`/`slot`/`pos`, draws the instance hexagon and lets a visitor
+walk back once it runs this code and lists the instance with a World slot;
+until then a visitor who crosses arrives at the usual ForkMesh spawn and the
+instance hexagon there is missing.
+### Platform name
+
+The instance name replaces "ForkMesh" wherever the platform itself is meant.
+Three layers do it, so that nothing depends on the browser alone:
+
+- **Server.** `instance_features.display_name(env)` is the name (`ForkMesh`
+  without `INSTANCE_NAME`) and `instance_features.rename(env, text)` /
+  `rename_html` swap it into a string; on forkmesh.com both return the text
+  unchanged. They name the repository page's `og:site_name`, `og:title`,
+  `twitter:title` and default description, the profile page `<title>`, the
+  repository fediverse page, the repository card image's default line, every
+  email subject and body (`_send_email`; the "Powered by ForkMesh" footer is
+  added after the rename), the hosted-repository limit messages, the
+  "unavailable" pages, and the plain-text Git errors (`_git_error_as_text`
+  gets the env; on an instance it drops the forkmesh.com help link). The
+  founders' day-one feedback email (from founders@forkmesh.com) is not sent
+  on an instance.
+- **The git node account.** The instance's git node (`INSTANCE_FLAGSHIP_NODE`,
+  `forkmesh`) has authored merge and metadata commits, and it owns the platform
+  mirror internally. `/api/instance`
+  reports it as `gitNode`; the dashboard shows it as the instance name
+  wherever a commit author is shown (latest-commit line, history, commit
+  detail, contributors, Insights) through `shownAccountName()`, the Actions
+  snapshot shows it as the instance name when it is a run's actor, and
+  repository cards drop "published from <node>" on an instance.
+- **Build.** `apply_instance_brand.py` renames `<title>`, the
+  application-name and `og:site_name` metas, and now the platform word inside
+  `description`, `og:title`, `og:description`, `twitter:title` and
+  `twitter:description`. It also writes the instance name beside the header
+  logo (`<span data-instance-name-label>`, the same markup
+  `instance-brand.js` used to add after the page had painted, which pushed the
+  rest of the header right), so the name is there at the first paint;
+  re-branding replaces the label.
+- **Switched-off plugins at the first paint.** `/instance-theme.css` (a
+  stylesheet in the page head) ends with `instance_features.chrome_css`: one
+  rule per switched-off plugin hiding its `[data-instance-plugin~=id]`
+  elements and links to its pages in `header`, `nav`, `aside` and `footer`
+  (and `world.forkmesh.com` links when World is off), with the `li:has(...)`
+  wrappers in a rule of their own so a browser without `:has` keeps the rest.
+  It starts with `--instance-plugins: ready`; when `instance-brand.js` sees
+  that, it no longer hides every plugin element until `/api/instance` answers,
+  which made switched-on sections (the blog card, profile panels) appear late
+  and switched-off header icons disappear late.
+- **Dashboard.** `platformName()` in `02-helpers.js` reads the brand tag's
+  `data-instance-name` (default `ForkMesh`). Every platform reference in a
+  dashboard string goes through it, for example the repository Insights
+  panel "<name> traffic", "Could not reach <name>", hosting and import
+  notices, webhook and mirror help, the command palette, the profile link
+  title and the account-search placeholders. Static partial text that sits
+  inside `main` on repository and profile pages (which `instance-brand.js`
+  deliberately leaves alone so READMEs and user text are never rewritten) is
+  wrapped in `<span data-platform-name>`, which `applyPlatformName()` fills
+  at boot. `instance-brand.js` still renames chrome and the other pages; its
+  pattern skips identifiers (`X-ForkMesh-Ref`, `ForkMesh-Attestation`) and
+  "ForkMesh, Inc.", and drops the word before "desktop". Elements marked
+  `data-user-content` hold text a person or repository wrote (descriptions,
+  names) and keep their own words even where they say "ForkMesh".
+
+Beyond the dashboard, a branded instance also names itself in: the `/docs`
+and `/desktop` pages (which no longer say "ForkMesh desktop app" or
+"forkmesh.com/desktop", and drop the Powered by footer when `poweredBy` is
+off), the plugin-off page, the email unsubscribe pages, JSON error messages
+(`message`, `hint`, `detail`, `title`, `reason` of any 4xx/5xx JSON answer,
+renamed by `HostRuntime._instance_error_text`), the queued-agent notice,
+nodeinfo `nodeName`, the instance ActivityPub actor's name, the default
+profile and repository actor summaries, the fediverse daily digest, and the
+`User-Agent` of requests other servers see (webhook deliveries, fediverse
+fetches, workflow HTTP steps and imports, provider mirrors and repository
+metadata: `<name-slug>-<kind>/1.0 (+<origin>)`, from
+`instance_features.remember`/`user_agent`). The web manifest takes the name
+even without a logo. The build-time brand tool renames the platform word in
+all page text and shown attributes outside `<script>`/`<style>`, so a page
+reads right before `instance-brand.js` runs. "ForkMesh desktop app" reads
+"desktop app" on an instance (`desktopBrand()` in the dashboard,
+`data-desktop-brand` spans in partials, and both brand passes). The start
+page that launches new instances is the `instance-launcher` plugin, off on an
+instance.
+
+What stays on purpose: the software's own identity where it is a fact, not
+branding ("a ForkMesh node", "runs a ForkMesh version", "other ForkMesh
+instances", "a checkout of ForkMesh itself", nodeinfo `software.name`
+`forkmesh` and its repository); technical names never shown as prose
+(`.forkmesh/` like `.github/`, `forkmesh-actions`, `FORKMESH_*` variables,
+the `forkmesh` MCP server and its config path, header and trailer names, the
+`forkmesh-profile=` DNS verification record, service and file names); the
+`<owner>/forkmesh` platform-source mirror, its description and its "Mirror of
+forkmesh.com/forkmesh/forkmesh" label; the upstream installer command
+`curl -fsSL https://forkmesh.com/install.sh | bash` on `/desktop` and in
+Settings > Nodes; license and credit text, the optional Powered by badge and
+email footer; and the strings of ForkMesh-only plugins (ads, hackathon,
+links, referrals, rewards, Patreon membership, the Market, developer docs,
+the instance launcher), which an instance does not show.
+`app/tests/test_instance_platform_name.py` fails on any other platform
+literal in dashboard JS (its `KEPT` list is the allow-list) and on any
+"forkmesh", in any case, in the shown text of the branded static pages (its
+`PAGE_KEPT` and `GATED_PAGES` lists are the allow-list).
+
+### What an instance hides
+
+Besides plugin routes and `data-instance-plugin` UI: the profile Tips card
+(`rewards`), the profile "Referred users" panel (`referrals`), the profile
+footer's "© ForkMesh, Inc." line and the "Open the dashboard from
+forkmesh.com" setting (`website`), and the Patreon connection and
+membership cards in Settings (`patreon`). The dashboard does not request the
+ads slot (`/api/ads/serve`) or the blog feed (`/rss.xml`) unless
+`instancePluginEnabled()` says the plugin is on, so a switched-off plugin no
+longer costs a 404 on every page. The availability-proof links to
+forkmesh.com docs on the Mirrors tab are left out, and the repository Watch
+handle is the instance's own repository actor (`GET .../about`
+`fediverse.handle`) instead of `@forkmesh.forkmesh@forkmesh.com`.
 
 ## Dashboard on an instance
 
@@ -827,12 +1501,50 @@ never carry it.
   The Mirrors tab stays as the full diagnostic view. The "Powered by
   ForkMesh" badge is not a served-by label and stays (see the top of this
   page).
+- **Mirror goal.** The rail's "Mirrors" card is not a served-by label: it
+  counts plain git copies kept elsewhere (this instance, the original named
+  by `.forkmesh/forge-source.json`, and copies people register) against a
+  goal the maintainers set, and is shown on instances too. See
+  [app/mirror-quota.md](app/mirror-quota.md).
+
+## Accounts, sign-up and moderation
+
+An admin chooses under People, **Sign-up & moderation**
+(`app/src/instance_console.py`, view `accounts-moderation`); the choice is the
+`instance_settings` row `accounts` and applies within 30 seconds, without a
+restart. Defaults keep the behaviour from before (email required, people pick
+their usernames, no review, no limits). Details, APIs and storage:
+[app/accounts-and-moderation.md](app/accounts-and-moderation.md).
+
+| Setting | Choices |
+| --- | --- |
+| Sign-up | open with email required; open with email optional (no address stored, a one-time recovery code instead); invite code only (the Controls code, email optional); closed |
+| Usernames | people choose; suggest a random name like `quiet-otter-7f3k`; random names only |
+| Only signed-in accounts can post | off / on |
+| First-post approval | off / on: a new account's posts wait in the organization's Moderation queue until a moderator approves one |
+| New-account period, threads and comments per day | 7 days, 0 (no limit), 0 (no limit) |
+| Hide the posts of accounts blocked with "hide their posts" | on |
+
+The same page lists instance moderators (they moderate every repository
+here), accounts blocked on the whole server, and the moderation log.
+Organization owners and admins name their own moderators and block accounts
+from the organization's settings page.
+
+For a public forum such as forum.example.org: email optional, suggest
+random names, only signed-in accounts can post, first-post approval on,
+3 threads and 20 comments a day for the first 7 days. Sign-up still needs the
+Turnstile keys (see [Limits](#limits)).
 
 ## Directory
 
-After a successful launch, `instance_directory.publish` writes an
+After a successful launch, `instance_directory.publish_new` writes an
 `instance_directory` row keyed by domain (name, URL, logo, choices, World
-slot). An instance installed directly with the installer joins the same
+slot), but only when no row exists for that domain yet and the domain is the
+launch's own `sslip.io` name or resolves only to the address the launch
+connected to. A launch never updates or removes an entry: the launched
+server reports its own success, so anyone with an SSH server could otherwise
+name any domain and overwrite or delete its entry. Later changes to the
+choices go through the instance's signed announcement (below). An instance installed directly with the installer joins the same
 directory from its admin console (Platform → ForkMesh directory) or with the
 install setting `"directory": {"listed": true, "world": true}`: it publishes
 `/.well-known/forkmesh-instance.json` and sends a signed announcement that
@@ -848,12 +1560,17 @@ The forkmesh.com homepage's "Federated instances" section
 credentials and shows each listed instance's logo, name, address and status:
 "Online" when its last `/readyz` check answered, "Checking" before the first
 check or after one miss (each entry carries `status` and `checkedAt`;
-instances that missed two checks are not in the list at all). Under the list
-is a "Start an instance" button to `/start`, styled as a secondary button
-because the page's green call to action is its sign-up button. On
-forkmesh.com the section always shows, with "No instance has joined yet."
-when the list is empty; on an instance (whose own directory is empty) the
-section and the button stay hidden. Tests:
+instances that missed two checks are not in the list at all). The list always
+starts with a fixed OWASP BLT card (its logo, `www/public/assets/owasp-blt-logo.svg`,
+copied from the instance's `/instance-logo.svg`) linking to
+`https://git.owaspblt.org/BLT`; a directory entry on `git.owaspblt.org` is
+skipped so it does not show twice (the host is the `data-instances-pinned`
+value). It always ends with an "Add your instance" box to `/start`, a dashed
+card rather than a button because the page's green call to action is its
+sign-up button; it replaced the "Start an instance" button and the "No
+instance has joined yet." line in October 2026. On forkmesh.com the section
+always shows; on an instance (whose own directory is empty) the section and
+the add box stay hidden. Tests:
 `app/tests/test_homepage_federated_instances.py`. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
@@ -881,6 +1598,18 @@ otherwise SMTP or Mailtrap by configuration. `MAIL_SENDER` and
 `MAIL_SENDER_NAME` set the sender. Budgets, suppression and the mail log apply
 to every provider.
 
+## Privacy mode
+
+An admin can make the instance keep no records about visitors beyond what it
+needs to run: Platform → Privacy mode in the admin console (`instance_settings`
+key `privacy`), or the install setting `privacyMode: true`
+(`INSTANCE_PRIVACY_MODE=1` in `app.env`). Only the install setting also
+reaches Caddy, uvicorn, the git node and the journal. To turn it on for an
+existing instance, add `"privacyMode": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh --update`.
+[app/privacy-mode.md](app/privacy-mode.md) has the audit of what is recorded
+normally, what privacy mode stops, and what remains and why.
+
 ## Limits
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
@@ -894,9 +1623,18 @@ to every provider.
 - SSH credentials pass through the app once, in memory only.
 - The instance app's egress guard refuses forkmesh.com except
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
-  which only the directory announcement uses.
-- Brand renaming happens in the browser; plain-text server messages still
-  say ForkMesh.
+  which only the directory announcement uses, and the instance's own domain.
+  An instance on a `*.forkmesh.com` name (example.forkmesh.com) used to
+  refuse its own endpoint registration ("production host … is off limits for
+  Next"), so the git node never leased its endpoint and the `repo` step waited
+  on the platform mirror until the guard was widened.
+- Server text that is not listed under "Platform name" (admin-only
+  operational alerts, the plugin descriptions on the admin console's
+  Plugins page, Solana/ledger notices of switched-off plugins, the referral
+  preview page) still says ForkMesh.
+- The repository card image keeps the ForkMesh mark in its corner.
+- Commit identities, the runner name and the Go node's own messages change
+  only with a signed release that contains them (see "Commit identities").
 
 ## Tests
 
@@ -904,10 +1642,12 @@ to every provider.
 `test_install_instance_staged_build.py` (staged build, rollback, source
 switch, git node program),
 `test_start_instance_page.py`, `test_instance_white_label.py`,
+`test_instance_platform_name.py`, `test_git_error_text.py`,
 `test_instance_theme.py`, `test_instance_pages.py`,
 `test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_accounts_moderation.py`,
 `test_instance_node_reconnect_frontend.py`,
 `test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
 `test_single_org_contributors.py`, and

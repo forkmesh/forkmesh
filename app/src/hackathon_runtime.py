@@ -26,6 +26,7 @@ import json
 import re
 
 import hackathon as policy
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -73,6 +74,14 @@ def _now():
 
 def _name(value):
     return clean_string(value or "", MAX_NODE_NAME).strip().lower()
+
+
+def _profile_html(value):
+    name = _name(value)
+    if not valid_node_name(name):
+        return _html_escape(name)
+    return "<a href=\"/@%s\">%s</a>" % (
+        _html_escape(quote(name, safe="")), _html_escape(name))
 
 
 def _site_origin(env, request=None):
@@ -2280,8 +2289,8 @@ async def admin_page_handler(env, request):
             raw = await bounded_request_text(request, ADMIN_FORM_MAX_BYTES)
         except Exception:
             raw = ""
-        fields = {key: values[-1] for key, values in parse_qs(
-            str(raw or ""), keep_blank_values=True).items()}
+        fields = {key: values[-1] for key, values in clean_hidden_query(parse_qs(
+            str(raw or ""), keep_blank_values=True)).items()}
         slug = str(fields.get("slug") or "").strip().lower()
         form = str(fields.get("form") or "")
         notice_key = ""
@@ -3335,7 +3344,7 @@ def _invite_page(origin, campaign, config, inviter, stats, card_url):
         "card": _html_escape(card_url),
         "style": INVITE_STYLE,
         "campaign": _html_escape(str(campaign or "Hackathon")),
-        "inviter": _html_escape(name),
+        "inviter": _profile_html(name),
         "stats": stat_cells,
         "join": _html_escape(join_url),
         "theme": _html_escape(theme),
@@ -3480,7 +3489,7 @@ def _challenge_page(origin, campaign, challenge, card_url, now):
         "card": _html_escape(card_url),
         "style": INVITE_STYLE,
         "campaign": _html_escape(str(campaign or "Hackathon")),
-        "who": _html_escape(who),
+        "who": _profile_html(who),
         "cells": cells,
         "actions": actions,
         "note": _html_escape(note),
@@ -3579,7 +3588,7 @@ def _project_page(origin, campaign, project, members, card_url):
         "cells": cells,
         "links": "".join(links),
         "team": _html_escape(team),
-        "members": _html_escape(", ".join(members)),
+        "members": ", ".join(_profile_html(member) for member in members),
         "repo": _html_escape(repo),
     }
 
@@ -3922,7 +3931,7 @@ def _squad_page(origin, campaign, config, squad, roster):
             "{:,}".format(members))
     names = "".join(
         "<div class=\"card\"><h2>%s</h2><p>%s points</p></div>" % (
-            _html_escape(_name(entry.get("name"))),
+            _profile_html(entry.get("name")),
             "{:,}".format(int(entry.get("points") or 0)))
         for entry in list(roster or ())[:9])
     return (
@@ -3995,7 +4004,7 @@ def _squad_page(origin, campaign, config, squad, roster):
                 origin, quote(str(squad.get("code") or "")))),
         "style": INVITE_STYLE,
         "campaign": _html_escape(str(campaign or "Hackathon")),
-        "owner": _html_escape(owner),
+        "owner": _profile_html(owner),
         "percent": max(0, min(100, percent)),
         "members": "{:,}".format(members),
         "points": "{:,}".format(int(squad.get("points") or 0)),

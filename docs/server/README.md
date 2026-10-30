@@ -30,6 +30,12 @@ pinned toolchain). Paths are relative to `server/`.
 
 | Path | Responsibility |
 | --- | --- |
+| `cmd/forkmesh-calls/main.go`, `rtc/` | The group-call server (SFU) and our own standard-library WebRTC stack: [rtc.md](rtc.md); the engine replacing WebRTC: [fm-media.md](fm-media.md) |
+| `rtc/quic/`, `rtc/h3/`, `rtc/webtransport/` | Our own QUIC v1, minimal HTTP/3 and WebTransport, standard library only: [quic.md](quic.md) |
+| `rtc/fmm/` | FM Media engine core: [fmm-protocol.md](fmm-protocol.md) |
+| `rtc/fmmserver/`, `rtc/fmmcall/` | FM Media call server (QUIC and WebTransport, standby failover, certificates) and its client side: [fmm-server.md](fmm-server.md) |
+| `rtc/e2ee/`, `../app/public/chat-call-e2ee.js` | Group call end-to-end encryption (v2): hybrid X25519 + ML-KEM-768 sender keys per epoch, AES-256-GCM frame keys, a short commit-then-reveal verification code and batch-signed media: [call-e2ee.md](call-e2ee.md) |
+| `rtc/netsim/`, `rtc/bench/`, `../tools/call_bench.py` | Network impairment relay and the call-quality bench: [call-bench.md](call-bench.md) |
 | `cmd/forkmesh-mirror-node/main.go` | Flags and one-shot modes (`--init`, `--check`, `--preflight`, `--backup`, `--restore`, `--restore-drill`, `--export-identity`, `--import-identity`, `--register-link-code`, helper modes), then `Daemon.Run` |
 | `config.go` | `mirror-node.json` schema, defaults, strict validation; `role`, `runner`, `runnerPool` |
 | `daemon.go`, `supervisor.go` | Loopback API, sync/publish cycle, gateway generation adoption, backoff; child process supervision (`Reload` vs `Restart`) |
@@ -62,7 +68,7 @@ broker ([gateways.md](gateways.md)), the desktop host installer, and
   each core converges its own copy.
 - **One cycle, many doorbells.** `syncLoop` runs `cycle()`; node socket events
   (`commits`, collaboration kinds, `org-agents`, `forks`, `replica`, and a
-  catch-up on reconnect) mark work pending. App-fed nodes reconcile every 30
+  catch-up on reconnect) mark work pending. App-fed nodes reconcile every 5
   minutes as a safety net (`relaySafetySyncInterval`), third-party upstreams
   every `syncInterval` (default 15 s); the endpoint lease renews every 4
   minutes.
@@ -112,7 +118,7 @@ Environment: `/etc/forkmesh/node.env`, `FORKMESH_MIRROR_NODE_CONFIG`.
 `eventDrivenUpstreams` names upstreams whose changes arrive as `commits`
 doorbells. An upstream on the node's own relay (same host as `catalogUrl`
 once `app.`/`api.`/`www.` is dropped, or a subdomain of it) is announced on
-the node's signed account socket and keeps the 30-minute safety fetch. An
+the node's signed account socket and keeps the 5-minute safety fetch. An
 upstream on another relay (a self-hosted instance following forkmesh.com) gets
 an unsigned watch socket on that relay,
 `/api/nodes/events?watch=<owner>/<repo>` (`upstreamwatch.go`); a doorbell or
@@ -170,6 +176,39 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `refs/pr/*`, `refs/remotes/origin/*`, `HEAD` and commit ids, so hidden
   namespaces such as `refs/forkmesh/trash/` are never served
   (`test_reads_resolve_only_visible_refs`).
+- A commit id must have at least 7 hex digits, and is served only when one of
+  those visible refs, or a force-push backup under `refs/forkmesh/history/`
+  (kept resolvable for reviews, [CORE_PUSH.md](../CORE_PUSH.md)), contains
+  it. Until 2026-10-27 any id of 4+ digits resolved any object in the store,
+  so the public read API served deleted branches in `refs/forkmesh/trash/`,
+  merge staging, and objects a hosted fork borrows from its pool
+  (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
+- The check costs one walk per refs state, not per id: on the first commit-id
+  read of a cache generation the gateway lists the visible refs and, when
+  they reach at most `VISIBLE_COMMIT_SET_LIMIT` (50,000) commits, keeps that
+  commit set (about 5 MB at the limit). A full id is then answered from the
+  set without starting git. A bigger repository answers visible tips from
+  the ref list and walks the rest per id (`for-each-ref --contains`, memoized
+  per generation). Every walk forces `core.commitGraph=true` (repository
+  config is untrusted) and takes one of `VISIBLE_COMMIT_WALK_SLOTS` (2)
+  process-wide slots; a request that waits more than 5 s gets a 503, so a
+  flood of distinct old ids queues instead of taking every CPU
+  (`test_commit_id_visibility_is_cached_per_refs_state_and_bounded`).
+- The runner daemon reads a Codex job's `last-message.txt`, in a folder the
+  job user owns, with `readOwnedFile` (no symlink, no FIFO, owned by the job
+  user, at most 4 MiB), like every other job-owned file it reads
+  (`TestCodexLastMessageReadRefusesJobPlantedLinksAndFifos`).
+- A core (`role: core`) syncs its upstreams with `http.followRedirects=false`
+  (`syncCoreRepository`, `upstreamGitArgs` in `gateway.go`), for the fetch,
+  the first clone and the peer `main` convergence. The App's public Git route
+  can answer with a 307 to the serving node, and before this the core followed
+  it to whatever host the App named, so a mirror the App picked could feed the
+  core's `main` and tags. Now a redirecting upstream fails, and the sync moves
+  on to the next configured upstream, the peer cores listed by
+  `core_upstreams` (`deploy/core/render.py`). Mirrors and runners keep
+  following redirects: the public route is their only upstream
+  (`TestCoreSyncNeverFollowsARedirectToAnotherHost`,
+  `TestMirrorSyncStillFollowsRedirects`).
 - See [RUNNERS.md](../RUNNERS.md) and [IDS.md](../IDS.md).
 
 ## Traps
@@ -212,6 +251,58 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   joined CI (2026-10-14) until it was fixed; reproduce with
   `umask 077; GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1
   GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true go test ./...`.
+- **The sandbox has a CPU quota, not fewer cores.** The desktop runs a step in
+  a scope with `CPUQuota` of at most 800% and `CPUWeight=20`, while Go 1.24
+  sizes `GOMAXPROCS` (and so `go test -p`) from every host core. On a 36-core
+  desktop, 36 packages with 36 threads each got throttled in bursts. Run 6484
+  (2026-10-22) failed this way: a loopback `httptest` POST in
+  `TestRegisterNodeAccountReservesAndFinalizesLinkCode` hit the 20 s client
+  timeout, and the plain datagram window in
+  `TestDatagramLossExemptKeepsTheWindowOpen` regrew to 3600 B, short of the old
+  4x-the-exempt-window ratio. `tools/run_critical_tests.py go` now sets
+  `GOMAXPROCS` from `FORKMESH_ACTIONS_CPUS`, which the desktop exports, so
+  package parallelism follows it. That datagram test now checks each
+  connection against its own starting window: without the exemption the
+  window falls to half or less, and with it the window never shrinks.
+- **A timeout on a busy desktop gets one retry.** The CI step shares the host
+  with agent sessions, builds and auto-deploy tests, at `CPUWeight=20`. Even
+  with `GOMAXPROCS` capped, one in-process loopback exchange sometimes waits
+  out its whole timeout while the rest of the package runs at normal speed.
+  Run 6458 hit the 30 s context of `TestMirrorNodeRejectsUnsafeAgentJobWithoutRunningIt`,
+  run 6484 the 20 s client timeout of the account test, and run 6499
+  (2026-10-22) the 30 s dial timeout of `http.DefaultTransport` in
+  `TestRunnerClaimsOnlyWithAProviderAndFreeSlots`. Each failed package took
+  its usual ~63 s plus exactly that timeout. The host counters show no lost
+  packets (`/proc/net/stat/nf_conntrack` drop 0, `ListenOverflows` 0,
+  `softnet_stat` dropped 0), so the test process was starved, not the
+  network. `tools/run_critical_tests.py go` now reruns the failed tests once,
+  with `-count=1 -run '^(…)$'` per package, but only when at most three
+  tests failed, each printed a timeout (`i/o timeout`,
+  `context deadline exceeded`, `Client.Timeout exceeded`, `timed out`), and
+  no package panicked or failed to build. The log says
+  `retrying … once: every failure was a timeout`. A wrong value, a panic,
+  or a timeout that recurs still fails the step.
+  `TestThreePeopleHoldACallThroughImpairedLinks` gets the same one retry
+  for any failure, because its frame counts drop when the process is
+  starved (`GO_LOAD_SENSITIVE_TESTS`, [../engineering/github-actions.md](../engineering/github-actions.md)).
+- **Real-time call tests take three attempts.** The call and QUIC tests that
+  judge wall-clock results run their peers, cores and `netsim` links in the
+  test process, so a starved process is a worse network, not a slower one:
+  on 2026-10-24 an agent sandbox measured RTTs of 40–100 ms on 15/25 ms
+  links, a 1.3 s failover with no goroutine stalled for more than 57 ms, and
+  listeners that ran 110–121 of 150 steps yet played 15–71 frames. A stall
+  allowance or a per-step frame count therefore cannot separate load from a
+  regression. `TestThreePeopleHoldACallThroughImpairedLinks`,
+  `TestCoreDeathMovesTheCallToTheStandbyCore` (audio back within 500 ms),
+  `TestMultipathPathFailureAudio` (a gap within one round trip of the
+  surviving path, no loss) and the lower bound of `TestAntiAmplificationLimit`
+  run through `retryTiming` (`timing_test.go` in `rtc/fmmserver` and
+  `rtc/quic`): each attempt builds fresh cores, parties and links, misses are
+  logged, and the test fails only when all three miss. Setup failures and
+  the anti-amplification upper bound still fail at once. They blocked
+  deploys `e162e9991b8f` (82 ms multipath gap) and `bf3a0be84066` (544 ms
+  failover) in run 7942, and earlier deploys on 2026-10-23 and 2026-10-24
+  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)).
 
 ## Related docs
 

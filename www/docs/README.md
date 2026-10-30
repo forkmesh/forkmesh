@@ -14,14 +14,29 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Goal | Guide |
 | --- | --- |
 | Install ForkMesh and complete first-run setup | [Getting started](getting-started.md) |
+| Keep a private backup of a GitHub repository, no developer experience needed | [Back up a GitHub repository](back-up-a-github-repository.md) |
 | Supported platforms, signing, upgrade, rollback, uninstall | [Installation support matrix](install-support-matrix.md) |
+| Start your own instance on your server from forkmesh.com/start | [Start your own instance](start-your-own-instance.md) |
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |
-| Build, run and use the desktop application | [Qt client guide](qt-client.md) |
+| Hand ForkMesh work to Claude Code or another coding agent | [Working with coding agents](coding-agents.md) |
+| Use the web, desktop, iPhone, Apple Watch and Android apps | [ForkMesh apps](apps.md) |
+| Build, run and use the desktop application | [ForkMesh desktop app guide](qt-client.md) |
 | Read and clone public projects without an account | [Reading and cloning without an account](accountless-reading.md) |
+| Follow issues by Atom feed or email, or read them without JavaScript | [Subscribing by feed or email](feeds-and-email.md) |
 | Create a repository from the web and push to it | [Hosted repositories](hosted-repositories.md) |
+| Fork a repository, push a branch and open a pull request with git only | [Contribute with git only](contributing-with-git.md) |
 | Import repositories from another forge | [Repository imports](repository-imports.md) |
 | Diagnose a failed clone, pull or push | [Git errors](git-errors.md) |
 | Change the project and open a pull request | [Contributing](../../CONTRIBUTING.md) |
+
+## Chat, calls and jams
+
+| Goal | Guide |
+| --- | --- |
+| Make voice, video and group calls, and check call quality | [Voice and video calls](calls.md) |
+| Check safety numbers and approve new devices in direct messages | [Safety numbers and trusted devices](chat-safety-numbers.md) |
+| Mention people and pick usernames as you type | [Mentions and username suggestions](mentions-and-autocomplete.md) |
+| Share a queue and decks with friends in Video Mix DJ Studio | [DJ Studio jams](dj-studio.md) |
 
 ## Product and policy
 
@@ -53,6 +68,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Availability proof and repository risk | [Availability proof](availability-proof.md) |
 | Signed availability contracts backed by mirror capacity | [Repository availability contracts](availability-contract.md) |
 | Fast preservation during shutdowns and takedowns | [Crisis preservation](crisis-preservation.md) |
+| A goal of healthy mirrors and the copies people run | [Mirror goals](mirror-quota.md) |
 | Removable-media exports and resumable low-bandwidth fetches | [Offline and low-bandwidth sync](offline-sync.md) |
 | Clearnet, Tor, I2P, overlay and LAN transports | [Transports and anonymity postures](transports.md) |
 | Recovery from origin, DNS, key, region and backup loss | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |
@@ -101,9 +117,9 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 - `engineering/`: quality gates, performance budgets and completion policy.
 - `security/`: security boundaries and local integration contracts.
 - `operations/`: deployment, recovery, gateways, headless nodes and runbooks.
-- `mobile/`: mobile node contract and the mobile Git engine.
+- `mobile/`: mobile node contract, the mobile Git engine, and phone guides (Siri, Apple Health, file editing, agent access).
 - `plugins/`, `launch/`, `strategy/`, `research/`: planned plugins, launch material and research.
 - `*.schema.json`: machine-readable configuration and protocol schemas.
 
 When reporting a problem, include the version, the action taken and the
-relevant log excerpt; see the [Qt client guide](qt-client.md) for log locations.
+relevant log excerpt; see the [ForkMesh desktop app guide](qt-client.md) for log locations.

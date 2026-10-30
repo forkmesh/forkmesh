@@ -265,6 +265,7 @@ QString displayMessage(const JournalEntry &entry);
 Classified classifyEntry(const JournalEntry &entry, const QString &source);
 bool isErrorEntry(const JournalEntry &entry, const QString &source);
 bool isKnownBootNoise(const JournalEntry &entry);
+bool isCaddyReloadNoise(const JournalEntry &entry);
 constexpr qint64 kBacklogAlertMs = 15 * 60 * 1000;
 bool isBacklogEntry(const JournalEntry &entry, qint64 nowMs);
 QString backlogNote(const JournalEntry &entry);

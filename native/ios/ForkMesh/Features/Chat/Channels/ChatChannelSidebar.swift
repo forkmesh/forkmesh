@@ -23,7 +23,6 @@ struct ChatChannelSidebar: View {
     @State private var groupName: String = ""
     @State private var renaming: String?
     @State private var moving: String?
-    @State private var inviting: String?
     @State private var managing: OfficeRoom?
     @State private var leaving: String?
     @State private var deleting: String?
@@ -46,18 +45,34 @@ struct ChatChannelSidebar: View {
         }
     }
 
+    private var movingKey: Binding<ChatSheetKey?> {
+        Binding(get: { moving.map(ChatSheetKey.init) }, set: { (key: ChatSheetKey?) in moving = key?.value })
+    }
+
+    private func shown(_ value: Binding<String?>) -> Binding<Bool> {
+        Binding(get: { value.wrappedValue != nil }, set: { (on: Bool) in if !on { value.wrappedValue = nil } })
+    }
+
     var body: some View {
+        dialogs(alerts(channelSheets(peopleSheets(list))))
+    }
+
+    @ViewBuilder private var list: some View {
+        let directRows: [ChatDirectRow] = hub.directRows
+        let people: [String: ChatDirectRow] = Dictionary(
+            directRows.map { ($0.conversation, $0) }, uniquingKeysWith: { (first: ChatDirectRow, _: ChatDirectRow) in first })
+        let memberGroups: [MemberGroup] = hub.memberGroups
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
-                recentSection.padding(.bottom, FmSpace.x4)
+                recentSection(directRows, people: people, online: memberGroups.filter(\.online).count).padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
                     sectionTitle("Starred", count: hub.workspace.starred.count)
                     card {
                         ForEach(hub.workspace.starred, id: \.self) { (conversation: String) in
-                            conversationTile(conversation)
+                            conversationTile(conversation, people: people)
                         }
                     }
                     .padding(.bottom, FmSpace.x4)
@@ -72,15 +87,15 @@ struct ChatChannelSidebar: View {
                         }
                     }
                     if !hub.workspace.isStarred(meshConversation) {
-                        conversationTile(meshConversation)
+                        conversationTile(meshConversation, people: people)
                     }
                 }
-                directMessages
-                if !hub.memberGroups.isEmpty {
-                    sectionTitle("People", count: hub.memberGroups.count)
+                directMessages(directRows)
+                if !memberGroups.isEmpty {
+                    sectionTitle("People", count: memberGroups.count)
                         .padding(.top, FmSpace.x4)
                     card {
-                        ForEach(hub.memberGroups) { (group: MemberGroup) in
+                        ForEach(memberGroups) { (group: MemberGroup) in
                             ChatMemberRow(
                                 group: group, selected: memberSelected(group),
                                 onTap: memberTap(group), onProfile: { person = ChatPersonKey(group: group) }, retentionHub: hub)
@@ -103,95 +118,108 @@ struct ChatChannelSidebar: View {
             await hub.direct?.refresh()
             await hub.refreshAppCommands()
         }
-        .sheet(isPresented: $statusSheet) { UserStatusSheet() }
-        .sheet(item: $person) { (key: ChatPersonKey) in
-            ChatPersonSheet(
-                hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in open(recipient) },
-                onProfile: { (name: String) in onRoute(.profile(name: name)) })
-        }
-        .sheet(isPresented: $showingOnline) {
-            ChatOnlineSheet(
-                hub: hub,
-                onMessage: { (recipient: ChatRecipient) in
-                    showingOnline = false
-                    open(recipient)
-                },
-                onProfile: { (name: String) in
-                    showingOnline = false
-                    onRoute(.profile(name: name))
-                })
-        }
-        .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { select($0) }) }
-        .sheet(item: Binding(get: { inviting.map(ChatSheetKey.init) }, set: { inviting = $0?.value })) { key in
-            InviteToChannelSheet(hub: hub, channel: key.value)
-        }
-        .sheet(item: Binding(get: { moving.map(ChatSheetKey.init) }, set: { moving = $0?.value })) { key in
-            MoveChannelSheet(channel: key.value, rows: rows, onMove: { group in move(key.value, to: group) })
-        }
-        .sheet(item: $managing) { (room: OfficeRoom) in
-            if let office = hub.office {
-                NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
+    }
+
+    private func peopleSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $statusSheet) { UserStatusSheet() }
+            .sheet(item: $person) { (key: ChatPersonKey) in
+                ChatPersonSheet(
+                    hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in open(recipient) },
+                    onProfile: { (name: String) in onRoute(.profile(name: name)) })
             }
-        }
-        .alert("New group", isPresented: $newGroup) {
-            TextField("Name", text: $groupName)
-            Button("Cancel", role: .cancel) { groupName = "" }
-            Button("Create") {
-                let name: String = groupName
-                groups?.update { ChannelGroups.createGroup(&$0, name) }
-                groupName = ""
+            .sheet(isPresented: $showingOnline) {
+                ChatOnlineSheet(
+                    hub: hub,
+                    onMessage: { (recipient: ChatRecipient) in
+                        showingOnline = false
+                        open(recipient)
+                    },
+                    onProfile: { (name: String) in
+                        showingOnline = false
+                        onRoute(.profile(name: name))
+                    })
             }
-        }
-        .alert("Rename group", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $groupName)
-            Button("Cancel", role: .cancel) { renaming = nil }
-            Button("Rename") {
-                if let from = renaming {
-                    let members: [String] = ChannelGroups.renderedMembers(rows, from)
-                    let to: String = groupName
-                    groups?.update { ChannelGroups.renameGroup(&$0, from: from, to: to, members: members) }
+    }
+
+    private func channelSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { (conversation: String) in select(conversation) }) }
+            .sheet(item: movingKey) { (key: ChatSheetKey) in
+                MoveChannelSheet(channel: key.value, rows: rows, onMove: { (group: String) in move(key.value, to: group) })
+            }
+            .sheet(item: $managing) { (room: OfficeRoom) in
+                if let office = hub.office {
+                    NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
                 }
-                renaming = nil
-                groupName = ""
             }
-        }
-        .confirmationDialog(
-            "Leave \(leaving ?? "")?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Leave channel", role: .destructive) {
-                if let channel = leaving {
-                    hub.workspace.forget(conversation: channel)
-                    hub.extras.removeChannel(channel)
-                    if hub.currentConversation == channel { hub.select(hub.generalConversation) }
+    }
+
+    private func alerts<Content: View>(_ content: Content) -> some View {
+        content
+            .alert("New group", isPresented: $newGroup) {
+                TextField("Name", text: $groupName)
+                Button("Cancel", role: .cancel) { groupName = "" }
+                Button("Create") {
+                    let name: String = groupName
+                    groups?.update { ChannelGroups.createGroup(&$0, name) }
+                    groupName = ""
                 }
-                leaving = nil
             }
-        } message: {
-            Text("It disappears from this phone. Messages others send there stop arriving here.")
-        }
-        .confirmationDialog(
-            "Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let conversation = deleting { hub.deleteConversation(conversation) }
-                deleting = nil
+            .alert("Rename group", isPresented: shown($renaming)) {
+                TextField("Name", text: $groupName)
+                Button("Cancel", role: .cancel) { renaming = nil }
+                Button("Rename") {
+                    if let from = renaming {
+                        let members: [String] = ChannelGroups.renderedMembers(rows, from)
+                        let to: String = groupName
+                        groups?.update { ChannelGroups.renameGroup(&$0, from: from, to: to, members: members) }
+                    }
+                    renaming = nil
+                    groupName = ""
+                }
             }
-        } message: {
-            Text("It is removed from this phone only, and comes back if they message you again.")
-        }
-        .confirmationDialog(
-            "Block \(blocking ?? "")?", isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Block", role: .destructive) {
-                if let name = blocking { hub.setBlocked(name, true) }
-                blocking = nil
+    }
+
+    private func dialogs<Content: View>(_ content: Content) -> some View {
+        content
+            .confirmationDialog(
+                "Leave \(leaving ?? "")?", isPresented: shown($leaving),
+                titleVisibility: .visible
+            ) {
+                Button("Leave channel", role: .destructive) {
+                    if let channel = leaving {
+                        hub.workspace.forget(conversation: channel)
+                        hub.extras.removeChannel(channel)
+                        if hub.currentConversation == channel { hub.select(hub.generalConversation) }
+                    }
+                    leaving = nil
+                }
+            } message: {
+                Text("It disappears from this phone. Messages others send there stop arriving here.")
             }
-        } message: {
-            Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
-        }
+            .confirmationDialog(
+                "Delete this conversation?", isPresented: shown($deleting),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let conversation = deleting { hub.deleteConversation(conversation) }
+                    deleting = nil
+                }
+            } message: {
+                Text("It is removed from this phone only, and comes back if they message you again.")
+            }
+            .confirmationDialog(
+                "Block \(blocking ?? "")?", isPresented: shown($blocking),
+                titleVisibility: .visible
+            ) {
+                Button("Block", role: .destructive) {
+                    if let name = blocking { hub.setBlocked(name, true) }
+                    blocking = nil
+                }
+            } message: {
+                Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
+            }
     }
 
     private var jumpBar: some View {
@@ -274,14 +302,16 @@ struct ChatChannelSidebar: View {
         .frame(minHeight: 44)
     }
 
-    @ViewBuilder private var recentSection: some View {
-        let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit)
-        sectionTitle("Recent", count: 0) { onlineButton }
+    @ViewBuilder private func recentSection(
+        _ directRows: [ChatDirectRow], people: [String: ChatDirectRow], online: Int
+    ) -> some View {
+        let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows)
+        sectionTitle("Recent", count: 0) { onlineButton(online) }
         if !recent.isEmpty {
             card {
                 ForEach(recent, id: \.self) { (conversation: String) in
                     if ChatHub.isPersonConversation(conversation) || conversation == meshConversation {
-                        conversationTile(conversation)
+                        conversationTile(conversation, people: people)
                     } else {
                         channelTile(conversation)
                     }
@@ -292,9 +322,8 @@ struct ChatChannelSidebar: View {
 
     static let recentLimit: Int = 5
 
-    private var onlineButton: some View {
-        let online: Int = hub.memberGroups.filter(\.online).count
-        return Button(action: { showingOnline = true }) {
+    private func onlineButton(_ online: Int) -> some View {
+        Button(action: { showingOnline = true }) {
             HStack(spacing: 5) {
                 Circle()
                     .fill(online > 0 ? fm.success : fm.textTertiary)
@@ -356,8 +385,8 @@ struct ChatChannelSidebar: View {
         }
     }
 
-    @ViewBuilder private var directMessages: some View {
-        let rows: [ChatDirectRow] = hub.directRows.filter { !hub.workspace.isStarred($0.conversation) }
+    @ViewBuilder private func directMessages(_ directRows: [ChatDirectRow]) -> some View {
+        let rows: [ChatDirectRow] = directRows.filter { !hub.workspace.isStarred($0.conversation) }
         if !rows.isEmpty || onCompose != nil {
             sectionTitle("Direct messages", count: rows.count) {
                 if let onCompose {
@@ -379,14 +408,16 @@ struct ChatChannelSidebar: View {
         }
     }
 
-    @ViewBuilder private func conversationTile(_ conversation: String, direct: ChatDirectRow? = nil) -> some View {
+    @ViewBuilder private func conversationTile(
+        _ conversation: String, direct: ChatDirectRow? = nil, people: [String: ChatDirectRow] = [:]
+    ) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: conversation)
         let person: Bool = conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
-        let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(conversation)
+        let locked: Bool = office?.isPrivate ?? false
         let icon: String = conversation == meshConversation ? "point.3.connected.trianglepath.dotted" : (person ? "at" : (locked ? "lock.fill" : "number"))
         let title: String = direct.map { $0.name } ?? hub.conversationLabel(conversation)
         let preview: ChatListPreview? = hub.listPreview(conversation)
-        let row: ChatDirectRow? = direct ?? (person ? hub.directRows.first(where: { $0.conversation == conversation }) : nil)
+        let row: ChatDirectRow? = direct ?? (person ? people[conversation] : nil)
         ChatChannelTile(
             title: title, icon: icon, selected: hub.currentConversation == conversation, unread: hub.isUnread(conversation),
             onTap: { select(conversation) }, muted: hub.workspace.isMuted(conversation),
@@ -475,7 +506,7 @@ struct ChatChannelSidebar: View {
 
     @ViewBuilder private func channelTile(_ channel: String) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: channel)
-        let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(channel)
+        let locked: Bool = office?.isPrivate ?? false
         let preview: ChatListPreview? = hub.listPreview(channel)
         ChatChannelTile(
             title: office?.name.isEmpty == false ? "#\(office!.name)" : hub.conversationLabel(channel),
@@ -494,9 +525,6 @@ struct ChatChannelSidebar: View {
                         Button(action: { managing = office }) { Label("Channel settings", systemImage: "gearshape") }
                     }
                 } else {
-                    if hub.extras.isPrivate(channel) {
-                        Button(action: { inviting = channel }) { Label("Invite people", systemImage: "person.badge.plus") }
-                    }
                     if hub.canLeaveChannel(channel) {
                         Button(role: .destructive, action: { leaving = channel }) {
                             Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right")
@@ -516,6 +544,7 @@ struct ChatChannelSidebar: View {
         if group.isSelf {
             return canSetStatus ? { statusSheet = true } : nil
         }
+        if group.account.isEmpty { return nil }
         return { open(ChatHub.recipient(for: group)) }
     }
 
@@ -891,50 +920,6 @@ struct NewChatChannelSheet: View {
             }
             onCreated(created)
             dismiss()
-        }
-    }
-}
-
-struct InviteToChannelSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let hub: ChatHub
-    let channel: String
-    @State private var invited: Set<String> = []
-
-    private var people: [Member] {
-        hub.relay.roster().filter { !$0.isSelf && $0.online && !ChatVisitorPresence.isTransientVisitor(name: $0.name) }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if people.isEmpty {
-                    Text("Nobody else is online right now. Invitations go to devices that are connected.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(people) { (member: Member) in
-                    Button(action: {
-                        if hub.extras.invite(peerId: member.id, to: channel) { invited.insert(member.id) }
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(member.owner.isEmpty ? member.name : member.owner)
-                                if !member.nodeName.isEmpty {
-                                    Text(member.nodeName).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if invited.contains(member.id) {
-                                Image(systemName: "checkmark").foregroundStyle(.green)
-                            }
-                        }
-                    }
-                    .disabled(invited.contains(member.id))
-                }
-            }
-            .navigationTitle("Invite to \(channel)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }

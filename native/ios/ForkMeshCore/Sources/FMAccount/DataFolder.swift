@@ -379,6 +379,9 @@ public enum DataFolderIdentity {
         var seed = try RecoveryKit.openSeed(kit: kit, passphrase: passphrase)
         defer { CryptoBytes.wipe(&seed) }
         let publicKey = B64.encodeUrlNoPadding(try Ed25519.publicKey(seed: seed))
+        if ChatKeyring.storedSeed(secureStore.read(namespace + Identity.seedKey)) != seed {
+            secureStore.delete(namespace + ChatKeyring.identityStoreKey)
+        }
         secureStore.write(namespace + Identity.seedKey, B64.encode(seed))
         return publicKey
     }

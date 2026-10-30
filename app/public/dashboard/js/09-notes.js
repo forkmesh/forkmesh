@@ -33,18 +33,36 @@
     owner_required: "Only the note's owner can do that.",
     editor_required: "You need edit access to do that.",
     note_not_found: "This note no longer exists, or you no longer have access to it.",
+    upstream_unavailable: "ForkMesh is restarting. Try again in a few seconds.",
+    sealed: "ForkMesh is restarting. Try again in a few seconds.",
   };
+  const NOTE_READ_RETRY_DELAYS_MS = [500, 1500, 4000];
 
   async function noteRequest(path, method = "GET", body = null) {
     const headers = { accept: "application/json" };
     const token = state.session?.sessionToken || "";
     if (token) headers.authorization = `Bearer ${token}`;
     if (body !== null) headers["content-type"] = "application/json";
-    const response = await fetch(path, {
-      method, headers, cache: "no-store",
-      body: body === null ? undefined : JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => ({}));
+    const retries = method === "GET" ? NOTE_READ_RETRY_DELAYS_MS : [];
+    let response;
+    let payload;
+    for (let attempt = 0; ; attempt += 1) {
+      const last = attempt >= retries.length;
+      try {
+        response = await fetch(path, {
+          method, headers, cache: "no-store",
+          body: body === null ? undefined : JSON.stringify(body),
+        });
+      } catch (cause) {
+        if (last) throw cause;
+        response = null;
+      }
+      if (response) {
+        payload = await response.json().catch(() => ({}));
+        if (response.ok || last || (response.status < 500 && response.status !== 408)) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retries[attempt]));
+    }
     if (!response.ok) {
       const error = new Error(NOTE_ERRORS[payload.error] || payload.error || `HTTP ${response.status}`);
       error.status = response.status; error.payload = payload; throw error;
@@ -285,14 +303,14 @@
       people.innerHTML = `
         <div class="notes-person">
           <span class="notes-avatar" style="background:${noteAvatarColor(owner)}">${escapeHtml(noteInitials(owner))}</span>
-          <div class="min-w-0"><div class="notes-person-name">${escapeHtml(owner)}</div><div class="notes-person-hint">You</div></div>
+          <div class="min-w-0"><div class="notes-person-name">${issuePersonNameHtml(owner, "")}</div><div class="notes-person-hint">You</div></div>
           <span class="notes-person-hint">Owner</span><span></span>
         </div>` + (note.shares || []).map((share) => {
         const key = `${escapeHtml(share.type)}:${escapeHtml(share.name)}`;
         return `
         <div class="notes-person">
           <span class="notes-avatar" data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}">${escapeHtml(noteInitials(share.name))}</span>
-          <div class="min-w-0"><div class="notes-person-name">${escapeHtml(share.name)}</div><div class="notes-person-hint">${share.type === "organization" ? "Organization" : "User"}</div></div>
+          <div class="min-w-0"><div class="notes-person-name">${share.type === "organization" ? escapeHtml(share.name) : issuePersonNameHtml(share.name, "")}</div><div class="notes-person-hint">${share.type === "organization" ? "Organization" : "User"}</div></div>
           <select data-note-share-role-change="${key}" aria-label="Access for ${escapeHtml(share.name)}">
             <option value="editor" ${share.role === "editor" ? "selected" : ""}>Can edit</option>
             <option value="viewer" ${share.role !== "editor" ? "selected" : ""}>Can view</option>
@@ -334,8 +352,8 @@
     const canEdit = noteCanEdit(note);
     const kindIcon = { issue: "circle-dot", pull: "git-pull-request", discussion: "message-square" };
     const chips = (note.links || []).map((link) => {
-      const section = link.kind === "pull" ? "pulls" : `${link.kind}s`;
-      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}?tab=${section}#${link.number}`;
+      const section = { pull: "pull", discussion: "discussions" }[link.kind] || "issues";
+      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}/${section}/${encodeURIComponent(link.number)}`;
       return `<span class="notes-chip"><span data-kind="${escapeHtml(link.kind)}">${noteIcon(kindIcon[link.kind] || "link")}</span><a href="${href}" title="${escapeHtml(link.owner)}/${escapeHtml(link.repo)} ${escapeHtml(link.kind)} #${link.number}">${escapeHtml(link.repo)}#${link.number}</a>${canEdit ? `<button type="button" class="notes-chip-x" data-note-unlink='${escapeHtml(JSON.stringify(link))}' aria-label="Unlink ${escapeHtml(link.repo)}#${link.number}">${noteIcon("x")}</button>` : ""}</span>`;
     }).join("");
     const adder = !canEdit ? ""
@@ -482,7 +500,7 @@
     if (entry.kind === "web") return "";
     const me = String(state.session?.nodeName || "").toLowerCase();
     const actor = String(entry.actor || "");
-    return `<b>${actor && actor === me ? "You" : actor ? userNameHtml(actor) : "Someone"}</b> `;
+    return `<b>${actor && actor === me ? "You" : actor ? issuePersonNameHtml(actor, "") : "Someone"}</b> `;
   }
 
   function renderNoteActivity() {
@@ -679,7 +697,7 @@
         return `
         <div class="notes-version" data-current="${current ? "true" : "false"}">
           <span class="notes-version-node"></span>
-          <div><div class="notes-version-name">Version ${version.version}</div><div class="notes-version-hint">${escapeHtml(relativeTimeLabel(version.createdAt))}${version.author ? ` · by @${escapeHtml(version.author)}` : ""}</div></div>
+          <div><div class="notes-version-name">Version ${version.version}</div><div class="notes-version-hint">${escapeHtml(relativeTimeLabel(version.createdAt))}${version.author ? ` · by ${issuePersonNameHtml(`@${version.author}`, "")}` : ""}</div></div>
           ${current ? '<span class="notes-version-tag">Current</span>'
             : canEdit ? `<button type="button" data-note-restore="${version.version}">Restore</button>` : "<span></span>"}
         </div>`;

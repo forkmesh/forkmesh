@@ -14,8 +14,8 @@ only Git's own message, usually with a `curl` error.
 | This ForkMesh mirror could not read the repository just now. | The mirror you were sent to failed while reading the repository. | Try again; the next attempt may use another mirror. |
 | ForkMesh has no public repository at this address. | The owner or repository name is wrong, or the repository is private. | Check the spelling in `git remote -v`. Private repositories need their owner's credential. |
 | This ForkMesh mirror has no public repository at this address. | Same as above, answered by the mirror itself. | Same as above. |
-| Pushing over HTTPS needs your ForkMesh account name and the repository's push credential. | The push had no credential, or a wrong one. | Use your account name as the username and the push credential as the password. See [Hosted repositories](hosted-repositories.md). |
-| This repository is private. Sign in with your ForkMesh account name and the repository's credential. | The repository is private and the credential was missing or wrong. | Use the credential its owner gave you. |
+| Pushing over HTTPS needs your ForkMesh account name or email and your password, or the repository's push credential. | The push had no credential, or a wrong one, or the account cannot push here. | Use your account name or email as the username and your account password, or the push credential, as the password. See [Hosted repositories](hosted-repositories.md). |
+| This repository is private. Sign in with your ForkMesh account name or email and your password, or the repository's credential. | The repository is private and the credential was missing or wrong, or your account cannot read it. | Sign in with an account that can read the repository, or use the credential its owner gave you. |
 | ForkMesh could not reach the node that accepts pushes for this repository. | The node that writes this repository did not answer. | Try again in a minute. Your commits are still local and safe. |
 | Use Git protocol version 0, 1, or 2. | Your Git sent a protocol version ForkMesh does not speak. | Remove `protocol.version` from your Git configuration, or set it to `2`. |
 

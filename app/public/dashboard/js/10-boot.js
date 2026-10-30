@@ -14,7 +14,6 @@
     "docs": initDocsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
-    "chat": initChatPage,
     "tasks": initTasksPage,
     "calendar": initCalendarPage,
     "notes": initNotesPage,
@@ -99,6 +98,7 @@
     session: () => state.session ? { ...state.session } : null,
     escapeHtml,
     relativeTimeLabel,
+    publicSiteOrigin,
     // Bundled first-party packages can keep a mature host implementation while
     // the manifest owns route, navigation, install identity, and presentation.
     // The allowlist prevents a package from invoking arbitrary dashboard code.
@@ -136,7 +136,7 @@
       owner: String(repo.owner),
       name: String(repo.name),
       key: repoKey(repo),
-      display: repoDisplayKey(repo),
+      display: agentModalRepoLabel(repo),
       owns: sessionOwnsRepo(repo),
       endpoint: orgAgentEndpoint(repo),
     };
@@ -189,6 +189,9 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
+    applyPlatformName();
+    void instanceInfo();
     watchGenieSetting();
     watchHomeRedirectSetting();
     installErrorActions();
@@ -207,10 +210,24 @@
       initDashboardFeedback();
       initPluginMenu();
       initDashboardUpdateNotice();
+      initRecentPushes();
+      initCommentReactions();
+      initCommentAnchor();
+      initCommentGifs();
+      initCommentTips();
+      void initReactionSettings();
+      void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
+      initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
       watchUserNames();
+      document.documentElement.dataset.composerHost = "1";
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

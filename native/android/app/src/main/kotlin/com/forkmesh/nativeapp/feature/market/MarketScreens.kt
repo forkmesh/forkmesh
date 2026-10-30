@@ -35,6 +35,7 @@ import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.market.PackageInstallMode
 import com.forkmesh.nativeapp.market.PackagesException
 import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
+import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.fmSafeAreaInsets
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -130,9 +131,17 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "marketing" -> Route.Marketing(null)
     "analytics" -> Route.Analytics(null)
     "competitors" -> Route.Competitors
+    "invoices" -> Route.Invoices(null, null)
     "ledger" -> Route.Ledger(null)
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories
+    "steps" -> Route.Steps
+    "water" -> Route.Water
+    "sleep" -> Route.Sleep
+    "sugarBreak" -> Route.SugarBreak
+    "stretch" -> Route.Stretch
+    "foodGuide" -> Route.FoodGuide
+    "speech" -> Route.Speech
     "glassesAlert" -> Route.GlassesAlert
     "phoneSecurity" -> Route.PhoneSecurity
     "ember" -> Route.Ember(null)
@@ -144,9 +153,11 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "runners" -> Route.Runners
     "usage" -> Route.Usage
     "rssReader" -> Route.RssReader
+    "videoMixDjStudio" -> Route.VideoMixDjStudio
+    "poker" -> Route.Poker(null)
     "instanceFeed" -> Route.InstanceFeed(null)
     "secureDrive" -> Route.SecureDrive
-    "files" -> Route.Files
+    "files", "fileExplorer" -> Route.Files
     "workflows" -> Route.Workflows
     "people" -> Route.People
     "docs" -> Route.Docs
@@ -156,9 +167,9 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "timers" -> Route.Timers
     "tour" -> Route.Tour
     "status" -> Route.Status
-    "agents" -> Route.Agents(AgentFilter.All)
-    "inbox" -> Route.Inbox(InboxFilter.All)
-    "chat" -> Route.Chat
+    "agents", "Agents" -> Route.Agents(AgentFilter.All)
+    "inbox", "Inbox" -> Route.Inbox(InboxFilter.All)
+    "chat", "Chat" -> Route.Chat
     "desktops" -> Route.Desktops
     "teammates" -> Route.Teammates
     "shortcuts" -> Route.Shortcuts(null)
@@ -167,6 +178,8 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "coves" -> Route.Coves(null)
     "localAI" -> Route.LocalAI
     "activity" -> Route.Activity
+    "logs" -> Route.Logs
+    "diagnostics" -> Route.Diagnostics
     "stats" -> Route.Stats
     "orgs" -> Route.Orgs
     else -> null
@@ -302,35 +315,23 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                 onDismissRequest = { confirmInstallAll = false },
             )
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar("Market", navigator) {
-                FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)
-            }
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
+            MarketNavBar(model, version, onChanged = { version++ }, onBack = { navigator.pop() })
             if (loading && model.packages.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
                 return@Column
             }
             val shelves = model.shelves
+            FmPullToRefreshBox(isRefreshing = loading, onRefresh = { reload++ }, modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.fillMaxSize().windowInsetsPadding(fmSafeAreaInsets(top = false, bottom = false)),
             ) {
-                item(key = "search") {
-                    FmTextField(
-                        model.query,
-                        { model.query = it; version++ },
-                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
-                        hint = "Search packages",
-                    )
-                }
                 item(key = "install-all") {
                     @Suppress("UNUSED_EXPRESSION") version
                     Column {
                         MarketInstallAll(model.installAllPlan(), installAllBusy, onClick = { confirmInstallAll = true })
                         ErrorLine(installAllNote)
                     }
-                }
-                item(key = "controls") {
-                    MarketControls(model, version, onChanged = { version++ })
                 }
                 item(key = "errors") {
                     @Suppress("UNUSED_EXPRESSION") version
@@ -388,6 +389,7 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                         Spacer(Modifier.height(MARKET_LIST_TAIL))
                     }
                 }
+            }
             }
         }
     }
@@ -459,7 +461,7 @@ class PackageScreen(private val packageId: String) : Screen() {
         @Suppress("UNUSED_EXPRESSION") version
         @Suppress("UNUSED_EXPRESSION") accountVersion
         val pkg = market.pkg(packageId)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(pkg?.name ?: "Package", navigator) {
                 if (pkg != null) {
                     Box {
@@ -752,7 +754,7 @@ class RateScreen(private val model: PackageReviewsModel) : Screen() {
         model.draft = draft
         val rules = model.rules
         val issues = model.fieldIssues
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Rate ${model.packageId}", navigator) {
                 FmToneButton(if (saving) "Saving…" else "Submit", onPressed = if (!saving && model.canSubmit) ({
                     saving = true

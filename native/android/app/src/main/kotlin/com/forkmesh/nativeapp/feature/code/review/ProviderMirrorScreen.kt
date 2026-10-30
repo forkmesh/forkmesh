@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -167,10 +168,10 @@ internal class ProviderMirrorScreen(private val repo: Repository) : Screen() {
                                         }, icon = "tune")
                                         FmToneButton("Disconnect", onPressed = {
                                             scope.launch {
-                                                if (messenger.showConfirmDialog(
-                                                        "Disconnect from ${mirror.providerLabel}? The stored token is deleted. Nothing already copied is removed.",
-                                                        confirmLabel = "Disconnect",
-                                                        destructive = true,
+                                                if (messenger.confirmAction(
+                                                        "Disconnect from ${mirror.providerLabel}?",
+                                                        "Disconnect",
+                                                        "The stored token is deleted and nothing more is mirrored. Nothing already copied is removed on either side.",
                                                     )
                                                 ) {
                                                     io { model.disconnect() }

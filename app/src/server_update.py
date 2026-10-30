@@ -5,7 +5,9 @@ import re
 INSTANCE_REQUEST_ROOT = "/var/lib/forkmesh-instance/"
 INSTANCE_STATUS_ROOT = "/var/lib/forkmesh-instance-update/"
 BUILD_INFO_NAME = re.compile(r"^/[A-Za-z0-9._/-]+\.json$")
-ACTIONS = ("check", "update")
+ACTIONS = ("check", "update", "auto")
+TRIGGERS = ("admin", "merge")
+DAEMON_STATES = ("current", "stale", "unknown", "release")
 RUNNING = ("checking", "updating")
 MAX_FILE_BYTES = 16 * 1024
 OID_RE = re.compile(r"^[0-9a-f]{7,64}$")
@@ -108,6 +110,20 @@ def running(env):
     return current
 
 
+def build_source(env):
+    path = _env(env, "BUILD_INFO_FILE")
+    info = read_json(path if BUILD_INFO_NAME.fullmatch(path) else "")
+    daemon = info.get("daemon") if isinstance(info.get("daemon"), dict) \
+        else {}
+    state = str(daemon.get("state") or "")
+    return {
+        "source": _text(info.get("source"), 300),
+        "ref": _text(info.get("ref"), 120),
+        "daemon": state if state in DAEMON_STATES else "",
+        "daemonBuiltCommit": commit(daemon.get("builtCommit"))["commit"],
+    }
+
+
 def instance_status(env):
     doc = read_json(status_path(env))
     state = str(doc.get("state") or "idle")
@@ -116,6 +132,8 @@ def instance_status(env):
         "state": state if state in STATES else "idle",
         "action": str(doc.get("action") or "") if doc.get("action") in ACTIONS
         else "",
+        "trigger": str(doc.get("trigger") or "") if doc.get("trigger") in
+        TRIGGERS else "",
         "startedAt": _int(doc.get("startedAt")),
         "finishedAt": _int(doc.get("finishedAt")),
         "step": step if STEP_RE.fullmatch(step) else "",

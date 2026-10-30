@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs, quote, urlparse
 
 import instance_directory
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -216,7 +217,7 @@ async def _handle_post(env, request, runtime, admin_query, account):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True))
 
     def location(notice):
         return _console_path(env) + _admin_href(  # noqa: F821

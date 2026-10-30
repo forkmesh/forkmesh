@@ -301,6 +301,27 @@
   }
   resumeAdminSession().catch(() => {});
 
+  async function leaveIfSignedIn() {
+    if (new URLSearchParams(location.search).has("next")) return;
+    let session = null;
+    try {
+      session = JSON.parse(localStorage.getItem("forkmesh.session") || "null");
+    } catch (_) {}
+    if (!session || !(session.nodeName || session.email)) return;
+    const headers = { accept: "application/json" };
+    if (session.sessionToken && session.sessionToken !== "cookie") {
+      headers.authorization = "Bearer " + session.sessionToken;
+    }
+    const res = await fetch("/api/accounts/sessions", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers,
+    });
+    if (res.ok) location.replace("/dashboard");
+  }
+  leaveIfSignedIn().catch(() => {});
+
   // The credential fields sit in a real <form> so password managers recognize
   // them, which means the submit event -- Log in, or Enter in any field -- is
   // what runs the request. A browser or intermediary can briefly pair a cached

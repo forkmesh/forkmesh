@@ -505,6 +505,12 @@ export function createWorldOfficeController({
     }
     if (meetingAuthorizationPromise) return meetingAuthorizationPromise;
     const activeSession = authenticatedSession();
+    if (activeSession?.visitor) {
+      root.notice?.(
+        "Office meetings are for members of this World. As a visitor you can look around the lobby and the rooftop.",
+      );
+      return false;
+    }
     if (!activeSession) {
       root.toggleWorldAccount?.(true, "login");
       root.setWorldAccountStatus?.("Sign in to join an Office meeting.");

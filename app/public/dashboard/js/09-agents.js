@@ -175,7 +175,7 @@
             <span>${escapeHtml(agentsKindLabel(row))}</span>
             ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
             ${row.node ? `<span class="inline-flex items-center gap-1"><i data-lucide="server" class="h-3 w-3 text-muted-foreground" aria-hidden="true"></i><span class="font-mono">${escapeHtml(row.node)}</span></span>` : ""}
-            ${row.createdBy ? `<span>by ${escapeHtml(row.createdBy)}</span>` : ""}
+            ${row.createdBy ? `<span>by ${row.href ? escapeHtml(row.createdBy) : issuePersonNameHtml(row.createdBy, "")}</span>` : ""}
             ${started ? `<span class="sm:hidden">${started}</span>` : ""}
             ${updated ? `<span class="sm:hidden">${updated}</span>` : ""}
           </div>
@@ -296,7 +296,7 @@
         ? agentsBlankslate("search", "No agents match these filters",
           `<button data-agents-clear-filters type="button" class="font-medium text-accent hover:underline">Clear filters</button>`)
         : agentsBlankslate("bot", "No agent sessions yet",
-          "Start one with New agent, from a repository's Agents tab, or from the ForkMesh desktop.");
+          `Start one with New agent, from a repository's Agents tab, or from the ${desktopBrand()}desktop.`);
     window.lucide?.createIcons();
   }
 

@@ -5,6 +5,7 @@
 #include "StartupSplash.h"
 
 using forkmesh::ui::OnboardingStep;
+using forkmesh::ui::OnboardingTrack;
 using forkmesh::ui::OnboardingTour;
 
 namespace {
@@ -77,9 +78,9 @@ void MainWindow::showFirstRunWelcome()
         return;
     if (!m_onboardingTour) {
         m_onboardingTour = new OnboardingTour(centralWidget());
-        m_onboardingTour->startTourRequested = [this] {
+        m_onboardingTour->startTourRequested = [this](OnboardingTrack track) {
             completeFirstRunWelcome();
-            startFeatureTour();
+            startFeatureTourTrack(track);
         };
         m_onboardingTour->welcomeDismissed = [this] {
             completeFirstRunWelcome();
@@ -98,6 +99,7 @@ void MainWindow::showFirstRunWelcome()
         };
     }
     m_onboardingTour->setGeometry(centralWidget()->rect());
+    m_onboardingTour->setTrackSizes(featureTourSteps());
     m_onboardingTour->showWelcome(machineNodeName());
 }
 
@@ -140,8 +142,30 @@ void MainWindow::ensureTourTargetVisible(QWidget *target)
 
 void MainWindow::startFeatureTour()
 {
-    if (!centralWidget() || !m_tourPackageInstalled)
+    if (!prepareFeatureTour())
         return;
+    m_onboardingTour->setGeometry(centralWidget()->rect());
+    m_onboardingTour->setTrackSizes(featureTourSteps());
+    m_onboardingTour->showChooser();
+}
+
+void MainWindow::startFeatureTourTrack(OnboardingTrack track)
+{
+    if (!prepareFeatureTour())
+        return;
+    // The tour points at the rail and the status strip, which the reduced
+    // views hide.
+    if (forkmesh::ui::appViewModeHidesShellChrome(m_viewMode))
+        setAppViewMode(forkmesh::ui::AppViewMode::Standard);
+    m_onboardingTour->setGeometry(centralWidget()->rect());
+    m_onboardingTour->startTour(
+        OnboardingTour::stepsForTrack(featureTourSteps(), track));
+}
+
+bool MainWindow::prepareFeatureTour()
+{
+    if (!centralWidget() || !m_tourPackageInstalled)
+        return false;
     // Clicking the permanent Tour action during the short first-frame delay is
     // itself an explicit first-run choice. Resolve the welcome before its timer
     // can replace the tour that the user just opened.
@@ -154,13 +178,11 @@ void MainWindow::startFeatureTour()
         if (m_onboardingTour)
             m_onboardingTour->hide();
     }
-    if (!m_onboardingTour)
-        return;
-    // The tour points at the rail and the status strip, which the reduced
-    // views hide.
-    if (forkmesh::ui::appViewModeHidesShellChrome(m_viewMode))
-        setAppViewMode(forkmesh::ui::AppViewMode::Standard);
+    return m_onboardingTour != nullptr;
+}
 
+QVector<OnboardingStep> MainWindow::featureTourSteps()
+{
     auto *rail = findChild<QWidget *>(QStringLiteral("appNavigationRail"));
     auto *breadcrumb =
         findChild<QWidget *>(QStringLiteral("breadcrumbBar"));
@@ -317,8 +339,10 @@ void MainWindow::startFeatureTour()
         {"Search, assign, start, complete, reopen, and create follow-ups.",
          "Send work to an agent with the composer’s current model and mode.",
          "Request QA, attach a test plan, or promote a mature task into a repository issue."},
-        m_tasksNavButton,
-        revealSection(kOrganizationTasksSectionIndex, m_tasksNavButton)));
+        nativePackageNavigation(QStringLiteral("tasks")), [this] {
+            showNativePackage(QStringLiteral("tasks"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("tasks")));
+        }));
 
     steps.append(tourStep(
         "calendar", "TIME & ACTIVITY", "See plans and repository activity together",
@@ -327,8 +351,10 @@ void MainWindow::startFeatureTour()
         {"Switch month, week, day, and agenda views with search and time-zone support.",
          "Invite attendees, RSVP, recur events, and scope calendars to an organization.",
          "Ask an agent to suggest calendar entries from natural language."},
-        m_calendarNavButton,
-        revealSection(kCalendarSectionIndex, m_calendarNavButton)));
+        nativePackageNavigation(QStringLiteral("calendar")), [this] {
+            showNativePackage(QStringLiteral("calendar"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("calendar")));
+        }));
 
     steps.append(tourStep(
         "notes", "PERSONAL KNOWLEDGE", "Capture Markdown notes before they disappear",
@@ -337,8 +363,10 @@ void MainWindow::startFeatureTour()
         {"Edit Markdown with attachments and version history.",
          "Switch storage and sharing per note instead of globally.",
          "Turn a note into a task or repository issue, or add it directly to an agent prompt."},
-        m_notesNavButton,
-        revealSection(kNotesSectionIndex, m_notesNavButton)));
+        nativePackageNavigation(QStringLiteral("notes")), [this] {
+            showNativePackage(QStringLiteral("notes"));
+            ensureTourTargetVisible(nativePackageNavigation(QStringLiteral("notes")));
+        }));
 
     steps.append(tourStep(
         "files", "LOCAL WORKSPACE", "Browse and edit files without losing context",
@@ -449,9 +477,28 @@ void MainWindow::startFeatureTour()
         "ForkMesh will keep the rest of the workspace close as the work grows.",
         {"Open or add a repository from the top-left switcher.",
          "Write a goal in the floating prompt and choose an agent.",
-         "Replay this walkthrough any time from Tour in the rail."},
+         "Come back to Tour in the rail for a deeper track any time."},
         m_tourNavButton, revealHome(m_tourNavButton)));
 
-    m_onboardingTour->setGeometry(centralWidget()->rect());
-    m_onboardingTour->startTour(std::move(steps));
+    const QHash<QString, OnboardingTrack> tracks{
+        {QStringLiteral("navigation"), OnboardingTrack::Essentials},
+        {QStringLiteral("agents"), OnboardingTrack::Essentials},
+        {QStringLiteral("prompt"), OnboardingTrack::Essentials},
+        {QStringLiteral("repositories"), OnboardingTrack::Essentials},
+        {QStringLiteral("repo-switcher"), OnboardingTrack::Essentials},
+        {QStringLiteral("pings"), OnboardingTrack::Essentials},
+        {QStringLiteral("search"), OnboardingTrack::Essentials},
+        {QStringLiteral("ready"), OnboardingTrack::Essentials},
+        {QStringLiteral("repo-plan"), OnboardingTrack::Advanced},
+        {QStringLiteral("repo-ship"), OnboardingTrack::Advanced},
+        {QStringLiteral("repo-operate"), OnboardingTrack::Advanced},
+        {QStringLiteral("market"), OnboardingTrack::Advanced},
+        {QStringLiteral("chat"), OnboardingTrack::Advanced},
+        {QStringLiteral("files"), OnboardingTrack::Advanced},
+        {QStringLiteral("settings"), OnboardingTrack::Advanced},
+        {QStringLiteral("capture"), OnboardingTrack::Advanced},
+    };
+    for (OnboardingStep &step : steps)
+        step.track = tracks.value(step.id, OnboardingTrack::Everything);
+    return steps;
 }

@@ -10,6 +10,20 @@ import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.shell.LaunchFlight
 import com.forkmesh.nativeapp.ui.SoundCue
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import com.forkmesh.nativeapp.composer.VoiceLaunchRules
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -84,7 +98,7 @@ fun BoxScope.ShellPrompt(
     var text by remember { mutableStateOf(drafts?.load(PromptDraftStore.SHELL) ?: "") }
     var photos by remember { mutableStateOf<List<PromptAttachment>>(emptyList()) }
     var targetBusy by remember { mutableStateOf(false) }
-    val actions = rememberQuickAgentActions(navigator, quick, repoContext, onStarted, openRun)
+    val actions = rememberQuickAgentActions(navigator, quick, repoContext, onStarted, openRun, notice)
     val targetTick by ComposerFeature.promptTargetTick.collectAsState()
     val targets = ComposerFeature.promptTargets
     val activeTarget = remember(targetTick) { targets.active }
@@ -205,9 +219,9 @@ fun BoxScope.ShellPrompt(
                     uploadsFiles = true,
                     hint = "New agent · type / for commands",
                     busy = quick.sending,
-                    modelLabel = quick.model.label,
+                    modelLabel = quick.chip.label,
                     modelChoices = quick.modelChoices,
-                    selectedModel = quick.model,
+                    selectedModel = quick.chip,
                     onSelectModel = { picked -> scope.launch { quick.chooseModel(picked) } },
                     attachments = photos,
                     onAttachmentsChanged = { photos = it },
@@ -231,6 +245,55 @@ fun BoxScope.ShellPrompt(
     }
 }
 
+class PromptVoiceHold(
+    val onPress: () -> Unit,
+    val onHold: (Rect, Boolean) -> Unit,
+    val onRelease: () -> Unit,
+)
+
+private enum class HoldEnd { Tap, Cancel }
+
+private fun Modifier.holdToTalk(voice: PromptVoiceHold, bounds: () -> Rect, onTap: () -> Unit, pressed: (Boolean) -> Unit): Modifier =
+    pointerInput(voice) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            pressed(true)
+            voice.onPress()
+            val slop = VoiceLaunchRules.SLOP_DP * density
+            val early = withTimeoutOrNull(VoiceLaunchRules.HOLD_MS) {
+                var end: HoldEnd? = null
+                while (end == null) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                    end = when {
+                        change == null -> HoldEnd.Cancel
+                        !change.pressed -> HoldEnd.Tap.also { change.consume() }
+                        (change.position - down.position).getDistance() > slop -> HoldEnd.Cancel
+                        else -> null
+                    }
+                }
+                end
+            }
+            when (early) {
+                HoldEnd.Tap -> onTap()
+                HoldEnd.Cancel -> drain(down.id, consume = false)
+                null -> {
+                    voice.onHold(bounds(), true)
+                    drain(down.id, consume = true)
+                    voice.onRelease()
+                }
+            }
+            pressed(false)
+        }
+    }
+
+private suspend fun AwaitPointerEventScope.drain(id: PointerId, consume: Boolean) {
+    while (true) {
+        val change = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: return
+        if (consume) change.consume()
+        if (!change.pressed) return
+    }
+}
+
 @Composable
 fun PromptButton(
     tabLabel: String,
@@ -239,7 +302,12 @@ fun PromptButton(
     size: Dp = 44.dp,
     onLongClick: (() -> Unit)? = null,
     running: Int = 0,
+    voice: PromptVoiceHold? = null,
 ) {
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    var down by remember { mutableStateOf(false) }
+    val squeeze by animateFloatAsState(if (down) 0.9f else 1f, label = "prompt-press")
+    val latestClick by rememberUpdatedState(onClick)
     val drafts = remember { ComposerFeature.drafts }
     val hasDraft = remember(tabLabel) { !drafts?.load(PromptDraftStore.SHELL).isNullOrBlank() }
     val accent = Fm.colors.accent
@@ -248,6 +316,11 @@ fun PromptButton(
         Box(
             Modifier
                 .size(size)
+                .onGloballyPositioned { bounds = it.boundsInRoot() }
+                .graphicsLayer {
+                    scaleX = squeeze
+                    scaleY = squeeze
+                }
                 .shadow(10.dp, CircleShape, ambientColor = glow, spotColor = glow)
                 .clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent, accent.copy(alpha = 0.7f))))
@@ -260,11 +333,23 @@ fun PromptButton(
                         drawSparkle(center, this.size.minDimension * 0.07f, Color.White.copy(alpha = 0.85f))
                     }
                 }
-                .combinedClickable(
-                    role = Role.Button,
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                    onLongClickLabel = onLongClick?.let { "Command palette" },
+                .then(
+                    if (voice != null) {
+                        Modifier
+                            .holdToTalk(voice, { bounds }, { latestClick() }, { down = it })
+                            .semantics {
+                                role = Role.Button
+                                onClick { latestClick(); true }
+                                onLongClick("Speak a prompt") { voice.onHold(bounds, false); true }
+                            }
+                    } else {
+                        Modifier.combinedClickable(
+                            role = Role.Button,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                            onLongClickLabel = onLongClick?.let { "Command palette" },
+                        )
+                    },
                 )
                 .semantics { contentDescription = "New agent" },
             contentAlignment = Alignment.Center,

@@ -7,9 +7,11 @@
 import FMAccount
 import FMApi
 import FMBase
+import FMDesktopRemote
 import FMInsights
 import SwiftUI
 import TipKit
+import UIKit
 
 extension ShellRelayState {
     /// The Kit's copy of the relay state.
@@ -42,6 +44,7 @@ struct ShellTopBarState {
 struct ShellTopBar: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var motion: GenieMotion = GenieMotion.shared
 
     let state: ShellTopBarState
@@ -116,8 +119,10 @@ struct ShellTopBar: View {
     /// header now names the project and holds the account overflow.
     var body: some View {
         ZStack {
-            TelemetryStrip()
-                .padding(.horizontal, 64)
+            if !ShellIslandStatusDots.earsShown(compact: verticalSizeClass == .compact) && !StoreScreenshotLaunch.on {
+                TelemetryStrip()
+                    .padding(.horizontal, 64)
+            }
             HStack(spacing: FmSpace.x3) {
                 ShellProjectSlot(onHome: onHome)
                     .genieKeepsClear()
@@ -409,12 +414,165 @@ struct ShellStatusDots: View {
     }
 }
 
+struct ShellIslandStatusDots: View {
+    static let islandInset: CGFloat = 54
+    static let islandBottom: CGFloat = 48
+    static let islandHeight: CGFloat = 37
+    static let islandWidth: CGFloat = 126
+    static let clockClear: CGFloat = 12
+    static let earHeight: CGFloat = 12
+    static let earMargin: CGFloat = 10
+    static let earLeadingInset: CGFloat = 24
+    static let dotSize: CGFloat = 5
+
+    let lights: [StatusLight]
+    var fleet: [FleetLight] = []
+    var runnerAgents: [String: Int] = [:]
+    var desktop: ShellLocalDesktop? = nil
+    var desktops: [ShellDesktopLight] = []
+    var desktopLoad: DesktopStrain? = nil
+    var buildMac: BuildMacLight? = nil
+    var agentTokens: Bool = false
+
+    static let stackOverlap: CGFloat = -4
+
+    private var otherDesktops: [ShellDesktopLight] {
+        desktops.count > 1 ? desktops.filter { !$0.active } : []
+    }
+
+    private var cores: [FleetLight] { fleet.filter { $0.kind == .core } }
+
+    private var runners: [FleetLight] { fleet.filter { $0.kind == .runner } }
+
+    static func gap(top: CGFloat) -> CGFloat? {
+        top >= islandInset ? top - islandBottom : nil
+    }
+
+    static func earTop(gap: CGFloat) -> CGFloat {
+        max(1, gap - clockClear)
+    }
+
+    static func earWidth(screen: CGFloat) -> CGFloat {
+        max(0, (screen - islandWidth) / 2)
+    }
+
+    static func earsShown(compact: Bool) -> Bool {
+        !compact && gap(top: GenieKeepClear.keyWindow()?.safeAreaInsets.top ?? 0) != nil
+    }
+
+    static func screenTop(origin: CGFloat, inset: CGFloat) -> CGFloat {
+        max(GenieKeepClear.keyWindow()?.safeAreaInsets.top ?? 0, origin + inset)
+    }
+
+    private var earShown: Bool {
+        desktop != nil || buildMac != nil || !fleet.isEmpty
+    }
+
+    var body: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            let frame: CGRect = proxy.frame(in: .global)
+            let top: CGFloat = ShellIslandStatusDots.screenTop(origin: frame.minY, inset: proxy.safeAreaInsets.top)
+            let earWidth: CGFloat = ShellIslandStatusDots.earWidth(screen: frame.width)
+            if let gap = ShellIslandStatusDots.gap(top: top) {
+                ZStack(alignment: .topLeading) {
+                    if !lights.isEmpty {
+                        dots
+                            .frame(width: frame.width, height: gap)
+                    }
+                    if earShown {
+                        ear
+                            .frame(width: max(0, earWidth - ShellIslandStatusDots.earLeadingInset))
+                            .padding(.leading, ShellIslandStatusDots.earLeadingInset)
+                            .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
+                    }
+                    TelemetryEarSparks(
+                        width: max(0, earWidth - ShellIslandStatusDots.earMargin * 2),
+                        height: ShellIslandStatusDots.earHeight)
+                        .frame(width: earWidth)
+                        .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
+                        .frame(width: frame.width, alignment: .topTrailing)
+                    if agentTokens {
+                        ShellIslandTokenCharts(
+                            width: ShellIslandStatusDots.islandWidth, height: ShellIslandStatusDots.earHeight)
+                            .padding(.top, gap + ShellIslandStatusDots.islandHeight)
+                            .frame(width: frame.width)
+                    }
+                }
+                .frame(width: frame.width, alignment: .topLeading)
+                .offset(y: -frame.minY)
+            }
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+    }
+
+    private var dots: some View {
+        HStack(spacing: 2) {
+            ForEach(lights) { (light: StatusLight) in
+                ShellStatusDot(light: light, size: ShellIslandStatusDots.dotSize)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(lights.map(\.label).joined(separator: "; ")))
+        .accessibilityIdentifier("top-island-status-dots")
+    }
+
+    private var ear: some View {
+        HStack(spacing: 8) {
+            if let desktop = desktop {
+                HStack(spacing: ShellIslandStatusDots.stackOverlap) {
+                    ShellFooterDesktopLight(
+                        desktop: desktop, load: desktopLoad, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
+                    ForEach(otherDesktops) { (light: ShellDesktopLight) in
+                        ShellStackedDesktopLight(light: light)
+                    }
+                }
+            }
+            if let buildMac = buildMac {
+                ShellFooterMacLight(light: buildMac, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
+            }
+            if !cores.isEmpty {
+                HStack(spacing: ShellIslandStatusDots.stackOverlap) {
+                    ForEach(cores) { (light: FleetLight) in
+                        ShellFleetLight(light: light, agents: 0)
+                    }
+                }
+            }
+            if !runners.isEmpty {
+                HStack(spacing: 1) {
+                    ForEach(runners) { (light: FleetLight) in
+                        ShellFleetLight(light: light, agents: runnerAgents[light.name.lowercased()] ?? 0)
+                    }
+                }
+            }
+        }
+        .frame(height: ShellIslandStatusDots.earHeight)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(earLabel))
+        .accessibilityIdentifier("top-clock-lights")
+    }
+
+    private var earLabel: String {
+        var parts: [String] = []
+        if let desktop = desktop {
+            parts.append(desktop.label)
+            parts += otherDesktops.map(\.label)
+        }
+        if let buildMac = buildMac {
+            parts.append(buildMac.label)
+        }
+        return (parts + cores.map(\.label) + runners.map(\.label)).joined(separator: "; ")
+    }
+}
+
 struct ShellStatusDot: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State private var dim: Bool = false
     let light: StatusLight
     var ringed: Bool = false
+    var size: CGFloat = 7
 
     private var color: Color {
         switch light.state {
@@ -428,7 +586,7 @@ struct ShellStatusDot: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 7, height: 7)
+            .frame(width: size, height: size)
             .opacity(light.troubled && dim ? 0.25 : 1)
             .background {
                 if ringed {
@@ -457,6 +615,8 @@ struct ShellFooterDesktopLight: View {
     let desktop: ShellLocalDesktop
     let load: DesktopStrain?
     let onPressed: () -> Void
+    var glyph: CGFloat = 12
+    var side: CGFloat = 28
 
     private var relayed: Bool {
         if case .relay = desktop { return true }
@@ -472,9 +632,20 @@ struct ShellFooterDesktopLight: View {
         return load == .busy ? fm.warning : fm.success
     }
 
+    private var usage: NodeResources? {
+        guard desktop.isConnected, let vitals = Services.get(DesktopVitals.self), vitals.watching else { return nil }
+        return NodeResources(cpu: vitals.latest(.cpu), memory: vitals.latest(.memory), disk: vitals.latest(.disk))
+    }
+
     private var label: String {
-        guard desktop.isConnected, let load = load else { return desktop.label }
-        return "\(desktop.label), \(load.label)"
+        var parts: [String] = [desktop.label]
+        if desktop.isConnected, let load = load {
+            parts.append(load.label)
+        }
+        if let usage = usage {
+            parts.append(usage.label)
+        }
+        return parts.joined(separator: ", ")
     }
 
     var body: some View {
@@ -483,7 +654,7 @@ struct ShellFooterDesktopLight: View {
             onPressed()
         } label: {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: glyph, weight: .semibold))
                 .foregroundStyle(fm.textSecondary)
                 .overlay(alignment: .topTrailing) {
                     Circle()
@@ -493,16 +664,20 @@ struct ShellFooterDesktopLight: View {
                         .opacity(alarmed && dim ? 0.25 : 1)
                         .offset(x: 3, y: -2)
                 }
-                .overlay(alignment: .bottomTrailing) {
-                    if relayed {
-                        Image(systemName: "globe")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(fm.textSecondary)
-                            .background(Circle().fill(fm.bgBase).padding(-1))
-                            .offset(x: 4, y: 3)
+                .overlay(alignment: .bottomLeading) {
+                    if relayed && usage != nil {
+                        relayGlobe.offset(x: -4, y: 3)
                     }
                 }
-                .frame(minWidth: 28, minHeight: 28)
+                .overlay(alignment: .bottomTrailing) {
+                    if let usage = usage {
+                        ShellResourceBars(values: usage.values)
+                            .offset(x: 3, y: 2)
+                    } else if relayed {
+                        relayGlobe.offset(x: 4, y: 3)
+                    }
+                }
+                .frame(minWidth: side, minHeight: side)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -513,6 +688,13 @@ struct ShellFooterDesktopLight: View {
         .accessibilityIdentifier("footer-desktop-light")
     }
 
+    private var relayGlobe: some View {
+        Image(systemName: "globe")
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(fm.textSecondary)
+            .background(Circle().fill(fm.bgBase).padding(-1))
+    }
+
     private func blink() {
         guard alarmed, !reduceMotion else {
             withAnimation(.default) { dim = false }
@@ -521,6 +703,37 @@ struct ShellFooterDesktopLight: View {
         withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
             dim = true
         }
+    }
+}
+
+struct ShellStackedDesktopLight: View {
+    @Environment(\.fmPalette) var fm
+    let light: ShellDesktopLight
+
+    private var dot: Color {
+        switch light.presence {
+        case .online: return fm.success
+        case .offline: return fm.danger
+        case .checking: return fm.warning
+        case .unknown: return fm.textTertiary
+        }
+    }
+
+    var body: some View {
+        Image(systemName: "desktopcomputer")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(fm.textSecondary)
+            .padding(1)
+            .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fm.bgBase))
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(dot)
+                    .frame(width: 5, height: 5)
+                    .background(Circle().fill(fm.bgBase).padding(-1))
+                    .offset(x: 2, y: -2)
+            }
+            .frame(minHeight: ShellIslandStatusDots.earHeight)
+            .accessibilityLabel(Text(light.label))
     }
 }
 
@@ -579,6 +792,11 @@ struct ShellFleetLight: View {
             .opacity(!light.healthy && dim ? 0.25 : 1)
             .padding(1)
             .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fm.bgBase))
+            .overlay(alignment: .bottomTrailing) {
+                if let resources = light.resources {
+                    ShellResourceBars(values: resources.values)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if agents > 0 {
                     ShellRunnerAgentCount(count: agents)
@@ -599,6 +817,44 @@ struct ShellFleetLight: View {
         withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
             dim = true
         }
+    }
+}
+
+struct ShellResourceBars: View {
+    static let warning: Double = 75
+    static let bad: Double = 90
+
+    @Environment(\.fmPalette) var fm
+    let values: [Double?]
+    var barWidth: CGFloat = 1.5
+    var height: CGFloat = 6
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0.5) {
+            ForEach(Array(values.enumerated()), id: \.offset) { (entry: (offset: Int, element: Double?)) in
+                bar(entry.element)
+            }
+        }
+        .padding(0.75)
+        .background(RoundedRectangle(cornerRadius: 1.5, style: .continuous).fill(fm.bgBase))
+        .accessibilityHidden(true)
+    }
+
+    private func bar(_ value: Double?) -> some View {
+        ZStack(alignment: .bottom) {
+            Rectangle().fill(fm.textTertiary.opacity(0.35))
+            if let value {
+                Rectangle()
+                    .fill(color(value))
+                    .frame(height: max(1.5, height * CGFloat(min(100, max(0, value)) / 100)))
+            }
+        }
+        .frame(width: barWidth, height: height)
+    }
+
+    private func color(_ value: Double) -> Color {
+        if value >= ShellResourceBars.bad { return fm.danger }
+        return value >= ShellResourceBars.warning ? fm.warning : fm.success
     }
 }
 
@@ -623,6 +879,8 @@ struct ShellFooterMacLight: View {
     @Environment(\.fmPalette) var fm
     let light: BuildMacLight
     let onPressed: () -> Void
+    var glyph: CGFloat = 12
+    var side: CGFloat = 28
 
     private var lightColor: Color {
         switch light.state {
@@ -638,7 +896,7 @@ struct ShellFooterMacLight: View {
             onPressed()
         } label: {
             Image(systemName: "laptopcomputer")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: glyph, weight: .semibold))
                 .foregroundStyle(fm.textSecondary)
                 .overlay(alignment: .topTrailing) {
                     Circle()
@@ -647,7 +905,7 @@ struct ShellFooterMacLight: View {
                         .background(Circle().fill(fm.bgBase).padding(-1))
                         .offset(x: 3, y: -2)
                 }
-                .frame(minWidth: 28, minHeight: 28)
+                .frame(minWidth: side, minHeight: side)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

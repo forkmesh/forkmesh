@@ -295,7 +295,7 @@
           The repository-scoped passphrase and room key are derived in two stages:
         </p>
         <ul>
-          <li><strong>Relay passphrase:</strong> the Town Square <code>mainnode/forkmesh</code> compatibility room uses lowercase hex of <code>SHA-256(DATA_KEY + ":room-chat-passphrase-v1")</code>. Other repositories use <code>SHA-256(DATA_KEY + ":room-chat-passphrase-v2:" + lower(owner + "/" + repo))</code>. <code>GET /api/chat/room-key?owner=&amp;repo=</code> releases the scoped value only to an authenticated account or signed node authorized for that repository; missing and unauthorized private repositories both return not found.</li>
+          <li><strong>Relay passphrase:</strong> each Town Square <code>mainnode/forkmesh</code> room has its own: lowercase hex of <code>SHA-256(DATA_KEY + ":room-chat-passphrase-v2:mainnode/forkmesh:room:" + lower(room))</code>, and the public <code>world-general</code> room uses <code>SHA-256(DATA_KEY + ":room-chat-passphrase-public-world-general-v1")</code>. The relay admits only <code>world-general</code>, <code>general</code> and the public <code>world-*</code> spaces there, plus the server's channel, office and direct-message rooms. <code>GET /api/chat/room-key?owner=&amp;repo=</code> releases the scoped value only to an authenticated account or signed node authorized for that repository; missing and unauthorized private repositories both return not found.</li>
           <li><strong>Room salt:</strong> the first 16 bytes of <code>SHA-256("ForkMesh room:" + &lt;roomName&gt;)</code>.</li>
           <li><strong>Client KDF:</strong> PBKDF2-HMAC-SHA256 over the UTF-8 passphrase, 210,000 rounds, producing a 256-bit <strong>AES-GCM</strong> key. The desktop, website, iOS, and Android clients use the same bytes.</li>
           <li><strong>Protected application layer:</strong> each installation keeps a local X25519 private key and advertises only its public key. Private conversations wrap each fresh AES-256-GCM content key for known room devices before applying the outer room cipher. Public-key discovery is automatic and goes through the relay, which is trusted to publish the right device keys.</li>
@@ -366,8 +366,13 @@
         </p>
         <p>
           A channel manager can create up to ten incoming webhooks for a public
-          channel. Private channels reject creation and rotation because a
-          controller webhook cannot author a recipient-sealed frame. Creation
+          or private channel (not for notices or office channels). A webhook
+          cannot author a recipient-sealed frame, so its messages are written
+          with the room cipher when they reach the server, marked
+          server-injected (<code>srv</code>) and <code>serverVisible</code>,
+          and every client shows them as the integration, labelled
+          server-visible. A private channel's webhook notifies only its
+          members. Creation
           returns a random 256-bit bearer URL once; only a
           keyed blind index of its token is stored, so a later list can never
           show the URL again.
@@ -570,13 +575,12 @@
         <table>
           <thead><tr><th>Method · path</th><th>Purpose</th></tr></thead>
           <tbody>
-            <tr><td><code>GET /api/room/&lt;room&gt;/ws</code> | <code>/clients</code></td><td>bare room WebSocket / live client count</td></tr>
             <tr><td><code>GET /api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/ws</code> | <code>/clients</code></td><td>per-repo room WS / count (the mainnode <code>general</code> room lives here)</td></tr>
             <tr><td><code>GET</code> | <code>POST /api/chat/channels</code></td><td>list authorized public and private channels or atomically create one with its private initial members</td></tr>
             <tr><td><code>GET</code> | <code>POST</code> | <code>DELETE /api/chat/channels/&lt;id&gt;/members</code></td><td>creator-only private membership list, invitation, and revocation; a private room is visible only to its creator and invited members (administrators included only when invited), and non-members get 404</td></tr>
-            <tr><td><code>GET</code> | <code>POST /api/chat/channels/&lt;id&gt;/webhooks</code></td><td>list webhook metadata or create a one-time incoming bearer URL for a public channel as its creator or, for a public channel, an administrator</td></tr>
+            <tr><td><code>GET</code> | <code>POST /api/chat/channels/&lt;id&gt;/webhooks</code></td><td>list webhook metadata or create a one-time incoming bearer URL for a public or private channel as its creator or, for a public channel, an administrator</td></tr>
             <tr><td><code>DELETE /api/chat/channels/&lt;id&gt;/webhooks/&lt;webhook-id&gt;</code></td><td>revoke an incoming channel webhook</td></tr>
-            <tr><td><code>POST /api/chat/webhooks/&lt;token&gt;</code></td><td>post JSON into the channel and notify its audience without a user session</td></tr>
+            <tr><td><code>POST /api/chat/webhooks?token=&lt;token&gt;</code></td><td>post JSON into the channel without a user session (the token may also go in <code>x-forkmesh-webhook-token</code>); the public audience is notified at most once every ten minutes</td></tr>
             <tr><td><code>GET /api/chat/channels/&lt;id&gt;/room-access</code></td><td>issue the current channel passphrase and short-lived ticket after visibility-aware authorization</td></tr>
             <tr><td><code>GET /api/chat/channels/&lt;id&gt;/ws?ticket=…</code></td><td>ticketed channel WebSocket with active-account, visibility, membership, and key-version admission checks</td></tr>
             <tr><td><code>GET</code> | <code>POST /api/chat/direct-messages</code></td><td>list participant conversations or idempotently start one with another active registered user</td></tr>
@@ -727,10 +731,13 @@
         </p>
         <p>
           <code>POST /api/accounts/rotate</code> accepts
-          <code>{ nodeName?, oldPubkey, newPubkey, ts, sig|signature }</code>
+          <code>{ nodeName?, oldPubkey, newPubkey, ts, sig|signature, newSig }</code>
           and verifies
           <code>forkmesh-rotate-v1\n&lt;oldPubkey&gt;\n&lt;newPubkey&gt;\n&lt;ts&gt;</code>
-          with the currently bound old key. A request that names the account
+          with the currently bound old key, and
+          <code>forkmesh-rotate-accept-v1\n&lt;nodeName&gt;\n&lt;oldPubkey&gt;\n&lt;newPubkey&gt;\n&lt;ts&gt;</code>
+          in <code>newSig</code> with the new key; without it the relay answers
+          <code>426 new_key_proof_required</code>. A request that names the account
           and finds <code>newPubkey</code> already bound returns success as
           an idempotent no-op. <code>nodeName</code> is optional for desktop
           rotation records; when omitted, the relay finds the account by

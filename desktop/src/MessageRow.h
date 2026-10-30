@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QList>
 #include <QMap>
+#include <QPair>
 #include <QPixmap>
 #include <QString>
 #include <QStringList>
@@ -101,6 +102,12 @@ protected:
 private:
     void buildAttachment(QWidget *parent, QVBoxLayout *layout);
     void showReactionPicker();
+    void showStickerPicker();
+    void setStickers(const QList<QPair<QString, QStringList>> &placed);
+    void placeStickers();
+    void applyOuterMargins();
+    QWidget *stickerAnchor() const;
+    int idealBodyWidth() const;
     void renderSenderHeader();
 
     ChatMessage m_message;
@@ -118,6 +125,15 @@ private:
     QToolButton *m_menuButton = nullptr;
     QWidget *m_reactionsRow = nullptr;
     QPushButton *m_hoverReactButton = nullptr;
+    QPushButton *m_hoverStickerButton = nullptr;
+    QLabel *m_bodyLabel = nullptr;
+    QList<QLabel *> m_stickerLabels;
+    QHash<QObject *, QString> m_stickerValues;
+    int m_reactionsBarFixed = 0;
+    int m_stickerReserve = 0;
+    int m_baseRightMargin = 0;
+    mutable int m_idealWidthFor = -1;
+    mutable int m_idealWidth = 0;
     bool m_continuation = false;
     QLabel *m_recipientsLabel = nullptr;
     QLabel *m_receiptLabel = nullptr;

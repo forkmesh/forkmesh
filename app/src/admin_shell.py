@@ -21,6 +21,7 @@ import html as _html
 from urllib.parse import quote, parse_qs
 
 import admin_path as _admin_path
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -63,6 +64,8 @@ NAV = (
     )),
     ("People", (
         ("users", "Users", "users", ("console", "users")),
+        ("accounts-moderation", "Sign-up & moderation", "shield",
+         ("console", "accounts-moderation")),
     )),
     ("Support", (
         ("bugs", "Bug reports", "bug", ("console", "bugs")),
@@ -91,6 +94,11 @@ NAV = (
         ("plugins", "Plugins", "grid", ("console", "plugins")),
         ("federation", "ForkMesh directory", "globe",
          ("console", "federation")),
+        ("world-territory", "World", "grid",
+         ("console", "world-territory")),
+        ("home-page", "Home page", "globe", ("console", "home-page")),
+        ("site-theme", "Site theme", "system", ("console", "site-theme")),
+        ("privacy", "Privacy mode", "shield", ("console", "privacy")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )
@@ -733,8 +741,8 @@ async def theme_handler(env, request):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:ADMIN_THEME_MAX_FORM_BYTES],
-                    keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:ADMIN_THEME_MAX_FORM_BYTES],
+                    keep_blank_values=True))
     choice = (form.get("theme") or [""])[0]
     target = safe_next((form.get("next") or [""])[0])
     if choice not in THEMES:

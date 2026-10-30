@@ -7,6 +7,7 @@ struct VideoMixDjStudioScreen: View {
     @State private var model: DjStudioModel?
     @State private var presented = false
     @State private var opened = false
+    @State private var leaving = false
 
     var body: some View {
         Color.black
@@ -24,7 +25,11 @@ struct VideoMixDjStudioScreen: View {
                 opened = true
                 present()
             }
-            .fullScreenCover(isPresented: $presented, onDismiss: { dismiss() }) {
+            .fullScreenCover(isPresented: $presented, onDismiss: {
+                guard leaving else { return }
+                leaving = false
+                dismiss()
+            }) {
                 if let model {
                     DjStudioView(model: model)
                 }
@@ -34,7 +39,12 @@ struct VideoMixDjStudioScreen: View {
     private func present() {
         let studio = model ?? DjStudioHub.shared.studio()
         let shown = $presented
-        studio.onLeave = { shown.wrappedValue = false }
+        let leaving = $leaving
+        studio.onLeave = {
+            leaving.wrappedValue = true
+            shown.wrappedValue = false
+        }
+        studio.onStepAside = { shown.wrappedValue = false }
         model = studio
         var transaction = Transaction()
         transaction.disablesAnimations = true

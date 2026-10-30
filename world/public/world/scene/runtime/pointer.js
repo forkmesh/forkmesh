@@ -34,6 +34,9 @@ export function functions({
   onFederatedWorldTravel,
   onFediverseProfile,
   onInstanceHexagonSelect,
+  onTerritoryLinkSelect = () => {},
+  onTerritoryBugSelect = () => {},
+  onNeighbourBugSelect = () => {},
   onFloorTap,
   onForkbotChat,
   onLandmarkSelect,
@@ -768,6 +771,14 @@ export function functions({
       });
       return;
     }
+    if (hit?.object?.userData?.interactive === "neighbour-door") {
+      fns.onNeighbourDoor?.({ ...(hit.object.userData.link || {}) });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "neighbour-bug") {
+      onNeighbourBugSelect({ ...(hit.object.userData.bug || {}) });
+      return;
+    }
     if (hit?.object?.userData?.interactive === "instance-hexagon") {
       onInstanceHexagonSelect({
         url: String(hit.object.userData.url || ""),
@@ -775,6 +786,17 @@ export function functions({
         worldUrl: String(hit.object.userData.worldUrl || ""),
         arrivalSlot: Number(hit.object.userData.arrivalSlot),
       });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "territory-link") {
+      onTerritoryLinkSelect({
+        url: String(hit.object.userData.url || ""),
+        label: String(hit.object.userData.label || ""),
+      });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "territory-bug") {
+      onTerritoryBugSelect({ ...(hit.object.userData.bug || {}) });
       return;
     }
     if (hit?.object?.userData?.interactive === "beach-scene-enter") {
@@ -1318,6 +1340,7 @@ export function functions({
       }
       if (
         enteredDistrictRide ||
+        fns.enterNearbyTerritoryDoor?.() ||
         fns.toggleNearestCoasterRide() ||
         fns.toggleNearestQuadcopterRide() ||
         fns.toggleNearestBikeRide() ||

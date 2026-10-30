@@ -16,8 +16,11 @@ FUNCS = {
     "_login_record_fail",
     "_login_clear",
     "_login_failure_response",
+    "_resolve_user_by_password",
+    "_verify_password_miss",
 }
-ASSIGNS = {"UNVERIFIED_PROFILE_FIELDS"}
+ASSIGNS = {"UNVERIFIED_PROFILE_FIELDS", "PASSWORD_MISS_SALT",
+           "PASSWORD_MISS_HASH"}
 
 
 class _Request:
@@ -44,6 +47,7 @@ def _load(account, session_name=""):
         "locked_until INTEGER NOT NULL)")
     deleted = []
     totp_checks = []
+    password_checks = []
 
     def _row(cursor):
         names = [col[0] for col in cursor.description or []]
@@ -76,7 +80,8 @@ def _load(account, session_name=""):
             return "bi:" + name, dict(account)
         return "", None
 
-    async def verify_password(password, _salt, _hash):
+    async def verify_password(password, salt, _hash):
+        password_checks.append(salt)
         return password == "right password"
 
     async def totp_verify(_secret, code):
@@ -88,6 +93,9 @@ def _load(account, session_name=""):
 
     async def _login_attempt_keys(_env, _request, identifier):
         return ["source", "pair:" + identifier]
+
+    async def _login_source_key(_env, _request):
+        return "source"
 
     def json_response(body, status=200, **_kwargs):
         return {"status": status, "body": body}
@@ -111,6 +119,7 @@ def _load(account, session_name=""):
         "verify_password": verify_password,
         "totp_verify": totp_verify,
         "_login_attempt_keys": _login_attempt_keys,
+        "_login_source_key": _login_source_key,
         "_account_email_unverified": lambda _rec: False,
         "_email_not_verified_response": lambda: json_response({}, 403),
         "_delete_account_namespace": _delete_account_namespace,
@@ -119,6 +128,7 @@ def _load(account, session_name=""):
                  "exec"), namespace)
     namespace["deleted"] = deleted
     namespace["totp_checks"] = totp_checks
+    namespace["password_checks"] = password_checks
     return namespace
 
 
@@ -174,6 +184,17 @@ def test_profile_password_failures_spend_the_login_budget():
     assert statuses == [401, 401, 429]
 
 
+def test_profile_password_for_an_unknown_account_still_spends_one_hash():
+    ns = _load(_enrolled())
+    response = _profile(ns, {"identifier": "nobody", "password": "wrong",
+                             "deleteAccount": True})
+    assert response["body"] == {"error": "invalid_credentials"}
+    assert ns["password_checks"] == [ns["PASSWORD_MISS_SALT"]]
+    response = _profile(ns, {"identifier": "alice", "password": "wrong",
+                             "deleteAccount": True})
+    assert ns["password_checks"] == [ns["PASSWORD_MISS_SALT"], "s"]
+
+
 def test_totp_guesses_lock_the_account_code_even_for_the_right_code():
     ns = _load(_enrolled())
     totp_ok = ns["_account_totp_ok"]
@@ -204,3 +225,67 @@ def test_every_totp_check_goes_through_the_budgeted_helper():
     ]
     assert sorted(callers) == ["_account_admin_totp_enrollment",
                                "_account_totp_ok"]
+
+
+def _claim_password(ns, body):
+    return asyncio.run(ns["_resolve_user_by_password"](
+        object(), body, _Request(body)))
+
+
+def test_claim_password_alone_cannot_act_on_a_totp_account():
+    ns = _load(_enrolled())
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password"})
+    assert rec is None
+    assert refusal["body"] == {"error": "bad_totp"}
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password",
+             "totp": "123456"})
+    assert rec["name"] == "alice" and refusal is None
+
+
+def test_claim_password_guesses_lock_the_source_even_for_the_right_password():
+    ns = _load({**_enrolled(), "totp_enrolled": False})
+    statuses = [
+        _claim_password(ns, {"identifier": "alice", "password": "wrong"})[2][
+            "status"]
+        for _ in range(10)
+    ]
+    assert statuses[:2] == [401, 401] and statuses[-1] == 429
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password"})
+    assert rec is None
+    assert refusal["status"] == 429
+    assert refusal["body"]["error"] == "too_many_attempts"
+
+
+def test_a_claim_password_for_an_unknown_account_still_spends_one_hash():
+    ns = _load(_enrolled())
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "nobody", "password": "wrong"})
+    assert rec is None and refusal["body"] == {"error": "invalid_credentials"}
+    assert ns["password_checks"] == [ns["PASSWORD_MISS_SALT"]]
+
+
+def test_a_missing_claim_code_never_spends_the_accounts_code_budget():
+    ns = _load(_enrolled())
+    for _ in range(12):
+        _bi, rec, refusal = _claim_password(
+            ns, {"identifier": "alice", "password": "right password"})
+        assert rec is None and refusal["body"] == {"error": "bad_totp"}
+    assert ns["totp_checks"] == []
+    _bi, rec, refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password",
+             "totp": "123456"})
+    assert rec["name"] == "alice" and refusal is None
+
+
+def test_a_wrong_claim_code_after_the_right_password_is_counted():
+    ns = _load(_enrolled())
+    for guess in range(10):
+        _claim_password(ns, {"identifier": "alice", "password": "right password",
+                             "totp": "%06d" % guess})
+    _bi, rec, _refusal = _claim_password(
+        ns, {"identifier": "alice", "password": "right password",
+             "totp": "123456"})
+    assert rec is None

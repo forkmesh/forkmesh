@@ -9,6 +9,7 @@ import importlib.util
 import plistlib
 import re
 import struct
+import subprocess
 import sys
 import zlib
 from pathlib import Path
@@ -57,8 +58,8 @@ def _manifest(tag, names):
 
 
 def test_version_code_increases_with_every_release():
-    assert tool.android_version_code("v0.8.7") == 80701
-    assert tool.android_version_code("0.8.10") == 81001
+    assert tool.android_version_code("v0.8.7") == 80700
+    assert tool.android_version_code("0.8.10") == 81000
     codes = [tool.android_version_code(t) for t in ("v0.8.7", "v0.8.8", "v0.9.0", "v1.0.0")]
     assert codes == sorted(codes) and len(set(codes)) == len(codes)
     # v0.8.6's hand-built APK carried versionCode 4; the next one must exceed it.
@@ -304,7 +305,7 @@ def test_the_apk_badging_names_the_package_and_version_code():
 
 def test_the_native_apk_takes_the_release_version():
     assert tool.android_version_name("v1.2.5") == "1.2.5"
-    assert tool.android_version_code("v1.2.5") == 1020501
+    assert tool.android_version_code("v1.2.5") == 1020500
     assert tool.android_version_code("v1.2.5") > tool.android_version_code("v1.2.4")
     with pytest.raises(tool.CompletionError):
         tool.android_version_name("latest")
@@ -636,6 +637,29 @@ def test_an_arm64_only_local_dmg_is_published_as_the_arm64_image_only(tmp_path):
     payload = _thin(ARM64) + bytes(8192) + BUILD.encode()
     _, names = tool.local_macos_dmg(_write(tmp_path, payload), BUILD)
     assert names == frozenset({DMG})
+
+
+def test_a_commit_stored_as_a_utf16_qstringliteral_counts(tmp_path):
+    payload = _fat([ARM64, X86_64], commit="") + bytes(100) + BUILD.encode("utf-16-le")
+    assert tool.inspect_macos_dmg(_write(tmp_path, payload), BUILD)["carries_commit"] is True
+    other = _fat([ARM64, X86_64], commit="") + bytes(100) + ("b" * 40).encode("utf-16-le")
+    assert tool.inspect_macos_dmg(_write(tmp_path, other), BUILD)["carries_commit"] is False
+
+
+def test_the_windows_build_finds_its_commit_as_ascii_or_a_utf16_qstringliteral(tmp_path):
+    line = next(l for l in tool.BUILD_WINDOWS_SCRIPT.splitlines() if l.startswith("python3 -c"))
+    program = line.split("'")[1]
+    for text, encoding, found in ((BUILD, "utf-16-le", 0), (BUILD, "ascii", 0), ("b" * 40, "utf-16-le", 1)):
+        exe = tmp_path / "forkmesh.exe"
+        exe.write_bytes(bytes(64) + text.encode(encoding) + bytes(64))
+        assert subprocess.run([sys.executable, "-c", program, BUILD, str(exe)]).returncode == found
+
+
+def test_the_mac_build_stamps_the_release_version_not_the_checkout_version():
+    assert 'FORKMESH_VERSION="$1"' in tool.MAC_DESKTOP_BUILD_SCRIPT
+    script = (ROOT / "tools/package/macos_universal_on_mac.sh").read_text()
+    assert 'release_version="${FORKMESH_VERSION:-}"' in script
+    assert '-DFORKMESH_VERSION_OVERRIDE="$release_version"' in script
 
 
 def test_one_single_arch_binary_makes_the_local_dmg_arm64_only(tmp_path):
@@ -1074,3 +1098,84 @@ def test_the_mac_lock_is_shared_with_the_ios_builds_and_retaken_by_a_retry(tmp_p
     ran = _mac_shell(tmp_path, owned)
     assert ran.stdout == "ran\n"
     assert (tmp_path / "ci/lock/pid").read_text().strip().isdigit()
+
+
+def _git_repo(path):
+    import subprocess
+    env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+           "HOME": str(path), "PATH": "/usr/bin:/bin"}
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(path), "-c", "user.name=t",
+                               "-c", "user.email=t@example.invalid", *args],
+                              env=env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+    path.mkdir(parents=True, exist_ok=True)
+    git("init", "-q", "-b", "main")
+    return git
+
+
+def _release_key(tmp_path):
+    import subprocess
+    private = tmp_path / "release.pem"
+    subprocess.run(["openssl", "genpkey", "-algorithm", "Ed25519", "-out", private],
+                   check=True, capture_output=True)
+    public = subprocess.run(["openssl", "pkey", "-in", private, "-pubout"],
+                            check=True, capture_output=True, text=True).stdout
+    return private, "".join(public.splitlines()[1:-1])
+
+
+def _sign(private, data):
+    import subprocess
+    body = private.with_name("to-sign.bin")
+    body.write_bytes(data)
+    return subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey",
+                           private, "-in", body],
+                          check=True, capture_output=True).stdout
+
+
+def test_candidate_manifests_without_a_valid_signature_are_ignored(tmp_path):
+    import shutil
+    if shutil.which("openssl") is None:
+        return
+    private, public = _release_key(tmp_path)
+    repo = tmp_path / "repo"
+    git = _git_repo(repo)
+    (repo / "www/public").mkdir(parents=True)
+    (repo / "www/public/install.sh").write_text(f"'{public}'\n")
+    signed = b'{"tag":"v9.0.0","channel":"candidate-9.0.0"}'
+    forged = b'{"tag":"v9.0.1","channel":"candidate-9.0.1"}'
+    for channel, body, signature in (
+            ("candidate-9.0.0", signed, _sign(private, signed)),
+            ("candidate-9.0.1", forged, _sign(private, signed)),
+            ("candidate-9.0.2", forged, None)):
+        folder = repo / tool.RELEASES / channel
+        folder.mkdir(parents=True)
+        (folder / "release.json").write_bytes(body)
+        if signature is not None:
+            (folder / "release.json.sig").write_bytes(signature)
+    git("add", "-A")
+    git("commit", "-q", "-m", "releases")
+    assert tool.manifest_signature_valid(signed, _sign(private, signed), public)
+    assert not tool.manifest_signature_valid(signed, _sign(private, signed)[:63],
+                                             public)
+    assert list(tool.manifests_at(repo, "main")) == ["candidate-9.0.0"]
+
+
+def test_build_commit_must_descend_from_the_tag_commit(tmp_path):
+    repo = tmp_path / "repo"
+    git = _git_repo(repo)
+    git("commit", "-q", "--allow-empty", "-m", "tag")
+    tagged = git("rev-parse", "HEAD")
+    git("commit", "-q", "--allow-empty", "-m", "fix")
+    later = git("rev-parse", "HEAD")
+    git("checkout", "-q", "--orphan", "other")
+    git("commit", "-q", "--allow-empty", "-m", "unrelated")
+    unrelated = git("rev-parse", "HEAD")
+    tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, tagged)
+    tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, later)
+    for build in (unrelated, "0" * 40):
+        with pytest.raises(tool.CompletionError, match="does not descend"):
+            tool.require_build_from_tag(repo, "candidate-9.0.0", tagged, build)
+    with pytest.raises(tool.CompletionError, match="does not descend"):
+        tool.require_build_from_tag(repo, "candidate-9.0.0", later, tagged)

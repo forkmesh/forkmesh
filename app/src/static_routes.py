@@ -40,6 +40,7 @@ REPO_TAB_ROUTES = frozenset({
     "insights",
     "sizemap",
     "settings",
+    "security",
 })
 
 # Repository deep links that are not tabs but still belong to the repo
@@ -51,6 +52,7 @@ REPO_DOCUMENT_ROUTES = frozenset({
     "tree",
     "blob",
     "compare",
+    "pull",
 })
 
 CORE_RESERVED_ROUTE_PREFIXES = frozenset({
@@ -69,6 +71,8 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "verify-pending",
     "mirror-payouts",
     "security-report",
+    "advisories",
+    "security-researchers",
     "network",
     "world",
     "chat",
@@ -161,7 +165,6 @@ DASHBOARD_PAGE_ASSETS = {
     "/dashboard/repos": "dashboard/repos/index.html",
     "/dashboard/repos/new": "dashboard/repos/new/index.html",
     "/dashboard/network": "dashboard/network/index.html",
-    "/dashboard/chat": "dashboard/chat/index.html",
     "/dashboard/ads": "dashboard/ads/index.html",
     "/dashboard/challenges": "dashboard/challenges/index.html",
     "/dashboard/agents": "dashboard/agents/index.html",
@@ -200,7 +203,7 @@ DASHBOARD_SECTION_PATHS = {
     "home": "/dashboard",
     "repos": "/dashboard/repos",
     "network": "/dashboard/network",
-    "chat": "/dashboard/chat",
+    "chat": "/chat",
     "profile": "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -234,6 +237,8 @@ LEGACY_PAGE_PATHS = {
     "/explore/": "/dashboard/repos",
     "/forgot": "/forgot-password",
     "/forgot/": "/forgot-password",
+    "/dashboard/chat": "/chat",
+    "/dashboard/chat/": "/chat",
 }
 
 PROFILE_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -271,17 +276,21 @@ def legacy_page_redirect(path, query):
 
 
 # Familiar repository URLs from other forges -> the canonical repo route
-# (issue #508). Scripts and pasted links that say /pull/12, /pull-requests/12
-# or GitLab's /-/merge_requests/12 land on /owner/repo/pulls/12. Like the page
-# redirects above these are permanent 308s, so an alias is never removed; see
+# (issue #508). One pull request lives at /owner/repo/pull/12, GitHub style,
+# and the list at /owner/repo/pulls; /pulls/12, /pull-requests/12 and GitLab's
+# /-/merge_requests/12 land on /pull/12. Like the page redirects above these
+# are permanent 308s, so an alias is never removed; see
 # www/docs/terminology.json for the full compatibility table.
 REPO_ROUTE_ALIASES = {
     "commit": "commits",
     "pull": "pulls",
+    "pulls": "pulls",
     "pull-requests": "pulls",
     "merge_requests": "pulls",
     "merge-requests": "pulls",
 }
+PULL_RECORD_ROUTE = "pull"
+PULL_NUMBER_RE = re.compile(r"^[1-9][0-9]{0,8}$")
 
 
 def repo_alias_redirect(path, query):
@@ -295,10 +304,13 @@ def repo_alias_redirect(path, query):
         rest = rest[1:]
     kind = unquote(rest[0])
     canonical = REPO_ROUTE_ALIASES.get(kind)
+    if canonical == "pulls" and len(rest) > 1 and PULL_NUMBER_RE.match(
+            unquote(rest[1])):
+        canonical = PULL_RECORD_ROUTE
     if canonical is None and gitlab_scope and (
             kind in REPO_TAB_ROUTES or kind in REPO_DOCUMENT_ROUTES):
         canonical = kind
-    if canonical is None:
+    if canonical is None or (canonical == kind and not gitlab_scope):
         return None
     target = "/" + "/".join([parts[0], parts[1], canonical, *rest[1:]])
     return target + ("?" + query if query else "")
@@ -410,7 +422,7 @@ def site_document_asset_path(pathname):
     if is_ecosystem_project_path(pathname):
         return "/ecosystem"
     if is_market_package_path(pathname):
-        return "/market"
+        return "/market/" + path_parts(pathname)[1]
     return pathname
 
 

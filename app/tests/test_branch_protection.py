@@ -170,6 +170,28 @@ def test_a_merge_into_a_protected_branch_needs_an_owner_or_admin_approval(
     assert merge()[1]["error"] == "approval_required"
 
 
+def test_a_pull_revision_dismisses_approvals_but_keeps_change_requests(world):
+    module, state = world
+    merge = lambda: run(module.merge_refusal(  # noqa: E731
+        None, "acme", "platform", 3, False))
+    state.protect()
+    review(module, state, "bob", "approved")
+    assert merge() is None
+    review(module, state, "alice", "changes_requested")
+    state.now += 1
+    assert run(module.dismiss_approvals(None, "acme", "platform", 3)) == ["bob"]
+    assert merge()[1]["error"] == "changes_requested"
+    review(module, state, "alice", "dismissed")
+    assert merge()[1]["error"] == "approval_required"
+
+
+def test_the_relay_dismisses_approvals_when_it_accepts_a_revision():
+    entry = (Path(__file__).resolve().parents[1] / "src" / "entry.py").read_text("utf-8")
+    block = entry.split("async def _accept_pull_revision", 1)[1].split("\nasync def ", 1)[0]
+    assert block.index('"INSERT OR IGNORE INTO pull_inbox "') < block.index(
+        "await _branch_protection.dismiss_approvals(env, owner, repo, number)")
+
+
 def test_the_author_cannot_approve_under_another_name(world):
     module, state = world
     state.protect()

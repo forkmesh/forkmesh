@@ -56,6 +56,8 @@ import hmac
 import time
 from urllib.parse import parse_qs, quote, urlparse
 
+from hidden_unicode import clean_query as clean_hidden_query
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by this domain."""
@@ -70,6 +72,9 @@ PRODUCT_ANALYSIS_SESSION_COOKIE = "forkmesh_product_analysis"
 PRODUCT_ANALYSIS_SESSION_TTL_MS = 12 * 60 * 60 * 1000
 PRODUCT_ANALYSIS_SESSION_CONTEXT = "forkmesh-product-analysis-session-v1"
 PRODUCT_ANALYSIS_LOGIN_CONTEXT = "product-analysis-login:"
+PRODUCT_ANALYSIS_GLOBAL_LOGIN_KEY = "product-analysis-login-global:v1"
+PRODUCT_ANALYSIS_GLOBAL_MAX_FAILS = 200
+PRODUCT_ANALYSIS_GLOBAL_WINDOW_MS = 60 * 60 * 1000
 # Rows per D1 read while draining a table. Deliberately small so the tests can
 # prove that a report larger than one page is still complete.
 PRODUCT_ANALYSIS_SCAN_PAGE = 200
@@ -399,10 +404,35 @@ def session_valid(env, request, credentials, now_ms):
 
 
 async def _login_budget_key(env, request):
-    source = _transient_client_address(request)
+    source = _client_source_bucket(_transient_client_address(request))
     source_bi = await blind_index(env, source) if source else ""
     return await blind_index(
         env, PRODUCT_ANALYSIS_LOGIN_CONTEXT + (source_bi or "local"))
+
+
+async def _global_login_locked_until(env, key, now):
+    row = await d1_first(
+        env, "SELECT fails,first_fail_ts FROM login_attempts WHERE id_bi=?",
+        key)
+    fails = _int((row or {}).get("fails"))
+    started = _int((row or {}).get("first_fail_ts"))
+    until = started + PRODUCT_ANALYSIS_GLOBAL_WINDOW_MS
+    if fails >= PRODUCT_ANALYSIS_GLOBAL_MAX_FAILS and until > int(now):
+        return until
+    return 0
+
+
+async def _global_login_record_fail(env, key, now):
+    window = PRODUCT_ANALYSIS_GLOBAL_WINDOW_MS
+    await d1_run(
+        env,
+        "INSERT INTO login_attempts (id_bi,fails,first_fail_ts,locked_until) "
+        "VALUES (?,1,?,0) ON CONFLICT(id_bi) DO UPDATE SET "
+        "fails=CASE WHEN ?-login_attempts.first_fail_ts>=? "
+        "THEN 1 ELSE login_attempts.fails+1 END,"
+        "first_fail_ts=CASE WHEN ?-login_attempts.first_fail_ts>=? "
+        "THEN ? ELSE login_attempts.first_fail_ts END,locked_until=0",
+        key, int(now), int(now), window, int(now), window, int(now))
 
 
 # --- responses ----------------------------------------------------------------
@@ -525,15 +555,18 @@ async def _handle_post(env, request, credentials, now, theme="system"):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:PRODUCT_ANALYSIS_MAX_FORM_BYTES],
-                    keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:PRODUCT_ANALYSIS_MAX_FORM_BYTES],
+                    keep_blank_values=True))
     action = (form.get("action") or [""])[0]
     if action == "logout":
         return _redirect(clear_session_cookie())
     if action != "login":
         return None
     budget_key = await _login_budget_key(env, request)
-    locked_until = _int(await _login_locked_until(env, budget_key))
+    global_key = await blind_index(env, PRODUCT_ANALYSIS_GLOBAL_LOGIN_KEY)
+    locked_until = max(
+        _int(await _login_locked_until(env, budget_key)),
+        await _global_login_locked_until(env, global_key, now))
     if locked_until > now:
         return _login_response(now, locked_until=locked_until, theme=theme)
     user = (form.get("username") or [""])[0]
@@ -542,6 +575,7 @@ async def _handle_post(env, request, credentials, now, theme="system"):
         await _login_clear(env, budget_key)
         return _redirect(session_cookie(env, credentials, now))
     result = await _login_record_fail(env, budget_key)
+    await _global_login_record_fail(env, global_key, now)
     locked_until = _int(result.get("lockedUntil")) if isinstance(
         result, dict) else _int(result)
     return _login_response(now, failed=True, locked_until=locked_until,

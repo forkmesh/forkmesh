@@ -138,12 +138,20 @@ object RouteCatalog {
         Route.Kind.Marketing -> "Marketing"
         Route.Kind.Analytics -> "Analytics"
         Route.Kind.Competitors -> "Competitors"
+        Route.Kind.Invoices -> "Invoices"
         Route.Kind.Ads -> "Ads"
         Route.Kind.Ledger -> "Ledger & tips"
         Route.Kind.Vault -> "Vault"
         Route.Kind.Coves -> "Coves"
         Route.Kind.Cove -> "Cove"
         Route.Kind.Calories -> "Calories"
+        Route.Kind.Steps -> "Steps"
+        Route.Kind.Water -> "Water"
+        Route.Kind.Sleep -> "Sleep"
+        Route.Kind.SugarBreak -> "Sugar Break"
+        Route.Kind.Stretch -> "Stretch Break"
+        Route.Kind.FoodGuide -> "Food Guide"
+        Route.Kind.Speech -> "Speech"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
         Route.Kind.Ember -> "Ember"
@@ -155,12 +163,17 @@ object RouteCatalog {
         Route.Kind.Runners -> "Runners"
         Route.Kind.Usage -> "Usage"
         Route.Kind.RssReader -> "RSS Reader"
+        Route.Kind.VideoMixDjStudio -> "Video Mix DJ Studio"
+        Route.Kind.Poker -> "Poker"
         Route.Kind.InstanceFeed -> "Feed"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
+        Route.Kind.Nexus -> "NEXUS"
         Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
+        Route.Kind.Logs -> "Logs"
+        Route.Kind.Diagnostics -> "Diagnostics"
         Route.Kind.Stats -> "Stats"
         Route.Kind.Status -> "Status"
         Route.Kind.Admin -> "Admin"
@@ -215,11 +228,19 @@ object RouteCatalog {
         Route.Kind.Marketing -> "campaign"
         Route.Kind.Analytics -> "show_chart"
         Route.Kind.Competitors -> "travel_explore"
+        Route.Kind.Invoices -> "receipt_long"
         Route.Kind.Ads -> "ads_click"
         Route.Kind.Ledger -> "account_balance_wallet"
         Route.Kind.Vault -> "key"
         Route.Kind.Coves, Route.Kind.Cove -> "shield"
         Route.Kind.Calories -> "restaurant"
+        Route.Kind.Steps -> "directions_walk"
+        Route.Kind.Water -> "water_drop"
+        Route.Kind.Sleep -> "bedtime"
+        Route.Kind.SugarBreak -> "cake"
+        Route.Kind.Stretch -> "self_improvement"
+        Route.Kind.FoodGuide -> "eco"
+        Route.Kind.Speech -> "volume_up"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
         Route.Kind.Ember -> "local_fire_department_rounded"
@@ -231,12 +252,17 @@ object RouteCatalog {
         Route.Kind.Runners -> "dns"
         Route.Kind.Usage -> "speed"
         Route.Kind.RssReader -> "feed"
+        Route.Kind.VideoMixDjStudio -> "album"
+        Route.Kind.Poker -> "casino"
         Route.Kind.InstanceFeed -> "comment"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
+        Route.Kind.Nexus -> "lan"
         Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
+        Route.Kind.Logs -> "subject"
+        Route.Kind.Diagnostics -> "troubleshoot"
         Route.Kind.Stats -> "bar_chart"
         Route.Kind.Status -> "monitor_heart"
         Route.Kind.Admin -> "build"
@@ -305,6 +331,7 @@ object HubCatalog {
         HubItem.destination(Route.Tasks(null), guestAction = "use tasks"),
         HubItem.destination(Route.Calendar(null, CalendarMode.Month), needsRegistration = true),
         HubItem.destination(Route.Timers, needsRegistration = true),
+        HubItem.destination(Route.Nexus),
     )
 
     val operate: List<HubItem> = listOf(
@@ -315,6 +342,8 @@ object HubCatalog {
         HubItem.destination(Route.Hosts, guestAction = "manage your hosts"),
         HubItem.destination(Route.Runners, needsRegistration = true),
         HubItem.destination(Route.Network(null), needsRegistration = true),
+        HubItem.destination(Route.Logs),
+        HubItem.destination(Route.Diagnostics),
     )
 
     val business: List<HubItem> = listOf(
@@ -323,6 +352,7 @@ object HubCatalog {
         HubItem.destination(Route.Marketing(null), needsRegistration = true, guestAction = "plan marketing"),
         HubItem.destination(Route.Analytics(null), needsRegistration = true, guestAction = "see product analytics"),
         HubItem.destination(Route.Competitors, needsRegistration = true, guestAction = "keep a competitor watchlist"),
+        HubItem.destination(Route.Invoices(null, null), needsRegistration = true, guestAction = "send invoices"),
         HubItem.destination(Route.Ads, needsRegistration = true, guestAction = "manage your ads"),
         HubItem.destination(Route.Ledger(null), needsRegistration = true),
     )
@@ -331,11 +361,20 @@ object HubCatalog {
         HubItem.destination(Route.Vault(null), guestAction = "open your password vault"),
         HubItem.destination(Route.Coves(null), needsRegistration = true, guestAction = "open your coves"),
         HubItem.destination(Route.Calories, guestAction = "use the calorie counter"),
+        HubItem.destination(Route.Steps),
+        HubItem.destination(Route.Water),
+        HubItem.destination(Route.Sleep),
+        HubItem.destination(Route.SugarBreak),
+        HubItem.destination(Route.Stretch),
+        HubItem.destination(Route.FoodGuide),
+        HubItem.destination(Route.Speech),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.PhoneSecurity),
         HubItem.destination(Route.OpenWrtRouter),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
+        HubItem.destination(Route.VideoMixDjStudio),
+        HubItem.destination(Route.Poker(null), needsRegistration = true, guestAction = "play poker"),
         HubItem.destination(Route.InstanceFeed(null), needsRegistration = true),
         HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.Files),

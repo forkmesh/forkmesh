@@ -7,13 +7,20 @@ cd "$(dirname "$0")/../.."
 head=$(git log -1 --format='%h %s' main)
 tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
 version=$(sed -n 's/^MARKETING_VERSION *= *//p' native/ios/Config/Version.xcconfig)
-: "${FORKMESH_RELEASE_ASSIGNEE:?set FORKMESH_RELEASE_ASSIGNEE to the release maintainer account}"
-exec python3 -I - "$PWD" "$head" "$tag" "$version" "$FORKMESH_RELEASE_ASSIGNEE" <<'PY'
+exec python3 -I - "$PWD" "$head" "$tag" "$version" "${FORKMESH_RELEASE_ASSIGNEE:-}" <<'PY'
 import sys
 
 root, head, tag, version, assignee = sys.argv[1:6]
 sys.path.insert(0, root + "/tools")
 import forkmesh_mcp_server as mcp
+import forkmesh_paths
+
+assignee = assignee.strip()
+if not assignee:
+    saved = forkmesh_paths.resolve().config / "release-assignee"
+    assignee = saved.read_text().strip() if saved.is_file() else ""
+if not assignee:
+    print(f"No release maintainer set (FORKMESH_RELEASE_ASSIGNEE or {saved}); creating the task unassigned.", file=sys.stderr)
 
 details = f"""A reminder to deploy the iOS app to the App Store.
 
@@ -31,10 +38,9 @@ Guide: docs/native/IOS_RELEASE.md, "App Store rollout for a tagged release". App
 task = mcp.create_task({
     "title": "Reminder: deploy the iOS app to the App Store",
     "details": details,
-    "assigneeKind": "user",
     "assignee": assignee,
     "repository": "forkmesh/forkmesh",
 })
 created = task.get("task") if isinstance(task.get("task"), dict) else task
-print(f"Created task {created.get('id', '')} for {created.get('assignee', '')}: {created.get('title', '')}")
+print(f"Created task {created.get('id', '')} for {created.get('assignee') or 'nobody yet'}: {created.get('title', '')}")
 PY

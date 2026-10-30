@@ -21,7 +21,8 @@
     "Inputs and selects: control-height, control-font, 1px border, focus = border and inset 1px line in primary. No glow.",
     "Menus: menu-row-height rows, control-font text, check mark in primary on the selected row, muted hint on the right. No coloured left bars.",
     "Buttons: secondary (neutral) by default, one cta per page, destructive text for remove.",
-    "Structure: one bordered box per group with hairline dividers between rows."
+    "Structure: one bordered box per group with hairline dividers between rows.",
+    "Seasons: a platform administrator or moderator can switch on a seasonal theme (Settings, Appearance). seasons.<name> overrides cta and success while it is on; keep using the roles, never a seasonal colour directly."
   ],
   "colors": {
     "header": {
@@ -61,7 +62,7 @@
       "light": "9 105 218"
     },
     "primary-foreground": {
-      "dark": "255 255 255",
+      "dark": "1 4 9",
       "light": "255 255 255"
     },
     "cta": {
@@ -127,6 +128,18 @@
     "scrollbar": {
       "dark": "139 148 158",
       "light": "71 85 105"
+    }
+  },
+  "seasons": {
+    "halloween": {
+      "cta": {
+        "dark": "194 65 12",
+        "light": "194 65 12"
+      },
+      "success": {
+        "dark": "250 122 24",
+        "light": "188 76 0"
+      }
     }
   },
   "components": {

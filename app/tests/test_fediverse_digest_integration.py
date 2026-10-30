@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -13,6 +14,8 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "entry.py"
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
 ENTRY_TEXT = (
     # entry.py + its lazily-split domain modules
     (ENTRY.parent / "forkbot.py").read_text(encoding="utf-8")
@@ -47,7 +50,8 @@ def _load(*names, extra_globals=None):
         and node.name in names
     ]
     assert {node.name for node in nodes} == set(names)
-    namespace = dict(extra_globals or {})
+    namespace = {"instance_features": instance_features}
+    namespace.update(extra_globals or {})
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=nodes, type_ignores=[])), str(ENTRY), "exec"),
          namespace)
@@ -668,7 +672,7 @@ def test_owner_and_org_admin_previews_are_no_store_and_private_safe():
         ENTRY_TEXT.index("async def org_fediverse_handler"):
         ENTRY_TEXT.index("# --- Admins + email-delivery follow-up")
     ]
-    assert 'not in ("owner", "admin")' in org_handler
+    assert '"organization.fediverse.manage"' in org_handler
     assert "await _repo_is_private(env, source_owner, repo)" in org_handler
     assert "ownerEnabled" in org_handler
     assert "Organization controls cannot override repository-owner settings." \

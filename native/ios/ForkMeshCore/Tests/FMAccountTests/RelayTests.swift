@@ -360,6 +360,31 @@ final class RelayTests: XCTestCase {
     }
 
     @MainActor
+    func testAnInstanceBelongsToOnlyOneProject() async throws {
+        let (directory, _) = load()
+        let instance = try XCTUnwrap(RelayProfile.tryParse("relay.example.com"))
+        let tea = try XCTUnwrap(directory.addNamed("Tea"))
+        let coffee = try XCTUnwrap(directory.addNamed("Coffee"))
+        XCTAssertNotNil(directory.attach(tea.id, to: instance))
+        XCTAssertEqual(directory.owner(of: instance)?.id, tea.id)
+        XCTAssertNil(directory.attach(coffee.id, to: instance))
+        XCTAssertFalse(try XCTUnwrap(directory.byId(coffee.id)).hasInstance)
+        XCTAssertNil(directory.attach(coffee.id, to: try XCTUnwrap(RelayProfile.tryParse("https://relay.example.com/ws"))))
+
+        let count = directory.relays.count
+        XCTAssertEqual(directory.add(instance).id, tea.id)
+        XCTAssertEqual(directory.useUrl("wss://relay.example.com/ws")?.id, tea.id)
+        XCTAssertEqual(directory.activeId, tea.id)
+        XCTAssertEqual(directory.relays.count, count)
+
+        let lab = try XCTUnwrap(RelayProfile.tryParse("lab.example.com"))
+        directory.add(lab)
+        XCTAssertNil(directory.attach(coffee.id, to: lab))
+        XCTAssertNil(directory.attach(coffee.id, to: try XCTUnwrap(RelayProfile.tryParse(AppEnv.prodHost))))
+        XCTAssertNotNil(directory.attach(coffee.id, to: try XCTUnwrap(RelayProfile.tryParse("other.example.com"))))
+    }
+
+    @MainActor
     func testALogoCanBeSetAndClearedOnAnyProject() async throws {
         let (directory, _) = load()
         directory.setLogo(AppEnv.prodHost, "fm.png")

@@ -1,0 +1,179 @@
+QLabel#sectionTitle[marketNextRole="title"] {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+QLabel#marketNextSummary { color: @fgMuted; font-size: 12px; background: transparent; }
+QLineEdit#marketSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 30px; max-height: 32px; padding: 0px 8px 0px 2px; font-size: 13px; color: @fg;
+}
+QLineEdit#marketSearch:hover { border-color: @borderStrong; }
+QLineEdit#marketSearch:focus { border-color: @accent; }
+QComboBox#marketSort {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 30px; max-height: 32px; font-size: 13px; color: @fg;
+}
+QComboBox#marketSort:hover { border-color: @borderStrong; }
+QPushButton#marketInstallAllButton[marketNextRole="ghost"] {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgSecondary; padding: 0px 10px; min-height: 30px; max-height: 30px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton#marketInstallAllButton[marketNextRole="ghost"]:hover { background-color: @surfaceRaised; color: @fg; }
+QPushButton#marketInstallAllButton[marketNextRole="ghost"]:pressed { background-color: @surfaceActive; }
+QPushButton#marketInstallAllButton[marketNextRole="ghost"]:disabled { color: @fgSubtle; }
+QPushButton#marketPublishButton {
+    background-color: @fg; color: @bg; border: none; border-radius: 8px;
+    padding: 0px 12px 0px 10px; min-height: 30px; max-height: 30px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton#marketPublishButton:hover { background-color: @fgSecondary; }
+QPushButton#marketPublishButton:pressed { background-color: @fgMuted; }
+QFrame#marketNextViewToggle {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+QFrame#marketNextViewToggle QPushButton {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-width: 26px; max-width: 26px; min-height: 24px; max-height: 24px; padding: 0px;
+}
+QFrame#marketNextViewToggle QPushButton:hover { background-color: @surfaceRaised; }
+QFrame#marketNextViewToggle QPushButton:checked { background-color: @surfaceActive; }
+QFrame#marketNextViewToggle QPushButton:focus { border-color: @accent; }
+
+QWidget#marketCategoryButtons { background: transparent; }
+QWidget#marketCategoryButtons QPushButton {
+    background-color: @surface; color: @fgMuted; border: 1px solid @border;
+    border-radius: 14px; padding: 0px 12px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 400;
+}
+QWidget#marketCategoryButtons QPushButton:hover { background-color: @surfaceRaised; color: @fg; }
+QWidget#marketCategoryButtons QPushButton:checked {
+    background-color: @fg; color: @bg; border-color: @fg;
+}
+QWidget#marketCategoryButtons QPushButton:checked:hover { background-color: @fgSecondary; border-color: @fgSecondary; }
+QWidget#marketCategoryButtons QPushButton:focus { border-color: @accent; }
+
+QLabel#marketStatus { color: @warning; font-size: 12px; background: transparent; }
+QLabel#marketSearchEmpty { color: @fgMuted; font-size: 13px; background: transparent; }
+
+QTabWidget#marketTabs::pane {
+    border: none; border-top: 1px solid @border; padding-top: 52px;
+    top: -1px; background: transparent;
+}
+QTabWidget#marketTabs::tab-bar { left: 24px; alignment: left; }
+QTabWidget#marketTabs > QTabBar { background: transparent; border: none; }
+QScrollArea#marketList, QScrollArea#marketInstalledList, QScrollArea#marketNotInstalledList,
+QScrollArea#marketPacksList, QScrollArea#marketGuidesList { background: transparent; border: none; }
+
+QFrame#marketPackageCard[nextMarketCard="true"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#marketPackageCard[nextMarketCard="true"]:hover { border-color: @borderStrong; }
+QFrame#marketPackageCard[nextMarketSelected="true"] { border-color: @accent; }
+QWidget#marketNextCardMain, QWidget#marketNextDetails, QWidget#marketNextTrust,
+QWidget#marketNextTrustItem, QWidget#marketNextWarnRow { background: transparent; }
+QLabel[marketNextRole="name"] { color: @fg; font-size: 14px; font-weight: 600; background: transparent; }
+QFrame#marketPackageCard[nextMarketCard="true"] QLabel#marketPrice {
+    color: @fg; font-size: 13px; font-weight: 500; background: transparent;
+}
+QLabel#mutedLabel[marketNextRole="meta"] { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel[marketNextRole="summary"] { color: @fgSecondary; font-size: 13px; background: transparent; }
+QWidget#marketNextDetails QLabel#marketPackageStats,
+QLabel#marketNextFacts { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketNextWarning { color: @warning; font-size: 12px; background: transparent; }
+QLabel#marketPackageFootprint,
+QLabel#marketNextPaneFootprint { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketPackageFootprint[separate="true"],
+QLabel#marketNextPaneFootprint[separate="true"] { color: @success; }
+QPushButton#marketNextDetailsToggle {
+    background: transparent; border: none; border-radius: 6px; color: @fgSubtle;
+    padding: 0px 4px; min-height: 24px; max-height: 24px; font-size: 12px; font-weight: 400;
+}
+QPushButton#marketNextDetailsToggle:hover { color: @fg; }
+QPushButton#marketNextDetailsToggle:checked { color: @fgSecondary; background: transparent; }
+QPushButton#marketNextDetailsToggle:focus { color: @accentFg; }
+
+QPushButton[marketNextAction="install"] {
+    background-color: @accent; color: @onAccent; border: 1px solid @accent;
+    border-radius: 6px; padding: 0px 10px 0px 8px; min-height: 26px; max-height: 26px;
+    font-size: 12px; font-weight: 500;
+}
+QPushButton[marketNextAction="install"]:hover { background-color: @accentHover; border-color: @accentHover; }
+QPushButton[marketNextAction="install"]:pressed { background-color: @accentPressed; border-color: @accentPressed; }
+QPushButton[marketNextAction="remove"] {
+    background-color: @surface; color: @danger; border: 1px solid @borderStrong;
+    border-radius: 8px; padding: 0px 12px; min-height: 30px; max-height: 30px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton[marketNextAction="remove"]:hover { background-color: @dangerSubtle; border-color: @danger; }
+QPushButton[marketNextAction="status"] {
+    background: transparent; color: @fgMuted; border: 1px solid @border;
+    border-radius: 6px; padding: 0px 8px; min-height: 26px; max-height: 26px;
+    font-size: 12px; font-weight: 500;
+}
+QPushButton[marketNextAction="status"]:disabled { color: @fgMuted; border-color: @border; }
+QPushButton[marketNextRole="outline"] {
+    background-color: @surface; color: @fg; border: 1px solid @borderStrong;
+    border-radius: 8px; padding: 0px 12px; min-height: 30px; max-height: 30px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton[marketNextRole="outline"]:hover { background-color: @surfaceRaised; }
+QPushButton[marketNextRole="outline"]:pressed { background-color: @surfaceActive; }
+QPushButton[marketNextRole="outline"]:disabled { color: @fgSubtle; border-color: @border; }
+
+QLabel#marketNextCaption {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; background: transparent;
+}
+QLabel#marketNextTrustText { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketNextTrustText[tone="warning"] { color: @warning; }
+QFrame#marketNextPermissions {
+    background: transparent; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#marketNextPermission {
+    background: transparent; border: none; border-top: 1px solid @border; border-radius: 0px;
+}
+QFrame#marketNextPermission[firstRow="true"] { border-top: none; }
+QLabel#marketNextPermissionText { color: @fgSecondary; font-size: 13px; background: transparent; }
+QLabel#marketNextPermissionNone {
+    color: @fgMuted; font-size: 13px; padding: 10px 12px; background: transparent;
+}
+QWidget#marketNextDetails QLabel#marketNativeNotice {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+QWidget#marketNextDetails QFrame#marketNestedPackages {
+    background: transparent; border: none;
+}
+QWidget#marketNextDetails QFrame#marketNestedPackages QLabel {
+    color: @fgSecondary; font-size: 13px; background: transparent;
+}
+QWidget#marketPackagePlaces[marketNext="true"] {
+    background: transparent; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#marketPackagePlaces[marketNext="true"] QCheckBox {
+    color: @fg; font-size: 13px; min-height: 32px; spacing: 10px; background: transparent;
+}
+QLabel#marketPackageNotShownHere { color: @fgMuted; font-size: 12px; background: transparent; }
+
+QFrame#marketPackageSettingsPage, QFrame#marketPackCard, QFrame#marketGuideCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#marketPackCard QLabel, QFrame#marketGuideCard QLabel,
+QFrame#marketPackageSettingsPage QLabel { background: transparent; }
+QFrame#marketPackCard QLabel#marketPackIncludes, QFrame#marketGuideCard QLabel#marketGuideLinks {
+    color: @fgMuted; font-size: 12px;
+}
+
+QFrame#marketNextDetailsPane {
+    background-color: @surface; border: none; border-left: 1px solid @border;
+}
+QScrollArea#marketNextPaneScroll, QWidget#marketNextPaneBody { background: transparent; border: none; }
+QLabel#marketNextPaneTitle { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }
+QPushButton#marketNextPaneClose {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px;
+}
+QPushButton#marketNextPaneClose:hover { background-color: @surfaceRaised; }
+QPushButton#marketNextPaneClose:focus { border-color: @accent; }
+QLabel#marketNextPaneVersion { color: @fgSubtle; font-size: 12px; background: transparent; }
+QLabel#marketNextPanePrice { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
+QLabel#marketNextPaneMeta { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketNextPaneSummary { color: @fgSecondary; font-size: 13px; background: transparent; }

@@ -58,6 +58,8 @@ inline const QList<KindInfo> &kinds()
         {"mention", "conversations", "Mentions", true, true},
         {"subscribed", "conversations", "Activity on things you follow", true,
          true},
+        {"reaction", "conversations", "Reactions to your comments", false,
+         false},
         {"chat_webhook", "conversations", "Chat webhook posts", false, false},
         {"channel_unread", "conversations", "Unread channel messages", true,
          true},
@@ -70,6 +72,8 @@ inline const QList<KindInfo> &kinds()
         {"calendar_rsvp", "conversations", "Calendar replies", true, true},
         {"issue_opened", "repositories", "New issues", true, true},
         {"pull_submitted", "repositories", "New pull requests", true, true},
+        {"pull_attention", "repositories",
+         "Reviews and conflicts on your pull requests", true, true},
         {"issue_assigned", "repositories", "Issue assignments", true, true},
         {"pending_inbox", "repositories", "Inbox updates", true, true},
         {"code_push", "repositories", "Code pushes", false, false},
@@ -77,6 +81,8 @@ inline const QList<KindInfo> &kinds()
          false},
         {"release_published", "repositories", "Releases", true, true},
         {"repo_shared", "repositories", "Repositories shared with you", true,
+         true},
+        {"security_advisory", "repositories", "Security advisories", true,
          true},
         {"mirror_request", "repositories", "Mirror requests", true, true},
         {"repository_hosted", "repositories", "Imports finished hosting",
@@ -280,6 +286,29 @@ inline bool setPingKindEnabled(const QString &kind, bool enabled)
     }
     setDesktopKindEnabled(key, enabled);
     return false;
+}
+
+inline QString alertLeadTitle(const QString &who, const QString &where,
+                              int number = 0)
+{
+    QString place = where.trimmed();
+    if (number > 0)
+        place += (place.isEmpty() ? QString() : QStringLiteral(" ")) +
+                 QLatin1Char('#') + QString::number(number);
+    const QString actor = who.trimmed();
+    if (actor.isEmpty())
+        return place;
+    if (place.isEmpty())
+        return actor;
+    return actor + QString::fromUtf8(" \xC2\xB7 ") + place;
+}
+
+inline QString alertSnippet(const QString &text, int maxChars = 180)
+{
+    const QString clean = text.simplified();
+    if (clean.size() <= maxChars)
+        return clean;
+    return clean.left(maxChars - 1).trimmed() + QString::fromUtf8("\xE2\x80\xA6");
 }
 
 // The daily quiet window, in the same shape as the relay's

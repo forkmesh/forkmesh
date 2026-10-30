@@ -95,6 +95,8 @@ public:
                         const QString &commit, const QString &ref,
                         const QString &before = QString()) const;
     QString artifactsDir() const; // <root>/artifacts (validated run outputs)
+    QString heavyRoot() const;
+    QString legacySandboxDir() const;
     QString sandboxDir() const; // <root>/sandbox (disposable per-run trees)
     QString cacheRoot() const;
     // <root>/cache/<repoKey>: the one writable Action mount that outlives a
@@ -116,6 +118,7 @@ public:
     // Where readLog() reads from. Handed to agents so they open the whole file
     // instead of working from a tail that stopped before the failing line.
     QString logPath(const ActionRun &run) const;
+    static void flushWrites();
 
     static QMap<QString, QString> variables();
     static void setVariables(const QMap<QString, QString> &vars);

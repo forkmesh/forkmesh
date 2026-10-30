@@ -15,14 +15,15 @@ enum DjWaveSource {
     }
 
     static func read(for id: String, source: URL, bars wantsBars: Bool) async -> (bars: [DjWaveBar]?, audio: DjScratchAudio?) {
-        await Task.detached(priority: .utility) { () -> ([DjWaveBar]?, DjScratchAudio?) in
+        let work = Task.detached(priority: .utility) { () -> ([DjWaveBar]?, DjScratchAudio?) in
             guard let file = await download(source) else { return (nil, nil) }
             defer { try? FileManager.default.removeItem(at: file) }
-            guard let decoded = await decode(file, bars: wantsBars) else { return (nil, nil) }
+            guard !Task.isCancelled, let decoded = await decode(file, bars: wantsBars) else { return (nil, nil) }
             let bars = decoded.bars.flatMap { $0.isEmpty ? nil : $0 }
             if let bars, let url = cacheURL(id) { try? DjWaveCache.encode(bars).write(to: url, options: .atomic) }
             return (bars, decoded.audio)
-        }.value
+        }
+        return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
     }
 
     private static func cacheURL(_ id: String) -> URL? {

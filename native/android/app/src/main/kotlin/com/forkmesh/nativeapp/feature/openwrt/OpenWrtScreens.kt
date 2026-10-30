@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.openwrt
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
+import com.forkmesh.nativeapp.ui.kit.FmSwitch
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +27,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -87,7 +88,7 @@ private fun CoroutineScope.guard(block: suspend () -> Unit) = launch {
 
 @Composable
 private fun RouterPage(title: String, navigator: Navigator, root: Boolean = false, content: LazyListScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+    Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
         ToolsAppBar(title, navigator, pluginMenu = root)
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(Modifier.fillMaxSize()) {
@@ -144,7 +145,7 @@ private fun Row2(title: String, detail: String = "", icon: String? = null, onCli
 private fun Field(label: String, value: String, onChange: (String) -> Unit, hint: String = "", secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = if (secret) onChange else FmSafeInput.text(onChange),
         label = { Text(label) },
         placeholder = if (hint.isEmpty()) null else ({ Text(hint) }),
         singleLine = true,
@@ -161,7 +162,7 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        FmSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -208,7 +209,7 @@ private fun Prompt(title: String, text: String, initial: String, action: String,
         text = {
             Column {
                 Text(text)
-                OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
+                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
             }
         },
         confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }) { Text(action) } },
@@ -231,7 +232,7 @@ class OpenWrtScreen : Screen() {
             AlertDialog(
                 onDismissRequest = { reviewing = false },
                 title = { Text("Waiting changes") },
-                text = { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FontFamily.Monospace) },
+                text = { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FmType.mono) },
                 confirmButton = { TextButton(onClick = { reviewing = false }) { Text("Done") } },
             )
         }
@@ -289,7 +290,7 @@ class OpenWrtScreen : Screen() {
                 }
                 if (state.pendingCertificate.isNotEmpty()) {
                     Header("Certificate fingerprint (SHA-256)")
-                    Text(state.pendingCertificate, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4))
+                    Text(state.pendingCertificate, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4))
                     Note("Compare it with the fingerprint the router shows before you trust it.")
                     Actions { TextButton(onClick = { scope.guard { state.trustCertificate() } }) { Text("Trust this certificate") } }
                 }
@@ -475,7 +476,7 @@ class OpenWrtWifiScreen : Screen() {
                 text = {
                     Column {
                         Text("The new network uses WPA2/WPA3 and connects to the local network.")
-                        OutlinedTextField(newSsid, { newSsid = it }, label = { Text("Network name") }, singleLine = true)
+                        OutlinedTextField(newSsid, FmSafeInput.text<String> { newSsid = it }, label = { Text("Network name") }, singleLine = true)
                         OutlinedTextField(newKey, { newKey = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
                     }
                 },
@@ -804,7 +805,7 @@ class OpenWrtStorageScreen : Screen() {
                     if (state.storageLog.isNotEmpty()) {
                         Header("USB storage check")
                         SelectionContainer {
-                            Text(state.storageLog, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
+                            Text(state.storageLog, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
                         }
                     }
                     Header("Disks")
@@ -924,7 +925,7 @@ class OpenWrtPackagesScreen : Screen() {
                         TextButton(onClick = { scope.guard { state.packageAction("update", emptyList()) } }, enabled = !state.busy) { Text("Update lists") }
                     }
                     if (state.packageOutput.isNotEmpty()) {
-                        Text(state.packageOutput, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
+                        Text(state.packageOutput, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
                     }
                     Field("Filter installed packages", query, { query = it })
                     Header("Installed (${state.snapshot.packages.size})")

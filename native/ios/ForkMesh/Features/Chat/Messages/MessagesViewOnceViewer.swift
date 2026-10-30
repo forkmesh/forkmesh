@@ -246,8 +246,10 @@ struct MessagesViewOnceViewer: View {
                 return
             }
             file = url
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            if !OtherAppCall.ownCall {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try AVAudioSession.sharedInstance().setActive(true)
+            }
             if entry.kind == .video {
                 let made: AVPlayer = AVPlayer(url: url)
                 player = made
@@ -313,7 +315,7 @@ struct MessagesViewOnceViewer: View {
         audio = nil
         levels = []
         dropFile()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
     }
 
     private func dropFile() {

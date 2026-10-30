@@ -143,16 +143,17 @@ test("a pull-request row is a link that opens in a new tab on middle-click", asy
   // tab" affordances (middle-click, ctrl/cmd-click, copy link, right-click
   // menu) all have a URL to work with.
   await expect(row).toHaveJSProperty("tagName", "A");
-  await expect(row).toHaveAttribute("href", "/acme/widgets/pulls/93");
+  await expect(row).toHaveAttribute("href", "/acme/widgets/pull/93");
 
   // Middle-click opens the record in a second tab and leaves this one on the
   // list, exactly where the reviewer left off.
   const opened = context.waitForEvent("page");
   await row.click({ button: "middle" });
   const newTab = await opened;
+  await newTab.waitForURL("**/acme/widgets/pull/93", { waitUntil: "commit" });
   await expect(page).toHaveURL(/\/acme\/widgets\/pulls$/);
   await expect(page.locator('[data-repo-record-detail="pulls"]')).toHaveCount(0);
-  expect(new URL(newTab.url()).pathname).toBe("/acme/widgets/pulls/93");
+  expect(new URL(newTab.url()).pathname).toBe("/acme/widgets/pull/93");
   await newTab.close();
 
   // A plain left click still opens the record in place, without the full page
@@ -163,6 +164,6 @@ test("a pull-request row is a link that opens in a new tab on middle-click", asy
   });
   await row.click();
   await expect(page.locator('[data-repo-record-detail="pulls"]')).toBeVisible();
-  await expect(page).toHaveURL(/\/acme\/widgets\/pulls\/93$/);
+  await expect(page).toHaveURL(/\/acme\/widgets\/pull\/93$/);
   expect(reloaded).toBe(false);
 });

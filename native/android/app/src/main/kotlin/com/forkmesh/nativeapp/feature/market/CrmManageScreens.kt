@@ -51,6 +51,7 @@ import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
+import com.forkmesh.nativeapp.ui.kit.FmKeyValueRow
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
@@ -79,7 +80,7 @@ class CrmNewListScreen(private val model: CrmModel) : Screen() {
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
         val flows = model.data?.flows.orEmpty()
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("New list", navigator) {
                 FmTextButton(onClick = {
                     runner.run({ createList(name, this@CrmNewListScreen.flow, if (onlyMe) "private" else "organization") }) { view -> if (view != null) navigator.pop() }
@@ -121,7 +122,7 @@ class CrmPipelineEditorScreen(private val model: CrmModel, start: CrmFlowDraft) 
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator) {
                 FmTextButton(onClick = { runner.run({ saveFlow(draft) }) { flow -> if (flow != null) navigator.pop() } }, enabled = draft.flow != null && model.canManage && runner.busy == 0) { Text("Save") }
             }
@@ -177,7 +178,7 @@ class CrmPipelinesScreen(private val model: CrmModel) : Screen() {
         val runner = remember { CrmRunner(scope, model) }
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val flows = model.data?.flows.orEmpty()
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Pipelines", navigator) {
                 if (model.canManage && flows.size < 12) FmIconButton("add", "New pipeline", onPressed = { navigator.push(CrmPipelineEditorScreen(model, CrmFlowDraft())) }, color = Fm.colors.textPrimary)
             }
@@ -246,7 +247,7 @@ class CrmTabSettingsScreen(private val model: CrmModel, private val item: CrmTab
                 more = page.second
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(savedName, navigator)
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -410,7 +411,7 @@ class CrmSettingsScreen(private val model: CrmModel) : Screen() {
         val runner = remember { CrmRunner(scope, model) }
         val settings = model.data?.settings
         val manage = model.canManage
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("CRM settings", navigator) {
                 if (manage) FmTextButton(onClick = { runner.run({ saveSettings(edit) }) { ok -> if (ok) navigator.pop() } }, enabled = runner.busy == 0) { Text("Save") }
             }
@@ -436,6 +437,12 @@ class CrmSettingsScreen(private val model: CrmModel) : Screen() {
                     Text(if (settings?.zoho?.connected == true) "Zoho Mail connected (${settings.zoho.region})" else "Zoho Mail not connected", Modifier.weight(1f), style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
                     if (settings?.zoho?.connected != true && settings?.zoho?.oneClick == true && manage) {
                         FmToneButton("Connect", onPressed = { runner.run({ connectZoho() }) { url -> if (url != null) crmOpen(context, url) } }, tone = FmTone.Accent)
+                    }
+                }
+                if (settings?.zoho?.connected == true) {
+                    FmKeyValueRow("Sending", if (settings.zoho.canSend) "Allowed" else "Read only")
+                    if (!settings.zoho.canSend && settings.zoho.oneClick && manage) {
+                        FmToneButton("Reconnect Zoho Mail", onPressed = { runner.run({ connectZoho() }) { url -> if (url != null) crmOpen(context, url) } }, icon = "sync", tone = FmTone.Accent)
                     }
                 }
                 if (settings?.zoho?.connected != true && manage) {
@@ -475,7 +482,7 @@ class CrmImportScreen(private val model: CrmModel, private val csv: String, priv
             fetched = true
         }
         val rows = remember(csv) { CrmCsv.split(csv).rows }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Import CSV", navigator) {
                 if (result == null) {
                     FmTextButton(onClick = {

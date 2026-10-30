@@ -34,7 +34,7 @@ PUBLIC_OPERATIONS = frozenset({
     "commit", "compare", "branches", "search", "stats", "sizes", "release-blob",
     "merge-pull", "merge-preview", "update-pull-branch", "actions-status",
     "actions-control", "merge-agent-branch", "delete-agent-branch",
-    "branch-trash",
+    "branch-trash", "pulse", "issue-index", "issue-search",
 })
 # The owner-authorized pull mutations. A mirror only serves these with an
 # operator-configured merge executor, and a read-only node advertises neither,
@@ -1037,8 +1037,11 @@ def masked_target_url(base_url, owner, repo, operation, query=None):
         quote(operation, safe="-"),
     )
     safe_query = {}
-    for key in ("path", "ref", "base", "head", "service", "sha256",
-                "tagMoves", "protect"):
+    for key in ("path", "ref", "base", "head", "cherry", "limit", "counts",
+                "service",
+                "sha256", "tagMoves", "protect", "pushPrefix", "rewrite",
+                "period",
+                "person", "view", "related", "q"):
         if key in (query or {}):
             raw = (query or {}).get(key)
             values = raw if isinstance(raw, (list, tuple)) else [raw]

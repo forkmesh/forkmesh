@@ -29,7 +29,7 @@ object AgentSessionActionsBridge : AgentSessionActions {
     override suspend fun mergeAndCleanUp(sessionId: String) = withContext(Dispatchers.IO) {
         val target = row(sessionId)
         if (!target.isDesktop) error("Only a desktop run can be merged from here.")
-        val client = AgentOpsFeature.client
+        val client = AgentOpsFeature.client(target.desktopKey)
         val confirmation = client.prepareMerge(target.localId)
         client.merge(target.localId, confirmation.token, confirmation.typeToConfirm)
         AgentsFeature.control.refreshAsync()

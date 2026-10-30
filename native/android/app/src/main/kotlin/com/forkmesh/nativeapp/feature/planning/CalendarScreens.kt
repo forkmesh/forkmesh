@@ -123,7 +123,7 @@ class CalendarScreen(private val date: String?, private val initialMode: Calenda
         }
         @Suppress("UNUSED_EXPRESSION") version
         val zone = model.zone
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Calendar", navigator) {
                     FmTextButton(onClick = { change { model.goToToday() } }) { Text("Today") }
@@ -301,7 +301,7 @@ class EventScreen(private val eventId: String, private val shared: CalendarModel
         }
         @Suppress("UNUSED_EXPRESSION") version
         val event = model.event(eventId)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             val plugin = rememberScreenPluginMenu()
             ToolsAppBar(event?.title ?: "Event", navigator, pluginMenu = false) {
                 val editable = event != null && model.canEdit(event)
@@ -419,7 +419,7 @@ class EventEditorScreen(private val model: CalendarModel, private val eventId: S
     @Composable
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator) {
                 FmTextButton(onClick = {
                     val next = built() ?: return@FmTextButton

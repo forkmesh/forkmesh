@@ -261,6 +261,7 @@ def _base_globals(traffic_writes=None):
         "json": json,
         "_agent_live_relay": _agent_live_relay_module(),
         "re": re,
+        "ACCOUNT_EVENT_CONVERSATION_TOPICS": ("direct-messages", "calls"),
         "parse_qs": parse_qs,
         "quote": quote,
         "unquote": unquote,

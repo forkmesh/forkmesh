@@ -594,3 +594,24 @@ pulsing gem, speaking moves the mouth.
   liquid thresholds (`loosen`, `sinking`, `inertia`), flat detection, scan cost
   on long lists, effect placement on every edge, and that Apple's model still
   calls tools for open and read requests.
+
+## Android
+
+The Android app ports the spider and the outreach half of the Genie; details
+are in [ANDROID.md](ANDROID.md#28-the-genie-spider-and-outreach-sync-ledger-s047-s058).
+Logic is in `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/genie/`
+(`GenieOutreach`, `GenieAutoSend`, `GenieCrm`, `GenieGravity`, `GenieTalk`),
+views in `native/android/app/.../feature/genie/`.
+
+- Same as iOS: the painter, crawling, silk, wandering, flights and tilt pulled
+  sideways by phone gravity, badge cheers, the outreach face, Suggestion mode,
+  the top-bar mail chip (count, countdown ring, stage mark, spinner), Zoho
+  auto-send (864 s, 100 a day, review sheet), and every storage key
+  (`genie/*`, `shell/suggestion_mode`, `shell/auto_send*`).
+- Android equivalents: speech in is `SpeechRecognizer`, speech out is
+  `TextToSpeech`; text comes from the saved agent key's provider, since
+  Android has no Apple Intelligence or on-device Gemma in this app.
+- Not ported: the tool loop and spotting, always listening, the liquid tumble
+  and flat-on-a-table walk, screen scanning and plays (iOS reads the
+  accessibility tree; Compose semantics would be the Android source), keeping
+  off buttons, hand play, tricks and effects, vitals, pocket mode.

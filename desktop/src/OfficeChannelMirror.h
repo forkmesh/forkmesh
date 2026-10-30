@@ -22,8 +22,10 @@
 #include <memory>
 
 class QNetworkAccessManager;
+class QNetworkRequest;
 class QTimer;
 class ServerNode;
+class ChatNodeOwners;
 
 // Office channels are independently encrypted rooms admitted with 60-second
 // WebSocket tickets. The desktop authenticates with its Ed25519 identity,
@@ -131,9 +133,14 @@ public:
     // Signs a canonical string with this node's account identity key, in the
     // same base64url form the relay's signed endpoints expect.
     void setSigner(std::function<QString(const QByteArray &)> signer);
+    static void prepareRoomSender(ServerNode &sender,
+                                  const std::function<QString(const QByteArray &)> &signer,
+                                  ChatNodeOwners *owners = nullptr);
+    void setOwnerVerifier(ChatNodeOwners *owners);
     void setIdentity(const QString &account, const QString &selfId,
                      const QString &displayName = QString());
     void setConnectionAuthorizer(std::function<bool(const QUrl &)> authorizer);
+    void setSessionProvider(std::function<QString(const QUrl &)> provider);
     void setApiBase(const QUrl &apiBase);
     struct MeshTransport {
         std::function<QList<forkmesh::chatv3::MeshLinkedDevice>()> linkedDevices;
@@ -201,6 +208,7 @@ public:
 
     QStringList directConversations() const;
     bool startDirectMessage(const QString &username);
+    bool sendDirectText(const QString &username, const QString &text);
     void refreshDirectMessages();
     void watchConversation(const QString &conversation);
     QStringList directDeviceKeys(const QString &conversation) const;
@@ -271,6 +279,8 @@ signals:
                        const QString &peerName, bool active);
 
 private:
+    bool openDirect(const QString &username, bool announce);
+    void flushDirectTexts(const QString &name, const QString &conversation);
     struct PendingText {
         QString id;
         QString text;
@@ -368,6 +378,7 @@ private:
                             const QString &url);
     QUrl signedUrl(const QString &path, const QString &ts,
                    const QByteArray &canonical) const;
+    QNetworkRequest apiRequest(const QUrl &url) const;
     bool ready() const;
     QString channelIdForConversation(const QString &conversation,
                                      bool requireManager) const;
@@ -381,7 +392,10 @@ private:
     bool m_socketBudgetNoted = false;
     qint64 m_lastListMs = 0;
     std::function<QString(const QByteArray &)> m_signer;
+    QHash<QString, QStringList> m_directTexts;
+    QPointer<ChatNodeOwners> m_owners;
     std::function<bool(const QUrl &)> m_connectionAuthorizer;
+    std::function<QString(const QUrl &)> m_sessionProvider;
     MeshTransport m_mesh;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
     int m_deviceToken = 0;

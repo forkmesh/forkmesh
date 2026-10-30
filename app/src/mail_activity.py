@@ -3,6 +3,8 @@ import html as _html
 import re
 import secrets
 
+import instance_privacy
+
 
 def _bind_runtime(runtime):
     namespace = globals()
@@ -163,6 +165,8 @@ async def _follow(env, row, event, who, subject, first, now):
 
 async def tracked(env, send_id, event, now, message_id="", viewer="",
                   ref=None):
+    if instance_privacy.active(env):
+        return False
     send_id = _send_id(send_id)
     if event not in EVENTS or not send_id:
         return False

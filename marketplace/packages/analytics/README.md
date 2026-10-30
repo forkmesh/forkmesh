@@ -139,6 +139,19 @@ optional. Responses: `200 {ok, accepted, replayBytes}`, `401 unknown_project`
 or `invalid_key`, `403 origin_not_allowed`, `413`, `429 quota_exceeded`. A
 client stops for the page's lifetime on 401/403 and backs off on 429/5xx.
 
+`403 origin_not_allowed` comes from the project's allowed origins. An entry is
+either an exact origin (`https://example.org`) or a wildcard
+(`https://*.example.org`) that allows every subdomain on the same scheme and
+port but not the bare domain, which is listed on its own. A wildcard needs at
+least two labels after `*.` and is refused over a shared suffix where
+strangers own the subdomains: two-label country suffixes (`*.co.uk`,
+`*.com.au`) and hosting platforms (`*.github.io`, `*.pages.dev`,
+`*.vercel.app`, `*.herokuapp.com` and the rest of `SHARED_SUFFIXES` in
+`worker/analytics.py`). A deeper wildcard under them (`*.me.github.io`) is
+allowed. Requests without an `Origin` header (server-side callers) are not
+checked; the write key is their credential. The desktop reads a wildcard
+entry's domain as the project's host.
+
 Reserved event names and the properties the insights read:
 
 | Event | Properties |

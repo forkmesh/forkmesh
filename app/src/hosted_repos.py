@@ -25,6 +25,7 @@ drive it with fakes.
 """
 
 import hashlib
+import ipaddress
 import json
 import re
 import time
@@ -53,7 +54,7 @@ MAX_COMMIT_COUNT = 10 ** 9
 BRANCH = "main"
 DEFAULT_MAX_PER_ACCOUNT = 10
 DEFAULT_MAX_BYTES = 200 * 1024 * 1024
-DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org")
+DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org", "gitea.com")
 REMOVED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 # Replica read grants: long enough for a slow fetch of a full-size repository.
 GRANT_TTL_MS = 60 * 60 * 1000
@@ -365,11 +366,18 @@ async def ensure_tables(runtime):
     _TABLES_READY.add(key)
 
 
-async def count_for_creator(runtime, creator_bi):
-    row = await runtime.d1_first(
-        "SELECT COUNT(*) AS n FROM hosted_repos "
-        "WHERE creator_bi=? AND deleted_at=0", creator_bi)
-    return int((row or {}).get("n") or 0)
+async def count_for_creator(runtime, creator_bi, forks=False):
+    count = 0
+    for row in await runtime.d1_all(
+            "SELECT data FROM hosted_repos "
+            "WHERE creator_bi=? AND deleted_at=0", creator_bi) or []:
+        try:
+            record = await runtime.open(row.get("data"))
+        except Exception:
+            record = None
+        if bool(fork_parent_key(record)) == bool(forks):
+            count += 1
+    return count
 
 
 async def find_by_key(runtime, key_bi):
@@ -387,6 +395,14 @@ async def insert(runtime, repo_id, key_bi, owner_bi, creator_bi, visibility,
         created_at)
 
 
+async def set_visibility(runtime, repo_id, visibility):
+    if visibility not in ("public", "private"):
+        raise ValueError("visibility")
+    await runtime.d1_run(
+        "UPDATE hosted_repos SET visibility=? WHERE id=? AND deleted_at=0",
+        visibility, repo_id)
+
+
 async def link_organization(runtime, org_bi, repo, node_owner, now):
     """Link a hosted repository into an organization (org_repos alias)."""
     repo = str(repo or "").lower()
@@ -399,7 +415,56 @@ async def link_organization(runtime, org_bi, repo, node_owner, now):
         org_bi, repo, str(node_owner or "").lower(), now)
 
 
-async def note_push(runtime, repo_id, node, now):
+FORCED_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+FORCED_MAX = 32
+FORCED_REF_RE = re.compile(r"^refs/heads/(?!forkmesh/)[^\x00-\x20~^:?*\[\\]{1,240}$")
+FORCED_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def merge_forced(current, updates, now):
+    entries = {}
+    for ref, value in (current if isinstance(current, dict) else {}).items():
+        if (
+            isinstance(value, dict)
+            and FORCED_REF_RE.fullmatch(str(ref))
+            and FORCED_OID_RE.fullmatch(str(value.get("new") or ""))
+            and now - int(value.get("at") or 0) < FORCED_KEEP_MS
+        ):
+            entries[ref] = {"old": str(value.get("old") or ""),
+                            "new": value["new"], "at": int(value["at"])}
+    for update in updates or []:
+        ref = str((update or {}).get("ref") or "")
+        new = str((update or {}).get("new") or "")
+        old = str((update or {}).get("old") or "")
+        if FORCED_REF_RE.fullmatch(ref) and FORCED_OID_RE.fullmatch(new):
+            entries[ref] = {"old": old if FORCED_OID_RE.fullmatch(old) else "",
+                            "new": new, "at": int(now)}
+    newest = sorted(entries.items(), key=lambda item: -item[1]["at"])
+    return dict(newest[:FORCED_MAX])
+
+
+def forced_tips(record, now):
+    return {ref: value["new"] for ref, value in merge_forced(
+        (record or {}).get("forced"), [], now).items()}
+
+
+async def note_forced(runtime, repo_id, updates, now):
+    row = await runtime.d1_first(
+        "SELECT data FROM hosted_repos WHERE id=?", repo_id)
+    if not row or not hasattr(runtime, "seal"):
+        return
+    record = await runtime.open(row.get("data"))
+    if not isinstance(record, dict):
+        return
+    record["forced"] = merge_forced(record.get("forced"), updates, now)
+    await runtime.d1_run(
+        "UPDATE hosted_repos SET data=? WHERE id=?",
+        await runtime.seal(record), repo_id)
+
+
+async def note_push(runtime, repo_id, node, now, forced=None):
+    if forced:
+        await note_forced(runtime, repo_id, forced, now)
     await runtime.d1_run(
         "UPDATE hosted_repos SET pushed_at=?,pushed_by=? WHERE id=?",
         now, node, repo_id)
@@ -410,6 +475,92 @@ async def size_of(runtime, repo_id):
         "SELECT MAX(size_bytes) AS n FROM hosted_repo_copies WHERE repo_id=?",
         repo_id)
     return int((row or {}).get("n") or 0)
+
+
+DEFAULT_MAX_FORKS_PER_ACCOUNT = 20
+
+
+def max_forks_per_account(env):
+    return _int_setting(env, "HOSTED_MAX_FORKS_PER_ACCOUNT",
+                        DEFAULT_MAX_FORKS_PER_ACCOUNT)
+
+
+def fork_of(record):
+    fork = record.get("fork") if isinstance(record, dict) else None
+    if not isinstance(fork, dict):
+        return None
+    parent = str(fork.get("of") or "")
+    network = str(fork.get("network") or parent)
+    if (not ID_RE.fullmatch(parent) or not ID_RE.fullmatch(network)
+            or parent == str(record.get("id") or "")):
+        return None
+    return parent, network
+
+
+UPSTREAM_NETWORK_DOMAIN = "forkmesh-fork-network-v1\n"
+OWNER_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def fork_clone_url(value):
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 500:
+        return ""
+    parsed = urlparse(raw)
+    try:
+        parsed.port
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    try:
+        ipaddress.ip_address(host)
+        return ""
+    except ValueError:
+        pass
+    if (parsed.scheme != "https" or not host or "@" in parsed.netloc
+            or host == "localhost" or host.endswith(".localhost")
+            or parsed.query or parsed.fragment or "?" in raw or "#" in raw
+            or not re.fullmatch(r"(/[A-Za-z0-9._~-]+){1,8}/?", path)
+            or any(part in (".", "..") for part in path.split("/"))):
+        return ""
+    return "https://" + parsed.netloc.lower() + path.rstrip("/")
+
+
+def upstream_network(owner, name):
+    digest = hashlib.sha256((
+        UPSTREAM_NETWORK_DOMAIN + str(owner or "").lower() + "/"
+        + str(name or "").lower()).encode()).hexdigest()
+    return "hr" + digest[:24]
+
+
+def fork_upstream(record):
+    fork = record.get("fork") if isinstance(record, dict) else None
+    upstream = fork.get("upstream") if isinstance(fork, dict) else None
+    if not isinstance(upstream, dict):
+        return None
+    owner = str(upstream.get("owner") or "").lower()
+    name = str(upstream.get("name") or "")
+    clone_url = fork_clone_url(upstream.get("cloneUrl"))
+    if not OWNER_RE.fullmatch(owner) or not valid_name(name) or not clone_url:
+        return None
+    return ({"owner": owner, "name": name, "cloneUrl": clone_url},
+            upstream_network(owner, name))
+
+
+def fork_parent_key(record):
+    fork = fork_of(record)
+    if fork:
+        return fork[0]
+    upstream = fork_upstream(record)
+    if upstream:
+        return (upstream[0]["owner"] + "/" + upstream[0]["name"]).lower()
+    return ""
+
+
+async def rows_for_creator(runtime, creator_bi):
+    return await runtime.d1_all(
+        "SELECT id,key_bi,data FROM hosted_repos "
+        "WHERE creator_bi=? AND deleted_at=0", creator_bi) or []
 
 
 # --- the replica exchange ---------------------------------------------------
@@ -508,6 +659,11 @@ async def replicas(runtime, raw):
         push_reports = {}
     mirror_keys = (await runtime.push_mirror_keys()
                    if hasattr(runtime, "push_mirror_keys") else set())
+    archive_reports = data.get("archiveSyncs")
+    if not isinstance(archive_reports, dict):
+        archive_reports = {}
+    archive_keys = (await runtime.archive_sync_keys()
+                    if hasattr(runtime, "archive_sync_keys") else set())
 
     # A catalog row deleted on the website ends the hosted repository, and so
     # does one the owner's own node took over with a signed publication (the
@@ -540,8 +696,12 @@ async def replicas(runtime, raw):
         copies.setdefault(row["repo_id"], {})[row["node"]] = row
     live = await runtime.live_core_nodes(cores)
     endpoints = await runtime.core_endpoints(cores)
+    public_ids = {str(row.get("id") or "") for row in rows or []
+                  if not int(row.get("deleted_at") or 0)
+                  and row.get("visibility") != "private"}
     repositories = []
     removed = []
+    upstream_urls = {}
     for row in rows or []:
         repo_id = str(row.get("id") or "")
         record = await runtime.open(row.get("data"))
@@ -600,6 +760,19 @@ async def replicas(runtime, raw):
         }
         if caller == primary and isinstance(record.get("init"), dict):
             item["init"] = record["init"]
+        forced = forced_tips(record, now)
+        if forced:
+            item["forced"] = forced
+        fork = fork_of(record)
+        upstream = None if fork else fork_upstream(record)
+        if fork and item["visibility"] == "public" and fork[0] in public_ids:
+            item["forkOf"], item["network"] = fork
+        elif upstream and item["visibility"] == "public":
+            parent = await _upstream_parent(
+                runtime, upstream[0], upstream_urls)
+            if parent:
+                item["forkUpstream"] = parent
+                item["network"] = upstream[1]
         push_report = push_reports.get(repo_id)
         if isinstance(push_report, dict) and hasattr(
                 runtime, "record_push_mirror"):
@@ -610,6 +783,17 @@ async def replicas(runtime, raw):
                 owner, name, item["aliases"], mirror_keys)
             if mirror:
                 item["pushMirror"] = mirror
+        archive_report = archive_reports.get(repo_id)
+        if isinstance(archive_report, dict) and hasattr(
+                runtime, "record_archive_sync"):
+            await runtime.record_archive_sync(
+                owner, name, item["aliases"], archive_report)
+        if (caller == primary and archive_keys
+                and item["visibility"] == "public"):
+            archive = await runtime.archive_sync(
+                owner, name, item["aliases"], archive_keys)
+            if archive:
+                item["archiveSync"] = archive
         empty_here = report is None or report["empty"]
         others = copies.get(repo_id, {})
         content_elsewhere = any(
@@ -638,6 +822,34 @@ async def replicas(runtime, raw):
     return runtime.response({"ok": True, "node": caller,
                              "repositories": repositories,
                              "removed": removed})
+
+
+async def _upstream_parent(runtime, upstream, cache):
+    key = (upstream["owner"] + "/" + upstream["name"]).lower()
+    if key not in cache:
+        parent = None
+        if hasattr(runtime, "fork_parent"):
+            try:
+                parent = await runtime.fork_parent(
+                    upstream["owner"], upstream["name"])
+            except Exception:
+                parent = None
+        cache[key] = None
+        if isinstance(parent, dict):
+            served = ""
+            if hasattr(runtime, "fork_parent_alias"):
+                try:
+                    served = str(await runtime.fork_parent_alias(
+                        upstream["owner"], upstream["name"]) or "").lower()
+                except Exception:
+                    served = ""
+            if not OWNER_RE.fullmatch(served):
+                served = upstream["owner"]
+            cache[key] = dict(
+                upstream, owner=served,
+                cloneUrl=(fork_clone_url(parent.get("cloneUrl"))
+                          or upstream["cloneUrl"]))
+    return cache[key]
 
 
 async def _read_grant(runtime, node, owner, name, caller, now):

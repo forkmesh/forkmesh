@@ -223,15 +223,29 @@
       "term": "attestation",
       "explanation": "the signed list of branch and tag commits",
       "reason": "Explains what a public read is routed against for people pushing to a web-created repository."
+    },
+    {
+      "path": "app/public/dashboard/js/02-helpers.js",
+      "term": "attestation",
+      "explanation": "runner signed under a router-issued grant naming one of these models",
+      "reason": "Names the ForkMesh-Attestation commit trailer a pull rule requires and says who signs it."
     }
   ],
   "compatibilityAliases": [
     {
-      "id": "repo-pull-singular",
+      "id": "repo-pulls-record",
       "kind": "route",
       "resolver": "repo_alias_redirect",
-      "alias": "/OWNER/REPOSITORY/pull/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "alias": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
+      "policy": "Permanent 308 that keeps the query and any section such as /files; never removed. One pull request lives at /OWNER/REPOSITORY/pull/NUMBER and the list stays at /OWNER/REPOSITORY/pulls, as on GitHub."
+    },
+    {
+      "id": "repo-pull-list",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/pull",
+      "canonical": "/OWNER/REPOSITORY/pulls",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -247,7 +261,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/pull-requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -255,7 +269,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/merge_requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -271,7 +285,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/-/merge_requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {

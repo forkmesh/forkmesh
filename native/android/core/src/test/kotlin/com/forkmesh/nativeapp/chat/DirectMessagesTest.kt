@@ -39,6 +39,37 @@ class DirectMessagesTest {
         api, connector, store, { "https://app.forkmesh.com" }, { "me-node" }, { "Me" }, loop = loop,
     )
 
+    fun testARefreshThatChangesNothingDoesNotRedraw() {
+        val api = FakeAccountApi()
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(mapOf("id" to conversationId, "otherUser" to "pat", "unreadCount" to 0L)),
+            "nextCursor" to "",
+        )
+        val dm = service(api, FakeOfficeConnector())
+        var redraws = 0
+        var loadingSeen = false
+        dm.addListener {
+            redraws++
+            if (dm.loading) loadingSeen = true
+        }
+        dm.refresh()
+        expect(loadingSeen)
+        expect(!dm.loading)
+        val first = redraws
+        expect(first > 0)
+        loadingSeen = false
+        dm.refresh()
+        assertEq(first, redraws)
+        expect(!loadingSeen)
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(mapOf("id" to conversationId, "otherUser" to "pat", "unreadCount" to 0L, "updatedAt" to 5L)),
+            "nextCursor" to "",
+        )
+        dm.refresh()
+        expect(redraws > first)
+        expect(!loadingSeen)
+    }
+
     private val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
 
     private val scope = "direct:$conversationId"
@@ -114,21 +145,58 @@ class DirectMessagesTest {
         val ref = OfficeFrames.sentRef(r.socket.sent.last())
         val first = r.dm.messages(r.conversation).single().id
         assertEq(ChatReceipt.SENDING, r.hub.rows(r.conversation).single().receipt)
+        expect(r.dm.receiptTime(first).isEmpty)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
         assertEq(ChatReceipt.SENT, r.dm.receipt(first))
+        expect(r.dm.receiptTime(first).isEmpty)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf("f".repeat(40)))))
         assertEq(ChatReceipt.SENT, r.dm.receipt(first))
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf(ref, "nope"))))
         assertEq(ChatReceipt.DELIVERED, r.hub.rows(r.conversation).single().receipt)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
         assertEq(ChatReceipt.DELIVERED, r.dm.receipt(first))
+        val deliveredAt = r.dm.receiptTime(first).delivered!!
+        assertEq(null, r.dm.receiptTime(first).read)
         expect(r.dm.send(r.conversation, "second"))
         val second = r.dm.messages(r.conversation).last().id
         r.socket.onText("""{"kind":"forkmesh-read","v":1}""")
         assertEq(ChatReceipt.READ, r.dm.receipt(first))
+        assertEq(deliveredAt, r.dm.receiptTime(first).delivered, "reading keeps the delivered time")
+        expect(r.dm.receiptTime(first).read!! >= deliveredAt)
+        assertEq(r.dm.receiptTime(first), r.hub.receiptTimes(r.dm.messages(r.conversation).first()))
         assertEq(ChatReceipt.SENDING, r.dm.receipt(second))
+        expect(r.dm.receiptTime(second).isEmpty)
         r.fromPeer(peerChat("pat-1", "hello"), "a".repeat(40))
         assertEq(null, r.hub.rows(r.conversation).first { it.message.id == "pat-1" }.receipt)
+    }
+
+    fun testMessagingAUsernameFromOutsideChatOpensTheirAccountDirectMessage() {
+        val api = FakeAccountApi()
+        api.replies["POST /api/chat/direct-messages"] = mapOf("ok" to true, "conversation" to mapOf("id" to conversationId, "otherUser" to "pat"))
+        val dm = service(api, FakeOfficeConnector())
+        val relay = FakeChatRelay()
+        val hub = ChatHub(relay)
+        hub.direct = dm
+        hub.switchConversation("@Pat")
+        assertEq("direct:$conversationId", hub.currentConversation)
+        assertEq(1, hub.revealRequests)
+        assertEq(listOf<Any?>("pat"), api.calls.filter { it.first == "POST" && it.second == "/api/chat/direct-messages" }.map { it.third?.get("username") })
+        hub.select("#general")
+        hub.switchConversation("@pat")
+        assertEq("direct:$conversationId", hub.currentConversation)
+        assertEq(1, api.calls.count { it.first == "POST" && it.second == "/api/chat/direct-messages" })
+        relay.peers.add(com.forkmesh.nativeapp.model.Member(id = "peer-9", name = "Pat", online = true, owner = "pat"))
+        hub.select("#general")
+        hub.switchConversation("@peer-9")
+        assertEq("direct:$conversationId", hub.currentConversation, "Message on a person opens their account's direct conversation")
+        dm.closeAll()
+    }
+
+    fun testAServerMarkedUnsealedFrameNeverShowsInADirectMessage() {
+        val rig = rig()
+        rig.socket.onText(envelope(peerChat("srv-1", "from the server"), "srv" to true))
+        rig.fromPeer(peerChat("p-1", "sealed hello"))
+        assertEq(listOf("sealed hello"), rig.dm.messages(rig.conversation).map { it.text })
     }
 
     fun testOwnFramesComingBackFromTheRelayAreIgnored() {
@@ -195,6 +263,44 @@ class DirectMessagesTest {
         val own = r.dm.messages(r.conversation).last()
         r.hub.toggleReaction(own, "love")
         assertEq("love", r.hub.rows(r.conversation).last().reactions.single().value)
+    }
+
+    fun testStickersTravelBothWaysInADirectMessage() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))
+        r.fromPeer(
+            r.peerFrame(
+                "reaction", "pat-2", "target" to "pat-1", "emoji" to "🎉", "sticker" to "party",
+                "reactorId" to "pat-node", "reactorName" to "pat", "added" to true,
+            ),
+        )
+        val row = r.hub.rows(r.conversation).single()
+        assertEq(listOf("party"), row.stickers.map { it.slug })
+        expect(row.reactions.isEmpty(), "a known sticker is not also a reaction")
+        expect(r.hub.canSticker(r.conversation))
+        val before = r.socket.sent.size
+        r.hub.toggleSticker(row.message, "ship-it")
+        assertEq(listOf("ship-it", "party"), r.hub.rows(r.conversation).single().stickers.map { it.slug })
+        val (envelope, sent) = r.sealedSent(before).single()
+        assertEq("reaction", sent["type"])
+        assertEq("pat-1", sent["target"])
+        assertEq("🚀", sent["emoji"])
+        assertEq("ship-it", sent["sticker"])
+        assertEq(true, sent["added"])
+        assertEq("me-node", sent["reactorId"])
+        assertEq(true, envelope["persist"])
+        assertEq(null, envelope["notify"])
+        val off = r.socket.sent.size
+        r.hub.toggleSticker(row.message, "ship-it")
+        assertEq(false, r.sealedSent(off).single().second["added"])
+        assertEq(listOf("party"), r.hub.rows(r.conversation).single().stickers.map { it.slug })
+        r.fromPeer(
+            r.peerFrame(
+                "reaction", "pat-3", "target" to "pat-1", "emoji" to "🎉", "sticker" to "party",
+                "reactorId" to "pat-node", "added" to false,
+            ),
+        )
+        expect(r.hub.rows(r.conversation).single().stickers.isEmpty())
     }
 
     fun testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks() {
@@ -379,6 +485,24 @@ class DirectMessagesTest {
         expect(!r.dm.verifyScanned(r.conversation, before.qr))
         expect(r.dm.markVerified(r.conversation))
         expect(r.dm.isVerified(r.conversation))
+    }
+
+    fun testSeveralNewDevicesShareOneLineAndOneBanner() {
+        val r = rig()
+        val phone = peerSeal()
+        val tablet = peerSeal()
+        phone.acceptKeyFrame(mySeal(r.store).keyFrame())
+        tablet.acceptKeyFrame(mySeal(r.store).keyFrame())
+        r.socket.onText(envelope(phone.keyFrame()))
+        r.socket.onText(envelope(tablet.keyFrame()))
+        val lines = r.dm.messages(r.conversation).filter { it.senderId == DirectMessageFrames.SYSTEM_SENDER }
+        assertEq(1, lines.size, "one line for both devices")
+        assertEq(DirectTrustText.pendingDevices("pat", 2, own = false), lines.single().text)
+        val banner = r.dm.trustNotices(r.conversation).single()
+        assertEq(setOf(phone.keyId, tablet.keyId), banner.kids.toSet())
+        for (kid in banner.kids) expect(r.dm.approveDevice(r.conversation, kid))
+        expect(r.dm.pendingDevices(r.conversation).isEmpty())
+        expect(r.dm.trustNotices(r.conversation).isEmpty())
     }
 
     fun testABlockedDeviceIsIgnored() {

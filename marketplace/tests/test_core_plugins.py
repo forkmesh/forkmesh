@@ -310,6 +310,26 @@ def test_organizations_cannot_install_account_synced_packages(hooks):
         assert result["status"] == 409 and result["data"]["error"] == "plugin_installs_per_account"
 
 
+def test_organization_guests_see_no_organization_package_state(hooks, monkeypatch):
+    runtime = Runtime(NEW)
+    for column in ("installed_by_name TEXT", "installed_at INTEGER"):
+        runtime.db.execute("ALTER TABLE org_plugin_installs ADD COLUMN " + column)
+
+    async def guest(_name, _account_bi):
+        return "org:acme", "guest"
+
+    monkeypatch.setattr(runtime, "organization", guest)
+    result = call(runtime, "/api/plugins/acme")
+    assert result["status"] == 404
+    assert result["data"]["error"] == "organization_not_found"
+
+    async def auditor(_name, _account_bi):
+        return "org:acme", "auditor"
+
+    monkeypatch.setattr(runtime, "organization", auditor)
+    assert call(runtime, "/api/plugins/acme")["status"] == 200
+
+
 def test_workflows_stay_for_accounts_from_before_the_change_and_bring_their_packs(hooks):
     old = installed(Runtime(_ms("2026-10-13")))
     assert old["workflows"] and old["workflows-examples"] and old["workflows-pack-ai"]

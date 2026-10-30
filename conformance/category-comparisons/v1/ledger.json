@@ -158,13 +158,13 @@
       "subject": "forkmesh-protocol",
       "dimension": "workflow",
       "basis": "evidence",
-      "text": "Stock Git clones, fetches, and pushes over SSH. HTTPS and failover paths are read-only, hooks pushed with a repository never run on a mirror, and partial clone needs Git protocol v2.",
+      "text": "Stock Git clones and fetches over HTTPS and SSH, and pushes over SSH or over HTTPS with an account credential. Read mirrors never take writes, hooks pushed with a repository never run on a mirror, and partial clone needs Git protocol v2.",
       "evidence": [
         {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "known-limitations"},
         {"kind": "product-evidence", "path": "conformance/git/v1/results.json"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "fm-protocol-operations",
@@ -197,7 +197,7 @@
       "subject": "forkmesh-protocol",
       "dimension": "portability",
       "basis": "evidence",
-      "text": "A stock Git clone carries the code and the signed .forkmesh/ records; export needs no fee, upgrade, or proprietary verifier. Imports from GitHub, GitLab, and Codeberg resume from checkpoints after an interruption.",
+      "text": "A stock Git clone carries the code and the signed .forkmesh/ records; export needs no fee, upgrade, or proprietary verifier. Imports from GitHub, GitLab, Codeberg, and Gitea resume from checkpoints after an interruption.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "portability-commitments"},
         {"kind": "test", "ref": "app/tests/test_repository_migration.py::test_interruption_resumes_exact_checkpoint_and_rate_limit_does_not_advance"}
@@ -708,13 +708,13 @@
   "notForYou": [
     {
       "id": "nfy-https-push",
-      "text": "You need to push over HTTPS or through a read mirror. ForkMesh accepts pushes only over SSH to a gateway.",
+      "text": "You need anonymous pushes, or pushes that land on a read mirror. ForkMesh takes pushes only from an authenticated account, over SSH or HTTPS, and streams them to one write endpoint.",
       "instead": ["centralized-hosting", "self-hosted-forge"],
       "evidence": [
-        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"},
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "nfy-slo-support",
@@ -788,9 +788,9 @@
   "limitations": [
     {
       "id": "lim-https-read-only",
-      "text": "HTTPS and mirror-failover Git paths are read-only; publish branches with the SSH URL.",
-      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
-      "verifiedOn": "2026-09-14"
+      "text": "Read mirrors never take writes; an HTTPS push needs the account name and password or a push credential, and the compatibility suite does not probe it yet.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "lim-server-hooks",
@@ -823,7 +823,7 @@
   "migrationCost": [
     {
       "id": "mig-imports",
-      "text": "Imports from GitHub, GitLab, and Codeberg run as resumable jobs with checkpoints; a failed or abandoned import can be recovered or rolled back.",
+      "text": "Imports from GitHub, GitLab, Codeberg, and Gitea run as resumable jobs with checkpoints; a failed or abandoned import can be recovered or rolled back.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/repository-imports.md", "anchor": "failure-abandonment-and-rollback"},
         {"kind": "test", "ref": "app/tests/test_repository_migration.py::test_abandon_recover_rollback_and_credential_non_persistence"}
@@ -841,9 +841,9 @@
     },
     {
       "id": "mig-remotes",
-      "text": "Everyone who pushes registers an SSH public key and changes their push remote to the SSH URL; reads keep working over HTTPS.",
-      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
-      "verifiedOn": "2026-09-14"
+      "text": "Everyone who pushes signs in with a ForkMesh account: over HTTPS with the account password or a push credential, or over SSH with a registered key.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "mig-forge-sync",

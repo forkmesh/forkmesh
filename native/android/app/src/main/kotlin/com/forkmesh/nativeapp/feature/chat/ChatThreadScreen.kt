@@ -85,7 +85,9 @@ class ChatThreadScreen(private val channel: String, private val rootId: String) 
                             onLongPress = { scope.launch { messageActionsFlow(messenger, context, navigator, rootRow, inThread = true, status) } },
                             onToggleReaction = { value -> scope.launch(Dispatchers.IO) { hub.toggleReaction(rootRow.message, value) } },
                             onOpenThread = null,
+                            onToggleSticker = { slug -> scope.launch(Dispatchers.IO) { hub.toggleSticker(rootRow.message, slug) } },
                         )
+                        ChatRowLinkPreviews(rootRow)
                     } else {
                         Text(
                             "The first message of this thread is not on this phone.",
@@ -112,7 +114,9 @@ class ChatThreadScreen(private val channel: String, private val rootId: String) 
                             onLongPress = { scope.launch { messageActionsFlow(messenger, context, navigator, row, inThread = true, status) } },
                             onToggleReaction = { value -> scope.launch(Dispatchers.IO) { hub.toggleReaction(row.message, value) } },
                             onOpenThread = null,
+                            onToggleSticker = { slug -> scope.launch(Dispatchers.IO) { hub.toggleSticker(row.message, slug) } },
                         )
+                        ChatRowLinkPreviews(row)
                     }
                 }
             }

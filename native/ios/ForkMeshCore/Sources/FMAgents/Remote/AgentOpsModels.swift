@@ -875,21 +875,25 @@ public struct MergeStats: Equatable, Sendable {
 public struct MergeOutcome: Equatable, Sendable {
     public var branch: String
     public var stats: MergeStats?
+    public var setAsideNote: String
 
-    public init(branch: String, stats: MergeStats? = nil) {
+    public init(branch: String, stats: MergeStats? = nil, setAsideNote: String = "") {
         self.branch = branch
         self.stats = stats
+        self.setAsideNote = setAsideNote
     }
 
     public init(json: JSONObject) {
-        self.init(branch: json.str("branch"), stats: MergeStats(json: json))
+        self.init(branch: json.str("branch"), stats: MergeStats(json: json), setAsideNote: json.str("setAside"))
     }
 
     public func message(fallbackBranch: String = "") -> String {
         let name = branch.isEmpty ? fallbackBranch : branch
         let head = name.isEmpty ? "Merged and cleaned up." : "Merged \(name) and cleaned up."
         let summary = stats?.summary ?? ""
-        return summary.isEmpty ? head : "\(head) \(summary)."
+        let text = summary.isEmpty ? head : "\(head) \(summary)."
+        let note = setAsideNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        return note.isEmpty ? text : "\(text) \(note)"
     }
 }
 

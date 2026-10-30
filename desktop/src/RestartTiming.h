@@ -257,6 +257,123 @@ inline BuildProgress lastBuildProgress(const QString &text)
     return {};
 }
 
+inline QStringList compiledSources(const QString &text)
+{
+    static const QRegularExpression step(QStringLiteral(
+        "^\\[\\s*\\d+(?:/\\d+|%)\\]\\s+Building \\S+ object (\\S+)$"));
+    static const QRegularExpression lineBreak(QStringLiteral("[\\r\\n]"));
+    QStringList sources;
+    for (const QString &line : text.split(lineBreak, Qt::SkipEmptyParts)) {
+        const QRegularExpressionMatch m = step.match(line.trimmed());
+        if (!m.hasMatch())
+            continue;
+        QString source = m.captured(1);
+        if (const qsizetype dir = source.indexOf(QLatin1String(".dir/")); dir >= 0)
+            source = source.mid(dir + 5);
+        for (const QLatin1String suffix : {QLatin1String(".obj"), QLatin1String(".o")}) {
+            if (source.endsWith(suffix)) {
+                source.chop(suffix.size());
+                break;
+            }
+        }
+        if (!source.isEmpty() && !sources.contains(source))
+            sources.append(source);
+    }
+    return sources;
+}
+
+inline QString rebuiltSummary(const QStringList &sources)
+{
+    if (sources.isEmpty())
+        return QStringLiteral("No source changes since the last build; "
+                              "restarting the same build.");
+    constexpr int kNamed = 5;
+    QStringList names;
+    for (const QString &source : sources.mid(0, kNamed))
+        names.append(source.section(QLatin1Char('/'), -1));
+    QString list = names.join(QStringLiteral(", "));
+    if (sources.size() > kNamed)
+        list += QStringLiteral(" and %1 more").arg(sources.size() - kNamed);
+    return QStringLiteral("Rebuilt %1 changed file%2: %3")
+        .arg(sources.size())
+        .arg(sources.size() == 1 ? QString() : QStringLiteral("s"), list);
+}
+
+inline constexpr int kFastDiskCcacheGiB = 40;
+inline constexpr int kRebuildCcacheMinGiB = 2;
+inline constexpr int kRebuildCcacheMaxGiB = 20;
+
+inline QString rebuildCcacheDir(const QString &cacheHome)
+{
+    return cacheHome.isEmpty() ? QString()
+                               : cacheHome + QStringLiteral("/forkmesh/rebuild-ccache");
+}
+
+inline QMap<QString, QString> ccacheEnvironment(const QString &inheritedDir,
+                                                const QString &fastDiskDir,
+                                                const QString &cacheHome,
+                                                qint64 freeBytes)
+{
+    if (!inheritedDir.isEmpty())
+        return {};
+    if (!fastDiskDir.isEmpty())
+        return {{QStringLiteral("CCACHE_DIR"), fastDiskDir},
+                {QStringLiteral("CCACHE_MAXSIZE"),
+                 QStringLiteral("%1G").arg(kFastDiskCcacheGiB)}};
+    const QString dir = rebuildCcacheDir(cacheHome);
+    if (dir.isEmpty())
+        return {};
+    constexpr qint64 gib = 1024LL * 1024 * 1024;
+    const qint64 budget =
+        freeBytes < 0 ? kRebuildCcacheMaxGiB
+                      : std::clamp<qint64>(freeBytes / 4 / gib, kRebuildCcacheMinGiB,
+                                           kRebuildCcacheMaxGiB);
+    return {{QStringLiteral("CCACHE_DIR"), dir},
+            {QStringLiteral("CCACHE_MAXSIZE"), QStringLiteral("%1G").arg(budget)}};
+}
+
+struct CcacheCounts {
+    int hits = 0;
+    int misses = 0;
+};
+
+inline CcacheCounts ccacheCounts(const QString &statsLog)
+{
+    CcacheCounts counts;
+    bool hit = false;
+    bool miss = false;
+    const auto flush = [&] {
+        if (hit)
+            ++counts.hits;
+        else if (miss)
+            ++counts.misses;
+        hit = miss = false;
+    };
+    for (const QString &raw : statsLog.split(QLatin1Char('\n'))) {
+        const QString line = raw.trimmed();
+        if (line.startsWith(QLatin1Char('#'))) {
+            flush();
+        } else if (line == QLatin1String("direct_cache_hit") ||
+                   line == QLatin1String("preprocessed_cache_hit")) {
+            hit = true;
+        } else if (line == QLatin1String("cache_miss")) {
+            miss = true;
+        }
+    }
+    flush();
+    return counts;
+}
+
+inline QString withCcacheSummary(const QString &summary, const CcacheCounts &counts)
+{
+    const int total = counts.hits + counts.misses;
+    if (total == 0)
+        return summary;
+    return summary + QStringLiteral(" · compile cache: %1 of %2 hit")
+                         .arg(counts.hits)
+                         .arg(total);
+}
+
 // The line beside the restart ring: progress, what the restart is doing, then
 // the estimate while it holds and the real elapsed time once it has not.
 inline QString countdownText(int percent, const QString &activity,

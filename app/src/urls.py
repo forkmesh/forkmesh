@@ -16,7 +16,6 @@ import re
 
 # Each room exposes a WebSocket (/ws) and a read-only live client count
 # (/clients); the Durable Object picks behavior from the upgrade header.
-ROOM_RE = re.compile(r"^/api/room/([^/]+)/(?:ws|clients)$")
 REPO_ROOM_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/rooms/([^/]+)/(?:ws|clients)$")
 # User-created public/private chat channels. Public paths use only
 # opaque 128-bit identifiers; human-readable channel names stay encrypted.
@@ -38,11 +37,11 @@ CHAT_CHANNEL_WEBHOOKS_RE = re.compile(
 CHAT_CHANNEL_WEBHOOK_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/([0-9a-f]{32})/?$")
 CHAT_WEBHOOK_DELIVERY_RE = re.compile(
-    r"^/api/chat/webhooks/([0-9a-f]{64})/?$")
+    r"^/api/chat/webhooks(?:/[0-9a-f]{64})?/?$")
 CHAT_CHANNEL_INVITE_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/invite/?$")
 CHAT_INVITE_RE = re.compile(
-    r"^/api/chat/invites/([0-9a-f]{64})/?$")
+    r"^/api/chat/invites/(?:[0-9a-f]{64}|preview|accept)/?$")
 CHAT_CHANNEL_WS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/ws/?$")
 # One-to-one direct messages use opaque conversation identifiers and a
@@ -61,6 +60,7 @@ CHAT_DIRECT_MESSAGE_DELIVERED_RE = re.compile(
 CHAT_DIRECT_MESSAGE_WS_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/ws/?$")
 CHAT_READS_RE = re.compile(r"^/api/chat/reads/?$")
+CHAT_BLOCKS_RE = re.compile(r"^/api/chat/blocks/?$")
 # Issue inbox: signed submissions from people without write access to the repo.
 REPO_ISSUES_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/issues$")
 # Pull-request inbox: signed PR submissions from any node.
@@ -77,6 +77,10 @@ REPO_PULL_UPDATE_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/update$")
 REPO_PULL_RULES_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/rules$")
+REPO_PULL_ATTENTION_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/attention$")
+REPO_PULL_CHECKS_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/checks$")
 # Branch management typed on the website's Branches page (adhoc #2098). The
 # relay runs no Git: POST queues one delete/update/create for the repository's
 # own node, GET reads the queue back, and DELETE?id= cancels one that has not
@@ -85,6 +89,8 @@ REPO_BRANCH_OPS_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/branches/ops$")
 REPO_BRANCH_OP_RESULTS_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/branches/ops/results$")
+REPO_BRANCH_DELETE_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/branches/delete$")
 # Owner/write-authorized, bounded redacted run summaries from an attested
 # mirror Actions executor. No workflow variables or public catalog data use
 # this endpoint.
@@ -228,7 +234,7 @@ PRIVATE_REPLICA_ACCESS_RE = re.compile(
 # already rejected at the edge with 426). The other actions are live: Default
 # routes those authorized reads through direct HTTPS.
 REPO_HOST_RE = re.compile(
-    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes)$")
+    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse|issue-index|issue-search)$")
 # Stable content-addressed release URL. Default streams it from an attested
 # direct-HTTPS endpoint; the host control socket rejects this path.
 RELEASE_BLOB_RE = re.compile(
@@ -394,6 +400,8 @@ REPO_AP_POSTS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/ap-posts$")
 REPO_WEBHOOKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/webhooks$")
 REPO_PROVIDER_MIRROR_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/provider-mirror$")
+REPO_ARCHIVE_SYNC_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/archive-sync$")
 # Owner-uploaded repo branding (logo/banner PNG) served publicly — referenced
 # by the repo's fediverse actor document as its avatar/header.
 REPO_MEDIA_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/media/(logo|banner)\.png$")
@@ -404,11 +412,30 @@ REPO_CARD_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/card\.png$")
 # state when a session is supplied); POST/DELETE toggle it for the logged-in
 # account (session-token authenticated, same as ACCOUNT_FOLLOW_RE).
 REPO_STAR_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/star$")
+REPO_REACTIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
+REPO_TIPS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/tips$")
+CUSTOM_REACTIONS_RE = re.compile(r"^/api/reactions/custom(?:/(manage))?$")
+CUSTOM_REACTION_ASSET_RE = re.compile(
+    r"^/api/reactions/custom/asset/([0-9a-f]{40})\.(svg|png|gif|webp)$")
+COMMENT_GIFS_RE = re.compile(r"^/api/gifs/(config|search|trending|settings)$")
+COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
+SEASON_RE = re.compile(r"^/api/season(?:/(settings))?/?$")
+REPO_MODERATION_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/moderation$")
+ORG_MODERATION_RE = re.compile(r"^/api/orgs/([^/]+)/moderation$")
+REPO_TRANSLATIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/translations$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
+REPO_ISSUE_VIEW_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/issues/([1-9][0-9]{0,8})/view$")
+REPO_ISSUE_VIEWS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/issue-views$")
+REPO_FORK_COUNTS_RE = re.compile(r"^/api/repo-fork-counts/?$")
 # Forks for this repo: GET returns the public list of repositories that publish
 # this one as their `forkedFrom`; POST durably asks one of the caller's linked
 # managed mirrors to create their fork. The public edge still appears only
 # after that mirror publishes its own signed catalog record.
 REPO_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forks$")
 REPO_REMOTE_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/remote-forks$")
+REPO_PULL_BATCH_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/pull-batch$")
+AI_REVIEW_RE = re.compile(
+    r"^/api/ai-review/(?:(settings)|pulls/([A-Za-z0-9_-][A-Za-z0-9._-]{0,63})/"
+    r"([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/([1-9][0-9]{0,8}))$")

@@ -13,6 +13,23 @@ public enum DirectCallPhase: Equatable, Sendable {
     case live
 }
 
+public enum DirectCallConnection: String, Equatable, Sendable {
+    case connected
+    case disconnected
+    case failed
+    case stalled
+}
+
+public struct DirectCallEnding: Equatable, Sendable {
+    public let title: String
+    public let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+}
+
 public struct DirectCallInvite: Equatable, Sendable {
     public let conversation: String
     public let callId: String
@@ -34,7 +51,10 @@ public protocol DirectCallPeer: AnyObject {
     var onIceCandidate: (@MainActor (JSONObject) -> Void)? { get set }
     var onLive: (@MainActor () -> Void)? { get set }
     var onClosed: (@MainActor () -> Void)? { get set }
+    var onConnection: (@MainActor (DirectCallConnection) -> Void)? { get set }
     func offer() async throws -> JSONObject
+    func restartOffer() async throws -> JSONObject?
+    func resumeMedia()
     func answer(offer: JSONObject) async throws -> JSONObject
     func acceptAnswer(_ answer: JSONObject) async throws
     func add(candidate: JSONObject) async
@@ -49,6 +69,12 @@ public protocol DirectCallPeer: AnyObject {
 }
 
 extension DirectCallPeer {
+    public var onConnection: (@MainActor (DirectCallConnection) -> Void)? {
+        get { nil }
+        set {}
+    }
+    public func restartOffer() async throws -> JSONObject? { nil }
+    public func resumeMedia() {}
     public func setFace(_ id: String) {}
     public func setFace(_ id: String, image: String) { setFace(id) }
     public func setBackground(_ id: String, image: String) {}
@@ -68,6 +94,21 @@ public final class DirectCallEngine {
     public static let ringTimeout: TimeInterval = 45
     public static let inviteResend: TimeInterval = 3
     public static let inviteStale: TimeInterval = 9
+    public static let acceptResend: TimeInterval = 2
+    public static let acceptResends = 8
+    public static let offerResend: TimeInterval = 3
+    public static let offerResends = 5
+    public static let connectTimeout: TimeInterval = 30
+    public static let dropGrace: TimeInterval = 2
+    public static let restartEvery: TimeInterval = 6
+    public static let reconnectBudget: TimeInterval = 30
+    public static let connectFailed = DirectCallEnding(
+        title: "Could not connect", message: "The call could not connect. Try again.")
+    public static let dropped = DirectCallEnding(
+        title: "Call lost", message: "The connection dropped and did not come back. Try calling again.")
+    public static let ringTopic = "calls"
+    public static let ringSound = "forkmesh-call-ring.wav"
+    public static let ringSoundSeconds: Double = 27
     public static let frameTypes: Set<String> = [
         "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
     ]
@@ -91,6 +132,9 @@ public final class DirectCallEngine {
     public private(set) var muted = false
     public private(set) var cameraOff = false
     public private(set) var voice = ""
+    public private(set) var reconnecting = false
+    public private(set) var liveSince: Date?
+    public private(set) var ending: DirectCallEnding?
 
     @ObservationIgnored private var caller = false
     @ObservationIgnored private var peerId = ""
@@ -100,6 +144,26 @@ public final class DirectCallEngine {
     @ObservationIgnored private var ringTask: Task<Void, Never>?
     @ObservationIgnored private var inviteTask: Task<Void, Never>?
     @ObservationIgnored private var staleTask: Task<Void, Never>?
+    @ObservationIgnored private var heldInvite = ""
+    @ObservationIgnored private var acceptTask: Task<Void, Never>?
+    @ObservationIgnored private var offerTask: Task<Void, Never>?
+    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var dropTask: Task<Void, Never>?
+    @ObservationIgnored private var restartTask: Task<Void, Never>?
+    @ObservationIgnored private var restartNow = false
+    @ObservationIgnored private var restarting = false
+    @ObservationIgnored private var dropRound = 0
+    @ObservationIgnored private var offerReceived = false
+    @ObservationIgnored private var answering = false
+    @ObservationIgnored private var answeredOffer = ""
+    @ObservationIgnored private var storedAnswer: JSONObject?
+    @ObservationIgnored private var localOffer: JSONObject?
+    @ObservationIgnored private var offerOutstanding = false
+    @ObservationIgnored private var offerRound = 0
+    @ObservationIgnored private var appliedAnswer = ""
+    @ObservationIgnored private var answerApplied = false
+    @ObservationIgnored private var holdingIce = false
+    @ObservationIgnored private var heldIce: [JSONObject] = []
 
     public init(
         selfId: @escaping @MainActor () -> String,
@@ -143,6 +207,7 @@ public final class DirectCallEngine {
     public var active: Bool { phase != nil }
 
     public var stateLine: String {
+        if reconnecting && phase != nil { return "Reconnecting…" }
         switch phase {
         case .ringing: return "Calling @\(partner)…"
         case .connecting: return "Connecting…"
@@ -169,6 +234,7 @@ public final class DirectCallEngine {
         peerId = ""
         muted = false
         cameraOff = false
+        ending = nil
         let id = callId
         _ = await sendSignal(conversation, "call-invite", ["call": .string(id), "media": .string(media.rawValue)])
         let pulse = sleep
@@ -183,16 +249,19 @@ public final class DirectCallEngine {
         ringTask = Task { [weak self] in
             do { try await self?.sleep(DirectCallEngine.ringTimeout) } catch { return }
             guard let self, self.callId == id, self.phase == .ringing else { return }
-            let missedConversation = self.conversation
-            let missedMedia = self.media
-            await self.end(notifyPeer: true, reason: "missed")
-            self.onMissed?(missedConversation, missedMedia)
+            self.ringTask = nil
+            await self.hangUp()
         }
         return true
     }
 
-    public func acceptInvite() async {
-        guard let pending = invite, !active, available else { return }
+    public func holdInvite() {
+        heldInvite = invite?.callId ?? ""
+    }
+
+    @discardableResult
+    public func acceptInvite() async -> Bool {
+        guard let pending = invite, !active, available else { return false }
         clearInvite()
         conversation = pending.conversation
         callId = pending.callId
@@ -203,8 +272,29 @@ public final class DirectCallEngine {
         peerId = pending.from
         muted = false
         cameraOff = false
-        _ = await sendSignal(
-            pending.conversation, "call-accept", ["call": .string(pending.callId), "to": .string(pending.from)])
+        ending = nil
+        armConnectTimeout()
+        let id = pending.callId
+        let fields: JSONObject = ["call": .string(pending.callId), "to": .string(pending.from)]
+        _ = await sendSignal(pending.conversation, "call-accept", fields)
+        let pulse = sleep
+        acceptTask = Task { [weak self] in
+            for _ in 0..<DirectCallEngine.acceptResends {
+                do { try await pulse(DirectCallEngine.acceptResend) } catch { return }
+                guard let self, !Task.isCancelled, self.callId == id, self.active, !self.caller, !self.offerReceived
+                else { return }
+                _ = await self.sendSignal(self.conversation, "call-accept", fields)
+            }
+        }
+        return true
+    }
+
+    public func dismissEnding() {
+        ending = nil
+    }
+
+    public func resumeMedia() {
+        peer?.resumeMedia()
     }
 
     public func declineInvite() async {
@@ -216,7 +306,14 @@ public final class DirectCallEngine {
     }
 
     public func hangUp() async {
-        await end(notifyPeer: true, reason: "")
+        guard caller, phase == .ringing else {
+            await end(notifyPeer: true, reason: "")
+            return
+        }
+        let missedConversation = conversation
+        let missedMedia = media
+        await end(notifyPeer: true, reason: "missed")
+        onMissed?(missedConversation, missedMedia)
     }
 
     public func toggleMute() {
@@ -295,8 +392,12 @@ public final class DirectCallEngine {
             if invite?.callId == frameCall { clearInvite() }
             if active && callId == frameCall { await end(notifyPeer: false, reason: "") }
         case "call-accept":
-            guard active, callId == frameCall, caller, peerId.isEmpty else { return }
-            await connectAsCaller(to: from)
+            guard active, callId == frameCall, caller else { return }
+            if peerId.isEmpty {
+                await connectAsCaller(to: from)
+            } else if from == peerId, offerOutstanding, let localOffer {
+                await sendOffer(localOffer)
+            }
         case "call-decline":
             guard active, callId == frameCall, caller else { return }
             await end(notifyPeer: false, reason: "")
@@ -304,21 +405,46 @@ public final class DirectCallEngine {
             guard active, callId == frameCall, !caller, from == peerId,
                 let sdp = plain["sdp"]?.objectValue
             else { return }
-            await connectAsCallee(offer: sdp)
+            offerReceived = true
+            acceptTask?.cancel()
+            acceptTask = nil
+            let text = sdp["sdp"]?.text ?? ""
+            if answering { return }
+            if peer == nil {
+                await connectAsCallee(offer: sdp, text: text)
+            } else if text == answeredOffer, let storedAnswer {
+                _ = await sendSignal(
+                    conversation, "call-answer",
+                    ["call": .string(callId), "to": .string(peerId), "sdp": .object(storedAnswer)])
+            } else {
+                await renegotiate(offer: sdp, text: text)
+            }
         case "call-answer":
             guard active, callId == frameCall, caller, from == peerId, let peer,
                 let sdp = plain["sdp"]?.objectValue
             else { return }
+            let text = sdp["sdp"]?.text ?? ""
+            guard offerOutstanding, !(answerApplied && text == appliedAnswer) else { return }
+            offerOutstanding = false
+            offerTask?.cancel()
+            offerTask = nil
+            let round = offerRound
             do {
                 try await peer.acceptAnswer(sdp)
+                appliedAnswer = text
+                answerApplied = true
                 remoteReady = true
                 await flushPendingIce()
             } catch {
-                await end(notifyPeer: true, reason: "")
+                if !answerApplied {
+                    await end(notifyPeer: true, reason: "")
+                } else if offerRound == round, self.peer === peer {
+                    offerOutstanding = true
+                }
             }
         case "call-ice":
             guard active, callId == frameCall, from == peerId, let candidate = plain["ice"]?.objectValue else { return }
-            if remoteReady, let peer {
+            if remoteReady, !answering, !(caller && answerApplied && offerOutstanding), let peer {
                 await peer.add(candidate: candidate)
             } else {
                 pendingIce.append(candidate)
@@ -337,7 +463,7 @@ public final class DirectCallEngine {
         let id = frameCall
         staleTask = Task { [weak self] in
             do { try await self?.sleep(DirectCallEngine.inviteStale) } catch { return }
-            guard let self, self.invite?.callId == id else { return }
+            guard let self, self.invite?.callId == id, self.heldInvite != id else { return }
             self.clearInvite()
         }
     }
@@ -346,36 +472,200 @@ public final class DirectCallEngine {
         stopRinging()
         peerId = deviceId
         phase = .connecting
+        armConnectTimeout()
         guard let factory = peerFactory else {
             await end(notifyPeer: true, reason: "")
             return
         }
+        let id = callId
         do {
             let made = try await factory.makePeer(media: media, iceServers: DirectCallEngine.iceServers)
+            guard callId == id, active else {
+                made.close()
+                return
+            }
             attach(made)
             let sdp = try await made.offer()
-            _ = await sendSignal(
-                conversation, "call-offer",
-                ["call": .string(callId), "to": .string(deviceId), "sdp": .object(sdp)])
+            guard callId == id, peer === made else { return }
+            await sendOffer(sdp)
         } catch {
+            guard callId == id else { return }
             await end(notifyPeer: true, reason: "")
         }
     }
 
-    private func connectAsCallee(offer: JSONObject) async {
-        guard peer == nil, let factory = peerFactory else { return }
+    private func sendOffer(_ sdp: JSONObject) async {
+        let id = callId
+        let target = peerId
+        let scope = conversation
+        if localOffer != sdp || !offerOutstanding {
+            localOffer = sdp
+            offerOutstanding = true
+            offerRound += 1
+            let round = offerRound
+            let pulse = sleep
+            offerTask?.cancel()
+            offerTask = Task { [weak self] in
+                for _ in 0..<DirectCallEngine.offerResends {
+                    do { try await pulse(DirectCallEngine.offerResend) } catch { return }
+                    guard let self, !Task.isCancelled, self.callId == id, self.offerOutstanding,
+                        self.offerRound == round, let offer = self.localOffer
+                    else { return }
+                    _ = await self.sendSignal(
+                        scope, "call-offer", ["call": .string(id), "to": .string(target), "sdp": .object(offer)])
+                }
+            }
+        }
+        _ = await sendSignal(scope, "call-offer", ["call": .string(id), "to": .string(target), "sdp": .object(sdp)])
+    }
+
+    private func connectAsCallee(offer: JSONObject, text: String) async {
+        guard peer == nil, !answering, let factory = peerFactory else { return }
+        answering = true
+        let id = callId
         do {
             let made = try await factory.makePeer(media: media, iceServers: DirectCallEngine.iceServers)
+            guard callId == id, active else {
+                made.close()
+                return
+            }
             attach(made)
             let answer = try await made.answer(offer: offer)
+            guard callId == id, peer === made else { return }
+            answering = false
+            answeredOffer = text
+            storedAnswer = answer
             remoteReady = true
             await flushPendingIce()
             _ = await sendSignal(
                 conversation, "call-answer",
                 ["call": .string(callId), "to": .string(peerId), "sdp": .object(answer)])
         } catch {
+            guard callId == id else { return }
+            answering = false
             await end(notifyPeer: true, reason: "")
         }
+    }
+
+    private func renegotiate(offer: JSONObject, text: String) async {
+        guard let current = peer, !answering else { return }
+        answering = true
+        holdingIce = true
+        let id = callId
+        let answer = try? await current.answer(offer: offer)
+        guard callId == id, peer === current else { return }
+        answering = false
+        if let answer {
+            answeredOffer = text
+            storedAnswer = answer
+            _ = await sendSignal(
+                conversation, "call-answer", ["call": .string(callId), "to": .string(peerId), "sdp": .object(answer)])
+        }
+        releaseIce()
+        await flushPendingIce()
+    }
+
+    private func releaseIce() {
+        holdingIce = false
+        let queued = heldIce
+        heldIce = []
+        guard !queued.isEmpty, !peerId.isEmpty else { return }
+        let id = callId
+        let target = peerId
+        let scope = conversation
+        Task { @MainActor in
+            for candidate in queued {
+                _ = await self.sendSignal(
+                    scope, "call-ice", ["call": .string(id), "to": .string(target), "ice": .object(candidate)])
+            }
+        }
+    }
+
+    private func armConnectTimeout() {
+        connectTask?.cancel()
+        let id = callId
+        let pulse = sleep
+        connectTask = Task { [weak self] in
+            do { try await pulse(DirectCallEngine.connectTimeout) } catch { return }
+            guard let self, !Task.isCancelled, self.callId == id, self.active, self.phase != .live else { return }
+            self.connectTask = nil
+            self.ending = DirectCallEngine.connectFailed
+            await self.end(notifyPeer: true, reason: "")
+        }
+    }
+
+    private func connectionChanged(_ state: DirectCallConnection) {
+        guard active, phase != .ringing else { return }
+        switch state {
+        case .connected:
+            recovered()
+        case .disconnected:
+            lost(immediate: false)
+        case .failed, .stalled:
+            lost(immediate: true)
+        }
+    }
+
+    private func recovered() {
+        dropRound += 1
+        reconnecting = false
+        dropTask?.cancel()
+        dropTask = nil
+        restartTask?.cancel()
+        restartTask = nil
+        restartNow = false
+    }
+
+    private func lost(immediate: Bool) {
+        if phase == .live {
+            reconnecting = true
+            armReconnectBudget()
+        }
+        guard caller else { return }
+        if restartTask != nil && (restartNow || !immediate) { return }
+        restartTask?.cancel()
+        restartNow = immediate
+        let round = dropRound
+        let id = callId
+        let pulse = sleep
+        restartTask = Task { [weak self] in
+            if !immediate {
+                do { try await pulse(DirectCallEngine.dropGrace) } catch { return }
+            }
+            while true {
+                guard let self, !Task.isCancelled, self.callId == id, self.dropRound == round else { return }
+                await self.restart()
+                do { try await pulse(DirectCallEngine.restartEvery) } catch { return }
+            }
+        }
+    }
+
+    private func armReconnectBudget() {
+        guard dropTask == nil else { return }
+        let round = dropRound
+        let id = callId
+        let pulse = sleep
+        dropTask = Task { [weak self] in
+            do { try await pulse(DirectCallEngine.reconnectBudget) } catch { return }
+            guard let self, !Task.isCancelled, self.callId == id, self.dropRound == round, self.reconnecting else {
+                return
+            }
+            self.dropTask = nil
+            self.ending = DirectCallEngine.dropped
+            await self.end(notifyPeer: true, reason: "")
+        }
+    }
+
+    private func restart() async {
+        guard caller, let current = peer, !restarting, !peerId.isEmpty else { return }
+        restarting = true
+        holdingIce = true
+        let id = callId
+        let made = (try? await current.restartOffer()) ?? nil
+        restarting = false
+        guard callId == id, peer === current else { return }
+        if let made { await sendOffer(made) }
+        releaseIce()
     }
 
     private func attach(_ made: DirectCallPeer) {
@@ -393,6 +683,10 @@ public final class DirectCallEngine {
         }
         made.onIceCandidate = { [weak self] candidate in
             guard let self, self.callId == id, !self.peerId.isEmpty else { return }
+            if self.holdingIce {
+                self.heldIce.append(candidate)
+                return
+            }
             let target = self.peerId
             let scope = self.conversation
             Task { @MainActor in
@@ -403,6 +697,14 @@ public final class DirectCallEngine {
         made.onLive = { [weak self] in
             guard let self, self.callId == id else { return }
             self.phase = .live
+            if self.liveSince == nil { self.liveSince = Date() }
+            self.connectTask?.cancel()
+            self.connectTask = nil
+            self.recovered()
+        }
+        made.onConnection = { [weak self] (state: DirectCallConnection) in
+            guard let self, self.callId == id else { return }
+            self.connectionChanged(state)
         }
         made.onClosed = { [weak self] in
             guard let self, self.callId == id else { return }
@@ -427,12 +729,34 @@ public final class DirectCallEngine {
     private func clearInvite() {
         staleTask?.cancel()
         staleTask = nil
+        heldInvite = ""
         invite = nil
     }
 
     private func end(notifyPeer: Bool, reason: String) async {
         guard active else { return }
         stopRinging()
+        for task in [acceptTask, offerTask, connectTask, dropTask, restartTask] { task?.cancel() }
+        acceptTask = nil
+        offerTask = nil
+        connectTask = nil
+        dropTask = nil
+        restartTask = nil
+        restartNow = false
+        restarting = false
+        dropRound += 1
+        offerReceived = false
+        answering = false
+        answeredOffer = ""
+        storedAnswer = nil
+        localOffer = nil
+        offerOutstanding = false
+        appliedAnswer = ""
+        answerApplied = false
+        holdingIce = false
+        heldIce = []
+        reconnecting = false
+        liveSince = nil
         let scope = conversation
         let id = callId
         conversation = ""
@@ -448,6 +772,7 @@ public final class DirectCallEngine {
         let closing = peer
         peer = nil
         closing?.onClosed = nil
+        closing?.onConnection = nil
         closing?.close()
         if notifyPeer {
             var extra: JSONObject = ["call": .string(id)]

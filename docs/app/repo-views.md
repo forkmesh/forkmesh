@@ -23,6 +23,94 @@ purged with the repository and rekeyed by the rekey tool
 - `GET /api/repo/<owner>/<repo>/view` → `{views, viewers, lastViewedAt}`
 - `POST /api/repo/<owner>/<repo>/view` → totals plus `counted`
 - `POST /api/repo-views` `{"repos": [...]}` (up to 200) → `{views: {...}}`
+- `POST /api/repo-fork-counts` `{"forks": [...]}` (up to 24) → `{counts: {...}}`
+  (see [Forks in Top repositories](#forks-in-top-repositories))
+
+## Forks in Top repositories
+
+Both "Top repositories" lists, the Home rail (`homeRepositoryGroup`) and the
+sidebar (`sidebarRepositoryGroup`), nest forks under their parent with
+`nestRepositoryForks` in `05-repo-list-explorer.js`. A row is a fork when
+`repoForkParent` reads a `forkedFrom` from its catalog row; its parent is the
+listed row that `repoMatchesKey` matches, or the listed row that
+`findRepository` resolves the parent key to. A fork of a fork goes under the
+top listed ancestor, and a fork whose parent is not listed stays an ordinary
+top-level row. Forks do not use up the list's top-level slots.
+
+The parent row stays as it was. Its forks sit below it, indented behind a thin
+left border as the tree guide line. Each one is a compact single line: the
+owner name (or `owner/name` when the fork was renamed, since the name is no
+longer implied), the ahead/behind badge, and on Home its view count. Forks are
+ordered by views, most first. Past three forks a "+N more forks" button expands
+the rest inline. It sits outside the row links (rows are `<a>`, so a button
+inside one would nest an interactive element), and the expanded set lives in
+`state.repositoryForksExpanded` for the session.
+
+### Ahead/behind badge
+
+After a list renders, `hydrateRepositoryForkCounts` collects the
+`data-repo-fork-counts` keys of public forks it has not asked about yet and
+sends them in one `POST /api/repo-fork-counts {"forks": [...]}` (up to 24 per
+request). The answer is cached in `state.repositoryForkCounts` and reused by
+both lists and by later renders. The badge reads `↑3 ↓12` with the title "3
+commits ahead, 12 behind <parent>". It stays hidden when the count is unknown
+(a private fork or parent, no answer, or a fork whose gateway does not serve
+the parent) and when it is 0/0.
+
+`app/src/fork_counts.py` answers that request. For each fork it requires a
+public catalog row for the fork, reads the parent from that row's
+`forkedFrom` (never from the request), and requires the parent to be public
+too. Organization addresses resolve through `_org_repo_node`. It then reads
+the parent's and the fork's default-branch tips from their `branches`
+operations (edge-cacheable reads, each parent read once per request) and asks
+the fork's gateway for
+`compare?base=<parent tip>&head=<fork tip>&cherry=<parent>&counts=1`.
+Results are cached per worker by (fork, parent, both tips), so a moved branch
+gives a fresh count. The response is `{ok, counts: {"<fork>": {ahead, behind,
+parent, branch}}}`; unknown forks are left out.
+
+`counts=1` is a mode of the gateway's upstream comparison (`cherry`): with
+the parent's objects as an alternate it runs
+`git rev-list --left-right --count <base>...<head>` and returns only
+`{ok, baseOid, headOid, ahead, behind}`. It takes commit ids for base and
+head, and it refuses `limit`, any value other than `1`, and an upstream the
+gateway does not serve. The Worker forwards `counts` for `compare` in
+`_https_mirror_request_query` and `edge_routing.masked_target_url`. The catalog
+already carries the default branch and its commit, but those are only as
+fresh as the last catalog publish, so the counts read live tips instead.
+
+## Pinned repositories and fork count
+
+An instance can choose what both Top repositories lists show with the
+`instance_settings` row `sidebar`:
+
+```sql
+INSERT INTO instance_settings (k, doc, updated_at)
+VALUES ('sidebar', '{"pinned":["acme/app","acme/docs"],"forks":5}',
+        CAST(strftime('%s','now') AS INTEGER) * 1000)
+ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
+```
+
+- `pinned`: repositories shown instead of the most viewed ones, in this order.
+  An entry is `owner/name` (the catalog address or the public owner shown on
+  the row) or a bare `name`, which pins the listed repository with that name.
+  When several rows match, the one with the most forks wins, and entries that
+  match nothing are skipped. The sidebar shows only the pinned rows; the Home
+  card shows them too, unless a search is typed or "Show more" is open.
+- `forks`: how many forks each row shows before "+N more forks", in both lists
+  (0 to 50, default 3).
+
+`Default._instance_sidebar_setting` cleans the row for `/api/instance`
+(`sidebar`): `pinned` is lower-cased and de-duplicated, and keeps at most 10
+entries of at most 161 characters with at most one `/`. A missing, unreadable
+or non-object row answers `{"pinned": [], "forks": 3}`. A `pinned` that is not a list
+counts as empty, so a lone string is not read letter by letter. The dashboard reads it
+once per page through `instanceInfo` (`loadSidebarSetting` in
+`05-repo-list-explorer.js`) and redraws both lists when it arrives. With no
+row, an empty `pinned` list, or a list where nothing matches, the lists keep
+their usual order (six sidebar rows, eight Home rows). Outside an instance
+`instanceInfo` answers nothing, so the lists never change there.
+`/api/instance` is cached for 60 seconds, so a new row shows within a minute.
 
 ## Profile repository list and popular cards
 
@@ -79,6 +167,9 @@ per-page colours:
 - The branch merge dialog uses `fm-dialog` inside the native `<dialog>`; the
   `fm-dialog` class sits on the inner form because its `display: flex` would
   otherwise override the closed dialog's `display: none`.
+- The issue and pull-request metadata pickers are non-modal popovers: opening
+  one moves focus to its first field, and closing it with Escape or Close
+  returns focus to the settings button that opened it.
 - Empty and error states are `fm-blankslate`: an empty or missing path, an
   unreachable tree, a file that will not load, empty issue and pull-request
   lists, discussions with no mirror, the Actions empty states and the
@@ -97,16 +188,72 @@ per-page colours:
   found as `.bg-cta, .fm-btn-cta` (`08-repo-detail-network.js`), so forms
   whose green button is now an `fm-btn-cta` keep the shortcut.
 
+## Repository title row
+
+In October 2026 the user asked for GitHub's repository header: Fork and Star
+belong next to the name, where people look for them. In the About rail they
+read as stats, and the Fork button was hidden behind the Forks count, so
+web-only visitors never found it. Under the tab bar and above the content grid,
+`renderRepoTitleRow` in `08-repo-detail-network.js` draws one row with a bottom
+border, on every tab:
+
+- **Left:** the repository logo (`nativeRepositoryLogoMarkup`) or the owner's
+  initial, the name in bold, and a Public/Private `fm-label`. Under the name is
+  the provenance line (`repoProvenanceHtml(repo, { forkButton: false })`):
+  "forked from owner/repo" as an accent link, or a mirror's "Mirror of" line
+  and read-only notice. The line used to sit above the file table. The mirror
+  notice no longer draws its own Fork button, because the row already has one.
+- **Fork N ▾:** a neutral `fm-btn-sm` split button.
+  - The main part (`data-repo-fork-primary`) opens your own fork when the
+    forks list or a create response names one. Otherwise it opens the menu and
+    creates the fork right away.
+  - ▾ (`data-repo-action-fork`) opens the forks menu: the list, forks on other
+    instances, and the page's one green button, "Create fork".
+  - Creating a fork calls `POST /api/repo/<o>/<r>/forks`
+    (`createRepoForkFromWebsite` in `06-repo-content.js`). On success it
+    refreshes the list and shows "Open fork". When the response carries `push`,
+    it shows the remote commands, username, password and expiry once
+    (`repoForkPushHtml`). `exists: true`, or a response that is neither
+    `created` nor `queued`, means you already had a fork.
+- **Star N:** "Star N" or "Starred N", with the yellow star. `fm-btn` colours
+  every icon grey, so `setRepoStarButtonState` also sets the colour inline.
+  Stars have no list (they are blind-indexed), so the button has no ▾.
+
+`renderRepoDetail` draws the Fork button in the Code toolbar too, so it
+declares its own `websiteForkAvailable`. Until 2026-10-21 only
+`renderRepoTitleRow` declared it, and every repository page stopped with a
+ReferenceError before its tabs loaded.
+
+Watch stays in the About rail. The forks menu is anchored to the actions
+container, which `ml-auto` keeps at the right edge even when it wraps under
+the name on a phone, so the menu always opens on screen. The server-rendered
+first view (`_title_row` in `app/host/forkmesh_host/repo_ssr.py`) draws the
+same row with placeholder counts, so the page does not shift when the
+dashboard takes over. Tests: `app/browser_tests/tests/dashboard-repo-forks.spec.js`,
+`app/tests/test_dashboard_repo_mirror_label.py`,
+`app/tests/test_dashboard_landing_migration.py` and
+`app/tests/host/test_repo_ssr.py`.
+
 ## Code page About rail
 
 The About rail beside the Code tab is a details list, not a stack of cards
 (October 2026 restyle, the "details list" variant the user picked from three).
 Under the description and the Readme / Activity / clean-URL links, one row per
 fact shows a muted label on the left and the value on the right: Website,
-Release, Stars, Watchers, Forks, Mirrors, Files and Size. Stars toggles a star,
-Watchers and Forks open their popovers to the right, Mirrors opens the Mirrors
-tab, Release opens Releases, and Size opens the Size map tab beside a tiny
-sunburst. Rows stay hidden until their data loads.
+Release, Watchers, Mirrors, Files and Size. Stars and Forks moved to the
+title row above (see the section above). Watchers opens its popover to the
+right, Mirrors opens the Mirrors tab, Release opens Releases, and Size opens
+the Size map tab beside a tiny sunburst. Rows stay hidden until their data
+loads.
+
+Every `http(s)://` address in the description is a link (accent colour, new
+tab, `nofollow ugc`), found and trimmed the way the README renderer finds bare
+URLs (`MD_BARE_URL`, `mdTrimAutolink`, `mdLinkHtml`); the rest of the text
+stays escaped. A read-only mirror without its own description links the
+upstream path in "Read-only mirror of …" to the upstream URL. Long addresses
+wrap instead of widening the rail. The first render and a saved edit both go
+through `repoAboutDescriptionHtml` in `06-repo-content.js`; tests in
+`app/tests/test_dashboard_repo_mirror_label.py`.
 
 The rail has no banner or logo header: the user asked for the fediverse banner,
 repository logo, handle and follower avatars to be removed from it. The
@@ -129,22 +276,74 @@ contributor's picture drawn over them when one is known:
   use) and its avatar replaces the initials when the account exists and is
   public. Names with spaces keep initials.
 
+**Contributor roster.** A repository can ship its own list at
+`.forkmesh/contributors/contributors.json`, with one avatar per contributor at
+`.forkmesh/contributors/<slug>.png`:
+
+```json
+{"about": "How the list was made.", "count": 3,
+ "contributors": [{"slug": "alice", "name": "Alice", "login": "alice",
+   "profile": "https://example.com/@alice", "commits": 120,
+   "first": "2024-01-02", "last": "2026-10-01", "projects": ["acme-api"]}]}
+```
+
+When the file is there, the Contributors section shows `count` (never below
+the number of valid rows) and the top 8 rows by `commits`, each picture read
+through the raw route at the selected branch (`repoRawUrl`, as README images are). The
+tooltip is the name and commit count; an avatar links to `profile` only when it
+is a plain `https:` URL; a missing picture keeps the initials; "+N" opens the
+roster file. Other fields are ignored. The file is read with the optional
+`.forkmesh` folder machinery below (no request unless `.forkmesh` has a
+`contributors` folder; a miss is remembered), at most 2 MiB and 10,000 rows;
+a slug must match `[a-z0-9][a-z0-9._-]*`. Without a valid roster the section
+uses the `stats` authors as before, minus bots (`… [bot]`, `GitHub Action(s)`,
+`… Bot` / `…-bot`, `<slug>-actions`, `<platform> Actions` /
+`actions@forkmesh.local` and `ForkMesh Deploy`), which are dropped from both the avatars and the
+count. Code: `loadRepoContributorRoster`, `renderRepoAboutRoster`,
+`repoContributorIsBot` in `06-repo-content.js`; tests in
+`app/tests/test_repo_contributor_roster.py`.
+
 Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's
-fediverse posts sit at the bottom as collapsibles.
+fediverse posts sit at the bottom as collapsibles. Below them, last in the rail, is the "Mirrors"
+card with the repository's mirror goal and the health of each copy
+([mirror-quota.md](mirror-quota.md)).
 
 ## Issues, pull requests and discussions
 
 These three tabs follow GitHub's layouts (October 2026, from the user's
 GitHub reference screenshots).
 
+The issue list's label filter lives in the address bar (`?label=…`), so a
+filtered list can be linked and survives a refresh. Only the list route is
+rewritten; an open issue keeps its own address. A label's swatch is its
+colour dot, except Hacktoberfest, which gets a small pumpkin that wiggles a
+few times when the list first paints (and stays still for viewers who ask for
+reduced motion).
+
 - **Issues and Pull requests lists** share one layout
   (`data-repo-collection-layout`). On wide screens the views sidebar sits
   flush against the left edge of the window with a border down its right
   side, and the list is centred beside it at up to 80rem. "Collapse sidebar"
   is pinned to the bottom of the sidebar and is shared by both tabs.
+- **Issues and Pull requests on a phone** (October 2026, from the user's
+  iPhone screenshot): `shell.html` raises every button, input and select to
+  44px under `(pointer: coarse)`, but the New issue chevron is a `<summary>`,
+  so on a phone the refresh and New issue buttons stood 44px tall beside a
+  32px chevron. The toolbar (`data-repo-collection-chrome`), the list header
+  and the pagination are exempt from that floor, so every control keeps the
+  32px compact height and they line up. Below 640px the "All issues" /
+  "All pull requests" heading is visually hidden (the view select already
+  names the view, and the heading stays for screen readers) so the select,
+  refresh and New issue fit on one row; the filters (Author, Labels,
+  Milestones, Assignees, Types, Sort) sit on one line under Open/Closed and
+  scroll sideways (`data-repo-issue-list-filters`) instead of wrapping onto a
+  second and third line; and rows use 12px side padding, 6px vertical
+  padding and a 14px title. The rules are hand-written CSS keyed on data
+  attributes because the committed `tailwind.css` carries no `sm:` variants
+  for them. `dashboard-issue-filters.spec.js` "on a phone" checks it.
 - **Pull request views** are Pull requests, Authored by me and Mentioned, then
   a Branches link and the base branches of the open pulls. Pulls carry no
   labels, milestones, assignees or review requests in `pull.md`, so the list
@@ -160,13 +359,519 @@ GitHub reference screenshots).
   avatar-left comment card; commits and bodiless reviews are lines on a
   timeline rail, and reviews with text are comment cards. The sidebar lists
   only sections with real data behind them.
+- **People in timelines** (issue and pull timelines, comment cards, the
+  opening card, "set assignees"): every name is drawn by
+  `issuePersonNameHtml` and every face by `issueActorAvatarHtml`
+  (`02-helpers.js`). The picture is, in order, the forge account's avatar
+  (`/api/accounts/<name>`, one cached lookup per name), the repository
+  roster's picture for a row whose `login`, `github` or `gitlab` matches the
+  name case-insensitively (`avatar` when it points into
+  `.forkmesh/contributors/`, else `<slug>.png`), then the initials. A name
+  links to `/@<name>` when the forge account is linkable (a taken, public
+  user or node account; [profile-links.md](profile-links.md)), else to the roster
+  `profile` (plain `https:` only, new tab), else not at all. Bots (`…[bot]`
+  and the names `repoContributorIsBot` already treats as bots, such as
+  `<org>-actions`) get the lucide `bot` mark and no link. Faces have fixed
+  sizes and pictures are laid over the initials with explicit width and
+  height and `loading="lazy"`, so nothing moves when they arrive. Comment
+  cards keep the 40 px avatar column on wide screens and show a 24 px avatar
+  beside the name on phones, where the column is hidden. The roster is read
+  once per repository and branch (`repoContributorRosterCached`), shared with
+  the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **Code map No wrap** (`layoutPrefs`, `fitCode` in `app/public/assets/codemap/codemap.js`):
+  by default a file's lines flow into newspaper columns, each cut at the
+  file's 97th-percentile line length (at most 110 characters). The toolbar's
+  "No wrap" toggle lays the file out as one column, one row per line, sized to
+  the tile height (no wider than 80 characters of text), and clips each line at
+  the tile's edge instead (`code.clip`). The choice is kept in `localStorage`
+  (`forkmesh-codemap-wrap`).
+- **Code map text vs binary** (`createLoader` in `app/public/assets/codemap/codemap.js`,
+  glue `openRepoCodeMap`): a file is drawn as a binary card only when the host
+  answered it as base64 (not UTF-8) or its text holds a NUL byte. A path the
+  `/blobs` batch left out (`null`: an upstream timeout or the batch byte
+  budget) or a batch that failed is retried on its own up to three times, then
+  left blank, never carded. Before this, large `.forkmesh/issues` JSON records
+  in a batch showed as "binary" at random. The gateway also cuts a blob over
+  `MAX_JSON_BLOB` at a UTF-8 character boundary (`_utf8_prefix`), so a cut
+  text file stays text.
+- **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
+  text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
+  example/forum README marks its Persian and Arabic headings with `&rlm;` and
+  `&zwnj;`). After code spans are parked, a well-formed named or numeric
+  entity is restored, as GitHub renders it; an entity only ever yields text,
+  `&lt;script&gt;` stays visible text, and code spans keep the literal.
+- **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
+  `@login` (letters, digits and single inner hyphens, at most 39) becomes a
+  link to its profile, resolved like a timeline name; with no forge account
+  and no roster profile it goes back to plain text. It is matched after code
+  spans, links, images and bare URLs are parked, so nothing is linked twice,
+  and never when the `@` follows a letter, digit, `.`, `/`, `+` or `-`
+  (emails, URL paths, `@scope/package`), or when the login runs on into
+  `.x`, `/x`, `_x`, `@` or `[bot]`. Task markdown opts out
+  (`mentions: false`): tasks highlight teammates themselves. Tests in
+  `app/tests/test_repo_readme_markdown.py`.
+- **Mention suggestions** in every record editor (the Add a comment box and
+  its @ button, pull reviews, discussion replies, the issue description
+  editor, inline pull comments, and the new issue and new pull forms; a
+  textarea opts in with `data-mention-input`). Typing `@` plus characters
+  opens a list of at most 8 people at the caret: those in this issue or pull
+  (author, commenters, assignees, reviewers, people already mentioned, most
+  recent first), then the roster by commits; logins and names match by
+  prefix first, then anywhere. There is no forge-wide search because
+  `/api/accounts/users` returns every account's picture and is too heavy to
+  read for this. Tap, Enter or Tab inserts `@login ` (replacing the rest of a
+  half-typed login); Escape closes; arrows move. The list is a `listbox`
+  driven by `aria-activedescendant`, rows are 44 px tall, and it is placed in
+  the visual viewport so it stays above a phone keyboard. Nothing is fetched
+  per keystroke: the candidates come from the loaded record and the cached
+  roster. Editing a comment opens an inline editor in its card
+  (`openIssueCommentEditor`, replacing the browser prompt, which could not
+  offer suggestions); a quiet refresh waits while it is open.
+- **Development links** (October 2026; the user asked for GitHub's
+  Development section on both pages, with a picker and links made from
+  "fixes #71" style comments). There is no link event type: a new signed
+  event would need every client and the gateway to learn it. Links are read
+  from signed text instead, the way issue relationships are:
+  - A pull links issue #N when its title or body names `#N`, or when one of
+    its comments or commit messages says `close`, `fix` or `resolve` (any
+    tense) `#N`. Code spans and fenced blocks don't count.
+  - An issue's own description or comments link pull #N with
+    `Linked pull request #N`, `fixed by #N`, `resolved in PR #N` and similar
+    lines, and unlink it with `Unlinked pull request #N`. The last line about
+    a pull wins, so an unlink also hides a link that comes from the pull's
+    text. A plain `fixes #N` on an issue is not a link, because issues and
+    pulls are numbered separately and `#N` there means an issue.
+  - The settings button on Development (any signed-in visitor, since the
+    write is an ordinary comment) opens the sidebar picker. On an issue it
+    searches the pull list; on a pull it searches the open issues
+    (`loadRepoIssueRelationIndex`). Typing a number links one that isn't
+    listed. Closing the picker writes one signed issue comment with a
+    `Linked/Unlinked pull request #N` line per change. From a pull page that
+    comment goes on each issue, because an issue page reads only the pull
+    list, not pull comments. For the same reason a web pull comment that says
+    `fixes #N` also writes `Linked pull request #P` on issue #N
+    (`linkPullCommentIssues`). A comment made only of those lines shows on
+    the issue timeline as a "linked pull request #P" rail line.
+  - The issue page reads the pull list in the background
+    (`loadRepoDevelopmentPulls`, cached for a minute) when the Pull requests
+    tab hasn't loaded it. The rules are `pullOwnIssueNumbers`,
+    `issueDevelopmentPullStates`, `issueLinkedPullNumbers` and
+    `pullLinkedIssueNumbers` in `06-repo-content.js`, ported to
+    `development_pull_states` in `repo_ssr_issue.py` for the first view. The
+    desktop and phone apps don't show these links yet. Tests:
+    `app/tests/test_development_links_frontend.py` and
+    `app/browser_tests/tests/dashboard-development-links.spec.js`.
 - **Discussions** have a search box (`is:open category:…`), Sort by (latest
   activity, date created, oldest), Filter (open, closed, all) and New
   discussion, with Categories on the left and the list on the right. Each row
   shows the category's emoji, the title, who started it, when, and in which
   category. There are no vote or reply counts because the list reads only
-  `discussion.md`. New discussion explains that discussions are created from
-  the desktop app, since they are signed by the author's node.
+  `discussion.md`. New discussion (and the empty list's Start a discussion)
+  opens the web composer; see [web-discussions.md](web-discussions.md).
+
+## Reconnecting after a mirror outage
+
+Pull request, issue and discussion lists and records, projects, the code tree, commits,
+branches and releases share one helper in `06-repo-content.js`
+(`handleRepoReadFailure`, `finishRepoRead`). A read that fails with 503
+`mirror_unavailable` (or 503 without a code), 502, 504 or a network error
+shows "Reconnecting to the repository host…" and is retried after 2, 4, 8, 16
+and then every 30 s. After two minutes the page says "The repository host is
+not answering right now." with a Retry button. A 404 is the repository's
+answer: a record page says the record was not found and names its file; other
+errors say the view could not be loaded. The earlier text ("unavailable until
+a reachable mirror host serves …") read as permanent, and on a single-server
+instance it appeared after every deploy while the gateway restarted.
+
+Each view's last rendered HTML is kept in `sessionStorage`
+(`forkmesh.repoView.v1|<node>|<owner/repo>|<view>`, at most 24 views of
+400 000 characters, oldest dropped first, every access in `try`) and is shown
+under a "Reconnecting…" note while the host is away, so the reader keeps the
+list or pull request they had. The key includes the signed-in node name, and
+sign-out clears every `forkmesh.` key in `sessionStorage`. A read answered
+with `X-ForkMesh-Stale: 1` (the host's stale cache, `docs/host/README.md`) is
+rendered with an "Updating…" note and read again on the same schedule.
+
+A retry runs only while the address and the container are the ones it was
+armed for; `navigateHistory` and the repository page's `popstate` handler
+cancel every pending retry, and a loader that is retrying does not repaint its
+loading state over the kept view.
+
+## Issue page first view
+
+An issue page (`/<owner>/<repo>/issues/<n>`, or `/<name>/issues/<n>` on an
+instance with short addresses) used to arrive as the repository header and
+an empty band; `dashboard.js` drew a shimmering frame, read the issue and
+replaced the frame with it, and everything below the title moved. The node
+now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.py`):
+
+- **Same markup as the dashboard.** `render_issue` draws the article
+  `renderRepoIssueDetail` (`06-repo-content.js`) draws for a visitor without
+  write access, from the issue's signed-event JSON. Its helpers are ports of
+  the dashboard's (`escapeHtml`, `formatTimeAgo`, `parseIssueJson`,
+  `issueDetailParsed`, `issueLabelHue`, the timeline people helpers, and
+  `renderMarkdown` with its inline rules, @mention links included); icons are
+  the `<svg>` lucide 0.468's `createIcons` puts in place of
+  `<i data-lucide>`. The frame around it is `renderRepoDetail` with the
+  Issues tab open on a record. `dashboard.js` keeps that article in place
+  when it takes the page over (`takeRepoFirstViewIssue`, and
+  `loadRepoRecordDetail` puts it where the skeleton would go), then paints
+  its own render of the same markup over it, keeping every server-drawn node
+  it would draw the same way (see **Long threads** below), so nothing moves.
+  Any change to
+  the dashboard's issue markup must be made in both; the parity tests in
+  `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
+  under node and compare the two renders (add any new helper the issue view
+  calls to the test's `FUNCTIONS`/`CONSTANTS`).
+- **Long threads.** A forum thread of a hundred comments used to arrive as
+  one HTML page that the node sent only once every comment was rendered
+  (example/forum#519: 179 KB gzip, received after 468 ms, DOMContentLoaded
+  at 852 ms), and the dashboard then redrew the whole thread. The forum's
+  own requirements  are that the whole thread is
+  readable from the first HTTP response without JavaScript, on links as
+  slow as a DNS tunnel, so the first HTML still carries every comment. What
+  changed on 2026-10-21 is how it is sent and taken over:
+  - **Streamed.** `inject_issue_page` (`repo_ssr.py`) returns an
+    `IssuePage`: the page up to and including the header, the opening post
+    and the first `TIMELINE_FIRST` (10) timeline items, then the remaining
+    items rendered `STREAM_CHUNK` (10) at a time, then the rest of the page
+    (the sidebar, the comment box, the shell's scripts). `finish` answers
+    with a `ReadableStream` over it, so the ASGI layer sends each part as
+    it is ready (chunked transfer): the top no longer waits for the
+    Markdown of every comment. `render_issue_parts` (`repo_ssr_issue.py`)
+    leaves `REST_MARK` where the later items go and returns their render
+    functions (`Renderer.timeline_items`), each chunk rendered with the
+    forge-avatar context set again. The page is cut at the mark, so the
+    mark must come only from the renderer: `esc` turns every NUL a post
+    carries into U+FFFD, `render_issue_parts` refuses an article with more
+    than one mark, and `inject_issue_page` sends the page in one piece if
+    the shell or the tabs hold one. Before 2026-10-24 an author name holding
+    the mark moved the cut inside an attribute, and the comments streamed
+    after it became live attributes (stored XSS on the app origin). The
+    whole article is remembered on the
+    bundle once the last chunk is sent; a remembered article goes out in
+    one piece. A chunk that fails ends the thread early and still closes
+    the page; the dashboard draws what is missing. `inject_issue` joins the
+    parts for callers that want a string. Caddy must not hold the stream:
+    the instance Caddyfile (`install-instance.sh`) sets `flush_interval -1`
+    on the App proxy, as `deploy/core/render.py` already did for the
+    served stack; Cloudflare passes chunked HTML through as it arrives.
+  - **No competing download.** The page's head script fetches the view's
+    `page-reads` bundle (`window.__forkmeshView`); on a server-rendered
+    issue page it now waits for `DOMContentLoaded`
+    (`_view_reads_head(meta, after_page=True)`), so the record does not
+    share a slow link with the HTML the reader is waiting for. The
+    dashboard still needs the record once, for the comment form,
+    reactions and edit controls, and reads it from that bundle
+    (`seededRepoRead`).
+  - **Taking over without redrawing.** `renderRepoIssueDetail` builds the
+    timeline as entries (`issueTimelineEntries`, each with a lazy `html()`)
+    and draws only the first `ISSUE_TIMELINE_FIRST` (10, kept equal to
+    `TIMELINE_FIRST` by a test) plus, on in-app navigation, a placeholder
+    (`<div data-repo-issue-more data-remaining="N">`, two shimmer rows on
+    the rail and "Loading N more comments…"). Every issue render goes
+    through `paintRepoIssueDetail` (`loadRepoRecordDetail`, the optimistic
+    view, the late relations redraw, `renderCurrentWebIssueDetail`): for the
+    sticky bar, header, opening post, sidebar, Fediverse thread and each
+    timeline item it keeps the node already on screen when its signature
+    matches (`issueNodeSignature`: the markup as first drawn, lucide `<svg>`
+    turned back into `<i data-lucide>`, whitespace collapsed; recorded when
+    a node is drawn, for the server's page by `keepRepoFirstViewIssue`
+    before avatars are filled in). Items on screen past the first ten (the
+    server's, or an earlier render's) stay where they are, in front of a
+    hidden placeholder, and the stream (`queueIssueTimelineRest`,
+    `ISSUE_TIMELINE_BATCH` = 15 entries per `requestIdleCallback`, a 16 ms
+    timeout without it) renders each entry in turn and keeps the matching
+    node (`placeIssueTimelineItems`), inserting only what differs and
+    removing what no longer exists. A guest's page therefore stays the very
+    nodes the server sent (no picture is decoded again, nothing moves), a
+    member only sees the comments that gain edit buttons swapped, and the
+    scroll position holds. Without a server page the placeholder shows and
+    the items are appended. Lucide draws new icons once, after the last
+    batch. A newer render stops the old stream.
+  - **Comment links.** Each comment card has `id="issuecomment-<event id>"`.
+    A fragment `#issuecomment-<id>` (or GitHub's `#issuecomment-<number>`
+    for a mirrored `forge-github-comment-<number>`) makes the dashboard draw
+    through that comment at once and scroll to it, once per address; on the
+    server page the browser finds it by itself.
+  - **Off-screen cards.** `shell.html` gives timeline comment cards
+    `content-visibility: auto` with `contain-intrinsic-height: auto 180px`
+    and `scroll-margin-top: 64px` (clear of the sticky title bar). The
+    browser lays out and paints only the cards near the screen, which is
+    what lets a 500-comment page paint its top at once; their text stays in
+    the DOM, so find in page and anchors reach it, and `auto` remembers a
+    card's height once drawn. Paint containment clips a card's own
+    overflow, which its `overflow-hidden` box already did, except a 2 px
+    avatar hover ring at the card's left edge; the reaction picker opens in
+    `document.body`.
+  - Comment posting appends after the placeholder, avatars and person links
+    are filled in by the existing `MutationObserver`, and edit, delete and
+    reaction controls are delegated, so streamed items behave like the rest.
+  - Tests in `test_repo_ssr_issue.py`: parity of the whole thread (the
+    dashboard's first ten plus its streamed rest against the server page),
+    the streamed response's parts and order, the dashboard's placeholder and
+    fragment handling, and a node harness with a small fake DOM that runs
+    the stream (batches of 15, order, the first nodes kept, server-sent
+    nodes reused and a stale one replaced).
+- **Viewer-dependent parts.** The comment box, the sub-issue Add button and
+  the Development settings button depend on who is looking, so both the guest and the member variants are
+  drawn and the page's head script picks one before the first paint
+  (`html[data-guest]`, `VIEWER_STYLE`). A member's comment-box avatar is
+  drawn blank: the node does not know who is signed in.
+- **Escaping.** Everything from the issue is escaped, the state label
+  included: the issue file's `status` is author-controlled and not checked
+  against a signature here. The Markdown port escapes before it formats.
+- **Data.** `repo_views` builds an issue bundle (the whole record and the
+  issue index's `related` answer, for mentions and sub-issues; the open records on a gateway
+  without the index, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)) from the
+  local gateway,
+  remembered per content; the rendered article is kept on the bundle for a
+  minute because its relative times move. The page waits at most
+  `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first
+  view, which are usually remembered; otherwise it is served without them.
+  Without a remembered `/about`, a feature tab's page still draws the tabs a
+  repository has by default.
+- **View on GitHub.** When the issue index knows the provider issue an issue
+  was mirrored from (`sourceUrl`, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)), the title
+  actions start with a link to it (`renderIssueSourceLink` /
+  `source_link_html`): "View on GitHub" for github.com, "View on <host>"
+  otherwise, the text hidden below `sm` so the row stays one line on a phone.
+  It opens in a new tab with `rel="noopener noreferrer nofollow"`; both
+  renderers accept only an `https` address of plain path characters. It is
+  a link the reader chooses to follow: nothing on the page loads from the
+  provider. The dashboard learns the address with the issue's relations
+  (`loadRepoIssueRelations`, kept per issue in `repoIssueSources`), the
+  server renderer from the bundle's `related` answer (`index_source_url`).
+- **Order, as on GitHub (`forum-list` plugin).** With the instance plugin
+  `forum-list` on (an `OPT_IN` plugin: off on instances and on forkmesh.com
+  until chosen), the issue list's default sort is Newest (`newest`: created
+  time descending, ties by number descending), GitHub's
+  `sort=created&direction=desc`; without it the default stays "Recently
+  updated" (`issueDefaultSort`). Both stay in the Sort menu, and "Recently
+  updated" is what the Recent view picks. The default is not written into the search
+  box (`sort:` appears only for another choice). `issueSortItems` falls back
+  to Newest for an unknown sort, and the server-rendered list orders its rows
+  the same way (`_created_ms`, seconds read as milliseconds like `stamp`).
+  A thread shows its comments and events oldest first by their `ts`
+  (`renderIssueTimeline` / `Renderer.timeline`, both stable sorts), whatever
+  order the record stores them in; mirrored comments carry the provider's
+  creation time.
+- **Instance switches.** With the `issue-ai-prompt` or `fediverse-ui` plugin
+  off ([INSTANCES.md](../INSTANCES.md#plugins)) neither renderer draws the
+  prompt box or the Fediverse thread; the server renderer reads
+  `plugins_off()` and keys its kept article by it.
+- **Pictures.** A paragraph that is one picture of unknown size (no width or
+  height, `mdLoneImage` / `lone_image`) is drawn in a fixed 16:9 frame,
+  `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture
+  scaled down inside it, so the conversation below does not move when it
+  loads.
+- **Mirrored attachments.** On a repository whose issues come from GitHub,
+  `tools/forge_sync.py` copies the images and files the threads embed into
+  `.forkmesh/attachments/` ([forge-sync.md](../../www/docs/forge-sync.md#attachments)).
+  The issue page reads the issue's own map,
+  `.forkmesh/attachments/issues/<n>.json`, with one `blobs` read at the
+  branch (`loadRepoIssueAttachments`, kept per repository in
+  `repoAttachmentFiles`; `_issue_attachments` in `plan_issue` puts the same
+  read in the bundle and the map in `model["attachments"]`, which
+  `issue_article` hands to the `Context`). The list page reads nothing. Both
+  renderers then, for an address in the map (looked up as written, with the
+  five `escapeHtml` entities undone: `mdAttachmentKey` / `attachment_key`):
+  - draw an image (`mdImageHtml` / `image_html`) from the raw URL of the
+    stored file at the page's branch (`repoRawUrl` / `Context.raw_url`), an
+    SVG through `data-repo-svg-src`; a stored file that is not an image, in
+    an image's place, becomes a link;
+  - point a link (`mdLinkHtml` / `link_html`), bare addresses included, at
+    that raw URL, `data-md-attachment`, in a new tab.
+  With the `mirrored-attachments` instance plugin on (an `OPT_IN` plugin,
+  off on instances and on forkmesh.com until chosen), a GitHub attachment
+  address that is not in the map
+  (`MD_GITHUB_ATTACHMENT_URL`: `github.com/user-attachments/`,
+  `github.com/<o>/<r>/assets|files/`, `user-images`, `private-user-images`
+  and `objects.githubusercontent.com`) is never drawn as an `<img>`: it
+  becomes a link reading "image on GitHub" (or "<alt> (image on GitHub)"),
+  `data-md-github-image`, the address in its `href` and `title`, which the
+  reader may choose to open. This applies to READMEs too, and to the plain
+  fallback view (`repo_ssr._image_html`), which has no map. Links to such
+  addresses stay links to GitHub. Images on other hosts are drawn as before.
+  The map's paths must look like `.forkmesh/attachments/<sha256>.<ext>`;
+  anything else is ignored. The parity tests cover a mapped and an unmapped
+  thread.
+
+## Pull requests for AI reviewers
+
+A user who pasted a pull request link into ChatGPT and asked for a review
+got "the page isn't exposing the PR description or code changes", and was
+asked to paste the diff (October 2026). ChatGPT's browser (`ChatGPT-User`)
+does not run `dashboard.js`, so it reads only the first HTML, and that HTML
+held no pull request:
+
+- **Short addresses.** On an instance with short addresses
+  (`/<name>/pull/<n>`) a pull page got only the repository header and tab
+  strip; only issues were drawn into the page.
+- **Cold pages.** On `/<owner>/<repo>/pull/<n>` the node waits only
+  `VIEW_BUDGET_SECONDS` (0.04 s) for the pull's read bundle, which is long
+  enough only once the bundle is remembered. A one-off visitor reaching one
+  of several nodes nearly always arrived before that.
+- **No diff address.** `/pull/<n>.diff` and `.patch` led to the same empty
+  page.
+
+What changed (`repo_ssr.py`, `repo_views.py`):
+
+- A short-address pull page is drawn like a long one (`inject_view`, the
+  pull's own frame with links under `/<name>`). When the bundle is not ready
+  in time, the page keeps the header and tab strip and starts the bundle
+  read, as before.
+- A request whose user agent names an AI fetcher (`READER_AGENTS`:
+  `ChatGPT-User`, `OAI-SearchBot`, `Claude-User`, `Perplexity-User` and
+  similar) waits up to `READER_BUDGET_SECONDS` (5 s) for the bundle, and its
+  Conversation page also carries the Files changed diff under a heading, so
+  one fetch holds everything a review needs. People's pages are unchanged:
+  the bundle build has already started either way, and only the wait
+  differs.
+- `GET /<owner>/<repo>/pull/<n>.diff` (or `.patch`, or `/pulls/`), and
+  `/<name>/pull/<n>.diff` on short addresses, answers the pull's patch as
+  `text/plain` (`nosniff`, `no-cache`) from the same bundle; a pull with no
+  patch (closed or merged) answers 404. A short name is resolved to its
+  owner from the repository page's `forkmesh-repo-owner` meta, then
+  remembered. A repository the gateway does not serve publicly falls through
+  to the Worker, so the route reveals nothing new.
+- The first view's pull header has a **Raw diff** link to that address, and
+  a diff cut at `MAX_DIFF_FILES` / `MAX_DIFF_LINES` points to it.
+- `GET .../pull/<n>.txt` (long and short addresses alike) answers the whole
+  pull request as `text/plain` from the same bundle: title, author,
+  branches, state, the description, every comment and review (edits and
+  deletions applied by `repo_views.folded_conversation`, line comments with
+  their `path:line`), then the diff. It is the `{textUrl}` of the review
+  prompt ([pull-review-prompt.md](pull-review-prompt.md)), so an assistant
+  reads the discussion and the change in one fetch. A closed or merged pull
+  request answers too, without a diff; a repository the gateway does not
+  serve publicly falls through to the Worker, like `.diff`.
+
+Tests: `app/tests/host/test_repo_views.py`.
+
+## Repository share card
+
+The repository page's `og:image` points at `repo_card_handler`
+(`app/src/entry.py`), so a Mastodon, Slack or Twitter unfurl shows the
+repository as a terminal session: a rounded window with a title bar (three
+traffic-light dots and `host - owner/repo`), and in it a short shell session
+(`forkmesh repo show <path>`), the description (at most three lines), the
+counts that are not zero (a single mirror, the repository itself, is left
+out too), and `git clone https://<host>/<path>.git` with a block cursor. The
+repository's mark sits neofetch-style in the body's top-right corner, over a
+dark wash of the instance accent (`_repo_card_accent`, lightened until it
+reads on the near-black terminal) and faint scanlines.
+
+- **Visibility before cache.** The signed catalog record is checked first, so
+  making a repository private revokes its cached card at once rather than
+  after the TTL. Organization aliases keep their public owner on the card
+  while every lookup uses the backing node.
+- **Live counts.** The card counts what the repository page counts, read
+  through the router like any public read (`_repo_card_counts`): open issues
+  are the numbered folders of `.forkmesh/issues/open`, branches the current
+  branch list, contributors the committed `contributors.json` roster (its
+  declared count, else its named rows), else the commit authors without bots.
+  The catalog's `issueCount`/`branchCount` are what a publisher last reported
+  and are only the fallback for a count that could not be read. The counts are
+  remembered per repository (owner and name lowercased) for five minutes, and
+  the reads of one card share a routing context, so a burst of link-preview
+  fetches costs one set of reads; the caller's `?v=` does not key this memo,
+  so varying it cannot force fresh reads.
+- **Edge cache.** The rendered PNG is cached under its version and a short
+  token of the live counts (`og_card.counts_token`), so a card drawn with
+  other numbers is never served for these.
+- **Text.** Every string goes through `og_card.terminal_text`: accents are
+  dropped, typographic quotes and dashes fold to ASCII, anything else becomes
+  `?`. Trailing blanks only advance the pen, so they never paint over what lies
+  past the text. `CARD_REVISION` is bumped when the card's look changes, so
+  link-preview caches that key on the `og:image` URL fetch the new card.
+- **Address and logo.** The card names the repository by the address its
+  page has (`/<name>` on an instance with short addresses, not
+  `/<owner>/<name>`) and carries the owner-uploaded repository logo, else
+  the instance's PNG logo (the raster copy `tools/apply_instance_brand.py`
+  writes, since crawlers and the card renderer cannot draw SVG); only
+  forkmesh.com itself draws the ForkMesh mark. A repository whose only
+  artwork is a committed `logo.svg` shows its instance's logo. Only 8-bit,
+  non-interlaced PNGs of at most 512 x 512 pixels are read: decoding is pure
+  Python on the request's event loop, so a larger upload falls back rather
+  than block it for seconds, and the scaled result is remembered per logo.
+  `CARD_REVISION` went to 4 with this change.
+- **Font.** Text is Geist Mono (SIL OFL 1.1, licence in
+  `desktop/resources/fonts/Geist-OFL.txt`). The Pyodide worker cannot
+  rasterise a TrueType font, so `app/tools/embed_og_mono_font.py` (needs
+  Pillow) rasterises every glyph of `og_card.MONO_GLYPHS` into 8-bit coverage
+  atlases at authoring time: one fixed cell after another, zlib-compressed and
+  base64-encoded, spliced between the generated-block markers in
+  `og_card.py`. Geist Mono advances 0.6 em, so the sizes (20 and 35 px) are
+  multiples of 5 and every cell is a whole number of pixels wide. A glyph row
+  is blended over the flat background with three `bytes.translate()` calls, so
+  a whole card is still a few thousand row-slice writes. Run the tool after
+  changing the sizes or the glyph set. The 25 px faces (`r25`, `b25`) were
+  added for the pull request card below; the older atlases came out
+  byte-identical.
+
+## Pull request share card
+
+A shared pull request link used to unfurl as the repository card: the
+reader saw the repository, not the change. The host now gives a pull page
+its own preview (`app/host/forkmesh_host/pull_card.py`), drawn by
+`og_card.render_pull_card` in the same terminal window as the repository
+card:
+
+- **Header:** the state as a coloured pill (open, draft, merged, closed),
+  the number, the commit count, how long ago it was opened, and the review
+  verdict on the right (approved by N reviewers, changes requested, review
+  required), worked out like the pull list's chip (`review_state`).
+- **Title** (two lines at most) and who wants to merge which branch into
+  which.
+- **Diff:** lines added and removed, GitHub-style five squares, files
+  changed, and comments with how many people wrote them.
+- **Code health:** the six scores of the Files tab (Merge, Complexity,
+  Quality, Security, Network, Practices) as tiles with a bar each, green 85+,
+  orange 60+, red below; a clean Security score is grey, as on the page,
+  because a pattern scan finding nothing is not a security pass.
+  `diff_health.py` is a line-for-line port of the dashboard's
+  `diffHealthReport` and `parseDiffFiles`; `test_health_scores_match_the_dashboard`
+  runs both on the same patches under Node and fails when they differ.
+- **Reviews:** each reviewer's latest review (blocking ones first, the pull
+  author's own never), with their avatar and the start of what they wrote,
+  then ForkBot's automated review, summed up by its Summary section. Rows
+  that do not fit are left off.
+- **People:** the avatars of everyone involved (author, reviewers,
+  commenters), ten at most with a "+N", and how many people that is.
+  Avatars are read from `/api/accounts/<name>/avatar?size=128` through the
+  Worker, decoded and scaled with Pillow off the event loop, and remembered
+  per account for ten minutes; a missing picture, a bot or a git-only name
+  gets a coloured disc with its initial. All reads share a 3 s budget.
+
+Wiring:
+
+- `GET /<owner>/<repo>/pull/<n>.png` (and `/<name>/pull/<n>.png` on short
+  addresses) answers the card from the same bundle as the page
+  (`repo_views.build`), so a repository the gateway does not serve publicly
+  falls through to the Worker. Cards are remembered per bundle version for
+  ten minutes; the PNG is `public, max-age=300`.
+- `inject_view` rewrites the page's `og:*`, `twitter:*`, canonical link and
+  `<title>` for a pull: the image is `.../pull/<n>.png?v=<bundle version>.<CARD_REVISION>`,
+  so link-preview caches fetch a new card when the pull changes, and the
+  description is a one-line summary of the same facts for clients that show
+  only text. Only pages that already carry the public repository's share
+  tags are rewritten.
+- Link-preview fetchers (`PREVIEW_AGENTS`: Slackbot, Twitterbot,
+  facebookexternalhit, Discordbot, Mastodon, Bluesky's Cardyb, WhatsApp,
+  Telegram, LinkedIn and similar) wait up to `READER_BUDGET_SECONDS` for a
+  cold pull's bundle, like the AI readers, but do not get the diff in the
+  page.
+- The bundle's pull now carries `authorKey` (for the avatar and to leave the
+  author's own review out), `draft` and `commits` (the `From <sha>` lines of
+  `commits.mbox`, which the bundle already read).
+- A merged or closed pull has no patch in the bundle, so its card leaves out
+  the diff and code health rows.
+
+Tests: `app/tests/host/test_pull_card.py`, the pull card tests in
+`app/tests/test_repo_og_card.py`.
 
 ## Optional folder reads, repository logos and SVG images
 
@@ -241,3 +946,59 @@ than `src`, `alt`, `width`, `height` and `href`, event handlers, `style`,
 addresses, `<svg>`, `<iframe>`, `<source srcset>`. External images get
 `referrerpolicy="no-referrer"`; instance pages already allow `https:` images in
 their CSP `img-src`, and there is no image proxy.
+
+## Code addresses with a branch, tag or commit
+
+The app's own code addresses are `/<owner>/<repo>/blob/<path>` and
+`/<owner>/<repo>/tree/<path>` (or `/<repo>/...` at a short address) for the
+default branch, with `?ref=<ref>` added for any other ref. The address bar
+now carries that `?ref=` while a non-default branch is browsed, so a copied
+link reopens the same branch; Back and Forward restore the ref of the entry.
+
+Links copied from GitHub put the ref in the path instead:
+`/alice/tools/blob/main/README.md`, `/alice/tools/tree/feature/x/src`. They
+used to read `main/README.md` from the default branch and show "File
+unavailable". They now open the right file and settle on the app's address.
+
+How a path after `tree/` or `blob/` is read when the address has no `?ref=`:
+
+1. If a leading run of segments names a known branch, that is the ref and the
+   rest is the path. The longest match wins, so `feature/x` beats `feature`.
+   A `blob/` address keeps at least one segment for the file. The default
+   branch is matched from the catalog without a listing; other names need
+   the branch listing (`branches`), read once and cached.
+2. Otherwise it is a path on the default branch, exactly as before, so
+   `/blob/README.md` and `/tree/docs` behave as they always have.
+3. If that path does not exist and the first segment resolves as a ref on a
+   mirror (a tag such as `v1.0`, a full or short commit SHA, a branch the
+   listing missed), the rest is read at that ref.
+
+So a real folder named like a branch (`main/`) loses to the branch, just as
+it does on GitHub. A folder named like a tag or commit wins, because tags and
+commits are not listed and are only tried when the path is missing.
+
+Once resolved, the address is replaced (`history.replaceState`, no new
+history entry) with `/blob/<path>` for the default branch or
+`/blob/<path>?ref=<ref>` for any other ref.
+
+On a node that reads the repository locally (repo_fastpath), the host answers
+a plain GET of a GitHub-style address with a `308` to the same canonical
+address before the page loads (`app/host/forkmesh_host/repo_code_ref.py`). It
+reads the gateway's branch listing (cached 30 s, waited for at most 150 ms)
+and redirects only on a listed branch, so tags and commits are left to the
+page. A short address is redirected once the Worker's page names its owner.
+The redirect is `no-store` because branches come and go. A path that names no
+branch, or an address that already has a query, is served as before.
+A failed listing (a private or missing repository) is cached for the same
+30 s, so repeated GitHub-style hits on it do not each wait on the gateway.
+An address with a `.` or `..` segment (decoded, so `%2E%2E` and `a%2F..`
+count) is never redirected, so the `Location` header never carries a dot
+segment.
+
+One known cost: the app still writes its own default-branch addresses as
+`/tree/<path>`, so on a repository that also has a branch named like that
+path's first folder (a `docs` branch and a `docs/` folder), such a link opens
+the branch. A shared link that must survive this can carry `?ref=`.
+
+There is no `raw/<ref>/<path>` page route; raw bytes come from
+`/api/repo/<owner>/<repo>/raw?path=&ref=`.

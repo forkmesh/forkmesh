@@ -171,6 +171,33 @@ def test_allowed_origins_and_daily_quota_bound_a_public_key():
     assert usage["data"]["project"]["usage"]["events"] == 3
 
 
+def test_wildcard_origins_allow_subdomains_only():
+    runtime = Runtime()
+    item = project(runtime, allowedOrigins=[
+        "https://*.example.org", "https://example.org", "https://*.com", "http://*.x"])
+    key = item["writeKey"]
+    assert item["settings"]["allowedOrigins"] == ["https://*.example.org", "https://example.org"]
+    for origin in ("https://www.example.org", "https://a.b.example.org", "https://example.org"):
+        assert capture(runtime, key, [pageview("/")], origin=origin)["status"] == 200, origin
+    for origin in ("https://evilexample.org", "http://www.example.org",
+                   "https://www.example.org:8443", "https://example.org.evil.test"):
+        assert capture(runtime, key, [pageview("/")], origin=origin)["status"] == 403, origin
+
+
+def test_wildcards_over_shared_hosting_and_public_suffixes_are_refused():
+    runtime = Runtime()
+    refused = ["https://*.co.uk", "https://*.com.au", "https://*.github.io",
+               "https://*.pages.dev", "https://*.vercel.app", "https://*.herokuapp.com"]
+    item = project(runtime, allowedOrigins=refused + [
+        "https://*.example.co.uk", "https://*.me.github.io", "https://*.example.org:8443"])
+    assert item["settings"]["allowedOrigins"] == [
+        "https://*.example.co.uk", "https://*.me.github.io", "https://*.example.org:8443"]
+    key = item["writeKey"]
+    assert capture(runtime, key, [pageview("/")], origin="https://a.example.org:8443")["status"] == 200
+    assert capture(runtime, key, [pageview("/")], origin="https://a.example.org")["status"] == 403
+    assert capture(runtime, key, [pageview("/")], origin="https://evil.github.io")["status"] == 403
+
+
 def test_identify_merges_the_anonymous_history_into_one_person():
     runtime = Runtime()
     item = project(runtime)
@@ -636,6 +663,13 @@ def test_replay_chunks_are_sealed_paged_and_gated_by_the_project_setting():
     assert played["recording"]["viewport"] == {"width": 1280, "height": 720}
     failures = query(runtime, item, "errors")["groups"]
     assert failures[0]["type"] == "TypeError" and failures[0]["sessionId"] == "sess-aaaa-0001"
+    member_delete = call(runtime.use("DELETE", "charlie"),
+                         f"/api/analytics/acme/projects/{item['id']}"
+                         "/recordings/sess-aaaa-0001")
+    assert (member_delete["status"], member_delete["data"]["error"]) == (
+        403, "organization_admin_required")
+    assert runtime.db.execute(
+        "SELECT COUNT(*) FROM analytics_recording_chunks").fetchone()[0] == 2
     assert call(runtime.use("DELETE"), f"/api/analytics/acme/projects/{item['id']}"
                 "/recordings/sess-aaaa-0001")["data"]["deleted"]
     assert runtime.db.execute(
@@ -799,6 +833,25 @@ def test_membership_roles_and_the_instance_site_key():
         "plugin_not_installed"
     # A snippet left on a site after uninstall sees an unknown key, not a 500.
     assert capture(missing, "fma_" + "1" * 40, [pageview("/")])["status"] == 401
+
+
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts.update({"gus": "bi:gus", "dave": "bi:dave"})
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:gus','guest','gus',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    item = project(runtime)
+    path = f"/api/analytics/acme/projects/{item['id']}"
+    for target in ("/api/analytics/acme", path, path + "/persons", path + "/recordings"):
+        guest = call(runtime.use("GET", "gus"), target)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("GET", "dave"), path)["status"] == 200
+    assert call(runtime.use("POST", "dave", {"kind": "trends", "from": NOW - DAY, "to": NOW}),
+                path + "/query")["status"] == 200
+    for method, target in (("POST", path + "/objects"), ("PATCH", path),
+                           ("DELETE", path + "/recordings/sess-aaaa-0001")):
+        refused = call(runtime.use(method, "dave", {"kind": "trends"}), target)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
 
 
 def pages(runtime, path, method="GET"):

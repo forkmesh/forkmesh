@@ -39,9 +39,28 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 WORKFLOW_PATH_RE = re.compile(r"^\.forkmesh/[A-Za-z0-9._-]{1,96}\.ya?ml$")
 INPUT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,99}$")
 SECRET_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+PULL_REF_RE = re.compile(r"^refs/pr/([1-9][0-9]{0,8})/head$")
 PUBLIC_RUN_FIELDS = ("id", "workflow", "workflowPath", "event", "commit", "ref",
-                     "status", "createdAt", "startedAt", "finishedAt", "actor")
+                     "status", "createdAt", "startedAt", "finishedAt", "actor",
+                     "pullNumber")
 _ACTIVE_SQL = "('leased','running','cancelling')"
+PULL_EVENT = "pull_request"
+PULL_APPROVALS = ("", "author", "workflows", "approved")
+WAITING_TTL_MS = 7 * 24 * 60 * 60 * 1000
+PULL_RUNS_LIMIT = 40
+PULL_JOBS_PER_HEAD = 16
+
+
+# refs/heads/pr/<account>/ is written by contributors without write access
+# (the SSH gateway's pull-request grant, contributor pushes). A run on such a
+# branch executes that branch's workflow files, so it is never trusted: no
+# secrets, job token or push grant, whoever queued or re-ran it.
+CONTRIBUTOR_BRANCH_PREFIX = "pr/"
+ISSUE_EVENTS = ("issues", "issue_comment")
+
+
+def untrusted_branch(branch):
+    return str(branch or "").startswith(CONTRIBUTOR_BRANCH_PREFIX)
 
 
 def valid_branch(branch):
@@ -195,6 +214,8 @@ async def enqueue(runtime, owner, repo, branch, commit="", node="",
     if not NAME_RE.fullmatch(node):
         node = ""
     ref = str(ref or "") or "refs/heads/" + branch
+    if untrusted_branch(branch):
+        trusted = False
     actor = _text(pusher, 64)
     now = runtime.now()
     sealed = ""
@@ -259,6 +280,10 @@ async def enqueue_catalog(runtime, owner, repo, event, branch, payload,
 
 async def sweep(runtime, now):
     await runtime.d1_run(
+        "UPDATE repo_action_jobs SET status='expired',"
+        "note='Nobody approved this run within 7 days.',updated_at=? "
+        "WHERE status='waiting' AND updated_at<?", now, now - WAITING_TTL_MS)
+    await runtime.d1_run(
         "UPDATE repo_action_jobs SET status='cancelled',lease_id='',"
         "token_hash='',updated_at=? WHERE status='cancelling' "
         "AND expires_at<?", now, now)
@@ -279,10 +304,11 @@ async def sweep(runtime, now):
     await runtime.d1_run(
         "DELETE FROM repo_action_logs WHERE job_id IN (SELECT id FROM "
         "repo_action_jobs WHERE updated_at<? AND status NOT IN "
-        "('queued','leased','running','cancelling'))", now - KEEP_MS)
+        "('queued','waiting','leased','running','cancelling'))",
+        now - KEEP_MS)
     await runtime.d1_run(
         "DELETE FROM repo_action_jobs WHERE updated_at<? AND status NOT IN "
-        "('queued','leased','running','cancelling')", now - KEEP_MS)
+        "('queued','waiting','leased','running','cancelling')", now - KEEP_MS)
 
 
 async def _target(runtime, preferred, pool):
@@ -346,7 +372,8 @@ async def lease(runtime, runner, requested, maximum):
         return []
     rows = await runtime.d1_all(
         "SELECT id,owner,repo,branch,commit_oid,target_node,attempts,event,"
-        "workflow,ref,actor,before_oid,payload,trusted "
+        "workflow,ref,actor,before_oid,payload,trusted,pull_number,approval,"
+        "base_branch,base_oid "
         "FROM repo_action_jobs WHERE status='queued' ORDER BY id LIMIT %d"
         % SCAN_LIMIT)
     jobs = []
@@ -374,7 +401,7 @@ async def lease(runtime, runner, requested, maximum):
             continue
         trusted = bool(
             _int(row.get("trusted")) and runner.get("actionsTrusted")
-            and event != "pull_request")
+            and event != "pull_request" and not untrusted_branch(branch))
         lease_id = runtime.new_id()
         expires_at = now + JOB_TIMEOUT_MS
         read_grant = await runner_leases._grant(
@@ -390,7 +417,15 @@ async def lease(runtime, runner, requested, maximum):
                 runtime, target, repo, "actions-push", "refs/heads/" + branch,
                 runner["name"], runtime.new_id(), now, expires_at,
                 owner=public_owner)
-        if trusted:
+        # An issue or comment event by someone without write access runs
+        # untrusted, yet the default branch's issue workflows (triage,
+        # /assign) still need the job API, which only reads and writes this
+        # repository's issues. Such a job gets a job token, but never
+        # secrets, a push grant or the bot's commit identity.
+        issue_scoped = bool(
+            not trusted and runner.get("actionsTrusted")
+            and event in ISSUE_EVENTS and not untrusted_branch(branch))
+        if trusted or issue_scoped:
             token = runtime.new_id() + runtime.new_id()
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='leased',lease_id=?,runner=?,"
@@ -451,6 +486,20 @@ async def lease(runtime, runner, requested, maximum):
             if push_grant:
                 job["pushGrant"] = push_grant
                 job["pushRef"] = "refs/heads/" + branch
+        elif token:
+            job.update({"jobToken": token, "apiUrl": runtime.public_origin()})
+        if event == PULL_EVENT:
+            base_oid = str(row.get("base_oid") or "")
+            base_oid = base_oid if OID_RE.fullmatch(base_oid) else ""
+            job.update({
+                "pullNumber": _int(row.get("pull_number")),
+                "pullRef": str(row.get("ref") or ""),
+                "baseRef": str(row.get("base_branch") or ""),
+                "baseCommit": base_oid,
+                "before": base_oid,
+                "gateWorkflowChanges": str(
+                    row.get("approval") or "") != "approved",
+            })
         jobs.append(job)
     return jobs
 
@@ -606,7 +655,7 @@ async def report(runtime, runner, data):
     lease_id = str(data.get("leaseId") or "")[:64]
     row = await runtime.d1_first(
         "SELECT id,owner,repo,branch,status,event,payload,target_node,"
-        "token_hash FROM "
+        "token_hash,approval FROM "
         "repo_action_jobs WHERE id=? AND runner=? AND lease_id=? "
         "AND lease_id!='' AND status IN " + _ACTIVE_SQL,
         job_id, runner["name"], lease_id) if job_id and lease_id else None
@@ -619,6 +668,17 @@ async def report(runtime, runner, data):
     if status not in JOB_STATUSES:
         return runtime.response({"error": "invalid_status"}, 400)
     now = runtime.now()
+    if (data.get("approvalRequired") == "workflows"
+            and str(row.get("event") or "") == PULL_EVENT
+            and str(row.get("approval") or "") != "approved"
+            and row.get("status") != "cancelling"):
+        await runtime.d1_run(
+            "UPDATE repo_action_jobs SET status='waiting',approval='workflows',"
+            "lease_id='',runner='',token_hash='',expires_at=0,attempts=0,"
+            "note=?,updated_at=? WHERE id=? AND lease_id=?",
+            "This pull request changes files under .forkmesh/, so a "
+            "maintainer has to approve the run.", now, job_id, lease_id)
+        return runtime.response({"ok": True, "cancel": False})
     repo = str(row["repo"])
     owner, public = await identity(runtime, str(row["owner"]), repo)
     cancelling = row.get("status") == "cancelling"
@@ -705,10 +765,10 @@ async def cancel(runtime, owner, repo, run_id):
     if not row:
         return "run_not_found"
     now = runtime.now()
-    if row["status"] == "queued":
+    if row["status"] in ("queued", "waiting"):
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='cancelled',updated_at=? "
-            "WHERE id=? AND status='queued'", now, job_id)
+            "WHERE id=? AND status IN ('queued','waiting')", now, job_id)
         return ""
     if row["status"] in ("leased", "running"):
         await runtime.d1_run(
@@ -724,11 +784,12 @@ async def rerun(runtime, owner, repo, run_id, actor):
     job_id = run_id // RUN_ID_STRIDE
     row = await runtime.d1_first(
         "SELECT id,branch,commit_oid,status,event,workflow,ref,before_oid,"
-        "payload,trusted,data FROM repo_action_jobs WHERE id=? AND owner=? "
+        "payload,trusted,data,pull_number,base_branch,base_oid "
+        "FROM repo_action_jobs WHERE id=? AND owner=? "
         "AND repo=?", job_id, owner, repo) if job_id else None
     if not row:
         return 0, "run_not_found"
-    if row["status"] in ("queued",) + ACTIVE_STATUSES:
+    if row["status"] in ("queued", "waiting") + ACTIVE_STATUSES:
         return 0, "run_active"
     workflow = str(row.get("workflow") or "")
     if not workflow and run_id % RUN_ID_STRIDE:
@@ -738,6 +799,7 @@ async def rerun(runtime, owner, repo, run_id, actor):
                 workflow = str(run.get("workflowPath") or "")
     record = await _open(runtime, row.get("payload"))
     now = runtime.now()
+    pull = _int(row.get("pull_number"))
     sealed = ""
     if record.get("event") or record.get("inputs"):
         sealed = await runtime.seal({
@@ -746,12 +808,15 @@ async def rerun(runtime, owner, repo, run_id, actor):
     await runtime.d1_run(
         "INSERT INTO repo_action_jobs (owner,repo,branch,commit_oid,"
         "target_node,pusher,status,created_at,updated_at,event,workflow,ref,"
-        "actor,before_oid,payload,trusted) "
-        "VALUES (?,?,?,?,'',?,'queued',?,?,?,?,?,?,?,?,?)",
+        "actor,before_oid,payload,trusted,pull_number,approval,approved_by,"
+        "base_branch,base_oid) "
+        "VALUES (?,?,?,?,'',?,'queued',?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         owner, repo, row["branch"], str(row.get("commit_oid") or ""),
         _text(actor, 64), now, now, str(row.get("event") or "push"),
         workflow, str(row.get("ref") or ""), _text(actor, 64),
-        str(row.get("before_oid") or ""), sealed, _int(row.get("trusted")))
+        str(row.get("before_oid") or ""), sealed, _int(row.get("trusted")),
+        pull, "approved" if pull else "", _text(actor, 64) if pull else "",
+        str(row.get("base_branch") or ""), str(row.get("base_oid") or ""))
     created = await runtime.d1_first(
         "SELECT id FROM repo_action_jobs WHERE owner=? AND repo=? "
         "AND status='queued' ORDER BY id DESC LIMIT 1", owner, repo)
@@ -845,8 +910,9 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
     owner, public = await identity(runtime, owner, repo)
     rows = await runtime.d1_all(
         "SELECT id,runner,status,commit_oid,branch,data,created_at,updated_at,"
-        "event,workflow,ref,note,actor FROM repo_action_jobs WHERE owner=? "
-        "AND repo=? ORDER BY id DESC LIMIT %d" % SNAPSHOT_JOBS, owner, repo)
+        "event,workflow,ref,note,actor,pull_number FROM repo_action_jobs "
+        "WHERE owner=? AND repo=? ORDER BY id DESC LIMIT %d" % SNAPSHOT_JOBS,
+        owner, repo)
     if not rows and not always and not await owner_has_runner(
             runtime, public) and not await owner_has_runner(runtime, owner):
         return None
@@ -857,41 +923,7 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
              if masked and rows else ())
     for row in rows:
         node = node or str(row.get("runner") or "")
-        event = str(row.get("event") or "push")
-        actor = _line(row.get("actor"), 64)
-        record = await _open(runtime, row.get("data"))
-        stored = record.get("runs")
-        if isinstance(stored, list) and stored:
-            for run in stored:
-                if isinstance(run, dict):
-                    item = {"event": event, "actor": actor, **run}
-                    if masks and item.get("logTail"):
-                        item["logTail"] = mask(item["logTail"], masks)
-                    if item.get("logTail"):
-                        item["logTail"] = _show_runner(runtime, item["logTail"])
-                    runs.append(item)
-        elif str(row.get("status") or "") in (
-                ("queued",) + ACTIVE_STATUSES + tuple(ENDED_STATUSES)):
-            commit = str(row.get("commit_oid") or "")
-            ended = row["status"] in ENDED_STATUSES
-            runs.append({
-                "id": int(row["id"]) * RUN_ID_STRIDE,
-                "workflow": str(row.get("workflow") or "")
-                or ".forkmesh workflows",
-                "commit": commit if OID_RE.fullmatch(commit) else "",
-                "ref": str(row.get("ref") or "")
-                or "refs/heads/" + str(row.get("branch") or ""),
-                "status": ENDED_STATUSES[row["status"]] if ended
-                else "running" if row["status"] in ACTIVE_STATUSES[1:]
-                else "queued",
-                "createdAt": int(row.get("created_at") or 0),
-                "startedAt": 0,
-                "finishedAt": int(row.get("updated_at") or 0) if ended else 0,
-                "logTail": _log_tail(_line(row.get("note"), 300) + "\n")
-                if ended and row.get("note") else "",
-                "event": event,
-                "actor": actor,
-            })
+        runs.extend(await _row_runs(runtime, row, masks))
         if len(runs) >= RUN_LIMIT:
             break
     local = _local_runner(runtime, node)
@@ -907,6 +939,212 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
         "controlAvailable": bool(runtime.setting("ACTIONS_INSTANCE_RUNNER")),
         "workflows": await catalog(runtime, owner, repo),
     }
+
+
+async def _row_runs(runtime, row, masks):
+    event = str(row.get("event") or "push")
+    actor = _shown_actor(runtime, _line(row.get("actor"), 64))
+    pull = _int(row.get("pull_number"))
+    extra = {"pullNumber": pull} if pull else {}
+    record = await _open(runtime, row.get("data"))
+    stored = record.get("runs")
+    runs = []
+    if isinstance(stored, list) and stored:
+        for run in stored:
+            if isinstance(run, dict):
+                item = {"event": event, "actor": actor, **run, **extra}
+                if masks and item.get("logTail"):
+                    item["logTail"] = mask(item["logTail"], masks)
+                if item.get("logTail"):
+                    item["logTail"] = _show_runner(runtime, item["logTail"])
+                runs.append(item)
+        return runs
+    status = str(row.get("status") or "")
+    if status not in (("queued", "waiting") + ACTIVE_STATUSES
+                      + tuple(ENDED_STATUSES)):
+        return runs
+    commit = str(row.get("commit_oid") or "")
+    ended = status in ENDED_STATUSES
+    note = _line(row.get("note"), 300)
+    run = {
+        "id": int(row["id"]) * RUN_ID_STRIDE,
+        "workflow": str(row.get("workflow") or "") or ".forkmesh workflows",
+        "commit": commit if OID_RE.fullmatch(commit) else "",
+        "ref": str(row.get("ref") or "")
+        or "refs/heads/" + str(row.get("branch") or ""),
+        "status": ENDED_STATUSES[status] if ended
+        else "awaiting-approval" if status == "waiting"
+        else "running" if status in ACTIVE_STATUSES[1:]
+        else "queued",
+        "createdAt": int(row.get("created_at") or 0),
+        "startedAt": 0,
+        "finishedAt": int(row.get("updated_at") or 0) if ended else 0,
+        "logTail": _log_tail(note + "\n")
+        if (ended or status == "waiting") and note else "",
+        "event": event,
+        "actor": actor,
+        **extra,
+    }
+    if pull and WORKFLOW_PATH_RE.fullmatch(str(row.get("workflow") or "")):
+        run["workflowPath"] = str(row["workflow"])
+    runs.append(run)
+    return runs
+
+
+def _pull_payload(number, title, head, head_ref, base_branch, base_oid,
+                  author, full_name, action):
+    return {
+        "action": action,
+        "number": number,
+        "pull_request": {
+            "number": number,
+            "title": _line(title, 300),
+            "head": {"sha": head, "ref": head_ref},
+            "base": {"sha": base_oid, "ref": base_branch},
+            "user": {"login": author},
+        },
+        "repository": {"full_name": full_name},
+        "sender": {"login": author},
+    }
+
+
+async def pull_workflows(runtime, owner, repo):
+    return [item["path"] for item in await catalog(runtime, owner, repo)
+            if PULL_EVENT in item["events"]]
+
+
+def _pull_head_ref(number, head_ref):
+    match = PULL_REF_RE.fullmatch(head_ref)
+    if match:
+        return int(match.group(1)) == number
+    return head_ref.startswith("refs/heads/") and valid_branch(
+        head_ref[len("refs/heads/"):])
+
+
+async def enqueue_pull(runtime, owner, repo, number, head, head_ref,
+                       base_branch, base_oid, author, approval, title=""):
+    repo = str(repo or "").strip()
+    owner, public = await identity(runtime, owner, repo)
+    number = _int(number)
+    head = str(head or "").strip().lower()
+    base_oid = str(base_oid or "").strip().lower()
+    head_ref = str(head_ref or "")
+    base_branch = str(base_branch or "").strip()
+    if (not NAME_RE.fullmatch(owner) or not REPO_RE.fullmatch(repo)
+            or not number or not OID_RE.fullmatch(head)
+            or not valid_branch(base_branch)
+            or (base_oid and not OID_RE.fullmatch(base_oid))
+            or approval not in PULL_APPROVALS
+            or not _pull_head_ref(number, head_ref)):
+        return []
+    if await _actions_off(runtime, owner, repo):
+        return []
+    now = runtime.now()
+    await runtime.d1_run(
+        "UPDATE repo_action_jobs SET status='cancelled',updated_at=?,"
+        "note='A newer commit replaced this one on the pull request.' "
+        "WHERE owner=? AND repo=? AND event=? AND pull_number=? "
+        "AND commit_oid!=? AND status IN ('queued','waiting')",
+        now, owner, repo, PULL_EVENT, number, head)
+    author = _text(author, 64)
+    previous = await runtime.d1_first(
+        "SELECT id FROM repo_action_jobs WHERE owner=? AND repo=? AND event=? "
+        "AND pull_number=? LIMIT 1", owner, repo, PULL_EVENT, number)
+    payload = _pull_payload(
+        number, title, head, head_ref, base_branch, base_oid, author,
+        public + "/" + repo, "synchronize" if previous else "opened")
+    sealed = await runtime.seal({"event": payload, "inputs": {}})
+    status = "queued" if approval in ("", "approved") else "waiting"
+    note = "" if status == "queued" else (
+        "Waiting for a maintainer to approve running this pull request's "
+        "code.")
+    queued = []
+    for path in (await pull_workflows(runtime, owner, repo))[
+            :PULL_JOBS_PER_HEAD]:
+        if await runtime.d1_first(
+                "SELECT id FROM repo_action_jobs WHERE owner=? AND repo=? "
+                "AND event=? AND pull_number=? AND commit_oid=? AND workflow=? "
+                "LIMIT 1", owner, repo, PULL_EVENT, number, head, path):
+            continue
+        await runtime.d1_run(
+            "INSERT INTO repo_action_jobs (owner,repo,branch,commit_oid,"
+            "target_node,pusher,status,created_at,updated_at,event,workflow,"
+            "ref,actor,before_oid,payload,trusted,pull_number,approval,"
+            "base_branch,base_oid,note) "
+            "VALUES (?,?,?,?,'',?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
+            owner, repo, "pull/%d" % number, head, author, status, now, now,
+            PULL_EVENT, path, head_ref, author, base_oid, sealed, number,
+            approval, base_branch, base_oid, note)
+        row = await runtime.d1_first(
+            "SELECT id FROM repo_action_jobs WHERE owner=? AND repo=? "
+            "AND event=? AND pull_number=? AND commit_oid=? AND workflow=? "
+            "ORDER BY id DESC LIMIT 1", owner, repo, PULL_EVENT, number, head,
+            path)
+        if row:
+            queued.append(int(row["id"]))
+    return queued
+
+
+async def pull_runs(runtime, owner, repo, number):
+    owner, _public = await identity(runtime, owner, repo)
+    rows = await runtime.d1_all(
+        "SELECT id,runner,status,commit_oid,branch,data,created_at,updated_at,"
+        "event,workflow,ref,note,actor,pull_number,approval,approved_by "
+        "FROM repo_action_jobs WHERE owner=? AND repo=? AND event=? "
+        "AND pull_number=? ORDER BY id DESC LIMIT %d" % PULL_RUNS_LIMIT,
+        owner, repo, PULL_EVENT, _int(number))
+    jobs = []
+    for row in rows or []:
+        jobs.append({
+            "jobId": int(row["id"]),
+            "commit": str(row.get("commit_oid") or ""),
+            "status": str(row.get("status") or ""),
+            "approval": str(row.get("approval") or ""),
+            "approvedBy": _line(row.get("approved_by"), 64),
+            "note": _line(row.get("note"), 300),
+            "runs": await _row_runs(runtime, row, ()),
+        })
+    return jobs
+
+
+async def approve_pull(runtime, owner, repo, number, head, actor):
+    owner, _public = await identity(runtime, owner, repo)
+    head = str(head or "").strip().lower()
+    if not OID_RE.fullmatch(head):
+        return 0
+    result = await runtime.d1_run(
+        "UPDATE repo_action_jobs SET status='queued',approval='approved',"
+        "approved_by=?,note='',updated_at=? WHERE owner=? AND repo=? "
+        "AND event=? AND pull_number=? AND commit_oid=? AND status='waiting'",
+        _text(actor, 64), runtime.now(), owner, repo, PULL_EVENT,
+        _int(number), head)
+    return runtime.changes(result)
+
+
+async def approve_run(runtime, owner, repo, run_id, actor):
+    owner, _public = await identity(runtime, owner, repo)
+    job_id = _int(run_id) // RUN_ID_STRIDE
+    row = await runtime.d1_first(
+        "SELECT id,status,pull_number,commit_oid FROM repo_action_jobs "
+        "WHERE id=? AND owner=? AND repo=?", job_id, owner, repo) if (
+            job_id) else None
+    if not row:
+        return "run_not_found", 0, ""
+    if row["status"] != "waiting":
+        return "not_awaiting_approval", 0, ""
+    await runtime.d1_run(
+        "UPDATE repo_action_jobs SET status='queued',approval='approved',"
+        "approved_by=?,note='',updated_at=? WHERE id=? AND status='waiting'",
+        _text(actor, 64), runtime.now(), job_id)
+    return "", _int(row.get("pull_number")), str(row.get("commit_oid") or "")
+
+
+def _shown_actor(runtime, actor):
+    node = runtime.setting("INSTANCE_FLAGSHIP_NODE")
+    name = " ".join(runtime.setting("INSTANCE_NAME").split())[:60]
+    if actor and node and name and actor.lower() == node.lower():
+        return name
+    return actor
 
 
 def _site_host(runtime):

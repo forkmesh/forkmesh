@@ -90,6 +90,10 @@ final class ProjectRuntime: ProjectActivator {
     }
 
     private func forgetPreviousProject() {
+        if let hub = Services.get(ChatHub.self) {
+            hub.enterProject(workspace: ChatInstaller.bindProject() ?? ChatWorkspace())
+        }
+        Services.get(LocalPingLog.self)?.reload()
         Services.get(LocalControlService.self)?.resetForProjectSwitch()
         Services.get(DesktopControlHub.self)?.resetForProjectSwitch()
         Services.get(AgentControlCenter.self)?.resetForProjectSwitch()
@@ -114,6 +118,11 @@ final class ProjectRuntime: ProjectActivator {
             return
         }
         ProjectLogoStore.delete(project.logo)
+        if let directory = ChatHistoryStore.defaultDirectory() {
+            let room: String =
+                services.prefs.base.string(forKey: project.scope.key(SettingsService.roomKey)) ?? SettingsService.defaultRoom
+            ChatHistoryStore(directory: directory).eraseProject(project.id, room: room)
+        }
         ProjectStorage.erase(
             project, secureStore: services.secure.base, prefs: services.prefs.base, roots: ProjectRuntime.roots())
     }

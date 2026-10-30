@@ -3,6 +3,8 @@
 #include "AppPaths.h"
 
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -28,6 +30,8 @@ struct Project {
     bool isHome = false;
     bool ownsFolder = false;
     QDateTime created;
+    QStringList instances;
+    bool instancesRecorded = false;
 };
 
 // Conventional logo at the project root, in the order repositories use.
@@ -43,15 +47,32 @@ struct InstanceChoice {
 
 inline const QString kInstancePendingSetting = QStringLiteral("project/instancePending");
 inline const QString kInstanceChoicesSetting = QStringLiteral("project/instanceChoices");
+inline const QString kInstanceChosenSetting = QStringLiteral("project/instanceChosen");
 
 QString encodeInstanceChoices(const QVector<InstanceChoice> &choices);
 QVector<InstanceChoice> decodeInstanceChoices(const QString &json);
+
+enum class StarterPack { Minimal, Standard, Everything, Empty };
+
+QStringList starterPackages(StarterPack pack, const QStringList &available);
+
+struct DirectoryInstance {
+    QString name;
+    QString host;
+    QString logoUrl;
+    bool online = false;
+};
+
+QVector<DirectoryInstance> directoryInstances(const QJsonArray &rows, const QString &origin);
+
+bool isForkMeshVersionReply(int status, bool workerHeader, const QJsonObject &body);
 
 struct CreateRequest {
     QString name;
     QString description;
     QString logoSource;          // image to copy in as the logo; optional
     QVector<InstanceChoice> instances;
+    InstanceChoice instance;
     bool shareIdentity = true;   // copy this project's identity key, so the
                                  // new project signs in as the same account
     QStringList packages;        // plugins to start with
@@ -71,6 +92,13 @@ bool updateDetails(const QString &projectDir, const QString &name,
 
 bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
             QString *error, QString *movedTo = nullptr);
+
+QString instanceKey(const QString &url);
+
+bool recordInstances(const QString &projectDir, const QStringList &urls, QString *error);
+
+const Project *instanceOwner(const QVector<Project> &projects, const QString &url,
+                             const QString &exceptDir);
 
 // Settings file a project's process will read, for seeding before first run.
 QString settingsFilePath(const QString &projectDir);

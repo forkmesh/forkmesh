@@ -53,7 +53,7 @@ object SettingsCatalog {
         SettingsSectionEntry(SettingsSectionId.Notifications, "Notifications", "notifications_none_rounded", listOf("push", "pings", "email", "quiet hours", "background")),
         SettingsSectionEntry(SettingsSectionId.Relay, "Relay", "cloud_outlined", listOf("server", "relay", "room", "passphrase", "network")),
         SettingsSectionEntry(SettingsSectionId.Imports, "Import tokens", "download_outlined", listOf("github", "gitlab", "import")),
-        SettingsSectionEntry(SettingsSectionId.Data, "Data", "storage_outlined", listOf("export", "download", "cache", "clear", "backup")),
+        SettingsSectionEntry(SettingsSectionId.Data, "Data", "storage_outlined", listOf("export", "download", "cache", "clear", "backup", "sync", "save", "restore", "privacy", "delete", "my data", "layout", "subscriptions")),
         SettingsSectionEntry(SettingsSectionId.Security, "Report a vulnerability", "verified_user_outlined", listOf("security", "vulnerability", "report", "bug bounty")),
         SettingsSectionEntry(SettingsSectionId.Account, "Account", "person_outline_rounded", listOf("sign out", "log out", "switch account", "delete account", "guest")),
         SettingsSectionEntry(SettingsSectionId.Sponsored, "Sponsored messages", "info_outline", listOf("ads", "sponsored")),

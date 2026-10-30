@@ -34,6 +34,7 @@ publish, holding state/publisher/publish.lock:
   1. sync: fast-forward-only fetch checkout → data/mirrors/forkmesh-forkmesh.git
   2. SSH fan-out to config/fanout/hosts (no targets on the served stack)
   3. each line of config/fanout/gateways: signed HTTPS push through the app
+  3b. each line of config/fanout/github: main and tags to the GitHub mirror
   4. state/publisher/status.json; repeat (up to 3 passes) if the checkout moved meanwhile
 then, with publish.lock released:
   5. systemctl --user start --no-block forkmesh-mirror-branch-deletes.service
@@ -119,6 +120,102 @@ and wakes the other cores.
   ("main was already past this pass"). If the cores are behind and refused
   it, the pass fails (`gateway cores: the cores are behind and refused
   main`).
+- **Lagging read-back.** The fetch that checks a refused ref goes through the
+  same edge as the push, so it can reach a core that has not replicated the
+  newer value yet. On 2026-10-21 the desktop committed two `pull #N: merged`
+  ledger records while a pass ran; the push of `forkmesh/pulls` was refused
+  by a core that already held the newer tip, the read-back landed on one that
+  still held the older one, and the pass failed as `DIVERGED` and sent a Ping.
+  The next pass, 50 s later, went through. A refused `main` or ledger ref that
+  does not read as outrun is now read once more after 10 s before the pass
+  fails.
+- **Ledger grace.** `forkmesh/pulls` is written by the cores too (mirror
+  intake, web merges), and the desktop merges their records into its own
+  ledger on its next intake ("Merge divergent mirror collaboration
+  intake"). Until it does, every push of the ledger is refused (`fetch
+  first`). When that is the only refusal, the publisher logs it and waits
+  `LEDGER_GRACE_SECONDS` (10 minutes, from `ledgerSince` in
+  `publish-alert.json`) before it Pings. On 2026-10-25 pull #108's mirror
+  intake sent a "Repository publishing failed" Ping for a gap the desktop
+  closed four minutes later. Any other refused ref still Pings at once.
+- **Ping cause.** A refused ref is named in the Ping (`the cores refused
+  refs/heads/forkmesh/pulls (non-fast-forward)`, plus the absorb reason for
+  `main`). Before, the Ping carried the last 600 characters of git's output.
+  Those were mostly the cores' `receive.denyCurrentBranch` warning, cut off
+  mid-word. Stale branches left at the cores' value are not counted as
+  causes.
+
+## GitHub mirror
+
+`github.com/forkmesh/forkmesh` is a public, read-only copy of the flagship:
+every pass pushes `main` and the tags from the bare mirror to each line of
+`config/fanout/github` (`<name> https://github.com/<owner>/<repo>.git
+[token-file]`). The token file defaults to `config/fanout/github-token` (one
+GitHub classic token with `repo` and `workflow` scopes, mode 600; without
+`workflow` GitHub refuses any `main` that touches `.github/workflows/`).
+The token goes to git through `GIT_CONFIG_VALUE_0`, never the command line,
+and is masked in errors.
+
+- Only `main` and tags go to GitHub. Agent and feature branches stay local
+  and on the forge.
+- The push is fast-forward only. A GitHub `main` with commits ours lacks (a
+  pull request merged on GitHub) is reported as `github <name>: FAILED, …
+  rejected` and left as is; take the change into the checkout instead.
+- A failed GitHub push does not fail the pass or send the publishing Ping, but
+  `--if-changed` passes keep retrying until it succeeds. `status` lists each
+  mirror's result under `github`.
+- Contributions land on the forge, not GitHub. Pull requests opened on GitHub
+  are reviewed and reapplied by hand.
+- GitHub `main` (`eb1db58be1`, 2026-07-29) predated the 2026-10-08 history
+  rewrite and shared no history with ours. On 2026-10-21 it was replaced by
+  ours (`324ab97a03`) with a one-time
+  `--force-with-lease=refs/heads/main:eb1db58be1…` push; since then the
+  publisher's fast-forward pushes keep it current. The old commits stay
+  reachable through GitHub's `refs/pull/1-3` until the repository is deleted
+  or GitHub support purges them. A bundle of the old `main` and PR heads is in
+  `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`.
+- GitHub runs `.github/workflows/` on every push to `main`; nothing ran them
+  before 2026-10-21, so the first runs surfaced drift that had built up
+  unseen. Fixed then: the Windows jobs set `PYTHONUTF8: "1"` (Windows Python
+  otherwise reads and writes files as cp1252 and fails on any non-ASCII
+  source) and run `git config --global core.autocrlf false` before checkout
+  (CRLF checkouts change the protocol suite's document digests);
+  `tools/forkmesh_safe_delete.py` imports `pwd` only where it exists;
+  `app/browser_tests/package-lock.json` lists the optional packages npm 11
+  `npm ci` requires; the World input-latency test opens chat through the HUD
+  island that replaced the chat terminal; the protocol suite manifest was
+  regenerated; and the external dependency map
+  (`conformance/external-dependencies/v1/manifest.json`) now classifies the
+  ~200 hosts added since 2026-09-14, among them the workflow integration
+  APIs, Turnstile (recorded as a privacy finding: the privacy notice does not
+  name it yet), SendGrid/Mailgun, chat link previews and the Calories
+  package's food databases. The core quality gate also caught source-reading
+  tests that had fallen behind `entry.py` (the HTTPS mirror routing tests now
+  load `_discard_response_body`, `_mirror_origin_is_this_app` and the
+  `_instance_*flagship_node` helpers; the mirror-node test follows
+  `d.publishEndpoint`) and five discouraged terms (two "merge request" relay
+  messages, two "Qt client" links, and the `ForkMesh-Attestation` pull rule,
+  now an explained allowance).
+- Fixed 2026-10-22, from the logs of the runs on `7e22a97771`: the actions
+  move to checkout v7.0.1, setup-python v7.1.0, setup-go v7.0.0, setup-node
+  v7.1.0 and upload-artifact v7.0.2 (Node 24; checkout v7 refuses to check out
+  a fork's pull request code under `pull_request_target`, which the sync
+  workflow never does: it checks out the default branch). The macOS image no
+  longer ships Go, so the dependency workflow installs it from
+  `server/go.mod`; every pytest install reads `tools/requirements-ci.txt`; the
+  bridge's `cryptography` pin follows `app/host/requirements.txt`. Code drift
+  the runs caught: the `pr/545` merge left `06-repo-actions.js` with two
+  `pullLink` branches and `08-repo-detail-network.js` without the end of the
+  quick-reply handler, so `dashboard.js` did not parse and the World browser
+  job's esbuild step failed (repaired the same way on `main` in `8fd2702dcf`,
+  which also dropped a doubled readiness panel and added a `node --check` test
+  of the bundle); GIPHY (`comment_gifs.py`) was missing from the
+  external dependency map (recorded as a privacy finding); the certification
+  tests built their report on the runner's platform while the registry lists
+  only `linux`; the social-signals CLI test checked a POSIX file mode on
+  Windows; and the bridge's signature test read discussion #2 and issue #126,
+  which were scrubbed and deleted, so their signed records are now fixtures in
+  `app/tests/fixtures/` (author names replaced; they are not signed).
 
 ## Merges made on the cores
 
@@ -132,6 +229,24 @@ the cores. The `post-merge` hook then lets the desktop queue its Actions. A
 conflicting or untakeable `main` is recorded in
 `state/publisher/cores-watch.json` and not retried until that core's `main`
 moves. An unreadable `main` does nothing.
+
+**Two cores must agree.** `absorb_cores` (used by `watch-cores` and by a
+publish pass whose `main` push was refused) takes a tip only when at least
+two cores serve it as `main`, or every core that answered does when fewer
+than two answer (`cores_agreement`). Otherwise it logs `not taking … only N
+of M reachable cores serve main …; waiting for a second core`, changes
+nothing, and does not record the tip in `cores-watch.json`, so the next
+20-second pass tries again once a peer has caught up. The reason: a taken
+tip is deployed with the operator's fleet credentials, and one core's `main`
+alone, or the edge, which can route to any node it trusts, should not be
+enough to move the checkout. The cores converge on each other within
+seconds, so a real merge or owner push still lands on the next pass. With
+no `deploy/fleet.toml` cores to ask, the old behaviour applies
+(`test_absorb_takes_main_only_when_a_second_core_serves_it`,
+`test_absorb_accepts_the_only_reachable_core`,
+`test_watch_waits_for_a_second_core_before_taking_main`). The installed copy
+in `bin/publisher` takes this only after `python3 tools/source_publisher.py
+install`.
 
 ## Flagship guard
 

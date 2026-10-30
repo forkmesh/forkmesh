@@ -88,6 +88,8 @@
 
   function userNameHtml(name) {
     const text = String(name || "").trim();
+    const forge = forgeIdentity(text);
+    if (forge) return `<span title="${escapeHtml(forge.title)}">@${escapeHtml(forge.login)}</span>`;
     const key = userNameKey(text);
     if (!key) return escapeHtml(text);
     return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;
@@ -179,25 +181,60 @@
     return theme === "light" ? "light" : "dark";
   }
 
-  function readDashboardTheme() {
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -208,9 +245,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -227,7 +267,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -237,7 +277,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -667,6 +717,9 @@
                 "forkmesh:mirror-signal", { detail: { catchUp: true } },
               ));
               window.dispatchEvent(new CustomEvent("forkmesh:cloud-agents"));
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: "", catchUp: true } },
+              ));
               void checkForDashboardUpdate(true);
             }
             connectedOnce = true;
@@ -694,6 +747,11 @@
             }
             if (topic === "direct-messages") {
               window.dispatchEvent(new CustomEvent("forkmesh:direct-messages"));
+            }
+            if (String(topic || "").startsWith("package:")) {
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: String(topic).slice(8) } },
+              ));
             }
           },
         });
@@ -766,28 +824,166 @@
       </span>`;
   }
 
-  // Compact, circular identity used beside every issue event. Agent identities
-  // get a bot mark instead of pretending to be a person.
-  function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
-    const label = String(name || author || (agent ? "Agent" : "unknown"));
-    const sessionName = String(state.session?.nodeName || state.session?.email || "");
-    const ownAvatar = label === sessionName ? String(state.session?.avatarPng || "") : "";
-    const handle = !agent && validNodeName(label) ? label : "";
-    const inner = agent
-      ? '<i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>'
-      : ownAvatar
-        ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml((label[0] || "?").toUpperCase())}</span>`;
-    const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
-    if (hydrate) watchIssueActorAvatars();
-    const classes = `flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
-    if (handle && link) {
-      return `<a href="${escapeHtml(publicProfileUrl(handle))}" title="${escapeHtml(label)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
-    }
-    return `<span title="${escapeHtml(label)}"${hydrate} class="${classes}">${inner}</span>`;
+  const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+
+  function recordAuthorName(values) {
+    const name = String(values?.authorName || "").trim();
+    if (name) return name;
+    const claimed = String(values?.authorClaimedName || "").trim().toLowerCase();
+    return validNodeName(claimed) ? `${claimed} (unverified)` : "";
   }
 
-  const issueActorPortraits = new Map();
+  function issuePersonHandle(name) {
+    const text = String(name || "").trim().replace(/^@/, "");
+    return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
+  }
+
+  const BOT_AVATAR_GLYPHS = {
+    actions: "<circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1\"></path><circle cx=\"12\" cy=\"12\" r=\"6.5\"></circle>",
+    node: "<circle cx=\"6\" cy=\"6\" r=\"2.25\"></circle><circle cx=\"6\" cy=\"18\" r=\"2.25\"></circle><circle cx=\"18\" cy=\"8\" r=\"2.25\"></circle><path d=\"M6 8.25v7.5M18 10.25c0 4-5.5 3.5-10.2 6.4\"></path>",
+    runner: "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><path d=\"M7.5 7.25h.01M7.5 16.75h.01M11.5 7.25h5M11.5 16.75h5\"></path>",
+    ai: "<path d=\"M11 3.5l1.9 4.6 4.6 1.9-4.6 1.9L11 16.5l-1.9-4.6L4.5 10l4.6-1.9z\"></path><path d=\"M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z\"></path>",
+    bot: "<rect x=\"4.5\" y=\"8\" width=\"15\" height=\"11\" rx=\"2.5\"></rect><path d=\"M12 8V4.5M9.5 4.5h5M2.5 12.5v3M21.5 12.5v3\"></path><circle cx=\"9.5\" cy=\"13\" r=\"1\"></circle><circle cx=\"14.5\" cy=\"13\" r=\"1\"></circle><path d=\"M9.5 16.25h5\"></path>",
+  };
+
+  function botAvatarKind(name, email = "") {
+    const text = String(name || "").trim();
+    const mail = String(email || "").trim().toLowerCase();
+    if (!text && !mail) return "";
+    if (/^(?:ai[\s_-]?review(?:er)?|forkbot|ai[\s_-]?agent)(?:\[bot\])?$/i.test(text)) return "ai";
+    if (/(?:^|[\s_-])runner(?:\[bot\])?$/i.test(text)) return "runner";
+    const lowered = text.toLowerCase();
+    const platform = String(typeof platformName === "function" ? platformName() : "").trim().toLowerCase();
+    if (/^forkmesh(?:[\s_-]mirror(?:[\s_-]reconciler)?)?$/i.test(text)
+      || (platform && [platform, `${platform} mirror`, `${platform} mirror reconciler`].includes(lowered))
+      || (typeof platformAccount === "function" && platformAccount(text))) return "node";
+    if (/^github[\s_-]?actions?(?:\[bot\])?$/i.test(text)
+      || /^[a-z0-9][a-z0-9_-]*-actions(?:\[bot\])?$/i.test(text)
+      || /^forkmesh[\s_-](?:actions|deploy)$/i.test(text)
+      || (platform && lowered === `${platform} actions`)
+      || ["actions@forkmesh.local", "deploy@forkmesh.local"].includes(mail)) return "actions";
+    if (/\[bot\]$/i.test(text) || /^(?:dependabot|renovate)$/i.test(text)
+      || /(?:^|[\s_-])bot$/i.test(text) || mail.includes("[bot]@")) return "bot";
+    return "";
+  }
+
+  function botAvatarSvg(kind, classes = "h-4 w-4") {
+    const name = Object.prototype.hasOwnProperty.call(BOT_AVATAR_GLYPHS, kind) ? kind : "bot";
+    return `<svg data-bot-avatar="${name}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="${classes} text-muted-foreground">${BOT_AVATAR_GLYPHS[name]}</svg>`;
+  }
+
+  function issueActorIsBot(name) {
+    const text = String(name || "").trim();
+    if (!text) return false;
+    if (botAvatarKind(text)) return true;
+    return typeof repoContributorIsBot === "function" && repoContributorIsBot({ name: text });
+  }
+
+  function issueActorPixels(size) {
+    const match = /\bh-(\d+(?:\.5)?)\b/.exec(String(size || ""));
+    return match ? Math.round(Number(match[1]) * 4) : 28;
+  }
+
+  function issuePersonProfileHref(handle) {
+    return handle && validNodeName(handle) ? publicProfileUrl(handle) : "";
+  }
+
+  const FORGE_PROFILES = Object.freeze({ github: { origin: "https://github.com/", label: "GitHub" } });
+  const FORGE_IDENTITY_RE = /^(github):([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)$/;
+
+  function forgeIdentity(name) {
+    const match = FORGE_IDENTITY_RE.exec(String(name || "").trim());
+    if (!match || match[2].includes("--")) return null;
+    const profile = FORGE_PROFILES[match[1]];
+    return { provider: match[1], login: match[2], href: profile.origin + match[2],
+      title: `${match[2]} on ${profile.label}` };
+  }
+
+  function forgeLinkAttrs(forge) {
+    return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
+  }
+
+  const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
+
+  function rememberForgeAvatars(repo, names, commit = "") {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
+  }
+
+  function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
+    const label = String(name || author || (agent ? "Agent" : "unknown"));
+    const bot = agent || issueActorIsBot(label);
+    const sessionName = String(state.session?.nodeName || state.session?.email || "");
+    const ownAvatar = !bot && label.toLowerCase() === sessionName.toLowerCase()
+      ? String(state.session?.avatarPng || "") : "";
+    const forge = bot ? null : forgeIdentity(label);
+    const handle = bot || forge ? "" : issuePersonHandle(label);
+    const pixels = issueActorPixels(size);
+    const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
+    const inner = bot
+      ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
+      : ownAvatar
+        ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
+    const override = bot && !agent ? issuePersonHandle(label) : "";
+    const hydrate = (handle || override) && !ownAvatar
+      ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
+    if (hydrate) watchIssueActorAvatars();
+    const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
+    const title = bot ? `${label} (bot)` : label;
+    if (forge && link) {
+      return `<a ${forgeLinkAttrs(forge)} aria-label="${escapeHtml(forge.title)}" class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
+    }
+    if (handle && link) {
+      const href = issuePersonProfileHref(handle);
+      return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
+    }
+    return `<span title="${escapeHtml(title)}"${bot ? ' data-issue-actor-bot=""' : ""}${hydrate} class="${classes}">${inner}</span>`;
+  }
+
+  function issuePersonNameHtml(name, classes = "font-semibold text-foreground", options = {}) {
+    const label = String(name || "").trim() || "unknown";
+    const git = options?.git === true;
+    const system = typeof platformAccount === "function" && platformAccount(label);
+    const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);
+    if (system || issueActorIsBot(label)) {
+      const kind = typeof botAvatarKind === "function" ? botAvatarKind(label) : "";
+      const nonAccountBot = ["actions", "node", "runner"].includes(kind)
+        || /(?:-actions|\[bot\])$/i.test(label);
+      const account = system || options?.inLink === true || nonAccountBot ? "" : issuePersonHandle(label);
+      if (account) watchIssueActorAvatars();
+      return `<span${account ? ` data-issue-bot-account="${escapeHtml(account)}"` : ""} class="${classes}">${system ? shown : escapeHtml(label)}</span>`;
+    }
+    const forge = forgeIdentity(label);
+    if (forge) {
+      if (options?.inLink === true) return `<span class="${classes}">@${escapeHtml(forge.login)}</span>`;
+      return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
+    }
+    const handle = issuePersonHandle(label);
+    if (!handle || options?.inLink === true) return `<span class="${classes}">${shown}</span>`;
+    watchIssueActorAvatars();
+    const href = git ? "" : issuePersonProfileHref(handle);
+    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}"${git ? ' data-issue-person-git=""' : ""} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${shown}</a>`;
+  }
+
+  const issueActorAccounts = new Map();
+  const issueActorAccountsSettled = new Map();
   let issueActorAvatarObserver = null;
   let issueActorAvatarFrame = 0;
 
@@ -796,18 +992,114 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
-  function issueActorPortrait(name) {
-    const key = String(name || "").trim().toLowerCase();
-    if (!key) return Promise.resolve("");
-    if (!issueActorPortraits.has(key)) {
-      issueActorPortraits.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((profile) => (profile?.exists === true && profile?.profilePrivate !== true
-          ? issueActorPortraitPng(profile.avatarPng)
-          : ""))
-        .catch(() => ""));
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
     }
-    return issueActorPortraits.get(key);
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
+  function issueActorAccount(name) {
+    const key = String(name || "").trim().toLowerCase();
+    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
+    if (!issueActorAccounts.has(key)) {
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
+        .then((profile) => ({
+          exists: profile?.exists === true,
+          png: profile?.exists === true && profile?.profilePrivate !== true
+            ? issueActorPortraitPng(profile.avatarPng) : "",
+          linkable: profile?.exists === true && profile?.available === false
+            && profile?.profilePrivate !== true
+            && (profile?.kind === "user" || profile?.kind === "node"),
+        }))
+        .catch(() => ({ exists: false, png: "", linkable: false }))
+        .then((account) => {
+          issueActorAccountsSettled.set(key, account);
+          return account;
+        }));
+    }
+    return issueActorAccounts.get(key);
+  }
+
+  function issueActorPortrait(name) {
+    return issueActorAccount(name).then((account) => account.png);
+  }
+
+  function issuePersonRoster(handle) {
+    if (typeof repoPeopleRosterMatch !== "function") return Promise.resolve(null);
+    return repoPeopleRosterMatch(state.selectedRepo, handle).catch(() => null);
+  }
+
+  function issuePersonResolve(handle) {
+    return Promise.all([issueActorAccount(handle), issuePersonRoster(handle)])
+      .then(([account, roster]) => ({ account, roster }));
+  }
+
+  function issueActorAvatarImage(avatar, src) {
+    const pixels = Math.max(16, Math.round(avatar.getBoundingClientRect?.().width || 0) || 28);
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = "";
+    image.width = pixels;
+    image.height = pixels;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.className = "absolute inset-0 h-full w-full object-cover";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    avatar.appendChild(image);
+  }
+
+  function hydrateIssuePersonLink(link, found) {
+    const linkable = found.account.exists && found.account.linkable !== false;
+    const href = linkable ? issuePersonProfileHref(link.dataset.issuePerson) : "";
+    if (href) {
+      link.setAttribute("href", href);
+      return;
+    }
+    if (link.hasAttribute("data-issue-person-git")) {
+      link.removeAttribute("href");
+      return;
+    }
+    const profile = found.roster?.profile || "";
+    if (profile) {
+      link.setAttribute("href", profile);
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer nofollow ugc");
+      return;
+    }
+    if (link.hasAttribute("data-issue-mention")) {
+      link.replaceWith(document.createTextNode(link.textContent || ""));
+      return;
+    }
+    link.removeAttribute("href");
   }
 
   function hydrateIssueActorAvatars(root = document) {
@@ -817,17 +1109,42 @@
     for (const avatar of avatars) {
       if (avatar.dataset.issueActorState) continue;
       avatar.dataset.issueActorState = "loading";
-      void issueActorPortrait(avatar.dataset.issueActorAvatar).then((png) => {
-        avatar.dataset.issueActorState = png ? "image" : "initial";
-        if (!png || !avatar.isConnected) return;
-        const image = document.createElement("img");
-        image.src = `data:image/png;base64,${png}`;
-        image.alt = "";
-        image.className = "h-full w-full object-cover";
-        image.decoding = "async";
-        const initial = avatar.firstElementChild;
-        image.addEventListener("error", () => { if (initial) image.replaceWith(initial); }, { once: true });
-        avatar.replaceChildren(image);
+      void issuePersonResolve(avatar.dataset.issueActorAvatar).then((found) => {
+        const png = found.account.png;
+        const picture = png ? `data:image/png;base64,${png}` : found.roster?.avatarUrl || "";
+        avatar.dataset.issueActorState = png ? "image" : picture ? "roster" : "initial";
+        if (!picture || !avatar.isConnected) return;
+        issueActorAvatarImage(avatar, picture);
+      });
+    }
+    const bots = [];
+    if (root.matches?.("[data-issue-bot-account]")) bots.push(root);
+    root.querySelectorAll?.("[data-issue-bot-account]").forEach((bot) => bots.push(bot));
+    for (const bot of bots) {
+      if (bot.dataset.issuePersonState) continue;
+      bot.dataset.issuePersonState = "loading";
+      void issueActorAccount(bot.dataset.issueBotAccount).then((account) => {
+        bot.dataset.issuePersonState = "done";
+        const href = account.exists && account.linkable !== false ? issuePersonProfileHref(bot.dataset.issueBotAccount) : "";
+        if (!href || !bot.isConnected) return;
+        const link = document.createElement("a");
+        link.href = href;
+        link.className = `${bot.className} hover:text-[var(--dashboard-link)] hover:underline`.trim();
+        link.dataset.issuePersonState = "done";
+        link.setAttribute("data-issue-person", bot.dataset.issueBotAccount);
+        link.replaceChildren(...bot.childNodes);
+        bot.replaceWith(link);
+      });
+    }
+    const links = [];
+    if (root.matches?.("[data-issue-person]")) links.push(root);
+    root.querySelectorAll?.("[data-issue-person]").forEach((link) => links.push(link));
+    for (const link of links) {
+      if (link.dataset.issuePersonState) continue;
+      link.dataset.issuePersonState = "loading";
+      void issuePersonResolve(link.dataset.issuePerson).then((found) => {
+        link.dataset.issuePersonState = "done";
+        if (link.isConnected) hydrateIssuePersonLink(link, found);
       });
     }
   }
@@ -1286,13 +1603,14 @@
     return before !== `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
   }
 
-  function repoProvenanceHtml(repo) {
+  function repoProvenanceHtml(repo, { forkButton = true } = {}) {
     const mirrorOf = repoMirrorOf(repo);
     const parent = mirrorOf ? null : repoForkParent(repo);
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>`;
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -1304,7 +1622,7 @@
       ? `<span data-repo-mirror-synced${syncedTitle ? ` title="${escapeHtml(syncedTitle)}"` : ""} class="shrink-0 text-muted-foreground">· synced ${escapeHtml(formatTimeAgo(syncedAt))}</span>`
       : "";
     const notice = `<span data-repo-mirror-notice class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes <a href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="dashboard-accent-link hover:underline">upstream</a> or into a fork.</span>`;
-    const fork = `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>`;
+    const fork = forkButton ? `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>` : "";
     const line = `<span data-repo-provenance-line="mirror" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="refresh-cw" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">Mirror of</span><a data-repo-provenance-link href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="${linkClass}">${escapeHtml(repoMirrorUpstreamPath(mirrorOf) || mirrorOf)}</a>${synced}</span>`;
     return `${line}${notice}${fork}`;
   }
@@ -1447,6 +1765,111 @@
 
   function dashboardOnInstance() {
     return Boolean(document?.querySelector?.("script[data-instance-brand]"));
+  }
+
+  function platformName() {
+    const brand = document?.querySelector?.("script[data-instance-brand]");
+    return String(brand?.dataset?.instanceName || "").trim() || "ForkMesh";
+  }
+
+  function desktopBrand() {
+    return dashboardOnInstance() ? "" : "ForkMesh ";
+  }
+
+  function applyPlatformName(root = document) {
+    const name = platformName();
+    root?.querySelectorAll?.("[data-platform-name]").forEach((element) => {
+      if (element.textContent !== name) element.textContent = name;
+    });
+    const desktop = desktopBrand();
+    root?.querySelectorAll?.("[data-desktop-brand]").forEach((element) => {
+      if (element.textContent !== desktop) element.textContent = desktop;
+    });
+  }
+
+  // Dialogs no page shows on load are not in the page documents
+  // (dashboard_bundle.py DEFERRED_MARKUP): the first open adds their markup,
+  // then the caller finds and opens the dialog as before.
+  function ensureDeferredMarkup(name) {
+    const spec = deferredMarkup(name);
+    if (!spec || !document.body || document.querySelector(spec.marker)) return;
+    const template = document.createElement("template");
+    template.innerHTML = spec.html;
+    const added = [...template.content.children];
+    const anchor = spec.after ? document.querySelector(spec.after) : null;
+    if (anchor) anchor.after(template.content);
+    else document.body.append(template.content);
+    added.forEach((element) => applyPlatformName(element));
+    window.lucide?.createIcons();
+  }
+
+  let instanceInfoRequest = null;
+  let instanceGitNode = "";
+  let instancePluginStates = null;
+
+  // GET /api/instance is the same public document for every visitor. One
+  // request per page serves every reader: an instance page starts it from
+  // the first inline script (tools/apply_instance_brand.py), and
+  // instance-brand.js and genie-spider.js share the same window promise, so
+  // whichever asks first sends it and the rest wait on that answer.
+  function sharedInstanceDocument() {
+    let pending = window.__forkmeshInstanceInfo;
+    if (!pending || typeof pending.then !== "function") {
+      pending = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = pending;
+    }
+    return pending;
+  }
+
+  function instanceInfo() {
+    if (!dashboardOnInstance()) return Promise.resolve(null);
+    if (!instanceInfoRequest) {
+      instanceInfoRequest = sharedInstanceDocument()
+        .then((info) => {
+          instanceGitNode = String(info?.gitNode || "").toLowerCase();
+          instancePluginStates = new Map((Array.isArray(info?.plugins) ? info.plugins : [])
+            .filter((plugin) => plugin && typeof plugin.id === "string")
+            .map((plugin) => [plugin.id, plugin.enabled !== false]));
+          return info;
+        })
+        .catch(() => null);
+    }
+    return instanceInfoRequest;
+  }
+
+  function platformAccount(name) {
+    const value = String(name || "").trim().toLowerCase();
+    return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;
+  }
+
+  function shownAccountName(name) {
+    return platformAccount(name) ? platformName() : String(name || "");
+  }
+
+  async function instancePluginEnabled(id) {
+    if (!dashboardOnInstance()) return true;
+    const info = await instanceInfo();
+    const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
+    return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
+  }
+
+  function instancePluginOff(id) {
+    if (!dashboardOnInstance()) return false;
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === false;
   }
 
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
@@ -1603,8 +2026,7 @@
   async function loadRepoAddresses() {
     if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
     try {
-      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
-      const data = response.ok ? await response.json() : null;
+      const data = await sharedInstanceDocument();
       if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
     } catch (_) {}
     return repoAddresses();
@@ -1672,7 +2094,8 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
   // account that can actually see them. A non-owner deep link falls through
@@ -1698,7 +2121,7 @@
     const owner = safeDecodeURIComponent(parts[0]);
     const name = safeDecodeURIComponent(parts[1]);
     const rest = parts.slice(2);
-    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (rest.length && !REPO_ROUTE_SEGMENTS.includes(rest[0])) return value;
     if (!repoShortName(owner, name)) return value;
     return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
   }
@@ -1812,10 +2235,10 @@
     const short = prefixed ? null : repoShortRoute(first);
     if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
-      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
-      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+      const routed = !rest.length || REPO_ROUTE_SEGMENTS.includes(rest[0]);
+      parts = [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
     }
-    return parts;
+    return parts[2] === "pull" ? [...parts.slice(0, 2), "pulls", ...parts.slice(3)] : parts;
   }
 
   function requestedRepoKey() {
@@ -1830,7 +2253,7 @@
   }
 
   // Pull-detail sections are addressable in their own right
-  // (/owner/repo/pulls/93/files) so a link to the Files changed review opens
+  // (/owner/repo/pull/93/files) so a link to the Files changed review opens
   // there for whoever it is sent to. Conversation is the default and stays on
   // the bare record URL.
   const REPO_RECORD_SECTIONS = [
@@ -1849,7 +2272,7 @@
   }
 
   function repoRecordUrl(repo, kind, number, section) {
-    const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
+    const url = `${repoLinkUrl(repo)}/${kind === "pulls" ? "pull" : kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.
     const suffix = kind === "pulls" ? normalizeRepoRecordSection(section) : "conversation";
     return suffix === "conversation" ? url : `${url}/${suffix}`;
@@ -1880,6 +2303,23 @@
     return { base, head };
   }
 
+  function splitRepoCodeRef(kind, parts, refs) {
+    const names = new Set((refs || []).map((ref) => String(ref || "").trim()).filter(Boolean));
+    const segments = (parts || []).map((part) => String(part || "")).filter(Boolean);
+    const longest = segments.length - (kind === "blob" ? 1 : 0);
+    for (let size = longest; size > 0; size -= 1) {
+      const ref = segments.slice(0, size).join("/");
+      if (names.has(ref)) return { ref, path: segments.slice(size).join("/") };
+    }
+    return null;
+  }
+
+  function repoCompareRouteOptions(search) {
+    const params = new URLSearchParams(String(search || ""));
+    const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return { expand: params.get("expand") === "1", title };
+  }
+
   // Pushes a new history entry for real in-app navigations (opening a repo,
   // browsing into a folder/file, leaving a repo for another section) so the
   // browser Back/Forward buttons step through them one at a time instead of
@@ -1888,6 +2328,7 @@
   // entries that would otherwise make Back a no-op.
   function navigateHistory(url) {
     if (`${location.pathname}${location.search}` === url) return;
+    stopRepoReconnects();
     window.history.pushState(null, "", url);
   }
 
@@ -1949,6 +2390,19 @@
     return data && typeof data === "object" && data.ok !== false ? data : null;
   }
 
+  // One-shot: a JSON read the repository page started before this script ran
+  // (partials/repo-early-reads.html early.json), taken over by exact path. It
+  // was sent with the page's cookies and no bearer token, so it only stands in
+  // for a request that would carry the same identity.
+  async function takeEarlyJsonRead(path) {
+    const early = globalThis.__forkmeshEarly;
+    const pending = early?.json?.[path];
+    if (!pending) return null;
+    delete early.json[path];
+    const data = await pending;
+    return data && typeof data === "object" && data.ok !== false ? data : null;
+  }
+
   async function fetchJson(path, options = {}) {
     const fresh = options.fresh === true;
     const cacheBust = options.cacheBust !== false;
@@ -1990,6 +2444,9 @@
       // (partials/views/repo.html); take that answer over instead of asking
       // again.
       let data = anonymousPublicRead && !noStore ? await takeEarlyPublicRead() : null;
+      if (!data && !noStore && !anonymousPublicRead && (!token || token === "cookie")) {
+        data = await takeEarlyJsonRead(path);
+      }
       if (!data) for (let attempt = 0; ; attempt += 1) {
         const last = attempt >= FETCH_JSON_RETRY_DELAYS_MS.length;
         let response;
@@ -2079,7 +2536,7 @@
     { kind: "commits", label: "Code quality: commit message format" },
     { kind: "secrets", label: "Security: no secrets in the change" },
     { kind: "paths", label: "Security: protected paths" },
-    { kind: "model", label: "Required AI model (signed by a ForkMesh runner)" },
+    { kind: "model", label: `Required AI model (signed by a ${platformName()} runner)` },
   ];
   const PULL_RULE_MODELS = [
     "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
@@ -2131,7 +2588,7 @@
         ${group("commits", field("subjectPattern", "Subject must match (regular expression)", rule.subjectPattern, "^(feat|fix|docs|chore)(\\(.+\\))?: ") + field("maxSubjectLength", "Longest subject", rule.maxSubjectLength || "", "72", "number"))}
         ${group("secrets", `<label class="${PULL_RULE_LABEL} sm:col-span-2">Extra secret patterns, one regular expression per line (API keys, private keys and common tokens are always checked)<textarea data-pull-rule-field="patterns" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 font-mono text-xs text-foreground outline-none"${disabled}>${escapeHtml((rule.patterns || []).join("\n"))}</textarea></label>` + field("paths", "Only scan these paths (empty = everything)", pullRuleList(rule.kind === "secrets" ? rule.paths : [])))}
         ${group("paths", field("paths", "Protected paths", pullRuleList(rule.kind === "paths" ? rule.paths : []), ".github/workflows/**, deploy/**"))}
-        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ForkMesh runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
+        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ${escapeHtml(platformName())} runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
         <label class="${PULL_RULE_LABEL}">How to fix it (optional, shown when the rule fails)
           <textarea data-pull-rule-field="suggestion" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"${disabled}>${escapeHtml(rule.suggestion || "")}</textarea>
         </label>

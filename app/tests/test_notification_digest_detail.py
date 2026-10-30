@@ -38,12 +38,15 @@ FUNCS = {
     "_notification_email_item",
     "_notification_digest_email",
     "_notification_instant_email",
+    "_notification_email_footer_html",
+    "_notification_email_subject",
 }
 # Module constants the rendering path reads. Taken from entry.py's own
 # assignments rather than restated here, so a limit or route-segment change
 # cannot drift away from what these tests assert.
 CONSTANTS = {
     "MAX_NODE_NAME",
+    "NODE_NAME_RE",
     "MAX_REPO_SEGMENT",
     "FORKMESH_SITE_URL",
     "AVATAR_B64_RE",
@@ -53,7 +56,12 @@ CONSTANTS = {
     "NOTIFICATION_ITEM_URL_SEGMENTS",
     "NOTIFICATION_ITEM_NOUNS",
     "NOTIFICATION_EMAIL_AVATAR_MAX_B64",
+    "NOTIFICATION_EMAIL_SNIPPET_MAX",
 }
+
+
+BOB_BYLINE = ('<a href="https://forkmesh.com/@bob" '
+              'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
 
 
 def _chat_format_module():
@@ -115,7 +123,15 @@ def test_digest_item_shows_number_actor_and_time():
         "ts": 1783607520000,
         "meta": {"number": 42, "source": "issue"},
     }], base_url="https://forkmesh.com")
-    assert subject == "ForkMesh: 1 new notification"
+    assert subject == (
+        "bob: Search box is broken on mobile \xb7 [alice/forkmesh] #42")
+    assert "new notification" not in subject + text + html
+    assert "You have" not in text + html
+    assert ('style="display:none;max-height:0;overflow:hidden;opacity:0;'
+            'color:transparent">Search box is broken on mobile</div>') in html
+    card = html[html.index('class="fm-item"'):]
+    assert card.index(BOB_BYLINE) < card.index("Search box is broken")
+    assert card.index("Search box is broken") < card.index("Issue submitted")
     # Text body: number folded into the header line, "by <actor>" + time on
     # their own indented line (matching the existing "    body" indent style).
     # The repository is named by the "[owner/repo]" prefix and taken back out
@@ -127,7 +143,7 @@ def test_digest_item_shows_number_actor_and_time():
     assert "    Search box is broken on mobile" in text
     # HTML body: same three facts, escaped, in a small muted meta line.
     assert "#42" in html
-    assert "by <strong>bob</strong>" in html
+    assert BOB_BYLINE in html
     assert "2026-07-09 14:32 UTC" in html
 
 
@@ -169,12 +185,12 @@ def test_digest_title_drops_the_repository_however_it_was_cased():
 
 
 def test_digest_maps_each_source_to_its_public_route_segment():
-    # Stored sources are singular ("pull"); the web route is plural
-    # ("/pulls/93"). Interpolating the source directly would 404.
+    # Stored sources are singular ("issue"); the web route of an issue is
+    # plural ("/issues/93") and of a pull request "/pull/93".
     ns = _load()
     for source, segment, noun in (
         ("issue", "issues", "issue"),
-        ("pull", "pulls", "pull request"),
+        ("pull", "pull", "pull request"),
         ("discussion", "discussions", "discussion"),
         ("issue_assigned", "issues", "issue"),
         ("bounty", "issues", "issue"),
@@ -215,10 +231,9 @@ def test_digest_item_without_number_or_actor_degrades_gracefully():
     header_idx = lines.index("- [alice/forkmesh] Pull request submitted")
     assert lines[header_idx + 1] == "    https://forkmesh.com/alice/forkmesh"
     assert ">Open alice/forkmesh</a>" in html
-    # HTML: the meta <p> (distinguished by its #8a8a93 muted color) is omitted
-    # entirely rather than rendering an empty/placeholder line.
-    assert "#8a8a93;font-size:12px\">" not in html.split(
-        "Pull request submitted</a></p>")[1].split("</div>")[0]
+    card = html.split('class="fm-item"')[1].split("</div>")[0]
+    assert 'line-height:20px">alice/forkmesh</p>' in card
+    assert "Pull request submitted</a></p>" in card
 
 
 def test_legacy_notification_without_repo_or_meta_still_renders_and_links():
@@ -234,8 +249,8 @@ def test_legacy_notification_without_repo_or_meta_still_renders_and_links():
         "actor": "",
         "ts": 0,
     }], base_url="https://forkmesh.com")
-    assert "- Invitation: release sync" in text
-    assert "[" not in text.split("\n")[4]
+    assert text.startswith("- Invitation: release sync\n")
+    assert "[" not in text.split("\n")[0]
     link = "https://forkmesh.com/dashboard/calendar?event=abc123"
     assert "    " + link in text
     assert '<a href="' + link + '"' in html
@@ -282,10 +297,10 @@ def test_actor_avatar_renders_with_the_name_and_falls_back_to_text():
     rendered = actor_html("bob", png)
     assert 'src="data:image/png;base64,' + png + '"' in rendered
     assert 'alt="bob"' in rendered
-    assert "by <strong>bob</strong>" in rendered
+    assert BOB_BYLINE in rendered
     # No avatar stored, an oversized one, and a malformed one all degrade to
     # exactly the text byline the digest showed before avatars existed.
-    text_only = "by <strong>bob</strong>"
+    text_only = BOB_BYLINE
     assert actor_html("bob", "") == text_only
     assert actor_html("bob", None) == text_only
     assert actor_html(
@@ -294,6 +309,10 @@ def test_actor_avatar_renders_with_the_name_and_falls_back_to_text():
     # No actor at all (a host/release ping) contributes nothing to the meta
     # line rather than a dangling "by".
     assert actor_html("", png) == ""
+    assert actor_html("bob", "", "https://next.example/") == (
+        '<a href="https://next.example/@bob" '
+        'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
+    assert actor_html("Bob Smith", "") == "<strong>Bob Smith</strong>"
 
 
 def test_digest_shows_the_actor_avatar_next_to_the_public_username():
@@ -313,7 +332,7 @@ def test_digest_shows_the_actor_avatar_next_to_the_public_username():
         identity={"repos": {}, "avatars": {"bob": png}},
         base_url="https://forkmesh.com")
     assert 'src="data:image/png;base64,' + png + '"' in html
-    assert "by <strong>bob</strong>" in html
+    assert BOB_BYLINE in html
     # The plain-text alternative still names the submitter.
     assert "    by bob \xb7 " in text
 
@@ -359,7 +378,7 @@ def test_digest_item_uses_the_resolved_public_alias_and_does_not_duplicate():
         }],
         identity={"repos": {"mirror23/forkmesh": "forkmesh/forkmesh"}},
         base_url="https://forkmesh.com")
-    assert _subject == "ForkMesh: 1 new notification"
+    assert _subject == "bob: Issue submitted \xb7 [forkmesh/forkmesh] #42"
     assert "mirror23" not in text
     assert "mirror23" not in html
     assert text.count("forkmesh/forkmesh") == 2  # item prefix + item link
@@ -373,21 +392,21 @@ def test_unaliased_node_repo_keeps_its_own_route():
     # account name and produce a link that resolves nowhere.
     ns = _load()
     _subject, text, html = ns["_notification_digest_email"](
-        "jett",
+        "alice",
         [{
             "kind": "pull_submitted",
-            "title": "Pull request submitted for jetts-box/notes",
+            "title": "Pull request submitted for alices-box/notes",
             "body": "",
-            "repo": "jetts-box/notes",
+            "repo": "alices-box/notes",
             "actor": "bob",
             "ts": 1783607520000,
             "meta": {"number": 3, "source": "pull"},
         }],
-        identity={"repos": {"jetts-box/notes": ""}},
+        identity={"repos": {"alices-box/notes": ""}},
         base_url="https://forkmesh.com")
-    assert text.startswith("Hi jett,")
-    assert "- [jetts-box/notes] #3 Pull request submitted\n" in text
-    assert "https://forkmesh.com/jetts-box/notes/pulls/3" in html
+    assert "Sent to alice." in text
+    assert "- [alices-box/notes] #3 Pull request submitted\n" in text
+    assert "https://forkmesh.com/alices-box/notes/pull/3" in html
 
 
 def test_digest_greets_the_account_that_owns_the_mailbox():
@@ -414,13 +433,13 @@ def test_notify_mentions_accepts_an_optional_number_for_the_digest():
         ENTRY_TEXT.index("def _thread_key")
     ]
     assert "number=0" in body
-    assert 'meta={"number": number} if number else {}' in body
+    assert 'meta=({"number": number, "source": source,' in body
+    assert "if number else {})" in body
     # Call sites that know the number now pass it through.
     for marker in (
-        'event.get("body", ""), repo_web_href(owner, repo), "issue",\n                number=number))',
-        '"issue",\n                number=number))',
-        'repo_web_href(owner, repo), "pull", number=number)',
-        'repo_web_href(owner, repo), "discussion", number=number)',
+        'event.get("body", ""), repo_web_href(owner, repo), "issue",\n            number=number,',
+        'repo_web_href(owner, repo), "pull", number=number,',
+        'repo_web_href(owner, repo), "discussion", number=number,',
     ):
         assert marker in ENTRY_TEXT
 
@@ -638,8 +657,11 @@ def test_instant_email_puts_the_event_in_the_subject_and_reuses_the_digest_card(
         "ts": 1783607520000,
         "meta": {"number": 42, "source": "issue"},
     }, base_url="https://forkmesh.com")
-    # The event, not a count — and the repository appears once, not twice.
-    assert subject == "ForkMesh: [alice/forkmesh] #42 Issue submitted"
+    assert subject == (
+        "bob: Search box is broken on mobile \xb7 [alice/forkmesh] #42")
+    assert "New notification" not in html
+    assert "new ForkMesh notification" not in html
+    assert '<h1 class="fm-h1"' not in html
     assert "- [alice/forkmesh] #42 Issue submitted" in text
     assert "    by bob \xb7 2026-07-09 14:32 UTC" in text
     assert "    Search box is broken on mobile" in text
@@ -662,7 +684,7 @@ def test_instant_email_primary_action_opens_the_record_not_the_site_root():
         "meta": {"number": 93, "source": "pull"},
     }, base_url="https://forkmesh.com")
     assert "Open pull request" in html
-    assert "https://forkmesh.com/alice/forkmesh/pulls/93" in html
+    assert "https://forkmesh.com/alice/forkmesh/pull/93" in html
 
 
 def test_instant_email_subject_degrades_when_the_item_has_no_title():
@@ -687,3 +709,16 @@ def test_item_body_keeps_chat_formatting():
     assert "<li><code style=" in html
     assert ">status</a>" in html
     assert "*Deploy*" not in html
+
+
+def test_item_body_mentions_link_to_the_absolute_profile():
+    ns = _load()
+    _subject, _text, html = ns["_notification_digest_email"]("alice", [{
+        "kind": "mention", "title": "bob mentioned you",
+        "body": "thanks @Alice see [@carol](https://x.test/c)",
+        "actor": "bob", "ts": 1783607520000,
+    }], base_url="https://next.example")
+    assert ('<a href="https://next.example/@alice" style="color:#0969da;'
+            'text-decoration:underline">@Alice</a>') in html
+    assert "<strong>@carol</strong></a>" in html
+    assert 'href="https://next.example/@bob"' in html

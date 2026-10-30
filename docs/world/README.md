@@ -24,12 +24,16 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `world-reaction-pops.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list, the live diagnostics chart, on-air signs, on-screen reaction pops ([voice.md](voice.md)) |
+| `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | The Genie spider in the 3D World: model, 100 acts with things nearby ([genie-spider.md](genie-spider.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
 | `world/public/world/world-mesh.js` | World mesh: directory normalising and the watch/visit sockets to neighbouring worlds ([World mesh](#world-mesh)) |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
+| `world/public/world/world-territory.js` | An instance's own hexagon: settings from `/api/instance`, the ForkMesh elements it hides, crossing URLs and arrival parameters, the bug list ([INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)) |
+| `world/public/world/scene/instance-territory.js`, `scene/territory-geometry.js` | The instance hexagon's scene (plaza, sign, buildings, bug terrarium, the ForkMesh hexagons next door) and the road-crossing geometry |
 | `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../INSTANCES.md#the-world-on-an-instance)) |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
@@ -89,7 +93,8 @@ desktop embeds the same page.
   `world/src/world_element_store.py`.
 - `GET /api/start/instances/<id>/logo`: an instance logo, drawn on its
   hexagon.
-- `GET /api/world/mesh`, `POST /api/world/visa`,
+- `GET /api/world/mesh`, `GET /api/world/neighbour-scene`,
+  `GET /api/world/neighbour-icon`, `POST /api/world/visa`,
   `POST /api/world/visa/verify` and the `watch` / `visa` forms of
   `/api/world/ws`: the [World mesh](#world-mesh).
 
@@ -101,7 +106,9 @@ desktop embeds the same page.
 `www/wrangler.toml`. The served host is `world_host` in `deploy/fleet.toml`
 `[production]`. `WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
 where an instance reads the World mesh directory; an App without
-`INSTANCE_NAME` is the hub itself. `world/wrangler.toml` still carries legacy Worker settings;
+`INSTANCE_NAME` is the hub itself. `WORLD_NEIGHBOUR_SCENE` (optional, on an
+instance) is the scene its single hexagon shows in the hub's World (see
+Neighbour scenes below). `world/wrangler.toml` still carries legacy Worker settings;
 the served stack reads only its `run_worker_first` list and `[build]`
 command. It holds no secrets.
 
@@ -123,6 +130,36 @@ on its own thread before reading, `sendall` blocked with nobody reading and
 handler on a thread while the client reads, and both sockets have a 10 s
 timeout. The server itself is not affected, because `ThreadingHTTPServer`
 gives each connection its own thread.
+
+The `@critical` suite has a 55 s global budget (`playwright.config.js`,
+pinned by `app/tests/test_offline_ci_workflow.py`). The GitHub workflow runs it
+with `npm test -- --global-timeout=0`, bounded by the job's `timeout-minutes`,
+as `test:device-tiers` already is: `ubuntu-latest` has 4 vCPUs and no GPU, so
+Chromium draws with SwiftShader at 120–250 ms a frame and the six tests take
+two to three minutes. The 55 s cap failed every run of
+`.github/workflows/world-browser-e2e.yml` before a test could report
+(22 Oct 2026).
+
+On a software renderer the browser specs gate on frames, not milliseconds:
+
+- The input-response test keeps its 100 ms budget on hardware; under
+  SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
+  doubled for SwiftShader's frame-to-frame jitter) and drops its first two
+  camera drags, one in each direction. Each carries about 500–700 ms of
+  one-time work for the part of the town it brings into view (816 ms against
+  ~130 ms for the next four on the mobile viewport). Dropping only the first
+  drag failed the GitHub runs of 25 Oct 2026: the first drag the other way
+  measured 615–1123 ms against a twelve-frame budget of 600–1000 ms, and the
+  three after it stayed under five frames.
+- `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
+  a hardware run; under SwiftShader it asks that the world keeps presenting
+  (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
+  second on four cores) and that input lands within twelve of its frames.
+- The two-client sync test boots two worlds and is `test.slow()`.
+
+To reproduce CI locally, unset `DISPLAY` and `WAYLAND_DISPLAY` (otherwise
+headless Chromium cannot create a WebGL context in an agent shell) and pin to
+four cores with `taskset -c 0-3`.
 
 The desktop's World page prefers a local dev server at
 `http://127.0.0.1:8788/world/` when one answers (`worldDevServerUrl` in
@@ -287,6 +324,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   within its radius or its bounds are in the camera frustum (with enter/exit
   margins). `updateCompactDistrictView()` runs before every render, so a
   district the camera turns to is drawn in its first on-screen frame.
+  When a territory visit moves the Office and the beach next door,
+  `moveCompactDistrictsWithin()` moves their residency centres with them and
+  re-measures their bounds. Until 2026-10-22 they were judged where they used
+  to stand, so on phone tiers (and any desktop the ladder put there) the moved
+  Office and beach blanked out while in view and stayed resident out of view.
 - **Office aquarium on demand.** The lobby reef is built in idle slices when
   the camera comes within the Office detail distance, warmed off-scene, then
   attached; it is released after `OFFICE_AQUARIUM_RELEASE_MS` (15 s) beyond
@@ -305,6 +347,14 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   attributes, records `WORLD_BOOT.interactive()` and fires
   `forkmesh:world-interactive`. The WebGL fallback, an import failure and a
   10 s watchdog also remove the card.
+- **Compact retry before the fallback.** `prepareWorldRenderer()` opens the
+  WebGL2 context early. If the full plan's context cannot be created (a
+  software GL such as Mesa llvmpipe, or a GPU process that fails
+  `BindToCurrentSequence`), it tries once more with the compact plan
+  (no antialias, default power preference) and, if that one opens, switches
+  the visit to safe mode so `createWorldScene` builds the matching compact
+  renderer. The "could not start the 3D renderer" fallback shows only when
+  both fail. A context whose `WebGLRenderer` throws is released at once.
 - **Sliced construction.** `createWorldScene` yields between slices; frames
   hold up to 32 ms of construction work. Construction-time canvases queue
   their painter; first-view plates paint before the reveal and the rest in
@@ -338,6 +388,12 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   (`computeWorldLoadSuggestions()`), adding `world.auditScene()` findings in
   an idle callback when the panel is visible. Capped at 400 lines; nothing
   runs per frame after load.
+- **Crash guard and scene stats.** The crash-guard beat runs for every
+  visitor and re-reads the diagnostics at most every 4 s, including the scene
+  stats, whose walk runs in idle slices. The heaviest three World
+  elements (once a minute) are counted inside the same sliced walk; they used
+  to come from one synchronous `listWorldElements()` call that blocked an
+  idle callback for up to half a second on slower machines.
 - **Visibility.** Shown to admin tickets and to anyone with Settings → Debug
   → "Show debug panel"; otherwise recorded but hidden. The panel is
   draggable, can collapse to a pill, and "Copy log" copies the summary,
@@ -345,7 +401,13 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
 - **Performance bar and profiler** (`createWorldProfiler`, only while an
   admin bar is shown): frame phases, per-callback cost, draw-call attribution
   by World element, GPU timer queries; `auditWorldScene` finds duplicate
-  geometries/materials, instancing candidates and culling opt-outs.
+  geometries/materials, instancing candidates and culling opt-outs. Both
+  copy paths (the drawer's Copy button and the boot log's report provider)
+  go through `perfCopyReport()`, which samples a fresh profile window and
+  re-runs the audit on it, so the findings and the Frame budget table
+  describe the same frames. The button used to print the newest window
+  beside findings from the last periodic audit, so one report could show
+  two different `renderer.render` costs.
 - **Render stall monitor** (`scene/render-stalls.js`): splits frames over
   50 ms into program compiles, texture uploads, shadow and reflection draws,
   and scene update parts (matrix walk, animation, labels, camera). Long
@@ -396,7 +458,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   `transform` or `backdrop-filter` on an ancestor of the phone HUD's fixed
   avatar badge. An element given `display` in the component layer needs a
   `[hidden] { display: none; }` rule. Avoid `backdrop-filter` over the live
-  canvas.
+  canvas. Rules for retired UI go with it: the chat terminal and quick
+  channel strip (now the HUD island's native chat), the avatar action menu
+  (the island toolbar), the `.world-loading-curtain` (inlined in
+  `index.html`) and the HTML aquarium controls (the 3D reef panel) were
+  removed from `world.css` on 2026-10-24; tests check they stay gone.
 
 ## User interface
 
@@ -447,6 +513,56 @@ above the software keyboard (`--world-chat-covered-bottom`).
   targetNode}` with the Desktop or Runner target always named. Models come
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
+- **Moving it:** drag the grip at the left of the toolbar (or the island's
+  empty edge) to put the island anywhere in the World; arrow keys on the grip
+  nudge it 24px, and Home or a double-click puts it back. The offset from the
+  default bottom-centre spot is stored in `forkmesh.world.hudIslandOffset.v1`
+  and applied as `--world-hud-island-x` / `-y` in its transform. Every resize
+  re-clamps it 8px inside the World, so expanding near the top pushes it down
+  instead of off screen, and the saved offset comes back when it collapses.
+  In the top half (`data-placement="top"`) the channel, model and runner menus
+  open downwards. At 600px and below the island is full width, so the grip is
+  hidden and the saved offset is ignored.
+- **Feed fit:** the island's feed rules carry `.world-hud-island` so they beat
+  the roomier `.world-native-chat` message rules (32px avatars, 8px padding)
+  that used to clip a single message out of the two-line collapsed view. Each
+  row is 24px (20px avatar, 20px line), so the 48px collapsed feed shows
+  exactly the last two messages.
+
+### HUD rails
+
+The HUD buttons sit in four rails, each marked `data-world-dock`: `top` (the
+launcher row, `[data-world-top-actions]`), `right` (a group inside the right
+rail, Share view by default), `bottom` (the avatar action toolbar in the HUD
+island) and `left` (`.world-dock-left`, empty and hidden by default). Every
+movable button carries `data-world-tool="<id>"`; the avatar badge is the
+launcher and stays put.
+
+- **Arrange mode** starts from Settings > View > "Arrange buttons", or by
+  pressing and holding any button for `WORLD_HUD_LONG_PRESS_MS`. It keeps the
+  launcher rails open, outlines the four rails and shows a panel with Reset
+  and Done. Clicks on buttons are swallowed while arranging.
+- **Dragging** uses pointer events on `window`, so mouse, pen and touch work
+  alike (buttons get `touch-action: none` while arranging). The button joins
+  the rail nearest the pointer and the slot by button centres
+  (`dragHudTool`).
+- **Keyboard:** arrow keys move the focused button one slot within its rail;
+  Shift with an arrow sends it to that edge's rail; Escape or Done leaves.
+  Each move is announced in `[data-world-dock-status]`.
+- **Buttons move, they are not re-rendered** (`placeHudTool`), so the
+  delegated `closest("[data-world-…]")` handlers and the emote buttons' own
+  listeners keep working anywhere.
+- **Resizing to the rail:** a button away from its home rail drops its home
+  class (`world-top-link`, `world-share-view-button`) for `.world-dock-tool`,
+  which takes the rail's size: 40px squares at the top and sides (42px in the
+  phone layout), 30px flat icons in the bottom bar, labels visually hidden.
+  The top rail still hides them until the launcher opens; the left rail is
+  always visible.
+- **Persistence:** per device in `forkmesh.world.hudLayout.v1` as
+  `{top, left, right, bottom}` id lists. The default layout is read from the
+  markup before the saved one is applied; "Reset to default" restores it and
+  removes the key. Unknown ids are skipped, so a button that is not rendered
+  (Upgrade for supporting members) is harmless.
 
 ### Restore everything and start fresh
 
@@ -499,6 +615,15 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   hexagon that leads back; `?portal=<n>` places the arriving visitor in front
   of hexagon `n`
   ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
+  On an instance with its own hexagon (a territory), the World is drawn as
+  that one hexagon with the ForkMesh hexagons next door, and walking across
+  its road puts the page in the ForkMesh World without a reload
+  (`leaveOwnTerritory()`, [../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon),
+  Stepping into the ForkMesh World); while the walker stands in the
+  territory `placeWorldMesh` draws no world-mesh neighbours, so the two
+  layouts never overlap. Off a territory the world-mesh flowers below
+  replace the old road crossing into an instance hexagon
+  ([../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
   by the road width plus junction discs, the hexes of every placed
   neighbouring world included (`setWorldMeshFlowers()`). `WORLD_RADIUS` (1900) bounds remote
@@ -537,6 +662,46 @@ flat side facing the town path.
   version, commit and deploy age from the `forkmesh-world-version`,
   `forkmesh-world-built` and `forkmesh-world-deploy` metas (falling back to
   `/api/version`).
+
+### Board ring
+
+Leaderboard Island's boards stand on one ring
+(`scene/districts/billboard-circles.js`, sized by `BILLBOARD_RING` in
+`scene/layout.js`). It replaced three separate circles (hub, social,
+leaderboards), which read as three plazas and fetched everything on a circle
+as soon as you walked onto it.
+
+- **Layout.** Boards are grouped by section (`sections`: hub, social,
+  leaderboards; a placement's `circle` option names the section, so existing
+  packages keep working) and then by `order`. Each board gets the arc it
+  needs, the spare arc is shared evenly, and an `entryGap` is left open
+  towards the causeway. `minRadius` (38) already fits every board, X and
+  Reddit banners included, so the ring is sized once and does not regrow as
+  boards are placed at boot.
+- **Refresh pads.** Every board with a `feed` has a small semicircle in front
+  of it (`padRadius` 2.2). A board fetches only when you step onto its own
+  pad: `updateBillboardPads()` runs with the other proximity checks at
+  12.5 Hz, rejects anyone outside the pad band with one distance test, and
+  reports `onBillboardNearby({ feed, refetch })` / `onBillboardAway({ feed })`
+  to the shell. Leaving needs `padExit` more distance than entering, so
+  standing on the edge cannot flap the request. Each board has its own
+  cooldown (`cooldownMs`, 60 s; the QA board 5 s), so walking along the
+  leaderboard cards refreshes each card once rather than the whole family.
+  The shell's `startBillboardWatch(feed)` maps a feed to its loader; the QA
+  deck polls only while you stand on its pad, and the Mastodon and social
+  banner countdowns refetch only while you stand on their pads.
+- **Spinners.** Only the board whose pad started a request spins. Feeds that
+  share one request (all leaderboard cards read `/api/leaderboards`) still
+  repaint together from that one snapshot, but only the approached card
+  shows the spinner. A request started elsewhere (a QA action, copying a
+  referral link) spins every board of that feed.
+- **Draw cost.** The ring is one textured apron (a unit circle scaled to the
+  ring), one rim, and one `InstancedMesh` holding every pad, so all pads are a
+  single draw call and the active pad is lit by its instance colour (`muted`
+  idle, `accent` underfoot). The rim and pads are flat decals with
+  `polygonOffset`, so they never z-fight the apron. Geometry comes from the
+  resource authority (the pad is a cached half-disc, laid flat by its
+  instance rotation).
 
 ### Members Circle
 
@@ -584,6 +749,86 @@ them without changing page.
   the next six. Every client draws itself at the centre and each other world
   at `offset(world) - offset(self)`. An instance therefore sees the hub and
   its fellow instances where they really sit.
+- **Single hexagons.** A slot 0–4 listed in the hub's `WORLD_MESH_HEX_SLOTS`
+  (comma-separated, `0` in the production fleet) is published with
+  `"shape": "hex"` and drawn as
+  one of the town's petals: it takes the place of desert petal
+  `NEIGHBOUR_HEX_PETALS[n]` (`scene/layout.js`; petal p lies at 60°·p, as in
+  `DESERT_HEXES`) and shares an edge with the town. Slot 0 is petal 1, slot 4
+  petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
+  aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
+  and the town no longer claims the ground (`worldMeshOwnerAt`). From a
+  distance the petal shows the neighbour's published scene (Neighbour scenes
+  below). Stepping off the road onto its land puts the page in that World,
+  laid out the way the instance's own World draws itself (Standing in an
+  instance's hexagon below). On the shared road strip the walker stays in
+  the World they came from. A spot on a neighbour's hexagon is not saved as
+  the World position (`neighbourHexLandAt`, and nothing is saved while the
+  page stands in a hexagon), and a position saved there before is replaced
+  by the fresh arrival at the campfire (`leaveRestoredNeighbourHex`), so
+  opening the World lands in it, at the last spot walked in it. The page used to
+  load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
+  the whole World on every crossing; `worldMeshCrossingURL()` still builds
+  that URL for a neighbour's own page. Arriving from such a page,
+  `?from=<host>&slot=n&pos=x,z` from a listed hexagon places the walker just
+  outside the edge they crossed, facing away from the petal with the
+  third-person camera behind them, and the parameters are removed.
+- **Neighbour scenes.** A single-hexagon neighbour may publish what stands
+  on its hexagon at `GET <world>/api/world/neighbour-scene` (public, CORS,
+  cacheable). The hub lists that URL as `scene` on hex entries in
+  `/api/world/mesh`, and its World fetches it without credentials and reads
+  it with `normalizeNeighbourScene()` (`world-neighbour-scene.js`): version
+  1, at most 64 KB and 48 objects, types `plaza`, `sign`, `house`,
+  `terrarium` (up to 32 bugs), `lamp` and `tree`, positions within 330 of
+  the hexagon centre in World axes, `facing` in radians, `#rrggbb` colours,
+  plain text, and https links only. Bug icons must sit on the neighbour's own
+  origin, so a scene cannot make every hub visitor's browser call third-party
+  hosts; any other icon is dropped and the bug shows its initial. The body is
+  refused when it is over 64 KB in bytes, by `content-length` or once read.
+  `buildNeighbourScene()` draws it with shared primitives; a scene that
+  arrives after its hex layer was replaced is ignored, and when it is missing
+  or refused the logo hexagon stays. A `circuit` ground gets a tiled canvas of
+  traces in the accent colour, which glow faintly (`neighbourGroundMaterial`);
+  `plain` is a flat colour. The terrarium glass does not write depth, or it
+  hid every bug drawn after it. A house, its label and each bug with an https
+  `url` are `instance-hexagon` picks, so clicking one opens that link in a new
+  tab.
+- **Neighbour scene draw cost.** A terrarium's bugs are one draw: their icons
+  share one canvas atlas and one `forkmesh-instance-hex-bug-board` mesh whose
+  vertex shader turns each quad to face the camera like a sprite. The board
+  uses `alphaTest` instead of blending, so overlapping icons need no sorting
+  and it casts no shadow. Each bug keeps a hidden `Sprite` with
+  `raycastProxy`, which carries the `neighbour-bug` pick. Unpicked meshes
+  (glass panes, frames, windows, lamps, trees) are then merged by material
+  (`mergeMeshesByMaterial` with `skip` for anything interactive). Before this a
+  32-bug scene cost 64 draws, 43 of them transparent; now it costs 19, 5
+  transparent. The hex layer is the `instance-hexes` World element
+  ("Neighbour hexagons"), so the profiler names its draws.
+- **Bug icons through home.** An instance's raw-file route sends no CORS
+  header, so a cross-origin icon cannot be drawn into a WebGL texture and
+  every bug fell back to its initial. The World loads each icon from its own
+  server instead: `GET /api/world/neighbour-icon?world=<id>&path=<path>`
+  (`neighbourIconURL()`, `world_neighbour_icon_handler`). The server answers
+  only for a hexagon neighbour in its directory that lists a scene (never
+  itself), builds the URL as that neighbour's `world` origin plus the path
+  (`neighbour_icon_source()`: starts with one `/`, at most 300 URL-safe
+  characters, no `#`), fetches it without credentials and with redirects
+  refused (4 seconds, 64 KB), and relays it only when the bytes are PNG,
+  JPEG, GIF, WebP or ICO (`icon_type()`; never SVG). The reply carries the
+  sniffed type, `access-control-allow-origin: *`, `nosniff`, a sandbox CSP
+  and an hour of public cache; the server keeps up to 96 icons in memory for
+  an hour, and a failure for a minute.
+- **Publishing a scene.** Every instance World serves that route
+  (`world_neighbour_scene_handler`, `neighbour_scene()` in `world_mesh.py`)
+  with `access-control-allow-origin: *` and a 5-minute public cache; the
+  hub answers 404, since it is never anyone's neighbour. Without settings
+  it publishes a default scene: a plaza with lamps, a sign with
+  `INSTANCE_NAME` and the World's host, and a ring of trees at 280 (outside
+  the landmark at 0.55 of the apothem, inside the 330 reach). An operator
+  can replace it by putting their own scene JSON in `WORLD_NEIGHBOUR_SCENE`.
+  The server only checks the outline (64 KB, version 1, 1–48 object
+  entries) and falls back to the default if the outline is wrong; the hub's
+  World still checks every field.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own
@@ -594,10 +839,18 @@ them without changing page.
   its logo, landmark and label, six sand hexes and one road net, all as
   shared geometry. The neighbour's roads sit 0.02 below the home roads so the
   shared border strip does not z-fight. Clicking the landmark explains how to
-  walk in; it opens no tab.
+  walk in; it opens no tab. When the World the page stands in is itself a
+  single hexagon, every neighbour is drawn as a single hexagon too
+  (`updateInstanceHexes`): from an instance on hub slot 0 (petal 1) the hub
+  is one hexagon on the instance's petal 4, mirroring how the hub draws the
+  instance. Drawing the hub as a whole flower there laid its sand petals over
+  the instance's own town.
 - **Ownership.** `worldMeshOwnerAt()` decides whose ground the player stands
   on. The home hexes win the shared road strip; past it, the neighbour's
-  flower owns the point.
+  flower owns the point. The page decides with a margin of 8
+  (`WORLD_MESH_SWITCH_MARGIN`), so a walker on the strip's midline does not
+  switch Worlds back and forth; a single hexagon needs the walker on its land
+  (`onLand`), which already leaves the strip between.
 - **Watch sockets.** `WorldMeshLinks` (`world-mesh.js`) opens
   `wss://<api>/api/world/ws?watch=1` to up to four neighbours whose centre is
   within 1700 units (released at 1900). The relay accepts a watcher only from
@@ -608,7 +861,7 @@ them without changing page.
   Their peers are shifted by the neighbour's offset and drawn in the space
   `world-mesh`, which carries the district radius. They are named
   `name@host`, except visitors from this world, who keep their plain name.
-- **Visits.** Stepping onto a neighbour's flower swaps that world's watch
+- **Visits.** Stepping onto a neighbour's flower or single hexagon swaps that world's watch
   socket for a presence socket. The client sends its profile as
   `town-square`, and its moves after subtracting the offset, so the
   neighbour's own visitors see it walk in from their edge. Meanwhile the home
@@ -617,6 +870,100 @@ them without changing page.
   hide `visiting` peers and see the visitor through their own watch socket
   instead, so nobody is drawn twice. Walking back reverses the swap. A notice
   says which world you entered or returned to.
+- **Hand-off.** The home presence turns `visiting` only once the neighbour's
+  relay has welcomed the visit socket (`onVisitAdmitted`, `admittedId` in
+  `WorldMeshLinks`). Until then, and again whenever that socket drops, moves
+  keep going to the home socket converted back to home's frame
+  (`homeFrameMovement()`), while the visit link keeps the latest move to send
+  on open. The watch link's residents stay drawn until the visit's own
+  welcome replaces them. Before 2026-10-22 the switch happened as soon as the
+  walker crossed, so for the seconds a visa and socket took (or for good, if
+  the neighbour refused the socket) the walker was drawn in neither World.
+- **Standing in an instance's hexagon.** Until 2026-10-21 stepping onto
+  OWASP BLT only drew its published scene, a stand-in with a plaza, a sign,
+  a house and a terrarium, and the rest of BLT's World (its members,
+  repositories, padlocks and shield, benches, trees, its residents as
+  residents) was not there. That evening the page briefly switched into BLT
+  as if it were a flower, and a walker stood in ForkMesh's town filled with
+  BLT's members. Now the page enters an instance's World as that World draws
+  itself (`docs/INSTANCES.md`, An instance World is its own hexagon):
+  - As soon as the hexagon is placed, the page reads the instance's
+    `/api/instance` (`neighbourInstance()`: CORS, no credentials, no
+    redirects, 6 seconds; the federation client's path list stays as it is)
+    and its neighbour scene, and `territoryForNeighbour()` (`world-territory.js`)
+    turns them into the same territory settings the instance builds from:
+    name, style, accent, houses and the terrarium. The logo is the
+    directory's logo, else `/instance-logo.png` through
+    `/api/world/neighbour-icon`; the bugs are the scene's terrarium list with
+    their icons through the same relay, since the instance's raw-file route
+    sends no CORS header. Until this has loaded (or when it fails; it is
+    retried after a minute) stepping onto the land stays a visit to the
+    published scene.
+  - `enterMeshWorld()` then calls the scene's `enterTerritoryVisit()`
+    (`scene/instance-territory.js`): it builds the hexagon with
+    `buildInstanceTerritory()` at the town's centre (or shows the copy built
+    ahead, below), moves ForkMesh's
+    scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) next door by
+    `forkmeshShiftAround()`, switches off `TERRITORY_HIDDEN_ELEMENTS` (only
+    those the visitor had on), walks the hexagon and ForkMesh's tiles, and
+    recentres the walker by minus the hexagon's offset. The Members Circle,
+    repository portals and other town reads come from the instance
+    (`reloadMeshRootData()`), its residents arrive over the visit socket,
+    the houses and terrarium are walled and clickable as on the instance,
+    and home's peers stay visible next door. ForkMesh's Office stays home's
+    (`setOfficeOwner(null)`).
+  - The hub's single-hexagon layer is cleared while the page stands there
+    (`placeMeshHexRoot`), and home is the one neighbour, at the shift the
+    territory reports. Stepping onto ForkMesh's ground (its tiles grown to
+    the road's midline, `territoryOwnerAt()`) returns home:
+    `leaveTerritoryVisit()` moves the scenery back, gives back its clicks,
+    turns the hidden elements on again and keeps the built hexagon, hidden,
+    for the next visit.
+  - The hexagon is built before anyone steps in. Once the territory has
+    loaded, an idle callback calls `prepareTerritoryVisit()`, which builds it
+    and adds it to the World hidden (`userData.groundStandby`), so the GPU
+    warm-up compiles its materials and uploads its plates in idle time and the
+    crossing frame only shows it. Building, compiling and uploading it on the
+    crossing frame cost a half-second stall. A standby hexagon is skipped by
+    the ground-height walk, has no clicks, and its terrarium bugs only move
+    while it is shown in the scene.
+- **Standing in another World.** A flower neighbour runs the same town, so
+  its real town is this page's town with that World's data. Single-hexagon
+  neighbours are entered as their own hexagon (see above). Before,
+  stepping onto a neighbour kept the page in the home World, and the
+  neighbour stayed a placeholder: a meadow with a logo, or its published
+  scene, with nobody but passers-by from the watch socket. Now
+  `enterMeshWorld()` (`world.js`) moves the page into the flower whose ground
+  the walker steps onto:
+  - The scene recentres on it. `shiftPlayer(dx, dz)` (`scene/runtime/camera.js`)
+    moves the walker and camera by minus that World's offset, keeping their
+    heading, and `placeWorldMesh()` lays the mesh out from that World's
+    slot, so the full town stands where its hexagon was and the World left
+    behind becomes the neighbour hexagon. The switch is refused inside a
+    building, a package district or on a ride; the walker then visits as
+    before.
+  - The town's content is read from that World (`fetchMeshRootJSON`): the
+    reads in `MESH_ROOT_READS` (`world-federation.js`: member directory,
+    inactive members, arrival stats, organizations, events, fediverse boards,
+    network overview, repositories, leaderboards) go to its API through the
+    federation client without credentials, and `reloadMeshRootData()` reloads
+    them on every switch. Reads in `MESH_ROOT_HIDDEN` (repository imports and
+    `/api/repo/...` details, ads, the reward fund, the security board, media
+    spaces) answer `not_in_this_world` there, so another World's town never
+    shows home's data. Everything else (session, chat, notifications,
+    rewards, any write) stays with home. A read that started before a switch
+    is dropped (`world_changed`).
+  - The visit socket to that World is the page's presence there, and its
+    residents are drawn with their activity and status like home peers.
+    Home's own socket stays open with presence `visiting`; its peers outdoors
+    are drawn shifted onto home's hexagon (`homeFramePlayer`), so people on
+    both sides of the border stay visible.
+  - The Office in that town is its owner's (`setOfficeOwner`), entered as a
+    visitor ([federation.md](federation.md)).
+  - The saved position is kept in home's frame, so a reload puts the walker
+    back on the same ground and the page switches again.
+  A notice names the World entered (`Entering <name> · <host>`) or returned
+  to.
 - **Visas (the session trick).** A signed-in user's account lives on their
   home world only. Before a visit the client asks home for a visa:
   `POST /api/world/visa {destination}`. It needs a session and an allowed
@@ -654,9 +1001,34 @@ them without changing page.
   a ballistic jump, corkscrew and helix; the track is resampled into typed
   arrays and drawn as LOD chunks with one shared material; the train is one
   `InstancedMesh`. Presence frames carry `COASTER_RIDING_ACTIVITY`.
+  In first person, `placeCoasterEye()` puts the eye `FIRST_PERSON_EYE_HEIGHT`
+  along the seat's up axis and takes the seat's whole orientation, so the view
+  pitches, banks and inverts with the car instead of staying level on world up.
+  Drags while riding are kept as `ride.lookYaw` (seat-relative yaw, reset to
+  forward when first person is switched on) and `firstPersonPitch` is applied
+  in the seat frame, so a glance to the side holds through loops where
+  `followHeading()` stops tracking the world heading. `seatRider()`
+  re-orthogonalises the track's interpolated up against its tangent so the
+  seat quaternion is a clean rotation. Test:
+  `test_the_first_person_eye_turns_over_with_the_seat_and_keeps_a_glance`.
 - **Bikes** follow the road graph (`districts/roads.js`); tapping left or
   right before a junction picks a branch, holding leaves the road, and riding
   onto a road along it rejoins. Tests: `world/tests/test_world_bike_junctions.py`.
+  On the outer edge of the world (a road with only one drawn hex beside it)
+  the default turn at each junction stays on the outer road (`outerTurn` and
+  `outerIncoming` on each graph edge), so a rider circles the whole edge
+  without steering and only goes back in after a tap toward the inside. Test:
+  `test_riding_the_outer_edge_stays_on_the_outer_road_unless_steered_in`.
+  The six outer junctions, where two drawn hexes meet open land, are T
+  junctions: each carries a `bend` (the centre of the missing third hex and its
+  corner), and the roads along that hex curve into each other around its
+  rounded corner. `roadBendPositions()` lays that corner's asphalt, its centre
+  dashes are kept through the junction while the side road's stop short, the
+  road graph adds the through turn between the two edges that share no drawn
+  hex, `roadBendContains()` makes the curve walkable, and the junction's fill
+  triangle points along its three roads. Tests:
+  `test_outer_junctions_curve_one_road_into_the_next`,
+  `test_outer_junction_dashes_follow_the_through_road`.
 - **Parachute** (`parachuteSinkVelocity()`), **gym** (`poseAvatarArms()`),
   **avatars** (the back name board is a child of the torso).
 - **Office aquarium reef controller** (`scene/aquarium-panel.js`): a physical
@@ -668,6 +1040,8 @@ them without changing page.
 
 ## Related docs
 
+- [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
+- [genie-spider.md](genie-spider.md): the Genie spider that follows you around the World
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)

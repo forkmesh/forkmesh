@@ -131,7 +131,7 @@ def test_runner_snapshots_dispatch_with_inputs_cancel_and_rerun_locally():
     assert 'data-repo-actions-input-required' in submit
     controls = function("renderRepoActionsRunControls")
     assert 'button("cancel"' in controls and 'button("rerun"' in controls
-    assert 'run.status === "awaiting-approval" && view.source !== "runner"' in controls
+    assert 'if (run.status === "awaiting-approval") {' in controls
 
 
 def test_dispatch_inputs_render_by_type():
@@ -197,12 +197,12 @@ def test_public_runs_hint_at_signing_in_for_logs():
     public = function("renderRepoActionsPublicDetail")
     assert "Sign in to see logs" in public
     assert "escapeHtml(repoActionsSignInHref())" in public
-    assert "userNameHtml(run.actor)" in public
+    assert "issuePersonNameHtml(run.actor," in public
     assert "logTail" not in public and "loadRepoActionsRunLog" not in public
     assert "/login?next=${encodeURIComponent(location.pathname + location.search)}" in function(
         "repoActionsSignInHref")
     assert "actor: repoActionsCleanLine(run?.actor, 64)," in FRAGMENT
-    assert "${userNameHtml(run.actor)}" in function("renderRepoActionsRuns")
+    assert '${issuePersonNameHtml(run.actor, "")}' in function("renderRepoActionsRuns")
     assert "Sign in to see runs" in FRAGMENT
 
 

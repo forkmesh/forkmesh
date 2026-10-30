@@ -24,11 +24,13 @@ from . import paths
 
 # The staged modules, the dashboard bundle and the site pages. The dashboard
 # and site builds are what fill app/dist (ASSETS); the Python staging alone is
-# enough to answer API routes.
+# enough to answer API routes. The last step writes the brotli and gzip
+# copies StaticAssets answers with (tools/precompress_assets.py).
 BUILD_STEPS = (
     ("tools/build_dashboard_assets.py",),
     ("tools/build_worker_python.py",),
     ("tools/build_site_assets.py", "app"),
+    ("tools/precompress_assets.py", "dist"),
 )
 
 
@@ -98,6 +100,9 @@ def cmd_serve(args):
     if vault.enabled(os.environ):
         vault.harden_process()
     app = make_app(args)
+    from . import privacy
+    access_log = args.access_log and not privacy.active(
+        getattr(getattr(app, "runtime", None), "env", None))
     loop = "auto"
     try:
         import uvloop  # noqa: F401
@@ -115,7 +120,7 @@ def cmd_serve(args):
         http = stopping_protocol(http, stopping)
     uvicorn.run(app, host=args.host, port=args.port, loop=loop, http=http,
                 ws=DrainingWebSocketProtocol, lifespan="on", workers=1,
-                log_level=args.log_level, access_log=args.access_log,
+                log_level=args.log_level, access_log=access_log,
                 proxy_headers=False, server_header=False,
                 **server_limits(os.environ))
     return 0
@@ -210,6 +215,8 @@ def main(argv=None):
     instance_bootstrap.add_parser(sub, common)
     from . import instance_repo
     instance_repo.add_parser(sub, common)
+    from . import pull_resync
+    pull_resync.add_parser(sub, common)
 
     args = parser.parse_args(argv)
     return args.func(args)

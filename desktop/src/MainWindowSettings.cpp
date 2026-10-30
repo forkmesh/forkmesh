@@ -1,4 +1,5 @@
 
+#include "InstanceTheme.h"
 #include "AwsSettingsPanel.h"
 #include "BackgroundSettings.h"
 #include "HiddenTerms.h"
@@ -22,11 +23,13 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "ReactionEmoji.h"
+#include "ReleaseTrust.h"
 #include "SafeDelete.h"
 #include "SettingsSectionsView.h"
 #include "SystemdTimersPanel.h"
 #include "MeshFirewall.h"
 #include "NodeDiagnostics.h"
+#include "DiagnosticsReport.h"
 #include "QrCode.h"
 #include "SuggestedApps.h"
 #include "UiSounds.h"
@@ -38,8 +41,10 @@
 #include <QColor>
 #include <QColorDialog>
 #include <QCompleter>
+#include <QDateTimeEdit>
 #include <QDesktopServices>
 #include <QFormLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkReply>
 #include <QPixmap>
@@ -174,6 +179,28 @@ QString suggestedAppCommandText(const QString &program, const QStringList &argum
 
 } // namespace
 
+QList<QPair<QString, QString>> MainWindow::appThemeChoices() const
+{
+    QList<QPair<QString, QString>> choices = {
+        {QStringLiteral("Follow system"), QStringLiteral("system")},
+        {QStringLiteral("Dark"), QStringLiteral("dark")},
+        {QStringLiteral("Light"), QStringLiteral("light")},
+        {QStringLiteral("Halloween"), kHalloweenTheme},
+    };
+    if (m_packageRegistry && m_packageRegistry->isReady()) {
+        for (const forkmesh::market::PackageManifest &package :
+             m_packageRegistry->packages()) {
+            if (package.type != QLatin1String("theme") ||
+                !m_packageRegistry->isInstalled(package.id)) {
+                continue;
+            }
+            choices.append({QStringLiteral("%1 (Market)").arg(package.name),
+                            kMarketplaceThemePrefix + package.id});
+        }
+    }
+    return choices;
+}
+
 void MainWindow::populateAppThemeCombo(QComboBox *combo) const
 {
     if (!combo)
@@ -182,21 +209,8 @@ void MainWindow::populateAppThemeCombo(QComboBox *combo) const
     const QString selected =
         QSettings().value(kThemeSetting, QStringLiteral("system")).toString();
     combo->clear();
-    combo->addItem(QStringLiteral("Follow system"), QStringLiteral("system"));
-    combo->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
-    combo->addItem(QStringLiteral("Light"), QStringLiteral("light"));
-    if (m_packageRegistry && m_packageRegistry->isReady()) {
-        for (const forkmesh::market::PackageManifest &package :
-             m_packageRegistry->packages()) {
-            if (package.type != QLatin1String("theme") ||
-                !m_packageRegistry->isInstalled(package.id)) {
-                continue;
-            }
-            combo->addItem(
-                QStringLiteral("%1 (Market)").arg(package.name),
-                kMarketplaceThemePrefix + package.id);
-        }
-    }
+    for (const auto &choice : appThemeChoices())
+        combo->addItem(choice.first, choice.second);
     const int index = combo->findData(selected);
     combo->setCurrentIndex(index < 0 ? 0 : index);
 }
@@ -215,6 +229,454 @@ ColumnFlowWidget *settingsFlowBody()
     body->setContentsMargins(2, 12, 2, 12);
     body->setMaximumColumns(1);
     return body;
+}
+
+const char kNextMarginsProperty[] = "nextMargins";
+const char kNextPolishedProperty[] = "nextSettingsPolished";
+const QMargins kNextRowMargins(16, 12, 16, 12);
+
+void setNextMargins(QWidget *widget, const QMargins &margins)
+{
+    if (!widget || !widget->layout())
+        return;
+    widget->setProperty(kNextMarginsProperty, QRect(margins.left(), margins.top(),
+                                                    margins.right(), margins.bottom()));
+    widget->layout()->setContentsMargins(margins);
+}
+
+void reapplyNextMargins(QWidget *root)
+{
+    if (!root)
+        return;
+    const QList<QWidget *> widgets = root->findChildren<QWidget *>();
+    for (QWidget *widget : widgets) {
+        const QVariant value = widget->property(kNextMarginsProperty);
+        if (!value.isValid() || !widget->layout())
+            continue;
+        const QRect stored = value.toRect();
+        const QMargins margins(stored.x(), stored.y(), stored.width(), stored.height());
+        if (widget->layout()->contentsMargins() != margins)
+            widget->layout()->setContentsMargins(margins);
+    }
+}
+
+class NextSettingsToggle : public QObject
+{
+public:
+    explicit NextSettingsToggle(QCheckBox *box) : QObject(box), m_box(box)
+    {
+        box->setProperty("nextToggle", true);
+        box->installEventFilter(this);
+        box->update();
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (!Theme::isNext())
+            return false;
+        switch (event->type()) {
+        case QEvent::Paint:
+            paint();
+            return true;
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonDblClick: {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() != Qt::LeftButton || !hitTrack(mouse->position().toPoint()))
+                return false;
+            m_pressed = true;
+            return true;
+        }
+        case QEvent::MouseButtonRelease: {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (!m_pressed || mouse->button() != Qt::LeftButton)
+                return false;
+            m_pressed = false;
+            if (m_box->isEnabled() && hitTrack(mouse->position().toPoint()))
+                m_box->click();
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+private:
+    QRect trackRect() const
+    {
+        return QRect(m_box->width() - kTrackWidth, (m_box->height() - kTrackHeight) / 2,
+                     kTrackWidth, kTrackHeight);
+    }
+
+    bool hitTrack(const QPoint &pos) const
+    {
+        return trackRect().adjusted(-6, -6, 6, 6).contains(pos);
+    }
+
+    void paint()
+    {
+        QPainter painter(m_box);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const bool enabled = m_box->isEnabled();
+        const QRect track = trackRect();
+        QRect textRect(0, 0, qMax(0, track.left() - 12), m_box->height());
+        const QIcon icon = m_box->icon();
+        if (!icon.isNull()) {
+            const QSize side = m_box->iconSize();
+            const QRect iconRect(0, (m_box->height() - side.height()) / 2, side.width(),
+                                 side.height());
+            icon.paint(&painter, iconRect, Qt::AlignCenter,
+                       enabled ? QIcon::Normal : QIcon::Disabled);
+            textRect.setLeft(iconRect.right() + 7);
+        }
+        QString text = m_box->text();
+        text.replace(QStringLiteral("&&"), QStringLiteral("\x01"));
+        text.remove(QLatin1Char('&'));
+        text.replace(QLatin1Char('\x01'), QLatin1Char('&'));
+        painter.setFont(m_box->font());
+        painter.setPen(Theme::color(enabled ? Theme::Role::Fg : Theme::Role::FgSubtle));
+        painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(m_box->font())
+                             .elidedText(text, Qt::ElideRight, textRect.width()));
+
+        const Qt::CheckState state = m_box->checkState();
+        const bool on = state != Qt::Unchecked;
+        painter.setOpacity(enabled ? 1.0 : 0.45);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(on ? Theme::color(Theme::Role::Accent)
+                            : Theme::activeDark()
+                                  ? Theme::color(Theme::Role::BorderStrong)
+                                  : Theme::color(Theme::Role::FgSubtle, 130));
+        const QRectF trackF(track);
+        painter.drawRoundedRect(trackF, trackF.height() / 2, trackF.height() / 2);
+        const qreal knob = trackF.height() - 4;
+        const qreal x = state == Qt::Checked ? trackF.right() - 2 - knob
+                        : state == Qt::PartiallyChecked
+                            ? trackF.center().x() - knob / 2
+                            : trackF.left() + 2;
+        painter.setBrush(Theme::color(Theme::Role::OnAccent));
+        painter.drawEllipse(QRectF(x, trackF.top() + 2, knob, knob));
+        if (m_box->hasFocus() && m_box->window()->testAttribute(Qt::WA_KeyboardFocusChange)) {
+            painter.setOpacity(1.0);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(Theme::color(Theme::Role::Accent), 2));
+            const QRectF ring = trackF.adjusted(-2.5, -2.5, 2.5, 2.5);
+            painter.drawRoundedRect(ring, ring.height() / 2, ring.height() / 2);
+        }
+    }
+
+    static constexpr int kTrackWidth = 30;
+    static constexpr int kTrackHeight = 18;
+    QCheckBox *m_box;
+    bool m_pressed = false;
+};
+
+class NextGroupRows : public QObject
+{
+public:
+    explicit NextGroupRows(QFrame *box) : QObject(box), m_box(box)
+    {
+        box->installEventFilter(this);
+    }
+
+    void add(QWidget *divider, QWidget *row)
+    {
+        m_rows.append(qMakePair(QPointer<QWidget>(divider), QPointer<QWidget>(row)));
+        row->installEventFilter(this);
+        schedule();
+    }
+
+    void schedule()
+    {
+        if (m_queued)
+            return;
+        m_queued = true;
+        QTimer::singleShot(0, this, [this] {
+            m_queued = false;
+            sync();
+        });
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show)
+            schedule();
+        return false;
+    }
+
+private:
+    void sync()
+    {
+        bool any = false;
+        for (const auto &entry : std::as_const(m_rows)) {
+            QWidget *row = entry.second;
+            if (!row || !row->layout())
+                continue;
+            const bool empty = row->layout()->isEmpty();
+            const QMargins wanted = empty ? QMargins() : kNextRowMargins;
+            if (row->layout()->contentsMargins() != wanted)
+                row->layout()->setContentsMargins(wanted);
+            if (QWidget *divider = entry.first) {
+                const bool show = !empty && any;
+                if (divider->isHidden() == show)
+                    divider->setVisible(show);
+            }
+            any = any || !empty;
+        }
+        if (m_box && m_box->property("empty").toBool() == any) {
+            m_box->setProperty("empty", !any);
+            m_box->style()->unpolish(m_box);
+            m_box->style()->polish(m_box);
+            m_box->update();
+        }
+    }
+
+    QPointer<QFrame> m_box;
+    QList<QPair<QPointer<QWidget>, QPointer<QWidget>>> m_rows;
+    bool m_queued = false;
+};
+
+QFrame *nextGroupBox(QWidget *owner)
+{
+    auto *box = new QFrame(owner);
+    box->setObjectName(QStringLiteral("settingsGroupBox"));
+    box->setProperty("nextGroupBox", true);
+    box->setAttribute(Qt::WA_StyledBackground, true);
+    auto *column = new QVBoxLayout(box);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(0);
+    return box;
+}
+
+QWidget *nextRowDivider(QWidget *box)
+{
+    auto *divider = new QWidget(box);
+    divider->setObjectName(QStringLiteral("settingsRowDivider"));
+    divider->setAttribute(Qt::WA_StyledBackground, true);
+    divider->setFixedHeight(1);
+    return divider;
+}
+
+bool isSettingsHeading(QLayoutItem *item)
+{
+    if (auto *label = qobject_cast<QLabel *>(item->widget()))
+        return label->objectName() == QLatin1String("sectionLabel");
+    auto *row = qobject_cast<QHBoxLayout *>(item->layout());
+    if (!row)
+        return false;
+    for (int i = 0; i < row->count(); ++i) {
+        auto *label = qobject_cast<QLabel *>(row->itemAt(i)->widget());
+        if (label && label->objectName() == QLatin1String("sectionLabel"))
+            return true;
+    }
+    return false;
+}
+
+bool isSettingsHint(QLayoutItem *item)
+{
+    auto *label = qobject_cast<QLabel *>(item->widget());
+    return label && (label->objectName() == QLatin1String("statusLine") ||
+                     label->objectName() == QLatin1String("modeHint"));
+}
+
+void hideHeadingGlyph(QLayoutItem *item)
+{
+    auto *row = qobject_cast<QHBoxLayout *>(item->layout());
+    if (!row)
+        return;
+    for (int i = 0; i < row->count(); ++i) {
+        auto *label = qobject_cast<QLabel *>(row->itemAt(i)->widget());
+        if (!label)
+            continue;
+        if (label->objectName() == QLatin1String("sectionLabel"))
+            return;
+        if (label->text().isEmpty())
+            label->hide();
+    }
+}
+
+struct NextColumnEntry {
+    QLayoutItem *item = nullptr;
+    int stretch = 0;
+    Qt::Alignment alignment;
+};
+
+void readdNextEntry(QVBoxLayout *target, const NextColumnEntry &entry, bool toggles)
+{
+    QLayoutItem *item = entry.item;
+    if (QWidget *widget = item->widget()) {
+        auto *check = qobject_cast<QCheckBox *>(widget);
+        const bool toggle =
+            toggles && check && !dynamic_cast<forkmesh::ui::kit::Toggle *>(check);
+        target->addWidget(widget, entry.stretch, toggle ? Qt::Alignment() : entry.alignment);
+        delete item;
+        if (toggle)
+            new NextSettingsToggle(check);
+        return;
+    }
+    if (QLayout *layout = item->layout()) {
+        if (layout->parent())
+            layout->setParent(nullptr);
+        target->addLayout(layout, entry.stretch);
+        if (entry.alignment)
+            target->setAlignment(layout, entry.alignment);
+        return;
+    }
+    target->addItem(item);
+    target->setStretch(target->count() - 1, entry.stretch);
+}
+
+bool groupNextSettingsColumn(QVBoxLayout *column, QWidget *owner)
+{
+    QList<NextColumnEntry> entries;
+    bool heading = false;
+    bool grouped = false;
+    for (int i = 0; i < column->count(); ++i) {
+        QLayoutItem *item = column->itemAt(i);
+        entries.append({item, column->stretch(i), item->alignment()});
+        if (isSettingsHeading(item))
+            heading = true;
+        else if (heading && !item->spacerItem() && !isSettingsHint(item))
+            grouped = true;
+    }
+    if (!grouped)
+        return false;
+    while (column->count() > 0)
+        column->takeAt(0);
+
+    enum class Place { Before, Leading, Inside };
+    Place place = Place::Before;
+    QFrame *box = nullptr;
+    NextGroupRows *rows = nullptr;
+    QVBoxLayout *rowColumn = nullptr;
+    for (const NextColumnEntry &entry : std::as_const(entries)) {
+        QLayoutItem *item = entry.item;
+        if (isSettingsHeading(item)) {
+            box = nullptr;
+            rowColumn = nullptr;
+            hideHeadingGlyph(item);
+            readdNextEntry(column, entry, false);
+            place = Place::Leading;
+            continue;
+        }
+        if (place == Place::Before) {
+            readdNextEntry(column, entry, false);
+            continue;
+        }
+        if (QSpacerItem *spacer = item->spacerItem()) {
+            if (spacer->expandingDirections() & Qt::Vertical) {
+                box = nullptr;
+                rowColumn = nullptr;
+                place = Place::Before;
+                readdNextEntry(column, entry, false);
+            } else if (place == Place::Leading) {
+                readdNextEntry(column, entry, false);
+            } else {
+                delete item;
+            }
+            continue;
+        }
+        if (place == Place::Leading && isSettingsHint(item)) {
+            readdNextEntry(column, entry, false);
+            continue;
+        }
+        if (!box) {
+            box = nextGroupBox(owner);
+            column->addWidget(box);
+            rows = new NextGroupRows(box);
+        }
+        place = Place::Inside;
+        if (!rowColumn || !isSettingsHint(item)) {
+            auto *boxColumn = static_cast<QVBoxLayout *>(box->layout());
+            QWidget *divider = nullptr;
+            if (rowColumn) {
+                divider = nextRowDivider(box);
+                boxColumn->addWidget(divider);
+            }
+            auto *row = new QWidget(box);
+            row->setObjectName(QStringLiteral("settingsGroupRow"));
+            rowColumn = new QVBoxLayout(row);
+            rowColumn->setContentsMargins(kNextRowMargins);
+            rowColumn->setSpacing(4);
+            boxColumn->addWidget(row);
+            rows->add(divider, row);
+        }
+        readdNextEntry(rowColumn, entry, true);
+    }
+    return true;
+}
+
+class NextPlacesRefresher : public QObject
+{
+public:
+    NextPlacesRefresher(QWidget *host, std::function<void()> run)
+        : QObject(host), m_run(std::move(run))
+    {
+        host->installEventFilter(this);
+    }
+
+    void schedule()
+    {
+        if (m_queued)
+            return;
+        m_queued = true;
+        QTimer::singleShot(0, this, [this] {
+            m_queued = false;
+            m_run();
+        });
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() ==
+                "placesRevision")
+            schedule();
+        return false;
+    }
+
+private:
+    std::function<void()> m_run;
+    bool m_queued = false;
+};
+
+QString nextPlaceLabel(const QString &place)
+{
+    if (place == QLatin1String("mobile"))
+        return QStringLiteral("Phone");
+    if (place == QLatin1String("desktop"))
+        return QStringLiteral("Desktop");
+    return QStringLiteral("Web");
+}
+
+void polishNextSettingsBody(QWidget *body, bool flat)
+{
+    if (!body || body->property(kNextPolishedProperty).toBool())
+        return;
+    body->setProperty(kNextPolishedProperty, true);
+    body->setContentsMargins(0, 0, 0, 0);
+    if (QLayout *layout = body->layout())
+        layout->setContentsMargins(0, 0, 0, 0);
+    const QList<QWidget *> widgets = body->findChildren<QWidget *>();
+    for (QWidget *card : widgets) {
+        if (!card->property("sectionCard").toBool() ||
+            card->property("nextTableRow").toBool())
+            continue;
+        auto *column = qobject_cast<QVBoxLayout *>(card->layout());
+        if (!column || !groupNextSettingsColumn(column, card))
+            continue;
+        card->setProperty("settingsGroupCard", true);
+        column->setSpacing(8);
+        setNextMargins(card, QMargins());
+    }
+    if (flat) {
+        if (auto *column = qobject_cast<QVBoxLayout *>(body->layout())) {
+            if (groupNextSettingsColumn(column, body))
+                column->setSpacing(8);
+        }
+    }
 }
 
 } // namespace
@@ -245,6 +707,7 @@ struct MainWindow::SettingsSectionParts {
     QCheckBox *issueModelMentionsCheck = nullptr;
     QCheckBox *excludeExternalClaudeCheck = nullptr;
     QCheckBox *publishAgentsToWebCheck = nullptr;
+    QCheckBox *claudeDesktopSessionsCheck = nullptr;
     QLabel *notifyLabel = nullptr;
     QHBoxLayout *pingPauseRow = nullptr;
     QCheckBox *nativeSystemNotificationsCheck = nullptr;
@@ -381,21 +844,37 @@ QWidget *MainWindow::buildSettingsSection()
     buildSettingsImportAndSecretsParts(parts);
     buildSettingsFooterParts(parts);
 
+    const bool next = Theme::isNext();
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(24, 14, 24, 16);
     layout->setSpacing(10);
+    if (next) {
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+    }
 
     // Every section on one scrolling page; the list on the left jumps to one
     // and follows the one being read, and its search box narrows the page.
     auto *sections = new SettingsSectionsView;
     sections->setObjectName("settingsSections");
+    if (next)
+        sections->setProperty("nextLayout", true);
     layout->addWidget(sections, 1);
-    auto addTab = [sections](QWidget *body, const QString &name,
-                             const QString &octicon) {
+    auto addTab = [this, sections, next](QWidget *body, const QString &name,
+                                         const QString &octicon) {
+        if (next && body != m_settingsProfileHost)
+            polishNextSettingsBody(body, false);
         return sections->addSection(body, name, octicon);
     };
-    auto addLazyTab = [sections](std::function<QWidget *()> build,
-                                 const QString &name, const QString &octicon) {
+    auto addLazyTab = [sections, next](std::function<QWidget *()> build,
+                                       const QString &name, const QString &octicon) {
+        if (next) {
+            build = [inner = std::move(build)] {
+                QWidget *body = inner();
+                polishNextSettingsBody(body, false);
+                return body;
+            };
+        }
         return sections->addLazySection(std::move(build), name, octicon);
     };
 
@@ -409,7 +888,7 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildQuickSetupTab(); }, "Quick Setup", "rocket");
 
-    addTab(buildSettingsGeneralTab(parts), "General", "gear");
+    const int generalTabIndex = addTab(buildSettingsGeneralTab(parts), "General", "gear");
 
     m_suggestedAppsSettingsTabIndex =
         addLazyTab([this] { return buildSuggestedAppsTab(); }, "Apps", "terminal");
@@ -435,6 +914,8 @@ QWidget *MainWindow::buildSettingsSection()
     secretsCol->addLayout(parts.varButtonRow);
     secretsCol->addWidget(m_varsList);
     secretsCol->addStretch();
+    if (next)
+        polishNextSettingsBody(secretsTab, true);
     addTab(secretsTab, "Secrets", "key");
 
     addLazyTab(
@@ -469,6 +950,8 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildVulnReportTab(); }, "Security", "shield-check");
 
+    addLazyTab([this] { return buildFastDiskTab(); }, "TMP disk", "database");
+
     addLazyTab([this] { return buildDataSection(); }, "Data", "package");
 
     m_settingsSections = sections;
@@ -487,10 +970,13 @@ QWidget *MainWindow::buildSettingsSection()
     // scrolls past.
     connect(sections, &SettingsSectionsView::sectionActivated, this,
             [this](int) { scheduleNavRecord(); });
-    connect(sections, &SettingsSectionsView::sectionRevealed, this, [this](int index) {
-        if (index == m_suggestedAppsSettingsTabIndex)
-            refreshSuggestedApps();
-    });
+    connect(sections, &SettingsSectionsView::sectionRevealed, this,
+            [this, generalTabIndex](int index) {
+                if (index == m_suggestedAppsSettingsTabIndex)
+                    refreshSuggestedApps();
+                if (index == generalTabIndex)
+                    refreshSeasonSettings();
+            });
     // The organization roster is an account-scoped network read, so it waits
     // for its section to come into view rather than firing with every
     // Settings open.
@@ -500,8 +986,21 @@ QWidget *MainWindow::buildSettingsSection()
             refreshOrganizations();
         }
     });
-    layout->addWidget(m_rebuildStatus);
-    layout->addLayout(parts.footerRow);
+    auto *footerSlot =
+        next ? sections->findChild<QWidget *>(QStringLiteral("settingsFooterSlot")) : nullptr;
+    if (footerSlot && footerSlot->layout()) {
+        auto *footerBar = new QWidget;
+        footerBar->setObjectName(QStringLiteral("settingsFooterBar"));
+        footerBar->setAttribute(Qt::WA_StyledBackground, true);
+        parts.footerRow->setContentsMargins(24, 10, 24, 10);
+        parts.footerRow->setSpacing(8);
+        footerBar->setLayout(parts.footerRow);
+        footerSlot->layout()->addWidget(m_rebuildStatus);
+        footerSlot->layout()->addWidget(footerBar);
+    } else {
+        layout->addWidget(m_rebuildStatus);
+        layout->addLayout(parts.footerRow);
+    }
     reloadVariablesList();
     setSettingsAvatar(QByteArray()); // show the current/generated avatar
     syncPackageSurfaces();
@@ -534,6 +1033,62 @@ void MainWindow::refreshSettingsSectionIcons()
 {
     if (!m_settingsSections)
         return;
+    if (Theme::isNext()) {
+        const qreal ratio = devicePixelRatioF();
+        const QSize side(16, 16);
+        for (int i = 0; i < m_settingsSections->count(); ++i) {
+            const QString name = m_settingsSections->sectionIconName(i);
+            if (name.isEmpty())
+                continue;
+            QIcon icon;
+            icon.addPixmap(themedOcticon(name, Theme::color(Theme::Role::FgMuted), 16)
+                               .pixmap(side, ratio),
+                           QIcon::Normal);
+            icon.addPixmap(themedOcticon(name, Theme::color(Theme::Role::FgSubtle), 16)
+                               .pixmap(side, ratio),
+                           QIcon::Disabled);
+            icon.addPixmap(themedOcticon(name, Theme::color(Theme::Role::Accent), 16)
+                               .pixmap(side, ratio),
+                           QIcon::Selected);
+            m_settingsSections->setSectionIcon(i, icon);
+        }
+        if (auto *nav = m_settingsSections->findChild<QListWidget *>(
+                QStringLiteral("settingsNav"))) {
+            nav->setProperty("nextNavColors",
+                             QVariantMap{
+                                 {QStringLiteral("fg"), Theme::hex(Theme::Role::Fg)},
+                                 {QStringLiteral("muted"), Theme::hex(Theme::Role::FgMuted)},
+                                 {QStringLiteral("active"),
+                                  Theme::hex(Theme::Role::SurfaceActive)},
+                                 {QStringLiteral("hover"),
+                                  Theme::hex(Theme::Role::SurfaceRaised)},
+                                 {QStringLiteral("border"), Theme::hex(Theme::Role::Border)},
+                             });
+            nav->doItemsLayout();
+            nav->viewport()->update();
+        }
+        if (auto *search = m_settingsSections->findChild<QLineEdit *>(
+                QStringLiteral("settingsSearch"))) {
+            QAction *glyph = nullptr;
+            for (QAction *action : search->actions()) {
+                if (action->property("nextSearchIcon").toBool())
+                    glyph = action;
+            }
+            const QIcon icon =
+                themedOcticon(QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14);
+            if (glyph) {
+                glyph->setIcon(icon);
+            } else {
+                glyph = search->addAction(icon, QLineEdit::LeadingPosition);
+                glyph->setProperty("nextSearchIcon", true);
+            }
+        }
+        QTimer::singleShot(0, this, [this] {
+            if (m_settingsSections)
+                reapplyNextMargins(m_settingsSections);
+        });
+        return;
+    }
     const QColor color(currentThemeIsDark() ? QStringLiteral("#8b949e")
                                             : QStringLiteral("#656d76"));
     for (int i = 0; i < m_settingsSections->count(); ++i) {
@@ -660,6 +1215,8 @@ void MainWindow::buildSettingsProfileParts(SettingsSectionParts &parts)
         saveSolanaAddress(addr);
         if (m_solanaEdit && m_solanaEdit->text().trimmed() != addr)
             m_solanaEdit->setText(addr);
+        if (auto *server = qobject_cast<ServerNode *>(m_backend))
+            server->setTipAddress(sharedTipAddress());
         updateSolanaNotice();
         updateHomeStats();
     });
@@ -671,6 +1228,16 @@ void MainWindow::buildSettingsProfileParts(SettingsSectionParts &parts)
     form->addRow("Node name", m_settingsMachineNodeEdit);
     form->addRow("Node labels", m_settingsNodeLabelsEdit);
     form->addRow("Solana", m_settingsSolanaEdit);
+    auto *shareTipAddress =
+        new QCheckBox(QStringLiteral("Show this address in shared chat rooms so people can tip you"));
+    shareTipAddress->setObjectName(QStringLiteral("settingsShareTipAddress"));
+    shareTipAddress->setChecked(QSettings().value(kShareTipAddressSetting, false).toBool());
+    connect(shareTipAddress, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(kShareTipAddressSetting, on);
+        if (auto *server = qobject_cast<ServerNode *>(m_backend))
+            server->setTipAddress(sharedTipAddress());
+    });
+    form->addRow(QString(), shareTipAddress);
     m_settingsEmailLabel = new QLabel("Email");
     m_settingsEmailVerifiedBadge = new QLabel;
     m_settingsEmailVerifiedBadge->setObjectName("emailVerifiedBadge");
@@ -1167,11 +1734,26 @@ void MainWindow::buildSettingsAgentBehaviourParts(SettingsSectionParts &parts)
         QSettings().setValue(kPublishAgentsToWebSetting, enabled);
     });
 
+    auto *claudeDesktopSessionsCheck =
+        new QCheckBox("Add Claude Code agents to the Claude app");
+    claudeDesktopSessionsCheck->setObjectName(QStringLiteral("claudeDesktopSessionsCheck"));
+    claudeDesktopSessionsCheck->setChecked(claudeDesktopSessionsEnabled());
+    claudeDesktopSessionsCheck->setToolTip(
+        "When a Claude Code agent finishes, add its session to the Claude "
+        "desktop app's Code tab so it can be read and resumed there. The Claude "
+        "app switches to each session it adds. Codex agents stay in ForkMesh.");
+    connect(claudeDesktopSessionsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        QSettings().setValue(kClaudeDesktopSessionsSetting, enabled);
+        if (enabled)
+            backfillClaudeDesktopSessions();
+    });
+
     parts.autoSwitchToAgentCheck = autoSwitchToAgentCheck;
     parts.terminalTranscriptOutputCheck = terminalTranscriptOutputCheck;
     parts.issueModelMentionsCheck = issueModelMentionsCheck;
     parts.excludeExternalClaudeCheck = excludeExternalClaudeCheck;
     parts.publishAgentsToWebCheck = publishAgentsToWebCheck;
+    parts.claudeDesktopSessionsCheck = claudeDesktopSessionsCheck;
 }
 
 // Settings > Pings > PINGS: pause, delivery and the per-kind alert switches.
@@ -2367,6 +2949,16 @@ void MainWindow::buildSettingsAppearanceParts(SettingsSectionParts &parts)
                 forkmesh::ui::NextAccess::setRailExpanded(*this, expanded);
             });
 
+    m_matchInstanceThemeCheck = new QCheckBox("Match the instance's theme");
+    m_matchInstanceThemeCheck->setObjectName(QStringLiteral("matchInstanceThemeCheck"));
+    m_matchInstanceThemeCheck->setChecked(forkmesh::instancetheme::matchEnabled());
+    m_matchInstanceThemeCheck->setToolTip(
+        "Wear the colours of the ForkMesh instance this project is connected "
+        "to, as its admin chose them in Settings -> Instance theme. Off by "
+        "default.");
+    connect(m_matchInstanceThemeCheck, &QCheckBox::toggled, this,
+            [this](bool enabled) { applyInstanceThemeChoice(enabled); });
+
     auto *edgeIndicatorCheck =
         new QCheckBox("Colored left edge on alerts and cards");
     edgeIndicatorCheck->setObjectName(QStringLiteral("edgeIndicatorCheck"));
@@ -2399,25 +2991,24 @@ void MainWindow::buildSettingsAppearanceParts(SettingsSectionParts &parts)
                                         : RailGroups::SortMode::Custom);
             });
 
-    auto *teammateRailCheck =
-        new QCheckBox("Show special agents in a rail on the right");
-    teammateRailCheck->setObjectName(QStringLiteral("teammateRailCheck"));
-    teammateRailCheck->setChecked(teammateRailEnabled());
+    auto *teammateRailCheck = new QCheckBox("Show the side rail on the right");
+    teammateRailCheck->setObjectName(QStringLiteral("sideRailCheck"));
+    teammateRailCheck->setChecked(sideRailEnabled());
     teammateRailCheck->setToolTip(
-        "A narrow rail along the right edge lists this repository's special agents "
-        "with a status light, when each last ran, a Run button and a menu of "
-        "every option, plus a button that creates the special agent the repository "
-        "needs. On by default.");
-    m_teammateRailCheck = teammateRailCheck;
+        "A narrow rail along the right edge holds a terminal button, a small "
+        "browser and anything you drag onto it: workflows and special agents "
+        "from the Workflows page, pages from the left rail, and links. On by "
+        "default.");
+    m_sideRailCheck = teammateRailCheck;
     connect(teammateRailCheck, &QCheckBox::toggled, this,
-            [this](bool enabled) { setTeammateRailEnabled(enabled); });
+            [this](bool enabled) { setSideRailEnabled(enabled); });
 
     auto *packageRailCheck =
         new QCheckBox("Show marketing channel status in a rail on the right");
     packageRailCheck->setObjectName(QStringLiteral("packageRailCheck"));
     packageRailCheck->setChecked(packageRailEnabled());
     packageRailCheck->setToolTip(
-        "A narrow rail beside the special agents shows a square for each "
+        "A narrow rail beside the side rail shows a square for each "
         "channel of an installed package such as Marketing, with its main "
         "count, a border coloured by its health and its next steps on click. "
         "It appears only when a package has something to show. On by default.");
@@ -2810,11 +3401,12 @@ void MainWindow::buildSettingsAgentProviderParts(SettingsSectionParts &parts)
     }
     workspaceNameModelCombo->setCurrentIndex(
         workspaceNameModelIndex >= 0 ? workspaceNameModelIndex : 0);
+    workspaceNameModelCombo->setObjectName("workspaceNameModelCombo");
     workspaceNameModelCombo->setToolTip(
-        "Optionally send each new ad-hoc task to the selected Cloudflare "
-        "Workers AI model for a short semantic branch/worktree name. The "
-        "coding prompt is not rewritten, and local naming is used if the "
-        "request fails.");
+        "The Cloudflare Workers AI model that names each new ad-hoc task's "
+        "branch/worktree and title when Cloudflare naming is on. The coding "
+        "prompt is not rewritten, and local naming is used if the request "
+        "fails.");
     connect(workspaceNameModelCombo, &QComboBox::currentIndexChanged, this,
             [workspaceNameModelCombo] {
                 QSettings().setValue(
@@ -2855,8 +3447,9 @@ void MainWindow::buildSettingsAgentProviderParts(SettingsSectionParts &parts)
     autoStallAgentCheck->setToolTip(
         "When a special agent's UI-stall log monitor crosses its configured threshold, "
         "start the task-specific agent selected for UI stall repair. On by "
-        "default; each special agent monitor starts at most one repair run until the "
-        "diagnostics are cleared.");
+        "default. While an agent session is already working on UI stalls, new "
+        "stall reports are added to that session in batches instead of "
+        "starting another agent.");
     connect(autoStallAgentCheck, &QCheckBox::toggled, this, [](bool enabled) {
         QSettings().setValue(kAutoAgentOnStallSetting, enabled);
     });
@@ -3160,13 +3753,14 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
     agentForm->setLabelAlignment(Qt::AlignLeft);
     agentForm->setSpacing(8);
     auto *agentTitleCheck = new QCheckBox(
-        "Ask Claude Code or Codex to title each run started from a prompt");
+        "Ask Claude Code or Codex to name each run started from a prompt");
     agentTitleCheck->setObjectName("agentTitleFromAgentCheck");
     agentTitleCheck->setToolTip(
-        "A run starts at once with a title cut from its prompt, then the "
-        "agent's own CLI (Claude Haiku, or Codex at low effort) reads the "
-        "whole prompt and writes a short descriptive title for the Agents "
-        "list. Other agents keep the title cut from the prompt.");
+        "Before a Claude Code or Codex run starts, its own CLI reads the "
+        "prompt and writes a short title and branch name, the way Claude's "
+        "desktop app names Code sessions: a small fast model first (Claude "
+        "Haiku, GPT-5.4-Mini), then the run's own model if that fails. Other "
+        "agents keep the title cut from the prompt.");
     agentTitleCheck->setChecked(
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool());
     connect(agentTitleCheck, &QCheckBox::toggled, this, [](bool on) {
@@ -3175,6 +3769,21 @@ void MainWindow::buildSettingsAgentUsageParts(SettingsSectionParts &parts)
 
     agentForm->addRow("Default agent", m_defaultAgentProviderCombo);
     agentForm->addRow("Agent titles", agentTitleCheck);
+    auto *cloudflareNamingCheck =
+        new QCheckBox("Use Cloudflare AI for branch, worktree and run names");
+    cloudflareNamingCheck->setObjectName("agentCloudflareNamingCheck");
+    cloudflareNamingCheck->setToolTip(
+        "Off: Claude Code and Codex name their own runs. On: the Cloudflare "
+        "Workers AI model below names them instead.");
+    cloudflareNamingCheck->setChecked(
+        QSettings().value(kAgentCloudflareNamingSetting, false).toBool());
+    workspaceNameModelCombo->setEnabled(cloudflareNamingCheck->isChecked());
+    connect(cloudflareNamingCheck, &QCheckBox::toggled, this,
+            [workspaceNameModelCombo](bool on) {
+                QSettings().setValue(kAgentCloudflareNamingSetting, on);
+                workspaceNameModelCombo->setEnabled(on);
+            });
+    agentForm->addRow("Cloudflare naming", cloudflareNamingCheck);
     agentForm->addRow("Branch/worktree names", workspaceNameModelCombo);
     agentForm->addRow("Composer models", m_composerModelVisibilityList);
     agentForm->addRow("Max running agents", m_maxRunningAgentsEdit);
@@ -3716,6 +4325,16 @@ void MainWindow::buildSettingsFooterParts(SettingsSectionParts &parts)
 
     auto *footerRow = new QHBoxLayout;
     footerRow->setContentsMargins(0, 0, 0, 0);
+    if (Theme::isNext()) {
+        footerRow->addWidget(leaveButton);
+        footerRow->addWidget(uninstallButton);
+        footerRow->addStretch();
+        footerRow->addWidget(m_rebuildButton);
+        footerRow->addWidget(loginButton);
+        footerRow->addWidget(logoutButton);
+        parts.footerRow = footerRow;
+        return;
+    }
     footerRow->addWidget(leaveButton);
     footerRow->addWidget(m_rebuildButton);
     footerRow->addWidget(loginButton);
@@ -3724,6 +4343,240 @@ void MainWindow::buildSettingsFooterParts(SettingsSectionParts &parts)
     footerRow->addWidget(uninstallButton);
 
     parts.footerRow = footerRow;
+}
+
+namespace {
+
+QNetworkReply *sendSeasonSettingsRequest(QNetworkAccessManager *network, QUrl url,
+                                         const QString &token, const QJsonObject *body)
+{
+    url.setPath(QStringLiteral("/api/season/settings"));
+    url.setQuery(QString());
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                         QNetworkRequest::AlwaysNetwork);
+    request.setTransferTimeout(15000);
+    request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    request.setRawHeader(QByteArrayLiteral("Authorization"),
+                         QByteArrayLiteral("Bearer ") + token.toUtf8());
+    if (!body)
+        return network->get(request);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    return network->post(request, QJsonDocument(*body).toJson(QJsonDocument::Compact));
+}
+
+QString seasonSettingsErrorText(const QString &code)
+{
+    if (code == QLatin1String("forbidden"))
+        return QStringLiteral("Only platform administrators and moderators can change this.");
+    if (code == QLatin1String("unauthorized"))
+        return QStringLiteral("Sign in again to change this.");
+    if (code == QLatin1String("invalid_until"))
+        return QStringLiteral("Pick a time between 5 minutes and 60 days from now.");
+    return QStringLiteral("That didn't save. Try again.");
+}
+
+QDateTime defaultSeasonEnd()
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime end(QDate(now.date().year(), 11, 1), QTime(0, 0));
+    return end > now.addSecs(60 * 60) ? end : now.addDays(1);
+}
+
+} // namespace
+
+QWidget *MainWindow::buildHalloweenSettings()
+{
+    auto *box = new QWidget;
+    auto *layout = new QVBoxLayout(box);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    auto *hint = new QLabel(QStringLiteral(
+        "Turns the green buttons, status dots and activity graph orange, hangs a spider "
+        "web, puts a witch hat on profile pictures and dresses up the Genie."));
+    hint->setObjectName(QStringLiteral("statusLine"));
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    auto *local = new QCheckBox(QStringLiteral("Use the Halloween theme on this desktop"));
+    local->setObjectName(QStringLiteral("halloweenLocalCheck"));
+    local->setToolTip(QStringLiteral(
+        "Switches this desktop's colour theme to Halloween. Untick it to go back to the "
+        "theme you had before."));
+    m_halloweenLocalCheck = local;
+    connect(local, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_themeCombo)
+            return;
+        const QString current = m_themeCombo->currentData().toString();
+        if (on && current != kHalloweenTheme)
+            m_themeBeforeHalloween = current;
+        QString wanted = on ? kHalloweenTheme : m_themeBeforeHalloween;
+        if (!on && (wanted.isEmpty() || wanted == kHalloweenTheme ||
+                    m_themeCombo->findData(wanted) < 0))
+            wanted = QStringLiteral("system");
+        const int index = m_themeCombo->findData(wanted);
+        if (index >= 0)
+            m_themeCombo->setCurrentIndex(index);
+        syncHalloweenLocalCheck();
+    });
+    if (m_themeCombo) {
+        connect(m_themeCombo, &QComboBox::currentIndexChanged, local,
+                [this](int) { syncHalloweenLocalCheck(); });
+    }
+    layout->addWidget(local);
+    syncHalloweenLocalCheck();
+
+    auto *admin = new QWidget;
+    admin->setObjectName(QStringLiteral("seasonAdminBox"));
+    auto *adminColumn = new QVBoxLayout(admin);
+    adminColumn->setContentsMargins(0, 6, 0, 0);
+    adminColumn->setSpacing(6);
+    auto *everyone = new QCheckBox(
+        QStringLiteral("Turn on the Halloween theme for everyone on this ForkMesh"));
+    everyone->setObjectName(QStringLiteral("seasonEveryoneCheck"));
+    everyone->setToolTip(QStringLiteral(
+        "Dresses up the ForkMesh website for every visitor until the time below. Only "
+        "platform administrators and moderators see this setting."));
+    m_seasonEveryoneCheck = everyone;
+    connect(everyone, &QCheckBox::clicked, this, [this](bool on) { saveSeasonSettings(on); });
+    adminColumn->addWidget(everyone);
+    auto *untilRow = new QHBoxLayout;
+    untilRow->setContentsMargins(0, 0, 0, 0);
+    untilRow->setSpacing(8);
+    auto *until = new QDateTimeEdit(defaultSeasonEnd());
+    until->setObjectName(QStringLiteral("seasonUntilEdit"));
+    until->setCalendarPopup(true);
+    until->setDisplayFormat(QLocale().dateTimeFormat(QLocale::ShortFormat));
+    until->setAccessibleName(QStringLiteral("Turn off automatically"));
+    until->setToolTip(QStringLiteral(
+        "When the Halloween theme turns itself off for everyone: between 5 minutes and "
+        "60 days from now."));
+    m_seasonUntilEdit = until;
+    connect(until, &QDateTimeEdit::editingFinished, this, [this] {
+        if (m_seasonSettings.value(QStringLiteral("season")).toString() ==
+            QLatin1String("halloween"))
+            saveSeasonSettings(true);
+    });
+    untilRow->addWidget(new QLabel(QStringLiteral("Turn off automatically")));
+    untilRow->addWidget(until);
+    untilRow->addStretch(1);
+    adminColumn->addLayout(untilRow);
+    auto *status = new QLabel;
+    status->setObjectName(QStringLiteral("statusLine"));
+    status->setWordWrap(true);
+    m_seasonStatusLabel = status;
+    adminColumn->addWidget(status);
+    admin->hide();
+    m_seasonAdminBox = admin;
+    layout->addWidget(admin);
+    return box;
+}
+
+void MainWindow::syncHalloweenLocalCheck()
+{
+    if (!m_halloweenLocalCheck)
+        return;
+    const QSignalBlocker blocker(m_halloweenLocalCheck);
+    m_halloweenLocalCheck->setChecked(
+        m_themeCombo && m_themeCombo->currentData().toString() == kHalloweenTheme);
+}
+
+void MainWindow::refreshSeasonSettings()
+{
+    if (!m_seasonAdminBox || m_seasonBusy || !m_networkAccess)
+        return;
+    const QUrl url = catalogApiUrl();
+    const QString token = accountSessionTokenForUrl(url);
+    if (token.isEmpty()) {
+        m_seasonAdminBox->hide();
+        return;
+    }
+    QNetworkReply *reply = sendSeasonSettingsRequest(m_networkAccess, url, token, nullptr);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject data = QJsonDocument::fromJson(reply->readAll()).object();
+        if (!m_seasonAdminBox || m_seasonBusy)
+            return;
+        if (reply->error() == QNetworkReply::NoError && status == 200 &&
+            data.value(QStringLiteral("ok")).toBool()) {
+            m_seasonSettings = data;
+            m_seasonAdminBox->show();
+            renderSeasonSettings();
+        } else if (status == 401 || status == 403) {
+            m_seasonAdminBox->hide();
+        }
+    });
+}
+
+void MainWindow::saveSeasonSettings(bool on)
+{
+    if (!m_seasonUntilEdit || m_seasonBusy || !m_networkAccess)
+        return;
+    const QUrl url = catalogApiUrl();
+    const QString token = accountSessionTokenForUrl(url);
+    if (token.isEmpty()) {
+        renderSeasonSettings(seasonSettingsErrorText(QStringLiteral("unauthorized")));
+        return;
+    }
+    const QJsonObject body{
+        {QStringLiteral("season"), on ? QStringLiteral("halloween") : QString()},
+        {QStringLiteral("until"),
+         on ? double(m_seasonUntilEdit->dateTime().toMSecsSinceEpoch()) : 0.0},
+    };
+    m_seasonBusy = true;
+    if (m_seasonEveryoneCheck)
+        m_seasonEveryoneCheck->setEnabled(false);
+    if (m_seasonStatusLabel)
+        m_seasonStatusLabel->setText(QString::fromUtf8("Saving\xE2\x80\xA6"));
+    QNetworkReply *reply = sendSeasonSettingsRequest(m_networkAccess, url, token, &body);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        m_seasonBusy = false;
+        if (m_seasonEveryoneCheck)
+            m_seasonEveryoneCheck->setEnabled(true);
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject data = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() == QNetworkReply::NoError && status == 200 &&
+            data.value(QStringLiteral("ok")).toBool()) {
+            m_seasonSettings = data;
+            renderSeasonSettings();
+            return;
+        }
+        renderSeasonSettings(
+            seasonSettingsErrorText(data.value(QStringLiteral("error")).toString()));
+    });
+}
+
+void MainWindow::renderSeasonSettings(const QString &message)
+{
+    const bool on = m_seasonSettings.value(QStringLiteral("season")).toString() ==
+                    QLatin1String("halloween");
+    const QDateTime until = QDateTime::fromMSecsSinceEpoch(
+        qint64(m_seasonSettings.value(QStringLiteral("until")).toDouble()));
+    if (m_seasonEveryoneCheck) {
+        const QSignalBlocker blocker(m_seasonEveryoneCheck);
+        m_seasonEveryoneCheck->setChecked(on);
+    }
+    if (m_seasonUntilEdit && message.isEmpty()) {
+        const QSignalBlocker blocker(m_seasonUntilEdit);
+        m_seasonUntilEdit->setDateTime(on ? until : defaultSeasonEnd());
+    }
+    if (!m_seasonStatusLabel)
+        return;
+    if (!message.isEmpty()) {
+        m_seasonStatusLabel->setText(message);
+        return;
+    }
+    const QString by = m_seasonSettings.value(QStringLiteral("by")).toString();
+    m_seasonStatusLabel->setText(
+        on ? QStringLiteral("On for everyone until %1%2.")
+                 .arg(QLocale().toString(until, QLocale::ShortFormat),
+                      by.isEmpty() ? QString() : QStringLiteral(", turned on by @%1").arg(by))
+           : QStringLiteral("Off. Turn it on to dress up ForkMesh for everyone. Only "
+                            "platform administrators and moderators see this setting."));
 }
 
 // Settings > General.
@@ -3740,6 +4593,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     appearanceGroup->addWidget(parts.schemeTiles);
     appearanceGroup->addWidget(m_themeCombo, 0, Qt::AlignLeft);
     appearanceGroup->addLayout(parts.designRow);
+    appearanceGroup->addWidget(m_matchInstanceThemeCheck);
     appearanceGroup->addLayout(parts.windowOpacityRow);
     appearanceGroup->addLayout(parts.backdropRow);
     appearanceGroup->addLayout(parts.backdropStrengthRow);
@@ -3759,6 +4613,12 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     appearanceGroup->addWidget(parts.verboseNetLogCheck);
     appearanceGroup->addWidget(parts.reportErrorsCheck);
     appearanceGroup->addWidget(parts.sponsoredMessagesCheck);
+
+    auto *halloweenLabel = new QLabel("HALLOWEEN THEME");
+    halloweenLabel->setObjectName("sectionLabel");
+    auto *halloweenGroup = generalTab->addSection();
+    halloweenGroup->addLayout(settingsHeading(halloweenLabel, "moon"));
+    halloweenGroup->addWidget(buildHalloweenSettings());
 
     auto *soundGroup = generalTab->addSection();
     soundGroup->addLayout(settingsHeading(parts.soundLabel, "unmute"));
@@ -3858,6 +4718,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     agentBehaviourGroup->addWidget(parts.issueModelMentionsCheck);
     agentBehaviourGroup->addWidget(parts.excludeExternalClaudeCheck);
     agentBehaviourGroup->addWidget(parts.publishAgentsToWebCheck);
+    agentBehaviourGroup->addWidget(parts.claudeDesktopSessionsCheck);
 
     auto *nodeStatsGroup = generalTab->addSection();
     nodeStatsGroup->addLayout(settingsHeading(parts.nodeStatsLabel, "graph"));
@@ -4502,7 +5363,7 @@ void MainWindow::showAgentRecycleBinDialog()
                 const QList<int> ids = selectedIds();
                 int restored = 0;
                 for (int id : ids) {
-                    if (m_agentStore->restoreRecycledSession(id))
+                    if (restoreRecycledAgentSession(id))
                         restored += 1;
                 }
                 if (restored > 0) {
@@ -4602,6 +5463,7 @@ QWidget *MainWindow::buildSuggestedAppsTab()
     topRow->addWidget(testAllButton);
     topRow->addWidget(m_suggestedAppsSummaryLabel, 1);
 
+    const bool next = Theme::isNext();
     auto *recommendedTitle = new QLabel("RECOMMENDED TOOLS");
     recommendedTitle->setObjectName("sectionLabel");
     auto *recommended = new ColumnFlowWidget;
@@ -4611,14 +5473,30 @@ QWidget *MainWindow::buildSuggestedAppsTab()
     optionalTitle->setObjectName("sectionLabel");
     auto *optional = new ColumnFlowWidget;
     optional->setMaximumColumns(1);
+    QFrame *recommendedBox = next ? nextGroupBox(body) : nullptr;
+    QFrame *optionalBox = next ? nextGroupBox(body) : nullptr;
 
     m_suggestedAppStatusLabels.clear();
     m_suggestedAppTestButtons.clear();
     m_suggestedAppInstallButtons.clear();
-    const auto addApp = [this](ColumnFlowWidget *target, const SuggestedApp &app) {
-        auto *section = target->addSection();
+    const auto addApp = [this, next](ColumnFlowWidget *target, QFrame *nextBox,
+                                     const SuggestedApp &app) {
+        QVBoxLayout *section = nullptr;
+        QWidget *nextRow = nullptr;
+        if (next && nextBox) {
+            auto *boxColumn = static_cast<QVBoxLayout *>(nextBox->layout());
+            if (boxColumn->count() > 0)
+                boxColumn->addWidget(nextRowDivider(nextBox));
+            nextRow = new QWidget(nextBox);
+            nextRow->setObjectName(QStringLiteral("settingsGroupRow"));
+            nextRow->setProperty("sectionCard", true);
+            nextRow->setProperty("nextTableRow", true);
+            boxColumn->addWidget(nextRow);
+        } else {
+            section = target->addSection();
+        }
 
-        auto *name = new QLabel(app.name.toUpper());
+        auto *name = new QLabel(next ? app.name : app.name.toUpper());
         name->setObjectName("sectionLabel");
         auto *command = new QLabel(
             QStringLiteral("Command: %1").arg(app.executableNames.join(" / ")));
@@ -4664,18 +5542,197 @@ QWidget *MainWindow::buildSuggestedAppsTab()
         buttons->addWidget(installButton);
         buttons->addStretch();
 
-        section->addLayout(nameRow);
-        section->addWidget(command);
-        section->addWidget(description);
-        section->addWidget(status);
-        section->addLayout(buttons);
+        if (nextRow) {
+            glyph->hide();
+            nameRow->setAlignment(name, Qt::AlignVCenter);
+            auto *row = new QHBoxLayout(nextRow);
+            row->setSpacing(12);
+            auto *info = new QVBoxLayout;
+            info->setContentsMargins(0, 0, 0, 0);
+            info->setSpacing(2);
+            info->addLayout(nameRow);
+            info->addWidget(description);
+            info->addWidget(command);
+            info->addWidget(status, 0, Qt::AlignLeft);
+            delete buttons->takeAt(buttons->count() - 1);
+            row->addLayout(info, 1);
+            row->addLayout(buttons);
+            row->setAlignment(buttons, Qt::AlignVCenter);
+            setNextMargins(nextRow, QMargins(16, 10, 16, 10));
+        } else {
+            section->addLayout(nameRow);
+            section->addWidget(command);
+            section->addWidget(description);
+            section->addWidget(status);
+            section->addLayout(buttons);
+        }
         m_suggestedAppStatusLabels.insert(app.id, status);
         m_suggestedAppTestButtons.insert(app.id, testButton);
         m_suggestedAppInstallButtons.insert(app.id, installButton);
     };
 
     for (const SuggestedApp &app : forkmesh::environment::suggestedApps())
-        addApp(app.optional ? optional : recommended, app);
+        addApp(app.optional ? optional : recommended,
+               app.optional ? optionalBox : recommendedBox, app);
+
+    if (next) {
+        body->setProperty(kNextPolishedProperty, true);
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(8);
+        delete recommended;
+        delete optional;
+
+        auto *placesHost = new QWidget(body);
+        placesHost->setObjectName(QStringLiteral("settingsPackagePlaces"));
+        auto *placesColumn = new QVBoxLayout(placesHost);
+        placesColumn->setContentsMargins(0, 0, 0, 12);
+        placesColumn->setSpacing(8);
+        auto *placesHeading = new QLabel(QStringLiteral("INSTALLED APPS"));
+        placesHeading->setObjectName(QStringLiteral("sectionLabel"));
+        auto *placesHint = new QLabel(QStringLiteral("Choose where each installed app shows up."));
+        placesHint->setObjectName(QStringLiteral("statusLine"));
+        placesHint->setWordWrap(true);
+        QFrame *placesBox = nextGroupBox(placesHost);
+        placesColumn->addWidget(placesHeading);
+        placesColumn->addWidget(placesHint);
+        placesColumn->addWidget(placesBox);
+        constexpr int kPlaceColumn = 84;
+        const auto rebuildPlaces = [this, placesHost, placesBox] {
+            auto *boxColumn = static_cast<QVBoxLayout *>(placesBox->layout());
+            while (QLayoutItem *item = boxColumn->takeAt(0)) {
+                if (QWidget *widget = item->widget()) {
+                    widget->hide();
+                    widget->deleteLater();
+                }
+                delete item;
+            }
+            QList<const forkmesh::market::PackageManifest *> listed;
+            if (m_packageRegistry && m_packageRegistry->isReady()) {
+                for (const auto &manifest : m_packageRegistry->packages()) {
+                    if (manifest.accountSync && !manifest.places.isEmpty() &&
+                        m_packageRegistry->isInstalled(manifest.id))
+                        listed.append(&manifest);
+                }
+            }
+            placesHost->setVisible(!listed.isEmpty());
+            if (listed.isEmpty())
+                return;
+            const QStringList allPlaces = forkmesh::market::PackageRegistry::allPlaces();
+            auto *header = new QWidget(placesBox);
+            header->setObjectName(QStringLiteral("settingsPlacesHeader"));
+            auto *headerRow = new QHBoxLayout(header);
+            headerRow->setContentsMargins(16, 8, 16, 8);
+            headerRow->setSpacing(0);
+            auto *appCaption = new QLabel(QStringLiteral("Installed app"));
+            appCaption->setObjectName(QStringLiteral("settingsPlacesCaption"));
+            headerRow->addWidget(appCaption, 1);
+            for (const QString &place : allPlaces) {
+                auto *caption =
+                    new QLabel(QStringLiteral("Show on %1").arg(nextPlaceLabel(place)));
+                caption->setObjectName(QStringLiteral("settingsPlacesCaption"));
+                caption->setAlignment(Qt::AlignCenter);
+                caption->setWordWrap(true);
+                caption->setFixedWidth(kPlaceColumn);
+                headerRow->addWidget(caption);
+            }
+            boxColumn->addWidget(header);
+            for (const auto *manifest : std::as_const(listed)) {
+                boxColumn->addWidget(nextRowDivider(placesBox));
+                auto *row = new QWidget(placesBox);
+                row->setObjectName(QStringLiteral("settingsGroupRow"));
+                row->setProperty("packageId", manifest->id);
+                auto *rowLayout = new QHBoxLayout(row);
+                rowLayout->setContentsMargins(16, 8, 16, 8);
+                rowLayout->setSpacing(0);
+                auto *info = new QVBoxLayout;
+                info->setContentsMargins(0, 0, 12, 0);
+                info->setSpacing(1);
+                auto *name = new QLabel(manifest->name);
+                name->setObjectName(QStringLiteral("settingsPlacesName"));
+                name->setTextFormat(Qt::PlainText);
+                info->addWidget(name);
+                if (!manifest->summary.isEmpty()) {
+                    auto *summary = new QLabel(manifest->summary);
+                    summary->setObjectName(QStringLiteral("statusLine"));
+                    summary->setTextFormat(Qt::PlainText);
+                    summary->setWordWrap(true);
+                    info->addWidget(summary);
+                }
+                rowLayout->addLayout(info, 1);
+                const QStringList chosen = m_packageRegistry->places(manifest->id);
+                QList<QCheckBox *> toggles;
+                for (const QString &place : allPlaces) {
+                    auto *cell = new QWidget(row);
+                    cell->setFixedWidth(kPlaceColumn);
+                    auto *cellLayout = new QHBoxLayout(cell);
+                    cellLayout->setContentsMargins(0, 0, 0, 0);
+                    if (manifest->places.contains(place)) {
+                        auto *toggle = new forkmesh::ui::kit::Toggle(cell);
+                        toggle->setObjectName(
+                            QStringLiteral("settingsPackagePlace-%1").arg(place));
+                        toggle->setProperty("packageId", manifest->id);
+                        toggle->setProperty("place", place);
+                        toggle->setChecked(chosen.contains(place));
+                        toggle->setAccessibleName(QStringLiteral("Show %1 on %2")
+                                                      .arg(manifest->name,
+                                                           nextPlaceLabel(place)));
+                        cellLayout->addWidget(toggle, 0, Qt::AlignCenter);
+                        toggles.append(toggle);
+                    }
+                    rowLayout->addWidget(cell);
+                }
+                int checked = 0;
+                for (QCheckBox *toggle : std::as_const(toggles))
+                    checked += toggle->isChecked() ? 1 : 0;
+                for (QCheckBox *toggle : std::as_const(toggles)) {
+                    if (checked == 1 && toggle->isChecked()) {
+                        toggle->setEnabled(false);
+                        toggle->setToolTip(QStringLiteral(
+                            "%1 has to show somewhere. Remove it to take it off "
+                            "everywhere.")
+                                               .arg(manifest->name));
+                    }
+                    connect(toggle, &QCheckBox::clicked, row,
+                            [this, toggles, placesHost, id = manifest->id] {
+                                QStringList places;
+                                for (QCheckBox *other : toggles) {
+                                    if (other->isChecked())
+                                        places.append(other->property("place").toString());
+                                }
+                                if (!places.isEmpty() &&
+                                    m_packageRegistry->setPlaces(id, places)) {
+                                    syncPackageRuntime();
+                                    refreshMarketPage();
+                                    pushAccountPackageChange(
+                                        id, QStringLiteral("places"),
+                                        QJsonObject{{QStringLiteral("places"),
+                                                     QJsonArray::fromStringList(places)}});
+                                }
+                                placesHost->setProperty(
+                                    "placesRevision",
+                                    placesHost->property("placesRevision").toInt() + 1);
+                            });
+                }
+                boxColumn->addWidget(row);
+            }
+        };
+        new NextPlacesRefresher(placesHost, rebuildPlaces);
+        rebuildPlaces();
+        column->addWidget(placesHost);
+
+        column->addWidget(title);
+        column->addWidget(hint);
+        column->addLayout(topRow);
+        column->addSpacing(12);
+        column->addWidget(recommendedTitle);
+        column->addWidget(recommendedBox);
+        column->addSpacing(12);
+        column->addWidget(optionalTitle);
+        column->addWidget(optionalBox);
+        column->addStretch();
+        refreshSuggestedApps();
+        return body;
+    }
 
     column->addWidget(title);
     column->addWidget(hint);
@@ -4743,6 +5800,30 @@ void MainWindow::refreshSuggestedApps()
                 .arg(found)
                 .arg(apps.size()));
     }
+    scheduleAgentUsagePagesRefresh();
+}
+
+bool MainWindow::suggestedAppInstalling(const QString &id) const
+{
+    return m_suggestedAppInstallProcess &&
+           m_suggestedAppInstallProcess->state() != QProcess::NotRunning &&
+           m_suggestedAppInstallingId == id;
+}
+
+QString MainWindow::suggestedAppInstallManager(const QString &id,
+                                               QString *blocker) const
+{
+    const auto *app = forkmesh::environment::suggestedAppById(id);
+    if (!app) {
+        if (blocker)
+            *blocker = QStringLiteral("ForkMesh does not know how to install this tool.");
+        return {};
+    }
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        *app, availableSuggestedAppInstallers());
+    if (blocker)
+        *blocker = plan.unavailableReason;
+    return plan.managerName;
 }
 
 void MainWindow::testSuggestedApp(const QString &id)
@@ -4889,6 +5970,7 @@ void MainWindow::installSuggestedApp(const QString &id)
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_suggestedAppInstallProcess = process;
     m_suggestedAppInstallingId = id;
+    m_suggestedAppInstallProblems.remove(id);
     auto output = std::make_shared<QString>();
     refreshSuggestedApps();
     if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
@@ -4939,6 +6021,8 @@ void MainWindow::installSuggestedApp(const QString &id)
                 logSystem(QStringLiteral("Suggested app %1 install failed (exit %2).")
                               .arg(name)
                               .arg(exitCode));
+                m_suggestedAppInstallProblems.insert(
+                    id, tail.isEmpty() ? QStringLiteral("exit %1").arg(exitCode) : tail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,
@@ -4960,6 +6044,9 @@ void MainWindow::installSuggestedApp(const QString &id)
                 process->deleteLater();
                 refreshSuggestedApps();
                 logSystem(QStringLiteral("Could not start the %1 installer.").arg(name));
+                m_suggestedAppInstallProblems.insert(
+                    id, detail.isEmpty() ? QStringLiteral("the installer did not start")
+                                         : detail);
                 if (QLabel *status = m_suggestedAppStatusLabels.value(id)) {
                     setSuggestedAppStatus(
                         status, SuggestedAppStatusTone::Problem,
@@ -4967,6 +6054,116 @@ void MainWindow::installSuggestedApp(const QString &id)
                             .arg(detail.isEmpty() ? QStringLiteral(".")
                                                   : QStringLiteral(": %1").arg(detail)));
                 }
+            });
+    process->start(program, arguments);
+}
+
+void MainWindow::installEmbeddedBrowser()
+{
+    if (m_embeddedBrowserInstallProcess &&
+        m_embeddedBrowserInstallProcess->state() != QProcess::NotRunning) {
+        flashMessage(QStringLiteral("The embedded browser is already being installed."));
+        return;
+    }
+    const auto &component = forkmesh::environment::embeddedBrowserComponent();
+    const auto plan = forkmesh::environment::suggestedAppInstallPlan(
+        component, availableSuggestedAppInstallers());
+    const QString title = QStringLiteral("Install the embedded browser");
+    if (!plan.isAvailable()) {
+        QMessageBox::information(
+            this, title,
+            QStringLiteral("ForkMesh cannot install Qt WebEngine here: %1\n\n"
+                           "Install your system's Qt 6 WebEngine development "
+                           "package, then use Rebuild & restart.")
+                .arg(plan.unavailableReason));
+        return;
+    }
+
+    QString program = plan.program;
+    QStringList arguments = plan.arguments;
+#ifndef Q_OS_WIN
+    if (plan.requiresAdministrator && geteuid() != 0) {
+        const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
+        if (pkexec.isEmpty()) {
+            QMessageBox::information(
+                this, title,
+                QStringLiteral("Installing Qt WebEngine needs administrator rights "
+                               "and pkexec is not installed. Run this in a "
+                               "terminal, then use Rebuild & restart:\n\nsudo %1")
+                    .arg(suggestedAppCommandText(plan.program, plan.arguments)));
+            return;
+        }
+        arguments.prepend(plan.program);
+        program = pkexec;
+    }
+#endif
+
+    const QString command = suggestedAppCommandText(program, arguments);
+    const auto answer = QMessageBox::question(
+        this, title,
+        QStringLiteral("ForkMesh will install Qt WebEngine with %1, then rebuild "
+                       "and restart so web pages open inside the app.\n\n"
+                       "Command:\n%2\n\nThe package manager may download software "
+                       "from its configured repositories.%3")
+            .arg(plan.managerName, command,
+                 plan.requiresAdministrator
+                     ? QStringLiteral(" Administrator approval may be requested.")
+                     : QString()),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    m_embeddedBrowserInstallProcess = process;
+    auto output = std::make_shared<QString>();
+    logSystem(QStringLiteral("Installing Qt WebEngine with %1.").arg(plan.managerName));
+    flashMessage(QStringLiteral("Installing the embedded browser with %1…")
+                     .arg(plan.managerName));
+
+    connect(process, &QProcess::readyReadStandardOutput, this, [process, output] {
+        output->append(QString::fromUtf8(process->readAllStandardOutput()));
+        if (output->size() > 8000)
+            *output = output->right(8000);
+    });
+    connect(process, &QProcess::finished, this,
+            [this, process, output, title](int exitCode, QProcess::ExitStatus exitStatus) {
+                output->append(QString::fromUtf8(process->readAllStandardOutput()));
+                process->deleteLater();
+                if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                    const QString tail = compactSuggestedAppOutput(*output);
+                    logSystem(QStringLiteral("Qt WebEngine install failed (exit %1): %2")
+                                  .arg(exitCode)
+                                  .arg(tail));
+                    QMessageBox::warning(
+                        this, title,
+                        QStringLiteral("The install did not finish (exit %1).%2")
+                            .arg(exitCode)
+                            .arg(tail.isEmpty() ? QString()
+                                                : QStringLiteral("\n\n%1").arg(tail)));
+                    return;
+                }
+                logSystem(QStringLiteral("Qt WebEngine installed; rebuilding to embed it."));
+                if (restartInProgress()) {
+                    flashMessage(QStringLiteral("Qt WebEngine installed. The running "
+                                                "restart picks it up on the next build."));
+                    return;
+                }
+                if (m_navRebuildButton)
+                    startRestartSpin(m_navRebuildButton);
+                quickRebuildRestart();
+            });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process, title](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                const QString detail = compactSuggestedAppOutput(process->errorString());
+                process->deleteLater();
+                logSystem(QStringLiteral("Could not start the Qt WebEngine installer: %1")
+                              .arg(detail));
+                QMessageBox::warning(this, title,
+                                     QStringLiteral("The installer did not start: %1")
+                                         .arg(detail));
             });
     process->start(program, arguments);
 }
@@ -5136,6 +6333,8 @@ QWidget *MainWindow::buildQuickSetupTab()
     col->addLayout(applyRow);
     col->addWidget(statusLabel);
     col->addStretch();
+    if (Theme::isNext())
+        polishNextSettingsBody(body, true);
     return body;
 }
 
@@ -6210,18 +7409,26 @@ void MainWindow::maybeAutoUpdate()
                         runOffThread<AutoUpdateRelease>(
                             [clientDir] {
                                 AutoUpdateRelease release;
-                                QString latestTag;
+                                QString tagList;
                                 if (!gitOutput(clientDir,
-                                               {"for-each-ref", "--sort=-creatordate",
-                                                "--count=1", "refs/tags",
+                                               {"for-each-ref", "refs/tags",
                                                 "--format=%(refname:short)"},
-                                               &latestTag)
-                                    || latestTag.trimmed().isEmpty())
+                                               &tagList))
                                     return release;
-                                release.tag = latestTag.trimmed();
+                                const QString newest =
+                                    forkmesh::releasetrust::newestReleaseTag(
+                                        tagList.split(QLatin1Char('\n')));
+                                if (newest.isEmpty()
+                                    || forkmesh::releasetrust::compareVersions(
+                                           newest,
+                                           QStringLiteral(FORKMESH_VERSION))
+                                           <= 0)
+                                    return release;
+                                release.tag = newest;
                                 QString tagCommit;
                                 if (!gitOutput(clientDir,
-                                               {"rev-list", "-n1", release.tag},
+                                               {"rev-list", "-n1",
+                                                "refs/tags/" + release.tag},
                                                &tagCommit)
                                     || tagCommit.trimmed().isEmpty())
                                     return release;
@@ -6250,7 +7457,13 @@ void MainWindow::maybeAutoUpdate()
                                 if (tryPrebuiltAutoUpdate(clientDir, release.tag,
                                                           release.commit))
                                     return;
-                                updateRebuildRestart();
+                                logSystem(QStringLiteral(
+                                              "Auto-update: release %1 could "
+                                              "not be installed from its "
+                                              "signed release here; nothing "
+                                              "was changed. Use Update to "
+                                              "update by hand.")
+                                              .arg(release.tag));
                             });
                     });
             fetch->start(QStringLiteral("git"), {"fetch", "--quiet", "--tags"});
@@ -7161,7 +8374,7 @@ QString withoutAddressTokens(const QString &text)
 QString withoutClearedTallies(const QString &lowerText)
 {
     static const QRegularExpression cleared(QStringLiteral(
-        "(?<![0-9a-z])(?:0|no)\\s+(?:fail(?:s|ed|ure|ures|ing)?|errors?)"
+        "(?<![0-9a-z])(?:0|no)\\s+(?:new\\s+)?(?:fail(?:s|ed|ure|ures|ing)?|errors?)"
         "(?![a-z])|(?<![0-9a-z])(?:fail(?:s|ed|ures)?|errors)\\s*[:=]?\\s*0"
         "(?![0-9.])"));
     QString kept = lowerText;
@@ -8329,8 +9542,20 @@ void MainWindow::setLogTextFilter(const QString &text)
     refreshLogTimelineChart();
 }
 
+void MainWindow::syncDebugActivityLightCategories()
+{
+    if (!m_logActivityLights)
+        return;
+    QSet<QString> hidden;
+    for (const QString &badge : forkmesh::ui::LogActivityLights::badges())
+        if (!logCategoryRecording(badge))
+            hidden.insert(badge);
+    m_logActivityLights->setHiddenCategories(hidden);
+}
+
 void MainWindow::rebuildLogFilterButtons()
 {
+    syncDebugActivityLightCategories();
     if (!m_logFilterRow)
         return;
     QLayoutItem *item = nullptr;
@@ -9465,6 +10690,15 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
             line, LogLineStyle{plain, badge, accentForBadge(badge)});
     if (badge == QLatin1String("ERROR"))
         NodeDiagnostics::hostCollector().noteErrorLine(plain);
+    if (forkmesh::diagreport::isSecurityIncident(plain)) {
+        ++m_securityIncidentCount;
+        m_securityIncidentLines.append(plain);
+        if (m_securityIncidentLines.size() > 20)
+            m_securityIncidentLines.removeFirst();
+        m_diagnosticsAlertLastCheckMs = 0;
+    }
+    if (m_networkLog.capacity() <= kNetworkLogLimit)
+        m_networkLog.reserve(2 * kNetworkLogLimit);
     m_networkLog.append(line);
     forkmesh::agentfeed::publishLogLine(line);
     bool chipsChanged = false;
@@ -10613,6 +11847,7 @@ QString pingKindLabel(const QString &kind)
         {QStringLiteral("repo_activity"), QStringLiteral("Repo activity")},
         {QStringLiteral("code_push"), QStringLiteral("Code push")},
         {QStringLiteral("repo_shared"), QStringLiteral("Repo shared")},
+        {QStringLiteral("security_advisory"), QStringLiteral("Security advisory")},
         {QStringLiteral("repository_hosted"), QStringLiteral("Repo hosted")},
         {QStringLiteral("release_published"), QStringLiteral("Release")},
         {QStringLiteral("host_online"), QStringLiteral("Host online")},
@@ -10750,6 +11985,11 @@ MainWindow::noticeDestination(const QString &href, int actionRunId,
         destination.label = QStringLiteral("Log");
         destination.icon = QStringLiteral("list-unordered");
         destination.tooltip = QStringLiteral("Open the log filtered to errors");
+    } else if (href == QLatin1String("fm:workflows:approve")) {
+        destination.href = href;
+        destination.label = QStringLiteral("Review");
+        destination.icon = QStringLiteral("workflow");
+        destination.tooltip = QStringLiteral("Review the repository workflows waiting for approval");
     } else if (href == QLatin1String("fm:offline:off")) {
         destination.href = href;
         destination.label = QStringLiteral("Go online");
@@ -10800,6 +12040,10 @@ bool MainWindow::openNoticeHref(const QString &href)
     }
     if (href == QLatin1String("fm:offline:off")) {
         setOfflineMode(false);
+        return true;
+    }
+    if (href == QLatin1String("fm:workflows:approve")) {
+        reviewPendingRepoWorkflowApprovals();
         return true;
     }
     if (href == QLatin1String("fm:chat:general")) {
@@ -10957,6 +12201,14 @@ void MainWindow::renderPageNotices(bool force)
     for (const QPointer<QWidget> &row : std::as_const(m_pageNoticeRows)) {
         if (!row)
             continue;
+        if (auto *shown = dynamic_cast<kit::InlineNotice *>(row.data())) {
+            const quint64 shownId = shown->property("pageNoticeId").toULongLong();
+            for (PageNotice &notice : m_pageNotices) {
+                if (notice.id == shownId)
+                    notice.countdownElapsedMs = shown->countdownElapsed();
+            }
+            shown->stopCountdown();
+        }
         m_pageNoticeLayout->removeWidget(row);
         row->hide();
         row->deleteLater();
@@ -11012,6 +12264,8 @@ void MainWindow::renderPageNotices(bool force)
         QPushButton *clear = row->addCloseButton();
         connect(clear, &QPushButton::clicked, this,
                 [this, id] { clearPageNotice(id); });
+        row->startCountdown(m_pageNoticeCountdownMs, notice.countdownElapsedMs,
+                            [this, id] { clearPageNotice(id); });
         m_pageNoticeLayout->addWidget(row);
         m_pageNoticeRows.append(row);
     }
@@ -11091,6 +12345,42 @@ void MainWindow::testClickPageNoticeClear()
         clear->click();
 }
 
+static kit::InlineNotice *firstNoticeRow(const QList<QPointer<QWidget>> &rows)
+{
+    for (const QPointer<QWidget> &row : rows) {
+        if (auto *notice = dynamic_cast<kit::InlineNotice *>(row.data()))
+            return notice;
+    }
+    return nullptr;
+}
+
+bool MainWindow::testPageNoticeCountingDown() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownRunning();
+}
+
+bool MainWindow::testPageNoticeCountdownPaused() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownPaused();
+}
+
+void MainWindow::testHoverPageNotice(bool inside)
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    if (!row)
+        return;
+    if (inside) {
+        const QPointF local(row->rect().center());
+        QEnterEvent enter(local, local, QPointF(row->mapToGlobal(local)));
+        QCoreApplication::sendEvent(row, &enter);
+    } else {
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(row, &leave);
+    }
+}
+
 QString MainWindow::testLoadStatusText() const
 {
     return m_loadStatusShowing && m_loadStatusNotice ? m_loadStatusNotice->text()
@@ -11107,7 +12397,7 @@ void MainWindow::resizeEvent(QResizeEvent *event)
         if (overlay)
             overlay->setGeometry(rect());
     }
-    applyTeammateRailVisibility();
+    applySideRailVisibility();
     applyPackageRailVisibility();
 }
 
@@ -11186,6 +12476,57 @@ void MainWindow::flashPingMessage(const QString &text, bool error,
                      NoticeRoute::Ping, sourceFile, sourceLine);
 }
 
+MainWindow::PingThreadScope::PingThreadScope(MainWindow *window, const QString &key)
+    : window(window), previous(window->m_pingThreadKey)
+{
+    window->m_pingThreadKey = key;
+}
+
+MainWindow::PingThreadScope::~PingThreadScope()
+{
+    window->m_pingThreadKey = previous;
+}
+
+QString MainWindow::mergePingThread(const QString &dir, const QString &branch)
+{
+    return QStringLiteral("merge:%1:%2").arg(dir, branch);
+}
+
+qint64 MainWindow::refileThreadPing(const QString &key,
+                                    const AppNotification &replacement)
+{
+    const qint64 id = m_pingThreadIds.value(key);
+    if (id <= 0)
+        return 0;
+    const auto found = std::find_if(
+        m_notifications.begin(), m_notifications.end(),
+        [id](const AppNotification &item) { return item.id == id; });
+    if (found == m_notifications.end()) {
+        m_pingThreadIds.remove(key);
+        return 0;
+    }
+    AppNotification item = *found;
+    m_notifications.erase(found);
+    item.title = replacement.title;
+    item.body = replacement.body;
+    item.warning = replacement.warning;
+    item.kind = replacement.kind;
+    item.runId = replacement.runId;
+    item.link = replacement.link;
+    item.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    QString reason;
+    item.sync = initialPingSync(item, &reason);
+    item.syncReason = reason;
+    m_notifications.prepend(item);
+    updateNotificationButton();
+    scheduleNotificationJournalSave();
+    if (m_notificationsTable && m_sectionStack &&
+        m_sectionStack->currentIndex() == 3)
+        refreshNotificationsTable();
+    notePingForFixes(item);
+    return item.id;
+}
+
 void MainWindow::flashMessageImpl(const QString &text, bool error,
                                   const QString &clickHref, const QString &kind,
                                   int actionRunId, NoticeRoute route,
@@ -11218,7 +12559,13 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
         item.link = notificationLinkForHref(clickHref);
         item.quiet = true;
         item.forward = unsolicited && forkmesh::pings::pingKindEnabled(kind);
-        pingId = recordNotification(item);
+        if (!m_pingThreadKey.isEmpty())
+            pingId = refileThreadPing(m_pingThreadKey, item);
+        if (pingId == 0) {
+            pingId = recordNotification(item);
+            if (pingId > 0 && !m_pingThreadKey.isEmpty())
+                m_pingThreadIds.insert(m_pingThreadKey, pingId);
+        }
     }
     if (error && !forkmesh::ClientErrorReports::echoesRelayAlert(kind, text)
         && !forkmesh::ClientErrorReports::describesLocalOperation(kind))
@@ -11354,6 +12701,8 @@ QWidget *MainWindow::buildVulnReportTab()
     col->addLayout(btnRow);
     col->addWidget(m_vulnStatusLabel);
     col->addStretch();
+    if (Theme::isNext())
+        polishNextSettingsBody(body, true);
     return body;
 }
 

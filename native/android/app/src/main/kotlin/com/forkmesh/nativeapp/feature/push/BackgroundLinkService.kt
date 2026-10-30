@@ -14,9 +14,16 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import com.forkmesh.nativeapp.api.AccountEventLoop
+import com.forkmesh.nativeapp.chat.DirectCallEngine
+import com.forkmesh.nativeapp.feature.chat.DirectCallFeature
+import com.forkmesh.nativeapp.feature.chat.IncomingCallNotifier
+import com.forkmesh.nativeapp.platform.AppLifecycle
+import com.forkmesh.nativeapp.push.CallRings
 import com.forkmesh.nativeapp.push.LinkPlan
 import com.forkmesh.nativeapp.push.LinkSupervisor
 import com.forkmesh.nativeapp.push.ReconnectBackoff
@@ -27,6 +34,7 @@ class BackgroundLinkService : Service() {
     private class Link(val account: LinkAccount, val api: com.forkmesh.nativeapp.api.ApiService, val loop: AccountEventLoop)
 
     private val links = LinkedHashMap<String, Link>()
+    private val main = Handler(Looper.getMainLooper())
     private val supervisor = LinkSupervisor()
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "BackgroundLink").apply { isDaemon = true } }
     private var plan: LinkPlan = LinkPlan.OFF
@@ -110,6 +118,9 @@ class BackgroundLinkService : Service() {
                     val event = DirectMessagePreviews.event(frame)
                     worker.execute { deliverDirectMessage(link, event) }
                 }
+                DirectCallEngine.RING_TOPIC -> CallRings.conversation(frame)?.let { conversation ->
+                    worker.execute { ringCall(link, conversation) }
+                }
             }
         }
         loop.onConnected = {
@@ -136,6 +147,7 @@ class BackgroundLinkService : Service() {
     }
 
     private fun deliver(link: Link) {
+        if (plan.callsOnly) return
         val account = link.account
         val many = links.size > 1 || BackgroundLink.accounts().size > 1
         if (PingAlerts.fetchAndDeliver(this, account.id, account.label, many, link.api, account.node)) {
@@ -144,10 +156,31 @@ class BackgroundLinkService : Service() {
     }
 
     private fun deliverDirectMessage(link: Link, event: DirectMessageEvent?) {
+        if (plan.callsOnly) return
         val account = link.account
         val many = links.size > 1 || BackgroundLink.accounts().size > 1
         val secrets = runCatching { account.project.scope.secrets(SecureStore(this)) }.getOrNull()
         PingAlerts.deliverDirectMessage(this, account.id, account.label, many, link.api, account.node, event, secrets)
+    }
+
+    private fun ringCall(link: Link, conversation: String) {
+        if (AppLifecycle.foreground.value) return
+        val active = BackgroundLink.projectsService()?.active?.value?.id == link.account.id
+        if (active && DirectCallFeature.wake(conversation)) {
+            main.postDelayed({
+                if (!AppLifecycle.foreground.value && !DirectCallFeature.ringing(conversation)) {
+                    worker.execute { postRing(link, conversation) }
+                }
+            }, CallRings.WAKE_WAIT_MS)
+            return
+        }
+        postRing(link, conversation)
+    }
+
+    private fun postRing(link: Link, conversation: String) {
+        if (AppLifecycle.foreground.value || DirectCallFeature.ringing(conversation)) return
+        val partner = runCatching { link.api.directMessagePartner(conversation) }.getOrDefault("")
+        IncomingCallNotifier.postRing(this, link.account.id, conversation, partner)
     }
 
     private fun close(id: String) {

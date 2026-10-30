@@ -41,10 +41,14 @@ const FLOOR_NOTE_STYLE = `
 .fm-floor-note-message.root{background:#fffbeb;border-color:#fde68a}
 .fm-floor-note-meta{display:flex;align-items:center;gap:6px;margin-bottom:4px;color:#6b7280;font-size:12px}
 .fm-floor-note-meta b{color:#111827;font-weight:600}
+.fm-floor-note-meta b a{color:inherit;text-decoration:none}
+.fm-floor-note-meta b a:hover,.fm-floor-note-meta b a:focus-visible{text-decoration:underline}
 .fm-floor-note-meta button{margin-left:auto;border:0;background:transparent;color:#6b7280;padding:2px 6px;border-radius:6px;font-size:12px}
 .fm-floor-note-meta button:hover{background:#fee2e2;color:#b91c1c}
 .fm-floor-note-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .fm-floor-note-text .mention{color:#2563eb;font-weight:600}
+.fm-floor-note-text a.mention{text-decoration:none}
+.fm-floor-note-text a.mention:hover,.fm-floor-note-text a.mention:focus-visible{text-decoration:underline}
 .fm-floor-note-empty{color:#6b7280}
 .fm-floor-note-compose{position:relative;display:grid;gap:8px;padding:12px 16px 14px;border-top:1px solid #eef0f3}
 .fm-floor-note-compose textarea{min-height:76px;max-height:180px;resize:vertical;border:1px solid #dfe3e8;border-radius:10px;padding:9px 11px;font:inherit;color:#111827;background:#fff;outline:0}
@@ -72,10 +76,31 @@ function escapeHTML(value) {
   );
 }
 
-function noteTextHTML(value) {
+const FLOOR_NOTE_BOT_NAMES = new Set(["forkbot", "agent", "claude", "codex"]);
+
+export function floorNoteProfileUrl(name) {
+  const handle = String(name || "").trim().replace(/^@/, "").toLowerCase();
+  if (!FLOOR_NOTE_NAME_RE.test(handle) || FLOOR_NOTE_BOT_NAMES.has(handle)) {
+    return "";
+  }
+  const host = String(globalThis.location?.hostname || "").toLowerCase();
+  const origin = ["app.forkmesh.com", "forkmesh.com", "world.forkmesh.com"].includes(host)
+    ? "https://forkmesh.com"
+    : String(globalThis.location?.origin || "");
+  return `${origin}/@${encodeURIComponent(handle)}`;
+}
+
+function profileLinkHTML(name, className = "") {
+  const label = `@${escapeHTML(name)}`;
+  const url = floorNoteProfileUrl(name);
+  if (!url) return className ? `<span class="${className}">${label}</span>` : label;
+  return `<a${className ? ` class="${className}"` : ""} href="${escapeHTML(url)}">${label}</a>`;
+}
+
+export function noteTextHTML(value) {
   return escapeHTML(value).replace(
     FLOOR_NOTE_MENTION_RE,
-    (_, lead, name) => `${lead}<span class="mention">@${name}</span>`,
+    (_, lead, name) => `${lead}${profileLinkHTML(name, "mention")}`,
   );
 }
 
@@ -229,7 +254,7 @@ export function createWorldFloorNotes({
   panel.hidden = true;
   panel.setAttribute("aria-label", "Floor note");
   panel.dataset.floorNotePanel = "";
-  panel.innerHTML = `<header class="fm-floor-note-head"><strong data-floor-note-title>Note</strong><button type="button" class="fm-floor-note-close" data-floor-note-close aria-label="Close note">×</button></header><div class="fm-floor-note-thread" data-floor-note-thread></div><div class="fm-floor-note-compose"><ul class="fm-floor-note-suggest" data-floor-note-suggest hidden></ul><textarea data-floor-note-input maxlength="${FLOOR_NOTE_TEXT_MAX}" placeholder="Write a note… type @ to tag someone"></textarea><div class="fm-floor-note-actions"><small data-floor-note-count></small><button type="button" class="fm-floor-note-send" data-floor-note-send>Post note</button></div></div><div class="fm-floor-note-status" data-floor-note-status hidden></div>`;
+  panel.innerHTML = `<header class="fm-floor-note-head"><strong data-floor-note-title>Note</strong><button type="button" class="fm-floor-note-close" data-floor-note-close aria-label="Close note">×</button></header><div class="fm-floor-note-thread" data-floor-note-thread></div><div class="fm-floor-note-compose"><ul class="fm-floor-note-suggest" data-floor-note-suggest hidden></ul><textarea name="floor-note-input" data-floor-note-input maxlength="${FLOOR_NOTE_TEXT_MAX}" placeholder="Write a note… type @ to tag someone"></textarea><div class="fm-floor-note-actions"><small data-floor-note-count></small><button type="button" class="fm-floor-note-send" data-floor-note-send>Post note</button></div></div><div class="fm-floor-note-status" data-floor-note-status hidden></div>`;
   document.body.append(chip, panel);
   const $ = (selector) => panel.querySelector(selector);
   const input = $("[data-floor-note-input]");
@@ -462,7 +487,7 @@ export function createWorldFloorNotes({
       const { note, replies } = thread;
       $("[data-floor-note-title]").textContent = `Note from @${note.author}`;
       const message = (item, root) =>
-        `<article class="fm-floor-note-message${root ? " root" : ""}" data-floor-note-message="${item.id}"><div class="fm-floor-note-meta"><b>@${escapeHTML(item.author)}</b><span>${relativeTime(item.createdAt)}</span>${item.canDelete ? `<button type="button" data-floor-note-delete="${root ? "" : item.id}">Delete</button>` : ""}</div><div class="fm-floor-note-text">${noteTextHTML(item.text)}</div></article>`;
+        `<article class="fm-floor-note-message${root ? " root" : ""}" data-floor-note-message="${item.id}"><div class="fm-floor-note-meta"><b>${profileLinkHTML(item.author)}</b><span>${relativeTime(item.createdAt)}</span>${item.canDelete ? `<button type="button" data-floor-note-delete="${root ? "" : item.id}">Delete</button>` : ""}</div><div class="fm-floor-note-text">${noteTextHTML(item.text)}</div></article>`;
       container.innerHTML =
         message(note, true) +
         (replies.length

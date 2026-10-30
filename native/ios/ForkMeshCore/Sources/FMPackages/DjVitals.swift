@@ -7,6 +7,8 @@ public enum DjWork: String, CaseIterable, Sendable {
     case spin = "record step"
     case fade = "crossfade step"
     case automix = "automix step"
+    case load = "deck load"
+    case start = "deck start"
     case scratch = "scratch move"
     case jam = "jam reply"
     case save = "state save"
@@ -59,6 +61,7 @@ public struct DjVitals: Sendable {
     public static let tickGap = 0.6
     public static let snapSeconds = 0.3
     public static let marksKept = 40
+    public static let marksShown = 16
     public static let longFramesKept = 12
     public static let workKept = 96
     public static let workShownMs = 1.0
@@ -471,7 +474,8 @@ public struct DjVitals: Sendable {
         lines.append("")
         lines.append("## Recent moments, newest first")
         if marks.isEmpty { lines.append("none") }
-        for mark in marks.suffix(16).reversed() {
+        let alerting = marks.filter { now - $0.at <= Double(Self.alertSeconds) }.count
+        for mark in marks.suffix(max(Self.marksShown, alerting)).reversed() {
             lines.append("\(Self.ago(mark.at, now)) \(mark.text)")
         }
         if !context.isEmpty {
@@ -484,7 +488,9 @@ public struct DjVitals: Sendable {
 
     public static let commitUnseen = "not seen: this iOS runs layout and drawing outside the run loop's commit observers"
 
-    public var commitSeen: Bool { commitMs > 0 || busyMs < Self.longFrameMs }
+    public static let commitShareSeen = 0.02
+
+    public var commitSeen: Bool { busyMs < Self.longFrameMs || commitMs >= busyMs * Self.commitShareSeen }
 
     public static func lead(reason: String) -> String {
         let why = reason.isEmpty ? "The user asked for a DJ studio performance check" : "The DJ studio detected a performance issue: \(reason)"
