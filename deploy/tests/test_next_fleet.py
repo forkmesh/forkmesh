@@ -1124,6 +1124,17 @@ def test_ssh_port_step_moves_sshd_behind_a_rollback_and_checks_the_new_port(tmp_
     assert "port = 822" in files["/etc/fail2ban/jail.d/fmnext-sshd.local"][0]
 
 
+def test_ssh_port_step_accepts_a_node_that_answers_with_its_label(tmp_path):
+    data, vultr = ssh_port_target(tmp_path)
+    ssh = FakeSsh(port=22)
+    ssh.strict_answer = subprocess.CompletedProcess(
+        ["ssh"], 0, b"fmnext-core-2\nfmnext-node\n", b"")
+    next_fleet.install(data, "n2", ssh, Runner(execute=True), ("ssh-port",),
+                       vultr=vultr)
+    assert ssh.port("203.0.113.12") == 822
+    assert "systemctl stop fmnext-ssh-port-rollback.timer" in ssh.runs[-1][1]
+
+
 def test_ssh_port_step_leaves_the_rollback_armed_when_the_new_port_fails(tmp_path):
     data, vultr = ssh_port_target(tmp_path)
     ssh = FakeSsh(port=22)

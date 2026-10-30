@@ -1336,7 +1336,8 @@ def install_ssh_port(fleet, name, ip, ssh, runner, replacement=False):
         completed = ssh.run_strict(ip, SSH_IDENTITY_SCRIPT)
         lines = (completed.stdout or b"").decode("utf-8", "replace").split()
         if completed.returncode != 0 or not lines or lines[0] not in (
-                "%s.%s" % (name, fleet.get("domain", "")), name):
+                "%s.%s" % (name, fleet.get("domain", "")), name,
+                parse_target(name)[2]):
             ssh.use_port(ip, current)
             raise ToolError(
                 "%s: no pinned answer on port %d (%s); the node puts its "
