@@ -739,12 +739,7 @@ double seatFraction(int slot, int seatCount)
 {
     if (seatCount <= 1 || slot <= 0)
         return 0.0;
-    if (seatCount == 2)
-        return 0.31;
-    constexpr double gap = 0.07;
-    const double usable = 1.0 - 2 * gap;
-    const double along = double(slot % seatCount) * usable / double(seatCount);
-    return along <= 0.5 - gap + 1e-9 ? along : along + 2 * gap;
+    return double(slot % seatCount) / double(seatCount);
 }
 
 PokerClock turnClock(qint64 now, qint64 started, qint64 deadline)
@@ -887,13 +882,12 @@ PokerLayout PokerLayout::compute(const QSizeF &size, int seatCount, int mySeat)
     layout.myCard = QSizeF(60 * scale, 85 * scale);
     layout.avatarRadius = 27 * scale;
     layout.chipRadius = 11 * scale;
-    layout.dealer = QPointF(layout.centre.x(), layout.rail.top() - 4 * scale);
-    layout.dealerLine = QPointF(layout.centre.x(), layout.felt.top() + 52 * scale);
     const double gap = 8 * scale;
     const double boardWidth = 5 * layout.card.width() + 4 * gap;
     layout.board = QRectF(layout.centre.x() - boardWidth / 2.0, layout.centre.y() - layout.card.height() / 2.0 + 6 * scale,
                           boardWidth, layout.card.height());
     layout.pot = QPointF(layout.centre.x(), layout.board.top() - 30 * scale);
+    layout.dealer = layout.pot;
     const QRectF seatRing = layout.rail.adjusted(walnut * 0.9, walnut * 0.9, -walnut * 0.9, -walnut * 0.9);
     const int count = std::max(0, seatCount);
     for (int index = 0; index < count; ++index) {
@@ -924,6 +918,28 @@ PokerLayout PokerLayout::compute(const QSizeF &size, int seatCount, int mySeat)
         layout.seats << geometry;
     }
     return layout;
+}
+
+PokerLayout PokerLayout::compute(const QRectF &area, int seatCount, int mySeat)
+{
+    PokerLayout layout = compute(area.size(), seatCount, mySeat);
+    const QPointF offset = area.topLeft();
+    for (QRectF *rect : {&layout.room, &layout.rail, &layout.felt, &layout.inset, &layout.board})
+        rect->translate(offset);
+    for (QPointF *point : {&layout.centre, &layout.dealer, &layout.pot})
+        *point += offset;
+    for (PokerSeatGeometry &geometry : layout.seats)
+        for (QPointF *point : {&geometry.anchor, &geometry.avatar, &geometry.cards, &geometry.bet, &geometry.tag,
+                               &geometry.button})
+            *point += offset;
+    return layout;
+}
+
+QRectF PokerLayout::seatBounds(const PokerSeatGeometry &geometry, double scale, double avatarRadius)
+{
+    const double radius = geometry.bottom ? avatarRadius * 1.12 : avatarRadius;
+    const double reach = radius + 60 * scale;
+    return {geometry.avatar.x() - 64 * scale, geometry.avatar.y() - reach, 128 * scale, 2 * reach};
 }
 
 const PokerSeatGeometry *PokerLayout::seat(int index) const

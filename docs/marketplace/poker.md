@@ -340,8 +340,8 @@ the bottom.
 
 | File | What it does |
 | --- | --- |
-| `PokerModel.{h,cpp}` | Widget-free: JSON to lobby and table structs, card codes, chip breakdown by denomination, seat rotation (your seat is slot 0, the next seat to your left), seat positions around the stadium-shaped rail with the dealer's place at the top kept free, legal-action labels, pot-fraction raises, the turn clock colour, the wake delay, event diffing by `seq`, and the reveal check (the 52 `hashes` hash to `commitment` joined by commas, and each revealed card's `salt:index:card` hashes to `hashes[index]`). Tested by `tests/test_poker_model.cpp` (`forkmesh-poker-tests`). |
-| `PokerTableView.{h,cpp}` | The QPainter table. The room, dealer, rail, leather, felt, gold line, mark, dealer tray and board slots are painted once into a pixmap at the widget's size and device pixel ratio; cards, chips and avatars are cached pixmaps too, so a frame is a few blits. Newer events become a timeline of animations (deal from the tray with a flip for your cards, chips to the bet line, bets into the pot when a street ends, board cards, showdown flips, the pot to the winner, the button sliding) driven by one 16 ms frame timer that stops when the timeline is empty. While a turn clock runs it repaints only the acting avatar at 15 frames a second. |
+| `PokerModel.{h,cpp}` | Widget-free: JSON to lobby and table structs, card codes, chip breakdown by denomination, seat rotation (your seat is slot 0, the next seat to your left), seat positions spread evenly around the stadium-shaped rail (on the desktop a player sits at the top, opposite you), legal-action labels, pot-fraction raises, the turn clock colour, the wake delay, event diffing by `seq`, and the reveal check (the 52 `hashes` hash to `commitment` joined by commas, and each revealed card's `salt:index:card` hashes to `hashes[index]`). Tested by `tests/test_poker_model.cpp` (`forkmesh-poker-tests`). |
+| `PokerTableView.{h,cpp}` | The QPainter table. The room, rail, leather, felt, gold line, mark and board slots are painted once into a pixmap at the widget's size and device pixel ratio; cards, chips and avatars are cached pixmaps too, so a frame is a few blits. Newer events become a timeline of animations (deal from the pot with a flip for your cards, chips to the bet line, bets into the pot when a street ends, board cards, showdown flips, the pot to the winner, the button sliding) driven by one 16 ms frame timer that stops when the timeline is empty. While a turn clock runs it repaints only the acting avatar at 15 frames a second. |
 | `PokerSynth.{h,cpp}`, `PokerSound.{h,cpp}` | The recipe table above, synthesized into float buffers and mixed by one pull-mode `QAudioSink` that closes 2.5 s after the last sound. Without Qt Multimedia the build has no sink and the page says "No sound". The mute choice is the package setting `soundMuted`. |
 | `PokerPage.{h,cpp}` | Lobby (wallet, claim countdown, record, tables, new table, join by code) and the table page (seat, sit out, rebuy, leave, bots, invite, close, chat, hand log, last hand with the checked reveal), the action bar with F, C, R and A shortcuts. |
 
@@ -353,10 +353,11 @@ answer, so the local clock's offset does not matter, plus 150 ms, and it sends
 `POST .../tick`. The lobby's claim label is refreshed by a local one-shot
 timer that sends nothing.
 
-Layout modes: Control Tower puts the chat, hand log and last hand in a column
-beside the table; Focus gives the table the page and opens them as a drawer
-over its right side from "Chat & log", which counts unread chat lines. The
-mode is read on show and on refresh.
+Layout modes: Control Tower keeps the chat, hand history and last hand panel
+open in the bottom-left corner and keeps the table above it; Focus hides that
+panel and opens it in the same corner, over the table, from "Chat & log" in the
+table options, which counts unread chat lines. The mode is read on show and on
+refresh.
 
 ### Desktop skin
 
@@ -364,8 +365,8 @@ On 2026-10-30 the owner asked for the desktop page to follow a neon poker
 concept delivered as an integration kit (`poker_plugin_asset_kit.zip`: a
 concept image, SVG cards, chips, felt, plates and buttons, a QSS starting
 point and a stand-alone preview). The kit asked for a reskin only, so the
-seat geometry, hit-testing, animations, turn clock, state and requests are
-unchanged. What the desktop takes from it:
+animations, turn clock, state and requests are unchanged. What the desktop
+takes from it:
 
 - **Cards** are the kit's SVGs, `content/desktop/cards/<rank>_<suit>.svg`
   (ranks `2`..`10`, `J`, `Q`, `K`, `A`; suits `S`, `H`, `D`, `C`) and
@@ -381,13 +382,53 @@ unchanged. What the desktop takes from it:
   stretched over the stadium it would not line up with the seats.
 - **Seats**: gold avatar rings (`#dfb75a`), navy plates (`#142b3d` to
   `#070e1c`) with a gold border, white names and gold stacks (`#f4c85a`); the
-  plate of the player to act glows gold. Pot, dealer line and hand-name pills
-  are navy with gold text.
+  plate of the player to act glows gold. Pot and hand-name pills are navy
+  with gold text.
 - **Dealer button** is a gold puck with a "D", as in the concept.
 - **Action bar** uses the kit's QSS colours: Fold red, Check blue, Call
   green (the call button's `pokerTone` property switches between the two),
   Bet/Raise gold, navy presets and amount box, and a blue-to-cyan slider with
   a gold handle.
+
+### Desktop layout
+
+The reskin kept the old page layout (a button bar above the table, the action
+bar under it and the chat column beside it), so on 2026-10-30 the owner said
+the new layout was not showing. The table page now follows the concept's layout
+too: the table fills the page and the controls float over the room in navy
+panels with a gold edge (`PokerPage::placeOverlays`, rerun on every resize and
+whenever a panel's contents change).
+
+- **Top left**: "‹ Lobby", the table name, stakes and blinds, buy-in and turn
+  clock, the hand number, code and privacy, the dealer's line (`dealerLine`, or
+  the phase when it is empty) in gold, and the wallet. The dealer's line moved
+  here from the felt because a player now sits where it was.
+- **Top right**: the table options as a list: Sit down (gold) or Sit out / I'm
+  back, Rebuy, Bots (owner), Invite friends, Leave table, Table info (the menu
+  with the code, how the deck is checked and Close table) and, in Focus, Chat &
+  log.
+- **Bottom left**: the chat, hand history and last hand panel.
+- **Bottom right**: the action bar: the action note, a row with −, the slider,
+  +, the amount and the ½ pot, ¾ pot, Pot and All-in presets, then Fold, Check
+  or Call and Bet or Raise as three wide buttons. − and + move the amount by one
+  big blind.
+- **Messages** about the table (copied code, errors) show as a pill at the top
+  centre.
+
+`PokerTableView::setKeepClear` gets the panels' rectangles and the action
+bar's height. The room is still painted under the whole page, but the rail,
+seats and cards are laid out above the action bar, and `relayout` then moves
+the table down 12 px at a time while a top panel covers a seat (the top-left
+seat's plate sits where the table info is at many sizes) and up while a bottom
+one does, up to 30% of the height each way (`PokerLayout::seatBounds` is the
+avatar, plate and tag of a seat). The chat panel counts only in Control Tower;
+in Focus it is a drawer that may cover the table. When the window is too narrow
+for the chat beside a 520 px action bar, the chat stacks above the bar.
+
+There is no dealer figure or chip tray at the top of the table any more: as in
+the concept, seats are spread evenly round the rail, so with six seats a player
+sits at the top opposite you and heads-up puts your opponent straight across.
+Hole cards are dealt from the pot.
 
 Left out on purpose: the kit's chips (six colours against the seven
 denominations of the shared chip table, so chips keep the painted look and
