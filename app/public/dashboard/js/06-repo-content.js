@@ -3751,12 +3751,43 @@
     change();
     if (header?.isConnected && before !== undefined) {
       const shift = header.getBoundingClientRect().top - before;
+      if (block) padPullDiffTail(block, scroller, scroller.scrollTop + shift);
       if (Math.abs(shift) >= 1) scroller.scrollTop += shift;
     }
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       if (block) block.style.contentVisibility = "auto";
       if (scroller) scroller.style.overflowAnchor = anchor;
     }));
+  }
+
+  const pullDiffTailScrollers = new WeakSet();
+
+  function padPullDiffTail(block, scroller, top) {
+    const list = block.parentElement;
+    if (!list) return;
+    let tail = list.querySelector(":scope > [data-repo-pull-diff-tail]");
+    const need = Math.ceil(top + scroller.clientHeight - (scroller.scrollHeight - (tail?.offsetHeight || 0)));
+    if (need <= 0) {
+      tail?.remove();
+      return;
+    }
+    if (!tail) {
+      tail = document.createElement("div");
+      tail.dataset.repoPullDiffTail = "";
+      tail.setAttribute("aria-hidden", "true");
+      list.append(tail);
+    }
+    tail.style.height = `${need}px`;
+    if (pullDiffTailScrollers.has(scroller)) return;
+    pullDiffTailScrollers.add(scroller);
+    const target = scroller === document.scrollingElement ? window : scroller;
+    target.addEventListener("scroll", () => {
+      const current = document.querySelector("[data-repo-pull-diff-tail]");
+      if (!current) return;
+      const shown = Math.ceil(scroller.scrollTop + scroller.clientHeight - (scroller.scrollHeight - current.offsetHeight));
+      if (shown <= 0) current.remove();
+      else if (shown < current.offsetHeight) current.style.height = `${shown}px`;
+    }, { passive: true });
   }
 
   function setRepoPullDiffBlockCollapsed(block, collapsed) {

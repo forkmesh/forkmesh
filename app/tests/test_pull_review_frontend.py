@@ -79,6 +79,8 @@ def test_folding_a_file_keeps_its_header_in_place_both_ways():
     edit = body.index("change();")
     assert pin < edit and no_anchor < edit
     assert "scroller.scrollTop += shift" in body
+    assert body.index("padPullDiffTail(block, scroller") < body.index("scroller.scrollTop += shift")
+    assert "data-repo-pull-diff-tail" in CONTENT
     assert 'block.style.contentVisibility = "auto"' in body[edit:]
     assert "scroller.style.overflowAnchor = anchor" in body[edit:]
     assert "keepPullDiffHeaderInPlace(block.firstElementChild" in CONTENT
