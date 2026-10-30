@@ -2612,7 +2612,7 @@
       reply?.remove();
     } catch (error) {
       button.disabled = false;
-      window.alert(webDiscussionSubmitErrorText(error));
+      showErrorNotice(webDiscussionSubmitErrorText(error));
     }
   }
 

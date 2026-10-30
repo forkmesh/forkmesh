@@ -5367,7 +5367,7 @@
       complexity: diffHealthEvidence(complexityBits, "No changed lines", "Estimated from churn, control flow, and concentration; no code was executed."),
       quality: diffHealthEvidence(qualityBits, "No quality findings", "Tests are inferred from paths and were not executed."),
       security: diffHealthEvidence(securityBits, "No high-confidence secrets or risky added-line patterns found", "Static heuristic only; it does not replace dependency or SAST scanning."),
-      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", "This is syntax analysis; ForkMesh sent no traffic for this check."),
+      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", `This is syntax analysis; ${platformName()} sent no traffic for this check.`),
       practices: diffHealthEvidence(practicesBits, "No unusual artifacts, conflict markers, or diff-hygiene issues found", "Checks only the files and added lines in this diff."),
     };
     const scores = { merge, complexity, quality, security, network, practices };
@@ -13945,7 +13945,7 @@ Your reply
       await submitWebProjectEvents(repo, number, specs);
       await loadRepoProjects(repo);
     } catch (error) {
-      window.alert(projectErrorText(error));
+      showErrorNotice(projectErrorText(error));
     }
   }
 

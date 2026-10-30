@@ -5739,7 +5739,7 @@
       reply?.remove();
     } catch (error) {
       button.disabled = false;
-      window.alert(webDiscussionSubmitErrorText(error));
+      showErrorNotice(webDiscussionSubmitErrorText(error));
     }
   }
 
@@ -24077,7 +24077,7 @@
       complexity: diffHealthEvidence(complexityBits, "No changed lines", "Estimated from churn, control flow, and concentration; no code was executed."),
       quality: diffHealthEvidence(qualityBits, "No quality findings", "Tests are inferred from paths and were not executed."),
       security: diffHealthEvidence(securityBits, "No high-confidence secrets or risky added-line patterns found", "Static heuristic only; it does not replace dependency or SAST scanning."),
-      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", "This is syntax analysis; ForkMesh sent no traffic for this check."),
+      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", `This is syntax analysis; ${platformName()} sent no traffic for this check.`),
       practices: diffHealthEvidence(practicesBits, "No unusual artifacts, conflict markers, or diff-hygiene issues found", "Checks only the files and added lines in this diff."),
     };
     const scores = { merge, complexity, quality, security, network, practices };
@@ -32655,7 +32655,7 @@ Your reply
       await submitWebProjectEvents(repo, number, specs);
       await loadRepoProjects(repo);
     } catch (error) {
-      window.alert(projectErrorText(error));
+      showErrorNotice(projectErrorText(error));
     }
   }
 
@@ -43155,7 +43155,7 @@ Your reply
       await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -43165,7 +43165,7 @@ Your reply
       await releaseEditRequest(repo, { op: "delete", tag, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -59803,7 +59803,7 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=c59dced335d6",
+    "notes": "/dashboard-page-notes.js?v=232a89697276",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=62cb9058a6b6",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",

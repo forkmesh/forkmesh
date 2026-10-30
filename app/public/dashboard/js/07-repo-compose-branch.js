@@ -2626,7 +2626,7 @@
       await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -2636,7 +2636,7 @@
       await releaseEditRequest(repo, { op: "delete", tag, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
