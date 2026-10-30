@@ -506,8 +506,12 @@ catalog fails the configure with "Marketplace package discovery failed".
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
   Market never re-renders SVGs on the GUI thread. The first read runs on a
   worker (`QtConcurrent`): the card shows an empty frame, and
-  `applyMarketPreview` fills every card and details pane whose `previewKey`
-  matches when the image lands. Diagnostic report #15 (2026-10-24) caught the
+  `applyMarketPreview` caches the image and queues it; `flushMarketPreviews`
+  fills every card and details pane whose `previewKey` matches, for all the
+  previews that landed in the last 50 ms, in one walk of the window. A
+  card's details pane is built the first time the card opens
+  ([diagnostics.md](../desktop/diagnostics.md), report #18) and copies the
+  card's preview then. Diagnostic report #15 (2026-10-24) caught the
   first Market open decoding every preview inline, ~4 s under memory pressure,
   in `QImageReader::read`. WebP needs Qt's optional qtimageformats plugin,
   which many Linux installs lack, so when Qt cannot read a preview whose bytes

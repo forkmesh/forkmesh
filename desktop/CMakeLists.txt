@@ -4760,6 +4760,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-window-tests --agent-landing-only)
     add_test(NAME forkmesh-stats-window-tests
              COMMAND forkmesh-window-tests --stats-only)
+    add_test(NAME forkmesh-market-view-window-tests
+             COMMAND forkmesh-window-tests --market-view-only)
     add_test(NAME forkmesh-view-modes-window-tests
              COMMAND forkmesh-window-tests --view-modes-only)
     add_test(NAME forkmesh-ui-snapshots-window-tests
@@ -4796,6 +4798,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-agent-efficiency-window-tests
         forkmesh-agent-landing-window-tests
         forkmesh-stats-window-tests
+        forkmesh-market-view-window-tests
         forkmesh-view-modes-window-tests
         forkmesh-ui-snapshots-window-tests
         forkmesh-task-agent-avatar-window-tests

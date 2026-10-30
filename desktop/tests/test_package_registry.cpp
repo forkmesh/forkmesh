@@ -46,6 +46,28 @@ int main(int argc, char **argv)
     check(registry.isReady(), "the embedded marketplace catalog validates");
     check(registry.packages().size() == 129,
           "every embedded marketplace package is retained");
+    {
+        bool lookupsMatch =
+            !registry.package(QStringLiteral("no-such-package")) &&
+            registry.nestedPackages(QStringLiteral("no-such-package")).isEmpty();
+        int nestedTotal = 0;
+        for (const forkmesh::market::PackageManifest &manifest : registry.packages()) {
+            const forkmesh::market::PackageManifest *found =
+                registry.package(manifest.id);
+            lookupsMatch = lookupsMatch && found == &manifest;
+            QStringList scanned;
+            for (const forkmesh::market::PackageManifest &candidate :
+                 registry.packages()) {
+                if (registry.marketParent(candidate.id) == manifest.id)
+                    scanned.append(candidate.id);
+            }
+            lookupsMatch =
+                lookupsMatch && registry.nestedPackages(manifest.id) == scanned;
+            nestedTotal += int(scanned.size());
+        }
+        check(lookupsMatch && nestedTotal > 0,
+              "indexed package and nested-package lookups match a full catalog scan");
+    }
     const forkmesh::market::PackageManifest *designSystem =
         registry.package(QStringLiteral("design-system"));
     check(designSystem &&
