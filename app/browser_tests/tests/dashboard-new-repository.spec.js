@@ -33,6 +33,12 @@ async function stubDashboard(page, apiHandler = null) {
       contentType: "text/html; charset=utf-8",
     }),
   );
+  await page.route("**/dashboard/repos/new**", (route) =>
+    route.fulfill({
+      path: path.join(PUBLIC, "dashboard", "repos", "new", "index.html"),
+      contentType: "text/html; charset=utf-8",
+    }),
+  );
   await page.route("**/dashboard", (route) =>
     route.fulfill({
       path: path.join(PUBLIC, "dashboard", "index.html"),
@@ -78,7 +84,14 @@ test("Create & mirror advances to a visible desktop handoff", async ({ page }) =
   await stubDashboard(page);
   await page.goto("/dashboard/repos");
 
-  await page.getByRole("button", { name: "New repository" }).click();
+  await page.getByRole("link", { name: "New repository" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/repos\/new$/);
+  await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
+    "Create empty repository",
+  );
+  const cloneUrl = page.getByRole("button", { name: "Clone URL" });
+  await cloneUrl.click();
+  await expect(cloneUrl).toHaveAttribute("aria-pressed", "true");
   await page.locator("[data-new-repo-name]").fill("test-repo-for-playwright");
   await page.locator("[data-new-repo-source-value]").fill(
     "https://github.com/octocat/Hello-World.git",
@@ -91,7 +104,7 @@ test("Create & mirror advances to a visible desktop handoff", async ({ page }) =
   await expect(page.locator("[data-new-repo-details]")).toBeHidden();
   const handoff = page.locator("[data-new-repo-steps]");
   await expect(handoff).toBeVisible();
-  await expect(handoff).toContainText("Desktop handoff required");
+  await expect(handoff).toContainText("Finish on your desktop node");
   await expect(handoff).toContainText("Nothing has been published yet");
   await expect(handoff).toContainText("test-repo-for-playwright");
   await expect(handoff).toContainText(
@@ -101,9 +114,10 @@ test("Create & mirror advances to a visible desktop handoff", async ({ page }) =
   await expect(page.locator("[data-new-repo-cancel]")).toHaveText("Close");
 
   await page.locator("[data-new-repo-cancel]").click();
-  await page.getByRole("button", { name: "New repository" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/repos$/);
+  await page.getByRole("link", { name: "New repository" }).click();
   await expect(page.locator("[data-new-repo-title]")).toHaveText(
-    "Create & mirror a repository",
+    "Create a new repository",
   );
   await expect(page.locator("[data-new-repo-details]")).toBeVisible();
   await expect(page.locator("[data-new-repo-steps]")).toBeHidden();
@@ -199,15 +213,17 @@ test("provider setup starts a resumable transfer and clears its credential", asy
     return null;
   });
 
-  await page.goto("/dashboard/repos");
-  await page.getByRole("button", { name: "New repository" }).click();
-  await page.getByRole("button", { name: "GitHub / GitLab / Codeberg" }).click();
+  await page.goto("/dashboard/repos/new");
+  await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
+    "Create empty repository",
+  );
+  await page.getByRole("button", { name: "Import from GitHub, GitLab, Codeberg" }).click();
   // Before anything starts, the tab states what an import produces, so the
   // later receipt cannot be the first mention of it (issue #678).
   await expect(page.locator("[data-new-repo-subtitle]")).toContainText(
-    "Mirroring the Git contents is a separate step");
+    "This does not copy the code");
   await expect(page.locator("[data-new-repo-source-hint]")).toContainText(
-    "an external listing, not a ForkMesh mirror");
+    "It does not copy the code and is not kept up to date, so it is not a backup.");
   await page.locator("[data-new-repo-source-value]").fill("https://github.com/acme/widgets");
   await page.locator("[data-new-repo-provider-token]").fill(token);
   await page.getByRole("button", { name: "Start resumable import" }).click();
@@ -241,9 +257,8 @@ test("provider setup starts a resumable transfer and clears its credential", asy
 
 // The home rail's "New" above Top repositories was inert markup: no data hook,
 // no href, no listener, so clicking it did nothing (issue #626). Source-text
-// tests can only pin that the link and the marker-consuming code exist; this
-// drives both real documents to prove a click actually lands on the
-// create-and-mirror flow.
+// tests can only pin that the link exists; this drives both real documents to
+// prove a click actually lands on the create page.
 test("home rail New reaches the new-repository flow", async ({ page }) => {
   await page.addInitScript((session) => {
     localStorage.setItem("forkmesh.session", JSON.stringify(session));
@@ -255,21 +270,21 @@ test("home rail New reaches the new-repository flow", async ({ page }) => {
   await expect(control).toBeVisible();
   await control.click();
 
-  // It leaves home for the document that carries the modal, and the modal is
-  // open on arrival rather than needing a second click.
-  const modal = page.locator("[data-new-repo-modal]");
-  await expect(modal).toBeVisible();
+  // It leaves home for the create page, with the form ready on arrival rather
+  // than needing a second click.
+  await expect(page).toHaveURL(/\/dashboard\/repos\/new$/);
+  await expect(page.locator("[data-new-repo-page]")).toBeVisible();
   await expect(page.locator("[data-new-repo-title]")).toHaveText(
-    "Create & mirror a repository",
+    "Create a new repository",
   );
   await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
-    "Create & mirror",
+    "Create empty repository",
   );
 
-  // The marker is consumed, not left in the address bar, so the URL a user
-  // would bookmark or reload is the plain Repositories page.
-  await expect(page).toHaveURL(/\/dashboard\/repos$/);
   await page.reload();
-  await expect(page.getByRole("button", { name: "New repository" })).toBeVisible();
-  await expect(modal).toBeHidden();
+  await expect(page.locator("[data-new-repo-details]")).toBeVisible();
+
+  await page.goto("/dashboard/repos?new=1");
+  await expect(page).toHaveURL(/\/dashboard\/repos\/new$/);
+  await expect(page.locator("[data-new-repo-details]")).toBeVisible();
 });

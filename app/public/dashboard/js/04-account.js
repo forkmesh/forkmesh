@@ -3312,7 +3312,9 @@
     let installed = [];
     if (account) {
       try {
-        installed = (await pluginRequest("/api/plugins/")).plugins || [];
+        const reply = await pluginRequest("/api/plugins/");
+        if (!Array.isArray(reply?.plugins)) throw new Error("plugin_list_missing");
+        installed = reply.plugins;
         window.ForkMeshAPI?.rememberPlugins?.(account, installed);
         window.ForkMeshAPI?.rememberStatusPage?.(
           account, installed.includes("status-page"));

@@ -139,11 +139,18 @@ test("admin manages a private channel while only invited users join", async ({ p
       if (JSON.parse(frame).persist === true) retainedPrivateFrames.push(frame);
     });
     if (privateConnections > 1) {
+      const replay = [...retainedPrivateFrames];
       setTimeout(() => {
-        retainedPrivateFrames.forEach((frame) => socket.send(frame));
+        replay.forEach((frame) => socket.send(frame));
       }, 50);
     }
   });
+  const signInAs = async (value) => {
+    await page.evaluate((stored) => {
+      localStorage.setItem("forkmesh.session", JSON.stringify(stored));
+    }, value);
+    await page.reload();
+  };
 
   await page.goto("/chat.html");
   await page.getByRole("button", {
@@ -165,16 +172,37 @@ test("admin manages a private channel while only invited users join", async ({ p
   )).toBe(true);
 
   await page.locator("#chat-channel-settings-close").click();
+  await expect(page.locator("#chat-log")).toContainText("No messages in #release-team yet.");
+
+  const beforeAlice = retainedPrivateFrames.length;
+  await signInAs(session("alice"));
+  await expect(page.locator("#chat-channel-title")).toHaveText("#release-team");
+  await expect(page.locator("#chat-status")).toHaveAttribute(
+    "title",
+    "Connected · private #release-team",
+  );
+  await expect.poll(() => retainedPrivateFrames.length).toBe(
+    beforeAlice + RETAINED_KEY_ADVERTISEMENTS,
+  );
+
+  await signInAs(session("admin", true));
+  await expect(page.locator("#chat-channel-title")).toHaveText("#release-team");
+  await expect.poll(() => page.evaluate(() => {
+    const profile = btoa("acct:admin").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const prefix = `forkmesh.chat/e2ee/p/${profile}/trustV3/`;
+    return Object.keys(localStorage)
+      .filter((key) => key.startsWith(prefix))
+      .flatMap((key) => Object.values(JSON.parse(localStorage.getItem(key)).records || {}))
+      .some((record) => record.acct === "alice" && record.state === "approved");
+  })).toBe(true);
+  const beforeSend = retainedPrivateFrames.length;
   await page.locator("#chat-input").fill("Private release is ready");
   await page.locator("#chat-send").click();
-  await expect.poll(() => retainedPrivateFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 1);
+  await expect(page.locator("#chat-log")).toContainText("Private release is ready");
+  await expect.poll(() => retainedPrivateFrames.length).toBe(beforeSend + 1);
   expect(retainedPrivateFrames.join("\n")).not.toContain("Private release is ready");
 
-  await page.evaluate((value) => {
-    localStorage.setItem("forkmesh.session", JSON.stringify(value));
-  }, session("alice"));
-  await page.reload();
-
+  await signInAs(session("alice"));
   await expect(page.locator("#chat-channel-title")).toHaveText("#release-team");
   await expect(page.locator("#chat-log")).toContainText("Private release is ready");
 
@@ -304,7 +332,7 @@ test("registered users discover a relay-provided public channel", async ({ page 
     "title",
     "Connected · public #announcements",
   );
-  await expect(page.locator("#chat-channel-manage")).toBeHidden();
+  await expect(page.locator("#chat-channel-manage")).toBeVisible();
 
   await page.evaluate((value) => {
     localStorage.setItem("forkmesh.session", JSON.stringify(value));
@@ -312,11 +340,12 @@ test("registered users discover a relay-provided public channel", async ({ page 
   await page.reload();
 
   await expect(page.locator("#chat-channel-title")).toHaveText("#announcements");
-  await expect(page.locator("#chat-rooms")).toContainText("#announcements");
+  await expect(page.getByRole("button", { name: "Public channel #announcements" })).toBeVisible();
   await expect(page.locator("#chat-status")).toHaveAttribute(
     "title",
     "Connected · public #announcements",
   );
+  await expect(page.locator("#chat-channel-manage")).toBeHidden();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(
@@ -329,7 +358,7 @@ test("registered users discover a relay-provided public channel", async ({ page 
   await page.reload();
 
   await expect(page.locator("#chat-channel-title")).toHaveText("World");
-  await expect(page.locator("#chat-rooms")).not.toContainText("#announcements");
+  await expect(page.locator("#chat-rooms")).not.toContainText("announcements");
 });
 
 
@@ -554,13 +583,13 @@ test("a channel manager renames and deletes a channel from its settings", async 
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.locator("#chat-channel-title")).toHaveText("#shipping");
   await expect(page.locator("#chat-channel-topic")).toHaveText("Ship it");
-  await expect(page.locator("#chat-rooms")).toContainText("#shipping");
+  await expect(page.getByRole("button", { name: "Private channel #shipping" })).toContainText("shipping");
 
   await page.getByRole("button", { name: "Delete channel" }).click();
   await page.getByRole("button", { name: "Yes, delete" }).click();
   await expect(page.locator("#chat-channel-settings")).toBeHidden();
   await expect(page.locator("#chat-channel-title")).toHaveText("World");
-  await expect(page.locator("#chat-rooms")).not.toContainText("#shipping");
+  await expect(page.locator("#chat-rooms")).not.toContainText("shipping");
   await expect(page.locator("#chat-log")).toContainText(
     "Channel #shipping was deleted",
   );

@@ -51,6 +51,9 @@ jobs:
         working-directory: world/browser_tests
         run: npx playwright install --with-deps --only-shell chromium
 
+      - name: Install ffmpeg for the fake camera clip
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Exercise WebGL, keyboard, touch, and two-client privacy
         working-directory: world/browser_tests
         run: npm test -- --global-timeout=0

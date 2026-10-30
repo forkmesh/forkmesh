@@ -222,9 +222,9 @@ test("a finished desktop agent shows its diff, merges in one click, and deletes"
   await expect(diff).toContainText("main...fm/fix-flaky");
   await shoot(page, "desktop-agent-diff");
 
-  page.once("dialog", (dialog) => {
-    expect(dialog.type()).toBe("confirm");
-    expect(dialog.message()).toContain("Merge fm/fix-flaky into main.");
+  const dialogs = [];
+  page.on("dialog", (dialog) => {
+    dialogs.push({ type: dialog.type(), message: dialog.message() });
     dialog.accept();
   });
   await detail.locator('[data-desktop-agent-action="merge"]').click();
@@ -232,9 +232,11 @@ test("a finished desktop agent shows its diff, merges in one click, and deletes"
     .toEqual([{ id: 12, token: "tok-merge", typed: "" }]);
   await expect(detail).toContainText("Merged fm/fix-flaky and cleaned up its worktree on the desktop.");
   await expect(detail.locator('[data-desktop-agent-action="merge"]')).toHaveCount(0);
+  expect(dialogs).toEqual([]);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await detail.locator('[data-desktop-agent-action="delete"]').click();
+  await expect.poll(() => dialogs.map((dialog) => dialog.type)).toEqual(["confirm"]);
+  expect(dialogs[0].message).toContain("Delete this agent.");
   await expect.poll(async () => (await desktopCalls(page, "agentops.delete")).map((c) => c.params))
     .toEqual([{ id: 12, token: "tok-delete" }]);
   await expect(page.locator("[data-desktop-agent-session]")).toHaveCount(1);

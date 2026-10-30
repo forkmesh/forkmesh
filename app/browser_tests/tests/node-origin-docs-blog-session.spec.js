@@ -118,9 +118,8 @@ test("an authenticated node session survives Dashboard → Docs/Blog → App", a
   await page.locator(".fm-header-app").click();
   await expect(page).toHaveURL(`${NODE_ORIGIN}/dashboard`);
 
-  await expect.poll(() => sessionReads.length).toBe(2);
+  await expect.poll(() => sessionReads.length).toBe(1);
   expect(sessionReads).toEqual([
-    "forkmesh_account=node-only-session",
     "forkmesh_account=node-only-session",
   ]);
   await context.close();

@@ -2355,7 +2355,7 @@ def test_dashboard_repository_tab_counts_wait_for_live_data_and_update_mirrors()
     assert 'data-dashboard-repo-tab-count="${tab}"' in render
     assert 'data-dashboard-repo-count="mirrors"' in render
     assert "updateRepoLiveCounts(repo, data.counts);" in dashboard_js
-    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount });" in mirror_loader
+    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });" in mirror_loader
     for fake_action in ("Watch <span", "Fork <span", "Star <span"):
         assert fake_action not in render
 
