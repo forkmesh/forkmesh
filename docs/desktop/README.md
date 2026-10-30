@@ -331,6 +331,20 @@ writes the entry only when none exists and the running binary is the installed
 AppImage run never adds a launcher, and a launcher the user edited is never
 overwritten. `forkmesh-launcher-icon-tests` covers both rules.
 
+A launcher written before the projects layout still ran
+`~/.local/share/forkmesh/src/qt_client/build/forkmesh`, a binary the in-app
+update never rebuilds. Clicking the icon started that months-old build, which
+stopped with "could not recover an interrupted mirror Actions configuration
+(configuration_lock_unavailable)" because its settings folder,
+`~/.config/ForkMesh`, is now a link into the project (2026-10-30). The same
+startup step therefore repairs an existing launcher: when the entry has
+`Name=ForkMesh` and its `Exec` names a missing binary or one inside the retired
+`~/.local/share/forkmesh` tree, it is rewritten to run the current client.
+The current client is `~/.local/bin/forkmesh` when installed, otherwise the
+primary checkout's `~/projects/forkmesh/src/desktop/build/forkmesh` when that
+is the running binary; a worktree build never qualifies. A launcher pointing at
+any other existing binary is left as it is.
+
 ### Signing in
 
 The desktop signs in with the email and password the user types, sending the

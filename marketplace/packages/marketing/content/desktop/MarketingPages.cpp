@@ -1199,9 +1199,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
                                                                          : QStringLiteral("Mark done"));
     });
     const auto planItem = [this] {
-        const int row = m_adPlanTable->currentRow();
-        const QJsonArray items = m_adPlan.value(QStringLiteral("recommendations")).toArray();
-        return row >= 0 && row < items.size() ? items.at(row).toObject() : QJsonObject();
+        return byId(m_adPlan.value(QStringLiteral("recommendations")).toArray(), rowId(m_adPlanTable));
     };
     connect(m_adPlanTable, &QTableWidget::currentCellChanged, this, [this, planItem](int, int, int, int) {
         const QJsonObject item = planItem();
@@ -1233,9 +1231,11 @@ void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
             QDesktopServices::openUrl(url);
     });
     connect(m_readinessTable, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *cell) {
-        const QJsonArray checks = m_adPlan.value(QStringLiteral("readiness")).toArray();
-        if (cell && cell->row() < checks.size() && !checks.at(cell->row()).toObject().value(QStringLiteral("done")).toBool())
-            runAdvisorAction(checks.at(cell->row()).toObject().value(QStringLiteral("action")).toObject());
+        QTableWidgetItem *first = cell ? m_readinessTable->item(cell->row(), 0) : nullptr;
+        const QJsonObject check = byId(m_adPlan.value(QStringLiteral("readiness")).toArray(),
+                                       first ? first->data(Qt::UserRole).toString() : QString());
+        if (!check.isEmpty() && !check.value(QStringLiteral("done")).toBool())
+            runAdvisorAction(check.value(QStringLiteral("action")).toObject());
     });
     connect(goalsButton, &QPushButton::clicked, this, [this] { editGoals(); });
     connect(m_healthFilter, &QButtonGroup::idClicked, this, [this](int) { renderChannelHealth(); });
@@ -4275,6 +4275,7 @@ void MarketingFeature::renderAdPlan()
         return;
     const QJsonArray items = m_adPlan.value(QStringLiteral("recommendations")).toArray();
     const int previous = m_adPlanTable->currentRow();
+    const QString previousId = rowId(m_adPlanTable);
     {
         const QSignalBlocker blocker(m_adPlanTable);
         m_adPlanTable->setRowCount(0);
@@ -4295,8 +4296,13 @@ void MarketingFeature::renderAdPlan()
     m_adPlanPanel->hint()->setText(text(m_adPlan, "landingPage").isEmpty()
                                        ? QStringLiteral("Ranked from your visits, conversions and logged ads")
                                        : QStringLiteral("Landing page %1").arg(text(m_adPlan, "landingPage")));
+    int select = qBound(0, previous, m_adPlanTable->rowCount() - 1);
+    for (int row = 0; row < m_adPlanTable->rowCount(); ++row) {
+        if (!previousId.isEmpty() && m_adPlanTable->item(row, 0)->data(Qt::UserRole).toString() == previousId)
+            select = row;
+    }
     if (m_adPlanTable->rowCount())
-        m_adPlanTable->setCurrentCell(qBound(0, previous, m_adPlanTable->rowCount() - 1), 0);
+        m_adPlanTable->setCurrentCell(select, 0);
     else
         m_adPlanWhy->setText(m_adPlan.isEmpty() ? QStringLiteral("Reading visits, conversions and logged ads…")
                                                 : QString());

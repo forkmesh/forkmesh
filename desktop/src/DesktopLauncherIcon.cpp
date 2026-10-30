@@ -95,6 +95,59 @@ bool installLauncher(const QString &dataHome, const QString &clientBin,
     return true;
 }
 
+QString launcherTarget(const QByteArray &entry)
+{
+    for (const QByteArray &line : entry.split('\n')) {
+        if (!line.startsWith("Exec="))
+            continue;
+        const QString value = QString::fromUtf8(line.mid(5)).trimmed();
+        if (value.startsWith(QLatin1Char('"'))) {
+            const qsizetype end = value.indexOf(QLatin1Char('"'), 1);
+            return end > 1 ? value.mid(1, end - 1) : QString();
+        }
+        return value.section(QLatin1Char(' '), 0, 0);
+    }
+    return {};
+}
+
+QString currentClient(const QString &installedBin, const QString &sourceBin,
+                      const QString &runningBin)
+{
+    if (QFileInfo(installedBin).isFile())
+        return installedBin;
+    const QString source = QFileInfo(sourceBin).canonicalFilePath();
+    if (!source.isEmpty() && source == QFileInfo(runningBin).canonicalFilePath())
+        return sourceBin;
+    return {};
+}
+
+bool repairLauncher(const QString &dataHome, const QString &retiredRoot,
+                    const QString &clientBin)
+{
+    if (dataHome.isEmpty() || !launcherInstalled(dataHome))
+        return false;
+    const QString client = QFileInfo(clientBin).canonicalFilePath();
+    if (client.isEmpty())
+        return false;
+    const QString path = dataHome + QStringLiteral("/applications/forkmesh.desktop");
+    const QByteArray entry = fileBytes(path);
+    if (!entry.contains("\nName=ForkMesh\n"))
+        return false;
+    const QString target = launcherTarget(entry);
+    if (target.isEmpty() || !QDir::isAbsolutePath(target))
+        return false;
+    const QString retired = QDir::cleanPath(retiredRoot) + QLatin1Char('/');
+    const bool stale = !QFileInfo::exists(target) ||
+                       (!retiredRoot.isEmpty() &&
+                        QDir::cleanPath(target).startsWith(retired));
+    if (!stale || QFileInfo(target).canonicalFilePath() == client)
+        return false;
+    if (!writeIfChanged(path, launcherEntry(clientBin)))
+        return false;
+    QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
+    return true;
+}
+
 QStringList refresh(const QString &dataHome, const QImage &icon, const QByteArray &svg)
 {
     QStringList changed;
@@ -123,8 +176,17 @@ void refreshInstalled()
 {
 #if defined(Q_OS_LINUX)
     const QString home = dataHome();
-    if (installLauncher(home, QDir::homePath() + QStringLiteral("/.local/bin/forkmesh"),
-                        QCoreApplication::applicationFilePath())) {
+    const QString installedBin = QDir::homePath() + QStringLiteral("/.local/bin/forkmesh");
+    const QString runningBin = QCoreApplication::applicationFilePath();
+    bool launcherChanged = installLauncher(home, installedBin, runningBin);
+    const QString client = currentClient(
+        installedBin,
+        QDir::homePath() + QStringLiteral("/projects/forkmesh/src/desktop/build/forkmesh"),
+        runningBin);
+    if (!client.isEmpty() &&
+        repairLauncher(home, home + QStringLiteral("/forkmesh"), client))
+        launcherChanged = true;
+    if (launcherChanged) {
         const QString databaseTool =
             QStandardPaths::findExecutable(QStringLiteral("update-desktop-database"));
         if (!databaseTool.isEmpty())
