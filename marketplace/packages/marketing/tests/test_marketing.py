@@ -4091,3 +4091,41 @@ def test_desktop_shows_the_advisor_and_the_ad_plan():
         "async def _marketing_inputs", 1)[0]))
     assert emitted <= {"campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
                        "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"}, emitted
+
+
+def test_web_tables_sort_by_number_duration_date_and_text_with_blanks_last():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    body = web[web.index("  const SORT_MONTHS"):web.index("  function sortTable(")]
+    assert "setupSortableTables();" in web
+    cells = ["1,234", "12.5%", "−4", "$4.50", "12.00 USD", "1.2k", "3M", "12 ★",
+             "2m 05s", "—", "2026-10-30 14:00", "Oct 3", "Facebook ads"]
+    script = (body + "\nconst cells = JSON.parse(process.argv[1]);"
+              "\nconst keys = cells.map(sortKey);"
+              "\nconst order = ['Week 10', 'week 2', 'Alpha', '3'].sort((a, b) => compareSortKeys(sortKey(a), sortKey(b)));"
+              "\nconst relative = [sortKey('3 days ago'), sortKey('yesterday'), sortKey('2 hours ago'), sortKey('just now'), sortKey('in 2 hours')];"
+              "\nprocess.stdout.write(JSON.stringify({keys, order, rising: relative.every((v, i) => !i || v > relative[i - 1])}));")
+    result = subprocess.run([node, "-e", script, json.dumps(cells)], capture_output=True,
+                            text=True, timeout=30, check=True)
+    out = json.loads(result.stdout)
+    assert out["keys"][:10] == [1234, 12.5, -4, 4.5, 12, 1200, 3000000, 12, 125000, None]
+    assert out["keys"][11] < out["keys"][10]
+    assert out["keys"][12] == "Facebook ads"
+    assert out["order"] == ["3", "Alpha", "week 2", "Week 10"]
+    assert out["rising"]
+
+
+def test_desktop_tables_sort_and_find_records_by_id_not_row_number():
+    common = (PACKAGE / "content" / "desktop" / "MarketingCommon.cpp").read_text()
+    pages = (PACKAGE / "content" / "desktop" / "MarketingPages.cpp").read_text()
+    feature = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    dashboard_table = common.split("void dashboardTable(QTableWidget *table)", 1)[1].split("\n}\n", 1)[0]
+    assert "sortableTable(table);" in dashboard_table
+    assert "table->sortItems(keyColumn, Qt::AscendingOrder);" in common
+    assert "&QAbstractItemModel::rowsInserted" in common
+    assert "items.at(row)" not in pages
+    assert "checks.at(cell->row())" not in pages
+    assert "m_channelRows.at(previousRow)" not in feature
+    assert "cells.at(0)->setData(kPinnedRowRole, true);" in feature

@@ -2129,8 +2129,11 @@ void MarketingFeature::applyOrganization(const QJsonObject &payload)
 void MarketingFeature::renderChannels()
 {
     const int previousRow = m_channelsTable->currentRow();
-    QString selectedId = previousRow >= 0 && previousRow < m_channelRows.size()
-                             ? m_channelRows.at(previousRow).id : QString();
+    QString selectedId;
+    for (const ChannelRow &row : std::as_const(m_channelRows)) {
+        if (previousRow >= 0 && m_channelsTable->cellWidget(previousRow, 1) == row.enabled)
+            selectedId = row.id;
+    }
     bool focusLink = false;
     bool reveal = false;
     for (const ChannelRow &row : std::as_const(m_channelRows)) {
@@ -2208,6 +2211,7 @@ void MarketingFeature::renderChannels()
         nameLayout->addWidget(refresh);
         nameLayout->addWidget(capture);
         connect(capture, &QPushButton::clicked, this, [this, id] { captureWithExtension(id); });
+        nameCell->setProperty("sortKey", name);
         m_channelsTable->setCellWidget(row, 0, nameCell);
 
         auto *enabled = new QCheckBox;
@@ -2581,6 +2585,7 @@ void MarketingFeature::updateVelocityCharts()
         for (int count : std::as_const(series))
             total += count;
         const double rate = total * double(window.rateMs) / double(qMax<qint64>(1, span));
+        chart->setProperty("sortKey", total);
         const QString summary = total == 0
             ? QStringLiteral("No posts")
             : QStringLiteral("%1 post%2 · %3/%4").arg(total)
@@ -3752,10 +3757,14 @@ void MarketingFeature::prepareRail()
 
 void MarketingFeature::showChannelRow(const QString &id, bool focusLink, bool reveal)
 {
-    for (int row = 0; row < m_channelRows.size(); ++row) {
-        const ChannelRow &channel = m_channelRows.at(row);
+    for (const ChannelRow &channel : std::as_const(m_channelRows)) {
         if (channel.id != id)
             continue;
+        int row = 0;
+        while (row < m_channelsTable->rowCount() && m_channelsTable->cellWidget(row, 1) != channel.enabled)
+            ++row;
+        if (row == m_channelsTable->rowCount())
+            return;
         if (reveal)
             this->reveal(m_channelsPanel);
         m_channelsTable->selectRow(row);
@@ -5895,6 +5904,7 @@ void MarketingFeature::renderTraffic()
                          QStringLiteral("%1% of visits; %2% in the previous period")
                              .arg(sessions / sum * 100, 0, 'f', 1).arg(before / previousSum * 100, 0, 'f', 1)}},
                        0, 48);
+        share->setProperty("sortKey", sessions);
         m_trafficTable->setCellWidget(index, 1, share);
         m_trafficTable->setItem(index, 2, numberItem(fullCount(sessions)));
         m_trafficTable->setItem(index, 3, changeItem(sessions - before, before > 0));
@@ -5927,6 +5937,7 @@ void MarketingFeature::renderTraffic()
             m_trafficTable->setItem(index, column, cells.at(column));
         }
         cells.at(1)->setForeground(colors.muted);
+        cells.at(0)->setData(kPinnedRowRole, true);
     }
     fitTable(m_trafficTable, 12);
 }
