@@ -123,7 +123,11 @@ struct AppHomeView: View {
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
-                    .overlay { DevPerformanceOverlay() }
+                    .overlay {
+                        if !StoreScreenshotLaunch.on {
+                            DevPerformanceOverlay()
+                        }
+                    }
                     .overlay { PingCelebrationOverlay() }
                     .directCallsRoot()
                     .groupCallsRoot()
@@ -131,10 +135,12 @@ struct AppHomeView: View {
                 AuthFlowView()
             }
         }
+        .onAppear { StoreScreenshotLaunch.prepare(auth: auth, settings: settings) }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
         .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
+        .modifier(StoreCanvas())
         .task {
             await updateCheck.check()
             await updateCheck.checkStore()

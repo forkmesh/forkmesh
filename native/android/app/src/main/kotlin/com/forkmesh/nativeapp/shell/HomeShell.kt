@@ -25,6 +25,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
@@ -150,6 +154,7 @@ import com.forkmesh.nativeapp.feature.surfaces.RunningAgentAccessory
 import com.forkmesh.nativeapp.feature.surfaces.SurfacesFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsFeature
 import com.forkmesh.nativeapp.navigation.AppTab
+import com.forkmesh.nativeapp.navigation.ShellPanes
 import com.forkmesh.nativeapp.navigation.CodeBarItem
 import com.forkmesh.nativeapp.navigation.CodeButton
 import com.forkmesh.nativeapp.navigation.CodeButtonPlan
@@ -167,6 +172,8 @@ import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.navigation.LocalNavigator
 import com.forkmesh.nativeapp.ui.navigation.LocalScreen
+import com.forkmesh.nativeapp.ui.navigation.LocalShellPaneOpen
+import com.forkmesh.nativeapp.ui.navigation.PaneListNavigator
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -580,7 +587,7 @@ class HomeShell : Screen() {
                                 barCandidates,
                             )
                         } else {
-                            TabStack(tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
+                            TabPanes(selectedTab, tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
                         }
                     }
                     ShellPrompt(
@@ -703,7 +710,80 @@ class HomeShell : Screen() {
 }
 
 @Composable
-private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearance: Dp) {
+private fun TabPanes(tab: AppTab, navigator: Navigator, holder: SaveableStateHolder, clearance: Dp) {
+    val configuration = LocalConfiguration.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val panes = ShellPanes.metrics(
+            configuration.screenWidthDp.toDouble(),
+            configuration.screenHeightDp.toDouble(),
+            content = maxWidth.value.toDouble(),
+        )
+        if (!ShellPanes.splits(tab, panes)) {
+            TabStack(navigator, holder, clearance)
+            return@BoxWithConstraints
+        }
+        val root = navigator.stack.first()
+        val list = remember(navigator) { PaneListNavigator(navigator) }
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .width(panes.list.dp)
+                    .fillMaxHeight()
+                    .background(Fm.colors.canvas)
+                    .padding(bottom = if (root.extendsUnderTabBar) 0.dp else clearance),
+            ) {
+                holder.SaveableStateProvider(root.key) {
+                    CompositionLocalProvider(
+                        LocalNavigator provides list,
+                        LocalScreen provides root,
+                        LocalShellClearance provides clearance,
+                        LocalShellPaneOpen provides navigator.stack.getOrNull(1),
+                    ) {
+                        root.Content(list)
+                    }
+                }
+            }
+            Box(Modifier.width(0.5.dp).fillMaxHeight().background(Fm.colors.border.copy(alpha = 0.7f)))
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                TabStack(navigator, holder, clearance, placeholder = { ShellPanePlaceholder(tab) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShellPanePlaceholder(tab: AppTab) {
+    val (title, hint) = when (tab) {
+        AppTab.Agents -> "Pick an agent" to "Its run, transcript and changes open here, beside the list."
+        AppTab.Inbox -> "Pick a ping" to "Reviews, mentions and approvals open here, beside the list."
+        AppTab.Code -> "Pick a repository" to "Its code, pull requests and issues open here, beside the list."
+        AppTab.Chat -> "Pick a conversation" to "The conversation opens here."
+    }
+    Column(
+        Modifier.fillMaxSize().background(Fm.colors.canvas).padding(FmSpace.x6),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(76.dp).fmGlass(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon(if (tab == AppTab.Code) "code" else if (tab == AppTab.Inbox) "inbox" else "auto_awesome", size = 34.dp, tint = Fm.colors.accent)
+        }
+        Spacer(Modifier.height(FmSpace.x3))
+        Text(title, textAlign = TextAlign.Center, style = Fm.text.titleMedium)
+        Spacer(Modifier.height(FmSpace.x2))
+        Text(
+            hint,
+            textAlign = TextAlign.Center,
+            style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
+            modifier = Modifier.widthIn(max = 300.dp),
+        )
+    }
+}
+
+@Composable
+private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearance: Dp, placeholder: (@Composable () -> Unit)? = null) {
     DisposableEffect(navigator) {
         navigator.onRemoved = { holder.removeState(it.key) }
         onDispose { navigator.onRemoved = {} }
@@ -734,7 +814,9 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
                 val from = navigator.stack.indexOf(initialState)
                 val to = navigator.stack.indexOf(targetState)
                 val forward = from >= 0 && (to > from || to < 0)
-                if (forward) {
+                if (placeholder != null && from < 0 && to > 0) {
+                    fadeIn(FmMotion.push()) togetherWith fadeOut(FmMotion.push())
+                } else if (forward) {
                     (slideInHorizontally(FmMotion.push()) { it } togetherWith slideOutHorizontally(FmMotion.push()) { -it * 3 / 10 })
                         .apply { targetContentZIndex = 1f }
                 } else {
@@ -743,6 +825,10 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
                 }
             },
         ) { screen ->
+            if (placeholder != null && screen === navigator.stack.firstOrNull()) {
+                placeholder()
+                return@AnimatedContent
+            }
             holder.SaveableStateProvider(screen.key) {
                 CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen, LocalShellClearance provides clearance) {
                     Box(Modifier.fillMaxSize().background(Fm.colors.canvas).padding(bottom = if (screen.extendsUnderTabBar) 0.dp else clearance)) {

@@ -2324,6 +2324,33 @@ build time, so Android always ships the same library as iOS.
   `logs`, `diagnostics` and the capitalised `Agents`, `Inbox` and `Chat`, so a
   catalog row written for iOS opens the same screen on Android.
 
+### Shell: the list beside the detail on a foldable (iOS iPhone Duo)
+
+iOS shows lists on the left and the open item on the right on iPhone Duo's
+inner display (`docs/native/NAVIGATION.md` 7.1). Android does the same on a
+foldable's inner display or any window at least 600 dp wide and 480 dp tall.
+
+- `ShellPanes` (`C/navigation/ShellPanes.kt`) holds the same thresholds and
+  list width as iOS: 40% of the content width, kept between 280 and 380 dp.
+  The cover screen, a landscape phone and split screen keep the phone stack.
+  Guard: `ShellPanesTest`.
+- `TabPanes` in `A/shell/HomeShell.kt` draws the tab's root screen in the list
+  column, a hairline, then the tab's stack in the detail column. With nothing
+  open the detail shows a glass placeholder. Chat keeps its own channel
+  sidebar at full width.
+- The list column gets a `PaneListNavigator`: a push from the list goes
+  through `Navigator.pick`, which replaces the detail instead of stacking on
+  it, as on the desktop. Pushes inside the detail stack as usual, and back
+  returns to the placeholder.
+- The row whose item is open on the right stays highlighted
+  (`shellPaneSelected` in `A/ui/navigation/ShellPaneSelection.kt`). The list
+  column gets the detail's first screen as `LocalShellPaneOpen`; the
+  repository lists compare it with their rows.
+- Hub pages open in the detail column. iOS moves list pages such as Tasks or
+  Settings into the list column; Android keeps the tab's list there.
+- From 760 dp wide the existing navigation rail replaces the bottom bar, as
+  iOS's side rail does on a Duo held sideways.
+
 ## 28. NEXUS network inspection (sync ledger S046)
 
 NEXUS is the port of the iOS package at `native/ios/Nexus` (see

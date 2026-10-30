@@ -227,7 +227,7 @@ struct SettingsScreen: View {
                 form.adoptAccountName(auth?.session)
                 rememberAccount(auth?.session)
             }
-            .navigationDestination(isPresented: $openIdentity) {
+            .shellDetail(isPresented: $openIdentity) {
                 IdentityScreen()
                     .shellPageClearance()
             }
@@ -414,7 +414,7 @@ struct SettingsScreen: View {
             SettingsCardBox(padded: false) {
                 VStack(spacing: 0) {
                     if backup.showsNag(currentKey: key, nowMillis: SystemClock().nowMillis) {
-                        NavigationLink {
+                        ShellPaneLink {
                             IdentityScreen()
                                 .shellPageClearance()
                         } label: {
@@ -423,7 +423,7 @@ struct SettingsScreen: View {
                         .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
                         FmHairline()
                     }
-                    NavigationLink {
+                    ShellPaneLink {
                         IdentityScreen()
                             .shellPageClearance()
                     } label: {
@@ -444,7 +444,7 @@ struct SettingsScreen: View {
             SettingsCardBox(padded: false) {
                 VStack(spacing: 0) {
                     if shown.contains(.sshKeys) {
-                        NavigationLink {
+                        ShellPaneLink {
                             SshKeysScreen()
                                 .shellPageClearance()
                         } label: {
@@ -457,7 +457,7 @@ struct SettingsScreen: View {
                         FmHairline()
                     }
                     if shown.contains(.mcp) {
-                        NavigationLink {
+                        ShellPaneLink {
                             McpConnectorScreen()
                                 .shellPageClearance()
                         } label: {
@@ -483,7 +483,7 @@ struct SettingsScreen: View {
                     if shown.contains(.data) {
                         DataFolderSettingsRow()
                         FmHairline()
-                        NavigationLink {
+                        ShellPaneLink {
                             AccountDataScreen()
                                 .shellPageClearance()
                         } label: {
@@ -495,7 +495,7 @@ struct SettingsScreen: View {
                         FmHairline()
                     }
                     if shown.contains(.security) {
-                        NavigationLink {
+                        ShellPaneLink {
                             SecurityReportScreen()
                                 .shellPageClearance()
                         } label: {
@@ -596,7 +596,7 @@ struct SettingsScreen: View {
     private var organizationsSection: some View {
         SettingsSection(title: "Organizations") {
             SettingsCardBox(padded: false) {
-                NavigationLink {
+                ShellPaneLink {
                     OrgsScreen()
                         .shellPageClearance()
                 } label: {
@@ -614,7 +614,7 @@ struct SettingsScreen: View {
     private var appsSection: some View {
         SettingsSection(title: "Installed apps") {
             SettingsCardBox(padded: false) {
-                NavigationLink {
+                ShellPaneLink {
                     InstalledAppsScreen()
                         .shellPageClearance()
                 } label: {
@@ -653,7 +653,7 @@ struct SettingsScreen: View {
             VStack(spacing: FmSpace.x3) {
                 if showsPingSettings(session: session, guest: guest) {
                     SettingsCardBox(padded: false) {
-                        NavigationLink {
+                        ShellPaneLink {
                             PingSettingsScreen()
                                 .shellPageClearance()
                         } label: {
@@ -763,7 +763,7 @@ struct SettingsScreen: View {
     }
 
     private var onDeviceAIRow: some View {
-        NavigationLink {
+        ShellPaneLink {
             LocalAISettingsView()
                 .shellPageClearance()
         } label: {
@@ -784,7 +784,7 @@ struct SettingsScreen: View {
                     FmHairline()
                     LegalLinkRow(label: "Privacy Policy", onTap: { openURL(LegalLinks.privacy) })
                     FmHairline()
-                    NavigationLink {
+                    ShellPaneLink {
                         AppleHealthGuideScreen()
                             .shellPageClearance()
                     } label: {

@@ -11,6 +11,9 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "iPhone", "text": "On iPhone Duo the row for the item open on the right stays highlighted in the list, as on the desktop."},
+  {"date": "2026-10-30", "area": "Android", "text": "On a foldable's inner display the app shows lists on the left and the open item on the right, like the desktop and iPhone Duo."},
+  {"date": "2026-10-28", "area": "iPhone", "text": "On iPhone Duo's inner display the app shows lists on the left and the open item on the right, like the desktop, with a Liquid Glass side rail when the phone is on its side."},
   {"date": "2026-10-30", "area": "Other improvements", "text": "On the website, a repository's Code, Issues and Pull requests tabs no longer vanish when the plugin list cannot be read, and \"fixes #N\" in a pull request comment links that issue again."},
   {"date": "2026-10-30", "area": "World", "text": "ForkMesh World shows again where it is embedded in forkmesh.com pages opened at www.forkmesh.com."},
   {"date": "2026-10-29", "area": "iPhone", "text": "The iPhone app no longer freezes for a moment at launch while it loads your saved chat history, and both phone apps put it back faster."},

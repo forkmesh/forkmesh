@@ -94,8 +94,11 @@ project files on Linux so store mistakes fail in `swift test`:
   FMCrypto, FMPush).
 - `APNS_BUNDLE_ID` in `app/src/apns.py` matches the app's bundle id.
 - `ForkMesh-Info.plist` answers `ITSAppUsesNonExemptEncryption`.
-- On iPhone the app is portrait only; the `~ipad` list keeps all four
-  orientations, which iPad multitasking requires.
+- On iPhone, `UISupportedInterfaceOrientations` lists portrait and both
+  landscapes. iPhone Duo scales a portrait-only app on its inner display, so
+  the app must declare landscape there. While it runs, `FmOrientationLock`
+  still keeps every other iPhone in portrait (NAVIGATION.md §7.1). The `~ipad`
+  list keeps all four orientations, which iPad multitasking requires.
 - No `PrivacyInfo.xcprivacy` is named in the project file (synchronized groups
   include them). Each manifest declares every required-reason API category its
   bundle's sources use (for example DiskSpace for `LocalModelStore`). The share,

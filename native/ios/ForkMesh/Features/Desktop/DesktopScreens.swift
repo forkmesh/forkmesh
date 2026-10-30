@@ -106,7 +106,7 @@ struct DesktopsScreen: View {
             }
         }
         .navigationTitle("Desktops")
-        .navigationDestination(isPresented: $showShortcutOutput) {
+        .shellDetail(isPresented: $showShortcutOutput) {
             if let shortcuts { ShortcutOutputScreen(store: shortcuts).shellPageClearance() }
         }
         .fmRefreshable { await refreshAll() }
@@ -504,19 +504,19 @@ struct DesktopScreen: View {
                 Section { ProgressView() }
             }
             Section("On the desktop") {
-                NavigationLink {
+                ShellPaneLink {
                     FileRootsScreen(store: files)
                         .shellPageClearance()
                 } label: {
                     Label("Files", systemImage: "folder")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     DesktopLogScreen(tail: DesktopLogTail(store: diagnostics))
                         .shellPageClearance()
                 } label: {
                     Label("Log", systemImage: "text.alignleft")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     StallsScreen(store: diagnostics)
                         .shellPageClearance()
                 } label: {
@@ -528,7 +528,7 @@ struct DesktopScreen: View {
                         }
                     }
                 }
-                NavigationLink {
+                ShellPaneLink {
                     ProcessesScreen(store: diagnostics)
                         .shellPageClearance()
                 } label: {
@@ -545,7 +545,7 @@ struct DesktopScreen: View {
                 NavigationLink(value: Route.hosts) {
                     Label("Hosts", systemImage: "server.rack")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     FleetOperationsScreen(store: fleet, hub: hub)
                         .shellPageClearance()
                 } label: {

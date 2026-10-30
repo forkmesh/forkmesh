@@ -89,15 +89,15 @@ struct DocsScreen: View {
         }
         .searchable(text: $query, prompt: "Search the docs")
         .task(id: query) { await search(library) }
-        .navigationDestination(item: $opened) { (link: DocsPageLink) in
+        .shellDetail(item: $opened) { (link: DocsPageLink) in
             DocsPageScreen(library: library, path: link.path, fragment: link.fragment)
                 .shellPageClearance()
         }
-        .navigationDestination(item: $openedDependency) { (dependency: DocsDependency) in
+        .shellDetail(item: $openedDependency) { (dependency: DocsDependency) in
             DocsDependencyScreen(library: library, dependency: dependency)
                 .shellPageClearance()
         }
-        .navigationDestination(isPresented: $showDependencies) {
+        .shellDetail(isPresented: $showDependencies) {
             DocsDependenciesScreen(library: library)
                 .shellPageClearance()
         }

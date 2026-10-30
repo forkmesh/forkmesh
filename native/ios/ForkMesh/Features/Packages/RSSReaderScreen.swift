@@ -393,7 +393,7 @@ struct RSSReaderScreen: View {
     }
 
     private func smartRow(_ scope: RSSScope, symbol: String, tint: Color, custom: RSSSmartFeed? = nil) -> some View {
-        NavigationLink {
+        ShellPaneLink {
             RSSReaderTimelineScreen(model: model, scope: scope)
         } label: {
             HStack(spacing: 12) {
@@ -461,7 +461,7 @@ struct RSSReaderScreen: View {
     @ViewBuilder private func sidebarRow(_ entry: RSSSidebarEntry) -> some View {
         switch entry {
         case let .feed(feed, unread, indented):
-            NavigationLink {
+            ShellPaneLink {
                 RSSReaderTimelineScreen(model: model, scope: .feed(feed.id))
             } label: {
                 HStack(spacing: 12) {
@@ -510,7 +510,7 @@ struct RSSReaderScreen: View {
                 .tint(.blue)
             }
         case let .folder(folder, unread, collapsed):
-            NavigationLink {
+            ShellPaneLink {
                 RSSReaderTimelineScreen(model: model, scope: .folder(folder.id))
             } label: {
                 HStack(spacing: 12) {

@@ -142,6 +142,7 @@ final class ShellChrome {
         withTransaction(transaction) {
             bare[tab] = nil
             returning.remove(tab)
+            if ShellDetailHost.shared.closes(tab) { return }
             if stack == .agents && tab == .agents, let router {
                 let path: [Route] = router.path(for: .agents)
                 let list: Int? = path.lastIndex { (route: Route) -> Bool in
