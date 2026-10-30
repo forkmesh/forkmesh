@@ -39,6 +39,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
@@ -733,6 +734,9 @@ QString readyPostErrorText(const QString &code, const QString &fallback)
         return QStringLiteral("only organization members can see the ready post");
     if (code == QLatin1String("invalid_ready_post_status"))
         return QStringLiteral("Marketing did not understand the change; update the desktop");
+    if (code == QLatin1String("invalid_post_url"))
+        return QStringLiteral("that link is not a post or page address. Paste the post's https:// link, or leave it "
+                              "empty");
     return fallback;
 }
 
@@ -1653,6 +1657,13 @@ MarketingFeature::MarketingFeature(
                 return editPostedLink(value.toObject());
         }
     });
+    connect(m_detailSnapshots, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
+        const QString id = m_detailSnapshots->item(item->row(), 0)->data(Qt::UserRole).toString();
+        for (const QJsonValue &value : std::as_const(m_metrics)) {
+            if (!id.isEmpty() && text(value.toObject(), "id") == id)
+                return editMetric(value.toObject(), item->column());
+        }
+    });
     connect(m_detailAds, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
         const QString id = m_detailAds->item(item->row(), 0)->data(Qt::UserRole).toString();
         for (const QJsonValue &value : std::as_const(m_ads)) {
@@ -2129,8 +2140,11 @@ void MarketingFeature::applyOrganization(const QJsonObject &payload)
 void MarketingFeature::renderChannels()
 {
     const int previousRow = m_channelsTable->currentRow();
-    QString selectedId = previousRow >= 0 && previousRow < m_channelRows.size()
-                             ? m_channelRows.at(previousRow).id : QString();
+    QString selectedId;
+    for (const ChannelRow &row : std::as_const(m_channelRows)) {
+        if (previousRow >= 0 && m_channelsTable->cellWidget(previousRow, 1) == row.enabled)
+            selectedId = row.id;
+    }
     bool focusLink = false;
     bool reveal = false;
     for (const ChannelRow &row : std::as_const(m_channelRows)) {
@@ -2208,6 +2222,7 @@ void MarketingFeature::renderChannels()
         nameLayout->addWidget(refresh);
         nameLayout->addWidget(capture);
         connect(capture, &QPushButton::clicked, this, [this, id] { captureWithExtension(id); });
+        nameCell->setProperty("sortKey", name);
         m_channelsTable->setCellWidget(row, 0, nameCell);
 
         auto *enabled = new QCheckBox;
@@ -2581,6 +2596,7 @@ void MarketingFeature::updateVelocityCharts()
         for (int count : std::as_const(series))
             total += count;
         const double rate = total * double(window.rateMs) / double(qMax<qint64>(1, span));
+        chart->setProperty("sortKey", total);
         const QString summary = total == 0
             ? QStringLiteral("No posts")
             : QStringLiteral("%1 post%2 · %3/%4").arg(total)
@@ -3023,6 +3039,69 @@ void MarketingFeature::addMetric(const QString &preset)
         if (!ok)
             return setStatus(QStringLiteral("Metrics were not saved: %1").arg(error), true);
         setStatus(QStringLiteral("Metric snapshot saved. Updating dashboard statistics…"));
+        loadOrganization();
+    });
+}
+
+void MarketingFeature::editMetric(const QJsonObject &metric, int column)
+{
+    const QString id = text(metric, "id");
+    if (id.isEmpty())
+        return;
+    static constexpr const char *keys[] = {"followers", "following", "posts", "reach", "engagements",
+                                           "views", "visits", "stars", "forks"};
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Correct recorded numbers"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *intro = new QLabel(QStringLiteral("%1 numbers recorded %2 · %3")
+        .arg(channelName(text(metric, "channel"), m_settings, m_channelCatalog),
+             timestamp(qint64(number(metric, "observedAt"))),
+             sourceLabel(text(metric, "source"))));
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+    auto *form = new QFormLayout;
+    QList<std::pair<const char *, QLineEdit *>> edits;
+    QWidget *focus = nullptr;
+    for (int index = 0; index < int(std::size(keys)); ++index) {
+        if (m_detailSnapshots->isColumnHidden(index + 1) && column != index + 1 && number(metric, keys[index]) <= 0)
+            continue;
+        auto *edit = lineEdit(QString::number(qint64(number(metric, keys[index]))));
+        edit->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("\\d{1,13}")), edit));
+        form->addRow(m_detailSnapshots->horizontalHeaderItem(index + 1)->text(), edit);
+        edits.append({keys[index], edit});
+        if (column == index + 1)
+            focus = edit;
+    }
+    auto *note = lineEdit(text(metric, "note"));
+    note->setMaxLength(500);
+    form->addRow(QStringLiteral("Note"), note);
+    if (column == 11 || !focus)
+        focus = note;
+    layout->addLayout(form);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    focus->setFocus();
+    if (auto *line = qobject_cast<QLineEdit *>(focus))
+        line->selectAll();
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    QJsonObject body;
+    for (const auto &[key, edit] : std::as_const(edits)) {
+        const qint64 value = edit->text().toLongLong();
+        if (value != qint64(number(metric, key)))
+            body.insert(QString::fromLatin1(key), value);
+    }
+    if (note->text().trimmed() != text(metric, "note"))
+        body.insert(QStringLiteral("note"), note->text().trimmed());
+    if (body.isEmpty())
+        return;
+    request(QByteArrayLiteral("PATCH"), organizationPath(QStringLiteral("/metrics/") + id),
+            body, [this](bool ok, const QJsonObject &, const QString &error) {
+        if (!ok)
+            return setStatus(QStringLiteral("Numbers were not corrected: %1").arg(error), true);
+        setStatus(QStringLiteral("Recorded numbers corrected. Updating dashboard statistics…"));
         loadOrganization();
     });
 }
@@ -3752,10 +3831,14 @@ void MarketingFeature::prepareRail()
 
 void MarketingFeature::showChannelRow(const QString &id, bool focusLink, bool reveal)
 {
-    for (int row = 0; row < m_channelRows.size(); ++row) {
-        const ChannelRow &channel = m_channelRows.at(row);
+    for (const ChannelRow &channel : std::as_const(m_channelRows)) {
         if (channel.id != id)
             continue;
+        int row = 0;
+        while (row < m_channelsTable->rowCount() && m_channelsTable->cellWidget(row, 1) != channel.enabled)
+            ++row;
+        if (row == m_channelsTable->rowCount())
+            return;
         if (reveal)
             this->reveal(m_channelsPanel);
         m_channelsTable->selectRow(row);
@@ -4307,13 +4390,17 @@ void MarketingFeature::renderChannelDetail()
         const QJsonObject &snapshot = *it;
         const int snapshotRow = m_detailSnapshots->rowCount();
         m_detailSnapshots->insertRow(snapshotRow);
-        m_detailSnapshots->setItem(snapshotRow, 0, new QTableWidgetItem(timestamp(qint64(number(snapshot, "observedAt")))));
+        auto *recordedCell = new QTableWidgetItem(timestamp(qint64(number(snapshot, "observedAt"))));
+        recordedCell->setData(Qt::UserRole, text(snapshot, "id"));
+        m_detailSnapshots->setItem(snapshotRow, 0, recordedCell);
         int column = 1;
         for (const char *key : snapshotKeys)
             m_detailSnapshots->setItem(snapshotRow, column++, numberItem(
                 missing(snapshot, key) ? kDash : fullCount(number(snapshot, key))));
         m_detailSnapshots->setItem(snapshotRow, 10, new QTableWidgetItem(sourceLabel(text(snapshot, "source"))));
         m_detailSnapshots->setItem(snapshotRow, 11, new QTableWidgetItem(text(snapshot, "note")));
+        for (int column = 0; column < m_detailSnapshots->columnCount(); ++column)
+            m_detailSnapshots->item(snapshotRow, column)->setToolTip(QStringLiteral("Double-click to correct these numbers"));
     }
     m_detailSnapshotsPanel->hint()->setText(history.isEmpty()
         ? QStringLiteral("No numbers recorded yet. Refresh %1 or log its numbers.").arg(name)
@@ -5188,6 +5275,19 @@ void MarketingFeature::renderReadyPost()
         connect(postNow, &QPushButton::clicked, this, [this] { postReadyPost(); });
         buttons->addWidget(postNow);
         buttons->addStretch(1);
+        auto *link = lineEdit(m_readyPostUrlId == postId ? m_readyPostUrl : QString());
+        link->setObjectName(QStringLiteral("marketingReadyPostUrl"));
+        link->setPlaceholderText(QStringLiteral("Link to the post (optional)"));
+        link->setToolTip(QStringLiteral("Paste the post's link on X to save it with the post when you mark it posted"));
+        link->setAccessibleName(QStringLiteral("Link to the X post"));
+        link->setMaxLength(1000);
+        link->setMinimumWidth(180);
+        link->setEnabled(canWrite && !m_readyPostSaving && !m_readyPost.isEmpty());
+        connect(link, &QLineEdit::textChanged, this, [this, postId](const QString &value) {
+            m_readyPostUrl = value;
+            m_readyPostUrlId = postId;
+        });
+        buttons->addWidget(link, 1);
         auto *posted = new QPushButton(QStringLiteral("Mark posted"));
         posted->setObjectName(QStringLiteral("ghostButton"));
         auto *skip = new QPushButton(QStringLiteral("Skip"));
@@ -5201,6 +5301,7 @@ void MarketingFeature::renderReadyPost()
         skip->setToolTip(canWrite ? QStringLiteral("Skip this post so %1 writes another one").arg(agentName)
                                   : QStringLiteral("Only organization members can close the ready post"));
         connect(posted, &QPushButton::clicked, this, [this] { closeReadyPost(QStringLiteral("posted")); });
+        connect(link, &QLineEdit::returnPressed, posted, &QPushButton::click);
         connect(skip, &QPushButton::clicked, this, [this] { closeReadyPost(QStringLiteral("skipped")); });
         about->addLayout(buttons);
         about->addStretch(1);
@@ -5259,15 +5360,27 @@ void MarketingFeature::closeReadyPost(const QString &status)
     const QString postId = text(m_readyPost.value(QStringLiteral("post")).toObject(), "id");
     if (postId.isEmpty() || m_readyPostSaving || organization != m_readyPostOrg)
         return;
+    const QString url = status == QLatin1String("posted") && m_readyPostUrlId == postId ? m_readyPostUrl.trimmed()
+                                                                                         : QString();
+    if (!url.isEmpty() && !url.startsWith(QLatin1String("https://"), Qt::CaseInsensitive)) {
+        setStatus(QStringLiteral("The post link must start with https://."), true);
+        return;
+    }
+    QJsonObject body{{QStringLiteral("channel"), QStringLiteral("x")}, {QStringLiteral("id"), postId},
+                     {QStringLiteral("status"), status}};
+    if (!url.isEmpty())
+        body.insert(QStringLiteral("url"), url);
     m_readyPostSaving = true;
     renderReadyPost();
-    request(QByteArrayLiteral("PATCH"), organizationPath(QStringLiteral("/ready-post")),
-            QJsonObject{{QStringLiteral("channel"), QStringLiteral("x")}, {QStringLiteral("id"), postId},
-                        {QStringLiteral("status"), status}},
+    request(QByteArrayLiteral("PATCH"), organizationPath(QStringLiteral("/ready-post")), body,
             [this, organization, status](bool ok, const QJsonObject &payload, const QString &error) {
         m_readyPostSaving = false;
         if (organization != m_organization->currentData().toString())
             return;
+        if (ok) {
+            m_readyPostUrl.clear();
+            m_readyPostUrlId.clear();
+        }
         const QString code = text(payload, "error");
         const QJsonObject ready = payload.value(QStringLiteral("readyPost")).toObject();
         if (!ready.isEmpty()) {
@@ -5895,6 +6008,7 @@ void MarketingFeature::renderTraffic()
                          QStringLiteral("%1% of visits; %2% in the previous period")
                              .arg(sessions / sum * 100, 0, 'f', 1).arg(before / previousSum * 100, 0, 'f', 1)}},
                        0, 48);
+        share->setProperty("sortKey", sessions);
         m_trafficTable->setCellWidget(index, 1, share);
         m_trafficTable->setItem(index, 2, numberItem(fullCount(sessions)));
         m_trafficTable->setItem(index, 3, changeItem(sessions - before, before > 0));
@@ -5927,6 +6041,7 @@ void MarketingFeature::renderTraffic()
             m_trafficTable->setItem(index, column, cells.at(column));
         }
         cells.at(1)->setForeground(colors.muted);
+        cells.at(0)->setData(kPinnedRowRole, true);
     }
     fitTable(m_trafficTable, 12);
 }

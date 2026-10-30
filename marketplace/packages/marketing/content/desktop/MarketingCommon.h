@@ -6,6 +6,7 @@
 #include <QList>
 #include <QPair>
 #include <QString>
+#include <QtCore/qnamespace.h>
 
 class QLayout;
 class QLineEdit;
@@ -16,6 +17,8 @@ namespace forkmesh::marketing {
 
 constexpr qint64 kDay = 24 * 3600 * 1000LL;
 inline const QString kDash = QString::fromUtf8("\xE2\x80\x94");
+constexpr int kSortKeyRole = Qt::UserRole + 40;
+constexpr int kPinnedRowRole = Qt::UserRole + 41;
 using Choices = QList<QPair<QString, QString>>;
 
 QString text(const QJsonObject &object, const char *key);
@@ -38,6 +41,7 @@ QString escaped(const QString &value);
 QTableWidgetItem *numberItem(const QString &value);
 void clearLayout(QLayout *layout);
 void dashboardTable(QTableWidget *table);
+void sortableTable(QTableWidget *table);
 void fitTable(QTableWidget *table, int maxRows);
 
 } // namespace forkmesh::marketing
