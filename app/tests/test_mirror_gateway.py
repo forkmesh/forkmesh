@@ -4427,3 +4427,46 @@ def test_sizes_lists_every_issue_folder_but_still_folds_code(application, monkey
                for item in open_dir["children"])
     vendor = next(item for item in payload["children"] if item["name"] == "vendor")
     assert len(vendor["children"]) == 41 and vendor["children"][-1]["type"] == "summary"
+
+
+def _commit_with_file(git_dir, parent, path, content):
+    env = dict(os.environ, GIT_INDEX_FILE=str(Path(git_dir) / "analysis-test-index"),
+               GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+
+    def git(*args, data=None):
+        return subprocess.run(["git", "--git-dir", str(git_dir), *args], env=env, input=data,
+                              check=True, capture_output=True).stdout.decode().strip()
+
+    blob = git("hash-object", "-w", "--stdin", data=content.encode())
+    git("read-tree", parent)
+    git("update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, path))
+    tree = git("write-tree")
+    return git("commit-tree", tree, "-p", parent, "-m", "change " + path)
+
+
+def test_tree_analysis_is_reused_when_only_forkmesh_metadata_moved(
+    application, monkeypatch,
+):
+    app, commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    first = repository._analysis(commit)
+    metadata = _commit_with_file(repository.git_dir, commit,
+                                 ".forkmesh/pull-batch.json", '{"pulls": []}\n')
+    builds = []
+    original = repository._build_analysis
+
+    def counted(target):
+        builds.append(target)
+        return original(target)
+
+    monkeypatch.setattr(repository, "_build_analysis", counted)
+    repository.invalidate_memory_generation()
+    reused = repository._analysis(metadata)
+    assert builds == []
+    assert reused["commit"] == reused["summary"]["commit"] == metadata
+    assert reused["adjacency"] == first["adjacency"]
+    code = _commit_with_file(repository.git_dir, metadata, "src/extra.js",
+                             "export const x = 1;\n")
+    assert repository._analysis(code)["commit"] == code
+    assert builds == [code]

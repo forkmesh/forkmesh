@@ -5091,6 +5091,7 @@ class GitRepository:
         self._trusted_routing_refs_sha256 = ""
         self._analysis_lock = threading.Lock()
         self._analysis_commit = ""
+        self._analysis_key = ""
         self._analysis_value: dict[str, Any] = {}
         self._counts_lock = threading.Lock()
         self._counts_key: tuple[str, str, str] = ("", "", "")
@@ -5146,8 +5147,9 @@ class GitRepository:
         with self._integrity_lock:
             self._integrity_checked_at = 0.0
         with self._analysis_lock:
+            # The value stays: _analysis reuses it only when the new tip's
+            # content key matches the one it was built from.
             self._analysis_commit = ""
-            self._analysis_value = {}
         with self._counts_lock:
             self._counts_key = ("", "", "")
             self._counts_value = {}
@@ -5702,12 +5704,53 @@ class GitRepository:
             },
         }
 
+    def _analysis_content_key(self, commit: str) -> str:
+        """What the analysis reads at ``commit``: every path and blob outside
+        ``.forkmesh/`` (plus coverage artifacts anywhere). Collaboration
+        metadata (issues, pulls, reviews, the Send list) lives under
+        ``.forkmesh/`` and moves the branch tip many times a day without
+        touching code, so a tip that only changed it reuses the analysis."""
+        output = _run_git(
+            self.git_dir,
+            ["ls-tree", "-r", "-z", commit],
+            max_output=64 * 1024 * 1024,
+        )
+        digest = hashlib.sha256()
+        for record in output.split(b"\0"):
+            _metadata, separator, raw_path = record.partition(b"\t")
+            if not separator:
+                continue
+            if raw_path.startswith(b".forkmesh/") and raw_path.rsplit(
+                    b"/", 1)[-1].decode("utf-8", "replace").lower() \
+                    not in COVERAGE_ARTIFACT_NAMES:
+                continue
+            digest.update(record + b"\0")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _analysis_for_commit(
+        value: dict[str, Any], commit: str
+    ) -> dict[str, Any]:
+        return {
+            **value,
+            "commit": commit,
+            "summary": {**value.get("summary", {}), "commit": commit},
+        }
+
     def _analysis(self, commit: str) -> dict[str, Any]:
         with self._analysis_lock:
             if self._analysis_commit == commit and self._analysis_value:
                 return self._analysis_value
-            value = self._build_analysis(commit)
+            try:
+                key = self._analysis_content_key(commit)
+            except GitError:
+                key = ""
+            if key and key == self._analysis_key and self._analysis_value:
+                value = self._analysis_for_commit(self._analysis_value, commit)
+            else:
+                value = self._build_analysis(commit)
             self._analysis_commit = commit
+            self._analysis_key = key
             self._analysis_value = value
             return value
 
