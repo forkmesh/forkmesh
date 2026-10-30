@@ -46,7 +46,7 @@ public enum OfficeFrames {
     public static func isOffice(_ conversation: String) -> Bool { conversation.hasPrefix(prefix) }
 
     public static func validChannelId(_ id: String) -> Bool {
-        id.count == 32 && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+        id.utf8.count == 32 && id.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
     public static func validName(_ name: String) -> Bool {
@@ -277,19 +277,31 @@ public final class OfficeChannelService {
     public var historySnapshot: [String: [ChatMessage]] { history }
 
     public func restore(_ messages: [ChatMessage]) {
-        var changed = false
+        var added: [String: [ChatMessage]] = [:]
+        var ids: [String: Set<String>] = [:]
+        var order: [String] = []
         for message in messages where OfficeFrames.isOffice(message.conversation) && !isGone(message.id) {
             if isExpired?(retentionKey(message.conversation), message.timestamp) == true { continue }
-            var list = history[message.conversation] ?? []
-            if list.contains(where: { $0.id == message.id }) { continue }
-            var at = list.count
-            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
-            list.insert(message, at: at)
-            if list.count > OfficeFrames.maxMessagesPerRoom { list.removeFirst(list.count - OfficeFrames.maxMessagesPerRoom) }
-            history[message.conversation] = list
+            let conversation = message.conversation
+            if ids[conversation] == nil {
+                ids[conversation] = Set((history[conversation] ?? []).map(\.id))
+                order.append(conversation)
+            }
+            guard ids[conversation, default: []].insert(message.id).inserted else { continue }
+            added[conversation, default: []].append(message)
+        }
+        var next = history
+        var changed = false
+        for conversation in order {
+            guard let incoming = added[conversation] else { continue }
+            let list = RelayService.merging(next[conversation] ?? [], incoming)
+            next[conversation] = Array(list.suffix(OfficeFrames.maxMessagesPerRoom))
             changed = true
         }
-        if changed { onChange?() }
+        if changed {
+            history = next
+            onChange?()
+        }
     }
 
     public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }

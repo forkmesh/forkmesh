@@ -356,17 +356,18 @@ class OfficeChannelService(
 
     fun restore(messages: List<ChatMessage>) {
         val changed = synchronized(lock) {
-            var any = false
+            val ids = HashMap<String, MutableSet<String>>()
+            val added = LinkedHashMap<String, MutableList<ChatMessage>>()
             for (message in messages) {
                 if (!OfficeFrames.isOffice(message.conversation)) continue
-                val list = history[message.conversation].orEmpty()
-                if (list.any { it.id == message.id }) continue
-                var next = insertSorted(list, message).toList()
-                if (next.size > OfficeFrames.MAX_MESSAGES_PER_ROOM) next = next.takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
-                history[message.conversation] = next
-                any = true
+                val known = ids.getOrPut(message.conversation) { history[message.conversation].orEmpty().mapTo(HashSet()) { it.id } }
+                if (!known.add(message.id)) continue
+                added.getOrPut(message.conversation) { ArrayList() }.add(message)
             }
-            any
+            for ((conversation, incoming) in added) {
+                history[conversation] = mergeSorted(history[conversation].orEmpty(), incoming).takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
+            }
+            added.isNotEmpty()
         }
         if (changed) notifyListeners()
     }
