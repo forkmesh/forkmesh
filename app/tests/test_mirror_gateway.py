@@ -1881,8 +1881,8 @@ def test_compare_requires_both_refs_and_enforces_byte_cap(
         {"base": base, "head": commit},
         request_id="compare_byte_cap_01",
     )
-    assert oversized.status == 503
-    assert decode_json(oversized)["error"] == "mirror_unavailable"
+    assert oversized.status == 413
+    assert decode_json(oversized)["error"] == "comparison_too_large"
 
 
 def divergent_conflicting_branch(tmp_path, bare, name="contributor/rename"):
