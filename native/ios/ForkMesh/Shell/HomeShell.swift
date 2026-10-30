@@ -607,6 +607,7 @@ struct HomeShell: View {
         }
         .id(list)
         .environment(\.shellPaneRole, .list)
+        .environment(\.shellPaneOpen, ShellPanes.opened(layout))
     }
 
     @ViewBuilder private func detailColumn(_ tab: AppTab, list: Route?, layout: ShellPaneLayout) -> some View {

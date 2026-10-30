@@ -119,7 +119,7 @@ struct ShellTopBar: View {
     /// header now names the project and holds the account overflow.
     var body: some View {
         ZStack {
-            if !ShellIslandStatusDots.earsShown(compact: verticalSizeClass == .compact) {
+            if !ShellIslandStatusDots.earsShown(compact: verticalSizeClass == .compact) && !StoreScreenshotLaunch.on {
                 TelemetryStrip()
                     .padding(.horizontal, 64)
             }

@@ -140,6 +140,7 @@ struct AppHomeView: View {
         .id(projects?.generation ?? 0)
         .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
+        .modifier(StoreCanvas())
         .task {
             await updateCheck.check()
             await updateCheck.checkStore()

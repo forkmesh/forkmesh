@@ -397,7 +397,7 @@ struct InboxRowLink: View {
                 Rectangle().fill(fm.border).frame(height: 0.5)
             }
             .contentShape(Rectangle())
-            .shellPaneRowLink {
+            .shellPaneRowLink(id: AnyHashable("inbox-\(item.id)")) {
                 InboxItemScreen(model: model, item: item)
                     .shellPageClearance()
             }

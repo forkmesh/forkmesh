@@ -39,7 +39,7 @@ abstract class Screen {
     }
 }
 
-class Navigator(root: Screen) {
+open class Navigator(root: Screen) {
     val stack = mutableStateListOf(root)
 
     internal var onRemoved: (Screen) -> Unit = {}
@@ -48,9 +48,14 @@ class Navigator(root: Screen) {
 
     val depth: Int get() = stack.size
 
-    fun push(screen: Screen) {
+    open fun push(screen: Screen) {
         FmSoundCues.play(SoundCue.NAVIGATE)
         stack.add(screen)
+    }
+
+    fun pick(screen: Screen) {
+        popToRoot()
+        push(screen)
     }
 
     fun pop(): Boolean {
@@ -90,6 +95,10 @@ class Navigator(root: Screen) {
         screen.onDisposed()
         onRemoved(screen)
     }
+}
+
+class PaneListNavigator(private val tab: Navigator) : Navigator(tab.stack.first()) {
+    override fun push(screen: Screen) = tab.pick(screen)
 }
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("no Navigator in composition") }

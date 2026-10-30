@@ -2,6 +2,7 @@ import FMAccount
 import FMApi
 import FMPackages
 import Foundation
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -10,6 +11,9 @@ enum StoreScreenshotLaunch {
     nonisolated static let routeKey = "FMStoreRoute"
     nonisolated static let tabKey = "FMStoreTab"
     nonisolated static let phoneLayoutKey = "FMStorePhoneLayout"
+    nonisolated static let canvasKey = "FMStoreCanvas"
+    static let canvasTop: CGFloat = 24
+    static let canvasBottom: CGFloat = 20
 
     nonisolated static var on: Bool {
         #if DEBUG
@@ -17,6 +21,21 @@ enum StoreScreenshotLaunch {
         #else
         return false
         #endif
+    }
+
+    static var canvas: CGSize? {
+        guard on, let text = UserDefaults.standard.string(forKey: canvasKey) else { return nil }
+        let parts: [Double] = text.lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
+    }
+
+    static func turnForCanvas() {
+        guard let size = canvas else { return }
+        let turn: UIInterfaceOrientationMask = size.width > size.height ? .landscapeRight : .portrait
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: turn)) { (_: Error) in }
+        }
     }
 
     static var pad: Bool {
@@ -56,5 +75,23 @@ enum StoreScreenshotLaunch {
             return true
         }
         return false
+    }
+}
+
+struct StoreCanvas: ViewModifier {
+    func body(content: Content) -> some View {
+        if let size = StoreScreenshotLaunch.canvas {
+            content
+                .safeAreaPadding(.top, StoreScreenshotLaunch.canvasTop)
+                .safeAreaPadding(.bottom, StoreScreenshotLaunch.canvasBottom)
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .ignoresSafeArea()
+                .statusBarHidden(true)
+                .onAppear { StoreScreenshotLaunch.turnForCanvas() }
+        } else {
+            content
+        }
     }
 }

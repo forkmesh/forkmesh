@@ -17,6 +17,10 @@ private struct ShellPaneRoleKey: EnvironmentKey {
     static let defaultValue: ShellPaneRole? = nil
 }
 
+private struct ShellPaneOpenKey: EnvironmentKey {
+    static let defaultValue: Route? = nil
+}
+
 extension EnvironmentValues {
     var shellPanes: ShellPaneMetrics {
         get { self[ShellPanesKey.self] }
@@ -26,6 +30,11 @@ extension EnvironmentValues {
     var shellPaneRole: ShellPaneRole? {
         get { self[ShellPaneRoleKey.self] }
         set { self[ShellPaneRoleKey.self] = newValue }
+    }
+
+    var shellPaneOpen: Route? {
+        get { self[ShellPaneOpenKey.self] }
+        set { self[ShellPaneOpenKey.self] = newValue }
     }
 }
 
@@ -148,6 +157,35 @@ extension View {
             get: { isPresented.wrappedValue ? key : nil },
             set: { (next: AnyHashable?) in isPresented.wrappedValue = next != nil })
         return modifier(ShellDetailDestination(item: item, page: { (_: AnyHashable) in destination() }))
+    }
+}
+
+private struct ShellPaneSelection: ViewModifier {
+    @Environment(\.shellPaneRole) private var role
+    @Environment(\.fmPalette) private var fm
+
+    let selected: Bool
+
+    private var shown: Bool { role == .list && selected }
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if shown {
+                    RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous)
+                        .fill(fm.accentSubtle)
+                        .padding(.horizontal, FmSpace.x2)
+                        .padding(.vertical, 2)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityAddTraits(shown ? .isSelected : [])
+    }
+}
+
+extension View {
+    func shellPaneSelected(_ selected: Bool) -> some View {
+        modifier(ShellPaneSelection(selected: selected))
     }
 }
 
@@ -361,8 +399,9 @@ struct ShellPaneLink<Label: View, Destination: View>: View {
         }
     }
 
-    @MainActor static func open(_ page: AnyView, on tab: AppTab) {
-        ShellDetailHost.shared.show(ShellDetailPage(id: AnyHashable(UUID()), view: page, release: {}), on: tab)
+    @MainActor static func open(_ page: AnyView, on tab: AppTab, id: AnyHashable? = nil) {
+        ShellDetailHost.shared.show(
+            ShellDetailPage(id: id ?? AnyHashable(UUID()), view: page, release: {}), on: tab)
     }
 }
 
@@ -370,15 +409,17 @@ private struct ShellPaneRowLink<Destination: View>: ViewModifier {
     @Environment(\.shellPaneRole) private var role
     @Environment(\.shellStackTab) private var tab
 
+    let id: AnyHashable?
     let destination: Destination
 
     func body(content: Content) -> some View {
         if role == .list, let tab {
             content
                 .onTapGesture {
-                    ShellPaneLink<EmptyView, AnyView>.open(AnyView(destination), on: tab)
+                    ShellPaneLink<EmptyView, AnyView>.open(AnyView(destination), on: tab, id: id)
                 }
                 .accessibilityAddTraits(.isButton)
+                .shellPaneSelected(id != nil && ShellDetailHost.shared.page(tab)?.id == id)
         } else {
             content
                 .background {
@@ -394,7 +435,9 @@ private struct ShellPaneRowLink<Destination: View>: ViewModifier {
 }
 
 extension View {
-    func shellPaneRowLink<Destination: View>(@ViewBuilder _ destination: () -> Destination) -> some View {
-        modifier(ShellPaneRowLink(destination: destination()))
+    func shellPaneRowLink<Destination: View>(id: AnyHashable? = nil, @ViewBuilder _ destination: () -> Destination)
+        -> some View
+    {
+        modifier(ShellPaneRowLink(id: id, destination: destination()))
     }
 }

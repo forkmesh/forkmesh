@@ -576,6 +576,7 @@ struct AgentsScreen: View {
                     eagleFeed: listView == .eagle ? eagle : nil, watch: dots?.controller, watchKeys: watchKeys(line))
             }
             .buttonStyle(.plain)
+            .shellPaneSelected(opened?.line.id == line.id)
         }
     }
 

@@ -33,6 +33,18 @@ final class ShellPanesTests: XCTestCase {
         XCTAssertEqual(ShellPanes.metrics(width: 1024, height: 1366, pad: true), .phone)
     }
 
+    func testTheOpenDetailNamesItsRow() {
+        let layout: ShellPaneLayout = ShellPanes.layout(
+            path: [.pull(repo, number: 4, tab: .conversation)], tab: .code, wide: true)
+        let open: Route? = ShellPanes.opened(layout)
+        XCTAssertEqual(open, .pull(repo, number: 4, tab: .conversation))
+        XCTAssertTrue(ShellPanes.opens(open, owners: ["ForkMesh"], name: "App"))
+        XCTAssertTrue(ShellPanes.opens(open, owners: ["node-7f3a", "forkmesh"], name: "app"))
+        XCTAssertFalse(ShellPanes.opens(open, owners: ["forkmesh"], name: "web"))
+        XCTAssertNil(ShellPanes.opened(ShellPanes.layout(path: [], tab: .code, wide: false)))
+        XCTAssertFalse(ShellPanes.opens(nil, owners: ["forkmesh"], name: "app"))
+    }
+
     func testListWidthStaysInBounds() {
         XCTAssertEqual(ShellPanes.listWidth(content: 500), 280)
         XCTAssertEqual(ShellPanes.listWidth(content: 2000), 380)

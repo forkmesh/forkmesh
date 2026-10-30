@@ -66,6 +66,16 @@ public enum ShellPanes {
         return [list]
     }
 
+    public static func opened(_ layout: ShellPaneLayout) -> Route? {
+        guard case let .split(_, detail) = layout else { return nil }
+        return detail.first
+    }
+
+    public static func opens(_ open: Route?, owners: [String], name: String) -> Bool {
+        guard let ref = open?.repoRef, ref.name.lowercased() == name.lowercased() else { return false }
+        return owners.contains { $0.lowercased() == ref.owner.lowercased() }
+    }
+
     public static func picked(_ pushed: [Route], layout: ShellPaneLayout) -> [Route]? {
         guard !pushed.isEmpty else { return nil }
         return listPrefix(layout) + pushed

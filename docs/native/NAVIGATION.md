@@ -1245,6 +1245,12 @@ look like the desktop, with the list on the left and the detail on the right.
   `ShellDetailHost`, which shows it as the detail's root. Anywhere else they
   behave exactly like `navigationDestination` and `NavigationLink`. A run
   screen's leave action (`ShellChrome.leave`) closes a hosted page.
+- **Selection.** As on the desktop, the row whose item is open on the right
+  stays highlighted in the list (`shellPaneSelected`). The list column gets
+  the detail's first route as `shellPaneOpen` (`ShellPanes.opened`); the
+  repository lists match it with `ShellPanes.opens`. Agents compare the line
+  they opened, and the Inbox gives `shellPaneRowLink` an id that is compared
+  with the hosted page.
 - **Bars.** On its side the Duo shows `ShellSideRail`, a vertical Liquid Glass
   rail on the left with the bottom bar's items, folders, menus and style. The
   bottom bar goes away. Upright, the bottom bar stays. The top bar spans both
@@ -1268,10 +1274,27 @@ look like the desktop, with the list on the left and the detail on the right.
   SDK 27.0 and with the Duo's model identifier `iPhone19,4`. Apple's own apps
   filled the screen. Store-ready Duo shots need Xcode 27.1's iPhone Duo
   simulator.
+- **Duo-sized shots on Xcode 26.** Simulator types with the Duo's own screen
+  sizes letterbox the app on the iOS 26.5 runtime: an iPhone-based one keeps
+  it at 440 pt, an iPad-based one scales it. The SpringBoard entitlement that
+  turns compatibility mode off makes an ad hoc signed app refuse to launch.
+  What works is an iPad mini simulator type at 3x (2232 × 3399, iPad mini
+  points, so iPadOS runs the app natively) with `SBMedusaMultitaskingEnabled`,
+  `SBFlexibleWindowingEnabled` and `SBChamoisWindowingEnabled` off in
+  `com.apple.springboard` (full screen apps, no window controls). In Debug,
+  `-FMStoreCanvas 669x951` (`StoreCanvas`) lays the whole app out in a canvas
+  of that size at the top left, hides the status bar and keeps 24 pt at the
+  top and 20 pt at the bottom as the safe area. The shell measures the canvas,
+  so the panes follow the Duo's rules, and the top-left 2007 × 2853 pixels are
+  a Duo inner-display shot. A width larger than the height turns the window
+  to landscape first (951 × 669 gives 2853 × 2007); 466 × 678 gives the cover
+  screen's 1398 × 2034. The 2026-10-30 set is in
+  `native/ios/docs/appstore/duo/`; store-ready shots from a real Duo simulator
+  still need Xcode 27.1.
 - **Store shots without taps.** In Debug builds `StoreScreenshotLaunch` reads
   launch arguments: `-FMStoreShots YES` skips the tour, the permissions intro
   and the starter pack, enters guest mode, and hides tips, the connection
-  banner, the spider, the aquarium and the status dots. Then `-FMStoreRoute <link>` opens
+  banner, the spider, the aquarium, the status dots and the top bar's telemetry strip. Then `-FMStoreRoute <link>` opens
   a link's whole stack (even for a guest, unlike a normal deep link), and
   `-FMStoreTab <agents|inbox|code|chat>` opens a tab. `-FMStorePhoneLayout YES`
   makes an iPad lay out as a phone (`StoreScreenshotLaunch.pad`), so the iPad

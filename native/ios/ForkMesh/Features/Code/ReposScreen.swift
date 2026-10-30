@@ -8,6 +8,7 @@ import SwiftUI
 
 struct ReposScreen: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.shellPaneOpen) private var paneOpen
     @State private var model: ReposScreenModel
     @State private var desktop: DesktopReposModel
     @State private var settings: SettingsService? = Services.get(SettingsService.self)
@@ -141,6 +142,9 @@ struct ReposScreen: View {
         return LazyVStack(spacing: 0) {
             ForEach(Array(repos.enumerated()), id: \.offset) { (entry: (offset: Int, element: Repository)) in
                 RepoCatalogRow(repo: entry.element, local: store?.record(for: entry.element), onTap: { CodeCurrentRepo.open(entry.element) })
+                    .shellPaneSelected(
+                        ShellPanes.opens(
+                            paneOpen, owners: [entry.element.owner, entry.element.displayOwner], name: entry.element.name))
                 if entry.offset != repos.count - 1 {
                     FmRowDivider()
                 }
@@ -152,6 +156,7 @@ struct ReposScreen: View {
 
 struct DesktopReposSection: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.shellPaneOpen) private var paneOpen
 
     let model: DesktopReposModel
     let query: String
@@ -182,6 +187,10 @@ struct DesktopReposSection: View {
                 }
                 ForEach(rows) { (repo: DesktopRepo) in
                     DesktopRepoRow(repo: repo) { CodeCurrentRepo.open(repo.repository) }
+                        .shellPaneSelected(
+                            ShellPanes.opens(
+                                paneOpen, owners: [repo.repository.owner, repo.repository.displayOwner],
+                                name: repo.repository.name))
                     FmRowDivider()
                 }
                 FmHairline()
