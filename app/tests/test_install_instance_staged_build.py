@@ -7,6 +7,7 @@ from test_install_instance_script import TEXT, function, sandbox_env
 
 FUNCTIONS = (
     "files_digest", "lines", "pip_lines", "logo_file", "save_logo", "source_git",
+    "source_retry", "fetch_origin_ref", "clone_source",
     "follow_source_url", "fetch_source", "checkout_target", "requirements_digest",
     "stage_venv", "stage_source", "activate_source", "rollback_source",
     "build_stamp", "release_version", "write_build_info", "write_daemon_state",
@@ -90,6 +91,7 @@ def harness(tmp_path, env, opt, upstream, body, extra=""):
         "CFG_projectName=Acme CFG_poweredBy=1 CFG_logoType= CFG_sourceRef=main",
         "CFG_sourceUrl=file://%s DOMAIN=code.example.com" % upstream,
         "systemctl() { printf 'systemctl %s\\n' \"$*\" >> \"$OPT/systemctl.log\"; }",
+        "FORKMESH_SOURCE_RETRY_WAITS=0",
         extra,
         "trap on_exit EXIT",
     ])

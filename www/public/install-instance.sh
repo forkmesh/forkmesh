@@ -95,7 +95,9 @@ on_exit() {
     progress "$CURRENT_STEP" failed
     printf 'Error: the step above stopped with status %s.\n' "$code"
   fi
-  if [ "$code" -ne 0 ]; then rollback_source || true; fi
+  # Only the copy that does the work defines rollback_source; the copy that
+  # started the detached setup and follows its log has nothing to roll back.
+  if [ "$code" -ne 0 ] && declare -F rollback_source >/dev/null; then rollback_source || true; fi
   if [ "$DETACHED" = "1" ]; then printf '%s\n' "$code" > "$SETUP_RUN_DIR/status" 2>/dev/null || true; fi
 }
 trap on_exit EXIT
@@ -860,6 +862,27 @@ follow_source_url() {
   fi
 }
 
+# The source can be this instance's own forge, whose git mirror answers 503
+# for a short while after a repository import; retry with a growing wait.
+source_retry() {
+  local attempt=1 waits=(${FORKMESH_SOURCE_RETRY_WAITS:-5 10 20 40 60})
+  while ! "$@"; do
+    [ "$attempt" -le "${#waits[@]}" ] || return 1
+    say "Could not reach the source; trying again in ${waits[$((attempt - 1))]} s (attempt $((attempt + 1)) of $(( ${#waits[@]} + 1 )))."
+    sleep "${waits[$((attempt - 1))]}"
+    attempt=$((attempt + 1))
+  done
+}
+
+fetch_origin_ref() {
+  source_git "$CFG_sourceUrl_effective" -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
+}
+
+clone_source() {
+  # git clone removes the directory it created when it fails.
+  git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$1"
+}
+
 fetch_source() {
   begin source "Downloading the ForkMesh source"
   local local_source="${FORKMESH_INSTANCE_SOURCE_DIR:-}"
@@ -872,7 +895,8 @@ fetch_source() {
   if [ -d "$SRC/.git" ]; then
     follow_source_url
     say "Fetching $CFG_sourceRef from $CFG_sourceUrl_effective"
-    source_git "$CFG_sourceUrl_effective" -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
+    source_retry fetch_origin_ref ||
+      die "Could not fetch $CFG_sourceRef from $CFG_sourceUrl_effective."
     TARGET_COMMIT="$(git -C "$SRC" rev-parse FETCH_HEAD)"
     if [ "$(git -C "$SRC" rev-parse HEAD)" = "$TARGET_COMMIT" ]; then
       say "The source is already at the latest $CFG_sourceRef."
@@ -883,7 +907,7 @@ fetch_source() {
     local stage="$OPT/src.partial"
     [ ! -e "$stage" ] || mv "$stage" "$OPT/src.partial.$(date +%s)"
     say "Cloning $CFG_sourceRef from $CFG_sourceUrl_effective"
-    git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$stage" ||
+    source_retry clone_source "$stage" ||
       die "Could not download the ForkMesh source from $CFG_sourceUrl_effective."
     mv "$stage" "$SRC"
     TARGET_COMMIT="$(git -C "$SRC" rev-parse HEAD)"

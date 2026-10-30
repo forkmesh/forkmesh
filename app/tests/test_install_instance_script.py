@@ -1027,3 +1027,34 @@ def test_white_label_is_off_unless_the_settings_ask_for_it(tmp_path):
     assert parse(tmp_path, settings(whiteLabel="yes")).returncode != 0
     assert 'brand_args+=(--white-label)' in TEXT
     assert 'echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"' in TEXT
+
+
+def test_the_source_fetch_retries_while_the_forge_mirror_answers_503(tmp_path):
+    body = ('n=0; flaky() { n=$((n + 1)); [ "$n" -ge 3 ]; }\n'
+            'FORKMESH_SOURCE_RETRY_WAITS="0 0 0"\n'
+            'source_retry flaky; echo "ok after $n"\n'
+            'never() { return 1; }\n'
+            'if source_retry never; then echo bad; else echo "gave up"; fi\n')
+    result = run_functions(tmp_path, ["source_retry"], body)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout.splitlines()
+    assert out[:3] == ["Could not reach the source; trying again in 0 s (attempt 2 of 4).",
+                       "Could not reach the source; trying again in 0 s (attempt 3 of 4).",
+                       "ok after 3"]
+    assert out[-1] == "gave up" and len(out) == 7
+    fetch = function("fetch_source")
+    assert "source_retry fetch_origin_ref ||" in fetch
+    assert 'source_retry clone_source "$stage" ||' in fetch
+
+
+def test_a_copy_that_only_follows_the_setup_does_not_roll_back(tmp_path):
+    # The copy that starts the detached setup exits from follow_setup, before
+    # rollback_source is defined; its exit trap must not call it.
+    assert TEXT.index("\nfollow_setup() {") < TEXT.index("\nrollback_source() {")
+    body = ('CURRENT_STEP=""; DETACHED="0"; progress() { :; }\n'
+            'trap on_exit EXIT\nexit 3\n')
+    result = run_functions(tmp_path, ["on_exit"], body)
+    assert result.returncode == 3
+    assert "command not found" not in result.stderr, result.stderr
+    result = run_functions(tmp_path, ["on_exit"], 'rollback_source() { echo rolled back; }\n' + body)
+    assert result.stdout.splitlines() == ["rolled back"]
