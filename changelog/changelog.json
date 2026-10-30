@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Desktop", "text": "Mastodon is now a full native client on the desktop: sign in to your server, then read and post, and manage your profile, followers, lists, hashtags, filters, blocks and scheduled posts without leaving ForkMesh."},
   {"date": "2026-10-30", "area": "Desktop", "text": "The desktop window no longer closes and reopens a second after it starts when Face Changer, Synapse or the Video Mix DJ Studio is installed."},
   {"date": "2026-10-30", "area": "Market", "text": "Market cards on the desktop show whether a plugin runs separately from the core and how much memory it uses, and installed plugins have an Open button."},
   {"date": "2026-10-30", "area": "Desktop", "text": "The desktop DJ studio's TAP button and BPM figure now tap the tempo on each press, and a new AUTO button finds the BPM from the audio, including for songs played before."},
