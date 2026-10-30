@@ -5081,6 +5081,11 @@ def _pulse_person_entry(ledger: Mapping[str, Any], key: str) -> dict[str, Any]:
     return entry
 
 
+def _analysis_path_skipped(path: str) -> bool:
+    return path.startswith(".forkmesh/") and (
+        path.rsplit("/", 1)[-1].lower() not in COVERAGE_ARTIFACT_NAMES)
+
+
 class GitRepository:
     def __init__(self, config: RepositoryConfig, git_dir: Path) -> None:
         self.config = config
@@ -5147,8 +5152,6 @@ class GitRepository:
         with self._integrity_lock:
             self._integrity_checked_at = 0.0
         with self._analysis_lock:
-            # The value stays: _analysis reuses it only when the new tip's
-            # content key matches the one it was built from.
             self._analysis_commit = ""
         with self._counts_lock:
             self._counts_key = ("", "", "")
@@ -5627,7 +5630,10 @@ class GitRepository:
         return result, partial
 
     def _build_analysis(self, commit: str) -> dict[str, Any]:
-        all_blobs = self._all_blobs(commit)
+        all_blobs = [
+            blob for blob in self._all_blobs(commit)
+            if not _analysis_path_skipped(blob[1])
+        ]
         repository_partial = len(all_blobs) > MAX_ANALYSIS_REPOSITORY_FILES
         blobs = all_blobs[:MAX_ANALYSIS_REPOSITORY_FILES]
         known_paths = {path for _size, path in blobs}
@@ -5705,11 +5711,6 @@ class GitRepository:
         }
 
     def _analysis_content_key(self, commit: str) -> str:
-        """What the analysis reads at ``commit``: every path and blob outside
-        ``.forkmesh/`` (plus coverage artifacts anywhere). Collaboration
-        metadata (issues, pulls, reviews, the Send list) lives under
-        ``.forkmesh/`` and moves the branch tip many times a day without
-        touching code, so a tip that only changed it reuses the analysis."""
         output = _run_git(
             self.git_dir,
             ["ls-tree", "-r", "-z", commit],
@@ -5720,9 +5721,7 @@ class GitRepository:
             _metadata, separator, raw_path = record.partition(b"\t")
             if not separator:
                 continue
-            if raw_path.startswith(b".forkmesh/") and raw_path.rsplit(
-                    b"/", 1)[-1].decode("utf-8", "replace").lower() \
-                    not in COVERAGE_ARTIFACT_NAMES:
+            if _analysis_path_skipped(raw_path.decode("utf-8", "replace")):
                 continue
             digest.update(record + b"\0")
         return digest.hexdigest()

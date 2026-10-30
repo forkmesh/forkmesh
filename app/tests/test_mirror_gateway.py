@@ -4466,7 +4466,22 @@ def test_tree_analysis_is_reused_when_only_forkmesh_metadata_moved(
     assert builds == []
     assert reused["commit"] == reused["summary"]["commit"] == metadata
     assert reused["adjacency"] == first["adjacency"]
+    assert original(metadata) == reused
     code = _commit_with_file(repository.git_dir, metadata, "src/extra.js",
                              "export const x = 1;\n")
     assert repository._analysis(code)["commit"] == code
     assert builds == [code]
+
+
+def test_tree_analysis_window_ignores_forkmesh_metadata(application, monkeypatch):
+    app, commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    code_files = [path for _size, path in repository._all_blobs(commit)
+                  if not path.startswith(".forkmesh/")]
+    monkeypatch.setattr(gateway, "MAX_ANALYSIS_REPOSITORY_FILES", len(code_files))
+    before = repository._build_analysis(commit)
+    metadata = _commit_with_file(repository.git_dir, commit,
+                                 ".forkmesh/aaa-pull-batch.json", '{"pulls": []}\n')
+    after = repository._build_analysis(metadata)
+    assert after["summary"]["dependency"] == before["summary"]["dependency"]
+    assert after["adjacency"] == before["adjacency"]
