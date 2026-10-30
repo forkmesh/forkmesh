@@ -1780,6 +1780,32 @@
     storeRepositoryCatalog(data.repositories);
     renderRepositories(data.repositories, state.session);
     recordInterfaceMetric("browse", startedAt, "remote");
+    if (!fresh) void refreshCatalogOnNewForks();
+  }
+
+  async function refreshCatalogOnNewForks() {
+    if (state.pinnedForkCountsChecked) return;
+    state.pinnedForkCountsChecked = true;
+    const groups = sidebarPinnedGroups(nestRepositoryForks(homeRepositoryEntries(), () => 0), () => []);
+    for (const group of groups) {
+      const repo = group.entry.repo;
+      if (!repo || repo.isPrivate) continue;
+      try {
+        const response = await fetch(`${repoApiBase(repo)}/forks`, { headers: { accept: "application/json" } });
+        const data = response.ok ? await response.json() : null;
+        const live = Number(data?.count) || 0;
+        const seenKey = `forkmesh.pinned-fork-count.v1:${repoKey(repo)}`;
+        let seen = 0;
+        try {
+          seen = Number(sessionStorage.getItem(seenKey)) || 0;
+          sessionStorage.setItem(seenKey, String(live));
+        } catch (_) {}
+        if (live > group.forks.length && live > seen) {
+          await loadRepositories({ fresh: true });
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   // Boot/shared-chrome loads take the cached path (browser + edge cache honor
@@ -3209,14 +3235,12 @@
         "[data-repo-issue-contribution-dismiss]",
       );
       if (contributionDismissButton && state.selectedRepo) {
-        const scope = contributionDismissButton.dataset.repoIssueContributionDismiss;
-        try {
-          const key = scope === "all"
-            ? "forkmesh.issue-contribution-tip.v1:all"
-            : issueContributionTipStorageKey(state.selectedRepo);
-          localStorage.setItem(key, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
+        if (contributionDismissButton.dataset.repoIssueContributionDismiss === "all") {
+          try {
+            localStorage.setItem("forkmesh.issue-contribution-tip.v1:all", "1");
+          } catch (_) {}
+        } else {
+          dismissContributionTip("issue", state.selectedRepo);
         }
         contributionDismissButton.closest("[data-repo-issue-contribution-tip]")?.remove();
         return;
@@ -3335,11 +3359,7 @@
 
       const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
       if (pullTipDismiss && state.selectedRepo) {
-        try {
-          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
-        }
+        dismissContributionTip("pull", state.selectedRepo);
         pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
         return;
       }
