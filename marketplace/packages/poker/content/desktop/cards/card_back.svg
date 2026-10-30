@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="140" viewBox="0 0 100 140">
+<rect x="4" y="4" width="92" height="132" rx="9" fill="#081d31" stroke="#e7b45f" stroke-width="4"/><rect x="13" y="13" width="74" height="114" rx="4" fill="none" stroke="#bb9857" stroke-width="1.5"/><path d="M50 39 L74 72 50 101 26 72Z" fill="none" stroke="#e5bd79" stroke-width="3"/><text x="50" y="83" text-anchor="middle" font-size="35" fill="#e5bd79">♠</text>
+</svg>
