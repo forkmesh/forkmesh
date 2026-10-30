@@ -29,6 +29,7 @@ public:
     void finishAnimations();
     bool animating() const { return !m_anims.isEmpty(); }
     int seatAt(const QPointF &point) const;
+    void setKeepClear(const QList<QRect> &areas, int reservedBottom);
 
     std::function<void(int)> emptySeatClicked;
     std::function<void(const QString &, float)> soundRequested;
@@ -68,9 +69,6 @@ private:
     void relayout();
     void ensureBackground();
     void paintBackground(QPainter &painter, const QSize &size);
-    void paintDealer(QPainter &painter);
-    void paintDealerTray(QPainter &painter);
-    void paintDealerLine(QPainter &painter);
     void paintPot(QPainter &painter, const QSet<QString> &held);
     void paintBoard(QPainter &painter, const QSet<QString> &held);
     void paintSeat(QPainter &painter, const PokerSeat &seat, const PokerSeatGeometry &geometry,
@@ -121,6 +119,8 @@ private:
     qint64 m_serverOffset = 0;
     int m_lastTick = -1;
     int m_hoverSeat = -1;
+    int m_reservedBottom = 0;
+    QList<QRect> m_keepClear;
     qint64 m_heldPot = 0;
 };
 

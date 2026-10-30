@@ -316,7 +316,6 @@ struct PokerLayout {
     QRectF inset;
     QPointF centre;
     QPointF dealer;
-    QPointF dealerLine;
     QPointF pot;
     QRectF board;
     QSizeF card;
@@ -327,6 +326,8 @@ struct PokerLayout {
     QList<PokerSeatGeometry> seats;
 
     static PokerLayout compute(const QSizeF &size, int seatCount, int mySeat);
+    static PokerLayout compute(const QRectF &area, int seatCount, int mySeat);
+    static QRectF seatBounds(const PokerSeatGeometry &geometry, double scale, double avatarRadius);
     const PokerSeatGeometry *seat(int index) const;
     QPointF boardCard(int index) const;
 };

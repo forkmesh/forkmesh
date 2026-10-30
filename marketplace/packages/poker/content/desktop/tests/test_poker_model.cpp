@@ -198,12 +198,13 @@ int main(int argc, char **argv)
         double last = -1;
         for (int slot = 0; slot < count; ++slot) {
             const double fraction = seatFraction(slot, count);
-            if (fraction <= last || fraction >= 1.0 || std::fabs(fraction - 0.5) < 0.069)
+            if (fraction <= last || fraction >= 1.0 || std::fabs(fraction - double(slot) / count) > 1e-9)
                 fractionsOk = false;
             last = fraction;
         }
     }
-    check(fractionsOk, "seats go round the table in order and leave the dealer's place at the top free");
+    check(fractionsOk && seatFraction(3, 6) == 0.5 && seatFraction(1, 2) == 0.5,
+          "seats are spread evenly round the table, with a player opposite the user at the top");
 
     const PokerLayout layout = PokerLayout::compute(QSizeF(1100, 700), 6, 2);
     const PokerSeatGeometry *mine = layout.seat(2);

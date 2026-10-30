@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Market", "text": "Poker on the desktop now uses the new table layout: the table fills the page with a player opposite you at the top, the table details and options float in the top corners, chat sits bottom left, and the bet slider and Fold, Check or Call and Raise buttons sit bottom right."},
   {"date": "2026-10-30", "area": "Market", "text": "The desktop Market opens more than twice as fast, and download counts and ratings arriving no longer redraw the whole page twice."},
   {"date": "2026-10-30", "area": "Market", "text": "Poker on the desktop has a new look: a navy room, a teal felt with a neon rim and gold rail, new cards, gold name plates and a gold dealer button, and colour-coded Fold, Check, Call and Raise buttons."},
   {"date": "2026-10-30", "area": "Desktop", "text": "Mastodon is now a full native client on the desktop: sign in to your server, then read and post, and manage your profile, followers, lists, hashtags, filters, blocks and scheduled posts without leaving ForkMesh."},

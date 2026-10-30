@@ -180,11 +180,44 @@ void PokerTableView::finishAnimations()
 void PokerTableView::relayout()
 {
     const int seats = m_table.valid && m_table.seatCount > 0 ? m_table.seatCount : 6;
-    m_layout = PokerLayout::compute(QSizeF(size()), seats, m_table.valid ? m_table.mySeat : -1);
+    const int mine = m_table.valid ? m_table.mySeat : -1;
+    const double limit = height() * 0.3;
+    double top = 0;
+    double bottom = 0;
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        const QRectF area(0, top, width(), std::max(1.0, height() - m_reservedBottom - top - bottom));
+        m_layout = PokerLayout::compute(area, seats, mine);
+        bool upper = false;
+        bool lower = false;
+        for (const QRect &clear : std::as_const(m_keepClear))
+            for (const PokerSeatGeometry &geometry : std::as_const(m_layout.seats))
+                if (PokerLayout::seatBounds(geometry, m_layout.scale, m_layout.avatarRadius).intersects(QRectF(clear)))
+                    (clear.center().y() < height() / 2 ? upper : lower) = true;
+        upper = upper && top < limit;
+        lower = lower && bottom < limit;
+        if (!upper && !lower)
+            break;
+        if (upper)
+            top += 12;
+        if (lower)
+            bottom += 12;
+    }
     m_cards.clear();
     m_chips.clear();
     m_avatars.clear();
     m_background = QPixmap();
+}
+
+void PokerTableView::setKeepClear(const QList<QRect> &areas, int reservedBottom)
+{
+    reservedBottom = std::max(0, reservedBottom);
+    if (areas == m_keepClear && reservedBottom == m_reservedBottom)
+        return;
+    m_keepClear = areas;
+    m_reservedBottom = reservedBottom;
+    relayout();
+    m_anims.clear();
+    update();
 }
 
 void PokerTableView::resizeEvent(QResizeEvent *event)
@@ -316,7 +349,7 @@ void PokerTableView::schedule(const PokerTable &previous, const QList<PokerEvent
         at = now;
     }
     const double s = m_layout.scale;
-    const QPointF tray(m_layout.centre.x(), m_layout.felt.top() + 18 * s);
+    const QPointF tray = m_layout.dealer;
     QHash<int, qint64> bets;
     for (const PokerSeat &seat : previous.seats)
         if (!seat.empty && seat.bet > 0)
@@ -653,8 +686,6 @@ void PokerTableView::paintBackground(QPainter &painter, const QSize &area)
     carpet.setColorAt(1.0, QColor(0, 0, 0, 0));
     painter.fillRect(room, carpet);
 
-    paintDealer(painter);
-
     for (int ring = 7; ring >= 1; --ring) {
         const double grow = ring * 4.0 * s;
         painter.setPen(Qt::NoPen);
@@ -796,119 +827,6 @@ void PokerTableView::paintBackground(QPainter &painter, const QSize &area)
         painter.drawRoundedRect(slot, 5 * s, 5 * s);
     }
 
-    paintDealerTray(painter);
-}
-
-void PokerTableView::paintDealer(QPainter &painter)
-{
-    const double s = m_layout.scale;
-    const double x = m_layout.centre.x();
-    const double top = m_layout.rail.top();
-    QRadialGradient halo(QPointF(x, top - 20 * s), 90 * s);
-    halo.setColorAt(0.0, QColor(255, 220, 170, 40));
-    halo.setColorAt(1.0, QColor(255, 220, 170, 0));
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(halo);
-    painter.drawEllipse(QPointF(x, top - 20 * s), 90 * s, 70 * s);
-
-    const QRectF body(x - 60 * s, top - 28 * s, 120 * s, 70 * s);
-    QLinearGradient jacket(body.topLeft(), body.bottomLeft());
-    jacket.setColorAt(0.0, QColor("#2a2a30"));
-    jacket.setColorAt(1.0, QColor("#0c0c10"));
-    painter.setBrush(jacket);
-    painter.drawRoundedRect(body, 26 * s, 26 * s);
-    QPainterPath shirt;
-    shirt.moveTo(x - 17 * s, top - 28 * s);
-    shirt.lineTo(x + 17 * s, top - 28 * s);
-    shirt.lineTo(x, top + 4 * s);
-    shirt.closeSubpath();
-    painter.setBrush(QColor("#f2f2f2"));
-    painter.drawPath(shirt);
-    QPainterPath vest;
-    vest.moveTo(x - 30 * s, top - 22 * s);
-    vest.lineTo(x - 12 * s, top - 22 * s);
-    vest.lineTo(x, top + 4 * s);
-    vest.lineTo(x + 12 * s, top - 22 * s);
-    vest.lineTo(x + 30 * s, top - 22 * s);
-    vest.lineTo(x + 30 * s, top + 20 * s);
-    vest.lineTo(x - 30 * s, top + 20 * s);
-    vest.closeSubpath();
-    painter.setBrush(QColor("#7a1212"));
-    painter.drawPath(vest);
-    painter.setBrush(QColor("#c62828"));
-    QPolygonF left{QPointF(x, top - 22 * s), QPointF(x - 10 * s, top - 27 * s), QPointF(x - 10 * s, top - 17 * s)};
-    QPolygonF right{QPointF(x, top - 22 * s), QPointF(x + 10 * s, top - 27 * s), QPointF(x + 10 * s, top - 17 * s)};
-    painter.drawPolygon(left);
-    painter.drawPolygon(right);
-    painter.drawEllipse(QPointF(x, top - 22 * s), 2.6 * s, 2.6 * s);
-    painter.setBrush(QColor("#c99b74"));
-    painter.drawRoundedRect(QRectF(x - 6 * s, top - 36 * s, 12 * s, 10 * s), 3 * s, 3 * s);
-    const QPointF head(x, top - 44 * s);
-    QRadialGradient skin(head + QPointF(-4 * s, -5 * s), 20 * s);
-    skin.setColorAt(0.0, QColor("#f0c9a0"));
-    skin.setColorAt(1.0, QColor("#b98558"));
-    painter.setBrush(skin);
-    painter.drawEllipse(head, 14 * s, 16 * s);
-    QPainterPath hair;
-    hair.moveTo(head + QPointF(-14.5 * s, 0));
-    hair.cubicTo(head + QPointF(-15 * s, -22 * s), head + QPointF(15 * s, -22 * s), head + QPointF(14.5 * s, -1 * s));
-    hair.cubicTo(head + QPointF(9 * s, -10 * s), head + QPointF(-6 * s, -12 * s), head + QPointF(-14.5 * s, 0));
-    painter.setBrush(QColor("#2b1d14"));
-    painter.drawPath(hair);
-    painter.setBrush(QColor("#3a2618"));
-    painter.drawEllipse(head + QPointF(-5 * s, 1 * s), 1.6 * s, 1.8 * s);
-    painter.drawEllipse(head + QPointF(5 * s, 1 * s), 1.6 * s, 1.8 * s);
-    painter.setPen(QPen(QColor("#7a4a32"), 1.2 * s, Qt::SolidLine, Qt::RoundCap));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawArc(QRectF(head.x() - 5 * s, head.y() + 3 * s, 10 * s, 6 * s), 200 * 16, 140 * 16);
-}
-
-void PokerTableView::paintDealerTray(QPainter &painter)
-{
-    const double s = m_layout.scale;
-    const QRectF tray(m_layout.centre.x() - 86 * s, m_layout.felt.top() + 5 * s, 172 * s, 26 * s);
-    painter.setPen(QPen(QColor("#050505"), 1 * s));
-    QLinearGradient body(tray.topLeft(), tray.bottomLeft());
-    body.setColorAt(0.0, QColor("#2e2e30"));
-    body.setColorAt(1.0, QColor("#111113"));
-    painter.setBrush(body);
-    painter.drawRoundedRect(tray, 5 * s, 5 * s);
-    const QList<qint64> order{1, 5, 25, 100, 500, 1000, 5000, 100, 25, 5};
-    const double slot = (tray.width() - 10 * s) / order.size();
-    for (int index = 0; index < order.size(); ++index) {
-        const QRectF stack(tray.left() + 5 * s + index * slot + 1.2 * s, tray.top() + 4 * s, slot - 2.4 * s,
-                           tray.height() - 8 * s);
-        QColor color(chipColor(order.at(index)));
-        QLinearGradient chipSide(stack.topLeft(), stack.topRight());
-        chipSide.setColorAt(0.0, color.darker(150));
-        chipSide.setColorAt(0.5, color.lighter(115));
-        chipSide.setColorAt(1.0, color.darker(160));
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(chipSide);
-        painter.drawRoundedRect(stack, 2 * s, 2 * s);
-        painter.setPen(QPen(QColor(255, 255, 255, 120), 0.8 * s));
-        for (double y = stack.top() + 2.5 * s; y < stack.bottom(); y += 3 * s)
-            painter.drawLine(QPointF(stack.left() + stack.width() * 0.35, y), QPointF(stack.right() - stack.width() * 0.35, y));
-    }
-}
-
-void PokerTableView::paintDealerLine(QPainter &painter)
-{
-    QString line = m_table.dealerLine;
-    if (line.isEmpty())
-        line = m_table.valid ? phaseLabel(m_table.phase) : QStringLiteral("Pick a table in the lobby");
-    if (line.isEmpty())
-        return;
-    const double s = m_layout.scale;
-    const QFont font = sized(this->font(), 13 * s, QFont::DemiBold);
-    const QFontMetricsF metrics(font);
-    const double width = std::min(metrics.horizontalAdvance(line) + 26 * s, m_layout.inset.width() * 0.62);
-    const QRectF box(m_layout.dealerLine.x() - width / 2, m_layout.dealerLine.y() - 12 * s, width, 24 * s);
-    pill(painter, box, QColor(7, 18, 31, 180), QColor(216, 183, 117, 110));
-    painter.setFont(font);
-    painter.setPen(QColor("#e8f3fc"));
-    painter.drawText(box.adjusted(10 * s, 0, -10 * s, 0), Qt::AlignCenter,
-                     metrics.elidedText(line, Qt::ElideRight, box.width() - 20 * s));
 }
 
 void PokerTableView::paintPot(QPainter &painter, const QSet<QString> &held)
@@ -1568,7 +1486,6 @@ void PokerTableView::paintEvent(QPaintEvent *)
     painter.drawPixmap(0, 0, m_background);
     const qint64 now = clockNow();
     const QSet<QString> held = heldKeys(now);
-    paintDealerLine(painter);
     if (!m_table.valid)
         return;
     paintPot(painter, held);

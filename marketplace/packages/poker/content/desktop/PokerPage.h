@@ -8,7 +8,6 @@
 
 #include <functional>
 
-class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -55,7 +54,7 @@ private:
     void buildLobby();
     void buildTable();
     void arrange(bool controlTower);
-    void placeDrawer();
+    void placeOverlays();
     void setDrawerOpen(bool open);
     void request(const QByteArray &method, const QString &path, const QJsonObject &body, ReplyHandler handler);
     void loadLobby();
@@ -133,8 +132,10 @@ private:
     QPushButton *m_invite = nullptr;
     QPushButton *m_more = nullptr;
     QPushButton *m_drawerButton = nullptr;
-    QWidget *m_tableColumn = nullptr;
-    QHBoxLayout *m_tableRow = nullptr;
+    QWidget *m_stage = nullptr;
+    QWidget *m_infoCard = nullptr;
+    QWidget *m_optionsCard = nullptr;
+    QLabel *m_dealerLine = nullptr;
     PokerTableView *m_view = nullptr;
     QWidget *m_actionBar = nullptr;
     QLabel *m_actionNote = nullptr;
@@ -145,6 +146,8 @@ private:
     QPushButton *m_threeQuarters = nullptr;
     QPushButton *m_potButton = nullptr;
     QPushButton *m_maxButton = nullptr;
+    QPushButton *m_raiseDown = nullptr;
+    QPushButton *m_raiseUp = nullptr;
     QSlider *m_slider = nullptr;
     QSpinBox *m_amount = nullptr;
     QWidget *m_side = nullptr;
@@ -173,6 +176,7 @@ private:
     bool m_controlTower = false;
     bool m_arranged = false;
     bool m_drawerOpen = false;
+    bool m_placing = false;
     bool m_syncingAmount = false;
     int m_badge = 0;
 };

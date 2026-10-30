@@ -49,7 +49,48 @@
 namespace forkmesh::poker {
 namespace {
 
-constexpr int kDrawerWidth = 320;
+constexpr int kEdge = 12;
+constexpr int kChatWidth = 340;
+constexpr int kChatHeight = 220;
+constexpr int kActionMinWidth = 520;
+constexpr int kActionMaxWidth = 820;
+
+constexpr char kStageStyle[] =
+    "QWidget#pokerStage { background: #040a13; }"
+    "QFrame#pokerPanel, QFrame#pokerSide { background: rgba(7, 18, 31, 225);"
+    " border: 1px solid rgba(216, 183, 117, 120); border-radius: 12px; }"
+    "QFrame#pokerPanel QLabel, QFrame#pokerSide QLabel { color: #e8f3fc; background: transparent; border: none; }"
+    "QLabel#pokerTitle { color: #ffffff; font-size: 16px; font-weight: 700; }"
+    "QLabel#pokerInfo { color: #b9c9d6; font-size: 12px; }"
+    "QLabel#pokerDealerLine { color: #f4c85a; font-size: 12px; font-weight: 600; }"
+    "QLabel#pokerWallet { color: #f4c85a; font-size: 12px; font-weight: 700; }"
+    "QPushButton#pokerBack { color: #4fc3f7; background: transparent; border: none; padding: 0;"
+    " font-weight: 600; text-align: left; }"
+    "QPushButton#pokerBack:hover { color: #ffffff; }"
+    "QPushButton#pokerOption { color: #e8f3fc; background: transparent; border: none; border-radius: 8px;"
+    " padding: 7px 10px; font-weight: 600; text-align: left; }"
+    "QPushButton#pokerOption:hover, QPushButton#pokerOption:checked { color: #ffffff;"
+    " background: rgba(244, 200, 90, 40); }"
+    "QPushButton#pokerOption:disabled { color: #59616d; }"
+    "QPushButton#pokerSit { color: #1a1205; background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffbd2c,"
+    " stop:1 #c48a14); border: 1px solid #f9e1a0; border-radius: 8px; padding: 7px 10px; font-weight: 700; }"
+    "QPushButton#pokerSit:hover { border-color: #ffffff; }"
+    "QPushButton#pokerSit:disabled { color: #9fb0bd; background: #34404d; border-color: #59616d; }"
+    "QLabel#pokerToast { color: #e8f3fc; background: rgba(7, 18, 31, 235); border: 1px solid rgba(216, 183, 117, 150);"
+    " border-radius: 10px; padding: 6px 12px; }"
+    "QLabel#pokerToast[pokerError=\"true\"] { color: #ff8a80; border-color: #e53935; }"
+    "QFrame#pokerSide QTabWidget::pane { border: none; background: transparent; }"
+    "QFrame#pokerSide QTabBar::tab { color: #9fb0bd; background: transparent; border: none;"
+    " border-bottom: 2px solid transparent; padding: 6px 10px; font-weight: 600; }"
+    "QFrame#pokerSide QTabBar::tab:selected { color: #4fc3f7; border-bottom: 2px solid #4fc3f7; }"
+    "QFrame#pokerSide QListWidget, QFrame#pokerSide QTextBrowser { color: #e8f3fc; background: transparent;"
+    " border: none; }"
+    "QFrame#pokerSide QLineEdit { color: #e8f3fc; background: #0d2235; border: 1px solid #37516a;"
+    " border-radius: 8px; padding: 5px 8px; }"
+    "QFrame#pokerSide QLineEdit:focus { border-color: #4fc3f7; }"
+    "QPushButton#pokerSend { color: #e8f3fc; background: #29445a; border: 1px solid #37516a; border-radius: 8px;"
+    " padding: 5px 12px; font-weight: 600; }"
+    "QPushButton#pokerSend:hover { border-color: #f4c85a; }";
 constexpr int kTableIdRole = Qt::UserRole + 1;
 
 QString text(const QJsonObject &object, const char *key)
@@ -70,6 +111,30 @@ QPushButton *ghostButton(const QString &label)
     auto *button = new QPushButton(label);
     button->setObjectName(QStringLiteral("ghostButton"));
     return button;
+}
+
+QFrame *panel(QWidget *parent)
+{
+    auto *frame = new QFrame(parent);
+    frame->setObjectName(QStringLiteral("pokerPanel"));
+    frame->setAttribute(Qt::WA_StyledBackground);
+    return frame;
+}
+
+QPushButton *optionButton(const QString &label)
+{
+    auto *button = new QPushButton(label);
+    button->setObjectName(QStringLiteral("pokerOption"));
+    button->setCursor(Qt::PointingHandCursor);
+    return button;
+}
+
+int panelHeight(QWidget *panel, int width)
+{
+    if (panel->layout())
+        panel->layout()->activate();
+    const int fit = panel->hasHeightForWidth() ? panel->heightForWidth(width) : -1;
+    return fit > 0 ? fit : panel->sizeHint().height();
 }
 
 QString clockText(qint64 at)
@@ -440,110 +505,151 @@ void PokerPage::buildTable()
     m_tablePage = new QWidget;
     auto *layout = new QVBoxLayout(m_tablePage);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(0);
+    m_stage = new QWidget;
+    m_stage->setObjectName(QStringLiteral("pokerStage"));
+    m_stage->setStyleSheet(QString::fromLatin1(kStageStyle));
+    layout->addWidget(m_stage, 1);
 
-    auto *bar = new QHBoxLayout;
-    bar->setSpacing(6);
-    m_back = ghostButton(QStringLiteral("‹ Lobby"));
-    bar->addWidget(m_back);
-    auto *titles = new QVBoxLayout;
-    titles->setSpacing(0);
+    m_view = new PokerTableView(m_stage);
+    m_view->setFocusPolicy(Qt::StrongFocus);
+
+    m_infoCard = panel(m_stage);
+    auto *info = new QVBoxLayout(m_infoCard);
+    info->setContentsMargins(14, 10, 14, 12);
+    info->setSpacing(3);
+    m_back = new QPushButton(QStringLiteral("‹ Lobby"));
+    m_back->setObjectName(QStringLiteral("pokerBack"));
+    m_back->setCursor(Qt::PointingHandCursor);
+    info->addWidget(m_back, 0, Qt::AlignLeft);
     m_tableTitle = new QLabel;
-    m_tableTitle->setStyleSheet(QStringLiteral("font-size: 16px; font-weight: 600;"));
-    m_tableInfo = mutedLabel();
-    m_tableInfo->setWordWrap(false);
-    titles->addWidget(m_tableTitle);
-    titles->addWidget(m_tableInfo);
-    bar->addLayout(titles, 1);
-    m_wallet = mutedLabel();
-    m_wallet->setWordWrap(false);
-    bar->addWidget(m_wallet);
+    m_tableTitle->setObjectName(QStringLiteral("pokerTitle"));
+    m_tableTitle->setWordWrap(true);
+    m_tableInfo = new QLabel;
+    m_tableInfo->setObjectName(QStringLiteral("pokerInfo"));
+    m_tableInfo->setWordWrap(true);
+    m_dealerLine = new QLabel;
+    m_dealerLine->setObjectName(QStringLiteral("pokerDealerLine"));
+    m_dealerLine->setWordWrap(true);
+    m_wallet = new QLabel;
+    m_wallet->setObjectName(QStringLiteral("pokerWallet"));
+    for (QLabel *label : {m_tableTitle, m_tableInfo, m_dealerLine, m_wallet})
+        info->addWidget(label);
+
+    m_optionsCard = panel(m_stage);
+    auto *options = new QVBoxLayout(m_optionsCard);
+    options->setContentsMargins(8, 8, 8, 8);
+    options->setSpacing(2);
     m_sit = new QPushButton(QStringLiteral("Sit down"));
-    m_sit->setObjectName(QStringLiteral("primaryButton"));
-    m_away = ghostButton(QStringLiteral("Sit out"));
-    m_rebuy = ghostButton(QStringLiteral("Rebuy"));
-    m_bots = ghostButton(QStringLiteral("Bots"));
-    m_invite = ghostButton(QStringLiteral("Invite"));
-    m_leave = ghostButton(QStringLiteral("Leave"));
-    m_more = ghostButton(QStringLiteral("More"));
-    m_drawerButton = ghostButton(QStringLiteral("Chat && log"));
+    m_sit->setObjectName(QStringLiteral("pokerSit"));
+    m_away = optionButton(QStringLiteral("Sit out"));
+    m_rebuy = optionButton(QStringLiteral("Rebuy"));
+    m_bots = optionButton(QStringLiteral("Bots"));
+    m_invite = optionButton(QStringLiteral("Invite friends"));
+    m_leave = optionButton(QStringLiteral("Leave table"));
+    m_more = optionButton(QStringLiteral("Table info"));
+    m_drawerButton = optionButton(QStringLiteral("Chat && log"));
     m_drawerButton->setCheckable(true);
     for (QPushButton *button : {m_sit, m_away, m_rebuy, m_bots, m_invite, m_leave, m_more, m_drawerButton})
-        bar->addWidget(button);
-    layout->addLayout(bar);
-    m_tableStatus = mutedLabel();
-    m_tableStatus->hide();
-    layout->addWidget(m_tableStatus);
+        options->addWidget(button);
 
-    m_tableRow = new QHBoxLayout;
-    m_tableRow->setSpacing(8);
-    m_tableColumn = new QWidget;
-    auto *column = new QVBoxLayout(m_tableColumn);
-    column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(0);
-    m_view = new PokerTableView;
-    m_view->setFocusPolicy(Qt::StrongFocus);
-    column->addWidget(m_view, 1);
+    m_side = panel(m_stage);
+    m_side->setObjectName(QStringLiteral("pokerSide"));
+    auto *sideLayout = new QVBoxLayout(m_side);
+    sideLayout->setContentsMargins(8, 4, 8, 8);
+    m_sideTabs = new QTabWidget;
+    m_sideTabs->setDocumentMode(true);
+    auto *chatPage = new QWidget;
+    auto *chatLayout = new QVBoxLayout(chatPage);
+    chatLayout->setContentsMargins(0, 4, 0, 0);
+    chatLayout->setSpacing(6);
+    m_chat = new QListWidget;
+    m_chat->setWordWrap(true);
+    m_chat->setSelectionMode(QAbstractItemView::NoSelection);
+    m_chat->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    chatLayout->addWidget(m_chat, 1);
+    auto *chatRow = new QHBoxLayout;
+    chatRow->setSpacing(6);
+    m_chatInput = new QLineEdit;
+    m_chatInput->setMaxLength(200);
+    m_chatInput->setPlaceholderText(QStringLiteral("Type a message…"));
+    m_chatSend = new QPushButton(QStringLiteral("Send"));
+    m_chatSend->setObjectName(QStringLiteral("pokerSend"));
+    chatRow->addWidget(m_chatInput, 1);
+    chatRow->addWidget(m_chatSend);
+    chatLayout->addLayout(chatRow);
+    m_sideTabs->addTab(chatPage, QStringLiteral("Chat"));
+    m_log = new QListWidget;
+    m_log->setWordWrap(true);
+    m_log->setSelectionMode(QAbstractItemView::NoSelection);
+    m_sideTabs->addTab(m_log, QStringLiteral("Hand history"));
+    m_lastHand = new QTextBrowser;
+    m_lastHand->setOpenLinks(false);
+    m_sideTabs->addTab(m_lastHand, QStringLiteral("Last hand"));
+    sideLayout->addWidget(m_sideTabs);
 
-    m_actionBar = new QWidget;
+    m_actionBar = new QWidget(m_stage);
     m_actionBar->setObjectName(QStringLiteral("pokerActionBar"));
     m_actionBar->setAttribute(Qt::WA_StyledBackground);
-    auto *actions = new QHBoxLayout(m_actionBar);
-    actions->setContentsMargins(12, 8, 12, 8);
+    auto *actions = new QVBoxLayout(m_actionBar);
+    actions->setContentsMargins(12, 8, 12, 12);
     actions->setSpacing(8);
     m_actionNote = new QLabel;
     m_actionNote->setObjectName(QStringLiteral("pokerActionNote"));
-    m_actionNote->setMinimumWidth(150);
     m_actionNote->setWordWrap(true);
-    actions->addWidget(m_actionNote, 1);
-    m_fold = new QPushButton(QStringLiteral("Fold"));
-    m_fold->setObjectName(QStringLiteral("pokerFold"));
-    m_call = new QPushButton(QStringLiteral("Check"));
-    m_call->setObjectName(QStringLiteral("pokerCall"));
-    actions->addWidget(m_fold);
-    actions->addWidget(m_call);
-    auto *raiseBox = new QVBoxLayout;
-    raiseBox->setSpacing(4);
-    auto *quick = new QHBoxLayout;
-    quick->setSpacing(4);
-    m_half = new QPushButton(QStringLiteral("½ pot"));
-    m_threeQuarters = new QPushButton(QStringLiteral("¾ pot"));
-    m_potButton = new QPushButton(QStringLiteral("Pot"));
-    m_maxButton = new QPushButton(QStringLiteral("All-in"));
-    for (QPushButton *button : {m_half, m_threeQuarters, m_potButton, m_maxButton}) {
-        button->setObjectName(QStringLiteral("pokerQuick"));
-        quick->addWidget(button);
-    }
-    raiseBox->addLayout(quick);
-    auto *sliderRow = new QHBoxLayout;
+    actions->addWidget(m_actionNote);
+    auto *raiseRow = new QHBoxLayout;
+    raiseRow->setSpacing(6);
+    m_raiseDown = new QPushButton(QStringLiteral("−"));
+    m_raiseUp = new QPushButton(QStringLiteral("+"));
     m_slider = new QSlider(Qt::Horizontal);
-    m_slider->setMinimumWidth(140);
+    m_slider->setMinimumWidth(120);
     m_amount = new QSpinBox;
     m_amount->setGroupSeparatorShown(true);
     m_amount->setMinimumWidth(96);
     m_amount->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    m_amount->setAlignment(Qt::AlignRight);
-    sliderRow->addWidget(m_slider, 1);
-    sliderRow->addWidget(m_amount);
-    raiseBox->addLayout(sliderRow);
-    actions->addLayout(raiseBox, 1);
+    m_amount->setAlignment(Qt::AlignCenter);
+    m_half = new QPushButton(QStringLiteral("½ pot"));
+    m_threeQuarters = new QPushButton(QStringLiteral("¾ pot"));
+    m_potButton = new QPushButton(QStringLiteral("Pot"));
+    m_maxButton = new QPushButton(QStringLiteral("All-in"));
+    for (QPushButton *button : {m_raiseDown, m_raiseUp, m_half, m_threeQuarters, m_potButton, m_maxButton})
+        button->setObjectName(QStringLiteral("pokerQuick"));
+    m_raiseDown->setFixedWidth(30);
+    m_raiseUp->setFixedWidth(30);
+    raiseRow->addWidget(m_raiseDown);
+    raiseRow->addWidget(m_slider, 1);
+    raiseRow->addWidget(m_raiseUp);
+    raiseRow->addWidget(m_amount);
+    for (QPushButton *button : {m_half, m_threeQuarters, m_potButton, m_maxButton})
+        raiseRow->addWidget(button);
+    actions->addLayout(raiseRow);
+    auto *buttonRow = new QHBoxLayout;
+    buttonRow->setSpacing(8);
+    m_fold = new QPushButton(QStringLiteral("Fold"));
+    m_fold->setObjectName(QStringLiteral("pokerFold"));
+    m_call = new QPushButton(QStringLiteral("Check"));
+    m_call->setObjectName(QStringLiteral("pokerCall"));
     m_raise = new QPushButton(QStringLiteral("Raise"));
     m_raise->setObjectName(QStringLiteral("pokerRaise"));
-    actions->addWidget(m_raise);
     m_call->setProperty("pokerTone", QStringLiteral("check"));
     for (QPushButton *button : {m_fold, m_call, m_raise}) {
-        button->setMinimumHeight(48);
+        button->setMinimumHeight(52);
         button->setMinimumWidth(110);
+        buttonRow->addWidget(button, 1);
     }
+    actions->addLayout(buttonRow);
     m_fold->setToolTip(QStringLiteral("Fold (F)"));
     m_call->setToolTip(QStringLiteral("Check or call (C)"));
     m_raise->setToolTip(QStringLiteral("Bet or raise to the amount (R)"));
+    m_raiseDown->setToolTip(QStringLiteral("One big blind less"));
+    m_raiseUp->setToolTip(QStringLiteral("One big blind more"));
     m_maxButton->setToolTip(QStringLiteral("Set the amount to your whole stack (A goes all-in)"));
     m_actionBar->setStyleSheet(QStringLiteral(
-        "QWidget#pokerActionBar { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2235, stop:1 #07121f);"
-        " border-top: 1px solid #37516a; }"
-        "QLabel#pokerActionNote { color: #e8f3fc; font-size: 13px; }"
-        "QPushButton#pokerFold, QPushButton#pokerCall, QPushButton#pokerRaise { color: white; font-size: 15px;"
+        "QWidget#pokerActionBar { background: rgba(7, 18, 31, 225); border: 1px solid rgba(216, 183, 117, 120);"
+        " border-radius: 14px; }"
+        "QLabel#pokerActionNote { color: #e8f3fc; font-size: 13px; background: transparent; border: none; }"
+        "QPushButton#pokerFold, QPushButton#pokerCall, QPushButton#pokerRaise { color: white; font-size: 16px;"
         " font-weight: 700; border-radius: 12px; padding: 6px 16px; border: 2px solid rgba(249,225,160,140); }"
         "QPushButton#pokerFold { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #da3a40, stop:1 #8c1725); }"
         "QPushButton#pokerCall { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2976e7, stop:1 #0e3e98); }"
@@ -555,56 +661,29 @@ void PokerPage::buildTable()
         "QPushButton#pokerFold:disabled, QPushButton#pokerCall:disabled, QPushButton#pokerRaise:disabled {"
         " background: #34404d; color: #9fb0bd; border: 2px solid #59616d; }"
         "QPushButton#pokerQuick { color: #e8f3fc; background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #29445a,"
-        " stop:1 #0d2235); border: 1px solid #37516a; border-radius: 8px; padding: 3px 10px; font-size: 12px;"
+        " stop:1 #0d2235); border: 1px solid #37516a; border-radius: 8px; padding: 4px 10px; font-size: 12px;"
         " font-weight: 600; }"
         "QPushButton#pokerQuick:hover { border-color: #f4c85a; }"
         "QPushButton#pokerQuick:disabled { color: #59616d; background: #1a2633; }"
-        "QSpinBox { color: #f4c85a; background: #07121f; border: 1px solid #37516a; border-radius: 8px; padding: 3px 6px;"
+        "QSpinBox { color: #f4c85a; background: #07121f; border: 1px solid #b99a5a; border-radius: 8px; padding: 3px 6px;"
         " font-weight: 700; }"
+        "QSpinBox:disabled { color: #59616d; border-color: #37516a; }"
         "QSlider::groove:horizontal { height: 8px; background: #234056; border-radius: 4px; }"
         "QSlider::sub-page:horizontal { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #1553ae,"
         " stop:1 #11c9e6); border-radius: 4px; }"
         "QSlider::handle:horizontal { background: #f5c45c; border: 2px solid white; width: 16px; margin: -6px 0;"
         " border-radius: 10px; }"
         "QSlider::handle:horizontal:disabled { background: #59616d; border-color: #9fb0bd; }"));
-    column->addWidget(m_actionBar);
-    m_tableRow->addWidget(m_tableColumn, 1);
 
-    m_side = new QWidget;
-    m_side->setObjectName(QStringLiteral("pokerSide"));
-    m_side->setMinimumWidth(260);
-    m_side->setMaximumWidth(kDrawerWidth + 40);
-    auto *sideLayout = new QVBoxLayout(m_side);
-    sideLayout->setContentsMargins(0, 0, 0, 0);
-    m_sideTabs = new QTabWidget;
-    auto *chatPage = new QWidget;
-    auto *chatLayout = new QVBoxLayout(chatPage);
-    chatLayout->setContentsMargins(4, 4, 4, 4);
-    m_chat = new QListWidget;
-    m_chat->setWordWrap(true);
-    m_chat->setSelectionMode(QAbstractItemView::NoSelection);
-    m_chat->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    chatLayout->addWidget(m_chat, 1);
-    auto *chatRow = new QHBoxLayout;
-    m_chatInput = new QLineEdit;
-    m_chatInput->setMaxLength(200);
-    m_chatInput->setPlaceholderText(QStringLiteral("Say something to the table"));
-    m_chatSend = ghostButton(QStringLiteral("Send"));
-    chatRow->addWidget(m_chatInput, 1);
-    chatRow->addWidget(m_chatSend);
-    chatLayout->addLayout(chatRow);
-    m_sideTabs->addTab(chatPage, QStringLiteral("Chat"));
-    m_log = new QListWidget;
-    m_log->setWordWrap(true);
-    m_log->setSelectionMode(QAbstractItemView::NoSelection);
-    m_sideTabs->addTab(m_log, QStringLiteral("Hand log"));
-    m_lastHand = new QTextBrowser;
-    m_lastHand->setOpenLinks(false);
-    m_sideTabs->addTab(m_lastHand, QStringLiteral("Last hand"));
-    sideLayout->addWidget(m_sideTabs);
-    m_tableRow->addWidget(m_side);
-    layout->addLayout(m_tableRow, 1);
-    m_tableColumn->installEventFilter(this);
+    m_tableStatus = new QLabel(m_stage);
+    m_tableStatus->setObjectName(QStringLiteral("pokerToast"));
+    m_tableStatus->setWordWrap(true);
+    m_tableStatus->setAlignment(Qt::AlignCenter);
+    m_tableStatus->hide();
+
+    m_stage->installEventFilter(this);
+    for (QWidget *overlay : {m_infoCard, m_optionsCard, m_actionBar})
+        overlay->installEventFilter(this);
 
     connect(m_back, &QPushButton::clicked, this, [this] { showLobby(); });
     connect(m_sit, &QPushButton::clicked, this, [this] {
@@ -661,6 +740,10 @@ void PokerPage::buildTable()
     connect(m_threeQuarters, &QPushButton::clicked, this, [this] { setRaiseAmount(potFractionRaise(m_table, 0.75)); });
     connect(m_potButton, &QPushButton::clicked, this, [this] { setRaiseAmount(potFractionRaise(m_table, 1.0)); });
     connect(m_maxButton, &QPushButton::clicked, this, [this] { setRaiseAmount(m_table.legal.raiseMax); });
+    connect(m_raiseDown, &QPushButton::clicked, this,
+            [this] { setRaiseAmount(m_amount->value() - std::max<qint64>(1, m_table.big)); });
+    connect(m_raiseUp, &QPushButton::clicked, this,
+            [this] { setRaiseAmount(m_amount->value() + std::max<qint64>(1, m_table.big)); });
     connect(m_slider, &QSlider::valueChanged, this, [this](int value) {
         if (m_syncingAmount)
             return;
@@ -703,33 +786,58 @@ void PokerPage::arrange(bool controlTower)
         return;
     m_arranged = true;
     m_controlTower = controlTower;
-    if (controlTower) {
-        m_side->setParent(m_tablePage);
-        m_side->setAutoFillBackground(false);
-        m_side->setStyleSheet(QString());
-        m_tableRow->addWidget(m_side);
-        m_side->show();
-        m_drawerButton->hide();
-    } else {
-        m_tableRow->removeWidget(m_side);
-        m_side->setParent(m_tableColumn);
-        m_side->setAutoFillBackground(true);
-        m_side->setStyleSheet(QStringLiteral("QWidget#pokerSide { border: 1px solid palette(mid); border-radius: 8px; }"));
-        m_drawerButton->show();
-        m_side->setVisible(m_drawerOpen);
-        placeDrawer();
-        m_side->raise();
-    }
+    m_drawerButton->setVisible(!controlTower);
+    placeOverlays();
     renderActions();
 }
 
-void PokerPage::placeDrawer()
+void PokerPage::placeOverlays()
 {
-    if (m_controlTower || !m_side || !m_view)
+    if (!m_stage || m_placing)
         return;
-    const QRect area = m_view->geometry();
-    const int width = std::min(kDrawerWidth, std::max(240, area.width() / 2));
-    m_side->setGeometry(area.right() - width - 8, area.top() + 8, width, std::max(160, area.height() - 16));
+    m_placing = true;
+    const QRect area = m_stage->rect();
+    m_view->setGeometry(area);
+
+    const int infoWidth = std::clamp(area.width() / 4, 190, 270);
+    m_infoCard->setGeometry(kEdge, kEdge, infoWidth, panelHeight(m_infoCard, infoWidth));
+    const int optionsWidth = std::clamp(area.width() / 6, 150, 190);
+    m_optionsCard->setGeometry(area.width() - kEdge - optionsWidth, kEdge, optionsWidth,
+                               panelHeight(m_optionsCard, optionsWidth));
+
+    const int chatWidth = std::clamp(area.width() / 3, 240, kChatWidth);
+    const bool chatBeside = area.width() - 3 * kEdge - chatWidth >= kActionMinWidth;
+    const bool chatShown = m_controlTower || m_drawerOpen;
+    const bool barShown = !m_actionBar->isHidden();
+    int barHeight = 0;
+    if (barShown) {
+        const int room = area.width() - 2 * kEdge - (chatShown && chatBeside ? chatWidth + kEdge : 0);
+        const int barWidth = std::min(room, kActionMaxWidth);
+        barHeight = panelHeight(m_actionBar, barWidth);
+        m_actionBar->setGeometry(area.width() - kEdge - barWidth, area.height() - kEdge - barHeight, barWidth, barHeight);
+    }
+    const int chatHeight = std::clamp(area.height() / 3, 150, kChatHeight);
+    const int chatBottom = chatBeside || !barShown ? area.height() - kEdge : area.height() - 2 * kEdge - barHeight;
+    m_side->setGeometry(kEdge, chatBottom - chatHeight, chatWidth, chatHeight);
+    m_side->setVisible(chatShown);
+
+    QList<QRect> keepClear{m_infoCard->geometry(), m_optionsCard->geometry()};
+    if (barShown)
+        keepClear << m_actionBar->geometry();
+    if (m_controlTower)
+        keepClear << m_side->geometry();
+    m_view->setKeepClear(keepClear, barShown ? barHeight + kEdge : 0);
+
+    if (!m_tableStatus->isHidden()) {
+        const int left = m_infoCard->geometry().right() + kEdge;
+        const int right = m_optionsCard->geometry().left() - kEdge;
+        const int width = std::max(160, std::min(right - left, 520));
+        const int height = m_tableStatus->heightForWidth(width);
+        m_tableStatus->setGeometry(area.width() / 2 - width / 2, kEdge, width,
+                                   height > 0 ? height : m_tableStatus->sizeHint().height());
+        m_tableStatus->raise();
+    }
+    m_placing = false;
 }
 
 void PokerPage::setDrawerOpen(bool open)
@@ -739,11 +847,7 @@ void PokerPage::setDrawerOpen(bool open)
         const QSignalBlocker block(m_drawerButton);
         m_drawerButton->setChecked(open);
     }
-    if (!m_controlTower) {
-        placeDrawer();
-        m_side->setVisible(open);
-        m_side->raise();
-    }
+    placeOverlays();
     if (open && m_sideTabs->currentIndex() == 0)
         m_unread = 0;
     renderActions();
@@ -751,8 +855,10 @@ void PokerPage::setDrawerOpen(bool open)
 
 bool PokerPage::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_tableColumn && (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest))
-        placeDrawer();
+    if ((watched == m_stage && event->type() == QEvent::Resize) ||
+        ((watched == m_infoCard || watched == m_optionsCard || watched == m_actionBar) &&
+         event->type() == QEvent::LayoutRequest))
+        placeOverlays();
     return forkmesh::market::NativePackageWidget::eventFilter(watched, event);
 }
 
@@ -888,9 +994,10 @@ void PokerPage::setTableStatus(const QString &value, bool error)
 {
     m_tableStatus->setVisible(!value.isEmpty());
     m_tableStatus->setText(value);
-    m_tableStatus->setObjectName(error ? QStringLiteral("errorLabel") : QStringLiteral("mutedLabel"));
+    m_tableStatus->setProperty("pokerError", error);
     m_tableStatus->style()->unpolish(m_tableStatus);
     m_tableStatus->style()->polish(m_tableStatus);
+    placeOverlays();
 }
 
 void PokerPage::setMuted(bool muted)
@@ -1079,7 +1186,7 @@ void PokerPage::openTable(const QString &id)
         setTableStatus(QString());
         renderTable();
     }
-    placeDrawer();
+    placeOverlays();
     loadTable();
     m_view->setFocus();
 }
@@ -1199,22 +1306,32 @@ void PokerPage::renderTable()
         for (QPushButton *button : {m_sit, m_away, m_rebuy, m_leave, m_bots, m_invite, m_more})
             button->hide();
         m_wallet->clear();
+        m_dealerLine->clear();
+        m_dealerLine->hide();
         m_actionBar->hide();
+        placeOverlays();
         return;
     }
     m_tableTitle->setText(table.name);
-    QStringList info;
     const PokerStake *stake = m_lobby.stake(table.stakes);
-    info << QStringLiteral("%1 blinds %2").arg(stake ? stake->label : table.stakes, stakesLabel(table.small, table.big));
-    info << QStringLiteral("buy-in %1 to %2").arg(amountText(table.minBuyIn), amountText(table.maxBuyIn));
-    info << QStringLiteral("%1 s clock").arg(table.turnSeconds);
+    QStringList info;
+    info << QStringLiteral("%1 · blinds %2").arg(stake ? stake->label : table.stakes, stakesLabel(table.small, table.big));
+    info << QStringLiteral("Buy-in %1 to %2 · %3 s clock")
+                .arg(amountText(table.minBuyIn), amountText(table.maxBuyIn))
+                .arg(table.turnSeconds);
+    QStringList details;
     if (table.handNumber > 0)
-        info << QStringLiteral("hand #%1").arg(table.handNumber);
+        details << QStringLiteral("Hand #%1").arg(table.handNumber);
     if (!table.code.isEmpty())
-        info << QStringLiteral("code %1").arg(table.code);
+        details << QStringLiteral("code %1").arg(table.code);
     if (table.isPrivate)
-        info << QStringLiteral("private");
-    m_tableInfo->setText(info.join(QStringLiteral(" · ")));
+        details << QStringLiteral("private");
+    if (!details.isEmpty())
+        info << details.join(QStringLiteral(" · "));
+    m_tableInfo->setText(info.join(QLatin1Char('\n')));
+    const QString dealerLine = table.dealerLine.isEmpty() ? phaseLabel(table.phase) : table.dealerLine;
+    m_dealerLine->setText(dealerLine);
+    m_dealerLine->setVisible(!dealerLine.isEmpty());
     m_wallet->setText(QStringLiteral("Wallet %1").arg(amountText(table.wallet)));
 
     const PokerSeat *mine = table.mine();
@@ -1230,6 +1347,7 @@ void PokerPage::renderTable()
     m_invite->setVisible(table.ownerIsMe || seated);
     m_more->setVisible(true);
     m_actionBar->setVisible(seated);
+    placeOverlays();
     renderActions();
     renderChat();
     renderLog();
@@ -1257,7 +1375,8 @@ void PokerPage::renderActions()
     }
     const bool raise = turn && legal.canRaise;
     for (QWidget *widget : {static_cast<QWidget *>(m_raise), static_cast<QWidget *>(m_slider),
-                            static_cast<QWidget *>(m_amount), static_cast<QWidget *>(m_half),
+                            static_cast<QWidget *>(m_amount), static_cast<QWidget *>(m_raiseDown),
+                            static_cast<QWidget *>(m_raiseUp), static_cast<QWidget *>(m_half),
                             static_cast<QWidget *>(m_threeQuarters), static_cast<QWidget *>(m_potButton),
                             static_cast<QWidget *>(m_maxButton)})
         widget->setEnabled(raise);
@@ -1299,6 +1418,7 @@ void PokerPage::renderActions()
         note = QStringLiteral("You folded this hand.");
     }
     m_actionNote->setText(note);
+    m_actionNote->setVisible(!note.isEmpty());
 }
 
 void PokerPage::setRaiseAmount(qint64 amount)
