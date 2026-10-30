@@ -242,7 +242,7 @@ test("real participants create, replay, and isolate an encrypted direct message"
     buffer: Buffer.from("private attachment body"),
   });
   await expect.poll(() => retainedFrames.length).toBe(
-    RETAINED_KEY_ADVERTISEMENTS + 4,
+    RETAINED_KEY_ADVERTISEMENTS + 5,
   );
   expect(retainedFrames.join("\n")).not.toContain("First private message");
   expect(retainedFrames.join("\n")).not.toContain("Second private message");

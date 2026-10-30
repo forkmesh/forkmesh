@@ -358,6 +358,22 @@ become ready on SwiftShader. Logging each stage showed three causes:
 starts the terminal. The spec polls for the call with `expect.poll`, as it
 does for `terminal.detach`.
 
+## The direct-message frame count
+
+From b783a27f4b (2026-10-30) about every other main run failed
+`direct-messages.spec.js` (150) at the retained-frame poll with "Expected: 5,
+Received: 6", on both attempts. Alice's page retains six frames: the sealed
+key advertisement, the two messages, the thread reply, the delete of that
+reply and the attachment. The 2026-10-30 fix counted
+`RETAINED_KEY_ADVERTISEMENTS + 4`, a count taken before the attachment frame
+went out. `expect.poll` returns as soon as it sees that count once, so the
+spec passed when its first samples landed before the attachment was sealed
+and sent, and failed when the attachment went first. It now waits for
+`RETAINED_KEY_ADVERTISEMENTS + 5`. Since the count only grows, the poll can no
+longer pass early, and the plaintext checks after it now cover the attachment
+frame as well. Bob's unread count stays 4: the delete is retained but does not
+notify.
+
 ## Reproducing the browser suites locally
 
 `npm run test:daily-interface` (App browser tests) starts the Python Worker
