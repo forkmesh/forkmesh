@@ -77,6 +77,14 @@ Shortcuts (`.forkmesh/shortcuts/`):
 | `ios-app-store-status.sh`, `testflight-feedback-to-tasks.sh` | Read-only App Store Connect report; TestFlight feedback to tasks ([IOS_RELEASE.md](IOS_RELEASE.md)) |
 | `task-mobile-app-store-deploy.sh`, `task-mobile-play-store-deploy.sh` | Create a signed reminder task with the version, tag, `main` head and the release steps for the App Store or the Play Store |
 
+The reminder goes to the release maintainer named by `FORKMESH_RELEASE_ASSIGNEE`
+or, when that is unset, by the one line in `release-assignee` in the core config
+folder (`~/projects/forkmesh/data/core/config/release-assignee`). The account is
+kept out of the public repository. With neither set the task is created
+unassigned and the shortcut says so; it used to stop with an error, which is all
+a shortcut run from the phone or desktop showed, because those runs do not
+export the variable.
+
 The Play Store path exists only as that reminder: no tool uploads to Google
 Play, and Android releases ship as the signed
 `forkmesh-android-universal.apk` in the release manifest.
