@@ -764,20 +764,21 @@ class MarketNextCard : public QObject
 {
 public:
     MarketNextCard(QFrame *card, QWidget *main, QWidget *details,
-                   QLabel *summary, QLabel *screenshot, QLabel *paneShot,
-                   QPushButton *toggle, const QString &packageName, bool list)
+                   QLabel *summary, QLabel *screenshot,
+                   std::function<QLabel *()> fillDetails, QPushButton *toggle,
+                   const QString &packageName, bool list)
         : QObject(card), m_card(card), m_main(main), m_details(details),
-          m_summary(summary), m_screenshot(screenshot), m_paneShot(paneShot),
-          m_toggle(toggle), m_packageName(packageName), m_list(list)
+          m_summary(summary), m_screenshot(screenshot),
+          m_fillDetails(std::move(fillDetails)), m_toggle(toggle),
+          m_packageName(packageName), m_list(list)
     {
         setObjectName(QStringLiteral("marketNextCardController"));
         m_main->installEventFilter(this);
         m_summary->installEventFilter(this);
         m_screenshot->installEventFilter(this);
-        m_paneShot->installEventFilter(this);
         QObject::connect(m_toggle, &QPushButton::clicked, this,
                          [this] { activate(); });
-        setSelected(false);
+        showSelection(false);
     }
 
     static MarketNextCard *of(QWidget *card)
@@ -787,9 +788,31 @@ public:
             Qt::FindDirectChildrenOnly));
     }
 
-    QWidget *details() const { return m_details; }
+    QWidget *details()
+    {
+        ensureDetails();
+        return m_details;
+    }
+
+    void ensureDetails()
+    {
+        if (!m_fillDetails)
+            return;
+        const std::function<QLabel *()> fill = std::exchange(m_fillDetails, {});
+        m_paneShot = fill();
+        if (m_paneShot)
+            m_paneShot->installEventFilter(this);
+    }
 
     void setSelected(bool selected)
+    {
+        showSelection(selected);
+        clampSummary();
+        m_card->style()->unpolish(m_card);
+        m_card->style()->polish(m_card);
+    }
+
+    void showSelection(bool selected)
     {
         m_card->setProperty("nextMarketSelected", selected);
         {
@@ -805,9 +828,6 @@ public:
                                  : QStringLiteral(
                                        "Show trust checks, permissions, where "
                                        "it shows and the package actions"));
-        clampSummary();
-        m_card->style()->unpolish(m_card);
-        m_card->style()->polish(m_card);
     }
 
     void activate();
@@ -861,7 +881,8 @@ private:
     QWidget *m_details;
     QLabel *m_summary;
     QLabel *m_screenshot;
-    QLabel *m_paneShot;
+    QLabel *m_paneShot = nullptr;
+    std::function<QLabel *()> m_fillDetails;
     QPushButton *m_toggle;
     QString m_packageName;
     bool m_list = false;
@@ -1053,6 +1074,7 @@ void MarketNextCard::activate()
         pane->toggleCard(m_card);
         return;
     }
+    ensureDetails();
     const bool open = m_details->isHidden();
     m_details->setVisible(open);
     setSelected(open);
@@ -1405,151 +1427,166 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
 
     auto *details = new QWidget(card);
     details->setObjectName(QStringLiteral("marketNextDetails"));
-    auto *detailsLayout = new QVBoxLayout(details);
-    detailsLayout->setContentsMargins(0, 0, 0, 0);
-    detailsLayout->setSpacing(0);
+    details->hide();
     if (parts.trust)
         parts.trust->hide();
     if (parts.permissions)
         parts.permissions->hide();
+    for (QWidget *parked :
+         {stats, nativeNotice, nested, places, notShown,
+          static_cast<QWidget *>(parts.settings), static_cast<QWidget *>(importCopy),
+          actionInDetails ? static_cast<QWidget *>(parts.action) : nullptr}) {
+        if (parked)
+            parked->setParent(details);
+    }
+    auto fillDetails = [details, screenshot = parts.screenshot,
+                        meta = parts.creator->text(), footprint = parts.footprint,
+                        status = parts.status, settings = parts.settings,
+                        open = parts.open, action = parts.action, stats, importCopy,
+                        nativeNotice, nested, places, notShown, actionInDetails,
+                        ratio, manifest]() -> QLabel * {
+        auto *detailsLayout = new QVBoxLayout(details);
+        detailsLayout->setContentsMargins(0, 0, 0, 0);
+        detailsLayout->setSpacing(0);
 
-    auto *paneShot = new QLabel;
-    paneShot->setObjectName(QStringLiteral("marketNextPaneShot"));
-    paneShot->setMinimumWidth(1);
-    paneShot->setFixedHeight(190);
-    paneShot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    const QPixmap preview = parts.screenshot->pixmap();
-    if (preview.isNull())
-        paneShot->setText(parts.screenshot->text());
-    else
-        paneShot->setPixmap(preview);
-    paneShot->setProperty("previewKey", parts.screenshot->property("previewKey"));
-    paneShot->setAccessibleName(parts.screenshot->accessibleName());
-    paneShot->setToolTip(parts.screenshot->toolTip());
-    detailsLayout->addWidget(paneShot);
-    detailsLayout->addSpacing(14);
-    auto *headline = new QHBoxLayout;
-    headline->setSpacing(8);
-    auto *version = new QLabel(QStringLiteral("v%1").arg(manifest.version));
-    version->setObjectName(QStringLiteral("marketNextPaneVersion"));
-    version->setTextFormat(Qt::PlainText);
-    headline->addWidget(version);
-    headline->addStretch(1);
-    auto *panePrice = new QLabel(manifest.priceLabel());
-    panePrice->setObjectName(QStringLiteral("marketNextPanePrice"));
-    panePrice->setTextFormat(Qt::PlainText);
-    headline->addWidget(panePrice);
-    detailsLayout->addLayout(headline);
-    detailsLayout->addSpacing(4);
-    auto *paneMeta = new QLabel(parts.creator->text());
-    paneMeta->setObjectName(QStringLiteral("marketNextPaneMeta"));
-    paneMeta->setTextFormat(Qt::PlainText);
-    paneMeta->setWordWrap(true);
-    detailsLayout->addWidget(paneMeta);
-    detailsLayout->addSpacing(10);
-    auto *paneSummary = new QLabel(manifest.summary);
-    paneSummary->setObjectName(QStringLiteral("marketNextPaneSummary"));
-    paneSummary->setTextFormat(Qt::PlainText);
-    paneSummary->setWordWrap(true);
-    detailsLayout->addWidget(paneSummary);
-    detailsLayout->addSpacing(16);
+        auto *paneShot = new QLabel;
+        paneShot->setObjectName(QStringLiteral("marketNextPaneShot"));
+        paneShot->setMinimumWidth(1);
+        paneShot->setFixedHeight(190);
+        paneShot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        const QPixmap preview = screenshot->pixmap();
+        if (preview.isNull())
+            paneShot->setText(screenshot->text());
+        else
+            paneShot->setPixmap(preview);
+        paneShot->setProperty("previewKey", screenshot->property("previewKey"));
+        paneShot->setAccessibleName(screenshot->accessibleName());
+        paneShot->setToolTip(screenshot->toolTip());
+        detailsLayout->addWidget(paneShot);
+        detailsLayout->addSpacing(14);
+        auto *headline = new QHBoxLayout;
+        headline->setSpacing(8);
+        auto *version = new QLabel(QStringLiteral("v%1").arg(manifest.version));
+        version->setObjectName(QStringLiteral("marketNextPaneVersion"));
+        version->setTextFormat(Qt::PlainText);
+        headline->addWidget(version);
+        headline->addStretch(1);
+        auto *panePrice = new QLabel(manifest.priceLabel());
+        panePrice->setObjectName(QStringLiteral("marketNextPanePrice"));
+        panePrice->setTextFormat(Qt::PlainText);
+        headline->addWidget(panePrice);
+        detailsLayout->addLayout(headline);
+        detailsLayout->addSpacing(4);
+        auto *paneMeta = new QLabel(meta);
+        paneMeta->setObjectName(QStringLiteral("marketNextPaneMeta"));
+        paneMeta->setTextFormat(Qt::PlainText);
+        paneMeta->setWordWrap(true);
+        detailsLayout->addWidget(paneMeta);
+        detailsLayout->addSpacing(10);
+        auto *paneSummary = new QLabel(manifest.summary);
+        paneSummary->setObjectName(QStringLiteral("marketNextPaneSummary"));
+        paneSummary->setTextFormat(Qt::PlainText);
+        paneSummary->setWordWrap(true);
+        detailsLayout->addWidget(paneSummary);
+        detailsLayout->addSpacing(16);
 
-    auto *facts = new QLabel(
-        QStringList{QStringLiteral("by @%1").arg(manifest.creatorHandle),
-                    manifest.type, manifest.licenseSpdx, parts.status}
-            .join(QString::fromUtf8(" \xC2\xB7 ")));
-    facts->setObjectName(QStringLiteral("marketNextFacts"));
-    facts->setTextFormat(Qt::PlainText);
-    facts->setWordWrap(true);
-    detailsLayout->addWidget(facts);
-    if (parts.footprint) {
-        auto *paneFootprint = new QLabel(parts.footprint->text());
-        paneFootprint->setObjectName(QStringLiteral("marketNextPaneFootprint"));
-        paneFootprint->setProperty("separate", parts.footprint->property("separate"));
-        paneFootprint->setTextFormat(Qt::PlainText);
-        paneFootprint->setWordWrap(true);
-        paneFootprint->setToolTip(parts.footprint->toolTip());
-        detailsLayout->addSpacing(4);
-        detailsLayout->addWidget(paneFootprint);
-    }
-    if (stats) {
-        detailsLayout->addSpacing(4);
-        detailsLayout->addWidget(stats);
-    }
-    detailsLayout->addSpacing(12);
-    detailsLayout->addWidget(marketNextTrustRow(manifest, ratio));
-    detailsLayout->addSpacing(18);
-    detailsLayout->addWidget(marketNextCaption(QStringLiteral("Permissions")));
-    detailsLayout->addSpacing(8);
-    detailsLayout->addWidget(marketNextPermissionList(manifest, ratio));
-    if (nativeNotice) {
-        detailsLayout->addSpacing(8);
-        detailsLayout->addWidget(nativeNotice);
-    }
-    if (nested) {
-        detailsLayout->addSpacing(18);
-        detailsLayout->addWidget(nested);
-    }
-    if (places) {
-        if (auto *caption = places->findChild<QLabel *>(
-                QStringLiteral("mutedLabel"), Qt::FindDirectChildrenOnly))
-            caption->hide();
-        if (auto *placesLayout = qobject_cast<QBoxLayout *>(places->layout())) {
-            placesLayout->setDirection(QBoxLayout::TopToBottom);
-            placesLayout->setContentsMargins(10, 4, 10, 4);
-            placesLayout->setSpacing(0);
+        auto *facts = new QLabel(
+            QStringList{QStringLiteral("by @%1").arg(manifest.creatorHandle),
+                        manifest.type, manifest.licenseSpdx, status}
+                .join(QString::fromUtf8(" \xC2\xB7 ")));
+        facts->setObjectName(QStringLiteral("marketNextFacts"));
+        facts->setTextFormat(Qt::PlainText);
+        facts->setWordWrap(true);
+        detailsLayout->addWidget(facts);
+        if (footprint) {
+            auto *paneFootprint = new QLabel(footprint->text());
+            paneFootprint->setObjectName(QStringLiteral("marketNextPaneFootprint"));
+            paneFootprint->setProperty("separate", footprint->property("separate"));
+            paneFootprint->setTextFormat(Qt::PlainText);
+            paneFootprint->setWordWrap(true);
+            paneFootprint->setToolTip(footprint->toolTip());
+            detailsLayout->addSpacing(4);
+            detailsLayout->addWidget(paneFootprint);
         }
-        places->setAttribute(Qt::WA_StyledBackground, true);
-        places->setProperty("marketNext", true);
-        detailsLayout->addSpacing(18);
-        detailsLayout->addWidget(marketNextCaption(QStringLiteral("Show on")));
-        detailsLayout->addSpacing(8);
-        detailsLayout->addWidget(places);
-        if (notShown) {
-            detailsLayout->addSpacing(6);
-            detailsLayout->addWidget(notShown);
+        if (stats) {
+            detailsLayout->addSpacing(4);
+            detailsLayout->addWidget(stats);
         }
-    }
-    detailsLayout->addSpacing(18);
-    detailsLayout->addStretch(1);
-    auto *actions = new QHBoxLayout;
-    actions->setSpacing(8);
-    parts.settings->setIcon(QIcon(
-        marketNextIcon(QStringLiteral("gear"), Theme::Role::FgMuted, 14, ratio)));
-    parts.settings->setProperty("marketNextRole", QStringLiteral("outline"));
-    actions->addWidget(parts.settings);
-    if (importCopy) {
-        importCopy->setProperty("marketNextRole", QStringLiteral("outline"));
-        actions->addWidget(importCopy);
-    }
-    actions->addStretch(1);
-    if (parts.open) {
-        auto *paneOpen = new QPushButton(parts.open->text());
-        paneOpen->setObjectName(QStringLiteral("marketNextPaneOpen"));
-        paneOpen->setProperty("marketNextRole", QStringLiteral("outline"));
-        paneOpen->setToolTip(parts.open->toolTip());
-        paneOpen->setAccessibleName(parts.open->accessibleName());
-        QObject::connect(paneOpen, &QPushButton::clicked, parts.open,
-                         &QPushButton::click);
-        actions->addWidget(paneOpen);
-    }
-    if (actionInDetails) {
-        actions->addWidget(parts.action);
-    } else {
-        auto *paneAction = new QPushButton(parts.action->text());
-        paneAction->setObjectName(QStringLiteral("marketNextPaneAction"));
-        paneAction->setProperty("marketNextAction",
-                                parts.action->property("marketNextAction"));
-        paneAction->setIcon(parts.action->icon());
-        paneAction->setEnabled(parts.action->isEnabled());
-        paneAction->setToolTip(parts.action->toolTip());
-        paneAction->setAccessibleName(parts.action->accessibleName());
-        QObject::connect(paneAction, &QPushButton::clicked, parts.action,
-                         &QPushButton::click);
-        actions->addWidget(paneAction);
-    }
-    detailsLayout->addLayout(actions);
-    details->hide();
+        detailsLayout->addSpacing(12);
+        detailsLayout->addWidget(marketNextTrustRow(manifest, ratio));
+        detailsLayout->addSpacing(18);
+        detailsLayout->addWidget(marketNextCaption(QStringLiteral("Permissions")));
+        detailsLayout->addSpacing(8);
+        detailsLayout->addWidget(marketNextPermissionList(manifest, ratio));
+        if (nativeNotice) {
+            detailsLayout->addSpacing(8);
+            detailsLayout->addWidget(nativeNotice);
+        }
+        if (nested) {
+            detailsLayout->addSpacing(18);
+            detailsLayout->addWidget(nested);
+        }
+        if (places) {
+            if (auto *caption = places->findChild<QLabel *>(
+                    QStringLiteral("mutedLabel"), Qt::FindDirectChildrenOnly))
+                caption->hide();
+            if (auto *placesLayout = qobject_cast<QBoxLayout *>(places->layout())) {
+                placesLayout->setDirection(QBoxLayout::TopToBottom);
+                placesLayout->setContentsMargins(10, 4, 10, 4);
+                placesLayout->setSpacing(0);
+            }
+            places->setAttribute(Qt::WA_StyledBackground, true);
+            places->setProperty("marketNext", true);
+            detailsLayout->addSpacing(18);
+            detailsLayout->addWidget(marketNextCaption(QStringLiteral("Show on")));
+            detailsLayout->addSpacing(8);
+            detailsLayout->addWidget(places);
+            if (notShown) {
+                detailsLayout->addSpacing(6);
+                detailsLayout->addWidget(notShown);
+            }
+        }
+        detailsLayout->addSpacing(18);
+        detailsLayout->addStretch(1);
+        auto *actions = new QHBoxLayout;
+        actions->setSpacing(8);
+        settings->setIcon(QIcon(
+            marketNextIcon(QStringLiteral("gear"), Theme::Role::FgMuted, 14, ratio)));
+        settings->setProperty("marketNextRole", QStringLiteral("outline"));
+        actions->addWidget(settings);
+        if (importCopy) {
+            importCopy->setProperty("marketNextRole", QStringLiteral("outline"));
+            actions->addWidget(importCopy);
+        }
+        actions->addStretch(1);
+        if (open) {
+            auto *paneOpen = new QPushButton(open->text());
+            paneOpen->setObjectName(QStringLiteral("marketNextPaneOpen"));
+            paneOpen->setProperty("marketNextRole", QStringLiteral("outline"));
+            paneOpen->setToolTip(open->toolTip());
+            paneOpen->setAccessibleName(open->accessibleName());
+            QObject::connect(paneOpen, &QPushButton::clicked, open,
+                             &QPushButton::click);
+            actions->addWidget(paneOpen);
+        }
+        if (actionInDetails) {
+            actions->addWidget(action);
+        } else {
+            auto *paneAction = new QPushButton(action->text());
+            paneAction->setObjectName(QStringLiteral("marketNextPaneAction"));
+            paneAction->setProperty("marketNextAction",
+                                    action->property("marketNextAction"));
+            paneAction->setIcon(action->icon());
+            paneAction->setEnabled(action->isEnabled());
+            paneAction->setToolTip(action->toolTip());
+            paneAction->setAccessibleName(action->accessibleName());
+            QObject::connect(paneAction, &QPushButton::clicked, action,
+                             &QPushButton::click);
+            actions->addWidget(paneAction);
+        }
+        detailsLayout->addLayout(actions);
+        return paneShot;
+    };
 
     auto *box = new QVBoxLayout(card);
     box->setContentsMargins(kMarketNextCardPadding, kMarketNextCardPadding,
@@ -1560,7 +1597,7 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
     QObject::connect(card, &QObject::destroyed, details, [details] { delete details; });
 
     new MarketNextCard(card, main, details, parts.summary, parts.screenshot,
-                       paneShot, toggle, manifest.name, list);
+                       std::move(fillDetails), toggle, manifest.name, list);
 }
 
 } // namespace
@@ -2288,16 +2325,32 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
 
 void MainWindow::applyMarketPreview(const QString &key, const QImage &image)
 {
-    m_marketPreviewDecoding.remove(key);
     const QPixmap pixmap =
         image.isNull() ? QPixmap() : QPixmap::fromImage(image);
     m_marketPreviewCache.insert(key, pixmap);
+    const bool flushQueued = !m_marketPreviewArrived.isEmpty();
+    m_marketPreviewArrived.insert(key, pixmap);
+    if (!flushQueued)
+        QTimer::singleShot(50, this, [this] { flushMarketPreviews(); });
+}
+
+void MainWindow::flushMarketPreviews()
+{
+    const QHash<QString, QPixmap> arrived =
+        std::exchange(m_marketPreviewArrived, {});
+    for (auto it = arrived.cbegin(); it != arrived.cend(); ++it)
+        m_marketPreviewDecoding.remove(it.key());
+    if (arrived.isEmpty())
+        return;
     QList<QLabel *> labels = findChildren<QLabel *>(
         QStringLiteral("marketPackageScreenshot"));
     labels += findChildren<QLabel *>(QStringLiteral("marketNextPaneShot"));
     for (QLabel *label : std::as_const(labels)) {
-        if (label->property("previewKey").toString() != key)
+        const auto found =
+            arrived.constFind(label->property("previewKey").toString());
+        if (found == arrived.constEnd())
             continue;
+        const QPixmap &pixmap = *found;
         if (pixmap.isNull()) {
             label->setText(QStringLiteral("Preview unavailable"));
             label->setProperty("screenshotLoaded", false);
@@ -2315,6 +2368,9 @@ void MainWindow::refreshMarketPage()
     if (!m_marketListLayout || !m_marketInstalledListLayout ||
         !m_marketNotInstalledListLayout)
         return;
+    ++m_marketPageBuilds;
+    if (m_marketStatsRefresh)
+        m_marketStatsRefresh->stop();
     clearPackageCards(m_marketListLayout);
     clearPackageCards(m_marketInstalledListLayout);
     clearPackageCards(m_marketNotInstalledListLayout);
@@ -2370,10 +2426,12 @@ void MainWindow::refreshMarketPage()
 
     const QHash<QString, qint64> resident =
         forkmesh::market::modules::residentBytesByPackage();
-    auto appendCard = [this, &resident](QVBoxLayout *list,
-                                        const PackageManifest &manifest) {
+    const bool projectOwned = m_packageRegistry->projectOwnsInstalls();
+    const QString activeThemeSetting =
+        QSettings().value(forkmesh::ui::kThemeSetting).toString();
+    auto appendCard = [this, &resident, projectOwned, &activeThemeSetting](
+                          QVBoxLayout *list, const PackageManifest &manifest) {
         const bool installed = m_packageRegistry->isInstalled(manifest.id);
-        const bool projectOwned = m_packageRegistry->projectOwnsInstalls();
         const bool themeManaged =
             manifest.type == QLatin1String("theme") &&
             manifest.entrypoints.contains(QStringLiteral("theme"));
@@ -2383,7 +2441,7 @@ void MainWindow::refreshMarketPage()
             manifest.entrypoints.contains(QStringLiteral("world"));
         const bool activeTheme =
             themeManaged && installed &&
-            QSettings().value(forkmesh::ui::kThemeSetting).toString() ==
+            activeThemeSetting ==
                 forkmesh::ui::kMarketplaceThemePrefix + manifest.id;
         const bool modelOperation =
             manifest.id == m_marketModelPackageId && m_marketModelProcess &&
@@ -6503,14 +6561,44 @@ void MainWindow::refreshPackageInstallCounts()
             if (downloads > 0 || installs > 0)
                 counts.insert(manifest.id, qMakePair(downloads, installs));
         }
-        if (counts == m_packageInstallCounts)
-            return;
-        m_packageInstallCounts = counts;
-        // Repaint the shelf with the numbers that just arrived. The settings
-        // page owns the list while it is open, so leave it alone.
-        if (m_marketListLayout && m_marketSettingsPackageId.isEmpty())
-            refreshMarketPage();
+        receivePackageInstallCounts(counts);
     });
+}
+
+void MainWindow::receivePackageInstallCounts(
+    const QHash<QString, QPair<qint64, qint64>> &counts)
+{
+    if (counts == m_packageInstallCounts)
+        return;
+    m_packageInstallCounts = counts;
+    queueMarketStatsRefresh();
+}
+
+void MainWindow::receivePackageMarketScores(
+    const QHash<QString, MarketPackageScore> &scores)
+{
+    if (scores == m_packageMarketScores)
+        return;
+    m_packageMarketScores = scores;
+    queueMarketStatsRefresh();
+}
+
+void MainWindow::queueMarketStatsRefresh()
+{
+    if (!m_marketStatsRefresh) {
+        m_marketStatsRefresh = new QTimer(this);
+        m_marketStatsRefresh->setObjectName(
+            QStringLiteral("marketStatsRefresh"));
+        m_marketStatsRefresh->setSingleShot(true);
+        m_marketStatsRefresh->setInterval(250);
+        connect(m_marketStatsRefresh, &QTimer::timeout, this, [this] {
+            if (m_marketListLayout && m_marketSettingsPackageId.isEmpty() &&
+                m_marketTabs && m_marketTabs->isVisible())
+                refreshMarketPage();
+        });
+    }
+    if (!m_marketStatsRefresh->isActive())
+        m_marketStatsRefresh->start();
 }
 
 void MainWindow::reportPackageInstallCounts(bool throttled)
@@ -6633,11 +6721,7 @@ void MainWindow::refreshPackageMarketScores()
                 score.views > 0)
                 scores.insert(manifest.id, score);
         }
-        if (scores == m_packageMarketScores)
-            return;
-        m_packageMarketScores = scores;
-        if (m_marketListLayout && m_marketSettingsPackageId.isEmpty())
-            refreshMarketPage();
+        receivePackageMarketScores(scores);
     });
 }
 

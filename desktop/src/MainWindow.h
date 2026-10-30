@@ -1441,6 +1441,21 @@ public:
         const QHash<QString, QPair<qint64, qint64>> &counts);
     void testSetPackageMarketScores(
         const QHash<QString, MarketPackageScore> &scores);
+    void testReceivePackageInstallCounts(
+        const QHash<QString, QPair<qint64, qint64>> &counts)
+    {
+        receivePackageInstallCounts(counts);
+    }
+    void testReceivePackageMarketScores(
+        const QHash<QString, MarketPackageScore> &scores)
+    {
+        receivePackageMarketScores(scores);
+    }
+    int testMarketPageBuilds() const { return m_marketPageBuilds; }
+    bool testMarketStatsRefreshQueued() const
+    {
+        return m_marketStatsRefresh && m_marketStatsRefresh->isActive();
+    }
     int testMarketPreviewDecodes() const { return m_marketPreviewDecodes; }
     void testDeliverAvatar(const QString &peerId, const QByteArray &pngData)
     {
@@ -4307,6 +4322,7 @@ private:
     QPixmap marketPreviewPixmap(const QString &path, const QSize &box,
                                 QString *key = nullptr);
     void applyMarketPreview(const QString &key, const QImage &image);
+    void flushMarketPreviews();
     void applyMarketSearch();
     QList<const forkmesh::market::PackageManifest *> sortedMarketPackages() const;
     void appendMarketPackCards();
@@ -4417,6 +4433,11 @@ private:
     // random id, never an account, node name, or address.
     void refreshPackageInstallCounts();
     void refreshPackageMarketScores();
+    void receivePackageInstallCounts(
+        const QHash<QString, QPair<qint64, qint64>> &counts);
+    void receivePackageMarketScores(
+        const QHash<QString, MarketPackageScore> &scores);
+    void queueMarketStatsRefresh();
     void reportPackageInstallCounts(bool throttled = false);
     QString packageStatsRunId() const;
     QList<QPair<QString, QString>> appThemeChoices() const;
@@ -11092,7 +11113,10 @@ private:
     qint64 m_packageMarketScoresFetchedMs = 0;
     QHash<QString, QPixmap> m_marketPreviewCache;
     QSet<QString> m_marketPreviewDecoding;
+    QHash<QString, QPixmap> m_marketPreviewArrived;
     int m_marketPreviewDecodes = 0;
+    QTimer *m_marketStatsRefresh = nullptr;
+    int m_marketPageBuilds = 0;
     std::unique_ptr<forkmesh::market::PackageRegistry> m_packageRegistry;
     std::unique_ptr<forkmesh::capture::CaptureFeature> m_captureFeature;
     std::unique_ptr<forkmesh::ledger::LedgerFeature> m_ledgerFeature;

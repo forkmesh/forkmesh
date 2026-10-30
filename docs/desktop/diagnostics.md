@@ -757,6 +757,49 @@ returned, so summed frame totals overstate a function's own cost.
     `ActionStore::appendLog`, `cancelSupersededRuns`) come from binaries
     built before their fixes; the current code already writes from worker
     threads.
+- **Market page build (report #18, 2026-10-30).** The four newest stalls
+  (`STALL-20261030T125913809-p2206072-0014` to `-0017`, 7.9 s, 6.9 s, 1.1 s
+  and 1.3 s) were one Market open: `refreshMarketPage` from `showSection`,
+  then again from the `/api/market/installs` and
+  `/api/market/reviews/summary` replies, then style polish of the ~10,000
+  new widgets (widgets 10,072 -> 20,133 in the Qt runtime samples).
+  - The build itself was about 0.5 s of each rebuild; ~2.8 s was Qt polishing
+    the new cards. Adding a card to a polished list posts a `PolishRequest`,
+    and `ensurePolished` polishes every child, hidden ones included. 37 of a
+    Next card's 52 widgets were its details pane (pane screenshot, facts,
+    trust row, permission list, pane buttons), built for every card in all
+    three lists though only the opened card shows it. `MarketNextCard` now
+    builds the details the first time the card opens; the card's own
+    settings, action, stats, places and nested-package widgets are parked
+    hidden in the empty details widget, so `marketPackageAction-*` and the
+    other per-card names still resolve.
+  - The install-count and rating replies each rebuilt the whole page. Both
+    now go through `receivePackageInstallCounts` /
+    `receivePackageMarketScores` into `queueMarketStatsRefresh`, a 250 ms
+    single-shot timer that rebuilds once, only while the Market tabs are
+    visible; a hidden Market picks the numbers up on its next open, and any
+    other rebuild cancels the queued one.
+  - `PackageRegistry::package` scanned the catalog and `nestedPackages`
+    called `marketParent` (two more scans) for every package, about 13
+    million string compares per build with 129 packages. Both read
+    `m_packageIndex` / `m_nestedPackages`, rebuilt by `reindex()` whenever
+    `loadCatalog` changes the list.
+  - `applyMarketPreview` walked the whole window twice for each decoded
+    preview. Previews that land within 50 ms are applied together by
+    `flushMarketPreviews` in one walk.
+  - The card constructor no longer clamps the summary at its pre-layout
+    width or repolishes the card; the first resize clamps it.
+  - Measured with `forkmesh-window-tests --market-view-only` (ctest
+    `forkmesh-market-view-window-tests`), offscreen at 1440×900: opening the
+    Market 3.9 s -> 1.6 s, one rebuild 3.1–3.4 s -> 1.2 s, and a first open
+    that gets both stats replies now builds twice instead of three times.
+  - No change: the `cancelSupersededRuns`, `ChatDevice::nextCounter`,
+    `PromptDraftStore::store`, `AgentStore::saveSession` and
+    `actionNodeLabels` groups were last logged on 2026-10-24/25, by binaries
+    built before their fixes. `hiddenunicode::guardWidget` shows up in the
+    samples only as the application event filter on Polish events; it does
+    three `qobject_cast`s. The "list rows stack one per row with a small
+    preview" check in `--market-view-only` failed before this change too.
 
 ### Startup: installed package pages after first paint (2026-10-25)
 

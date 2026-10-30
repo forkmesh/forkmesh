@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Market", "text": "The desktop Market opens more than twice as fast, and download counts and ratings arriving no longer redraw the whole page twice."},
   {"date": "2026-10-30", "area": "Market", "text": "Market cards on the desktop show whether a plugin runs separately from the core and how much memory it uses, and installed plugins have an Open button."},
   {"date": "2026-10-30", "area": "Desktop", "text": "The desktop DJ studio's TAP button and BPM figure now tap the tempo on each press, and a new AUTO button finds the BPM from the audio, including for songs played before."},
   {"date": "2026-10-30", "area": "Desktop", "text": "On Linux, a ForkMesh app-menu icon left over from an old install now opens the current app instead of an outdated copy that stopped with a mirror Actions error."},

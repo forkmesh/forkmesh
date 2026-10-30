@@ -11349,8 +11349,87 @@ void checkMarketNextView(MainWindow &window)
     MainWindow::applyTheme();
     window.resize(1440, 900);
     window.show();
+    QElapsedTimer marketOpen;
+    marketOpen.start();
     window.testShowMarketSection();
+    QApplication::processEvents();
+    const qint64 marketOpenMs = marketOpen.elapsed();
     settle();
+    QElapsedTimer marketRebuild;
+    marketRebuild.start();
+    window.testSetPackageInstallCounts({});
+    QApplication::processEvents();
+    const qint64 marketRebuildMs = marketRebuild.elapsed();
+    QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    settle();
+    qInfo("Market open took %lld ms, one rebuild %lld ms", marketOpenMs,
+          marketRebuildMs);
+    {
+        const auto waitForStats = [&window] {
+            QElapsedTimer wait;
+            wait.start();
+            while (window.testMarketStatsRefreshQueued() && wait.elapsed() < 5000) {
+                QApplication::processEvents();
+                QThread::msleep(10);
+            }
+            QApplication::processEvents();
+            QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        };
+        const auto notesStats = [&window] {
+            for (QLabel *stats : window.findChildren<QLabel *>(
+                     QStringLiteral("marketPackageStats"))) {
+                if (stats->property("packageId").toString() == QLatin1String("notes"))
+                    return stats->text();
+            }
+            return QString();
+        };
+        QHash<QString, QPair<qint64, qint64>> arrivedCounts;
+        arrivedCounts.insert(QStringLiteral("notes"), qMakePair(qint64(512), qint64(300)));
+        MarketPackageScore arrivedScore;
+        arrivedScore.ratingAverage = 4.0;
+        arrivedScore.ratingCount = 3;
+        const int buildsBefore = window.testMarketPageBuilds();
+        window.testReceivePackageInstallCounts(arrivedCounts);
+        window.testReceivePackageMarketScores({{QStringLiteral("notes"), arrivedScore}});
+        const bool deferred = window.testMarketStatsRefreshQueued() &&
+            window.testMarketPageBuilds() == buildsBefore;
+        waitForStats();
+        const int buildsAfter = window.testMarketPageBuilds();
+        const QString shown = notesStats();
+        check(deferred && buildsAfter == buildsBefore + 1 &&
+                  shown.contains(QStringLiteral("512 downloads")) &&
+                  shown.contains(QStringLiteral("3 ratings")),
+              QStringLiteral("install counts and ratings arriving together rebuild the "
+                             "open Market once (deferred=%1, builds %2 -> %3, stats \"%4\")")
+                  .arg(deferred)
+                  .arg(buildsBefore)
+                  .arg(buildsAfter)
+                  .arg(shown));
+
+        window.testShowHomeSection();
+        QApplication::processEvents();
+        const int buildsHidden = window.testMarketPageBuilds();
+        arrivedCounts.insert(QStringLiteral("notes"), qMakePair(qint64(640), qint64(301)));
+        window.testReceivePackageInstallCounts(arrivedCounts);
+        waitForStats();
+        const int buildsAfterHidden = window.testMarketPageBuilds();
+        window.testShowMarketSection();
+        QApplication::processEvents();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        check(buildsAfterHidden == buildsHidden &&
+                  notesStats().contains(QStringLiteral("640 downloads")),
+              QStringLiteral("counts arriving while the Market is hidden wait for the "
+                             "next open instead of rebuilding it (builds %1 -> %2, "
+                             "stats \"%3\")")
+                  .arg(buildsHidden)
+                  .arg(buildsAfterHidden)
+                  .arg(notesStats()));
+        window.testSetPackageInstallCounts({});
+        window.testSetPackageMarketScores({});
+        QApplication::processEvents();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        settle();
+    }
 
     auto *marketList = window.findChild<QScrollArea *>(QStringLiteral("marketList"));
     auto *gridButton =
