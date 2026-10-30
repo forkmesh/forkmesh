@@ -39,6 +39,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
@@ -1653,6 +1654,13 @@ MarketingFeature::MarketingFeature(
                 return editPostedLink(value.toObject());
         }
     });
+    connect(m_detailSnapshots, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
+        const QString id = m_detailSnapshots->item(item->row(), 0)->data(Qt::UserRole).toString();
+        for (const QJsonValue &value : std::as_const(m_metrics)) {
+            if (!id.isEmpty() && text(value.toObject(), "id") == id)
+                return editMetric(value.toObject(), item->column());
+        }
+    });
     connect(m_detailAds, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
         const QString id = m_detailAds->item(item->row(), 0)->data(Qt::UserRole).toString();
         for (const QJsonValue &value : std::as_const(m_ads)) {
@@ -3027,6 +3035,69 @@ void MarketingFeature::addMetric(const QString &preset)
     });
 }
 
+void MarketingFeature::editMetric(const QJsonObject &metric, int column)
+{
+    const QString id = text(metric, "id");
+    if (id.isEmpty())
+        return;
+    static constexpr const char *keys[] = {"followers", "following", "posts", "reach", "engagements",
+                                           "views", "visits", "stars", "forks"};
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Correct recorded numbers"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *intro = new QLabel(QStringLiteral("%1 numbers recorded %2 · %3")
+        .arg(channelName(text(metric, "channel"), m_settings, m_channelCatalog),
+             timestamp(qint64(number(metric, "observedAt"))),
+             sourceLabel(text(metric, "source"))));
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+    auto *form = new QFormLayout;
+    QList<std::pair<const char *, QLineEdit *>> edits;
+    QWidget *focus = nullptr;
+    for (int index = 0; index < int(std::size(keys)); ++index) {
+        if (m_detailSnapshots->isColumnHidden(index + 1) && column != index + 1 && number(metric, keys[index]) <= 0)
+            continue;
+        auto *edit = lineEdit(QString::number(qint64(number(metric, keys[index]))));
+        edit->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("\\d{1,13}")), edit));
+        form->addRow(m_detailSnapshots->horizontalHeaderItem(index + 1)->text(), edit);
+        edits.append({keys[index], edit});
+        if (column == index + 1)
+            focus = edit;
+    }
+    auto *note = lineEdit(text(metric, "note"));
+    note->setMaxLength(500);
+    form->addRow(QStringLiteral("Note"), note);
+    if (column == 11 || !focus)
+        focus = note;
+    layout->addLayout(form);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    focus->setFocus();
+    if (auto *line = qobject_cast<QLineEdit *>(focus))
+        line->selectAll();
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    QJsonObject body;
+    for (const auto &[key, edit] : std::as_const(edits)) {
+        const qint64 value = edit->text().toLongLong();
+        if (value != qint64(number(metric, key)))
+            body.insert(QString::fromLatin1(key), value);
+    }
+    if (note->text().trimmed() != text(metric, "note"))
+        body.insert(QStringLiteral("note"), note->text().trimmed());
+    if (body.isEmpty())
+        return;
+    request(QByteArrayLiteral("PATCH"), organizationPath(QStringLiteral("/metrics/") + id),
+            body, [this](bool ok, const QJsonObject &, const QString &error) {
+        if (!ok)
+            return setStatus(QStringLiteral("Numbers were not corrected: %1").arg(error), true);
+        setStatus(QStringLiteral("Recorded numbers corrected. Updating dashboard statistics…"));
+        loadOrganization();
+    });
+}
+
 void MarketingFeature::renderAds()
 {
     const QString dash = QString::fromUtf8("\xE2\x80\x94");
@@ -4307,13 +4378,17 @@ void MarketingFeature::renderChannelDetail()
         const QJsonObject &snapshot = *it;
         const int snapshotRow = m_detailSnapshots->rowCount();
         m_detailSnapshots->insertRow(snapshotRow);
-        m_detailSnapshots->setItem(snapshotRow, 0, new QTableWidgetItem(timestamp(qint64(number(snapshot, "observedAt")))));
+        auto *recordedCell = new QTableWidgetItem(timestamp(qint64(number(snapshot, "observedAt"))));
+        recordedCell->setData(Qt::UserRole, text(snapshot, "id"));
+        m_detailSnapshots->setItem(snapshotRow, 0, recordedCell);
         int column = 1;
         for (const char *key : snapshotKeys)
             m_detailSnapshots->setItem(snapshotRow, column++, numberItem(
                 missing(snapshot, key) ? kDash : fullCount(number(snapshot, key))));
         m_detailSnapshots->setItem(snapshotRow, 10, new QTableWidgetItem(sourceLabel(text(snapshot, "source"))));
         m_detailSnapshots->setItem(snapshotRow, 11, new QTableWidgetItem(text(snapshot, "note")));
+        for (int column = 0; column < m_detailSnapshots->columnCount(); ++column)
+            m_detailSnapshots->item(snapshotRow, column)->setToolTip(QStringLiteral("Double-click to correct these numbers"));
     }
     m_detailSnapshotsPanel->hint()->setText(history.isEmpty()
         ? QStringLiteral("No numbers recorded yet. Refresh %1 or log its numbers.").arg(name)
