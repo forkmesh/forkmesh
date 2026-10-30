@@ -706,16 +706,20 @@ void FaceChangerFeature::setStatus(const QString &text, bool error)
 
 namespace {
 
-const forkmesh::market::NativePackageRegistration faceChangerRegistration({
-    QStringLiteral("builtin:face-changer"),
-    {QStringLiteral("extension.native")},
-    QStringLiteral("Face Changer"),
-    QStringLiteral("person"),
-    QString(),
-    QString(),
-    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
-        return new forkmesh::facechanger::FaceChangerFeature(host, parent);
-    },
-});
+const forkmesh::market::NativePackageRegistration faceChangerRegistration([] {
+    forkmesh::market::NativePackageContribution contribution{
+        QStringLiteral("builtin:face-changer"),
+        {QStringLiteral("extension.native")},
+        QStringLiteral("Face Changer"),
+        QStringLiteral("person"),
+        QString(),
+        QString(),
+        [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+            return new forkmesh::facechanger::FaceChangerFeature(host, parent);
+        },
+    };
+    contribution.gpuSurface = true;
+    return contribution;
+}());
 
 }
