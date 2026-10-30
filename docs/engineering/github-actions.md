@@ -306,6 +306,58 @@ Run one spec against the local Worker with
 `CI=1 FORKMESH_BROWSER_FULL=1 npx playwright test tests/<spec> --retries=0`
 in `app/browser_tests`.
 
+## A passing retry that still fails the run
+
+Run 41044496008 (b3fd863c34, 2026-10-30) went red with 190 passed, 2 flaky
+and "1 error was not a part of any test". Every test had passed by its retry.
+The extra error was `page.evaluate: Target page, context or browser has been
+closed` from `chat-view-once.spec.js`. Each recorder spec opens the dialog
+with `const framePromise = page.evaluate(() => window.harness.record(...))`
+and awaits it only after it sends. When an assertion fails first, Playwright
+closes the page, the promise rejects with nothing listening, and the runner
+counts that rejection as a worker error, which exits 1 whatever the retry
+does. The specs now call `framePromise.catch(() => {})` straight away and
+still `await framePromise` later, so a real failure still fails the test. Any
+promise a spec starts and awaits later needs the same.
+
+The first attempt of "video messages record the chosen face and background"
+failed under load. With the spec pinned to two CPUs (`taskset -c 0,1`) it
+failed 2 runs in 6, always with "The face or background could not start here"
+about 4 seconds after the background was picked. Picking a face and then a
+background starts two face stages at once, and each took 11 to 14 seconds to
+become ready on SwiftShader. Logging each stage showed three causes:
+
+- The face also picks its voice ("theo" for Theo), and `openViewOnceCapture`
+  started the voice stage only after the face stage was ready. By then the
+  face models held the CPU, and the voice worklet's `addModule` ran past its
+  6-second limit (`MODULE_TIMEOUT_MS` in `chat-call-voice.js`) with "voice
+  module timed out". The recorder then blamed the face, because a face filter
+  was active. The voice stage now starts first, since its worklet is small and
+  the face stage has a 20-second budget. A failure is tagged with the stage
+  that threw, and a voice failure shows the voice message. "the face's voice
+  starts before the face, and a voice that cannot start says so" covers both.
+  With all three changes the same two-CPU run passed 8 in 8 with retries off.
+- The recorder showed "The face or background could not start here" when the
+  older stage failed, even though the user had already moved on and the newer
+  stage was still loading or already showing. `openCapture` in
+  `app/public/chat-view-once-recorder.js` now turns a failure from a stale
+  generation into the same `superseded` error that a stale success already
+  gave, so only the current attempt can change the status. "a face that fails
+  after a newer choice started leaves the newer preview alone" covers it and
+  fails without the change.
+- The harness kept whichever stage resolved last as `window.harness.faceStage`.
+  When the older, already stopped stage finished second, the spec read
+  `background: ""`. The harness now notes when the recorder stops a stage and
+  reads the newest one still running. Ordering by request does not work: the
+  voice stage runs first, so an older capture can reach its face stage after
+  a newer one.
+
+`dashboard-settings-agent-profiles.spec.js` (175) read the desktop's
+`terminal.start` call right after the modal's title changed, but
+`showAgentLoginModal` draws the title before `createAgentLoginTerminal`
+starts the terminal. The spec polls for the call with `expect.poll`, as it
+does for `terminal.detach`.
+
 ## Reproducing the browser suites locally
 
 `npm run test:daily-interface` (App browser tests) starts the Python Worker

@@ -432,7 +432,13 @@ API (`app/src/chat_direct_media_api.py`, under
   is opened, expired or withdrawn, because it keeps no local DM history.
 - Recording filters reuse the call engine's face, background and voice
   stages ([chat-direct-calls.md](chat-direct-calls.md)); if a requested stage
-  cannot start, nothing is recorded rather than sending raw media.
+  cannot start, nothing is recorded rather than sending raw media. The voice
+  stage starts before the face stage, so the face models cannot starve the
+  voice worklet's load, and the status names the stage that failed. Each change
+  of face or background starts a new capture; an older one that fails after
+  that is dropped like one that succeeds late, so only the latest choice sets
+  the status ([github-actions.md](../engineering/github-actions.md), "A
+  passing retry that still fails the run").
 - Screen capture cannot be prevented; platforms that report it blank the
   viewer.
 
