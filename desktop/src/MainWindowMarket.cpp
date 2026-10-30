@@ -70,6 +70,9 @@
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#include <QRhiWidget>
+#endif
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QButtonGroup>
@@ -5005,6 +5008,34 @@ void MainWindow::buildDeferredNativePackagePages()
     m_staggerNativePackagePages = true;
     syncNativePackagePages();
     m_staggerNativePackagePages = false;
+}
+
+void MainWindow::prepareStartupComposition()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    const QString platform = QGuiApplication::platformName();
+    if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal") ||
+        !m_packageRegistry || !m_packageRegistry->isReady() ||
+        findChild<QRhiWidget *>(QStringLiteral("startupGpuComposition"),
+                                Qt::FindDirectChildrenOnly))
+        return;
+    for (const PackageManifest &manifest : m_packageRegistry->packages()) {
+        if (!m_packageRegistry->isInstalledHere(manifest.id))
+            continue;
+        const forkmesh::market::NativePackageContribution *contribution =
+            forkmesh::market::nativePackageContribution(
+                manifest.desktopEntrypoint, manifest.type);
+        if (!contribution || !contribution->factory || !contribution->gpuSurface)
+            continue;
+        auto *composition = new QRhiWidget(this);
+        composition->setObjectName(QStringLiteral("startupGpuComposition"));
+        composition->hide();
+        forkmesh::logStartupTrace(
+            QStringLiteral("window composes on the GPU from the start for %1")
+                .arg(manifest.id));
+        return;
+    }
+#endif
 }
 
 void MainWindow::buildNextNativePackagePage(quint64 generation, int index)

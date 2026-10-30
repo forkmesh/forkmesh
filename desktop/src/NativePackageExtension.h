@@ -259,6 +259,7 @@ struct NativePackageContribution {
     NativePackageFactory chromeFactory;
     QStringList resourceProofs;
     QStringList accountPaths;
+    bool gpuSurface = false;
 };
 
 // Package translation units register their contribution while they are linked.
