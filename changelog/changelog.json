@@ -11,6 +11,17 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
+  {"date": "2026-10-30", "area": "Projects", "text": "Sending an approving quick reply on a pull request also adds the Thank you sticker to its description."},
+  {"date": "2026-10-30", "area": "Projects", "text": "Comparing two branches that are too far apart now says the comparison is too large instead of reporting the mirror as down."},
+  {"date": "2026-10-30", "area": "Projects", "text": "The Tasks board works on self-hosted instances, where it belongs to the instance's own organization."},
+  {"date": "2026-10-30", "area": "Projects", "text": "The Insights leaderboard gives everyone a distinct rank, counts opened pull requests and issues, and shows the top three on a podium."},
+  {"date": "2026-10-30", "area": "Server", "text": "The admin Update page is shorter: one Version card, the Update card and one Automatic updates card, and it no longer says an update is available right after one was installed."},
+  {"date": "2026-10-30", "area": "Projects", "text": "Dismissed contribution tips stay dismissed however a repository was opened, the Issues and Pull requests views sidebar collapses from an icon at its top, and Top repositories picks up new forks on its own."},
+  {"date": "2026-10-30", "area": "Server", "text": "Updating a self-hosted instance retries the source download for a couple of minutes when its own forge is briefly unavailable, instead of failing at once."},
+  {"date": "2026-10-30", "area": "Settings", "text": "Instance admins can choose the Top repositories list (pinned repositories and how many forks each shows) in Settings, and a pinned name never picks a fork."},
+  {"date": "2026-10-30", "area": "Projects", "text": "Marking one of the last files viewed in a diff now keeps its header where it was instead of jumping to the file above."},
+  {"date": "2026-10-30", "area": "Projects", "text": "A person who reviews a pull request from two devices now shows as one reviewer with one vote, and the author's own second device no longer counts as an approval."},
   {"date": "2026-10-30", "area": "Market", "text": "Poker cards on the desktop always show their suits now, with proper pip layouts, framed court cards and a new card back."},
   {"date": "2026-10-30", "area": "Market", "text": "Poker on the desktop now uses the new table layout: the table fills the page with a player opposite you at the top, the table details and options float in the top corners, chat sits bottom left, and the bet slider and Fold, Check or Call and Raise buttons sit bottom right."},
   {"date": "2026-10-30", "area": "Market", "text": "The desktop Market opens more than twice as fast, and download counts and ratings arriving no longer redraw the whole page twice."},
