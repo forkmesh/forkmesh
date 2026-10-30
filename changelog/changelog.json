@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Market", "text": "Marketing's ready X post now has an optional field for the post's link when you mark it posted, so the link stays with the post's history."},
   {"date": "2026-10-30", "area": "Desktop", "text": "Marketing: double-click a row in a channel's Recorded numbers to correct its numbers, and the browser extension no longer reads a post's views on an X profile as the account's."},
   {"date": "2026-10-30", "area": "Chat", "text": "Video messages with a face and background start reliably on slower devices, and a voice that cannot start now says so instead of blaming the face."},
   {"date": "2026-10-30", "area": "iPhone", "text": "On iPhone Duo the row for the item open on the right stays highlighted in the list, as on the desktop."},

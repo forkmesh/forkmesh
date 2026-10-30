@@ -3504,6 +3504,24 @@ def test_every_surface_shows_the_ready_x_post_with_a_one_tap_post():
     assert "ACTION_SEND" in android and "com.twitter.android" in android
 
 
+def test_every_surface_takes_an_optional_link_when_marking_the_ready_post_posted():
+    desktop = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    ios = (REPO / "native" / "ios" / "ForkMesh" / "Features" / "Packages"
+           / "MarketingSections.swift").read_text()
+    android = (REPO / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com"
+               / "forkmesh" / "nativeapp" / "feature" / "market" / "MarketingScreens.kt").read_text()
+    android_model = (REPO / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com"
+                     / "forkmesh" / "nativeapp" / "market" / "MarketingModel.kt").read_text()
+    for source in (desktop, web, ios, android):
+        assert "Link to the post (optional)" in source
+    assert "data-marketing-ready-url" in web and "...(url ? { url } : {})" in web
+    assert 'body.insert(QStringLiteral("url"), url)' in desktop
+    assert 'status: "posted", url: url' in ios
+    assert 'closeReadyPost("posted", link.trim())' in android
+    assert 'url = if (status == "posted") url else ""' in android_model
+
+
 def test_a_rate_limited_reddit_refresh_is_named_falls_back_and_backs_off():
     runtime = Runtime()
     _configure(runtime, reddit="https://www.reddit.com/r/Forkmesh/")

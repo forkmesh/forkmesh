@@ -414,6 +414,8 @@ private:
     QString m_readyPostSeen;
     QString m_readyPostError;
     QString m_readyPostImageId;
+    QString m_readyPostUrl;
+    QString m_readyPostUrlId;
     QPixmap m_readyPostImage;
     bool m_readyPostLoading = false;
     bool m_readyPostSaving = false;
