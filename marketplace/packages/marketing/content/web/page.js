@@ -9,7 +9,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     experiments: [], experimentsSummary: {}, funnel: [], funnelReport: {},
     redditThreads: [], redditDesk: {}, posts: [], channelPlaybooks: {}, performance: null,
     campaigns: [], campaignTemplates: [], keywords: [], suggestions: [], assistantAvailable: false,
-    traffic: null, assistant: null, emailSuggestions: null, discordPosts: null, readyPosts: {}, readyPost: null,
+    traffic: null, assistant: null, emailSuggestions: null, discordPosts: null, readyPosts: {}, readyPost: null, readyPostUrl: null,
     appStore: null,
   }, view: {
     rangeDays: 30, chartMetric: "reach", channelSort: "reach", status: "", contentLimit: 50,
@@ -2193,7 +2193,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const actions = [`<button data-marketing-ready-copy type="button" class="fm-btn fm-btn-sm">Copy text</button>`,
       image ? `<a href="${escapeHtml(image)}" download="${escapeHtml(`x-post-${post.id.slice(0, 8)}.${extension}`)}" class="fm-btn fm-btn-sm">Download image</a>` : "",
       String(post.intentUrl || "").startsWith("https://") ? `<button data-marketing-ready-share type="button" class="fm-btn fm-btn-sm" title="Share the image and text to the X app, or open the X composer with the text filled in">Post on X ↗</button>` : "",
-      canCloseReadyPost() ? `<button data-marketing-ready-close="posted" type="button" class="fm-btn fm-btn-sm">Mark posted</button><button data-marketing-ready-close="skipped" type="button" class="mk-link">Skip</button>` : ""];
+      canCloseReadyPost() ? `<input data-marketing-ready-url type="url" inputmode="url" maxlength="1000" class="mk-input mk-ready-url" value="${escapeHtml(state.marketing.readyPostUrl?.id === post.id ? state.marketing.readyPostUrl.url : "")}" placeholder="Link to the post (optional)" aria-label="Link to the X post, saved when you mark it posted"><button data-marketing-ready-close="posted" type="button" class="fm-btn fm-btn-sm">Mark posted</button><button data-marketing-ready-close="skipped" type="button" class="mk-link">Skip</button>` : ""];
     return `<div class="mk-mail mk-ready" data-marketing-ready-post><b>Ready to post</b>
       ${picture}
       <p class="mk-ready-text">${escapeHtml(post.text)}</p>
@@ -2233,12 +2233,16 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   }
   async function closeReadyPost(status, button) {
     const org = state.marketing.organization, post = shownReadyPost(); if (!post) return;
+    const url = status === "posted" && state.marketing.readyPostUrl?.id === post.id ? state.marketing.readyPostUrl.url.trim() : "";
+    if (url && !/^https:\/\//i.test(url)) { message("error", "The post link must start with https://."); return; }
     button.disabled = true;
-    try { const payload = await request(orgPath("/ready-post"), "PATCH", { channel: "x", id: post.id, status });
+    try { const payload = await request(orgPath("/ready-post"), "PATCH", { channel: "x", id: post.id, status, ...(url ? { url } : {}) });
+      state.marketing.readyPostUrl = null;
       setReadyPost(org, payload.readyPost);
       message("notice", status === "posted" ? "Marked as posted. Herald is writing the next post." : "Skipped. Herald is writing the next post."); }
     catch (error) {
       if (error.status === 409 && error.payload?.readyPost) { setReadyPost(org, error.payload.readyPost); message("error", "The ready post changed while you were looking; this is the new one."); }
+      else if (error.payload?.error === "invalid_post_url") { button.disabled = false; message("error", "That link is not a post or page address. Paste the post's https:// link, or leave it empty."); }
       else { button.disabled = false; message("error", `Could not update the ready post: ${error.message}`); }
     }
   }
@@ -3398,6 +3402,10 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-x-connect-form]`)?.addEventListener("submit", saveXConnection);
     $(`[data-marketing-x-disconnect]`)?.addEventListener("click", () => void disconnectX());
     $(`[data-marketing-x-guide]`)?.addEventListener("click", startXSetup);
+    view?.addEventListener("input", (event) => {
+      const field = event.target.closest?.("[data-marketing-ready-url]"), post = field && shownReadyPost();
+      if (post) state.marketing.readyPostUrl = { id: post.id, url: field.value };
+    });
     view?.addEventListener("change", (event) => {
       const box = event.target.closest?.("[data-marketing-campaign-task]");
       if (box) void toggleCampaignTask(box.dataset.marketingCampaignTask, Number(box.dataset.index), box.checked);
