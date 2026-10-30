@@ -581,7 +581,7 @@ void DjStudioFeature::deckMenu(int deck, const QPoint &global)
         });
         menu.addAction(QStringLiteral("Tags and Playlists…"), this, [this, deck]() { openSong(m_model->deck(deck).videoId); });
         menu.addSeparator();
-        menu.addAction(QStringLiteral("Detect the BPM Again"), this, [this, deck]() { m_model->detectBpm(deck); });
+        menu.addAction(QStringLiteral("Find the BPM from the Audio"), this, [this, deck]() { m_model->autoBpm(deck); });
         menu.addAction(QStringLiteral("Clear the BPM"), this, [this, deck]() { m_model->clearBpm(deck); });
         menu.addAction(QStringLiteral("Clear the Hot Cues"), this, [this, deck]() {
             for (int pad = 0; pad < 8; ++pad)

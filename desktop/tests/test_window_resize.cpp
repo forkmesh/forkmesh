@@ -21850,6 +21850,55 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
           QStringLiteral("the optional IDE package is catalogued without a "
                          "base-system install action"));
 
+    const QList<QPushButton *> marketOpens = marketList
+        ? marketList->findChildren<QPushButton *>(
+              QRegularExpression(QStringLiteral("^marketPackageOpen-")))
+        : QList<QPushButton *>{};
+    bool opensOnlyInstalled = !marketOpens.isEmpty();
+    QStringList openIds;
+    for (QPushButton *open : marketOpens) {
+        const QString id = open->objectName().mid(
+            QStringLiteral("marketPackageOpen-").size());
+        openIds << id;
+        opensOnlyInstalled = opensOnlyInstalled && installedPackageCards.contains(id);
+    }
+    bool openShowsPage = false;
+    if (!marketOpens.isEmpty()) {
+        const QString id = openIds.first();
+        marketOpens.first()->click();
+        QApplication::processEvents();
+        for (QWidget *page : window.findChildren<QWidget *>()) {
+            if (page->property("forkmeshPackageId").toString() == id &&
+                page->isVisibleTo(&window))
+                openShowsPage = true;
+        }
+        window.testShowMarketSection();
+        QApplication::processEvents();
+    }
+    check(opensOnlyInstalled && openShowsPage,
+          QStringLiteral("installed packages with a page have an Open button "
+                         "on their Market card that shows the page (%1)")
+              .arg(openIds.join(QLatin1Char(','))));
+    const QList<QLabel *> footprints = marketList
+        ? marketList->findChildren<QLabel *>(QStringLiteral("marketPackageFootprint"))
+        : QList<QLabel *>{};
+    bool footprintsSayWhere = !footprints.isEmpty();
+    bool captureBuiltIn = false;
+    for (QLabel *footprint : footprints) {
+        const bool separate = footprint->property("separate").toBool();
+        footprintsSayWhere = footprintsSayWhere &&
+            footprint->text().startsWith(separate ? QStringLiteral("Separate from the core")
+                                                  : QStringLiteral("Built into the core")) &&
+            !footprint->toolTip().isEmpty();
+        if (footprint->property("packageId").toString() == QLatin1String("capture"))
+            captureBuiltIn = !separate;
+    }
+    check(footprintsSayWhere && captureBuiltIn,
+          QStringLiteral("Market cards say whether a desktop package is separate "
+                         "from the core, and core-linked Capture is built in "
+                         "(%1 footprint lines)")
+              .arg(footprints.size()));
+
     // Popularity counts: a shelf that has heard nothing from the relay shows
     // no number at all, rather than a "0 downloads" the relay never reported.
     const bool noStatsBeforeAnyReport = !marketList || marketList

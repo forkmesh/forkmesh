@@ -34,6 +34,7 @@ struct DjEffect {
 };
 
 enum class DjFxSlot { Echo, Reverb, Flanger };
+enum class DjBpmSource { None, Tapped, Found };
 
 struct DjDeck {
     int index = 0;
@@ -88,7 +89,11 @@ struct DjDeck {
     double loudest = 0;
     QVector<qint16> pcm;
     QVector<char> heard;
+    QVector<char> captured;
     bool bpmQueued = false;
+    bool bpmWanted = false;
+    DjBpmSource bpmSource = DjBpmSource::None;
+    int bpmTriedBars = 0;
     bool waveDirty = false;
     double waveSaved = 0;
     DjSpin spin;
@@ -114,6 +119,9 @@ public:
     static constexpr int pcmRate = 11025;
     static constexpr int barsPerSecond = 20;
     static constexpr double longestPcm = 15 * 60;
+    static constexpr int autoBpmFirstSeconds = 15;
+    static constexpr int autoBpmSeconds = 25;
+    static constexpr int autoBpmRetrySeconds = 15;
     static const QList<double> &loopBeats();
 
     struct Host {
@@ -211,6 +219,8 @@ public:
     void tapTempo(int index);
     void clearBpm(int index);
     void detectBpm(int index, bool quietly = false);
+    void autoBpm(int index);
+    int capturedSeconds(int index) const;
     void toggleLoop(int index);
     void loopIn(int index);
     void loopOut(int index);

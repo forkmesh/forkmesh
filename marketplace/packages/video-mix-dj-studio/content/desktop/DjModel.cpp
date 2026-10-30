@@ -605,10 +605,13 @@ void DjModel::prepare(int index, const QString &id, const QString &title, const 
     deck.author = author.left(200);
     deck.bars.clear();
     deck.heard.clear();
+    deck.captured.clear();
     deck.pcm.clear();
     deck.loudest = 0;
     deck.waveDirty = false;
     deck.bpmQueued = false;
+    deck.bpmWanted = false;
+    deck.bpmTriedBars = 0;
     deck.time = start;
     deck.tickAt = now();
     deck.duration = 0;
@@ -623,6 +626,7 @@ void DjModel::prepare(int index, const QString &id, const QString &title, const 
     if (!keepSettings) {
         deck.cue = 0;
         deck.bpm = 0;
+        deck.bpmSource = DjBpmSource::None;
         deck.loop = false;
         deck.hotcues.fill(-1);
         deck.tap.clear();
@@ -667,6 +671,7 @@ void DjModel::eject(int index)
     deck.author.clear();
     deck.bars.clear();
     deck.heard.clear();
+    deck.captured.clear();
     deck.pcm.clear();
     deck.loudest = 0;
     deck.time = 0;
@@ -676,6 +681,11 @@ void DjModel::eject(int index)
     deck.advancing = false;
     deck.cue = 0;
     deck.bpm = 0;
+    deck.bpmSource = DjBpmSource::None;
+    deck.bpmQueued = false;
+    deck.bpmWanted = false;
+    deck.bpmTriedBars = 0;
+    deck.tap.clear();
     deck.loop = false;
     deck.hotcues.fill(-1);
     deck.sample = {};
@@ -1006,58 +1016,110 @@ void DjModel::sync(int index)
     emitDeck(index);
 }
 
+namespace {
+
+int longestRun(const QVector<char> &bars, int *start = nullptr)
+{
+    int best = 0;
+    int bestStart = 0;
+    int runStart = -1;
+    for (int i = 0; i <= bars.size(); ++i) {
+        const bool on = i < bars.size() && bars.at(i);
+        if (on && runStart < 0)
+            runStart = i;
+        if (!on && runStart >= 0) {
+            if (i - runStart > best) {
+                best = i - runStart;
+                bestStart = runStart;
+            }
+            runStart = -1;
+        }
+    }
+    if (start)
+        *start = bestStart;
+    return best;
+}
+
+}
+
 void DjModel::tapTempo(int index)
 {
     DjDeck &deck = m_decks[index];
-    if (!deck.loaded())
+    if (!deck.loaded()) {
+        show(QStringLiteral("Load a song on %1 first, then tap on the beat.").arg(deckName(index)));
         return;
+    }
     if (const auto bpm = deck.tap.tap(now())) {
         deck.bpm = *bpm / std::max(0.01, deck.effectiveRate());
+        deck.bpmSource = DjBpmSource::Tapped;
+        deck.bpmWanted = false;
         updateLoopLength(index);
+        show(QStringLiteral("%1 tapped at %2 BPM.").arg(deckName(index)).arg(*bpm, 0, 'f', 1));
         save();
-        emitDeck(index);
-    } else if (deck.bpm == 0) {
-        show(QStringLiteral("Keep tapping on the beat to set %1's BPM.").arg(deckName(index)));
+    } else {
+        const int left = std::max(1, 3 - deck.tap.count());
+        show(QStringLiteral("Keep tapping on the beat: %1 more for %2's BPM.").arg(left).arg(deckName(index)));
     }
+    emitDeck(index);
 }
 
 void DjModel::clearBpm(int index)
 {
-    m_decks[index].bpm = 0;
-    m_decks[index].tap.clear();
+    DjDeck &deck = m_decks[index];
+    deck.bpm = 0;
+    deck.bpmSource = DjBpmSource::None;
+    deck.bpmWanted = false;
+    deck.bpmTriedBars = 0;
+    deck.tap.clear();
     updateLoopLength(index);
     save();
     emitDeck(index);
+}
+
+int DjModel::capturedSeconds(int index) const
+{
+    return longestRun(m_decks[index].captured) / barsPerSecond;
+}
+
+void DjModel::autoBpm(int index)
+{
+    DjDeck &deck = m_decks[index];
+    if (!deck.loaded()) {
+        show(QStringLiteral("Load a song on %1 first.").arg(deckName(index)));
+        return;
+    }
+    if (deck.bpmQueued) {
+        show(QStringLiteral("Finding %1's BPM…").arg(deckName(index)));
+        return;
+    }
+    const int heard = capturedSeconds(index);
+    if (heard < autoBpmFirstSeconds) {
+        deck.bpmWanted = true;
+        show(QStringLiteral("%1's BPM will be found after %2 more seconds of playing.")
+                 .arg(deckName(index))
+                 .arg(autoBpmFirstSeconds - heard));
+        emitDeck(index);
+        return;
+    }
+    deck.bpmWanted = true;
+    detectBpm(index);
 }
 
 void DjModel::detectBpm(int index, bool quietly)
 {
     DjDeck &deck = m_decks[index];
     const QString id = deck.videoId;
-    if (id.isEmpty() || deck.heard.isEmpty()) {
+    if (id.isEmpty() || deck.captured.isEmpty()) {
         if (!quietly)
-            show(QStringLiteral("%1 has not been heard long enough yet: let it play, or tap the BPM box on the beat.").arg(deckName(index)));
+            show(QStringLiteral("%1 has not been heard yet: let it play, or tap TAP on the beat.").arg(deckName(index)));
         return;
     }
     const int perBar = pcmRate / barsPerSecond;
     int bestStart = 0;
-    int bestLength = 0;
-    int runStart = -1;
-    for (int i = 0; i <= deck.heard.size(); ++i) {
-        const bool on = i < deck.heard.size() && deck.heard.at(i);
-        if (on && runStart < 0)
-            runStart = i;
-        if (!on && runStart >= 0) {
-            if (i - runStart > bestLength) {
-                bestLength = i - runStart;
-                bestStart = runStart;
-            }
-            runStart = -1;
-        }
-    }
-    if (bestLength < barsPerSecond * 12) {
+    const int bestLength = longestRun(deck.captured, &bestStart);
+    if (bestLength < barsPerSecond * autoBpmFirstSeconds) {
         if (!quietly)
-            show(QStringLiteral("%1 needs about 15 seconds of playing to find its BPM.").arg(deckName(index)));
+            show(QStringLiteral("%1 needs about %2 seconds of playing to find its BPM.").arg(deckName(index)).arg(autoBpmFirstSeconds));
         return;
     }
     const qsizetype from = qsizetype(bestStart) * perBar;
@@ -1066,21 +1128,33 @@ void DjModel::detectBpm(int index, bool quietly)
         return;
     const QVector<qint16> samples = deck.pcm.mid(from, length);
     deck.bpmQueued = true;
+    deck.bpmTriedBars = bestLength;
+    emitDeck(index);
     QtConcurrent::run([samples]() { return bpm::detect(samples, pcmRate); })
         .then(this, [this, index, id, quietly](std::optional<double> found) {
             DjDeck &current = m_decks[index];
             if (current.videoId != id)
                 return;
-            if (quietly && current.bpm > 0)
+            current.bpmQueued = false;
+            const bool wanted = current.bpmWanted;
+            if (quietly && current.bpm > 0 && !wanted) {
+                emitDeck(index);
                 return;
+            }
             if (!found) {
-                if (!quietly)
-                    show(QStringLiteral("No steady beat found on %1: tap the BPM box on the beat instead.").arg(deckName(index)));
+                if (!quietly || wanted)
+                    show(QStringLiteral("No steady beat found on %1 yet: tap TAP on the beat instead.").arg(deckName(index)));
+                current.bpmWanted = false;
+                emitDeck(index);
                 return;
             }
             current.bpm = *found;
+            current.bpmSource = DjBpmSource::Found;
+            current.bpmWanted = false;
             current.tap.clear();
             current.waveDirty = true;
+            if (!quietly || wanted)
+                show(QStringLiteral("%1 is at %2 BPM.").arg(deckName(index)).arg(current.shownBpm(), 0, 'f', 1));
             updateLoopLength(index);
             refreshSound(index);
             save();
@@ -1902,15 +1976,12 @@ void DjModel::handlePcm(int index, const QString &id, double at, const QByteArra
         deck.pcm[start + i] = qint16(raw[2 * i] | (raw[2 * i + 1] << 8));
     rebuildBars(index, start, end);
     deck.waveDirty = true;
-    if (deck.bpm <= 0 && !deck.bpmQueued) {
-        int run = 0;
-        int best = 0;
-        for (char on : deck.heard) {
-            run = on ? run + 1 : 0;
-            best = std::max(best, run);
-        }
-        if (best >= barsPerSecond * 25)
-            detectBpm(index, true);
+    if ((deck.bpm <= 0 || deck.bpmWanted) && !deck.bpmQueued) {
+        const int run = longestRun(deck.captured);
+        const int first = barsPerSecond * (deck.bpmWanted ? autoBpmFirstSeconds : autoBpmSeconds);
+        const int retry = deck.bpmTriedBars > 0 ? deck.bpmTriedBars + barsPerSecond * autoBpmRetrySeconds : 0;
+        if (run >= first && run >= retry && deck.bpmTriedBars < barsPerSecond * int(bpm::longest))
+            detectBpm(index, !deck.bpmWanted);
     }
 }
 
@@ -1924,6 +1995,8 @@ void DjModel::rebuildBars(int index, qsizetype from, qsizetype to)
         deck.bars.resize(last);
         deck.heard.resize(last, 0);
     }
+    if (deck.captured.size() < last)
+        deck.captured.resize(last, 0);
     const double lowAlpha = 1 - std::exp(-2 * M_PI * 250.0 / pcmRate);
     const double highAlpha = 1 - std::exp(-2 * M_PI * 2500.0 / pcmRate);
     for (int bar = first; bar < last; ++bar) {
@@ -1960,6 +2033,7 @@ void DjModel::rebuildBars(int index, qsizetype from, qsizetype to)
         out.high = highShare;
         out.mid = std::max(0.0, 1 - lowShare - highShare);
         deck.heard[bar] = 1;
+        deck.captured[bar] = 1;
         deck.loudest = std::max(deck.loudest, rms);
     }
 }
@@ -1989,6 +2063,7 @@ void DjModel::cacheWave(int index, bool force)
     const QJsonObject object{{QStringLiteral("v"), 1},
                              {QStringLiteral("duration"), deck.duration},
                              {QStringLiteral("bpm"), deck.bpm},
+                             {QStringLiteral("bpmTapped"), deck.bpmSource == DjBpmSource::Tapped},
                              {QStringLiteral("loudest"), deck.loudest},
                              {QStringLiteral("hotcues"), cues},
                              {QStringLiteral("bars"), QString::fromLatin1(bytes.toBase64())}};
@@ -2024,8 +2099,12 @@ void DjModel::readWave(int index)
         deck.heard[i] = level == 255 ? 0 : 1;
     }
     deck.loudest = 1;
-    if (deck.bpm <= 0)
+    if (deck.bpm <= 0) {
         deck.bpm = clampDouble(object.value(QStringLiteral("bpm")).toDouble(), 0, 250, 0);
+        deck.bpmSource = deck.bpm <= 0 ? DjBpmSource::None
+                         : object.value(QStringLiteral("bpmTapped")).toBool() ? DjBpmSource::Tapped
+                                                                              : DjBpmSource::Found;
+    }
     const double duration = object.value(QStringLiteral("duration")).toDouble();
     if (duration > 0 && deck.duration <= 0)
         deck.duration = duration;
@@ -2061,6 +2140,7 @@ QJsonObject DjModel::savedState() const
                                  {QStringLiteral("level"), deck.level},
                                  {QStringLiteral("rate"), deck.rate},
                                  {QStringLiteral("bpm"), deck.bpm},
+                                 {QStringLiteral("bpmTapped"), deck.bpmSource == DjBpmSource::Tapped},
                                  {QStringLiteral("repeats"), deck.repeats},
                                  {QStringLiteral("keylock"), deck.keylock},
                                  {QStringLiteral("position"), deck.position(at)},
@@ -2242,6 +2322,9 @@ void DjModel::restore()
         deck.pitchRange = clampDouble(stored.value(QStringLiteral("pitchRange")).toDouble(studio::pitchRange), 0.04, 0.5, studio::pitchRange);
         deck.rate = studio::clampRate(clampDouble(stored.value(QStringLiteral("rate")).toDouble(1), 0.25, 2, 1), deck.pitchRange);
         deck.bpm = clampDouble(stored.value(QStringLiteral("bpm")).toDouble(), 0, 250, 0);
+        deck.bpmSource = deck.bpm <= 0 ? DjBpmSource::None
+                         : stored.value(QStringLiteral("bpmTapped")).toBool() ? DjBpmSource::Tapped
+                                                                              : DjBpmSource::Found;
         deck.repeats = stored.value(QStringLiteral("repeats")).toBool();
         deck.keylock = stored.value(QStringLiteral("keylock")).toBool();
         deck.loopSize = std::clamp(stored.value(QStringLiteral("loopSize")).toInt(7), 0, int(loopBeats().size()) - 1);
