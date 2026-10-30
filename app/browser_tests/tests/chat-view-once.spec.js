@@ -73,7 +73,10 @@ const request = async (path, options = {}) => {
   return data;
 };
 const client = viewOnce.createViewOnceClient({ request });
-window.harness = { viewOnce, recorder, client, revoked: [] };
+window.harness = { viewOnce, recorder, client, revoked: [], faceStages: [] };
+Object.defineProperty(window.harness, "faceStage", {
+  get: () => window.harness.faceStages.filter((stage) => !stage.stopped).at(-1),
+});
 const revoke = URL.revokeObjectURL.bind(URL);
 URL.revokeObjectURL = (url) => { window.harness.revoked.push(url); revoke(url); };
 window.harness.useFilters = async () => {
@@ -84,7 +87,12 @@ window.harness.useFilters = async () => {
     face: support.faces || support.backgrounds
       ? async (stream, choice) => {
         const stage = await filters.startViewOnceFaceStage(stream, choice);
-        window.harness.faceStage = stage;
+        const stop = stage.stop;
+        stage.stop = () => {
+          stage.stopped = true;
+          return stop();
+        };
+        window.harness.faceStages.push(stage);
         return stage;
       }
       : null,
@@ -174,6 +182,7 @@ for (const kind of ["video", "voice"]) {
     await page.waitForFunction(() => window.harnessReady === true);
 
     const framePromise = page.evaluate((value) => window.harness.record(value), kind);
+    framePromise.catch(() => {});
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: /Start recording/ }).click();
@@ -246,6 +255,7 @@ test("holding the record button sends a voice message in a changed voice", async
   await page.waitForFunction(() => window.harnessReady === true);
   await page.evaluate(() => window.harness.useFilters());
   const framePromise = page.evaluate(() => window.harness.record("voice"));
+  framePromise.catch(() => {});
   const dialog = page.getByRole("dialog");
   const picker = dialog.getByRole("combobox", { name: "Voice for this message" });
   await expect(picker).toHaveValue("face");
@@ -480,6 +490,7 @@ test("video messages record the chosen face and background, and refuse to record
   expect(support.backgrounds).toBe(true);
 
   const framePromise = page.evaluate(() => window.harness.record("video"));
+  framePromise.catch(() => {});
   const dialog = page.getByRole("dialog");
   const face = dialog.getByRole("combobox", { name: "Face for this video message" });
   const background = dialog.getByRole("combobox", { name: "Background for this video message" });
@@ -536,4 +547,79 @@ test("video messages record the chosen face and background, and refuse to record
   expect(errors).toEqual([]);
   await context.close();
   await faceBrowser.close();
+});
+
+test("a face that fails after a newer choice started leaves the newer preview alone", async () => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4179",
+    permissions: ["camera", "microphone"],
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/view-once-harness", (route) =>
+    route.fulfill({ contentType: "text/html", body: HARNESS }));
+  await page.goto("/view-once-harness");
+  await page.waitForFunction(() => window.harnessReady === true);
+  await page.evaluate(() => window.harness.useFilters());
+  await page.evaluate(() => {
+    window.harness.recorder.registerViewOnceFilterStages({
+      face: (stream, choice) => new Promise((resolve, reject) => {
+        if (!choice.backgroundId) {
+          setTimeout(() => {
+            window.harness.staleFailed = true;
+            reject(new Error("no webgl"));
+          }, 1500);
+          return;
+        }
+        setTimeout(() => resolve({ track: stream.getVideoTracks()[0], stop() {} }), 200);
+      }),
+    });
+    window.harness.record("video");
+  });
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "Face for this video message" }).selectOption("theo");
+  await dialog.getByRole("combobox", { name: "Background for this video message" }).selectOption("office");
+  await expect(dialog.getByRole("status")).toHaveText("It disappears after it is watched once.");
+  await page.waitForFunction(() => window.harness.staleFailed === true);
+  await expect(dialog.getByRole("status")).toHaveText("It disappears after it is watched once.");
+  await expect(dialog.getByRole("button", { name: /Start recording/ })).toBeEnabled();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("the face's voice starts before the face, and a voice that cannot start says so", async () => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4179",
+    permissions: ["camera", "microphone"],
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/view-once-harness", (route) =>
+    route.fulfill({ contentType: "text/html", body: HARNESS }));
+  await page.goto("/view-once-harness");
+  await page.waitForFunction(() => window.harnessReady === true);
+  await page.evaluate(() => window.harness.useFilters());
+  await page.evaluate(() => {
+    window.harness.order = [];
+    window.harness.recorder.registerViewOnceFilterStages({
+      face: async (stream) => {
+        window.harness.order.push("face");
+        return { track: stream.getVideoTracks()[0], stop() {} };
+      },
+      voice: async (track, voiceId) => {
+        window.harness.order.push(`voice:${voiceId}`);
+        throw new Error("voice module timed out");
+      },
+    });
+    window.harness.record("video");
+  });
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "Face for this video message" }).selectOption("theo");
+  await expect(dialog.getByRole("status")).toHaveText(
+    "The voice changer could not start here. Choose “Your own voice” or try again.");
+  expect(await page.evaluate(() => window.harness.order)).toEqual(["voice:theo"]);
+  expect(errors).toEqual([]);
+  await context.close();
 });
