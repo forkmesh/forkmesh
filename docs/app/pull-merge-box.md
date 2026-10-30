@@ -105,6 +105,16 @@ so a pull approved by another contributor shows **Approved** while the
 Review row of the merge box still waits. Tests:
 `app/tests/test_pull_list_review_state.py`.
 
+On the pull page a reviewer is an account, not a key (`pullReviewerKey`): a
+person who reviews from a laptop and a phone signs with two keys but gets one
+row in Reviewers and one vote, as the relay's `merge_refusal` counts them.
+Only a verified `authorName` (bound by the relay to the signed-in account)
+groups keys; an unverified claim ("name (unverified)") stays keyed by its
+signing key, so two strangers claiming one name stay two reviewers. The pull's
+author is left out by key or by verified account name, so the author's second
+device cannot approve their own pull. The list chip has only keys and keeps
+grouping by key. Tests: `app/tests/test_pull_review_frontend.py`.
+
 ## Merge status button and compact header
 
 An open pull request shows a merge status button beside the copy-link button

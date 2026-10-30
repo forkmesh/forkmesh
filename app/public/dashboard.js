@@ -24520,6 +24520,11 @@
   // Approve/request-changes/comment state per reviewer, derived the same way
   // the desktop's PullStore::reviewSummary() does: the *last* review event
   // per author wins.
+  function pullReviewerKey(ev) {
+    const name = String(ev?.authorName || "").trim();
+    return (name && !name.endsWith(" (unverified)") ? name : String(ev?.author || "").trim()).toLowerCase();
+  }
+
   function pullReviewSummary(events) {
     const rows = Array.isArray(events) ? events : [];
     const byAuthor = new Map();
@@ -24529,7 +24534,7 @@
         continue;
       }
       if (ev.type !== "review" || !ev.state) continue;
-      const key = String(ev.authorName || ev.author || "").trim().toLowerCase();
+      const key = pullReviewerKey(ev);
       if (!key) continue;
       byAuthor.set(key, {
         author: ev.author || "",
@@ -24541,16 +24546,17 @@
     return Array.from(byAuthor.values());
   }
 
-  function pullReviewPolicy(events, pullAuthor = "") {
-    const authorKey = String(pullAuthor || "").trim().toLowerCase();
+  function pullReviewPolicy(events, pullAuthor = "", pullAuthorName = "") {
+    const authorKeys = new Set([pullAuthor, pullAuthorName]
+      .map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
     const latest = new Map();
     for (const ev of Array.isArray(events) ? events : []) {
       // Inbox reviews are not authoritative merge evidence until the owner
       // node drains, validates, commits, and republishes them on the pinned
       // pull-metadata ref.
       if (ev?.type !== "review" || ev.pending === true) continue;
-      const key = String(ev.authorName || ev.author || "").trim().toLowerCase();
-      if (!key || key === authorKey || String(ev.author || "").trim().toLowerCase() === authorKey) continue;
+      const key = pullReviewerKey(ev);
+      if (!key || authorKeys.has(key) || authorKeys.has(String(ev.author || "").trim().toLowerCase())) continue;
       if (ev.state === "approved" || ev.state === "changes_requested") {
         latest.set(key, ev.state);
       } else {
@@ -24574,9 +24580,9 @@
     commented: { icon: "message-square", tone: "text-muted-foreground", label: "Commented" },
   };
 
-  function renderPullReviewers(events, pullAuthor = "") {
+  function renderPullReviewers(events, pullAuthor = "", pullAuthorName = "") {
     const reviewers = pullReviewSummary(events);
-    const policy = pullReviewPolicy(events, pullAuthor);
+    const policy = pullReviewPolicy(events, pullAuthor, pullAuthorName);
     const gateLabel = policy.ready ? "Review requirement met" : "Independent review required";
     const counts = [
       policy.approvals ? `<span class="inline-flex items-center gap-0.5 text-success" title="${formatCount(policy.approvals)} approved"><i data-lucide="check" class="h-3.5 w-3.5"></i>${formatCount(policy.approvals)}</span>` : "",
@@ -25146,7 +25152,7 @@
     if (commitPhrase) commitPhrase.innerHTML = pullCommitPhrase(commits.length);
     const reviewers = $("[data-repo-pull-reviewers]");
     if (reviewers) {
-      reviewers.innerHTML = renderPullReviewers(conversation, values.author || "");
+      reviewers.innerHTML = renderPullReviewers(conversation, values.author || "", values.authorName || "");
       window.lucide?.createIcons();
     }
     // Keep committed line threads in step with the activity poll. Do not tear
@@ -25995,7 +26001,7 @@
     const count = $("[data-repo-pull-timeline-count]");
     if (count) count.textContent = formatCount(parsed.pullTimeline.length);
     const reviewers = document.querySelector("[data-repo-pull-reviewers]");
-    if (reviewers) reviewers.innerHTML = renderPullReviewers(conversation, parsed.values?.author || "");
+    if (reviewers) reviewers.innerHTML = renderPullReviewers(conversation, parsed.values?.author || "", parsed.values?.authorName || "");
     updateRepoPullMergePanel(repo, number, parsed);
   }
 
@@ -26828,7 +26834,7 @@
     const values = parsed?.values || {};
     const readiness = parsed?.pullReadiness || {};
     const branchBacked = values.derive === "branch";
-    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "", values.authorName || "");
     const commits = Array.isArray(parsed?.pullCommits) ? parsed.pullCommits : [];
     const patch = String(parsed?.pullPatch?.patch || "");
     const series = commits.map((commit) => String(commit?.hash || "")).join(",");
@@ -26952,7 +26958,7 @@
     const updateAuthorized = authorized || parsed?.pullUpdateAuthorized === true;
     const merge = parsed?.pullMerge || {};
     const update = parsed?.pullUpdate || {};
-    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "", values.authorName || "");
     const rows = [];
 
     const reviewRow = { id: "review", actions: [] };
@@ -28070,6 +28076,7 @@
     const waive = overrideReview === true && !pullReviewPolicy(
       parsed.pullConversation || [],
       parsed.values?.author || "",
+      parsed.values?.authorName || "",
     ).ready;
     return {
       schemaVersion: 1,
@@ -28900,7 +28907,7 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}

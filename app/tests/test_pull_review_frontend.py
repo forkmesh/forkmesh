@@ -307,7 +307,7 @@ def test_reviews_before_a_force_push_are_marked_as_on_an_older_commit():
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    script = _function_source("pullReviewSummary") + """
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + """
 const events = [
   {type: "review", author: "k1", authorName: "alice", state: "approved"},
   {type: "review", author: "k2", authorName: "carol", state: "commented"},
@@ -347,7 +347,7 @@ def test_one_person_reviewing_with_two_keys_is_one_reviewer_and_one_vote():
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    script = _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
 const events = [
   {type: "review", author: "key-laptop", authorName: "alice", state: "changes_requested"},
   {type: "review", author: "key-phone", authorName: "Alice", state: "changes_requested"},
@@ -362,4 +362,31 @@ console.log(JSON.stringify({
     output = json.loads(subprocess.run([node, "-e", script], capture_output=True,
                                        text=True, check=True, timeout=30).stdout)
     assert len([name for name in output["rows"] if name.lower() == "alice"]) == 1
+    assert output["policy"] == {"approvals": 1, "blockers": 1, "ready": False}
+
+
+def test_unverified_reviewers_stay_apart_and_the_author_is_excluded_by_account():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
+const events = [
+  {type: "review", author: "key-anon-1", authorName: "dave (unverified)", state: "changes_requested"},
+  {type: "review", author: "key-anon-2", authorName: "dave (unverified)", state: "approved"},
+  {type: "review", author: "key-carol-phone", authorName: "carol", state: "approved"},
+];
+console.log(JSON.stringify({
+  rows: pullReviewSummary(events).length,
+  policy: pullReviewPolicy(events, "key-carol-laptop", "carol"),
+}));
+"""
+    output = json.loads(subprocess.run([node, "-e", script], capture_output=True,
+                                       text=True, check=True, timeout=30).stdout)
+    assert output["rows"] == 3
     assert output["policy"] == {"approvals": 1, "blockers": 1, "ready": False}

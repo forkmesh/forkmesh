@@ -42,6 +42,7 @@ def _between(start, end):
 def _harness():
     parts = [
         _function("immutableGitCommit"),
+        _function("pullReviewerKey"),
         _function("pullReviewPolicy"),
         _function("pullHeadBranchRef"),
         _function("repoPullMergeContext"),
