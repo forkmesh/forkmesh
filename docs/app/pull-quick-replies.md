@@ -115,6 +115,12 @@ the relay is what prevents repeats and pings the author. The request carries
 `quickReply: {id, head}` beside the signed event (not inside it; it is not
 part of the signature and is not stored in the ledger).
 
+On a build with comment reactions (`docs/app/comment-reactions.md`), an
+approving quick reply also adds the Thank you sticker to the pull request's
+description (`sayCommentThanks`, once per viewer), and `ai_missing` reads the
+stated model the way the AI disclosure chip does (`pullAiModel`: the `aiModel`
+field or an "AI model:" line in the description).
+
 ### One per commit
 
 The relay claims `(repository, pull, reviewer, head commit, reply id)` in
