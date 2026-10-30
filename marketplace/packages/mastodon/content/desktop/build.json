@@ -1,5 +1,40 @@
 {
   "schemaVersion": 1,
-  "sources": ["MastodonLink.cpp"],
-  "mocHeaders": []
+  "sources": [
+    "MastodonCore.h",
+    "MastodonCore.cpp",
+    "MastodonClient.h",
+    "MastodonClient.cpp",
+    "MastodonWidgets.h",
+    "MastodonWidgets.cpp",
+    "MastodonDialogs.h",
+    "MastodonDialogs.cpp",
+    "MastodonFeature.h",
+    "MastodonFeature.cpp",
+    "MastodonPages.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_mastodon.cpp",
+    "MastodonCore.h",
+    "MastodonCore.cpp",
+    "MastodonClient.h",
+    "MastodonClient.cpp",
+    "MastodonWidgets.h",
+    "MastodonWidgets.cpp",
+    "MastodonDialogs.h",
+    "MastodonDialogs.cpp",
+    "MastodonFeature.h",
+    "MastodonFeature.cpp",
+    "MastodonPages.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
 }

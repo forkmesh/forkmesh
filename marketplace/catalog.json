@@ -135,7 +135,7 @@
     { "id": "world", "version": "1.0.0", "manifest": "packages/world/manifest.json" },
     { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
     { "id": "feed", "version": "1.0.0", "manifest": "packages/feed/manifest.json" },
-    { "id": "mastodon", "version": "1.0.0", "manifest": "packages/mastodon/manifest.json" },
+    { "id": "mastodon", "version": "1.1.0", "manifest": "packages/mastodon/manifest.json" },
     { "id": "instance-feed", "version": "1.1.0", "manifest": "packages/instance-feed/manifest.json" },
     { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" },
     { "id": "code-map", "version": "1.0.0", "manifest": "packages/code-map/manifest.json" },
