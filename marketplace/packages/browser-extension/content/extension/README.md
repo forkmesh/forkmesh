@@ -182,6 +182,10 @@ channel sites** grants all configured channels at once. Exceptions:
 
 - **Discord**: never opened in a tab; Update asks Marketing's server refresh,
   which uses Discord's public invite API.
+- **X** (`x.com`, `twitter.com`): the page scan skips everything inside a post
+  (`article`, `[data-testid='tweet']`), so a timeline post's views, likes,
+  replies and reposts are never read as the account's totals; followers,
+  following and posts come from the profile header.
 - **Google** results pages: only the result count (`#result-stats`, or the
   number of result links on a single page) as `indexedPages`.
 - **Reddit** subreddit pages: only the subreddit header's members, weekly

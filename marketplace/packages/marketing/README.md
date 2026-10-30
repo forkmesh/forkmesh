@@ -79,6 +79,13 @@ source stopped refreshing). Both numbers always come from one snapshot.
   `/dashboard/marketing?org=<org>&page=channels&capture=<id>` in a browser;
   phones fall back to the manual **Log metrics** form.
 - **Log metrics** (`POST /metrics`) records numbers by hand.
+- **Correct a snapshot** (`PATCH /metrics/<id>`): double-clicking a row of a
+  channel page's **Recorded numbers** on the desktop opens its numbers and note
+  for editing; only changed fields are sent. The route accepts whole numbers
+  from 0 to 10^12 for the metric keys and a note, keeps the channel, time and
+  source, and pings the team "Channel numbers corrected". It exists because an
+  X profile read once recorded the first timeline post's 382,457 views (and its
+  0 likes as engagements) as the account's own (2026-10-18).
 
 ### Channel specifics
 
