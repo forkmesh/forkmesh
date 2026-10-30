@@ -123,7 +123,7 @@ test("an issue links a pull request from its Development section", async ({ page
   await page.goto("/dana/notes/issues/7");
 
   const development = page.locator('[data-repo-development="issues"]');
-  await expect(development.locator('a[href$="/pulls/3"]')).toContainText("Fix login", { timeout: 15_000 });
+  await expect(development.locator('a[href$="/pull/3"]')).toContainText("Fix login", { timeout: 15_000 });
 
   await page.locator('[data-repo-issue-picker-open="development"]').click();
   const picker = page.locator('[data-repo-issue-picker="development"]');
@@ -137,10 +137,10 @@ test("an issue links a pull request from its Development section", async ({ page
   await expect(page.locator('[data-repo-issue-picker-open="development"]')).toBeFocused();
 
   await expect.poll(() => issuePosts(posted)).toEqual([[7, "Linked pull request #4"]]);
-  await expect(development.locator('a[href$="/pulls/4"]')).toContainText("Add search index");
-  await expect(development.locator('a[href$="/pulls/3"]')).toBeVisible();
+  await expect(development.locator('a[href$="/pull/4"]')).toContainText("Add search index");
+  await expect(development.locator('a[href$="/pull/3"]')).toBeVisible();
   await expect(page.locator("[data-repo-issue-development-event]")).toContainText("linked pull request");
-  await expect(page.locator('[data-repo-issue-development-event] a[href$="/pulls/4"]')).toHaveText("#4");
+  await expect(page.locator('[data-repo-issue-development-event] a[href$="/pull/4"]')).toHaveText("#4");
 });
 
 test("a pull request links issues from its Development section and its comments", async ({ page }) => {

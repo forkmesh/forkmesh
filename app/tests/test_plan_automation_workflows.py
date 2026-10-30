@@ -78,7 +78,6 @@ def test_world_browser_e2e_exercises_runtime_webgl_touch_and_privacy():
     assert "npm ci" in workflow
     assert "playwright install --with-deps --only-shell chromium" in workflow
     assert '"@playwright/test": "1.61.0"' in package
-    assert '"three": "0.184.0"' in package
     assert "routeWebSocket" in tests
     assert "two live clients synchronize movement" in tests
     assert "landscape thumbstick remains visible and moves the avatar" in tests

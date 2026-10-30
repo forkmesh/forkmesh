@@ -2071,7 +2071,7 @@
           availability.classList.add("text-primary");
         }
       }
-      updateRepoLiveCounts(repo, { mirrors: mirrorCount });
+      updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });
       setRepoTabCount("mirrors", mirrorCount);
       state.repoMirrors = mirrors;
       // Where the repository has reached, in the forkmesh-sync-status-v1
@@ -3012,11 +3012,14 @@
     }
   }
 
-  function updateRepoLiveCounts(repo, counts) {
+  function updateRepoLiveCounts(repo, counts, options = {}) {
     if (!counts || typeof counts !== "object") return;
+    const mirrorsListed = options.mirrorList !== true
+      && repoMirrorLoadedKey === repoKey(repo).toLowerCase();
     (["commits", "issues", "pulls", "discussions", "mirrors"]).forEach((key) => {
       const value = Number(counts[key]);
       if (!Number.isFinite(value) || value < 0) return;
+      if (key === "mirrors" && mirrorsListed) return;
       repo[key] = value;
       $$(`[data-dashboard-repo-count="${key}"]`).forEach((badge) => {
         badge.textContent = formatCount(value);

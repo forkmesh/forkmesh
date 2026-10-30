@@ -7426,6 +7426,8 @@
         author: result?.event?.author || "",
         body,
       });
+      renderRepoRecordDevelopment();
+      if (body) void linkPullCommentIssues(repo, number, body);
       if (bodyInput) bodyInput.value = "";
       buttons.forEach((button) => { button.disabled = false; });
       setHint(isReview ? "Review sent to the maintainer's inbox for review." : "Comment sent to the maintainer's inbox for review.", "good");

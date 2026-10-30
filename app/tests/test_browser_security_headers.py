@@ -77,7 +77,7 @@ def test_only_explicit_embedded_documents_are_frameable():
 
     world_ancestors = (
         "frame-ancestors 'self' https://forkmesh.com "
-        "https://forkmesh.com"
+        "https://www.forkmesh.com"
     )
     for path in ("/world", "/world/*"):
         rule = _rule(path)
