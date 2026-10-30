@@ -35,9 +35,10 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 - **Render, then push.** `render.py` produces files only;
   `next_fleet.py install <node> --steps …` copies them and runs each step over
-  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `files`,
-  `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`). Runner steps: `base`, `files`,
-  `start`, `daemon`.
+  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `ssh-port`,
+  `files`, `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`).
+  Runner steps: `base`, `ssh-port`, `files`, `start`, `daemon`. SSH runs on
+  `ssh_port` ([ssh-port.md](ssh-port.md)).
 - **Secrets never rendered.** Units load encrypted credentials by name
   (`LoadCredentialEncrypted=`). With `[app] vault = true` the app gets only
   bootstrap credentials and starts sealed ([VAULT.md](../VAULT.md)).

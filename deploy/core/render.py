@@ -52,6 +52,8 @@ BURST_LABEL = "fmnext-burst-%d"
 AUTOSCALED_MAX = 9
 WG_KEY = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
 IDS_KEY = re.compile(r"^[A-Za-z0-9_-]{43}$")
+DEFAULT_SSH_PORT = 22
+FAIL2BAN_SSHD = "/etc/fail2ban/jail.d/fmnext-sshd.local"
 SSH_FINGERPRINT = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 LOGREAD_PUBLIC_KEY = re.compile(r"^ssh-ed25519 (AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{48}) fmnext-logread$")
 LOGREAD_PROGRAM = "/opt/forkmesh-next/bin/fmnext-logread"
@@ -202,6 +204,10 @@ def load_fleet(path, state_path=None, state=None, instances=None,
         raise RenderError("acme_issuer is gone: certificate issuance is "
                           "leaderless (deploy/core/certsync.py); remove it")
     check_production(fleet)
+    port = fleet.get("ssh_port", DEFAULT_SSH_PORT)
+    if isinstance(port, bool) or not isinstance(port, int) or \
+            not 1 <= port <= 65535 or port in (25, 53, 80, 443):
+        raise RenderError("ssh_port must be a free TCP port: %r" % (port,))
     dns = fleet.get("dns") or {}
     if dns.get("reconciler", "dry") not in ("on", "dry", "off"):
         raise RenderError("dns.reconciler must be on, dry or off")
@@ -804,6 +810,14 @@ def access_log_snippet():
     return out
 
 
+def ssh_port(fleet):
+    return int(fleet.get("ssh_port", DEFAULT_SSH_PORT))
+
+
+def fail2ban_sshd(fleet, name):
+    return MANAGED % name + "[sshd]\nport = %d\n" % ssh_port(fleet)
+
+
 def ids_enabled(fleet):
     return ids_settings(fleet)["enabled"]
 
@@ -847,6 +861,7 @@ def ids_config(fleet, name, role, paths):
                                            or []) + [
             fp for fp in [logread_fingerprint(
                 logs_settings(fleet)["reader_public_key"])] if fp],
+                "port": ssh_port(fleet),
                 "allow": list(ids.get("ssh_allow") or []),
                 "foreign_ip_severity": ids.get("ssh_foreign_ip_severity",
                                                "alert")},
@@ -913,7 +928,7 @@ def ids_config(fleet, name, role, paths):
                                     "fmnext-ids.service"],
             },
             "listeners": {
-                "tcp": sorted({22, 25, 80, 443, 53, int(rq.get("http_port", 4001)),
+                "tcp": sorted({ssh_port(fleet), 25, 80, 443, 53, int(rq.get("http_port", 4001)),
                                int(rq.get("raft_port", 4002)),
                                int(app.get("port", 8080)),
                                int(app.get("gateway_port", 8790)), 8791,
@@ -955,7 +970,7 @@ def ids_config(fleet, name, role, paths):
                 "protected_units": ["forkmesh-mirror-node.service",
                                     "fmnext-ids.service"],
             },
-            "listeners": {"tcp": [22, 53, 8791], "udp": [53, 68, 123, 323, 546],
+            "listeners": {"tcp": sorted({ssh_port(fleet), 53, 8791}), "udp": [53, 68, 123, 323, 546],
                           "udp_max_port": 10240,
                           "loopback_allow": [
                               {"user": JOB_USER, "units": ["run-*.scope"],
@@ -2156,11 +2171,12 @@ def render_core(fleet, node_name, replacement=False):
     add("/etc/default/earlyoom", template("earlyoom", values))
     add("/etc/systemd/journald.conf.d/60-forkmesh-next.conf",
         template("journald.conf", values))
+    add(FAIL2BAN_SSHD, fail2ban_sshd(fleet, node_name))
     mesh_ports = sorted({values["HTTP_PORT"], raft_port, values["MESH_PORT"],
                          int(app.get("certsync_port", 8793)), 80, 25})
     # 80 on wg0: the HTTP-01 forwarder of every peer asks this Caddy.
     peers_agent = autoscale_enabled(fleet) and not replica
-    public_tcp, public_udp = [22, 80, 443], [443, wg_port]
+    public_tcp, public_udp = [ssh_port(fleet), 80, 443], [443, wg_port]
     if turn_enabled(fleet):
         turn_tcp, turn_udp, relay = turn_ports(fleet)
         public_tcp, public_udp = public_tcp + turn_tcp, public_udp + turn_udp + [relay]
@@ -2309,8 +2325,10 @@ def render_runner(fleet, runner_name):
     add("/etc/default/earlyoom", template("earlyoom", values))
     add("/etc/systemd/journald.conf.d/60-forkmesh-next.conf",
         template("journald.conf", values))
+    add(FAIL2BAN_SSHD, fail2ban_sshd(fleet, runner_name))
     add("/etc/nftables.conf", nftables_conf(
-        fleet, runner_name, [], [22], [], output_rules=runner_output_rules()),
+        fleet, runner_name, [], [ssh_port(fleet)], [],
+        output_rules=runner_output_rules()),
         0o755)
     add("/etc/forkmesh-next/runner.md",
         (RUNNER_TEMPLATES / "runner.md").read_text("utf-8"))

@@ -55,6 +55,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | [NODE_OWNERSHIP.md](NODE_OWNERSHIP.md) | node account ownership and version fields |
 | [deploy/auto-deploy.md](deploy/auto-deploy.md) | automatic deploys of `main` |
 | [deploy/self-deploy.md](deploy/self-deploy.md) | phone-approved deploys run by the cores |
+| [deploy/ssh-port.md](deploy/ssh-port.md) | the fleet's sshd port (`ssh_port`) and moving a node to it |
 | [HOSTED_REPOS.md](HOSTED_REPOS.md) | repositories hosted on the cores |
 | [CORE_PUSH.md](CORE_PUSH.md) | owner pushes, tag moves and branch deletes on the cores |
 | [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances started from `forkmesh.com/start`; user guide [www/docs/start-your-own-instance.md](../www/docs/start-your-own-instance.md) |

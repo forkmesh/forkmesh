@@ -230,6 +230,8 @@ QString fleetSshDirectory();
 QString fleetLogsDirectory();
 QString readerKeyPath();
 QString fleetKnownHostsPath();
+QString fleetTomlPath();
+int fleetSshPort();
 QString fleetInstancesPath();
 QString autoscaledInstancesPath();
 bool writeAutoscaledInstances(const QJsonObject &instances);
@@ -242,7 +244,8 @@ QList<CoreNode> mergeFleetNodes(const QList<CoreNode> &primary,
 
 bool validJournalCursor(const QString &cursor);
 QString readerRequest(const QString &afterCursor);
-FeedCommand buildFeedCommand(const CoreNode &node, const QString &afterCursor);
+FeedCommand buildFeedCommand(const CoreNode &node, const QString &afterCursor,
+                             bool legacyPort = false);
 ReaderControl parseReaderControl(const QByteArray &line);
 NodeVitals parseNodeVitals(const QByteArray &line);
 StatementShape statementShape(const QString &sql);
