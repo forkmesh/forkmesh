@@ -49,7 +49,7 @@ PATCHES = {
     ]),
     "hygiene": "\n".join(
         ["diff --git a/.env b/.env", "new file mode 100644", "@@ -0,0 +1 @@",
-         '+api_key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"',
+         '+api_key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"',  # forkmesh-secret-scan:ignore-line
          "diff --git a/yarn.lock b/yarn.lock", "@@ -1 +1 @@", "-a", "+b",
          "diff --git a/dist/app.min.js b/dist/app.min.js", "@@ -1 +1 @@", "+x",
          "diff --git a/logo.png b/logo.png", "Binary files a/logo.png and b/logo.png differ",

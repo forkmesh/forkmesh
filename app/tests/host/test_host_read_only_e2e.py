@@ -15,7 +15,7 @@ from forkmesh_host import paths
 
 websockets_sync = pytest.importorskip("websockets.sync.client")
 
-PASSWORD = "correct-horse-battery"
+PASSWORD = "correct-horse-battery"  # forkmesh-secret-scan:ignore-line
 TURNSTILE = "XXXX.DUMMY.TOKEN.XXXX"
 
 
