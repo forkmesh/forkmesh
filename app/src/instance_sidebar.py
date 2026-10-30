@@ -1,11 +1,3 @@
-"""The instance's Top repositories setting (instance_settings row "sidebar").
-
-{"pinned": ["<repo>" | "<owner>/<repo>", ...], "forks": N}: a non-empty pinned
-list shows only those repositories, in that order, and forks is how many forks
-each one shows before its toggle. `parse` reads a stored document leniently;
-`clean` validates an admin's write strictly and says what is wrong.
-"""
-
 import re
 
 SETTING_KEY = "sidebar"
@@ -37,7 +29,6 @@ def parse(doc):
 
 
 def clean(value):
-    """Return (setting, "") for a valid write, or (None, error code)."""
     if not isinstance(value, dict):
         return None, "invalid_sidebar"
     raw = value.get("pinned", [])

@@ -286,6 +286,7 @@ LAZY_MODULES = {
     "instance_features.py",
     "instance_pages.py",
     "instance_theme.py",
+    "instance_sidebar.py",
     "remote_forks.py",
     "mirror_quota.py",
     "turnstile.py",

@@ -93,9 +93,10 @@ ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
 
 - `pinned`: repositories shown instead of the most viewed ones, in this order.
   An entry is `owner/name` (the catalog address or the public owner shown on
-  the row) or a bare `name`, which pins the listed repository with that name.
-  When several rows match, the one with the most forks wins, and entries that
-  match nothing are skipped. The sidebar shows only the pinned rows; the Home
+  the row) or a bare `name`, which pins the listed repository with that name
+  and never a fork of it (a fork keeps its parent's name). When several rows
+  match, an original beats a fork, then the one with the most forks wins, and
+  entries that match nothing are skipped. The sidebar shows only the pinned rows; the Home
   card shows them too, unless a search is typed or "Show more" is open.
 - `forks`: how many forks each row shows before "+N more forks", in both lists
   (0 to 50, default 3).
@@ -111,6 +112,26 @@ row, an empty `pinned` list, or a list where nothing matches, the lists keep
 their usual order (six sidebar rows, eight Home rows). Outside an instance
 `instanceInfo` answers nothing, so the lists never change there.
 `/api/instance` is cached for 60 seconds, so a new row shows within a minute.
+
+An instance admin edits the row in Settings → Top repositories
+(`initInstanceSidebarSection` in `04-account.js`): one pinned name per line
+and the forks count. `GET /api/instance/sidebar` answers the cleaned setting
+and the limits; `POST` (`{"sidebar": {...}}`) saves it. Both need a session
+whose account is an instance admin (`_is_admin`; 401 without a session, 403
+`not_admin` otherwise), and a cookie session is origin-checked. A write is
+validated strictly instead of cleaned (`instance_sidebar.clean`): each entry
+must be `name` or `owner/name` in the account and repository name grammar
+(`invalid_pinned`), at most 10 (`too_many_pinned`), and `forks` a whole number
+from 0 to 50 (`invalid_forks`); blank lines and repeats are dropped. The write
+is audited as `instance.sidebar`. Reading a stored row stays lenient
+(`instance_sidebar.parse`) so a hand-written row keeps working.
+
+The browser keeps the last setting it saw in `localStorage`
+(`forkmesh.sidebarSetting`), so the next page draws the pinned lists at once
+instead of the usual order first. While the repository list is still loading,
+a pinned list that matches nothing yet shows nothing rather than the usual
+rows, so the lists do not jump. Tests: `app/tests/test_sidebar_setting.py`,
+`app/tests/test_instance_sidebar_setting.py`.
 
 ## Profile repository list and popular cards
 
