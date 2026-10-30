@@ -2377,6 +2377,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const visitsFor = new Map(measured.map((row) => [row.term, row]));
     if (view === "measured") {
       $(`[data-marketing-keywords-head]`).innerHTML = `<tr><th>Term</th><th class="r">Visits</th><th class="r">Bounce</th><th class="r"><span class="sr-only">Track</span></th></tr>`;
+      markSortableHeaders($(`[data-marketing-keywords-head]`)?.closest("table"));
       const tracked = new Set((state.marketing.keywords || []).map((item) => item.term));
       host.innerHTML = measured.map((row) => `<tr><td title="${escapeHtml((row.topSources || []).map((item) => item.value).join(", "))}">${escapeHtml(row.term)}</td><td class="r mk-num">${fmtFull(row.sessions)}</td><td class="r mk-num">${fmtShare(row.bounceRate)}</td><td class="r">${tracked.has(row.term) || row.term === "(not provided)" ? "" : `<button data-marketing-keyword-track="${escapeHtml(row.term)}" type="button" class="mk-link">Track</button>`}</td></tr>`).join("");
       empty.hidden = measured.length > 0;
@@ -2384,6 +2385,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       return;
     }
     $(`[data-marketing-keywords-head]`).innerHTML = `<tr><th>Keyword</th><th class="r">Pos.</th><th class="r">Impr.</th><th class="r">Clicks</th><th class="r">Visits</th></tr>`;
+    markSortableHeaders($(`[data-marketing-keywords-head]`)?.closest("table"));
     const items = state.marketing.keywords || [];
     host.innerHTML = items.map((item) => {
       const change = item.positionChange;
@@ -3240,6 +3242,121 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     return order;
   }
 
+  const SORT_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const SORT_UNITS = { s: 1e3, sec: 1e3, second: 1e3, m: 6e4, min: 6e4, minute: 6e4, h: 36e5, hr: 36e5, hour: 36e5,
+    d: 864e5, day: 864e5, w: 6048e5, wk: 6048e5, week: 6048e5, mo: 2592e6, month: 2592e6, y: 31536e6, yr: 31536e6, year: 31536e6 };
+  const SORT_SCALE = { k: 1e3, K: 1e3, M: 1e6, B: 1e9 };
+  const sortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const sortObservers = new WeakMap();
+
+  const sortHeaderLabel = (th) => [...th.childNodes].filter((node) => !node.classList?.contains("sr-only"))
+    .map((node) => node.textContent).join("").trim();
+
+  function markSortableHeaders(scope) {
+    scope?.querySelectorAll(".mk-table thead th").forEach((th) => {
+      if (!sortHeaderLabel(th) || "mkSortable" in th.dataset) return;
+      th.dataset.mkSortable = "";
+      th.tabIndex = 0;
+    });
+  }
+
+  function sortCellText(row, column) {
+    if (row.cells.length === 1 && row.cells[0].colSpan > 1) return "";
+    let at = 0, cell = null;
+    for (const candidate of row.cells) {
+      if (column < at + candidate.colSpan) { cell = candidate; break; }
+      at += candidate.colSpan;
+    }
+    if (!cell) return "";
+    if (cell.dataset.sortValue != null) return cell.dataset.sortValue;
+    const copy = cell.cloneNode(true);
+    copy.querySelectorAll("small, .sr-only").forEach((node) => node.remove());
+    const text = (copy.textContent.trim() ? copy : cell).textContent.replace(/\s+/g, " ").trim();
+    const box = cell.querySelector(`input[type="checkbox"]`);
+    return text || (box ? (box.checked ? "1" : "0") : "");
+  }
+
+  function sortKey(text) {
+    if (!text || /^[—–…-]$/.test(text)) return null;
+    const now = Date.now(), lower = text.toLowerCase();
+    if (["just now", "now", "today"].includes(lower)) return now;
+    if (lower === "yesterday") return now - 864e5;
+    if (lower === "tomorrow") return now + 864e5;
+    let match = lower.match(/^(in )?(\d+(?:\.\d+)?)\s*([a-z]+?)s?( ago)?$/);
+    if (match && SORT_UNITS[match[3]] && (match[1] || match[4])) return now + (match[1] ? 1 : -1) * Number(match[2]) * SORT_UNITS[match[3]];
+    match = text.match(/^(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?$/);
+    if (match) return (Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0)) * 1e3;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+      const at = Date.parse(text.slice(0, 16).replace(" ", "T"));
+      if (Number.isFinite(at)) return at;
+    }
+    match = lower.replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+/, "").match(/^([a-z]{3})[a-z]*\.?\s+(\d{1,2})\b(?:,?\s+(\d{4}))?/);
+    if (match && SORT_MONTHS.includes(match[1])) return new Date(Number(match[3] || new Date().getFullYear()), SORT_MONTHS.indexOf(match[1]), Number(match[2])).getTime();
+    match = text.replace(/−/g, "-").match(/^([+-])?\s*[$€£¥]?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKMB](?![A-Za-z]))?(.*)$/);
+    if (match && !/\p{L}/u.test(match[4].replace(/\b[A-Z]{3}$/, ""))) {
+      const value = Number(match[2].replace(/,/g, "")) * (SORT_SCALE[match[3]] || 1);
+      return match[1] === "-" ? -value : value;
+    }
+    return text;
+  }
+
+  function compareSortKeys(a, b) {
+    if (typeof a === "number" && typeof b === "number") return a - b;
+    if (typeof a === "number") return -1;
+    if (typeof b === "number") return 1;
+    return sortCollator.compare(a, b);
+  }
+
+  function sortTable(table) {
+    const column = Number(table.dataset.mkSortColumn);
+    if (table.dataset.mkSortColumn == null || !Number.isInteger(column)) return;
+    const direction = table.dataset.mkSortDir === "descending" ? -1 : 1;
+    markSortableHeaders(table);
+    table.querySelectorAll("thead th").forEach((th) => {
+      if (th.cellIndex === column) th.setAttribute("aria-sort", table.dataset.mkSortDir);
+      else th.removeAttribute("aria-sort");
+    });
+    for (const body of table.tBodies) {
+      const rows = [...body.rows].map((row, index) => ({ row, index, key: sortKey(sortCellText(row, column)) }));
+      const sorted = [...rows].sort((a, b) => {
+        if (a.key == null || b.key == null) return (a.key == null) - (b.key == null) || a.index - b.index;
+        return direction * compareSortKeys(a.key, b.key) || a.index - b.index;
+      });
+      if (sorted.some((entry, index) => entry !== rows[index])) body.append(...sorted.map((entry) => entry.row));
+    }
+    sortObservers.get(table)?.takeRecords();
+  }
+
+  function activateSortHeader(th) {
+    const table = th.closest("table.mk-table"); if (!table) return;
+    const column = String(th.cellIndex);
+    const flip = table.dataset.mkSortColumn === column && table.dataset.mkSortDir === "ascending";
+    table.dataset.mkSortColumn = column;
+    table.dataset.mkSortDir = flip ? "descending" : "ascending";
+    if (!sortObservers.has(table)) {
+      const observer = new MutationObserver(() => sortTable(table));
+      observer.observe(table, { childList: true, subtree: true, characterData: true });
+      sortObservers.set(table, observer);
+    }
+    sortTable(table);
+  }
+
+  function setupSortableTables() {
+    const root = $(`[data-view="marketing"]`); if (!root) return;
+    markSortableHeaders(root);
+    const headerOf = (event) => event.target.closest?.(".mk-table thead th[data-mk-sortable]");
+    root.addEventListener("click", (event) => {
+      const th = headerOf(event);
+      if (th && !event.target.closest("button, a, input, select, label")) activateSortHeader(th);
+    });
+    root.addEventListener("keydown", (event) => {
+      const th = headerOf(event);
+      if (!th || event.target !== th || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      activateSortHeader(th);
+    });
+  }
+
   function setupMovablePanels() {
     const grid = $(`[data-marketing-panels]`); if (!grid) return;
     const panelOf = (key) => grid.querySelector(`:scope > [data-marketing-panel="${CSS.escape(key)}"]`);
@@ -3286,6 +3403,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
 
   async function init() {
     setupMovablePanels();
+    setupSortableTables();
     window.addEventListener("message", onExtensionMessage);
     window.postMessage({ source: "forkmesh-marketing-page", type: "marketing-hello" }, location.origin);
     if (!state.session?.sessionToken) return message("error", "Sign in to use organization Marketing.");

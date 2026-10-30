@@ -642,6 +642,37 @@ the states that only appear on an event match the rest of the dashboard:
   show a hidden flash or button.
 - Confirmations still use the browser's `confirm()`.
 
+### Sortable tables
+
+Every marketing table sorts by any column whose header has a label: click
+(or Enter on the focused header) sorts ascending, a second click descending.
+Action columns, whose header is empty, do not sort.
+
+- **Values.** A cell sorts as a number when it reads as one (`1,234`,
+  `12.5%`, `$4.50`, `12.00 USD`, `1.2k`, `+3`, `12 ★`), a duration (`2m 05s`),
+  a date (`2026-10-30 14:00`, `Oct 3`) or a relative time (`3 days ago`,
+  `in 2 hours`, `yesterday`); anything else sorts as text, case-insensitive
+  with numbers inside text in numeric order. Empty cells and `—` always go
+  last, in either direction. Numbers come before text in a mixed column.
+- **Web** (`page.js`, `setupSortableTables`): one delegated handler on the
+  view covers every `.mk-table`, so new tables need no wiring. Secondary
+  `<small>` text (change arrows, hints) is ignored; a cell can set
+  `data-sort-value` to override. The header gets `aria-sort` and an arrow. A
+  `MutationObserver` re-sorts a sorted table when a render replaces its rows,
+  so the order survives refreshes; `tfoot` (the Total row) never moves.
+- **Desktop** (`MarketingCommon.cpp`, `sortableTable`, called by
+  `dashboardTable`): rows are not sorted by `QTableWidget`'s own sorting,
+  which compares text and would reorder rows while the render code is still
+  filling them. The helper ranks rows itself, writes the ranks to a temporary
+  column, sorts by it with `sortItems` and removes the column, so cell widgets
+  and the selection follow their rows. A refill re-sorts once the event loop
+  runs. Cell widgets sort by their `sortKey` property, else their text or
+  checked state; `kSortKeyRole` on an item overrides its text and
+  `kPinnedRowRole` keeps a row last (the traffic table's Total). Code that
+  maps a table row to its record must look it up by the id in `Qt::UserRole`
+  or by the row's cell widget, never by row number: the Ad plan, Ad readiness
+  and Channels tables were changed to do that.
+
 ## Package tests
 
 ```sh
