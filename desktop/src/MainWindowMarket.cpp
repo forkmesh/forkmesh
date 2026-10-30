@@ -14,6 +14,7 @@
 #include "OfficeChannelMirror.h"
 #include "NativePackageExtension.h"
 #include "PackageFeedback.h"
+#include "PackageModules.h"
 #include "ServerNode.h"
 #include "SettingsSectionsView.h"
 #include "FlowLayout.h"
@@ -1154,6 +1155,62 @@ QWidget *marketNextPermissionList(const PackageManifest &manifest, qreal ratio)
     return list;
 }
 
+QLabel *marketFootprintLabel(const PackageManifest &manifest, bool installed,
+                             const QHash<QString, qint64> &resident)
+{
+    if (!manifest.entrypoints.contains(QStringLiteral("desktop")))
+        return nullptr;
+    const std::optional<forkmesh::market::modules::Module> module =
+        forkmesh::market::modules::moduleForPackage(manifest.id);
+    QString text;
+    QString tip;
+    if (module) {
+        const QString file = QFileInfo(module->path).fileName();
+        if (module->loaded) {
+            const auto bytes = resident.constFind(manifest.id);
+            text = bytes != resident.constEnd()
+                       ? QStringLiteral("Separate from the core · %1 in memory")
+                             .arg(QLocale().formattedDataSize(*bytes))
+                       : QStringLiteral("Separate from the core · loaded");
+            tip = QStringLiteral(
+                      "%1 is its own module (%2), apart from the ForkMesh core, "
+                      "loaded only while it is installed. The figure is the "
+                      "module's code and data in memory now; memory it "
+                      "allocates while running is counted with the app.")
+                      .arg(manifest.name, file);
+        } else if (!module->error.isEmpty()) {
+            text = QStringLiteral("Separate from the core · not loaded");
+            tip = QStringLiteral("%1 is its own module (%2), but it did not load: %3")
+                      .arg(manifest.name, file, module->error);
+        } else {
+            text = installed
+                       ? QStringLiteral("Separate from the core · not loaded yet")
+                       : QStringLiteral("Separate from the core · no memory until installed");
+            tip = QStringLiteral(
+                      "%1 is its own module (%2), apart from the ForkMesh core. "
+                      "It is loaded only when it is installed and used, so it "
+                      "takes no memory until then.")
+                      .arg(manifest.name, file);
+        }
+    } else {
+        text = QStringLiteral("Built into the core");
+        tip = QStringLiteral(
+                  "%1 is compiled into the ForkMesh app itself, so it is in "
+                  "memory whenever the app runs and its memory cannot be told "
+                  "apart from the app's.")
+                  .arg(manifest.name);
+    }
+    auto *label = new QLabel(text);
+    label->setObjectName(QStringLiteral("marketPackageFootprint"));
+    label->setProperty("packageId", manifest.id);
+    label->setProperty("separate", module.has_value());
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+    label->setToolTip(tip);
+    label->setAccessibleName(text);
+    return label;
+}
+
 struct MarketNextCardParts {
     QFrame *card = nullptr;
     QLabel *screenshot = nullptr;
@@ -1165,6 +1222,8 @@ struct MarketNextCardParts {
     QLabel *permissions = nullptr;
     QPushButton *settings = nullptr;
     QPushButton *action = nullptr;
+    QPushButton *open = nullptr;
+    QLabel *footprint = nullptr;
     QString status;
     qint64 downloads = 0;
 };
@@ -1250,6 +1309,12 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
     } else {
         status << parts.action;
     }
+    if (parts.open) {
+        parts.open->setProperty("marketNextRole", QStringLiteral("outline"));
+        status << parts.open;
+    }
+    if (parts.footprint)
+        parts.footprint->setProperty("marketNextRole", QStringLiteral("meta"));
     QWidget *warning = nullptr;
     if (!manifest.reproducibleBuild) {
         warning = new QWidget;
@@ -1288,6 +1353,8 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
         text->setSpacing(2);
         text->addWidget(parts.name);
         text->addWidget(parts.creator);
+        if (parts.footprint)
+            text->addWidget(parts.footprint);
         text->addSpacing(2);
         text->addWidget(parts.summary);
         row->addLayout(text, 1);
@@ -1317,6 +1384,8 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
             mainLayout->addLayout(row);
         };
         addPadded(parts.creator);
+        if (parts.footprint)
+            addPadded(parts.footprint);
         mainLayout->addSpacing(8);
         addPadded(parts.summary);
         mainLayout->addStretch(1);
@@ -1393,6 +1462,16 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
     facts->setTextFormat(Qt::PlainText);
     facts->setWordWrap(true);
     detailsLayout->addWidget(facts);
+    if (parts.footprint) {
+        auto *paneFootprint = new QLabel(parts.footprint->text());
+        paneFootprint->setObjectName(QStringLiteral("marketNextPaneFootprint"));
+        paneFootprint->setProperty("separate", parts.footprint->property("separate"));
+        paneFootprint->setTextFormat(Qt::PlainText);
+        paneFootprint->setWordWrap(true);
+        paneFootprint->setToolTip(parts.footprint->toolTip());
+        detailsLayout->addSpacing(4);
+        detailsLayout->addWidget(paneFootprint);
+    }
     if (stats) {
         detailsLayout->addSpacing(4);
         detailsLayout->addWidget(stats);
@@ -1444,6 +1523,16 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
         actions->addWidget(importCopy);
     }
     actions->addStretch(1);
+    if (parts.open) {
+        auto *paneOpen = new QPushButton(parts.open->text());
+        paneOpen->setObjectName(QStringLiteral("marketNextPaneOpen"));
+        paneOpen->setProperty("marketNextRole", QStringLiteral("outline"));
+        paneOpen->setToolTip(parts.open->toolTip());
+        paneOpen->setAccessibleName(parts.open->accessibleName());
+        QObject::connect(paneOpen, &QPushButton::clicked, parts.open,
+                         &QPushButton::click);
+        actions->addWidget(paneOpen);
+    }
     if (actionInDetails) {
         actions->addWidget(parts.action);
     } else {
@@ -2279,8 +2368,10 @@ void MainWindow::refreshMarketPage()
     const int settingsTabIndex =
         settingsManifest && m_marketTabs ? m_marketTabs->currentIndex() : -1;
 
-    auto appendCard = [this](QVBoxLayout *list,
-                             const PackageManifest &manifest) {
+    const QHash<QString, qint64> resident =
+        forkmesh::market::modules::residentBytesByPackage();
+    auto appendCard = [this, &resident](QVBoxLayout *list,
+                                        const PackageManifest &manifest) {
         const bool installed = m_packageRegistry->isInstalled(manifest.id);
         const bool projectOwned = m_packageRegistry->projectOwnsInstalls();
         const bool themeManaged =
@@ -2415,6 +2506,23 @@ void MainWindow::refreshMarketPage()
             QStringLiteral("Open %1 settings").arg(manifest.name));
         connect(settings, &QPushButton::clicked, this,
                 [this, id = manifest.id] { showPackageSettings(id); });
+        QPushButton *open = nullptr;
+        const bool openable =
+            installed &&
+            std::any_of(m_nativePackagePages.cbegin(), m_nativePackagePages.cend(),
+                        [&manifest](const NativePackagePage &page) {
+                            return page.id == manifest.id && page.widget;
+                        });
+        if (openable) {
+            open = new QPushButton(QStringLiteral("Open"));
+            open->setObjectName(
+                QStringLiteral("marketPackageOpen-%1").arg(manifest.id));
+            open->setAccessibleName(QStringLiteral("Open %1").arg(manifest.name));
+            open->setToolTip(QStringLiteral("Open %1").arg(manifest.name));
+            connect(open, &QPushButton::clicked, this,
+                    [this, id = manifest.id] { showNativePackage(id); });
+            top->addWidget(open);
+        }
         top->addWidget(settings);
         if (desktopManaged && !modelOperation && !installed &&
             manifest.localData) {
@@ -2459,6 +2567,9 @@ void MainWindow::refreshMarketPage()
         creator->setTextFormat(Qt::PlainText);
         creator->setObjectName(QStringLiteral("mutedLabel"));
         details->addWidget(creator);
+        QLabel *footprint = marketFootprintLabel(manifest, installed, resident);
+        if (footprint)
+            details->addWidget(footprint);
         if (manifest.accountSync && installed) {
             appendPackagePlaces(
                 details, manifest, m_packageRegistry->places(manifest.id),
@@ -2622,6 +2733,8 @@ void MainWindow::refreshMarketPage()
             parts.permissions = permissionsLabel;
             parts.settings = settings;
             parts.action = action;
+            parts.open = open;
+            parts.footprint = footprint;
             parts.status = packageStatus;
             parts.downloads = counted != m_packageInstallCounts.constEnd()
                                   ? counted->first

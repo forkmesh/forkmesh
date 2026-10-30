@@ -95,6 +95,20 @@ dropped, and so is a guide whose pack is gone.
   window's symbols from the executable, which works through `-rdynamic` on
   Linux but needs a shared plugin SDK library on Windows. Unlisted plugins
   are left out on every platform.
+- **The Market card shows it** (2026-10-30). Every package with desktop code
+  has a line under its byline: **Separate from the core · 6.4 MB in memory**
+  (green) for a loaded module, **· not loaded yet** / **· no memory until
+  installed** for one that is not mapped, **· not loaded** with the reason in
+  the tooltip for a refused one, and **Built into the core** (muted) for a
+  core-linked plugin or any plugin on macOS and Windows. The figure is the
+  `Rss` of the module file's own mappings in `/proc/self/smaps`
+  (`modules::residentBytesByPackage`), read once per Market refresh: its code
+  and static data. Heap the plugin allocates while running cannot be told
+  apart from the app's, so the tooltip says it is counted with the app;
+  Linux only, elsewhere a loaded module just says "loaded". An installed
+  package with a page also gets an **Open** button beside Settings (in the
+  Next card's status row and its details pane too) that shows the page, as
+  its rail button does.
 
 ### Plugins the core still links
 

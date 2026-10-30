@@ -80,6 +80,10 @@ QLabel[marketNextRole="summary"] { color: @fgSecondary; font-size: 13px; backgro
 QWidget#marketNextDetails QLabel#marketPackageStats,
 QLabel#marketNextFacts { color: @fgMuted; font-size: 12px; background: transparent; }
 QLabel#marketNextWarning { color: @warning; font-size: 12px; background: transparent; }
+QLabel#marketPackageFootprint,
+QLabel#marketNextPaneFootprint { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#marketPackageFootprint[separate="true"],
+QLabel#marketNextPaneFootprint[separate="true"] { color: @success; }
 QPushButton#marketNextDetailsToggle {
     background: transparent; border: none; border-radius: 6px; color: @fgSubtle;
     padding: 0px 4px; min-height: 24px; max-height: 24px; font-size: 12px; font-weight: 400;

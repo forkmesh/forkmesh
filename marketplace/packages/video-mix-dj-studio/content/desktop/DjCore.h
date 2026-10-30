@@ -162,6 +162,8 @@ class DjTapTempo
 public:
     std::optional<double> tap(double time);
     void clear() { m_taps.clear(); }
+    int count() const { return int(m_taps.size()); }
+    bool counting(double time) const { return !m_taps.isEmpty() && time - m_taps.last() <= 2; }
 
 private:
     QVector<double> m_taps;

@@ -67,6 +67,7 @@ private:
     DjPlatter *m_platter = nullptr;
     DjFader *m_pitch = nullptr;
     DjButton *m_tap = nullptr;
+    DjButton *m_auto = nullptr;
     DjButton *m_cue = nullptr;
     DjButton *m_play = nullptr;
     DjButton *m_stop = nullptr;

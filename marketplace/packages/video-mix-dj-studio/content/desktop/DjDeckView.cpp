@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QVBoxLayout>
 
@@ -30,6 +31,23 @@ QLabel *label(const QString &text, int pixels, const QColor &color, bool bold = 
     l->setPalette(p);
     return l;
 }
+
+class TapLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+    std::function<void()> tapped;
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && tapped) {
+            tapped();
+            return;
+        }
+        QLabel::mousePressEvent(event);
+    }
+};
 
 void setColor(QLabel *l, const QColor &color)
 {
@@ -119,11 +137,15 @@ QWidget *DjDeckView::buildInfo()
     names->addWidget(m_artist);
     auto *bpmBox = new QVBoxLayout;
     bpmBox->setSpacing(1);
-    m_bpm = label(QStringLiteral("---"), 20, color, true, box);
+    auto *bpmLabel = new TapLabel(QStringLiteral("---"), box);
+    bpmLabel->tapped = [this]() { m_model->tapTempo(m_deck); };
+    m_bpm = bpmLabel;
+    setColor(m_bpm, color);
+    m_bpm->setCursor(Qt::PointingHandCursor);
     m_bpm->setFont(theme::mono(20, true));
     m_bpm->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_bpm->setMinimumWidth(78);
-    m_bpm->setToolTip(QStringLiteral("BPM, found from the audio as the song plays (or tapped). Right-click to detect again or clear."));
+    m_bpm->setToolTip(QStringLiteral("BPM. Click it (or TAP) on the beat to tap the tempo; AUTO finds it from the audio. Right-click to clear."));
     m_bpm->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_bpm, &QLabel::customContextMenuRequested, this, [this](const QPoint &point) {
         if (menuRequested)
@@ -132,11 +154,14 @@ QWidget *DjDeckView::buildInfo()
     auto *bpmRow = new QHBoxLayout;
     bpmRow->setSpacing(3);
     auto *bpmCaption = label(QStringLiteral("BPM"), 9, theme::dim(), true, box);
+    m_auto = small(QStringLiteral("AUTO"), box, 38);
+    m_auto->clicked = [this]() { m_model->autoBpm(m_deck); };
     m_tap = small(QStringLiteral("TAP"), box, 34);
-    m_tap->setToolTip(QStringLiteral("Tap on the beat to set the BPM"));
-    m_tap->clicked = [this]() { m_model->tapTempo(m_deck); };
+    m_tap->setToolTip(QStringLiteral("Tap on the beat three times or more to set the BPM"));
+    m_tap->pressed = [this]() { m_model->tapTempo(m_deck); };
     bpmRow->addStretch();
     bpmRow->addWidget(bpmCaption);
+    bpmRow->addWidget(m_auto);
     bpmRow->addWidget(m_tap);
     bpmBox->addWidget(m_bpm);
     bpmBox->addLayout(bpmRow);
@@ -536,6 +561,15 @@ void DjDeckView::refresh()
                                 : deck.loaded() && std::abs(deck.effectiveRate() - 1) > 0.0005
                                     ? QStringLiteral("%1%").arg((deck.effectiveRate() - 1) * 100, 0, 'f', 1)
                                     : QStringLiteral("---"));
+    m_auto->setLit(deck.bpmSource == DjBpmSource::Found);
+    m_auto->setBlink(deck.bpmQueued || deck.bpmWanted);
+    m_auto->setToolTip(deck.bpmQueued ? QStringLiteral("Finding the BPM from the audio…")
+                       : deck.bpmWanted ? QStringLiteral("The BPM will be found once the song has played a little longer")
+                       : deck.bpmSource == DjBpmSource::Found
+                           ? QStringLiteral("This BPM was found from the audio. Click to find it again.")
+                           : QStringLiteral("Find the BPM from the audio. It is found by itself after %1 s of playing unless you tapped one.")
+                                 .arg(DjModel::autoBpmSeconds));
+    m_tap->setLit(deck.tap.counting(DjModel::now()));
     const double pitch = (deck.rate - 1) * 100;
     m_pitchLabel->setText(QStringLiteral("%1%2").arg(pitch >= 0 ? QStringLiteral("+") : QString()).arg(pitch, 0, 'f', 1));
     m_pitch->setValue((deck.rate - 1) / deck.pitchRange);
@@ -581,6 +615,9 @@ void DjDeckView::animate()
     m_overview->update();
     if (deck.keepsPlaying && !deck.advancing)
         m_play->update();
+    m_tap->setLit(deck.tap.counting(at));
+    if (deck.bpmQueued || deck.bpmWanted)
+        m_auto->update();
 }
 
 void DjDeckView::resizeEvent(QResizeEvent *event)

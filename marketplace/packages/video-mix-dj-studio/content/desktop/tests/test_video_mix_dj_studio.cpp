@@ -226,6 +226,111 @@ void testBrakeStopsTheDeck(const QString &dir)
     check(model.deck(0).sample.kind == DjSampleStepKind::Idle, "a deck with no length cannot be sampled");
 }
 
+QByteArray clickTrack(double bpm, double from, double seconds)
+{
+    QByteArray out;
+    const int count = int(seconds * DjModel::pcmRate);
+    const double beat = 60 / bpm;
+    for (int i = 0; i < count; ++i) {
+        const double time = from + double(i) / DjModel::pcmRate;
+        const double since = std::fmod(time, beat);
+        const double value = since < 0.02 ? 0.9 * std::sin(2 * M_PI * 1000 * since) * std::exp(-since * 250) : 0;
+        const auto sample = qint16(std::lround(value * 32000));
+        out.append(char(sample & 0xff));
+        out.append(char((sample >> 8) & 0xff));
+    }
+    return out;
+}
+
+void feed(DjPlayer &player, int deck, const QString &id, double from, const QByteArray &data)
+{
+    player.onEvent(QStringLiteral("pcm"), QJsonObject{{QStringLiteral("k"), deck},
+                                                      {QStringLiteral("id"), id},
+                                                      {QStringLiteral("t"), from},
+                                                      {QStringLiteral("d"), QString::fromLatin1(data.toBase64())}});
+}
+
+void play(DjPlayer &player, int deck, const QString &id, double bpm, double from, double seconds)
+{
+    for (double at = from; at < from + seconds; at += 1)
+        feed(player, deck, id, at, clickTrack(bpm, at, 1));
+}
+
+void waitForBpm(const DjModel &model, int deck)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (model.deck(deck).bpmQueued && timer.elapsed() < 10000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+}
+
+void testTapTempo(const QString &dir)
+{
+    QWidget parent;
+    DjPlayer player(QUrl(QStringLiteral("https://forkmesh.com/")), &parent);
+    DjModel model(host(dir), &player);
+    model.tapTempo(0);
+    check(model.deck(0).bpm == 0 && model.deck(0).tap.count() == 0, "tapping an empty deck sets nothing");
+    model.load(0, songA);
+    for (int i = 0; i < 4; ++i) {
+        if (i)
+            wait(500);
+        model.tapTempo(0);
+        if (i == 1)
+            check(model.deck(0).bpm == 0 && model.deck(0).tap.counting(DjModel::now()), "two taps are counted but set no BPM yet");
+    }
+    check(std::abs(model.deck(0).bpm - 120) < 6, "four taps half a second apart set about 120 BPM");
+    check(model.deck(0).bpmSource == DjBpmSource::Tapped, "a tapped BPM is marked as tapped");
+    const double beats = DjModel::loopBeats().value(model.deck(0).loopSize);
+    check(std::abs(model.deck(0).loopLength - beats * 60 / model.deck(0).bpm) < 1e-6, "the loop length follows the tapped BPM");
+    model.clearBpm(0);
+    check(model.deck(0).bpm == 0 && model.deck(0).bpmSource == DjBpmSource::None, "Clear BPM goes back to no BPM");
+    model.eject(0);
+}
+
+void testAutoBpm(const QString &dir)
+{
+    QWidget parent;
+    DjPlayer player(QUrl(QStringLiteral("https://forkmesh.com/")), &parent);
+    DjModel model(host(dir), &player);
+    model.load(0, songA);
+    play(player, 0, songA, 120, 0, 10);
+    check(!model.deck(0).bpmQueued && model.deck(0).bpm == 0, "ten seconds are too short to find the BPM by itself");
+    play(player, 0, songA, 120, 10, 17);
+    check(model.deck(0).bpmQueued || model.deck(0).bpm > 0, "the BPM is looked for after 25 seconds of playing");
+    waitForBpm(model, 0);
+    check(std::abs(model.deck(0).bpm - 120) < 0.6, "the BPM is found from the audio");
+    check(model.deck(0).bpmSource == DjBpmSource::Found && !model.deck(0).bpmQueued, "a found BPM is marked as found");
+    model.eject(0);
+
+    model.load(1, songB);
+    play(player, 1, songB, 0.0001, 0, 27);
+    waitForBpm(model, 1);
+    check(model.deck(1).bpm == 0 && !model.deck(1).bpmQueued, "a song without a beat gets no BPM and the search ends");
+    const int tried = model.deck(1).bpmTriedBars;
+    play(player, 1, songB, 128, 27, 16);
+    waitForBpm(model, 1);
+    check(model.deck(1).bpmTriedBars > tried, "the BPM is looked for again once more audio is heard");
+
+    model.load(1, songC);
+    model.deck(1).bpm = 90;
+    model.deck(1).bpmSource = DjBpmSource::Tapped;
+    model.autoBpm(1);
+    check(model.deck(1).bpmWanted && !model.deck(1).bpmQueued, "AUTO before enough audio waits for it");
+    play(player, 1, songC, 128, 0, 16);
+    waitForBpm(model, 1);
+    check(std::abs(model.deck(1).bpm - 128) < 0.6 && model.deck(1).bpmSource == DjBpmSource::Found,
+          "AUTO replaces a tapped BPM once enough audio is heard");
+
+    model.load(0, songA);
+    check(std::abs(model.deck(0).bpm - 120) < 0.6 && model.deck(0).bpmSource == DjBpmSource::Found, "the cached BPM comes back with the song");
+    model.clearBpm(0);
+    play(player, 0, songA, 120, 0, 2);
+    check(!model.deck(0).bpmQueued, "cached waveform bars without audio do not start a BPM search");
+    model.eject(0);
+    model.eject(1);
+}
+
 }
 
 int main(int argc, char **argv)
@@ -241,6 +346,8 @@ int main(int argc, char **argv)
     testSaveAndRestore(dir.filePath(QStringLiteral("d")));
     testQueueAndAutomix(dir.filePath(QStringLiteral("e")));
     testBrakeStopsTheDeck(dir.filePath(QStringLiteral("f")));
+    testTapTempo(dir.filePath(QStringLiteral("g")));
+    testAutoBpm(dir.filePath(QStringLiteral("h")));
     const int crate = runCrateTests();
     const int logic = runLogicTests();
     if (failures > 0 || crate || logic) {
