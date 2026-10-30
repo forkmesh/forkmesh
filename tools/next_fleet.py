@@ -97,12 +97,12 @@ RUNNER_APT_PACKAGES = (
 )
 # "daemon" (the Go daemon, role core/runner) runs after the first app deploy:
 # the daemon's catalog and lease calls need the App to answer.
-INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "calls", "files",
-                 "caddy", "secrets", "start")
-RUNNER_STEPS = ("base", "files", "start")
-APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "files", "caddy",
-             "secrets", "start")
-BURST_STEPS = ("base", "ids", "files", "secrets", "start", "daemon")
+INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "calls", "ssh-port",
+                 "files", "caddy", "secrets", "start")
+RUNNER_STEPS = ("base", "ssh-port", "files", "start")
+APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "ssh-port", "files",
+             "caddy", "secrets", "start")
+BURST_STEPS = ("base", "ids", "ssh-port", "files", "secrets", "start", "daemon")
 # "ids" generates the node's IDS signing key on the node (docs/IDS.md); run
 # it on every node before the files step that first renders the IDS.
 ALL_STEPS = INSTALL_STEPS + ("daemon", "ids", "caddy-debian", "logread")
@@ -468,7 +468,8 @@ def create(kind, number, vultr, runner, os_id=None, plan_id=None,
 
 OPTIONAL_SECRETS_RE = re.compile(r"(?ms)^optional_secrets = \[.*?^\]$|^optional_secrets = \[\]$")
 VAULT_RES = (re.compile(r"(?m)^vault = (?:true|false)$"),
-             re.compile(r"(?m)^vault_peer_unseal = (?:true|false)$"))
+             re.compile(r"(?m)^vault_peer_unseal = (?:true|false)$"),
+             re.compile(r"(?m)^ssh_port = [0-9]+$"))
 # The [ids] table (fingerprints, allowlist, operator key) is this fleet's own.
 IDS_SECTION_RE = re.compile(r"(?ms)^\[ids\]\n.*?(?=^\[|\Z)")
 TURN_SECTION_RE = re.compile(r"(?ms)^\[turn\]\n.*?(?=^\[|\Z)")
@@ -1232,6 +1233,124 @@ def rqlite_tarball(fleet):
     return version, rq.get("sha256", ""), path
 
 
+SSH_PORT_CONF = "/etc/ssh/sshd_config.d/05-fmnext-port.conf"
+SSH_PORT_STAGE = "/run/fmnext-ssh-port"
+SSH_PORT_ROLLBACK_UNIT = "fmnext-ssh-port-rollback"
+SSH_PORT_ROLLBACK_SECONDS = 180
+SSH_PORT_FILES = (("nftables", "/etc/nftables.conf"),
+                  ("ids", "/etc/forkmesh-next/ids.json"),
+                  ("fail2ban", "/etc/fail2ban/jail.d/fmnext-sshd.local"),
+                  ("port", SSH_PORT_CONF))
+NFT_MANAGED = "Managed by deploy/core/render.py"
+
+
+def ssh_port_files(fleet, name, replacement=False):
+    import render
+    files, _ = render_node(fleet, name, replacement)
+    subset = {path: files[path] for _key, path in SSH_PORT_FILES
+              if path in files}
+    subset[SSH_PORT_CONF] = ("Port %d\n" % render.ssh_port(fleet), 0o644)
+    return subset
+
+
+def ssh_port_image_script(fleet):
+    import render
+    port = render.ssh_port(fleet)
+    return "\n".join([
+        "install -d -m 0755 /etc/ssh/sshd_config.d",
+        "printf 'Port %d\\n' >%s" % (port, SSH_PORT_CONF),
+        "sshd -t",
+        "if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | "
+        "grep -q 'Status: active'; then ufw allow %d/tcp >/dev/null; fi" % port])
+
+
+def ssh_port_script(port, files, archive):
+    stage = SSH_PORT_STAGE
+    restore = []
+    for key, path in SSH_PORT_FILES:
+        restore.append("if [ -e %s/%s.bak ]; then cp -p %s/%s.bak %s; else rm -f %s; fi"
+                       % (stage, key, stage, key, shq(path), shq(path)))
+    rollback = "\n".join(restore + [
+        "if [ -e %s/nft ]; then nft -f /etc/nftables.conf || true; fi" % stage,
+        "if [ -e %s/ufw ]; then ufw delete allow %d/tcp >/dev/null || true; fi"
+        % (stage, port),
+        "systemctl reload ssh || true",
+        "systemctl try-restart fmnext-ids.service fail2ban.service || true",
+        "echo 'fmnext ssh-port: rolled back to the previous sshd and firewall'"])
+    lines = [
+        "if systemctl is-active -q ssh.socket; then echo 'ssh.socket is "
+        "active: sshd would ignore Port; nothing changed' >&2; exit 3; fi",
+        "systemctl stop %s.timer >/dev/null 2>&1 || true" % SSH_PORT_ROLLBACK_UNIT,
+        "install -d -m 0700 %s %s/new" % (stage, stage),
+        "rm -f %s/*.bak %s/nft %s/ufw" % (stage, stage, stage),
+        "tar -xzf %s -C %s/new" % (shq(archive), stage),
+        "rm -f %s" % shq(archive),
+    ]
+    for key, path in SSH_PORT_FILES:
+        lines.append("if [ -e %s ]; then cp -p %s %s/%s.bak; fi"
+                     % (shq(path), shq(path), stage, key))
+    lines += [
+        "cat >%s/rollback.sh <<'ROLLBACK'\n%s\nROLLBACK" % (stage, rollback),
+        "systemd-run --quiet --unit=%s --on-active=%d /bin/bash %s/rollback.sh"
+        % (SSH_PORT_ROLLBACK_UNIT, SSH_PORT_ROLLBACK_SECONDS, stage),
+    ]
+    for path, (_content, mode) in sorted(files.items()):
+        lines.append("install -D -m %04o %s/new%s %s" % (mode, stage, path, shq(path)))
+    lines += [
+        "if ! sshd -t; then bash %s/rollback.sh; exit 4; fi" % stage,
+        "ports=$(sshd -T | awk '$1 == \"port\" {print $2}' | sort -u | tr '\\n' ' ')",
+        "if [ \"$ports\" != '%d ' ]; then echo \"sshd would listen on $ports"
+        "(another Port line in /etc/ssh/sshd_config?)\" >&2; bash %s/rollback.sh; "
+        "exit 5; fi" % (port, stage),
+        "if grep -qF %s %s/nftables.bak 2>/dev/null && systemctl is-active -q "
+        "nftables.service; then nft -c -f /etc/nftables.conf && nft -f "
+        "/etc/nftables.conf && touch %s/nft; elif command -v ufw >/dev/null 2>&1 && "
+        "ufw status 2>/dev/null | grep -q 'Status: active'; then ufw allow %d/tcp "
+        ">/dev/null && touch %s/ufw; fi" % (shq(NFT_MANAGED), stage, stage, port, stage),
+        "systemctl reload ssh",
+        "systemctl try-restart fmnext-ids.service fail2ban.service || true",
+    ]
+    return "\n".join(lines)
+
+
+def ssh_port_disarm_script():
+    stage = SSH_PORT_STAGE
+    return "\n".join([
+        "systemctl stop %s.timer >/dev/null 2>&1 || true" % SSH_PORT_ROLLBACK_UNIT,
+        "rm -f %s/*.bak %s/nft %s/ufw %s/rollback.sh" % (stage, stage, stage, stage)])
+
+
+def install_ssh_port(fleet, name, ip, ssh, runner, replacement=False):
+    import render
+    port = render.ssh_port(fleet)
+    files = ssh_port_files(fleet, name, replacement)
+
+    def action():
+        current = ssh.port(ip)
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp, "ssh-port.tar.gz")
+            archive.write_bytes(tar_files(files))
+            ssh.put(ip, archive, "/tmp/fmnext-ssh-port.tar.gz")
+        ssh.run(ip, ssh_port_script(port, files, "/tmp/fmnext-ssh-port.tar.gz"))
+        ssh.use_port(ip, port)
+        completed = ssh.run_strict(ip, SSH_IDENTITY_SCRIPT)
+        lines = (completed.stdout or b"").decode("utf-8", "replace").split()
+        if completed.returncode != 0 or not lines or lines[0] not in (
+                "%s.%s" % (name, fleet.get("domain", "")), name,
+                parse_target(name)[2]):
+            ssh.use_port(ip, current)
+            raise ToolError(
+                "%s: no pinned answer on port %d (%s); the node puts its "
+                "previous sshd and firewall back within %d s" % (
+                    name, port, (completed.stderr or b"").decode(
+                        "utf-8", "replace").strip()[-300:],
+                    SSH_PORT_ROLLBACK_SECONDS))
+        ssh.run(ip, ssh_port_disarm_script())
+    runner.step("%s: move sshd to port %d (firewall, IDS and fail2ban too), "
+                "check it over a new connection, roll back by itself in %d s "
+                "otherwise" % (name, port, SSH_PORT_ROLLBACK_SECONDS), action)
+
+
 def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             state_path=None, idle_guard=False):
     ip = node_ip(fleet, name)
@@ -1240,6 +1359,15 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
         verify_target(vultr, ssh, fleet, name, ip)
     role = "core" if is_core_like(name) else "runner"
     import next_ids
+    import render
+    if runner.execute and "files" in steps and "ssh-port" not in steps[
+            :steps.index("files")] and hasattr(ssh, "port") and ssh.port(
+            ip) != render.ssh_port(fleet):
+        runner.say("%s answers on SSH port %d, not %d: moving sshd before the "
+                   "files step closes the old port" % (
+                       name, ssh.port(ip), render.ssh_port(fleet)))
+        steps = list(steps)
+        steps.insert(steps.index("files"), "ssh-port")
     for step in steps:
         # Tell the node's IDS first, so the step's changes are expected
         # (a no-op until the IDS runs there; docs/IDS.md).
@@ -1248,6 +1376,8 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             script = base_script(role)
             runner.step("%s: apt packages, users, dirs, swapfile, key-only sshd" % name,
                         lambda: ssh.run(ip, script))
+        elif step == "ssh-port":
+            install_ssh_port(fleet, name, ip, ssh, runner, replacement)
         elif step == "wireguard":
             def keygen():
                 out = ssh.run(ip, WIREGUARD_KEY_SCRIPT).stdout.decode().strip()

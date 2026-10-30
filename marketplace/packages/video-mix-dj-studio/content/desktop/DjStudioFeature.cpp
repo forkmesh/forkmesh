@@ -927,17 +927,21 @@ void DjStudioFeature::activateRailStep(const QString &, const QString &step)
 
 namespace {
 
-const forkmesh::market::NativePackageRegistration videoMixDjStudioRegistration({
-    QStringLiteral("builtin:video-mix-dj-studio"),
-    {QStringLiteral("extension.native")},
-    QStringLiteral("Video Mix DJ Studio"),
-    QStringLiteral("play"),
-    QStringLiteral("/api/video-mix-dj-studio"),
-    QStringLiteral("forkmesh-video-mix-dj-studio-request-v1"),
-    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
-        return new forkmesh::djstudio::DjStudioFeature(host, parent);
-    },
-    QString(),
-});
+const forkmesh::market::NativePackageRegistration videoMixDjStudioRegistration([] {
+    forkmesh::market::NativePackageContribution contribution{
+        QStringLiteral("builtin:video-mix-dj-studio"),
+        {QStringLiteral("extension.native")},
+        QStringLiteral("Video Mix DJ Studio"),
+        QStringLiteral("play"),
+        QStringLiteral("/api/video-mix-dj-studio"),
+        QStringLiteral("forkmesh-video-mix-dj-studio-request-v1"),
+        [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+            return new forkmesh::djstudio::DjStudioFeature(host, parent);
+        },
+        QString(),
+    };
+    contribution.gpuSurface = true;
+    return contribution;
+}());
 
 }

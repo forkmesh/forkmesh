@@ -216,11 +216,12 @@ def setup(fleet, ssh, runner, names=None) -> int:
     return 0
 
 
-def git_ssh_command(ssh) -> str:
+def git_ssh_command(ssh, ip=None) -> str:
     return " ".join(shlex.quote(part) for part in [
         "ssh", "-i", str(ssh.key), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes",
-        "-o", "UserKnownHostsFile=%s" % ssh.known_hosts])
+        "-o", "UserKnownHostsFile=%s" % ssh.known_hosts,
+        *(ssh.dest(ip) if ip and hasattr(ssh, "dest") else [])])
 
 
 def push(fleet, ssh, runner, names=None, repo=None, run=subprocess.run) -> int:
@@ -235,7 +236,7 @@ def push(fleet, ssh, runner, names=None, repo=None, run=subprocess.run) -> int:
         ip = node["public_ipv4"]
 
         def apply(ip=ip, name=node["name"]):
-            env = dict(os.environ, GIT_SSH_COMMAND=git_ssh_command(ssh))
+            env = dict(os.environ, GIT_SSH_COMMAND=git_ssh_command(ssh, ip))
             completed = run(["git", "-C", str(repo), "push", "--quiet",
                              "root@%s:%s" % (ip, REPO_PATH), *REFSPECS],
                             env=env, capture_output=True, text=True, check=False)

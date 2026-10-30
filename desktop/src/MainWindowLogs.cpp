@@ -2946,7 +2946,8 @@ void MainWindow::launchCoreLogFeed(const QString &node)
     feed->paused = false;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const forkmesh::corelogs::FeedCommand command =
-        forkmesh::corelogs::buildFeedCommand(feed->node, feed->handledCursor);
+        forkmesh::corelogs::buildFeedCommand(feed->node, feed->handledCursor,
+                                             feed->failures % 2 == 1);
     if (command.program.isEmpty()) {
         m_coreLogIdleReason =
             QStringLiteral("Cannot follow the fleet nodes' logs: %1.")

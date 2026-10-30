@@ -262,6 +262,9 @@ BASE_RESCAN = ("/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow",
                "/etc/systemd/system/cloud-init-log-reader.service",
                "/etc/systemd/system/multi-user.target.wants")
 AUTHORIZED_KEYS = ("/root/.ssh/authorized_keys",)
+SSH_PORT_RESCAN = ("/etc/ssh/sshd_config.d", "/etc/nftables.conf",
+                   "/etc/forkmesh-next/ids.json", "/etc/fail2ban/jail.d",
+                   "/etc/ufw")
 WANTS = ("/etc/systemd/system/multi-user.target.wants",
          "/etc/systemd/system/timers.target.wants",
          "/etc/systemd/system/sockets.target.wants")
@@ -312,6 +315,10 @@ def expect_step(fleet, ssh, runner, name, step, replacement=False):
                                 allow=("users", "modules", "listeners",
                                        "processes"),
                                 reason="next_fleet base")
+    if step == "ssh-port":
+        return push_expectation(fleet, ssh, runner, name, rescan=SSH_PORT_RESCAN,
+                                allow=("listeners", "processes"),
+                                reason="next_fleet ssh-port")
     if step == "wireguard":
         return push_expectation(fleet, ssh, runner, name,
                                 allow=("modules", "listeners"),

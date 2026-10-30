@@ -182,6 +182,34 @@ to the top search box like a page's. Timers is the first: `TimersClock` is the
 clock and its chips; the package's model (`TimersFeature`) was already in the
 plugin.
 
+### Pages that draw on the GPU
+
+A page holding a `QWebEngineView` (a `QQuickWidget` inside), a
+`QOpenGLWidget` or a `QRhiWidget` needs its top-level window composed by
+Qt's RHI. Qt 6 decides a window's surface type when it first creates the
+native window, so adding such a child to a window already on screen makes
+Qt destroy the native window and create it again: on Wayland the window
+vanished and came back about a second after every start, because package
+pages are built after the first paint (task 2683). A contribution that puts
+one on its page while the page is built sets `gpuSurface` (Face Changer,
+Synapse, Video Mix DJ Studio). Before its first show the window calls
+`MainWindow::prepareStartupComposition()` (`MainWindowMarket.cpp`): when a
+package installed here sets the flag, it adds a hidden `QRhiWidget`, so the
+first native window already has the GPU surface and the page joins it later
+without a rebuild. With no such package the window stays raster: composing
+on the GPU loads the GL driver, which is not worth paying for a window that
+never shows GPU content. It is skipped on the `offscreen` and `minimal`
+platforms and before Qt 6.7, which has no `QRhiWidget`. A GPU child added
+later by a user action (opening the workspace Browser tab in a raster
+window) still rebuilds the window once. The side browser restored at start
+does not, because the window builds it in its constructor, before the first
+show.
+
+To check it, run the window in a sandbox `HOME` on Wayland with
+`WAYLAND_DEBUG=client`: count `xdg_surface#N.get_toplevel` lines whose
+surface gets a `wl_surface.attach`. Before the fix the main window
+("ForkMesh v<version>") had two, the second about a second after the first.
+
 ## Measurements
 
 Taken 2026-10-15 on the 36-core Linux build box while other agents were
