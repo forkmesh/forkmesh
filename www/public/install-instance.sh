@@ -95,8 +95,6 @@ on_exit() {
     progress "$CURRENT_STEP" failed
     printf 'Error: the step above stopped with status %s.\n' "$code"
   fi
-  # Only the copy that does the work defines rollback_source; the copy that
-  # started the detached setup and follows its log has nothing to roll back.
   if [ "$code" -ne 0 ] && declare -F rollback_source >/dev/null; then rollback_source || true; fi
   if [ "$DETACHED" = "1" ]; then printf '%s\n' "$code" > "$SETUP_RUN_DIR/status" 2>/dev/null || true; fi
 }
@@ -862,8 +860,6 @@ follow_source_url() {
   fi
 }
 
-# The source can be this instance's own forge, whose git mirror answers 503
-# for a short while after a repository import; retry with a growing wait.
 source_retry() {
   local attempt=1 waits=(${FORKMESH_SOURCE_RETRY_WAITS:-5 10 20 40 60})
   while ! "$@"; do
@@ -879,7 +875,6 @@ fetch_origin_ref() {
 }
 
 clone_source() {
-  # git clone removes the directory it created when it fails.
   git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$1"
 }
 

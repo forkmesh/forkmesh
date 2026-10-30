@@ -242,7 +242,12 @@ and, on its next restart, new code that was never built. Now:
    step says so when it changes. A `sourceUrl` on the instance's own domain
    is fetched with `http.curloptResolve=<domain>:443:127.0.0.1`, through the
    local Caddy, so the update does not depend on public DNS or a proxy
-   hairpin.
+   hairpin. That forge's git mirror can answer 503 for a short while after a
+   repository import, so the fetch (and the first-install clone) is retried
+   after 5, 10, 20, 40 and 60 seconds (`source_retry`; the waits come from
+   `FORKMESH_SOURCE_RETRY_WAITS`) before the step stops with "Could not
+   fetch". A failed clone leaves no `src.partial` behind: `git clone`
+   removes the folder it created.
 2. **Stage.** When anything has to be built, the build happens in
    `/opt/forkmesh-instance/src.next`. That tree is the previous release
    (`src.prev`) recycled, or a copy of the running tree the first time; it
@@ -265,7 +270,11 @@ and, on its next restart, new code that was never built. Now:
    restarted. Migrations are not reversed: they are additive, and the old
    code keeps working on the migrated database. Once the app answers
    (`SOURCE_COMMITTED`), later steps (HTTPS, git node, runner) no longer roll
-   back.
+   back. Only the copy of the installer that does the work defines
+   `rollback_source`; the copy that starts the detached setup and follows its
+   log exits before that, so its `EXIT` trap calls the function only when it
+   exists (it used to print "rollback_source: command not found" whenever the
+   setup failed).
 
 Between the switch and the restart (a few seconds of settings and migrations)
 the running process sees the new files on disk, as it did during the whole

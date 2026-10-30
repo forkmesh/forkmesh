@@ -1048,8 +1048,6 @@ def test_the_source_fetch_retries_while_the_forge_mirror_answers_503(tmp_path):
 
 
 def test_a_copy_that_only_follows_the_setup_does_not_roll_back(tmp_path):
-    # The copy that starts the detached setup exits from follow_setup, before
-    # rollback_source is defined; its exit trap must not call it.
     assert TEXT.index("\nfollow_setup() {") < TEXT.index("\nrollback_source() {")
     body = ('CURRENT_STEP=""; DETACHED="0"; progress() { :; }\n'
             'trap on_exit EXIT\nexit 3\n')
