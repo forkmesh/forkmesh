@@ -530,8 +530,9 @@ void PokerPage::buildTable()
     m_raise = new QPushButton(QStringLiteral("Raise"));
     m_raise->setObjectName(QStringLiteral("pokerRaise"));
     actions->addWidget(m_raise);
+    m_call->setProperty("pokerTone", QStringLiteral("check"));
     for (QPushButton *button : {m_fold, m_call, m_raise}) {
-        button->setMinimumHeight(44);
+        button->setMinimumHeight(48);
         button->setMinimumWidth(110);
     }
     m_fold->setToolTip(QStringLiteral("Fold (F)"));
@@ -539,27 +540,33 @@ void PokerPage::buildTable()
     m_raise->setToolTip(QStringLiteral("Bet or raise to the amount (R)"));
     m_maxButton->setToolTip(QStringLiteral("Set the amount to your whole stack (A goes all-in)"));
     m_actionBar->setStyleSheet(QStringLiteral(
-        "QWidget#pokerActionBar { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d1f24, stop:1 #101114);"
-        " border-top: 1px solid #3a3326; }"
-        "QLabel#pokerActionNote { color: #e8e2d0; font-size: 13px; }"
-        "QPushButton#pokerFold, QPushButton#pokerCall, QPushButton#pokerRaise { color: white; font-size: 14px;"
-        " font-weight: 700; border-radius: 8px; padding: 6px 14px; border: 1px solid rgba(255,255,255,40); }"
-        "QPushButton#pokerFold { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #b23a3a, stop:1 #7f2020); }"
-        "QPushButton#pokerCall { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2f73c9, stop:1 #1b4f94); }"
-        "QPushButton#pokerRaise { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #3c9a46, stop:1 #24692c); }"
+        "QWidget#pokerActionBar { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2235, stop:1 #07121f);"
+        " border-top: 1px solid #37516a; }"
+        "QLabel#pokerActionNote { color: #e8f3fc; font-size: 13px; }"
+        "QPushButton#pokerFold, QPushButton#pokerCall, QPushButton#pokerRaise { color: white; font-size: 15px;"
+        " font-weight: 700; border-radius: 12px; padding: 6px 16px; border: 2px solid rgba(249,225,160,140); }"
+        "QPushButton#pokerFold { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #da3a40, stop:1 #8c1725); }"
+        "QPushButton#pokerCall { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2976e7, stop:1 #0e3e98); }"
+        "QPushButton#pokerCall[pokerTone=\"call\"] {"
+        " background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #17ba70, stop:1 #086b44); }"
+        "QPushButton#pokerRaise { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffbd2c, stop:1 #986008); }"
         "QPushButton#pokerFold:hover, QPushButton#pokerCall:hover, QPushButton#pokerRaise:hover {"
-        " border: 1px solid #e8c45c; }"
+        " border: 2px solid #ffffff; }"
         "QPushButton#pokerFold:disabled, QPushButton#pokerCall:disabled, QPushButton#pokerRaise:disabled {"
-        " background: #2a2c31; color: #6f7278; border: 1px solid #33353a; }"
-        "QPushButton#pokerQuick { color: #e8e2d0; background: #2a2c31; border: 1px solid #3d4046; border-radius: 6px;"
-        " padding: 3px 8px; font-size: 12px; }"
-        "QPushButton#pokerQuick:hover { border-color: #e8c45c; }"
-        "QPushButton#pokerQuick:disabled { color: #5d6066; }"
-        "QSpinBox { color: #fff3c4; background: #0d0e10; border: 1px solid #3d4046; border-radius: 6px; padding: 3px 6px;"
+        " background: #34404d; color: #9fb0bd; border: 2px solid #59616d; }"
+        "QPushButton#pokerQuick { color: #e8f3fc; background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #29445a,"
+        " stop:1 #0d2235); border: 1px solid #37516a; border-radius: 8px; padding: 3px 10px; font-size: 12px;"
+        " font-weight: 600; }"
+        "QPushButton#pokerQuick:hover { border-color: #f4c85a; }"
+        "QPushButton#pokerQuick:disabled { color: #59616d; background: #1a2633; }"
+        "QSpinBox { color: #f4c85a; background: #07121f; border: 1px solid #37516a; border-radius: 8px; padding: 3px 6px;"
         " font-weight: 700; }"
-        "QSlider::groove:horizontal { height: 6px; background: #2a2c31; border-radius: 3px; }"
-        "QSlider::sub-page:horizontal { background: #3c9a46; border-radius: 3px; }"
-        "QSlider::handle:horizontal { background: #e8c45c; width: 16px; margin: -6px 0; border-radius: 8px; }"));
+        "QSlider::groove:horizontal { height: 8px; background: #234056; border-radius: 4px; }"
+        "QSlider::sub-page:horizontal { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #1553ae,"
+        " stop:1 #11c9e6); border-radius: 4px; }"
+        "QSlider::handle:horizontal { background: #f5c45c; border: 2px solid white; width: 16px; margin: -6px 0;"
+        " border-radius: 10px; }"
+        "QSlider::handle:horizontal:disabled { background: #59616d; border-color: #9fb0bd; }"));
     column->addWidget(m_actionBar);
     m_tableRow->addWidget(m_tableColumn, 1);
 
@@ -1242,6 +1249,12 @@ void PokerPage::renderActions()
     m_fold->setEnabled(turn && legal.fold);
     m_call->setEnabled(turn);
     m_call->setText(turn ? callButtonLabel(legal) : QStringLiteral("Check / Call"));
+    const QString callTone = turn && legal.present && legal.call > 0 ? QStringLiteral("call") : QStringLiteral("check");
+    if (m_call->property("pokerTone").toString() != callTone) {
+        m_call->setProperty("pokerTone", callTone);
+        m_call->style()->unpolish(m_call);
+        m_call->style()->polish(m_call);
+    }
     const bool raise = turn && legal.canRaise;
     for (QWidget *widget : {static_cast<QWidget *>(m_raise), static_cast<QWidget *>(m_slider),
                             static_cast<QWidget *>(m_amount), static_cast<QWidget *>(m_half),

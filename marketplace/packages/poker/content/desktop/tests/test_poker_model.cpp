@@ -147,9 +147,9 @@ QImage render(PokerTableView &view, const QSize &size)
     return image;
 }
 
-bool greenish(const QColor &color)
+bool teal(const QColor &color)
 {
-    return color.green() > color.red() + 15 && color.green() > color.blue() + 10;
+    return color.green() > color.red() + 30 && color.blue() > color.red() + 30 && color.green() > 50;
 }
 
 }
@@ -370,11 +370,11 @@ int main(int argc, char **argv)
     PokerTableView view;
     view.setServerOffset(1790000000000LL - QDateTime::currentMSecsSinceEpoch() + 15000);
     QImage empty = render(view, QSize(1100, 700));
-    check(greenish(empty.pixelColor(empty.width() / 2, int(empty.height() * 0.62))), "an empty view still draws the felt");
+    check(teal(empty.pixelColor(empty.width() / 2, int(empty.height() * 0.62))), "an empty view still draws the felt");
     view.setTable(table, {});
     QImage flop = render(view, QSize(1100, 700));
     save(flop, QStringLiteral("poker-flop-1100.png"));
-    check(greenish(flop.pixelColor(int(flop.width() * 0.3), flop.height() / 2)), "the felt is green");
+    check(teal(flop.pixelColor(int(flop.width() * 0.3), flop.height() / 2)), "the felt is teal");
     const QColor corner = flop.pixelColor(3, 3);
     check(corner.lightness() < 50, "the room around the table is dark", corner.name());
     check(!view.animating(), "a first load plays no animation");

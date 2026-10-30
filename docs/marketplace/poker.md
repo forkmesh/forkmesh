@@ -255,7 +255,8 @@ Aces`, `High Card, King`.
 
 ## Look and sound
 
-Every client draws the same table so it feels like one game on every device:
+Every client draws the same table so it feels like one game on every device
+(the desktop has its own skin since 2026-10-30, see [Desktop skin](#desktop-skin)):
 
 - A dark room around an oval table: a polished walnut rail, a padded black
   leather arm rest, and green felt (`#0d5c3a` centre to `#083d27` edge, with
@@ -356,6 +357,44 @@ Layout modes: Control Tower puts the chat, hand log and last hand in a column
 beside the table; Focus gives the table the page and opens them as a drawer
 over its right side from "Chat & log", which counts unread chat lines. The
 mode is read on show and on refresh.
+
+### Desktop skin
+
+On 2026-10-30 the owner asked for the desktop page to follow a neon poker
+concept delivered as an integration kit (`poker_plugin_asset_kit.zip`: a
+concept image, SVG cards, chips, felt, plates and buttons, a QSS starting
+point and a stand-alone preview). The kit asked for a reskin only, so the
+seat geometry, hit-testing, animations, turn clock, state and requests are
+unchanged. What the desktop takes from it:
+
+- **Cards** are the kit's SVGs, `content/desktop/cards/<rank>_<suit>.svg`
+  (ranks `2`..`10`, `J`, `Q`, `K`, `A`; suits `S`, `H`, `D`, `C`) and
+  `card_back.svg` (navy with a gold border), compiled into the module as
+  `:/forkmesh-market/packages/poker/content/desktop/cards/`. Where the
+  resource is missing (the `forkmesh-poker-tests` binary does not carry the
+  module's files) the painted cards described above are drawn instead.
+- **Room, rail and felt** keep the stadium shapes from `PokerLayout` and take
+  the kit's colours: a navy room (`#13263c` to `#040a13`), a navy lacquer rail
+  with a gold edge (`#b99a5a`), a navy arm rest with gold stitching, a teal felt
+  (`#0a8a82` centre to `#004c52` edge) with a cyan neon rim (`#14e3e8`) and a
+  gold inset line. The kit's `table_felt.svg` is an ellipse, so it is not drawn:
+  stretched over the stadium it would not line up with the seats.
+- **Seats**: gold avatar rings (`#dfb75a`), navy plates (`#142b3d` to
+  `#070e1c`) with a gold border, white names and gold stacks (`#f4c85a`); the
+  plate of the player to act glows gold. Pot, dealer line and hand-name pills
+  are navy with gold text.
+- **Dealer button** is a gold puck with a "D", as in the concept.
+- **Action bar** uses the kit's QSS colours: Fold red, Check blue, Call
+  green (the call button's `pokerTone` property switches between the two),
+  Bet/Raise gold, navy presets and amount box, and a blue-to-cyan slider with
+  a gold handle.
+
+Left out on purpose: the kit's chips (six colours against the seven
+denominations of the shared chip table, so chips keep the painted look and
+colours), its icons (Unicode glyphs inside SVG, which vary by system font),
+its screenshot crops (reference only) and its portrait avatars (the kit
+itself says not to put fictional faces on real users; seats keep the account
+picture or initial).
 
 ## Data
 
