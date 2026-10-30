@@ -1025,6 +1025,7 @@ int main(int argc, char *argv[])
         window->raise();
         window->activateWindow();
     });
+    window->prepareStartupComposition();
     forkmesh::ui::startupStep(QStringLiteral("Showing the main window"));
     {
         forkmesh::StartupTraceStep step(QStringLiteral("show the main window"));
