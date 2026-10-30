@@ -5916,7 +5916,7 @@
         continue;
       }
       if (ev.type !== "review" || !ev.state) continue;
-      const key = ev.author || ev.authorName || "";
+      const key = String(ev.authorName || ev.author || "").trim().toLowerCase();
       if (!key) continue;
       byAuthor.set(key, {
         author: ev.author || "",
@@ -5929,15 +5929,15 @@
   }
 
   function pullReviewPolicy(events, pullAuthor = "") {
-    const authorKey = String(pullAuthor || "").trim();
+    const authorKey = String(pullAuthor || "").trim().toLowerCase();
     const latest = new Map();
     for (const ev of Array.isArray(events) ? events : []) {
       // Inbox reviews are not authoritative merge evidence until the owner
       // node drains, validates, commits, and republishes them on the pinned
       // pull-metadata ref.
       if (ev?.type !== "review" || ev.pending === true) continue;
-      const key = String(ev.author || "").trim();
-      if (!key || key === authorKey) continue;
+      const key = String(ev.authorName || ev.author || "").trim().toLowerCase();
+      if (!key || key === authorKey || String(ev.author || "").trim().toLowerCase() === authorKey) continue;
       if (ev.state === "approved" || ev.state === "changes_requested") {
         latest.set(key, ev.state);
       } else {

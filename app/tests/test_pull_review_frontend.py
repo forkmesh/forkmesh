@@ -335,3 +335,31 @@ def test_force_push_events_render_with_both_commits_and_a_compare_link():
     assert 'ev.type === "force-push"' in renderer
     assert "data-repo-pull-force-push-compare" in renderer
     assert "data-repo-pull-review-older" in CONTENT
+
+
+def test_one_person_reviewing_with_two_keys_is_one_reviewer_and_one_vote():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    script = _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
+const events = [
+  {type: "review", author: "key-laptop", authorName: "alice", state: "changes_requested"},
+  {type: "review", author: "key-phone", authorName: "Alice", state: "changes_requested"},
+  {type: "review", author: "key-bob", authorName: "bob", state: "approved"},
+  {type: "review", author: "key-author", authorName: "carol", state: "approved"},
+];
+console.log(JSON.stringify({
+  rows: pullReviewSummary(events).map((row) => row.authorName),
+  policy: pullReviewPolicy(events, "carol"),
+}));
+"""
+    output = json.loads(subprocess.run([node, "-e", script], capture_output=True,
+                                       text=True, check=True, timeout=30).stdout)
+    assert len([name for name in output["rows"] if name.lower() == "alice"]) == 1
+    assert output["policy"] == {"approvals": 1, "blockers": 1, "ready": False}
