@@ -416,12 +416,20 @@ class DirectMessageService(
     fun restore(messages: List<ChatMessage>, saved: Map<String, ChatReceipt>, times: Map<String, ChatReceiptTimes> = emptyMap()) {
         val owners = HashMap<String, String>()
         var changed = false
-        for (message in messages) {
-            if (!DirectMessageFrames.isDirect(message.conversation)) continue
-            if (synchronized(lock) { removed.containsKey(message.id) }) continue
-            val conversationId = DirectMessageFrames.conversationId(message.conversation)
-            owners[message.id] = conversationId
-            if (append(message, conversationId)) changed = true
+        synchronized(lock) {
+            val added = LinkedHashMap<String, MutableList<ChatMessage>>()
+            for (message in messages) {
+                if (!DirectMessageFrames.isDirect(message.conversation)) continue
+                if (removed.containsKey(message.id)) continue
+                val conversationId = DirectMessageFrames.conversationId(message.conversation)
+                owners[message.id] = conversationId
+                if (!seen.getOrPut(conversationId) { HashSet() }.add(message.id)) continue
+                added.getOrPut(message.conversation) { ArrayList() }.add(message)
+            }
+            for ((conversation, incoming) in added) {
+                history[conversation] = mergeSorted(history[conversation].orEmpty(), incoming).takeLast(DirectMessageFrames.MAX_MESSAGES_PER_ROOM)
+            }
+            changed = added.isNotEmpty()
         }
         for ((id, receipt) in saved) {
             if (receipt != ChatReceipt.DELIVERED && receipt != ChatReceipt.READ) continue

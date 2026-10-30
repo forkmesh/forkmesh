@@ -25,13 +25,19 @@ characters, lowest-ranked sections are trimmed first and say so):
   (lines listed, running, list view, agent dots, aquarium) and `watch`
   (paired, app installed, reachable) since 2026-10-18: the watch bridge
   reads and parses agent work only while a watch with the app is paired.
+  `chat history` (since 2026-10-29): the size of the stored chat history
+  files, which the app reads and restores at every launch. `screen` is the
+  page covering the tab when there is one (`Home`, `Report a bug`); before
+  2026-10-29 it gave only the tab, so on an iPhone, which opens on Home, a
+  report sent from Home read `tab: agents, screen: tab root`.
 - `FPS` comes from a 60 Hz probe (`TelemetryFrameProbe`), so about 60 is
   normal even on a 120 Hz phone; it is not the display rate.
 - `FRAME` is the longest gap between two probe callbacks in each second,
   `LOOP` the worst heartbeat lag in each second (`PerformanceMonitor`).
   `avg` is the average of those per-second worsts. An average `LOOP` of
   10-20 ms means the main thread is rarely idle; a high `max` alone is one
-  stall. Compare the 5 minute average with the hour's: a `FRAME` average of
+  stall. An `uptime` of a few seconds makes every average a launch figure,
+  not a steady level. Compare the 5 minute average with the hour's: a `FRAME` average of
   40-50 ms over an hour has been this phone's usual level (41 ms in the
   2026-10-18 bundle, 51 ms in the 2026-10-17 one), so only a rise above it
   points at the last few minutes. A `max` of tens of seconds with an
@@ -67,6 +73,16 @@ characters, lowest-ranked sections are trimmed first and say so):
   at `RELAY` max). Since 2026-10-19 main-thread sections of 1 ms or more
   are kept (the last 256), so such a burst sums under its name, and each
   chat relay frame is a `relay.frame` section.
+  Launch (since 2026-10-29): `startup.services` holds everything
+  `AppServices.start` does on the main thread after the identity load, as
+  one block: `startup.init` (with `startup.auth`), `startup.projects`,
+  `startup.features` (one `startup.feature.<area>` each), `startup.wire`
+  and one `startup.<area>` per installer; over 200 ms it is its own `sync
+  startup.services` stall with the steps in its `sections`. `shell.start`
+  is the shell's first-appearance work and `chat.history.restore` the
+  stored chat history going back into the chat services. Before that only
+  `startup.auth` (5 ms) was named, so a launch stall read as unnamed work
+  with `startup.auth` beside it.
   `surfaces.publish` (the widget, Live Activity and Shortcuts snapshot after
   agent row changes) has been named since 2026-10-18. `watchSections` hands
   every main-thread section of 1 ms or more to one watcher; the DJ studio
@@ -81,7 +97,13 @@ characters, lowest-ranked sections are trimmed first and say so):
   tab and navigation stack showing when each was recorded
   (`AppRouter.screenTitle`, the `screen` detail, also in `stalls.log`
   lines). `not recorded` is a stall from an older build or one caught off
-  the main thread. A missing section is not always trimming: build 276
+  the main thread. Before 2026-10-29 a stall during launch or on the Home
+  page read `Agents`, the router's default tab: the router exists from the
+  end of `AppServices.start` and knew nothing of the launch screen or of
+  the Home page drawn over the tab. It reads `Launch` until the shell
+  starts and `Home` while Home covers the tab now; an `Agents` launch stall
+  in an older bundle (2026-10-18, 2026-10-19, 2026-10-29) was not the
+  Agents tab. A missing section is not always trimming: build 276
   (commit b57c0d2) predates it, and a trimmed section says so. A screen
   that was left can still own the work: a load it started keeps running
   in `ApiService`'s caches after it is popped.
@@ -124,6 +146,72 @@ characters, lowest-ranked sections are trimmed first and say so):
 
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
+
+- 2026-10-29, `2672-agents-tab-freeze-fix` (1.5.0 (324), commit
+  cb5b44d, iPhone16,2, "tab: agents, screen: tab root"). Showed: "froze
+  for 0.3 s (2 freezes)" with `uptime 13s`: two event-loop stalls of 344
+  and 343 ms and a 372 ms frame, at 22:48:01-02, all `launch, first 10s`,
+  all filed under `Agents`; the only named work inside them was
+  `startup.auth` (5 ms); the Agents list read (4.8 s) and chat channels
+  finished after the stalls; `FRAME` avg 72 ms is a 13 s launch average.
+  Reading: telemetry starts in `AppServices.init`, about 22:48:01.7, and
+  `startup.auth` runs inside it, so one stall is the synchronous rest of
+  `AppServices.start` after the identity load (feature registration,
+  `wire`, 19 installers, all unnamed). `Agents` was the router's default
+  title, not the screen: the launch screen was up, and an iPhone opens on
+  Home. Cause (the largest measured part of that block): `installChat`
+  read and decoded the whole stored chat history (`relay-<scope>.json`,
+  up to 200 messages for each channel, room and direct conversation)
+  with `Data(contentsOf:)` and the byte parser, then put it back one
+  message at a time: each insert copied its conversation's array (O(n²)
+  per conversation), each restored direct message rescheduled a save
+  (`onChange` per message), `isDirect` validated 32 hex digits through
+  `Character` ranges about four times per message (25 ms per pass over
+  22,400 messages), and a deep `snapshot != loaded` compare (29 ms)
+  decided whether a purge needed saving. Measured (release `ForkMeshCore`
+  on x86, about one A17 core), 2.8 MB (8 channels, 4 rooms and 40 direct
+  conversations of 200): read 50 ms, restore 39 ms, direct restore 80 ms,
+  about 170 ms on the main thread; 6.2 MB (100 direct conversations):
+  100 + 96 + 226, about 420 ms, the size of the bundle's block. How big
+  this phone's history is the bundle could not say. Fix: the app attaches
+  the history with `inBackground: true` (`ChatHub.loadHistoryInBackground`:
+  read and decoded in a detached task; until then nothing is saved, so a
+  half-loaded state never overwrites the file; what arrives meanwhile is
+  merged), and the restores (`RelayService.restoreHistory`,
+  `DirectMessageService.restore`, `OfficeChannelService.restore`) group by
+  conversation and merge once (`RelayService.merging`), with one change
+  notice; `validChannelId` checks UTF-8 bytes; the purge check compares
+  item counts. Now about 28 ms (2.8 MB) and 70 ms (6.2 MB) on the main
+  thread, as `chat.history.restore`, with the read off it. Android had the
+  same per-message copies in `RelayRoom`, `DirectMessageService` and
+  `OfficeChannelService` (now `mergeSorted`); its history read in
+  `ChatDepth.install` is still synchronous. Tests:
+  `testRestoringDirectHistoryReportsOneChangeAndKeepsTheNewestInOrder`
+  (fails without the fix: one change per message),
+  `testABackgroundAttachReturnsBeforeTheHistoryIsReadAndKeepsWhatArrivesMeanwhile`,
+  `testRestoringRelayHistoryMergesWithWhatIsShownInOrder`,
+  `testOfficeRestoreKeepsTheNewestAndSkipsKnownIds`,
+  `testChannelIdsAreExactlyThirtyTwoLowercaseHexDigits`; Android
+  `testRestoresMergeOnceInOrderAndKeepTheNewest`. Ruled out: the Agents
+  tab (no rows yet: its list read finished at 22:48:06, and
+  `agents.lines`, `agents.eagle` and `agents.mergeRows` never reached
+  1 ms); the slow operations of 3-5 s (network, after the stalls); the
+  watch bridge (no watch app installed); the MetricKit CPU exceptions
+  (1.4.1, four days earlier); Keychain, owner keys and room seals (all
+  read in detached tasks at launch). Not measured, still on the main
+  thread at launch: WebRTC setup in `NativeCallMedia.shared`
+  (`installCalls`), the local-model folder scan and free-space query
+  (`LocalAIFeature.register`), the MetricKit payload replay
+  (`installInsights`), TipKit's store (`installNavigation`) and the
+  second stall's work, which ran no named section (likely the shell's
+  first build). Bundle gaps closed: every launch step is a section
+  (`startup.services` and the `startup.*` inside it, `shell.start`,
+  `chat.history.restore`), so the next launch stall names its step; the
+  stall screen reads `Launch` before the shell starts and `Home` under
+  Home (`AppRouter.cover`), and so does the header's `screen`; the header
+  gives the stored `chat history` size. Still missing: the main thread's
+  stack during an event-loop stall, so SwiftUI's first build of the shell
+  is still unnamed.
 
 - 2026-10-21, `2424-improve-mobile-chat-room` (no bundle; the user: "the
   app is very laggy", around chat). Read the chat paths the 2026-10-19
@@ -206,7 +294,8 @@ cause; the fix; what was ruled out; what the bundle lacked.
   event channel's connect), and `records`, `rooms` and `loading` are
   written unconditionally; `nextCounter` writes the counter to the Keychain
   on every send (it must be durable before the frame leaves). The 1262 ms
-  launch stall is unexplained (no section). Bundle gaps closed: main-thread
+  launch stall had no section; it was the launch block, not the Agents tab
+  (see the 2026-10-29 check). Bundle gaps closed: main-thread
   sections of 1 ms or more are kept, so a burst of short jobs sums by name,
   and chat relay frames are `relay.frame`; stalls carry `shown` and
   `shownMs`, grouped in "Stalls by time since shown"; operations leave out

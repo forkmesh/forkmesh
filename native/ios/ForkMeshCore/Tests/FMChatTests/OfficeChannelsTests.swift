@@ -11,6 +11,17 @@ import XCTest
 final class OfficeChannelsTests: XCTestCase {
     static let roomId = String(repeating: "a", count: 32)
 
+    func testChannelIdsAreExactlyThirtyTwoLowercaseHexDigits() {
+        let id = String(repeating: "0123456789abcdef", count: 2)
+        XCTAssertTrue(OfficeFrames.validChannelId(id))
+        XCTAssertTrue(DirectMessageFrames.isDirect(DirectMessageFrames.prefix + id))
+        XCTAssertFalse(OfficeFrames.validChannelId(id.uppercased()))
+        XCTAssertFalse(OfficeFrames.validChannelId(String(id.dropLast())))
+        XCTAssertFalse(OfficeFrames.validChannelId(id + "a"))
+        XCTAssertFalse(OfficeFrames.validChannelId(String(id.dropLast()) + "1\u{301}"))
+        XCTAssertFalse(DirectMessageFrames.isDirect("#general"))
+    }
+
     func testRoomsAreParsedAndBounded() {
         let payload: JSONObject = [
             "channels": [

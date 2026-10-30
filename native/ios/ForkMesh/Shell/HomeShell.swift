@@ -300,6 +300,14 @@ struct HomeShell: View {
         }
     }
 
+    nonisolated static func coverTitle(_ page: ShellPage?) -> String? {
+        switch page {
+        case .home: return "Home"
+        case .reportBug: return "Report a bug"
+        case nil: return nil
+        }
+    }
+
     nonisolated static func tabSymbol(_ tab: AppTab, selected: Bool) -> String {
         switch tab {
         case .agents: return "sparkles"
@@ -862,6 +870,7 @@ struct HomeShell: View {
                 ShellBarPrefs.shared.visit(next)
             }
             .onChange(of: page) { (_: ShellPage?, next: ShellPage?) in
+                router.cover = HomeShell.coverTitle(next)
                 if next != .home {
                     homeHold = nil
                 }
@@ -1089,6 +1098,12 @@ struct HomeShell: View {
             return
         }
         started = true
+        PerformanceMonitorService.section("shell.start") { startNow() }
+        await routePushOpen()
+        await push?.collectLaunchOpen()
+    }
+
+    private func startNow() {
         if live == nil {
             let auth: AuthService? = self.auth
             live = ShellLiveCounts.snapshot(
@@ -1112,6 +1127,7 @@ struct HomeShell: View {
         } else if page == .home {
             page = nil
         }
+        router.cover = HomeShell.coverTitle(page)
         if let target = router.takeComposeRequest() {
             openComposer(target)
         }
@@ -1140,8 +1156,6 @@ struct HomeShell: View {
         // Send does not wait on the relay.
         let launcher: QuickAgentLauncher = composer.launcher
         Task { await launcher.prepare() }
-        await routePushOpen()
-        await push?.collectLaunchOpen()
     }
 
     private func settleOffline(_ state: ShellRelayState) async {

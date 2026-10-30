@@ -73,6 +73,7 @@ public final class AppRouter {
     }
 
     @ObservationIgnored public var intercept: (@MainActor (Route) -> Bool)?
+    @ObservationIgnored public var cover: String?
     @ObservationIgnored private var archive = NavigationArchive()
     @ObservationIgnored private let now: () -> Date
 
@@ -91,7 +92,8 @@ public final class AppRouter {
     public var currentRoute: Route? { currentPath.last }
 
     public var screenTitle: String {
-        ([selectedTab.title] + currentPath.map(\.title) + [presented?.title].compactMap { $0 }).joined(separator: " > ")
+        let base: [String] = cover.map { [$0] } ?? [selectedTab.title] + currentPath.map(\.title)
+        return (base + [presented?.title].compactMap { $0 }).joined(separator: " > ")
     }
 
     public func setPath(_ path: [Route], for tab: AppTab) {
