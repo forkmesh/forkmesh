@@ -59615,7 +59615,7 @@ Your reply
   }
 
   function seasonStatusText(data) {
-    if (data?.season !== "halloween") return "Off. Turn it on to dress up ForkMesh for everyone.";
+    if (data?.season !== "halloween") return `Off. Turn it on to dress up ${platformName()} for everyone.`;
     const until = new Date(Number(data.until)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
     return `On for everyone until ${until}${data.by ? `, turned on by @${data.by}` : ""}.`;
   }
