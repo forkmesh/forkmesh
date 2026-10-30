@@ -1854,26 +1854,11 @@ class Default:
         try:
             row = await d1_first(
                 self.env, "SELECT doc FROM instance_settings WHERE k=?",
-                "sidebar")
+                instance_sidebar.SETTING_KEY)
             doc = json.loads((row or {}).get("doc") or "{}")
         except Exception:
             doc = {}
-        if not isinstance(doc, dict):
-            doc = {}
-        pinned = []
-        values = doc.get("pinned")
-        for value in values if isinstance(values, list) else []:
-            text = str(value or "").strip().lower()
-            if 0 < len(text) <= 161 and text.count("/") <= 1 \
-                    and text not in pinned:
-                pinned.append(text)
-            if len(pinned) >= 10:
-                break
-        try:
-            forks = int(doc.get("forks", 3))
-        except (TypeError, ValueError):
-            forks = 3
-        return {"pinned": pinned, "forks": max(0, min(50, forks))}
+        return instance_sidebar.parse(doc)
 
     async def _instance_legal_route(self, request, url):
         if method_name(request) not in ("GET", "HEAD"):
@@ -2058,6 +2043,50 @@ class Default:
         return json_response({"ok": True, "theme": theme},
                              cache_control="no-store")
 
+    async def _instance_sidebar_route(self, request):
+        method = method_name(request)
+        data = {}
+        if method == "POST":
+            try:
+                data = await bounded_json_request(request, max_bytes=8 * 1024)
+            except Exception:
+                return json_response({"error": "invalid_json"}, status=400,
+                                     cache_control="no-store")
+            if not isinstance(data, dict):
+                return json_response({"error": "invalid_json"}, status=400,
+                                     cache_control="no-store")
+        _account_bi, rec = await _account_session_record(
+            self.env, request, data or None)
+        actor = str((rec or {}).get("name") or "").strip().lower()
+        if not actor:
+            return json_response({"error": "unauthorized"}, status=401,
+                                 cache_control="no-store")
+        if not await _is_admin(self.env, actor):
+            return json_response({"error": "not_admin"}, status=403,
+                                 cache_control="no-store")
+        if method != "POST":
+            return json_response(
+                {"ok": True, "sidebar": await self._instance_sidebar_setting(),
+                 "limits": {"pinned": instance_sidebar.PINNED_MAX,
+                            "forks": instance_sidebar.FORKS_MAX}},
+                cache_control="no-store")
+        setting, error = instance_sidebar.clean(data.get("sidebar"))
+        if error:
+            return json_response({"error": error}, status=400,
+                                 cache_control="no-store")
+        await d1_run(
+            self.env,
+            "INSERT INTO instance_settings (k, doc, updated_at) "
+            "VALUES (?, ?, ?) ON CONFLICT(k) DO UPDATE SET "
+            "doc=excluded.doc, updated_at=excluded.updated_at",
+            instance_sidebar.SETTING_KEY, json.dumps(setting),
+            int(Date.now()))
+        await _audit_sensitive_action(
+            self.env, actor, "instance.sidebar", "instance", "sidebar",
+            "success", setting)
+        return json_response({"ok": True, "sidebar": setting},
+                             cache_control="no-store")
+
     async def _route(self, request, url):
         switched_off = instance_features.blocked(self.env, url.path)
         if switched_off:
@@ -2106,6 +2135,9 @@ class Default:
             scene = await self._instance_world_scene(request, url)
             if scene is not None:
                 return scene
+        if url.path == "/api/instance/sidebar" and \
+                method_name(request) in ("GET", "POST"):
+            return await self._instance_sidebar_route(request)
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
             return await self._instance_theme_write(request)

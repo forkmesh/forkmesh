@@ -1123,7 +1123,16 @@
         </div>`;
   }
 
+  const SIDEBAR_SETTING_STORAGE_KEY = "forkmesh.sidebarSetting";
+
   function sidebarSetting() {
+    if (state.sidebarSetting === undefined) {
+      try {
+        state.sidebarSetting = JSON.parse(localStorage.getItem(SIDEBAR_SETTING_STORAGE_KEY) || "null");
+      } catch (_) {
+        state.sidebarSetting = null;
+      }
+    }
     const setting = state.sidebarSetting;
     return setting && typeof setting === "object" ? setting : null;
   }
@@ -1140,6 +1149,9 @@
       .then((info) => {
         if (!info?.sidebar) return;
         state.sidebarSetting = info.sidebar;
+        try {
+          localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(info.sidebar));
+        } catch (_) {}
         renderSidebarRepositories(state.session);
         renderHomeRepositories();
       })
@@ -1153,7 +1165,7 @@
       const repo = group.entry.repo;
       const wanted = String(key).toLowerCase();
       if (repoMatchesKey(repo, wanted)) return true;
-      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      if (!wanted.includes("/")) return !repoForkParent(repo) && String(repo?.name || "").toLowerCase() === wanted;
       return repositoryEntryLabel(group.entry).toLowerCase() === wanted
         || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
     };
@@ -1161,10 +1173,13 @@
     pinned.forEach((key) => {
       const group = groups
         .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
-        .sort((a, b) => b.forks.length - a.forks.length)[0];
+        .sort((a, b) => Number(Boolean(repoForkParent(a.entry.repo))) - Number(Boolean(repoForkParent(b.entry.repo)))
+          || b.forks.length - a.forks.length)[0];
       if (group) picked.push(group);
     });
-    return picked.length ? picked : fallback(groups);
+    if (picked.length) return picked;
+    if (state.repositoriesLoading) return [];
+    return fallback(groups);
   }
 
   function renderSidebarRepositories(session) {
