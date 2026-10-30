@@ -69,6 +69,19 @@ in their country or region. Grants marked "no, confirm first" under
 **Checked live** could not be confirmed from an official page on the research
 date. Deadlines move: the prompt asks ChatGPT to read the live page first.
 
+## The funding manifest
+
+`www/public/funding.json` is ForkMesh's [funding.json](https://fundingjson.org)
+manifest, served at <https://forkmesh.com/funding.json>. FOSS United and
+FLOSS/fund read it, and FOSS United wants a grantee's personal milestones under
+its funding plans.
+
+A URL on `forkmesh.com` matches the manifest's hostname and needs no
+`wellKnown` file; a URL on any other host, GitHub included, does.
+Every claim in it is public, so keep each one checkable against the about page,
+the repository or the
+[exercise register](../../../www/docs/disaster-recovery/exercise-register.md).
+
 ## Updating the list
 
 Edit `grants.json` (one object per grant; `tools/grants_build.py` lists the
