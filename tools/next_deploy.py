@@ -799,10 +799,10 @@ SSH_EXIT_FIXES = (
     ("REMOTE HOST IDENTIFICATION HAS CHANGED", "the node's host key changed; if "
      "the node was rebuilt, remove its line from "
      "~/projects/forkmesh/config/fleet/known_hosts"),
-    ("timed out", "the node did not answer on port 22; check that it is up "
-     "(python3 tools/next_fleet.py list) and that this machine has network"),
-    ("No route to host", "the node did not answer on port 22; check that it is "
-     "up (python3 tools/next_fleet.py list) and that this machine has network"),
+    ("timed out", "the node did not answer on its SSH port (ssh_port in deploy/fleet.toml); "
+     "check that it is up (python3 tools/next_fleet.py list) and that this machine has network"),
+    ("No route to host", "the node did not answer on its SSH port (ssh_port in deploy/fleet.toml); "
+     "check that it is up (python3 tools/next_fleet.py list) and that this machine has network"),
     ("Connection refused", "sshd on the node is not listening; check the node's "
      "console in Vultr"),
     ("Could not resolve", "DNS failed on this machine; check its network"),

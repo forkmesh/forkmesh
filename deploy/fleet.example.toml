@@ -15,6 +15,10 @@ os_name = "Debian 13 x64 (trixie)"
 instance_label_prefix = "fmnext-"     # hard guard in tools/next_fleet.py
 instance_tag = "forkmesh-next"        # hard guard in tools/next_fleet.py
 ssh_key_name = "fmnext-fleet"
+# sshd port on every node and runner, off 22 so the bots that sweep 22 stop
+# reaching it; privileged, so only root can listen there. Move a node with
+# `tools/next_fleet.py install nN --steps ssh-port --execute` (docs/deploy/ssh-port.md).
+ssh_port = 822
 # No fixed ACME issuer: for app/world the live core first in rendezvous
 # order (sha256 of hostname:node) issues and renews over HTTP-01; the others
 # forward /.well-known/acme-challenge/* to the cores over WireGuard and pull

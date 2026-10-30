@@ -135,8 +135,9 @@ after the alert, so the `post-receive` hook did not start it. A deploy of
    least two) with a leader and no other node is quarantined; otherwise it
    keeps running behind the firewall. One healthy peer later removes the node
    as a voter when that is quorum-safe, never below two voters.
-5. **Firewall** (`inet fmnext_ids`): inbound only replies, loopback, SSH and
-   mesh; outbound only root.
+5. **Firewall** (`inet fmnext_ids`): inbound only replies, loopback, SSH (on
+   `ssh.port`, the fleet's `ssh_port`; [deploy/ssh-port.md](deploy/ssh-port.md))
+   and mesh; outbound only root.
 6. **Stop** services.
 7. **Alerts.**
 

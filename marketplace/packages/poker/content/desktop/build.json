@@ -24,6 +24,7 @@
   ],
   "testLibraries": [
     "Qt6::Core",
-    "Qt6::Widgets"
+    "Qt6::Widgets",
+    "Qt6::Svg"
   ]
 }

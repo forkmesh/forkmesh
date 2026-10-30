@@ -1093,3 +1093,84 @@ def test_roll_waits_out_the_dns_ttl_before_restarting_a_drained_core(monkeypatch
                       ("dns", "undrain", "n1"),
                       ("dns", "drain", "n2"), ("sleep", wait), ("install", "n2"),
                       ("dns", "undrain", "n2")]
+
+
+def ssh_port_target(tmp_path):
+    vultr, _ = vultr_with([instance("fmnext-core-2", ip="203.0.113.12",
+                                    instance_id=IDS["fmnext-core-2"])])
+    return fleet(tmp_path), vultr
+
+
+def test_ssh_port_step_moves_sshd_behind_a_rollback_and_checks_the_new_port(tmp_path):
+    data, vultr = ssh_port_target(tmp_path)
+    ssh = FakeSsh()
+    ssh.strict_answer = subprocess.CompletedProcess(
+        ["ssh"], 0, b"n2.next.forkmesh.com\nfmnext-node\n", b"")
+    next_fleet.install(data, "n2", ssh, Runner(execute=True), ("ssh-port",),
+                       vultr=vultr)
+    assert [p[2] for p in ssh.puts] == ["/tmp/fmnext-ssh-port.tar.gz"]
+    script = ssh.runs[0][1]
+    assert subprocess.run(["bash", "-n", "-c", script]).returncode == 0
+    assert script.index("systemd-run") < script.index("install -D")
+    assert "--on-active=180" in script and "sshd -t" in script
+    assert "ufw allow 822/tcp" in script and "systemctl reload ssh" in script
+    assert "/etc/ssh/sshd_config.d/05-fmnext-port.conf" in script
+    assert ssh.strict == [("203.0.113.12", next_fleet.SSH_IDENTITY_SCRIPT, 822)]
+    assert "systemctl stop fmnext-ssh-port-rollback.timer" in ssh.runs[-1][1]
+    files = next_fleet.ssh_port_files(data, "n2")
+    assert files["/etc/ssh/sshd_config.d/05-fmnext-port.conf"][0] == "Port 822\n"
+    assert "tcp dport { 822, 80, 443 } accept" in files["/etc/nftables.conf"][0]
+    assert json.loads(files["/etc/forkmesh-next/ids.json"][0])["ssh"]["port"] == 822
+    assert "port = 822" in files["/etc/fail2ban/jail.d/fmnext-sshd.local"][0]
+
+
+def test_ssh_port_step_accepts_a_node_that_answers_with_its_label(tmp_path):
+    data, vultr = ssh_port_target(tmp_path)
+    ssh = FakeSsh(port=22)
+    ssh.strict_answer = subprocess.CompletedProcess(
+        ["ssh"], 0, b"fmnext-core-2\nfmnext-node\n", b"")
+    next_fleet.install(data, "n2", ssh, Runner(execute=True), ("ssh-port",),
+                       vultr=vultr)
+    assert ssh.port("203.0.113.12") == 822
+    assert "systemctl stop fmnext-ssh-port-rollback.timer" in ssh.runs[-1][1]
+
+
+def test_ssh_port_step_leaves_the_rollback_armed_when_the_new_port_fails(tmp_path):
+    data, vultr = ssh_port_target(tmp_path)
+    ssh = FakeSsh(port=22)
+    ssh.strict_answer = subprocess.CompletedProcess(["ssh"], 255, b"", b"timed out")
+    with pytest.raises(ToolError, match="within 180 s"):
+        next_fleet.install(data, "n2", ssh, Runner(execute=True), ("ssh-port",),
+                           vultr=vultr)
+    assert ssh.port("203.0.113.12") == 22
+    assert not any("rollback.timer" in run[1] and "rm -f" in run[1]
+                   for run in ssh.runs[1:])
+
+
+def test_a_roll_moves_a_node_still_on_22_before_its_files_step(tmp_path):
+    data, vultr = ssh_port_target(tmp_path)
+    ssh = FakeSsh(port=22)
+    ssh.strict_answer = subprocess.CompletedProcess(
+        ["ssh"], 0, b"n2.next.forkmesh.com\nfmnext-node\n", b"")
+    next_fleet.install(data, "n2", ssh, Runner(execute=True), ("files",),
+                       vultr=vultr)
+    assert [p[2] for p in ssh.puts] == ["/tmp/fmnext-ssh-port.tar.gz",
+                                        "/tmp/fmnext-files.tar.gz"]
+    assert ssh.port("203.0.113.12") == 822
+    moved = FakeSsh()
+    next_fleet.install(data, "n2", moved, Runner(execute=True), ("files",),
+                       vultr=vultr)
+    assert [p[2] for p in moved.puts] == ["/tmp/fmnext-files.tar.gz"]
+
+
+def test_new_nodes_move_sshd_before_the_firewall_closes_22():
+    for steps in (next_fleet.INSTALL_STEPS, next_fleet.RUNNER_STEPS,
+                  next_fleet.APP_STEPS, next_fleet.BURST_STEPS):
+        assert steps.index("base") < steps.index("ssh-port") < steps.index("files")
+    assert "ssh-port" in next_fleet.ALL_STEPS
+
+
+def test_the_image_script_moves_sshd_at_next_boot_only(tmp_path):
+    script = next_fleet.ssh_port_image_script(fleet(tmp_path))
+    assert "Port 822" in script and "ufw allow 822/tcp" in script
+    assert "reload" not in script and "restart" not in script

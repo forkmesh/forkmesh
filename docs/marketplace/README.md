@@ -380,7 +380,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
   `feed`, shown as Network Feed, and `mastodon`
-  ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+  ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md);
+  the native desktop client: [mastodon.md](mastodon.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 

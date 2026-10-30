@@ -600,6 +600,7 @@ public:
     void openRepositoryForkFromSystemLink(const QString &target);
     void openNoteFromSystemLink(const QString &target);
     void openFolderFromSystem(const QString &folder);
+    void prepareStartupComposition();
     // Secret-free website handoff for provider-owned CLI authentication. The
     // URL contains only a bounded node name and provider id; ForkMesh resolves
     // that node against local/saved hosts and opens the existing local or
