@@ -374,6 +374,17 @@ takes from it:
   `:/forkmesh-market/packages/poker/content/desktop/cards/`. Where the
   resource is missing (the `forkmesh-poker-tests` binary does not carry the
   module's files) the painted cards described above are drawn instead.
+- **Card faces** are written by `tools/poker_card_svgs.py` (run it after
+  changing the design; `app/tests/test_poker_card_svgs.py` fails when the
+  files and the script disagree). The kit's cards drew each suit as a `♠ ♥ ♦ ♣`
+  text glyph with no font named, so on a machine whose default font lacks the
+  glyphs Qt SVG drew nothing and the cards showed only their rank. Every suit
+  is now a vector path, so only the rank letters depend on a font. The faces
+  have a rank and suit in the top-left and bottom-right corners, the standard
+  pip layout for 2 to 10 (pips below the middle turned upside down), a large
+  centre suit on the aces, and two-ended court cards: a gold-framed panel with
+  the letter and two suits in each half. The back is navy with a lattice, a
+  gold double border and a gold spade in a diamond.
 - **Room, rail and felt** keep the stadium shapes from `PokerLayout` and take
   the kit's colours: a navy room (`#13263c` to `#040a13`), a navy lacquer rail
   with a gold edge (`#b99a5a`), a navy arm rest with gold stitching, a teal felt
