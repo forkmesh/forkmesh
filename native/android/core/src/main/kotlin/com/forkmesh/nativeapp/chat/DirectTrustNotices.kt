@@ -34,22 +34,45 @@ object DirectTrustText {
 
     fun pendingDevice(name: String): String = DirectMessageFrames.pendingDeviceLine(name)
 
+    fun ownDevices(count: Int): String =
+        if (count == 1) OWN_DEVICE else "$count new devices were added to your account. Approve them if they are yours, otherwise block them."
+
+    fun pendingDevices(name: String, count: Int, own: Boolean): String {
+        if (count == 1) return pendingDevice(name)
+        val who = if (own) "" else " for $name"
+        return "$count new devices$who want to join this chat. Check the safety number, then approve or block."
+    }
+
+    fun blockTitle(count: Int): String = if (count == 1) "Block this device?" else "Block these $count devices?"
+
+    fun blockNote(count: Int): String =
+        if (count == 1) "Nothing is sent to it and its messages are dropped from now on."
+        else "Nothing is sent to them and their messages are dropped from now on."
+
     fun safetyExplainer(name: String): String =
         "Compare these numbers with $name, or scan the code on their phone. If they match, nobody is in the middle of this chat."
 }
 
-data class DirectTrustNotice(val id: String, val conversation: String, val kid: String, val own: Boolean, val text: String, val timestamp: Long)
+data class DirectTrustNotice(val id: String, val conversation: String, val kids: List<String>, val own: Boolean, val text: String, val timestamp: Long) {
+    val asksApproval: Boolean get() = kids.isNotEmpty()
+}
 
 object DirectTrustNotices {
-    fun pending(conversation: String, devices: List<DirectDevice>, name: String): List<DirectTrustNotice> =
-        devices.filter { it.state == TrustState.PENDING }.sortedBy { it.firstSeen }.map { device ->
+    fun pending(conversation: String, devices: List<DirectDevice>, name: String): List<DirectTrustNotice> {
+        val waiting = devices.filter { it.state == TrustState.PENDING }.sortedBy { it.firstSeen }
+        val first = waiting.firstOrNull() ?: return emptyList()
+        val kids = waiting.map { it.kid }
+        val ownOnly = waiting.all { it.ownAccount }
+        val mixed = !ownOnly && waiting.any { it.ownAccount }
+        return listOf(
             DirectTrustNotice(
-                id = "trust-$conversation-${device.kid}",
+                id = "trust-$conversation-devices",
                 conversation = conversation,
-                kid = device.kid,
-                own = device.ownAccount,
-                text = if (device.ownAccount) DirectTrustText.OWN_DEVICE else DirectTrustText.pendingDevice(name),
-                timestamp = device.firstSeen,
-            )
-        }
+                kids = kids,
+                own = ownOnly,
+                text = if (ownOnly) DirectTrustText.ownDevices(kids.size) else DirectTrustText.pendingDevices(name, kids.size, mixed),
+                timestamp = first.firstSeen,
+            ),
+        )
+    }
 }

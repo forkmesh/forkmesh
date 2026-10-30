@@ -2229,6 +2229,29 @@ int main(int argc, char *argv[])
                        .contains(QStringLiteral("Login failed")),
               "a login with no relay verdict names the transport failure, not bad credentials");
     }
+    {
+        const QJsonObject request = AccountCapability::passwordLoginRequest(
+            QStringLiteral(" Ada@Example.com "), QStringLiteral("secret"),
+            QStringLiteral("123456"));
+        check(!request.contains(QStringLiteral("nodeName")) &&
+                  request.value(QStringLiteral("identifier")).toString() ==
+                      QStringLiteral("Ada@Example.com") &&
+                  request.value(QStringLiteral("password")).toString() ==
+                      QStringLiteral("secret"),
+              "a password login is checked against the typed email, not a suggested username");
+        const QString lockout = AccountCapability::loginLockoutMessage(90000);
+        check(lockout.contains(QStringLiteral("about 2 minutes")) &&
+                  lockout.contains(QStringLiteral("not a wrong password")) &&
+                  AccountCapability::loginLockoutMessage(4000).contains(
+                      QStringLiteral("about 4 seconds")) &&
+                  AccountCapability::loginLockoutMessage(0).contains(
+                      QStringLiteral("a few minutes")),
+              "a lockout says how long to wait and that the password is not wrong");
+        check(AccountCapability::incorrectPasswordMessage(
+                  QStringLiteral("app.forkmesh.com"))
+                  .contains(QStringLiteral("same account and password as app.forkmesh.com")),
+              "a wrong password says the desktop and the website share one account");
+    }
     check(AccountCapability::ownerSigningAllowed(
               true, true, QStringLiteral("Alice-Node")) &&
               !AccountCapability::ownerSigningAllowed(
@@ -10888,6 +10911,38 @@ int main(int argc, char *argv[])
         check(stopped.root.size == 0 && stopped.root.fileCount == 0 &&
                   stopped.root.children.isEmpty() && cancelChecks > 0,
               "a scan canceled up front produces an empty tree, not a partial one");
+    }
+
+    {
+        const QHash<qint64, qint64> parentOf{
+            {500, 400}, {400, 300}, {300, 1}, {600, 500}, {700, 500},
+            {800, 1}, {900, 1}, {950, 1}};
+        const QHash<qint64, QString> nameOf{
+            {300, QStringLiteral("systemd")}, {400, QStringLiteral("konsole")},
+            {500, QStringLiteral("forkmesh")}, {600, QStringLiteral("claude")},
+            {700, QStringLiteral("forkmesh")}, {800, QStringLiteral("gnome-shell")},
+            {900, QStringLiteral("chrome")}, {950, QStringLiteral("forkmesh")}};
+        const QHash<qint64, QString> executableOf{
+            {600, QStringLiteral("/usr/bin/node")},
+            {700, QStringLiteral("/opt/forkmesh/forkmesh")},
+            {900, QStringLiteral("/opt/google/chrome/chrome")},
+            {950, QStringLiteral("/home/u/old/forkmesh")}};
+        const QSet<qint64> guarded = SystemStats::killProtectedPids(
+            500, {QStringLiteral("/opt/forkmesh/forkmesh")}, parentOf, nameOf,
+            executableOf);
+        check(guarded.contains(1) && guarded.contains(500),
+              "the high memory killer never ends PID 1 or ForkMesh");
+        check(guarded.contains(400) && guarded.contains(300),
+              "the high memory killer never ends what started ForkMesh, "
+              "whose exit would close it too");
+        check(guarded.contains(700),
+              "a process running the ForkMesh binary is protected");
+        check(guarded.contains(800),
+              "the display server is protected, since ending it closes ForkMesh");
+        check(!guarded.contains(600) && !guarded.contains(900) &&
+                  !guarded.contains(950),
+              "agent children, other programs and a ForkMesh from another path "
+              "stay killable");
     }
 
 #if defined(Q_OS_LINUX)

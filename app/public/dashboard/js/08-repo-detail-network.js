@@ -1895,6 +1895,7 @@
       canonicalProfileReady = hydrateCanonicalProfile(session)
         .then((nextSession) => {
           if (bounceToVerification(nextSession)) return;
+          void backfillAdminUrl(nextSession);
           return loadNotifications();
         })
         .catch(() => {});
@@ -4497,6 +4498,9 @@
   });
   $$("[data-new-repo-source]").forEach((btn) => {
     btn.addEventListener("click", () => setNewRepoSource(btn.dataset.newRepoSource));
+  });
+  $$("[data-new-repo-visibility]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoVisibilityNote);
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();

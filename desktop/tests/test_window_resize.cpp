@@ -5197,8 +5197,25 @@ void checkTranscriptCoverageIndicator()
     check(pill && pill->isHidden(),
           QStringLiteral("a transcript that draws every raw log entry has no "
                          "coverage pill"));
-    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started"})"));
-    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done"})"));
+    transcript.handleEvent(ev(R"({"type":"system","subtype":"dev_intent","kind":"ios_app","trigger":"ios_command"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"started","command_uuid":"93c66aa5-4c31-4a8f-a5ce-cba3efef2609"})"));
+    transcript.handleEvent(ev(R"({"type":"command_lifecycle","state":"done","command_uuid":"93c66aa5-4c31-4a8f-a5ce-cba3efef2609"})"));
+    QString notices;
+    for (const QLabel *label : transcript.findChildren<QLabel *>()) {
+        QTextDocument doc;
+        doc.setHtml(label->text());
+        notices += doc.toPlainText() + QLatin1Char('\n');
+    }
+    check(notices.contains(QStringLiteral("Development intent: ios_app (trigger: ios_command)")) &&
+              notices.contains(QStringLiteral("Command started: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609")) &&
+              notices.contains(QStringLiteral("Command done: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609")),
+          QStringLiteral("development intent and command lifecycle draw notices (%1)")
+              .arg(notices.simplified().left(400)));
+    check(pill && pill->isHidden() && transcript.coverageGaps().isEmpty(),
+          QStringLiteral("development intent and command lifecycle leave no "
+                         "coverage gaps"));
+    transcript.handleEvent(ev(R"({"type":"unknown_event","state":"started"})"));
+    transcript.handleEvent(ev(R"({"type":"unknown_event","state":"done"})"));
     transcript.handleEvent(ev(R"({"type":"system","subtype":"permission_denied"})"));
     QApplication::processEvents();
     const QRect area = transcript.viewport()->geometry();
@@ -20766,6 +20783,58 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             shortcutPanelEntries();
         }
 
+        {
+            const auto reloadShortcuts = [&shortcutsFilter] {
+                if (!shortcutsFilter)
+                    return;
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("shortcuts")));
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("all")));
+            };
+            QPushButton *starterButton = nullptr;
+            for (QPushButton *button : window.findChildren<QPushButton *>())
+                if (button->text() == QLatin1String("Add starter shortcuts"))
+                    starterButton = button;
+            const QString shortcutsDir =
+                QDir(repository.path()).filePath(QStringLiteral(".forkmesh/shortcuts"));
+            const QString asideDir =
+                QDir(repository.path()).filePath(QStringLiteral(".forkmesh/shortcuts-aside"));
+            const bool hiddenWithShortcuts = starterButton && starterButton->isHidden();
+            const bool movedAside = QDir().rename(shortcutsDir, asideDir);
+            reloadShortcuts();
+            shortcutPanelEntries();
+            const bool shownWhenEmpty = starterButton && !starterButton->isHidden();
+            if (starterButton)
+                starterButton->click();
+            const QStringList starters =
+                QDir(QStringLiteral(":/starter-shortcuts")).entryList(QDir::Files);
+            bool copied = starters.size() == 5;
+            for (const QString &name : starters)
+                copied = copied && QFileInfo::exists(QDir(shortcutsDir).filePath(name));
+            const bool reviewCard =
+                shortcutCardNamed(QStringLiteral("Review my changes")) != nullptr;
+            const bool hiddenAfterAdding = starterButton && starterButton->isHidden();
+            for (const QString &name : starters)
+                QFile::remove(QDir(shortcutsDir).filePath(name));
+            QDir().rmdir(shortcutsDir);
+            const bool restored = movedAside && QDir().rename(asideDir, shortcutsDir);
+            reloadShortcuts();
+            shortcutPanelEntries();
+            check(starterButton && hiddenWithShortcuts && shownWhenEmpty && copied &&
+                      reviewCard && hiddenAfterAdding && restored,
+                  QString("a repository without shortcuts offers Add starter shortcuts, which "
+                          "copies the five starters in and then hides (found=%1 hiddenWith=%2 "
+                          "shownEmpty=%3 copied=%4 card=%5 hiddenAfter=%6 restored=%7)")
+                      .arg(starterButton != nullptr)
+                      .arg(hiddenWithShortcuts)
+                      .arg(shownWhenEmpty)
+                      .arg(copied)
+                      .arg(reviewCard)
+                      .arg(hiddenAfterAdding)
+                      .arg(restored));
+        }
+
         window.testChooseTeammateRepo(repositoryIndex);
         auto *teamBackend = new ServerNode(
             QStringLiteral("qa-tester"), QStringLiteral("qa-node"),
@@ -25201,6 +25270,10 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   QStringLiteral("Settings remembers opting out of automatic "
                                  "cancelled-run cleanup and deletes it when on"));
         }
+        check(window.testSupersedeKeepsOtherPullsHeld(),
+              QStringLiteral("a held run for one pull request does not cancel "
+                             "another pull request's held run, only its own "
+                             "older one"));
     }
 
     QApplication::processEvents();

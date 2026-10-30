@@ -41,6 +41,7 @@
     "runners",
     "secure-drive",
     "sentry",
+    "shortcuts",
     "sleep",
     "status-check-api",
     "status-check-cores",

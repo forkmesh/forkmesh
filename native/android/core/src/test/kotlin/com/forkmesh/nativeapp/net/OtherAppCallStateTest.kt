@@ -21,12 +21,13 @@ class OtherAppCallStateTest {
         expect(state.active)
     }
 
-    fun testForkMeshsOwnCallIsNotAnotherAppsCall() {
+    fun testForkMeshsOwnCallCountsSoAppSoundsStepBackDuringIt() {
         val state = OtherAppCallState()
+        expect(state.update(normal, ownCall = true))
+        expect(state.active)
         expect(!state.update(communication, ownCall = true))
-        expect(!state.active)
-        expect(state.update(communication, ownCall = false))
-        expect(state.update(communication, ownCall = true))
-        expect(!state.active)
+        expect(!state.update(communication, ownCall = false))
+        expect(state.update(normal, ownCall = false))
+        assertEq(false, state.active)
     }
 }

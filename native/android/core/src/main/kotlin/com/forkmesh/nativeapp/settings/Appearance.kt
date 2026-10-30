@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.settings
 
 object AppearanceKeys {
     const val THEME_MODE = "appearance/themeMode"
+    const val LAYOUT_MODE = "appearance/layoutMode"
     const val ACCENT = "appearance/accent"
     const val ACCENT_CUSTOM = "appearance/accentCustom"
     const val SURFACE = "appearance/surface"
@@ -26,6 +27,17 @@ enum class ThemeModeChoice(val label: String) {
 
     companion object {
         fun fromName(name: String?): ThemeModeChoice = entries.firstOrNull { it.name == name } ?: system
+    }
+}
+
+enum class LayoutModeChoice(val label: String, val note: String) {
+    controlTower("Control Tower", "Compact, every control in view"),
+    focus("Focus", "Roomier, one thing at a time");
+
+    val dense: Boolean get() = this == controlTower
+
+    companion object {
+        fun fromName(name: String?): LayoutModeChoice = entries.firstOrNull { it.name == name } ?: controlTower
     }
 }
 
@@ -66,6 +78,7 @@ data class Appearance(
     val wallpaper: Wallpaper = Wallpaper(),
     val matchInstanceTheme: Boolean = false,
     val instanceThemeColors: String = "",
+    val layoutMode: LayoutModeChoice = LayoutModeChoice.controlTower,
 ) {
     val accent: AccentChoice get() = theme.accent
 
@@ -85,6 +98,7 @@ data class Appearance(
                 Wallpaper.read(get, getDouble),
                 getBool(AppearanceKeys.MATCH_INSTANCE_THEME) == true,
                 get(AppearanceKeys.INSTANCE_THEME_COLORS).orEmpty(),
+                LayoutModeChoice.fromName(get(AppearanceKeys.LAYOUT_MODE)),
             )
 
         fun readTheme(get: (String) -> String?, getBool: (String) -> Boolean?): AppTheme {

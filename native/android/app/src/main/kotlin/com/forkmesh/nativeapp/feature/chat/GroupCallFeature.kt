@@ -5,10 +5,13 @@ import android.webkit.WebView
 import com.forkmesh.nativeapp.chat.CallQualityHistory
 import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.GroupCallFrameBuffer
+import com.forkmesh.nativeapp.chat.GroupCallIdentity
+import com.forkmesh.nativeapp.chat.GroupCallLook
 import com.forkmesh.nativeapp.chat.GroupCallPageEvent
 import com.forkmesh.nativeapp.chat.GroupCallRoster
 import com.forkmesh.nativeapp.chat.GroupCallView
 import com.forkmesh.nativeapp.chat.OfficeChannelService
+import com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature
 import com.forkmesh.nativeapp.json.asJsonMap
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
@@ -47,6 +50,9 @@ object GroupCallFeature {
     @Volatile
     private var page: GroupCallPage? = null
 
+    @Volatile
+    private var identity: GroupCallIdentity? = null
+
     val active: Boolean get() = viewState.value.active
 
     fun install(context: Context, service: OfficeChannelService, account: () -> String) {
@@ -81,8 +87,13 @@ object GroupCallFeature {
 
     private fun roomOpened(conversation: String, roomName: String) {
         val current = page
-        if (current != null && viewState.value.conversation == conversation) current.post("rekeyed", listOf(conversation, roomName))
+        if (current == null || viewState.value.conversation != conversation) return
+        val fresh = office?.callIdentity(conversation)
+        identity = fresh
+        current.post("rekeyed", listOf(conversation, roomName, fresh?.page()))
     }
+
+    private fun sign(call: String, message: ByteArray): ByteArray? = identity?.sign(call, message)
 
     private fun chatRoomName(conversation: String): String =
         office?.room(conversation)?.let { "chat-channel:${it.id}:v${it.keyVersion}" } ?: ""
@@ -99,14 +110,18 @@ object GroupCallFeature {
     }
 
     private fun start(context: Context, conversation: String, media: DirectCallKind, accent: String) {
-        val made = GroupCallPage(context, events, ::onPageEvent) { event -> qualityState.update { it.add(event) } }
+        val made = GroupCallPage(context, events, ::onPageEvent, { event -> qualityState.update { it.add(event) } }, ::sign)
         page = made
         try {
             webState.value = made.load()
             if (!made.awaitAttached()) error("The call screen did not open.")
             if (page !== made || viewState.value.conversation != conversation) return
             for (frame in recent.recent(conversation)) made.post("frame", listOf(frame, conversation))
-            val reply = made.request("join", listOf(conversation, media.wire, accountName(), accent, chatRoomName(conversation)), timeoutMs = 60_000L).asJsonMap()
+            val service = office
+            if (service != null && service.open(conversation)) identity = service.callIdentity(conversation)
+            val look = GroupCallLook.page(FaceChangerFeature.look, video = media == DirectCallKind.VIDEO)
+            val joining = listOf(conversation, media.wire, accountName(), accent, chatRoomName(conversation), identity?.page(), look)
+            val reply = made.request("join", joining, timeoutMs = 60_000L).asJsonMap()
             val problem = jsonText(reply["error"])
             if (problem.isNotEmpty()) end(problem)
         } catch (error: Exception) {
@@ -131,7 +146,14 @@ object GroupCallFeature {
                     return
                 }
                 if (event.active) {
-                    viewState.value = view.copy(state = event.state, others = event.others, muted = event.muted, cameraOff = event.cameraOff)
+                    viewState.value = view.copy(
+                        state = event.state,
+                        others = event.others,
+                        muted = event.muted,
+                        cameraOff = event.cameraOff,
+                        engine = event.engine,
+                        verify = event.verify,
+                    )
                 }
             }
             else -> Unit
@@ -144,9 +166,12 @@ object GroupCallFeature {
 
     fun toggleCamera() = worker.execute { page?.post("camera", emptyList()) }
 
+    fun confirmCode(match: Boolean) = worker.execute { page?.post("confirm", listOf(match)) }
+
     private fun end(problem: String) {
         val current = page
         page = null
+        identity = null
         webState.value = null
         current?.close()
         val was = viewState.value

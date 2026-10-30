@@ -9,8 +9,8 @@ them, and re-hashes everything every 6 hours.
 
 On an intrusion it **locks the node down**: the vault key leaves memory, the
 node is quarantined in rqlite, the firewall closes and services stop. It also
-pages the admins. Only the operator can end a lockdown
-(`tools/next_ids.py release`).
+pages the admins, and mails them itself (see *Direct mail*). Only the
+operator can end a lockdown (`tools/next_ids.py release`).
 
 ## Threat model
 
@@ -153,7 +153,10 @@ the daemon.
 Every incident is logged to the journal and recorded in `security_incidents`
 (cores) or through the signed runner API. Unsealed core apps
 (`app/host/forkmesh_host/ids_alerts.py`, leaderless, compare-and-set claim)
-deliver them, so delivery works while the reporting node is down:
+deliver them, so delivery works while the reporting node is down. When no
+app is unsealed (every core sealed, locked down or stopped), the IDS's own
+direct mail still reaches the admins for lockdown, `test` and unrecorded
+incidents (*Direct mail* below); `alert` and `info` rows wait for an app:
 
 | Severity | Record | Ping (inbox, live clients, push) | Email |
 |---|---|---|---|
@@ -175,10 +178,46 @@ All platform mail shares one daily budget (`app/src/mail_budget.py`):
 verification, password and account mail. Set the limit to the provider's real
 daily limit.
 
-Optional, from the IDS process itself: direct mail with its own token
-(`[ids] direct_mail`, `FMNEXT_IDS_MAIL_TOKEN`, `FMNEXT_IDS_ALERT_EMAIL`) and a
-signed webhook (`[ids] webhook_url`, header
+From the IDS process itself, so an alert gets out when every app is sealed
+or down: direct mail (`[ids] direct_mail`, on since 2026-10-28) and an
+optional signed webhook (`[ids] webhook_url`, header
 `x-fmnext-ids-signature: v1:<ms>:<hex>`).
+
+### Direct mail
+
+Lockdown and `test` incidents, and any incident the IDS could not record
+(rqlite down), are mailed by the IDS to `[ids] mail_to`
+(`security@forkmesh.com`) from `mail_from` (empty: `founders@forkmesh.com`,
+`smtp_mail.SENDER`), envelope sender `no-reply@forkmesh.com`, as the app's
+mail. Before 2026-10-28 it was off: it needed a Mailtrap token and a
+recipient as two extra secrets that were never set, so a lockdown that
+sealed every app (or all apps down) left only the journal and the
+`security_incidents` row, and nobody was told.
+
+- **Normally** it submits over SMTP to the node's own Postfix on
+  `127.0.0.1:25`, so the same route as every other server mail applies:
+  OpenDKIM signing, the n4 relay for n3 and n5, and the Mailtrap fallback
+  relay when that route fails (docs/MAIL_LOG.md, "Sending from the cores").
+  Only a loopback address is accepted.
+- **In a lockdown** the IDS firewall lets only root send off the node, so
+  Postfix (user `postfix`) could queue the alert but not deliver it, and the
+  peers drop the node's WireGuard packets, so the n4 relay is gone too. The
+  IDS (root) then posts to the Mailtrap send API first, with the fallback
+  relay's own token read from `/etc/postfix/sasl_passwd` (root-only,
+  written by `next_mail.py install`). If that fails the mail goes into the
+  Postfix queue and leaves after the release. Opening the lockdown firewall
+  to Postfix was rejected: a service-user shell could then send mail out
+  through loopback while the node is locked down.
+- If Postfix does not answer outside a lockdown, the IDS tries the API the
+  same way.
+- No secret is pushed for it: the recipient is plain config and the token
+  is the one Postfix already holds. A core without the Mailtrap fallback
+  (no `MAILTRAP_API_TOKEN` at `next_mail.py install`) still mails normally,
+  but its lockdown mail waits for the release.
+- Each attempt leaves a masked note in #email-log (`kind: ids_direct`,
+  `via: postfix|mailtrap`, the routes tried).
+- Check it with `python3 tools/next_ids.py test-fire nN --execute`: the
+  `test` incident is mailed directly and through the app.
 
 ## Retention
 

@@ -15,6 +15,7 @@ const QSet<QString> &drawnEventTypes()
 {
     static const QSet<QString> types{
         QStringLiteral("system"),
+        QStringLiteral("command_lifecycle"),
         QStringLiteral("stream_event"),
         QStringLiteral("assistant"),
         QStringLiteral("user"),
@@ -56,6 +57,7 @@ const QSet<QString> &drawnSystemSubtypes()
         QStringLiteral("compact_boundary"),
         QStringLiteral("api_retry"),
         QStringLiteral("vcs_state_changed"),
+        QStringLiteral("dev_intent"),
         QStringLiteral("local_command_output"),
         QStringLiteral("task_notification"),
         QStringLiteral("status")};
@@ -119,6 +121,9 @@ const QSet<QString> &handledCodexMethods()
 {
     static const QSet<QString> methods{
         QStringLiteral("thread/started"),
+        QStringLiteral("remoteControl/status/changed"),
+        QStringLiteral("mcpServer/startupStatus/updated"),
+        QStringLiteral("thread/settings/updated"),
         QStringLiteral("turn/started"),
         QStringLiteral("turn/completed"),
         QStringLiteral("turn/plan/updated"),
@@ -139,6 +144,7 @@ const QSet<QString> &unshownCodexMethods()
         QStringLiteral("thread/archived"),
         QStringLiteral("thread/unarchived"),
         QStringLiteral("thread/closed"),
+        QStringLiteral("turn/moderationMetadata"),
         QStringLiteral("serverRequest/resolved"),
         QStringLiteral("skills/changed"),
         QStringLiteral("app/list/updated"),

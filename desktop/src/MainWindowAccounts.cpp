@@ -1465,8 +1465,12 @@ void MainWindow::loginToUserAccount()
         dialog.setWindowTitle(QStringLiteral("Sign in to a ForkMesh instance"));
         auto *form = new QFormLayout(&dialog);
         auto *intro = new QLabel(
-            QStringLiteral("Use an account from this or another ForkMesh instance. "
-                           "The instance is saved with the account for quick switching."));
+            QStringLiteral("Use the same account you use on the ForkMesh website. "
+                           "Your username is the name on your profile, not your email; "
+                           "change it below if the suggested one is not yours. The "
+                           "instance is the ForkMesh server that holds your account: "
+                           "leave it as it is unless someone gave you a different one. "
+                           "Continue only signs you in; it does not create anything."));
         intro->setWordWrap(true);
         form->addRow(intro);
         auto *accountEdit = new QLineEdit(suggested, &dialog);

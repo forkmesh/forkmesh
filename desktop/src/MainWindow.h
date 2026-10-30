@@ -128,6 +128,7 @@ namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
 namespace forkmesh::ui { class OverflowActionRow; }
+namespace forkmesh::ui { class SessionSidePanels; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
@@ -2766,6 +2767,7 @@ public:
     // Persists a cancelled run through the normal Actions store and checks
     // whether the current cleanup preference removes it immediately.
     bool testCancelledActionRunCleanup(bool expectDeleted);
+    bool testSupersedeKeepsOtherPullsHeld();
     void testWatchAllLiveRuns() { watchAllLiveRuns(); }
     void testCloseParallelRun(int runId) { closeParallelRun(runId); }
     void testAppendRunLog(int runId, const QString &text)
@@ -4849,6 +4851,7 @@ private:
     void showHighMemoryProcessPanel(bool activate = true);
     void updateHighMemoryHeading();
     void refreshHighMemoryProcessTable();
+    bool isHighMemoryProtected(qint64 pid) const;
     void killHighMemoryProcess(qint64 pid, const QString &name);
     void killAllHighMemoryProcesses(const QString &name, const QList<qint64> &pids);
     void stopHighMemoryAgent(int sessionId, const QString &label);
@@ -8657,6 +8660,8 @@ private:
     // have no loader of their own — every skill entry point calls this.
     void loadShortcutsPanel();
     QString shortcutsDirPath() const; // <working tree>/.forkmesh/shortcuts, "" without one
+    QStringList missingStarterShortcuts() const;
+    void addStarterShortcuts();
     // Both take their path by value: they refresh the panel (which deleteLater()s
     // the very card whose closure owns the caller's string) and can pump the
     // event loop before they are done reading it.
@@ -8951,6 +8956,8 @@ private:
     QString repoWorkflowPath(int repoIndex, const QString &workflowId) const;
     bool repoWorkflowFileApproved(int repoIndex, const QString &path) const;
     void approveRepoWorkflowFile(int repoIndex, const QString &path);
+    void approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                          const QString &who);
     void reviewPendingRepoWorkflowApprovals();
     QList<forkmesh::repoworkflows::Pin> workflowPins() const;
     void saveWorkflowPins(const QList<forkmesh::repoworkflows::Pin> &pins);
@@ -12728,6 +12735,7 @@ private:
     bool m_highMemoryAlertArmed = true;
     bool m_highMemoryAutoKillPending = false;
     QSet<qint64> m_highMemoryAutoKilledPids;
+    QSet<qint64> m_highMemoryProtectedPids;
     QStringList m_highMemoryAutoKilledNames;
     QPointer<QDialog> m_highMemoryDialog;
     QLabel *m_highMemoryHeading = nullptr;
@@ -12943,6 +12951,7 @@ private:
     QLabel *m_artifactsSummary = nullptr;
     QWidget *m_shortcutCardsHost = nullptr; // card rows, rebuilt by loadShortcutsPanel
     QLabel *m_shortcutsSummary = nullptr;
+    QPushButton *m_shortcutsStarterButton = nullptr;
     QPlainTextEdit *m_shortcutOutput = nullptr; // live output of the running shortcut
     QLabel *m_shortcutRunStatus = nullptr;
     QPushButton *m_shortcutStopButton = nullptr;
@@ -15329,13 +15338,15 @@ private:
     void answerClaudeElicitation(int sessionId, const QString &key,
                                  const QString &action, const QJsonObject &content);
     void closeClaudeElicitation(const QString &key);
-    QWidget *buildAgentSubSessionStrip();
+    QWidget *buildAgentTowerPanels();
+    void refreshAgentTowerPanels();
     void refreshAgentSubSessions();
+    void fillAgentSubSessions(forkmesh::ui::SessionSidePanels *panels, int sessionId);
     void stopAgentSubSession(int sessionId, const QString &taskId);
     QHash<QString, QPointer<ClaudeElicitationDialog>> m_claudeElicitations;
-    QWidget *m_agentSubSessionStrip = nullptr;
-    QLabel *m_agentSubSessionHeader = nullptr;
-    QWidget *m_agentSubSessionRows = nullptr;
+    forkmesh::ui::SessionSidePanels *m_agentTowerPanels = nullptr;
+    QTimer *m_agentTowerPanelsTimer = nullptr;
+    bool m_agentTowerPanelsSized = false;
     QString saveNewAgentPromptImage(const QImage &image);
     QPushButton *m_agentStopButton = nullptr;
     QPushButton *m_agentStartButton = nullptr;

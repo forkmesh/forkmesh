@@ -41,8 +41,8 @@ object PackageGate {
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
+        "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide", "speech" to "speech",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -83,6 +83,7 @@ object PackageGate {
         put("sugar-break", Route.Kind.SugarBreak)
         put("stretch", Route.Kind.Stretch)
         put("food-guide", Route.Kind.FoodGuide)
+        put("speech", Route.Kind.Speech)
         put("glasses-alert", Route.Kind.GlassesAlert)
         put("phone-security", Route.Kind.PhoneSecurity)
         put("ember", Route.Kind.Ember)
@@ -104,6 +105,8 @@ object PackageGate {
         put("docs", Route.Kind.Docs)
         put("on-device-ai", Route.Kind.LocalAI)
         put("activity", Route.Kind.Activity)
+        put("logs", Route.Kind.Logs)
+        put("diagnostics", Route.Kind.Diagnostics)
         put("stats", Route.Kind.Stats)
         put("status-page", Route.Kind.Status)
         put("organizations", Route.Kind.Orgs, Route.Kind.Org)

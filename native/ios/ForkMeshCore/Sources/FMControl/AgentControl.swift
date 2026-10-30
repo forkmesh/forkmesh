@@ -77,6 +77,8 @@ public struct AgentQuestion: Equatable, Sendable, Identifiable {
     public let id: String
     public let fields: [AgentQuestionField]
 
+    public static let composerHint = "Type your answer for the agent"
+
     init?(_ json: JSONObject) {
         id = json.str("id")
         fields = json.obj("input").maps("questions").enumerated().map { AgentQuestionField($0.element, index: $0.offset) }

@@ -35,6 +35,9 @@ object WorkflowsText {
         "A workflow is a trigger followed by steps: HTTP requests, logic and 100 integrations. Start from an example or a blank workflow."
     const val PHONE_RUN_NOTE =
         "Runs on this phone use the built-in engine and the credentials saved on this phone. Runs on ForkMesh use your account's credentials."
+    const val DESKTOP_RUN_NOTE =
+        "These steps run on your desktop, in its forkmesh/forkmesh checkout. Only ForkMesh leftovers that nothing uses are deleted."
+    const val DESKTOP_MISSING = "Pair this phone with your desktop to run these steps."
 
     val ERRORS = mapOf(
         "plugin_not_installed" to "Install the Workflows plugin from the Market to use workflows.",
@@ -217,12 +220,13 @@ data class WorkflowSummary(
     val scheduleMinutes: Int,
     val lastRunAt: Long,
     val lastStatus: String,
+    val runsOnDesktop: Boolean = false,
 ) {
     companion object {
         fun of(json: WorkflowJson) = WorkflowSummary(
             text(json["id"]), text(json["name"], "Untitled workflow"), json["active"] == true, text(json["trigger"]),
             (json["nodes"] as? List<*>)?.size ?: long(json["nodes"]).toInt(), long(json["scheduleMinutes"]).toInt(),
-            long(json["lastRunAt"]), text(json["lastStatus"]),
+            long(json["lastRunAt"]), text(json["lastStatus"]), text(json["runsOn"]) == "desktop",
         )
     }
 }
@@ -403,6 +407,7 @@ data class WorkflowRun(
     val nodes: Map<String, Any?>,
 ) {
     val succeeded: Boolean get() = status == "success"
+    val desktop: Boolean get() = trigger == "desktop"
     val hasDetail: Boolean get() = nodes.isNotEmpty()
 
     fun steps(draft: WorkflowDraft): List<WorkflowStepResult> {
@@ -455,6 +460,7 @@ class WorkflowsApi(private val call: (method: String, suffix: String, body: Work
 
     fun run(id: String): WorkflowRun = WorkflowRun.of(map(call("POST", "/$id/run", LinkedHashMap())["run"]), phone = false)
     fun runs(id: String): List<WorkflowRun> = list(call("GET", "/$id/runs", null)["runs"]).map { WorkflowRun.of(map(it), phone = false) }
+    fun record(id: String, body: WorkflowJson): WorkflowRun = WorkflowRun.of(map(call("POST", "/$id/record", body)["run"]), phone = false)
     fun runDetail(id: String, runId: String): WorkflowRun = WorkflowRun.of(map(call("GET", "/$id/runs/$runId", null)["run"]), phone = false)
     fun templates(): List<WorkflowTemplate> = list(call("GET", "/templates", null)["templates"]).map { WorkflowTemplate.of(map(it)) }
 

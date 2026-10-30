@@ -281,6 +281,14 @@ python3 tools/asc_bundle_ids.py has-watch   # exit 0 when an enabled watch is re
 An ad hoc profile covers only devices registered when it is minted, so build
 again afterwards. A watch lists as platform IOS, class APPLE_WATCH.
 
+When Apple publishes a new Program License Agreement, every App Store Connect
+call answers 403 `FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` until the team's Account
+Holder accepts it at https://developer.apple.com/account, and no build can get
+past "Register the bundle ids". The API key's role can't accept it. Apple
+puts the answer on several lines, and the deploy summary shows only the first,
+so `asc_bundle_ids.py` turns this refusal into one line that says what to do
+and names the Account Holder (`tools/test_asc_bundle_ids_errors.py`).
+
 ## App icon
 
 `tools/render_logo.py` draws the app icon from `logo.svg` into every file in

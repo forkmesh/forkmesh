@@ -60,6 +60,8 @@ struct NextAccess {
     static void workspaceSessionStarted(MainWindow &window, int sessionId);
     static void fillSessionSidePanels(MainWindow &window, SessionSidePanels *panels,
                                       int sessionId);
+    static void feedSessionSidePanels(MainWindow &window, SessionSidePanels *panels,
+                                      int sessionId);
     static void sessionStarted(MainWindow &window, int sessionId);
     static void fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which);
     static void placeWorkspaceComposer(MainWindow &window, bool overDetail);

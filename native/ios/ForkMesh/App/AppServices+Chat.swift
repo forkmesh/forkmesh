@@ -31,7 +31,8 @@ struct ChatInstaller: AppServicesInstaller {
                     return ChatHistoryCodec.projectScope(
                         projectId: project.isEmpty ? settings.serverUrl : project, room: settings.room)
                 },
-                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) })
+                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) },
+                inBackground: true)
         }
         if let workspace = ChatInstaller.bindProject() { hub.workspace = workspace }
         if let switcher = Services.get(RelaySwitchController.self) {

@@ -20184,6 +20184,17 @@ async def _clean_profile_links(env, rec, raw_links):
     return out, None
 
 
+async def _account_admin_link(env, name, rec):
+    if not (rec or {}).get("totp_enrolled") or not await _is_admin_flag(
+            env, name):
+        return {}
+    admin_path = _admin_path(env)
+    if not admin_path:
+        return {"isAdmin": True}
+    return {"isAdmin": True,
+            "adminUrl": "/" + admin_path + "?admin=" + quote(name)}
+
+
 async def _account_public_payload(
         env, rec, session_token=None, session_device_label="",
         session_client_ip="", session_device_bi=""):
@@ -25685,6 +25696,7 @@ async def _account_sessions(env, request, target_session_id=""):
                         env, account_bi,
                         max([s["lastSeenAt"] for s in sessions] or [0])),
                     **_account_email_activity(rec),
+                    **await _account_admin_link(env, actor, rec),
                 },
                 "privacyNotice": (
                     "Only you can see this list. Each row shows a broad device "
@@ -33089,7 +33101,7 @@ async def _send_email_smtp(env, sender, sender_name, to_email, subject,
         print("smtp send failed: kind %s: %s" % (
             kind, _safe_error_text(error)[:200]))
         await log("failed", error=type(error).__name__)
-        return False
+        return None
     account_bi = await _mailtrap_account_for_email(env, to_email)
     try:
         await d1_run(
@@ -33176,10 +33188,22 @@ async def _send_email(env, to_email, subject, text, html=None,
     subject = instance_features.rename(env, subject)
     text, html = _instance_brand_email(env, text, html)
     if via_smtp:
-        return await _send_email_smtp(env, sender, sender_name, to_email,
+        sent = await _send_email_smtp(env, sender, sender_name, to_email,
                                       subject, text, html, email_kind, log,
                                       send_id=send_id, ref=ref,
                                       recipient=recipient)
+        provider = mail_providers.fallback(env)
+        if sent is not None or not provider:
+            return bool(sent)
+        token = mail_providers.api_key(env, provider)
+        via, node = provider, ""
+        print("mail fallback: kind %s: local Postfix failed, sending through %s"
+              % (clean_string(email_kind or "account", 40), provider))
+        if await _mail_provider_held(env) or not await _mail_budget_spend(
+                env, email_kind):
+            await log("suppressed", error="fallback mail provider limit",
+                      budget=await _mail_budget_text(env, email_kind))
+            return False
     account_bi = await _mailtrap_account_for_email(env, to_email)
     send_id = send_id or _ap_uuid()
     message = {

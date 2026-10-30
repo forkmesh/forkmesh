@@ -293,6 +293,11 @@ public enum WorkflowDesktopSteps {
         draft.nodes.contains { steps[$0.type] != nil }
     }
 
+    public static func confirmation(_ draft: WorkflowDraft) -> String {
+        let names = draft.ordered.filter { steps[$0.type] != nil && !$0.disabled }.map(\.name)
+        return (names.isEmpty ? "" : names.joined(separator: ", ") + ". ") + WorkflowsText.desktopRunNote
+    }
+
     public static func bytes(_ value: Int64) -> String {
         var size = Double(max(0, value))
         for unit in ["B", "KB", "MB", "GB"] {

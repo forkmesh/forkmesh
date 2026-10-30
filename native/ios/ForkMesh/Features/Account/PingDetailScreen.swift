@@ -31,6 +31,10 @@ struct PingDetailScreen: View {
         let target: NotificationTapTarget = model.target(notification)
         ScrollView {
             VStack(alignment: .leading, spacing: FmSpace.x5) {
+                FmTextButton(PingDetailCopy.backToList, icon: "chevron_left", minHeight: 36, onPressed: { dismiss() })
+                    .padding(.leading, -FmSpace.x3)
+                    .padding(.bottom, -FmSpace.x3)
+                    .accessibilityIdentifier("ping-detail-back")
                 PingDetailHero(notification: notification)
                 if let label = pingOpenLabel(target) {
                     FmFilledButton(

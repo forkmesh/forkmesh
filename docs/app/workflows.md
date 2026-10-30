@@ -85,7 +85,7 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 | --- | --- |
 | `GET /api/workflows/catalog` | Core nodes, integrations, operators, and `requests`: each integration's base URL, credential placement, headers and per-operation path, query and body templates (public) |
 | `GET /api/workflows/desktop-script` | Source of `tools/free_disk_space.py` with each function's line range and the functions each desktop step runs (public); `script_unavailable` (404) when the server has no copy |
-| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}` |
+| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}`; a listed workflow with desktop steps carries `runsOn: "desktop"`, so the phones can offer Run on your desktop on its row without opening it |
 | `GET`/`POST /api/workflows/<id>` | Read / replace (`rotateHook: true` issues a new webhook token) |
 | `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data); `runs_on_desktop` (409) for a workflow with desktop steps |
 | `POST /api/workflows/<id>/record` | Store a run the browser drove on the desktop: `{startedAt, finishedAt, nodes, output: {freedBytes, freeBytes, totalBytes}}` |
@@ -565,7 +565,20 @@ page opening.
 - **Runs from a package.** The package `run` action is not the user's own
   click on the desktop, so it checks `repoWorkflowApproved` for a repository
   workflow, the same as the phone. Otherwise it answers that the file needs
-  approval and raises the notice.
+  approval (`code: approval_required`) and raises the notice. The `review`
+  action opens the same Allow / Not now box for that file and answers once
+  it closes: ok when the file is now approved. Allow is still the user's
+  click in the desktop's own box, so a package cannot approve a file itself.
+- **Run on the Workflows page.** The user ran the CEO special agent from the
+  page on 2026-10-28 and saw nothing: the file was not approved, so `run`
+  refused it, the Running placeholder vanished and the reason showed only in
+  the status line. Now a Run that answers `approval_required` keeps the
+  placeholder ("waiting for your approval"), opens the box through `review`
+  and starts the run after Allow. A Run that does not start for any reason,
+  Not now included, turns the placeholder into a Failed row with the reason
+  in its summary and log (`failPendingRun`) instead of removing it; an
+  account run that `POST /<id>/run` refuses does the same. A special agent
+  that fails at once answers the failed run's `runId`, so the page selects it.
 - **Shortcuts from the phone.** `insights` `runShortcut` (script or prompt)
   and `queueShortcut` run committed `.forkmesh/shortcuts` and
   `.forkmesh/skills` files. They answer `approval_required` until that file is
@@ -605,8 +618,8 @@ blank desktop workflow or Free disk space in a chosen repository. The editor
 adds checkbox, line-list, portrait and shortcut fields. It needs the
 `desktop.workflows.run` permission, which gives the page the host's
 `repositoryWorkflows()` and `repositoryWorkflowAction(repo, id, action,
-payload, done)` (actions `get`, `save`, `run`, `stop`, `delete`, `pin`,
-`unpin`, `setEnabled`, `setSchedule`, `openAgent`, `openSession`,
+payload, done)` (actions `get`, `save`, `run`, `review`, `stop`, `delete`,
+`pin`, `unpin`, `setEnabled`, `setSchedule`, `openAgent`, `openSession`,
 `openOutput`, `readOutput`, `openFile`; see
 [../marketplace/README.md](../marketplace/README.md)).
 

@@ -194,10 +194,14 @@ operator_public_key = "qUPEQcNjLAkc3B0ET_fpiA9pCI73F210j63I9kOynsU"
 # Per-detector severity overrides ("info" | "alert" | "lockdown"), e.g.
 # listener_unexpected = "lockdown". Defaults: docs/IDS.md.
 severity = {}
-# Direct mail from the IDS itself (works when every app is sealed or down):
-# loads FMNEXT_IDS_MAIL_TOKEN (a Mailtrap sending token) and
-# FMNEXT_IDS_ALERT_EMAIL (the recipient) from secrets.env as credentials.
-direct_mail = false
+# Direct mail from the IDS itself for lockdown, test and unrecorded
+# incidents (works when every app is sealed or down): it submits to the
+# node's own Postfix on 127.0.0.1:25 (relay and Mailtrap fallback apply); in
+# a lockdown, whose firewall stops Postfix sending, it posts to the Mailtrap
+# API as root with the fallback relay's token from /etc/postfix/sasl_passwd.
+# No extra secret. mail_from empty: founders@forkmesh.com. docs/IDS.md.
+direct_mail = true
+mail_to = "security@forkmesh.com"
 mail_from = ""
 # Optional signed webhook to the operator desktop (https only).
 webhook_url = ""
@@ -233,6 +237,7 @@ instance_id = "840f8e63-9050-4c36-b8c4-b9e1db2bd142"
 wg_ip = "10.77.0.3"
 wg_pubkey = "Ab8pL/fq7/2LiPVGedKusFdi7rr9aki9vFTT2zU+ax0="
 rqlite_id = "n3"
+mail_relay = "n4"
 
 [[nodes]]
 name = "n4"
@@ -251,6 +256,7 @@ instance_id = "1963e65c-46bf-4f1a-bf87-b19f92d50c6c"
 wg_ip = "10.77.0.5"
 wg_pubkey = "nUtPbbiGai9xczJDKg1u9h13tUjlLFye/koaLwShWWY="
 rqlite_id = "n5"
+mail_relay = "n4"
 
 [[runners]]
 name = "r1"

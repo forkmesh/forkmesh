@@ -71,3 +71,14 @@ The Linux assets are listed in the release host's `HOST_ASSETS` and required
 by the gate, so every new candidate is built by the host timer in a pristine
 worktree at the build commit, checked, smoke-tested and published into the
 candidate.
+
+The release build passes `-DFORKMESH_PACKAGE_MODULES=OFF`, so Market packages
+are compiled into the one `forkmesh-linux-x86_64` binary as they are on macOS
+and Windows. Modules are the Linux default since the empty-shell work, but a
+module is a shared object, and the static `libxcb-*.a` archives in the image
+are not built with `-fPIC`: v1.5.0's first build (2026-10-28) failed linking
+`packages/timers.so` with "relocation R_X86_64_PC32 against symbol
+`xcb_render_id` can not be used when making a shared object". The release
+asset is a single file, so loose module files would not have shipped anyway.
+The recipe comes from the release host's checkout, not the tag, so a fix here
+applies to the candidate being built.

@@ -107,37 +107,41 @@ final class AppServices {
                 SecurityBootstrap.load(secureStore: secure, prefs: prefs)
             }.value
         }
-        let services: AppServices = AppServices(
-            config: config, prefs: prefs, secure: secure, monitor: monitor, frameSource: frameSource,
-            settings: settings, security: security, pushBridge: pushBridge)
-        current = services
-        // Projects first: the project scope decides which storage namespace
-        // every service below reads, so it goes in before the feature areas.
-        services.installProjects()
-        services.registerFeatures()
-        services.wire()
-        // The workstream hooks run after the base wiring, so each may extend
-        // or replace what wire() set up (push callbacks, deep links, ...).
-        services.installPush()
-        services.installComposer()
-        services.installAgentWatch()
-        services.installWatchBridge()
-        services.installHosts()
-        services.installInbox()
-        services.installAgentOps()
-        services.installReview()
-        services.installSurfaces()
-        services.installChat()
-        services.installCI()
-        services.installPlanning()
-        services.installDesktopRemote()
-        services.installTeammates()
-        services.installAccount()
-        services.installPackages()
-        services.installInsights()
-        services.installCoves()
-        services.installNavigation()
-        return services
+        return monitor.timeSync("startup.services") {
+            let services: AppServices = monitor.timeSync("startup.init") {
+                AppServices(
+                    config: config, prefs: prefs, secure: secure, monitor: monitor, frameSource: frameSource,
+                    settings: settings, security: security, pushBridge: pushBridge)
+            }
+            current = services
+            // Projects first: the project scope decides which storage namespace
+            // every service below reads, so it goes in before the feature areas.
+            monitor.timeSync("startup.projects") { services.installProjects() }
+            monitor.timeSync("startup.features") { services.registerFeatures() }
+            monitor.timeSync("startup.wire") { services.wire() }
+            // The workstream hooks run after the base wiring, so each may extend
+            // or replace what wire() set up (push callbacks, deep links, ...).
+            monitor.timeSync("startup.push") { services.installPush() }
+            monitor.timeSync("startup.composer") { services.installComposer() }
+            monitor.timeSync("startup.agentWatch") { services.installAgentWatch() }
+            monitor.timeSync("startup.watchBridge") { services.installWatchBridge() }
+            monitor.timeSync("startup.hosts") { services.installHosts() }
+            monitor.timeSync("startup.inbox") { services.installInbox() }
+            monitor.timeSync("startup.agentOps") { services.installAgentOps() }
+            monitor.timeSync("startup.review") { services.installReview() }
+            monitor.timeSync("startup.surfaces") { services.installSurfaces() }
+            monitor.timeSync("startup.chat") { services.installChat() }
+            monitor.timeSync("startup.ci") { services.installCI() }
+            monitor.timeSync("startup.planning") { services.installPlanning() }
+            monitor.timeSync("startup.desktopRemote") { services.installDesktopRemote() }
+            monitor.timeSync("startup.teammates") { services.installTeammates() }
+            monitor.timeSync("startup.account") { services.installAccount() }
+            monitor.timeSync("startup.packages") { services.installPackages() }
+            monitor.timeSync("startup.insights") { services.installInsights() }
+            monitor.timeSync("startup.coves") { services.installCoves() }
+            monitor.timeSync("startup.navigation") { services.installNavigation() }
+            return services
+        }
     }
 
     private init(
@@ -252,12 +256,12 @@ final class AppServices {
 
         settings.settlePermissionPacing()
         // The feature areas, each creating and registering its own services.
-        ChatFeature.register()
-        CodeFeature.register()
-        LocalReposFeature.register()
-        LocalAIFeature.register(store: prefs, http: http)
-        AgentsFeature.register()
-        ToolsFeature.register()
+        monitor.timeSync("startup.feature.chat") { ChatFeature.register() }
+        monitor.timeSync("startup.feature.code") { CodeFeature.register() }
+        monitor.timeSync("startup.feature.localRepos") { LocalReposFeature.register() }
+        monitor.timeSync("startup.feature.localAI") { LocalAIFeature.register(store: prefs, http: http) }
+        monitor.timeSync("startup.feature.agents") { AgentsFeature.register() }
+        monitor.timeSync("startup.feature.tools") { ToolsFeature.register() }
 
         // The chat relay announces the member's own status with every hello
         // and presence (FMChat's RelayService is an OwnStatusAnnouncer).

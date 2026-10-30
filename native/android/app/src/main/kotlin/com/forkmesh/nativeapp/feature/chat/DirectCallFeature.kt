@@ -29,9 +29,13 @@ object DirectCallFeature {
     private val worker get() = FaceChangerFeature.worker
     private val revisionState = MutableStateFlow(0)
     private val precallState = MutableStateFlow<PreCall?>(null)
+    private val minimizedState = MutableStateFlow(false)
+    const val ANSWER_GONE = "The call ended before it could be answered."
+    const val ANSWER_BUSY = "Hang up the current call to answer this one."
 
     val revision: StateFlow<Int> = revisionState.asStateFlow()
     val precall: StateFlow<PreCall?> = precallState.asStateFlow()
+    val minimized: StateFlow<Boolean> = minimizedState.asStateFlow()
 
     @Volatile
     var engine: DirectCallEngine? = null
@@ -82,7 +86,12 @@ object DirectCallFeature {
         made.addListener {
             val active = made.phase != null
             if (active) precallState.value = null
+            if (!active) minimizedState.value = false
             if (wasActive.getAndSet(active) && !active) worker.execute { runCatching { factory?.endPreview(PRECALL_OWNER) } }
+            made.ending?.let { ending ->
+                made.dismissEnding()
+                ChatDepth.post(ending.message)
+            }
             bump()
         }
         direct.onCallFrame = { plain, conversation -> worker.execute { runCatching { made.handleFrame(plain, conversation) } } }
@@ -96,6 +105,7 @@ object DirectCallFeature {
         val rings = CallRinger(app, made)
         ringer = rings
         rings.start()
+        DirectCallAudio.attach(app, made)
         ProjectLifecycle.onClose { rings.release() }
         bump()
         return made
@@ -110,6 +120,8 @@ object DirectCallFeature {
         precallState.value = null
         ringer?.release()
         ringer = null
+        minimizedState.value = false
+        DirectCallAudio.detach()
         made.detach()
         direct?.onCallFrame = null
         bump()
@@ -156,6 +168,42 @@ object DirectCallFeature {
         precallState.value = null
     }
 
+    fun minimize() {
+        if (engine?.active != true || minimizedState.value) return
+        minimizedState.value = true
+        peers?.live()?.setLayout(true)
+    }
+
+    fun expand() {
+        if (!minimizedState.value) return
+        minimizedState.value = false
+        peers?.live()?.setLayout(false)
+    }
+
+    fun answer(callId: String, media: DirectCallKind, granted: Boolean) {
+        run { current ->
+            val pending = current.invite
+            if (pending == null || pending.callId != callId) {
+                if (!(current.active && current.callId == callId)) ChatDepth.post(ANSWER_GONE)
+                return@run
+            }
+            if (!granted) {
+                current.declineInvite()
+                ChatDepth.post(
+                    if (media == DirectCallKind.VIDEO) {
+                        "Allow ForkMesh to use the camera and microphone in Settings to answer video calls."
+                    } else {
+                        "Allow ForkMesh to use the microphone in Settings to answer calls."
+                    },
+                )
+                return@run
+            }
+            if (current.acceptInvite()) return@run
+            if (current.active && current.callId == callId) return@run
+            ChatDepth.post(if (current.active) ANSWER_BUSY else ANSWER_GONE)
+        }
+    }
+
     fun permitted(context: Context, media: DirectCallKind): Boolean {
         val needed = if (media == DirectCallKind.VIDEO) {
             listOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
@@ -180,8 +228,15 @@ object DirectCallFeature {
     fun accept(callId: String) {
         val context = appContext ?: return
         run { current ->
-            val pending = current.invite ?: return@run
-            if (pending.callId != callId || current.phase != null) return@run
+            val pending = current.invite
+            if (pending == null || pending.callId != callId) {
+                if (!(current.active && current.callId == callId)) ChatDepth.post(ANSWER_GONE)
+                return@run
+            }
+            if (current.phase != null) {
+                ChatDepth.post(ANSWER_BUSY)
+                return@run
+            }
             if (permitted(context, pending.media)) current.acceptInvite()
         }
     }

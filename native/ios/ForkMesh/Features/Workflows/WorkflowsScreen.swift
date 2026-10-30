@@ -58,6 +58,7 @@ private struct WorkflowsList: View {
     @State private var desktopPending: DesktopWorkflowConfirmation?
     @State private var desktopNotice: String = ""
     @State private var desktopNoticeIsError: Bool = false
+    @State private var desktopDraft: WorkflowDraft?
     @State private var drafts: [Int: WorkflowDraft] = [:]
     @State private var serial: Int = 0
     @State private var creating: Bool = false
@@ -112,6 +113,45 @@ private struct WorkflowsList: View {
                         if let confirmation { Task { await performOnDesktop(confirmation) } }
                     })
             }
+            .fmDialog(isPresented: Binding(get: { desktopDraft != nil }, set: { if !$0 { desktopDraft = nil } })) {
+                FmConfirmDialog(
+                    title: "Run on your desktop?", message: desktopDraft.map(WorkflowDesktopSteps.confirmation),
+                    confirmLabel: "Run",
+                    onCancel: { desktopDraft = nil },
+                    onConfirm: {
+                        let draft = desktopDraft
+                        desktopDraft = nil
+                        if let draft { Task { await runAccountOnDesktop(draft) } }
+                    })
+            }
+    }
+
+    private func prepareAccountOnDesktop(_ workflow: WorkflowSummary) {
+        guard store.canRunOnDesktop else {
+            desktopNotice = WorkflowsText.desktopMissing
+            desktopNoticeIsError = true
+            return
+        }
+        Task {
+            do {
+                desktopDraft = try await store.open(workflow.id)
+            } catch {
+                desktopNotice = WorkflowsText.describe(error, "This workflow could not be opened.")
+                desktopNoticeIsError = true
+            }
+        }
+    }
+
+    private func runAccountOnDesktop(_ draft: WorkflowDraft) async {
+        guard store.desktopRunning.isEmpty else { return }
+        let run = await store.runOnDesktop(draft)
+        if run.succeeded {
+            desktopNotice = "\(draft.name): done on your desktop."
+            desktopNoticeIsError = false
+        } else {
+            desktopNotice = run.error.isEmpty ? "\(draft.name) failed on your desktop." : run.error
+            desktopNoticeIsError = true
+        }
     }
 
     private func reload() async {
@@ -212,6 +252,13 @@ private struct WorkflowsList: View {
 
     private func trailing(_ workflow: WorkflowSummary) -> AnyView? {
         if store.desktopRunning == workflow.id { return AnyView(FmCircularProgressIndicator(size: 20, strokeWidth: 2)) }
+        if workflow.runsOnDesktop {
+            return AnyView(
+                FmIconButton(
+                    icon: "play_arrow", label: "Run \(workflow.name) on your desktop", size: 22,
+                    onPressed: store.desktopRunning.isEmpty ? { prepareAccountOnDesktop(workflow) } : nil)
+                    .accessibilityIdentifier("workflow-run-desktop-\(workflow.id)"))
+        }
         return workflow.active ? AnyView(FmStatusBadge(label: "Active", color: fm.accent)) : nil
     }
 

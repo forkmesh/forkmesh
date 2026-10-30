@@ -583,10 +583,6 @@ struct Chrome : public QObject {
     QWidget *hosts[TabCount] = {nullptr, nullptr, nullptr};
     WorkspaceBrowserPane *browser = nullptr;
     SessionSidePanels *details = nullptr;
-    int detailsSession = 0;
-    int detailsConsumed = 0;
-    int detailsCloudTurns = -1;
-    qint64 detailsCloudTail = -1;
     QPointer<QSplitter> filesSplit;
 
     bool composerReady = false;
@@ -1558,7 +1554,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
                           : MainWindow::AgentListView::Compact);
             if (window.m_agentCodePage->parentWidget() != window.m_agentCodeSplit) {
                 const bool shown = !window.m_agentCodePage->isHidden();
-                window.m_agentCodeSplit->addWidget(window.m_agentCodePage);
+                window.m_agentCodeSplit->insertWidget(1, window.m_agentCodePage);
                 window.m_agentCodePage->setVisible(shown);
             }
             chrome->panelStack->setCurrentWidget(chrome->hosts[TabTerminal]);
@@ -1574,6 +1570,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
             }
         }
         fitColumn(chrome);
+        window.refreshAgentTowerPanels();
         window.positionGlobalFooterOverlays();
         window.refreshAgentTranscriptTheme(dark);
         window.updateQuickAddTargetAgentLabel();
@@ -1741,46 +1738,8 @@ void NextAccess::syncWorkspace(MainWindow &window)
                       .arg(repository));
     }
 
-    if (chrome->details && chrome->panelOpen && chrome->tab == TabDetails) {
-        const int id = session ? session->id : 0;
-        if (chrome->detailsSession != id) {
-            chrome->detailsSession = id;
-            chrome->detailsConsumed = 0;
-            chrome->detailsCloudTurns = -1;
-            chrome->detailsCloudTail = -1;
-            chrome->details->clearActivity();
-        }
-        fillSessionSidePanels(window, chrome->details, id);
-        if (id != 0 && window.isCloudSession(id)) {
-            const auto cloud = window.m_cloudAgentSessions.constFind(id);
-            if (cloud != window.m_cloudAgentSessions.constEnd()) {
-                const int turns = int(cloud->history.size());
-                const qint64 tail =
-                    cloud->history.isEmpty() ? 0 : cloud->history.last().text.size();
-                if (turns != chrome->detailsCloudTurns ||
-                    tail != chrome->detailsCloudTail) {
-                    chrome->detailsCloudTurns = turns;
-                    chrome->detailsCloudTail = tail;
-                    chrome->details->replaceActivity(
-                        forkmesh::agents::cloudAgentTranscriptEvents(
-                            cloud.value(), window.cloudAgentImageDirectory()));
-                }
-            }
-        } else if (id != 0) {
-            const auto events = window.m_streamEvents.constFind(id);
-            if (events == window.m_streamEvents.constEnd()) {
-                window.ensureStreamEventsLoadedAsync(id);
-            } else {
-                if (events->size() < chrome->detailsConsumed) {
-                    chrome->details->clearActivity();
-                    chrome->detailsConsumed = 0;
-                }
-                for (int index = chrome->detailsConsumed; index < events->size(); ++index)
-                    chrome->details->append(events->at(index));
-                chrome->detailsConsumed = int(events->size());
-            }
-        }
-    }
+    if (chrome->details && chrome->panelOpen && chrome->tab == TabDetails)
+        feedSessionSidePanels(window, chrome->details, session ? session->id : 0);
 
     const bool showCard = session && stats.any() && !diffOpen;
     chrome->changesBar->setVisible(showCard);

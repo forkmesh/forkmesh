@@ -4370,22 +4370,23 @@
                 <button data-new-repo-source="provider" type="button" aria-pressed="false" class="text-muted-foreground border-l border-t border-border transition-colors">GitHub / GitLab / Codeberg</button>
               </div>
               <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo.git" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground" />
-              <span data-new-repo-source-hint class="text-xs leading-5 text-muted-foreground">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</span>
+              <span data-new-repo-source-hint class="text-xs leading-5 text-muted-foreground">Copies the repository at this URL. Private repositories are backed up through the desktop app. Local paths never leave your machine.</span>
             </div>
 
             <div data-new-repo-provider-options class="hidden grid gap-3 border-l-2 border-border pl-3">
               <label class="grid gap-1.5 text-xs text-muted-foreground">
-                Import type
+                What to import
                 <select data-new-repo-import-mode class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground outline-none">
-                  <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
-                  <option value="stub">Create a non-mirrored stub</option>
+                  <option value="import">Issues, pull requests &amp; history (not the code)</option>
+                  <option value="stub">Only a listing that links to the original</option>
                 </select>
               </label>
               <label class="grid gap-1.5 text-xs text-muted-foreground">
-                Provider access token <span class="text-[11px] font-normal">(required for private repositories; optional for public)</span>
-                <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground" />
+                Read-only access token <span class="text-[11px] font-normal">(required for private repositories; optional for public)</span>
+                <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Read-only GitHub, GitLab, or Codeberg token" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground" />
               </label>
-              <p class="text-xs leading-5 text-muted-foreground">The token passes through ForkMesh’s Worker only for this request and is forwarded to the provider; it is not persisted. The page repeats request-scoped calls only while it advances the transfer, then clears the form. Executable source files are not fetched by the provider adapter: Git object transfer stays on the normal mirror path, while provider objects and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
+              <p class="text-xs leading-5 text-muted-foreground">This copies issues, pull requests and their history once; it does not copy the code or keep anything up to date. To back up the code, see <a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>.</p>
+              <p class="text-xs leading-5 text-muted-foreground">A read-only token is enough: on GitHub, a fine-grained token for that one repository with Contents, Issues and Pull requests set to Read-only. <span data-platform-name>ForkMesh</span> never needs permission to push to GitHub. The token passes through ForkMesh’s Worker only for this request and is forwarded to the provider; it is not persisted. The page repeats request-scoped calls only while it advances the transfer, then clears the form. Executable source files are not fetched by the provider adapter: Git object transfer stays on the normal mirror path, while provider objects and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
             </div>
 
             <!-- ForkMesh-hosted options (docs/HOSTED_REPOS.md): shown when this
@@ -4429,6 +4430,7 @@
               <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" placeholder="What is this repository for?" class="resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground"></textarea>
             </label>
 
+            <p data-new-repo-visibility-note role="status" aria-live="polite" class="text-xs leading-5 text-muted-foreground"></p>
             <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
             <div data-new-repo-migration-status class="fm-flash hidden text-xs" role="status" aria-live="polite">
               <i data-lucide="refresh-cw" aria-hidden="true"></i>

@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.forkmesh.nativeapp.platform.OtherAppCall
 
 class DictationSession(
     val holds: () -> Boolean,
@@ -56,6 +57,10 @@ class SpeechDictation internal constructor(private val context: Context) {
         this.onError = onError
         if (!available) {
             onError("Dictation is not available on this device.")
+            return
+        }
+        if (inCall()) {
+            onError("Dictation is off during a call so the other person keeps hearing you.")
             return
         }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -147,11 +152,13 @@ class SpeechDictation internal constructor(private val context: Context) {
         voice.onSegment()
         val again = Runnable {
             restart = null
-            if (session === voice && voice.holds()) listen() else finish(voice)
+            if (session === voice && voice.holds() && !inCall()) listen() else finish(voice)
         }
         restart = again
         main.postDelayed(again, RESTART_MS)
     }
+
+    private fun inCall(): Boolean = runCatching { OtherAppCall.ownCall() }.getOrDefault(false)
 
     private fun finish(voice: DictationSession) {
         listening = false

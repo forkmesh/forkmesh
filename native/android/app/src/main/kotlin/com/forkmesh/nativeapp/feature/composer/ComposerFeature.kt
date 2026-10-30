@@ -16,6 +16,7 @@ import com.forkmesh.nativeapp.composer.QuickAgentLauncher
 import com.forkmesh.nativeapp.composer.QuickLaunchBackend
 import com.forkmesh.nativeapp.composer.QuickLaunchRunOptions
 import com.forkmesh.nativeapp.composer.ShellPromptTargets
+import com.forkmesh.nativeapp.control.DesktopPresence
 import com.forkmesh.nativeapp.control.DesktopPromptImages
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
@@ -143,6 +144,27 @@ internal object AppQuickLaunchBackend : QuickLaunchBackend {
         val reach = AgentsFeature.hub.reach
         if (reach.isConnected) reach.label else "connects when you send"
     }.getOrDefault("")
+
+    override fun desktopNames(): List<String> = runCatching {
+        val names = AgentsFeature.hub.choices.map { it.name }
+        if (names.isEmpty()) listOf(desktopName()).filter { it.isNotEmpty() } else names
+    }.getOrDefault(emptyList())
+
+    override fun desktopDetail(name: String): String = runCatching {
+        val hub = AgentsFeature.hub
+        val choice = hub.choices.firstOrNull { it.name == name } ?: return@runCatching desktopDetail()
+        if (choice.active && hub.reach.isConnected) return@runCatching hub.reach.label
+        when (choice.presence) {
+            DesktopPresence.Online -> "Running · connects when you send"
+            DesktopPresence.Offline -> "Not reachable right now"
+            DesktopPresence.Checking -> "Checking…"
+            DesktopPresence.Unknown -> "connects when you send"
+        }
+    }.getOrDefault("")
+
+    override fun chooseDesktop(name: String) {
+        runCatching { AgentsFeature.hub.chooseNamed(name) }
+    }
 
     override fun startOnDesktop(
         owner: String,

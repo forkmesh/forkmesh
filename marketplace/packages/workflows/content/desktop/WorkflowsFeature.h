@@ -124,6 +124,7 @@ private:
     void startPendingRun(const QString &workflowKey, const QString &name, const QString &where,
                          const QJsonArray &steps);
     void landPendingRun(const QJsonObject &run, const QString &workflowKey);
+    void failPendingRun(const QString &workflowKey, const QString &message);
     void showPendingRun(const QJsonObject &run);
     void showFlow(const QString &key, const QList<FlowStep> &steps, bool live);
     void updateDesktopPending(int running);

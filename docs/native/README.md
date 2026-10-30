@@ -25,7 +25,6 @@ Topic pages:
 
 | Page | Covers |
 | --- | --- |
-| [SYNC.md](SYNC.md) | iOS → Android sync ledger: every iOS feature or UI change Android still has to match, and `tools/native_sync.py` |
 | [PARITY.md](PARITY.md) | Phone feature matrix, platform decisions, iOS workstream hooks, the watchOS app, bundle ids |
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, sitemap and URLs |
@@ -77,6 +76,14 @@ Shortcuts (`.forkmesh/shortcuts/`):
 | `deploy-native-ios-ad-hoc-mac.sh`, `deploy-native-ios-app-store-mac.sh`, `build-desktop-macos-mac.sh` | The same builds on the office Mac ([MAC_BUILD.md](MAC_BUILD.md)) |
 | `ios-app-store-status.sh`, `testflight-feedback-to-tasks.sh` | Read-only App Store Connect report; TestFlight feedback to tasks ([IOS_RELEASE.md](IOS_RELEASE.md)) |
 | `task-mobile-app-store-deploy.sh`, `task-mobile-play-store-deploy.sh` | Create a signed reminder task with the version, tag, `main` head and the release steps for the App Store or the Play Store |
+
+The reminder goes to the release maintainer named by `FORKMESH_RELEASE_ASSIGNEE`
+or, when that is unset, by the one line in `release-assignee` in the core config
+folder (`~/projects/forkmesh/data/core/config/release-assignee`). The account is
+kept out of the public repository. With neither set the task is created
+unassigned and the shortcut says so; it used to stop with an error, which is all
+a shortcut run from the phone or desktop showed, because those runs do not
+export the variable.
 
 The Play Store path exists only as that reminder: no tool uploads to Google
 Play, and Android releases ship as the signed
@@ -425,6 +432,14 @@ avatar movement but does not silently change that saved feedback preference.
   Center, Notification Center, a system alert), not only after the
   background; gate it on age (`AccountPackagesStore.refreshIfStale`) or on
   a real return (`AppReturnGate`, used by chat).
+- Read and decode stored files off the main actor at launch, and restore a
+  list in one write: everything in `AppServices.start` after the identity
+  load runs on the main thread in one block. The chat history (megabytes
+  of messages) was read and decoded there, then put back one message at a
+  time, each insert copying its conversation and each direct message
+  rescheduling a save; `ChatHub.attachHistory(inBackground:)` and the
+  batched `restore`s replace that. Name every launch step
+  (`startup.<step>`) so the report says which one is slow.
 - Parse message text once per text, not once per redraw: `ChatLinkText` and
   the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.

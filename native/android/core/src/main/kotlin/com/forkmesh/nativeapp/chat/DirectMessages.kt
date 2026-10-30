@@ -416,12 +416,20 @@ class DirectMessageService(
     fun restore(messages: List<ChatMessage>, saved: Map<String, ChatReceipt>, times: Map<String, ChatReceiptTimes> = emptyMap()) {
         val owners = HashMap<String, String>()
         var changed = false
-        for (message in messages) {
-            if (!DirectMessageFrames.isDirect(message.conversation)) continue
-            if (synchronized(lock) { removed.containsKey(message.id) }) continue
-            val conversationId = DirectMessageFrames.conversationId(message.conversation)
-            owners[message.id] = conversationId
-            if (append(message, conversationId)) changed = true
+        synchronized(lock) {
+            val added = LinkedHashMap<String, MutableList<ChatMessage>>()
+            for (message in messages) {
+                if (!DirectMessageFrames.isDirect(message.conversation)) continue
+                if (removed.containsKey(message.id)) continue
+                val conversationId = DirectMessageFrames.conversationId(message.conversation)
+                owners[message.id] = conversationId
+                if (!seen.getOrPut(conversationId) { HashSet() }.add(message.id)) continue
+                added.getOrPut(message.conversation) { ArrayList() }.add(message)
+            }
+            for ((conversation, incoming) in added) {
+                history[conversation] = mergeSorted(history[conversation].orEmpty(), incoming).takeLast(DirectMessageFrames.MAX_MESSAGES_PER_ROOM)
+            }
+            changed = added.isNotEmpty()
         }
         for ((id, receipt) in saved) {
             if (receipt != ChatReceipt.DELIVERED && receipt != ChatReceipt.READ) continue
@@ -811,14 +819,35 @@ class DirectMessageService(
     private fun acceptBundle(record: DirectConversation, seal: RoomSeal, frame: Map<String, Any?>, holder: RoomSocket?, replay: Boolean) {
         val outcome = seal.acceptKeyFrame(frame, now()) ?: return
         if (outcome.isNew && holder != null && !replay) advertise(holder)
-        if (outcome.isNew && outcome.state == TrustState.PENDING) {
-            systemLine(record, "pending-${outcome.kid}", DirectMessageFrames.pendingDeviceLine(deviceOwnerName(record, outcome.acct)))
-        }
+        if (outcome.isNew && outcome.state == TrustState.PENDING) notePendingDevice(record, outcome.kid, outcome.acct)
         if (outcome.state == TrustState.APPROVED && outcome.updated) {
             if (holder != null) peerLearned(holder)
             releaseHeld(record, seal, outcome.kid, holder)
         }
         notifyListeners()
+    }
+
+    private fun notePendingDevice(record: DirectConversation, kid: String, acct: String) {
+        val devices = devices(record.conversation)
+        val waiting = devices.filter { it.state == TrustState.PENDING }.map { it.kid }.toSet()
+        if (waiting.size > 1) {
+            val folded = DirectTrustNotices.pending(record.conversation, devices, record.otherUser).firstOrNull()?.text
+            if (folded != null && foldPendingLine(record, waiting, folded)) return
+        }
+        systemLine(record, "pending-$kid", DirectMessageFrames.pendingDeviceLine(deviceOwnerName(record, acct)))
+    }
+
+    private fun foldPendingLine(record: DirectConversation, waiting: Set<String>, text: String): Boolean {
+        val prefix = "system-pending-"
+        val changed = synchronized(lock) {
+            val list = history[record.conversation] ?: return@synchronized false
+            val at = list.indexOfLast { it.senderId == DirectMessageFrames.SYSTEM_SENDER && it.id.startsWith(prefix) && it.id.removePrefix(prefix) in waiting }
+            if (at < 0) return@synchronized false
+            history[record.conversation] = list.toMutableList().also { it[at] = it[at].copy(text = text) }
+            true
+        }
+        if (changed) notifyListeners()
+        return changed
     }
 
     private fun deviceOwnerName(record: DirectConversation, acct: String): String =

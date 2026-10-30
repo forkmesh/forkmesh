@@ -2084,9 +2084,9 @@
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
         : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
-      `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
-      `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
-      `Publish — the node clones and hosts the mirror.`,
+      `On that computer, clone ${original ? mono(original) : "the repository"} with git, signing in with your own account. A read-only token is enough if git asks for a password.`,
+      `Open the desktop node's ${ui("Repos")} page, choose ${ui("Import folder…")} and pick the cloned ${mono(name)} folder.`,
+      `Choose ${ui("Public")} or ${ui("Private")}. The node copies the folder to the network and keeps that copy updated while it runs; run ${mono("git pull")} in the folder to pick up new changes.`,
       `Back here, ${ui("Volunteer to mirror")} records that node as a volunteer so the importer can see a mirror is available.`,
     ];
   }
@@ -2267,11 +2267,30 @@
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
+    `Copy a project's issues, pull requests and their history, once. This does not copy the code or keep anything up to date: to back up the code, follow the guide at /docs/back-up-a-github-repository/.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
     `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+
+  const NEW_REPO_BACKUP_GUIDE =
+    `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
+
+  const NEW_REPO_CLONE_HINT =
+    `The ${escapeHtml(desktopBrand())}desktop app does not fetch from a URL. Clone the repository to your computer with git, signing in with your own GitHub account, then add that folder in the desktop app. It only reads the folder: nothing is pushed back to GitHub. If git asks for a password, a read-only token is enough, such as a GitHub fine-grained token for that one repository with Contents: Read-only. ${escapeHtml(platformName())} never needs permission to push to GitHub to make a backup. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`;
+
+  function renderNewRepoVisibilityNote() {
+    const note = $("[data-new-repo-visibility-note]");
+    if (!note) return;
+    const source = newRepoSource();
+    note.classList.toggle("hidden", source === "provider");
+    const privateText = hostedCoreMode() && (source === "empty" || source === "remote")
+      ? "only you and your organization's readers can see and clone it."
+      : "its contents stay encrypted and hidden from everyone else.";
+    note.innerHTML = newRepoVisibility() === "private"
+      ? `This repository will be <span class="font-medium text-foreground">Private</span>: ${privateText}`
+      : `This repository will be <span class="font-medium text-foreground">Public</span>: anyone can find, browse and clone it. Choose Private above to keep it hidden.`;
+  }
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
@@ -2406,17 +2425,18 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
+      if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.innerHTML = `Paste a repository URL, or a GitLab group / Codeberg or Gitea profile to import every repository in it. This copies issues, pull requests and their history once. It does not copy the code and is not kept up to date, so it is not a backup. The transfer keeps going after setup and can resume where it stopped. To back up the code, see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
+      if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    renderNewRepoVisibilityNote();
   }
 
   function setNewRepoHint(text, cls) {
@@ -2430,17 +2450,24 @@
     const list = $("[data-new-repo-steps-list]");
     const panel = $("[data-new-repo-steps]");
     if (!list || !panel) return;
-    const sourceLabel = details.source === "local" ? "Local repository" : "Remote clone URL";
-    const pick = details.source === "local" ? "Select the local repository" : "Paste the clone URL";
-    const sourceValue = details.sourceValue
-      ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
-    const steps = [
-      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
-      `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
-      `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
-      `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
-      `Publish — the node mirrors it and it appears here in your repositories.`,
-    ];
+    const ui = (text) => `<span class="text-foreground">${escapeHtml(text)}</span>`;
+    const mono = (text) => `<span class="font-mono text-foreground">${escapeHtml(text)}</span>`;
+    const visibility = ui(details.visibility === "private" ? "Private" : "Public");
+    const importStep = `Open the ${desktopBrand()}desktop app's ${ui("Repos")} page and choose ${ui("Import folder…")} (${ui("Add local repo…")} in some menus).`;
+    const steps = details.source === "local"
+      ? [
+        importStep,
+        `Pick the folder${details.sourceValue ? ` ${mono(details.sourceValue)}` : ""} and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. It then appears here in your repositories.`,
+      ]
+      : [
+        `On your computer, clone the repository with git, signing in with your own GitHub account${details.sourceValue ? `: ${mono(`git clone ${details.sourceValue}`)}` : ""}. A read-only token is enough if git asks for a password.`,
+        importStep,
+        `Pick the folder you cloned and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. To pick up new changes from GitHub, run ${mono("git pull")} in that folder; nothing is pushed back to GitHub. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`,
+      ];
     list.innerHTML = steps
       .map((step, index) => `<li class="flex gap-2"><span class="shrink-0 font-mono text-foreground">${index + 1}.</span><span>${step}</span></li>`)
       .join("");

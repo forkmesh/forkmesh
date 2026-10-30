@@ -401,8 +401,9 @@ int Collector::runningBackground() const
 
 QStringList defaultCardOrder()
 {
-    return {QStringLiteral("progress"),   QStringLiteral("outputs"),
-            QStringLiteral("sources"),    QStringLiteral("background"),
+    return {QStringLiteral("progress"),   QStringLiteral("subsessions"),
+            QStringLiteral("outputs"),    QStringLiteral("sources"),
+            QStringLiteral("background"),
             QStringLiteral("changes"),    QStringLiteral("context"),
             QStringLiteral("environment"), QStringLiteral("tools")};
 }

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.chat.CallDiagnosis
+import com.forkmesh.nativeapp.chat.CallDiagnostics
 import com.forkmesh.nativeapp.chat.CallLevel
 import com.forkmesh.nativeapp.chat.CallLossMark
 import com.forkmesh.nativeapp.chat.CallQuality
@@ -80,42 +84,57 @@ private val pillShape = RoundedCornerShape(13.dp)
 private val cardShape = RoundedCornerShape(14.dp)
 
 @Composable
-internal fun CallQualityWidget(history: CallQualityHistory, video: Boolean, modifier: Modifier = Modifier, peerLabel: String = "Them") {
+internal fun CallQualityWidget(
+    history: CallQualityHistory,
+    video: Boolean,
+    modifier: Modifier = Modifier,
+    peerLabel: String = "Them",
+    sending: Boolean = true,
+    finishOnLeave: Boolean = true,
+) {
     if (history.latest == null && history.levels.isEmpty()) return
     val prefs = remember { Services.get<PrefStore>() }
     var open by remember { mutableStateOf(prefs?.getBool(CallQuality.OPEN_KEY) == true) }
     val latest = history.latest
     val live = history.live
     val summary = CallQuality.accessibility(history)
+    val diagnosis = remember(history.samples, live, video, sending) {
+        if (live) CallDiagnostics.diagnose(history.samples, video = video, sending = sending) else CallDiagnosis.EMPTY
+    }
+    LaunchedEffect(diagnosis) { if (live) CallDiagnosticsBook.refreshed(diagnosis) }
+    if (finishOnLeave) DisposableEffect(Unit) { onDispose { CallDiagnosticsBook.finish() } }
     Column(modifier, horizontalAlignment = Alignment.Start) {
-        Row(
-            Modifier
-                .height(26.dp)
-                .clip(pillShape)
-                .background(CallQualityColors.glass)
-                .border(0.5.dp, CallQualityColors.edge, pillShape)
-                .clickable(role = Role.Button, onClickLabel = if (open) "Hide live charts" else "Show live charts") {
-                    open = !open
-                    prefs?.putBool(CallQuality.OPEN_KEY, open)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .height(26.dp)
+                    .clip(pillShape)
+                    .background(CallQualityColors.glass)
+                    .border(0.5.dp, CallQualityColors.edge, pillShape)
+                    .clickable(role = Role.Button, onClickLabel = if (open) "Hide live charts" else "Show live charts") {
+                        open = !open
+                        prefs?.putBool(CallQuality.OPEN_KEY, open)
+                    }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = summary
+                        stateDescription = if (open) "Expanded" else "Collapsed"
+                    }
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (live) {
+                    val bars = latest?.bars ?: 0
+                    val color = CallQualityColors.grade(latest?.grade ?: CallQualityGrade.UNKNOWN)
+                    Canvas(Modifier.size(width = 14.dp, height = 12.dp)) { signalBars(bars, color) }
                 }
-                .semantics(mergeDescendants = true) {
-                    contentDescription = summary
-                    stateDescription = if (open) "Expanded" else "Collapsed"
+                Canvas(Modifier.size(width = 40.dp, height = 16.dp)) { voiceWave(history.levels, CallQuality.PILL_SAMPLES) }
+                val rtt = CallQuality.rttText(latest)
+                if (rtt.isNotEmpty()) {
+                    Text(rtt, color = CallQualityColors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (live) {
-                val bars = latest?.bars ?: 0
-                val color = CallQualityColors.grade(latest?.grade ?: CallQualityGrade.UNKNOWN)
-                Canvas(Modifier.size(width = 14.dp, height = 12.dp)) { signalBars(bars, color) }
             }
-            Canvas(Modifier.size(width = 40.dp, height = 16.dp)) { voiceWave(history.levels, CallQuality.PILL_SAMPLES) }
-            val rtt = CallQuality.rttText(latest)
-            if (rtt.isNotEmpty()) {
-                Text(rtt, color = CallQualityColors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-            }
+            if (live) CallDiagnosticsButton(diagnosis)
         }
         if (open) {
             Spacer(Modifier.height(6.dp))

@@ -431,6 +431,7 @@ public func pingOpenLabel(_ target: NotificationTapTarget) -> String? {
 
 public enum PingDetailCopy {
     public static let title = "Ping"
+    public static let backToList = "All pings"
     public static let deleteLabel = "Delete ping"
     public static let deleteTitle = "Delete this ping?"
     public static let deleteBody = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

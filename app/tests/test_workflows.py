@@ -871,6 +871,34 @@ def test_plugin_ships_valid_repository_files():
         assert warnings == []
 
 
+def test_shortcuts_plugin_ships_starter_shortcuts_the_desktop_embeds():
+    sys.path.insert(0, str(ROOT / "tools"))
+    sys.path.insert(0, str(ROOT.parent / "marketplace" / "tools"))
+    import build_app_plugins
+    import workflow_files
+    root = ROOT.parent / "marketplace" / "packages" / "shortcuts"
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    shipped = build_app_plugins.content_files(manifest, root)
+    assert len(shipped) >= 5
+    qrc = (ROOT.parent / "desktop" / "resources" / "icons.qrc").read_text(
+        encoding="utf-8")
+    embedded = re.findall(
+        r'<file alias="([^"]+)">\.\./\.\./marketplace/packages/shortcuts/'
+        r'content/shortcuts/\1</file>', qrc)
+    names = [item["path"].rsplit("/", 1)[1] for item in shipped]
+    assert sorted(embedded) == sorted(names)
+    for item in shipped:
+        assert item["kind"] == "shortcut"
+        assert item["text"].startswith("# name: " + item["name"] + "\n")
+        assert "\n# description: " in item["text"].split("\n\n", 1)[0]
+        assert "forkmesh" not in item["text"].lower(), item["path"]
+        document, warnings = workflow_files.parse_file(item["path"],
+                                                       item["text"])
+        text, _ = workflow_files.render_file(document, 0)
+        assert text == item["text"], item["path"]
+        assert warnings == []
+
+
 def test_templates_and_catalog_are_public(harness):
     listed = harness.call("/api/workflows/templates")
     assert listed.status == 200 and len(listed.data["templates"]) == 12

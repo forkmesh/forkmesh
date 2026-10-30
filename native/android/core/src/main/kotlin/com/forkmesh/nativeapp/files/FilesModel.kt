@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.files
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.bool
 import com.forkmesh.nativeapp.json.str
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -108,6 +109,22 @@ object FilesModel {
     fun crumbs(title: String, path: String): List<Pair<String, String>> {
         val parts = parts(path)
         return listOf(title to "") + parts.indices.map { parts[it] to parts.subList(0, it + 1).joinToString("/") }
+    }
+
+    const val LOCAL_NAME_PROBLEM = "That file name cannot be saved on this phone."
+
+    fun localName(name: String): String? {
+        val last = parts(name).lastOrNull() ?: return null
+        if (last == "." || last == ".." || last.any { it.code == 0 }) return null
+        return last
+    }
+
+    fun localTarget(folder: File, name: String): File {
+        val local = localName(name) ?: throw FileProblem(LOCAL_NAME_PROBLEM)
+        val base = folder.toPath().toAbsolutePath().normalize()
+        val target = base.resolve(local).normalize()
+        if (target.parent != base) throw FileProblem(LOCAL_NAME_PROBLEM)
+        return target.toFile()
     }
 
     fun nameProblem(name: String): String? {

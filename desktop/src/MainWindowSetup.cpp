@@ -5258,10 +5258,8 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         *fatal = false;
     const QString requestedAccount =
         AccountCapability::normalizedAccount(accountName);
-    QJsonObject loginRequest{{"nodeName", requestedAccount},
-                             {"email", email},
-                             {"password", password},
-                             {"totp", totp}};
+    QJsonObject loginRequest =
+        AccountCapability::passwordLoginRequest(email, password, totp);
     const QString publicKey = m_profileIdentity.publicKey();
     if (!publicKey.isEmpty()) {
         const QString deviceTs =
@@ -5316,9 +5314,10 @@ bool MainWindow::verifyTotpLogin(const QString &email,
                           "The selected instance returned an invalid account "
                           "session. No account was switched.")
                     : QStringLiteral(
-                          "Those credentials belong to @%1, not the selected "
-                          "@%2 account. Choose @%1 in the instance dialog, or "
-                          "enter credentials for @%2.")
+                          "That email and password are correct, but they "
+                          "belong to the account @%1, not @%2. Go back, "
+                          "enter %1 as your ForkMesh username, and log in "
+                          "again.")
                           .arg(returnedAccount, requestedAccount);
             if (!forkmesh::ui::NextAccess::accountNotice(
                     *this, QStringLiteral("Log in"), rejectedText, true)) {
@@ -5360,10 +5359,7 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         int webStatus = 0;
         const QJsonObject webResp = postAccountSyncForInstance(
             loginInstance, QStringLiteral("login"),
-            QJsonObject{{"nodeName", requestedAccount},
-                        {"email", email},
-                        {"password", password},
-                        {"totp", totp}},
+            AccountCapability::passwordLoginRequest(email, password, totp),
             &webStatus);
         if (webStatus == 200 && webResp.value("ok").toBool()) {
             if (!accountLoginResponseAccepted(requestedAccount, webResp)) {
@@ -5408,10 +5404,14 @@ bool MainWindow::verifyTotpLogin(const QString &email,
         err == "bad_totp"
             ? "Incorrect authenticator code."
         : err == "invalid_credentials"
-            ? "Incorrect email or password."
+            ? AccountCapability::incorrectPasswordMessage(
+                  accountApiUrlForInstance(loginInstance,
+                                           QStringLiteral("login"))
+                      .host())
         : err == "too_many_attempts"
-            ? "Too many failed attempts. Wait a few minutes "
-              "and try again."
+            ? AccountCapability::loginLockoutMessage(
+                  qint64(resp.value(QStringLiteral("retryAfterMs"))
+                             .toDouble()))
         : err == "pubkey_mismatch"
             ? "This account is already bound to another "
               "desktop key, and password-only fallback also "
@@ -5451,11 +5451,16 @@ bool MainWindow::runLoginFlow(const QString &accountName)
     QDialog dialog(this);
     dialog.setWindowTitle("Log in to " + accountName);
     auto *form = new QFormLayout(&dialog);
-    form->addRow(new QLabel("Log in with your email and password to join the network."));
+    auto *intro = new QLabel("Use the email and password you use on the "
+                             "ForkMesh website. There is no separate desktop "
+                             "password.");
+    intro->setWordWrap(true);
+    form->addRow(intro);
     auto *emailEdit = new QLineEdit;
     emailEdit->setPlaceholderText("you@example.com");
     auto *passEdit = new QLineEdit;
     passEdit->setEchoMode(QLineEdit::Password);
+    forkmesh::ui::kit::addPasswordReveal(passEdit);
     auto *totpEdit = new QLineEdit;
     totpEdit->setPlaceholderText("6-digit code (only if you enabled 2FA)");
     totpEdit->setMaxLength(6);
