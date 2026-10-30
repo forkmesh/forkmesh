@@ -58,14 +58,20 @@ https://forkmesh.com/affiliates?utm_source=email&utm_medium=email&utm_campaign=p
 
 ## Gates before posting
 
-| Gate | Status |
+| Gate | Status on 2026-10-30 16:15 UTC |
 | --- | --- |
-| Branch merged and deployed; /hackathon, /hackathon/rules, /hackathon/archive and /affiliates answer 200 | Open |
-| `GET /api/plugin-race` and `GET /api/affiliates` answer 200 | Open |
-| CRM installed on the `forkmesh` organization, so affiliate leads land in it | Open |
-| Race dates, 3-star minimum and affiliate commission confirmed by the owner | Open |
-| Prize wallet holds at least 1 SOL plus fees | Open |
-| Someone named to review entrants and plugins daily | Open |
+| Branch merged and deployed; /hackathon, /hackathon/rules, /hackathon/archive and /affiliates answer 200 | Passed. All four answer 200 (merged in `aa1972db78`). |
+| `GET /api/plugin-race` and `GET /api/affiliates` answer 200 | Passed. Both answer 200 with `ok: true`. |
+| CRM installed on the `forkmesh` organization, so affiliate leads land in it | Passed. The CRM's organization list shows it installed on `forkmesh`. |
+| Race dates, 3-star minimum and affiliate commission confirmed by the owner | Open. The served values match this brief (opens 19 October, closes 18 December 23:59 UTC, 3 stars, ten 0.1 SOL prizes, 50% commission), but no owner confirmation is recorded. |
+| Prize wallet holds at least 1 SOL plus fees | Open. The wallet address is not in the repository; the operator checks the balance. |
+| Someone named to review entrants and plugins daily | Open. |
+
+The race is already open on the site: `GET /api/plugin-race` says `open: true`,
+0 qualified entrants, 0 plugins and 10 prizes left, eleven days in, with no
+launch post on any channel. The three open gates are the operator's; once they
+pass, the 16 October and 19 October posts go out together as one "the race is
+open" post, and the 26 October review moves to a week after it.
 
 ## Drafts
 

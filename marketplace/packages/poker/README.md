@@ -25,8 +25,11 @@ free chips every four hours, and can never buy, sell or cash them out.
 - **Sounds.** Shuffle, deal, chips, check knocks, folds, your-turn chime,
   the last five seconds of your clock, all-ins and wins, synthesized on every
   platform. The web page can also read the dealer's lines aloud.
-- **Provably fair.** Each hand publishes a hash of the shuffled deck before
-  the deal and reveals the deck afterwards.
+- **Provably fair.** Before the deal each hand seals all 52 shuffled deck
+  positions with their own salts and publishes one hash over them. Afterwards
+  it reveals only the cards that became public (the board and the hands
+  shown at showdown), so anyone can check those sat where the deck said,
+  while folded, mucked and burned cards stay secret.
 
 ## Where it runs
 
