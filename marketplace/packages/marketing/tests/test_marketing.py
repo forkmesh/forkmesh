@@ -195,6 +195,32 @@ def test_x_profile_snapshot_keeps_its_counters_beside_the_channel_metrics():
     assert 'latest?.source === "x-profile"' in web
 
 
+def test_recorded_numbers_can_be_corrected_in_place():
+    runtime = Runtime()
+    created = call(runtime.use("POST", body={
+        "channel": "x", "followers": 93, "following": 649, "posts": 35,
+        "engagements": 0, "views": 382457, "source": "extension",
+        "note": "Read from x.com", "observedAt": 1_700_000_000_000}),
+        "/api/marketing/acme/metrics")["data"]["metric"]
+    path = "/api/marketing/acme/metrics/" + created["id"]
+    fixed = call(runtime.use("PATCH", body={"views": 145, "engagements": 12,
+                                            "note": "Corrected by hand"}), path)
+    assert fixed["status"] == 200
+    metric = fixed["data"]["metric"]
+    assert (metric["views"], metric["engagements"], metric["note"]) == (145, 12, "Corrected by hand")
+    assert (metric["followers"], metric["following"], metric["posts"]) == (93, 649, 35)
+    assert (metric["source"], metric["channel"], metric["observedAt"]) == (
+        "extension", "x", 1_700_000_000_000)
+    listed = call(runtime.use("GET"), "/api/marketing/acme/metrics")["data"]["metrics"]
+    assert [item["views"] for item in listed] == [145]
+    for body in ({"views": -1}, {"views": "12"}, {"views": True}, {"views": 10 ** 13}):
+        assert call(runtime.use("PATCH", body=body), path)["status"] == 400
+    assert call(runtime.use("PATCH", body={"channel": "youtube"}), path)["status"] == 400
+    assert call(runtime.use("PATCH", body={"views": 1}),
+                "/api/marketing/acme/metrics/" + "f" * 32)["status"] == 404
+    assert call(runtime.use("DELETE"), path)["status"] == 405
+
+
 def test_channel_settings_are_manager_only_and_https_only():
     runtime = Runtime()
     saved = call(runtime.use("PUT", body={"channels": [

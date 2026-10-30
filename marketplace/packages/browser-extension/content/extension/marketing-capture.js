@@ -159,9 +159,14 @@
     return list;
   }
 
+  const POST_HOSTS = /(?:^|\.)(?:x|twitter)\.com$/;
+  const POST = "article, [data-testid='tweet']";
+
   function fromPage(found, signals) {
     let stars = 0;
+    const posts = POST_HOSTS.test(location.hostname);
     for (const node of visibleElements()) {
+      if (posts && node.closest(POST)) continue;
       for (const attribute of ["aria-label", "title"]) {
         const value = node.getAttribute(attribute);
         if (value && value.length <= 120) {

@@ -101,6 +101,7 @@ private:
     void editContent(const QJsonObject &content = QJsonObject());
     void deleteContent();
     void addMetric(const QString &channel = QString());
+    void editMetric(const QJsonObject &metric, int column);
     void showChannelRow(const QString &id, bool focusLink, bool reveal);
     void openChannel(const QString &id);
     void closeChannel();
