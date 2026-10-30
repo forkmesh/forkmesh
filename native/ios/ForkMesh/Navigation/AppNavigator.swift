@@ -29,6 +29,7 @@ final class AppNavigator {
         let router = AppRouter(project: "", accountReady: false)
         let navigator = AppNavigator(router: router, saved: SavedSearchStore(store: Services.get(KeyValueStore.self)))
         router.activate(project: settings?.relays.activeId ?? "")
+        router.cover = "Launch"
         _ = Services.put(navigator)
         _ = Services.put(router)
         AppServices.current?.monitor.screenName = { [weak router] in router?.screenTitle ?? "" }

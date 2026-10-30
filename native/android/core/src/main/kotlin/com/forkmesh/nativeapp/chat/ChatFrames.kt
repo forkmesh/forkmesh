@@ -210,6 +210,19 @@ fun compareChatMessages(a: ChatMessage, b: ChatMessage): Int {
     return a.id.compareTo(b.id)
 }
 
+internal fun mergeSorted(list: List<ChatMessage>, added: List<ChatMessage>): List<ChatMessage> {
+    val incoming = added.sortedWith(::compareChatMessages)
+    val out = ArrayList<ChatMessage>(list.size + incoming.size)
+    var i = 0
+    var j = 0
+    while (i < list.size && j < incoming.size) {
+        if (compareChatMessages(list[i], incoming[j]) <= 0) out.add(list[i++]) else out.add(incoming[j++])
+    }
+    while (i < list.size) out.add(list[i++])
+    while (j < incoming.size) out.add(incoming[j++])
+    return out
+}
+
 internal fun insertSorted(list: List<ChatMessage>, message: ChatMessage): MutableList<ChatMessage> {
     val next = ArrayList<ChatMessage>(list.size + 1)
     next.addAll(list)

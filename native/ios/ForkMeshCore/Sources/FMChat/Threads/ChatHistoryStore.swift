@@ -29,6 +29,11 @@ extension ChatHistorySnapshot {
         return privateChannels.contains(conversation)
     }
 
+    public var itemCount: Int {
+        messages.count + replies.count + replyRoots.count + reactions.count + reactionOrder.count + stickers.count
+            + edits.count + receipts.count + receiptTimes.count + looks.count + lookEvents.count + privateChannels.count
+    }
+
     public var withoutRelayPrivate: ChatHistorySnapshot {
         let channels = Set(privateChannels)
         let purged: (String) -> Bool = { ChatHistorySnapshot.isRelayPrivate($0, privateChannels: channels) }
@@ -431,14 +436,25 @@ public final class ChatHistoryStore {
             .appendingPathComponent("chat-history", isDirectory: true)
     }
 
-    public func file(scope: String) -> URL { directory.appendingPathComponent("relay-\(scope).json") }
+    public nonisolated static func storedBytes(in directory: URL) -> (files: Int, bytes: Int) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        var total = (files: 0, bytes: 0)
+        for name in names where name.hasPrefix("relay-") && name.hasSuffix(".json") {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent(name).path)
+            total.files += 1
+            total.bytes += (attributes?[.size] as? NSNumber)?.intValue ?? 0
+        }
+        return total
+    }
+
+    public nonisolated func file(scope: String) -> URL { directory.appendingPathComponent("relay-\(scope).json") }
 
     public func load(scope: String) -> ChatHistorySnapshot? {
         if case .loaded(let snapshot) = read(scope: scope) { return snapshot }
         return nil
     }
 
-    public func read(scope: String, formerScopes: [String] = []) -> ChatHistoryLoad {
+    public nonisolated func read(scope: String, formerScopes: [String] = []) -> ChatHistoryLoad {
         let target = file(scope: scope)
         let manager = FileManager.default
         if !manager.fileExists(atPath: target.path) {
@@ -466,7 +482,7 @@ public final class ChatHistoryStore {
         return .loaded(snapshot)
     }
 
-    private func adopt(_ former: [URL], into target: URL) -> ChatHistoryLoad {
+    private nonisolated func adopt(_ former: [URL], into target: URL) -> ChatHistoryLoad {
         var found: [(URL, Date, ChatHistorySnapshot)] = []
         for url in former {
             guard let data = try? Data(contentsOf: url) else {
@@ -488,7 +504,7 @@ public final class ChatHistoryStore {
     }
 
     @discardableResult
-    private func setAside(_ url: URL, as suffix: String) -> Bool {
+    private nonisolated func setAside(_ url: URL, as suffix: String) -> Bool {
         (try? FileManager.default.moveItem(at: url, to: url.appendingPathExtension(suffix))) != nil
     }
 

@@ -13,6 +13,7 @@
  "notes": [
   {"date": "2026-10-30", "area": "Other improvements", "text": "On the website, a repository's Code, Issues and Pull requests tabs no longer vanish when the plugin list cannot be read, and \"fixes #N\" in a pull request comment links that issue again."},
   {"date": "2026-10-30", "area": "World", "text": "ForkMesh World shows again where it is embedded in forkmesh.com pages opened at www.forkmesh.com."},
+  {"date": "2026-10-29", "area": "iPhone", "text": "The iPhone app no longer freezes for a moment at launch while it loads your saved chat history, and both phone apps put it back faster."},
   {"date": "2026-10-29", "area": "Server", "text": "The admin button is back in the dashboard header for admins who were signed in from another ForkMesh page."},
   {"date": "2026-10-29", "area": "Market", "text": "Glasses Alert on iPhone and Android now also rings for cameras with Bluetooth on nearby, such as GoPro, Insta360, DJI, Canon, Nikon and Sony cameras, body cameras, dash cams, security cameras and camera drones."},
   {"date": "2026-10-29", "area": "Desktop", "text": "Shortcuts: a repository with no shortcuts now offers Add starter shortcuts, five ready-made prompts (review your changes, UX audit, stale-code cleanup, docs refresh, feature retirement) you can commit for everyone."},

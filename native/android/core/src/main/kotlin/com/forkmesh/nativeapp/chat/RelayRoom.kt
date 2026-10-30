@@ -790,21 +790,17 @@ class RelayRoom(
         retention?.isExpired(message.timestamp, message.conversation, System.currentTimeMillis()) == true
 
     fun restoreHistory(messages: List<ChatMessage>) = loop.call {
-        var changed = false
+        val added = LinkedHashMap<String, MutableList<ChatMessage>>()
         for (message in messages) {
             if (message.id.isEmpty() || message.id in seenIds || expired(message)) continue
             seenIds.add(message.id)
-            val list = history[message.conversation].orEmpty()
-            var at = list.size
-            while (at > 0 && compareMessages(list[at - 1], message) > 0) at--
-            val next = ArrayList<ChatMessage>(list.size + 1)
-            next.addAll(list)
-            next.add(at, message)
-            history[message.conversation] = java.util.Collections.unmodifiableList(next)
-            if (message.conversation.startsWith("#") && message.conversation !in channelList && !hidden(message.conversation)) channelList.add(message.conversation)
-            changed = true
+            added.getOrPut(message.conversation) { ArrayList() }.add(message)
         }
-        if (changed) notifyListeners()
+        for ((conversation, incoming) in added) {
+            history[conversation] = java.util.Collections.unmodifiableList(mergeSorted(history[conversation].orEmpty(), incoming))
+            if (conversation.startsWith("#") && conversation !in channelList && !hidden(conversation)) channelList.add(conversation)
+        }
+        if (added.isNotEmpty()) notifyListeners()
     }
 
     fun addChannel(channel: String) = loop.call {

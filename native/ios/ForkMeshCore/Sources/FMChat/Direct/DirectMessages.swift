@@ -411,8 +411,23 @@ public final class DirectMessageService {
     public func restore(
         _ messages: [ChatMessage], receipts saved: [String: ChatReceipt], times: [String: ChatReceiptTimes] = [:]
     ) {
+        var added: [String: [ChatMessage]] = [:]
+        var order: [String] = []
         for message in messages where DirectMessageFrames.isDirect(message.conversation) && !isGone(message.id) {
-            append(message, conversationId: DirectMessageFrames.conversationId(message.conversation))
+            if isExpired?(message.conversation, message.timestamp) == true { continue }
+            let conversationId = DirectMessageFrames.conversationId(message.conversation)
+            guard seen[conversationId, default: []].insert(message.id).inserted else { continue }
+            if added[message.conversation] == nil { order.append(message.conversation) }
+            added[message.conversation, default: []].append(message)
+        }
+        if !order.isEmpty {
+            var next = history
+            for conversation in order {
+                let list = RelayService.merging(next[conversation] ?? [], added[conversation] ?? [])
+                next[conversation] = Array(list.suffix(DirectMessageFrames.maxMessagesPerRoom))
+            }
+            history = next
+            onChange?()
         }
         for (id, receipt) in saved where receipt == .delivered || receipt == .read {
             setReceipt(receipt, id, stamped: times[id] ?? ChatReceiptTimes())
