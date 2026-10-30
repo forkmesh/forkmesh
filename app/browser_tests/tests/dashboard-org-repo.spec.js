@@ -115,11 +115,23 @@ test("organization repository alias resolves its linked mirror catalog group", a
           ok: true,
           entries: [{ name: "stable", type: "tree" }],
         };
+      } else if (url.searchParams.get("path") === ".forkmesh") {
+        body = {
+          ok: true,
+          entries: [{ name: "releases", path: ".forkmesh/releases", type: "tree" }],
+        };
       } else {
         body = {
           ok: true,
           commit: "0123456789abcdef",
           entries: [
+            {
+              name: ".forkmesh",
+              path: ".forkmesh",
+              type: "tree",
+              commit: "0123456789abcdef",
+              message: "Publish the release",
+            },
             {
               name: "src",
               path: "src",
@@ -249,6 +261,13 @@ test("organization repository alias resolves its linked mirror catalog group", a
             artifactCount: 0,
           },
         ],
+        sourceOfTruth: {
+          owner: "forkmesh",
+          repo: "forkmesh",
+          kind: "working-copy",
+          isSourceOfTruth: true,
+          referenceForMirrors: false,
+        },
         // Simulate a catalog summary that has not caught up with the live
         // mirror membership response. The Mirrors badge must follow the list.
         summary: { mirrors: 1 },
@@ -263,9 +282,10 @@ test("organization repository alias resolves its linked mirror catalog group", a
 
   await page.goto("/forkmesh/forkmesh");
 
-  await expect(
-    page.getByRole("heading", { name: "forkmesh/forkmesh", exact: true }),
-  ).toBeVisible();
+  const headerContext = page.getByRole("heading", { level: 1 }).locator("[data-dashboard-header-context]");
+  await expect(headerContext).toHaveText("forkmesh/forkmesh");
+  await expect(headerContext.locator("[data-repo-header-owner]")).toHaveAttribute("href", /\/@forkmesh$/);
+  await expect(headerContext.locator('a[href="/forkmesh/forkmesh"]')).toHaveText("forkmesh");
   await expect(page.locator("[data-repo-header-visibility]")).toHaveText("public");
   await expect(page.locator("[data-repo-tree]")).toContainText("README.md");
   await page.locator('[data-repo-tree] [data-dashboard-blob-path="README.md"]').click();
@@ -299,12 +319,16 @@ test("organization repository alias resolves its linked mirror catalog group", a
   ).toHaveCount(0);
   const aboutActions = page.locator("[data-repo-about-actions]");
   await expect(aboutActions).toBeVisible();
-  for (const label of ["Watch", "Fork", "Star", "Mirrors"]) {
+  for (const label of ["Watchers", "Mirrors", "Files"]) {
     await expect(aboutActions.getByText(label, { exact: true })).toBeVisible();
   }
+  const titleRow = page.locator("[data-repo-title-row]");
+  await expect(titleRow.locator("[data-repo-fork-primary]")).toBeVisible();
+  await expect(titleRow.locator("[data-repo-action-star]")).toBeVisible();
+  await expect(aboutActions.locator("[data-repo-action-fork], [data-repo-action-star]")).toHaveCount(0);
   await expect(
     aboutActions.locator('[data-dashboard-repo-count="mirrors"]'),
-  ).toHaveText("3");
+  ).toHaveText("4");
   await expect(page.locator("[data-dashboard-history-button]")).toHaveAttribute(
     "href",
     "/forkmesh/forkmesh/commits",
@@ -315,12 +339,18 @@ test("organization repository alias resolves its linked mirror catalog group", a
   await expect(
     page.locator('[role="tab"][data-dashboard-repo-tab="commits"] [data-dashboard-repo-tab-count]'),
   ).toHaveCount(0);
-  await expect(page.locator('[data-repo-tree] [data-lucide="folder"]')).toHaveCount(1);
+  await expect(page.locator('[data-repo-tree] [data-lucide="folder"]')).toHaveCount(2);
   await expect(page.locator('[data-repo-tree] [data-lucide="file"]')).toHaveCount(1);
-  await expect(page.locator("[data-repo-social-follower-avatars]")).toBeVisible();
-  await expect(page.locator("[data-repo-social-follower-avatars] > *")).toHaveCount(4);
-  await expect(page.locator("[data-repo-social-follower-avatars] img")).toHaveCount(4);
-  await expect(page.locator("[data-repo-social-followers]")).toHaveText("4");
+  await expect(aboutActions.locator("[data-repo-watch-count]")).toHaveText("4");
+  const watchButton = aboutActions.locator("[data-repo-action-watch]");
+  await watchButton.click();
+  const watchList = page.locator("[data-repo-watch-list]");
+  await expect(watchList).toBeVisible();
+  await expect(watchList.locator(":scope > div")).toHaveCount(4);
+  await expect(watchList).toContainText("@ada@social.example");
+  await expect(page.locator("[data-repo-watch-followers]")).toHaveText("4");
+  await watchButton.click();
+  await expect(watchList).toBeHidden();
 
   const releasesLink = page.locator("[data-dashboard-releases-button]");
   await expect(releasesLink).toBeVisible();
@@ -345,7 +375,10 @@ test("organization repository alias resolves its linked mirror catalog group", a
   expect(contentGridBox).not.toBeNull();
   expect(Math.abs(repoTabsBox.y - (appHeaderBox.y + appHeaderBox.height))).toBeLessThanOrEqual(1);
   expect(Math.abs(repoTabsBox.x - appHeaderBox.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(repoTabsBox.width - appHeaderBox.width)).toBeLessThanOrEqual(1);
+  const scrollViewWidth = await page.locator("[data-repo-github-header]").evaluate(
+    (header) => header.closest(".view").clientWidth,
+  );
+  expect(Math.abs(repoTabsBox.width - scrollViewWidth)).toBeLessThanOrEqual(1);
   expect(firstRepoTabBox.x).toBeLessThanOrEqual(32);
   expect(contentGridBox.width).toBeLessThanOrEqual(1280);
   await expect(page.locator("[data-app-header]")).toHaveCSS("background-color", "rgb(246, 248, 250)");
@@ -366,8 +399,10 @@ test("organization repository alias resolves its linked mirror catalog group", a
   const mirrorTable = page.locator("[data-mirror-table]");
   const mirrorRows = page.locator("[data-mirror-row]");
   await expect(mirrorTable).toBeVisible();
-  await expect(mirrorRows).toHaveCount(3);
-  await expect(mirrorRows.first()).toContainText("mirror2");
+  await expect(mirrorRows).toHaveCount(4);
+  await expect(mirrorRows.first()).toContainText("forkmesh");
+  await expect(mirrorRows.first()).toContainText("Source of truth");
+  await expect(mirrorRows.nth(1)).toContainText("mirror2");
   await expect(mirrorTable.locator('thead th[title="Node"] [data-lucide="server"]')).toBeVisible();
   await expect(mirrorTable.locator('thead th[title="Revision"] [data-lucide="git-commit-horizontal"]')).toBeVisible();
   await expect(mirrorTable.locator('thead th[title="Website requests"] [data-lucide="mouse-pointer-click"]')).toBeVisible();
@@ -377,6 +412,7 @@ test("organization repository alias resolves its linked mirror catalog group", a
   );
   expect(desktopRowBoxes[1].y).toBeGreaterThan(desktopRowBoxes[0].y);
   expect(desktopRowBoxes[2].y).toBeGreaterThan(desktopRowBoxes[1].y);
+  expect(desktopRowBoxes[3].y).toBeGreaterThan(desktopRowBoxes[2].y);
   expect(desktopRowBoxes.every((box) => box.height <= 28)).toBe(true);
   expect(
     await mirrorTable.evaluate((table) => getComputedStyle(table).borderTopWidth),

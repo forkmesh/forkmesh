@@ -9626,7 +9626,9 @@
     let installed = [];
     if (account) {
       try {
-        installed = (await pluginRequest("/api/plugins/")).plugins || [];
+        const reply = await pluginRequest("/api/plugins/");
+        if (!Array.isArray(reply?.plugins)) throw new Error("plugin_list_missing");
+        installed = reply.plugins;
         window.ForkMeshAPI?.rememberPlugins?.(account, installed);
         window.ForkMeshAPI?.rememberStatusPage?.(
           account, installed.includes("status-page"));
@@ -26037,6 +26039,8 @@
         author: result?.event?.author || "",
         body,
       });
+      renderRepoRecordDevelopment();
+      if (body) void linkPullCommentIssues(repo, number, body);
       if (bodyInput) bodyInput.value = "";
       buttons.forEach((button) => { button.disabled = false; });
       setHint(isReview ? "Review sent to the maintainer's inbox for review." : "Comment sent to the maintainer's inbox for review.", "good");
@@ -42461,7 +42465,7 @@ Your reply
           availability.classList.add("text-primary");
         }
       }
-      updateRepoLiveCounts(repo, { mirrors: mirrorCount });
+      updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });
       setRepoTabCount("mirrors", mirrorCount);
       state.repoMirrors = mirrors;
       // Where the repository has reached, in the forkmesh-sync-status-v1
@@ -43402,11 +43406,14 @@ Your reply
     }
   }
 
-  function updateRepoLiveCounts(repo, counts) {
+  function updateRepoLiveCounts(repo, counts, options = {}) {
     if (!counts || typeof counts !== "object") return;
+    const mirrorsListed = options.mirrorList !== true
+      && repoMirrorLoadedKey === repoKey(repo).toLowerCase();
     (["commits", "issues", "pulls", "discussions", "mirrors"]).forEach((key) => {
       const value = Number(counts[key]);
       if (!Number.isFinite(value) || value < 0) return;
+      if (key === "mirrors" && mirrorsListed) return;
       repo[key] = value;
       $$(`[data-dashboard-repo-count="${key}"]`).forEach((badge) => {
         badge.textContent = formatCount(value);
@@ -59982,6 +59989,7 @@ Your reply
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
       watchUserNames();
+      document.documentElement.dataset.composerHost = "1";
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

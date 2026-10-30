@@ -2462,7 +2462,7 @@
 
   window.dispatchEvent(new Event("forkmesh:composer-ready"));
 
-  window.addEventListener("forkmesh:composer-host", () => {
+  function hostReady() {
     if (!composer.root) {
       mount();
       if (!composer.root) releaseSlot();
@@ -2472,11 +2472,18 @@
     refreshContext();
     renderAvatar();
     if (isOpen()) void ensureRepoChoices();
-  });
+  }
+
+  function start() {
+    if (document.documentElement.dataset.composerHost === "1") hostReady();
+    else mount();
+  }
+
+  window.addEventListener("forkmesh:composer-host", hostReady);
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount, { once: true });
+    document.addEventListener("DOMContentLoaded", start, { once: true });
   } else {
-    mount();
+    start();
   }
 })();

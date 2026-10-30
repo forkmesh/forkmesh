@@ -82,9 +82,9 @@ async function mockIssuePage(page, requests) {
         ],
       };
     } else if (url.pathname === "/api/accounts/jett") {
-      body = { ok: true, exists: true, avatarPng: JETT_AVATAR };
+      body = { ok: true, exists: true, available: false, kind: "user", avatarPng: JETT_AVATAR };
     } else if (url.pathname === "/api/accounts/mona") {
-      body = { ok: true, exists: true, avatarPng: "" };
+      body = { ok: true, exists: true, available: false, kind: "user", avatarPng: "" };
     } else if (url.pathname === "/api/repo/dana/notes/branches") {
       body = { ok: true, branches: [{ name: "main", commit: "2".repeat(40) }] };
     } else if (url.pathname === "/api/repo/dana/notes/blob") {
@@ -120,11 +120,11 @@ test("issue avatars show the account's picture and link to its profile", async (
   const detail = page.locator('[data-repo-record-detail="issues"]');
   await expect(detail).toBeVisible({ timeout: 15_000 });
 
-  const jett = detail.locator('[data-repo-issue-opening] a[title="jett"]');
+  const jett = detail.locator('[data-repo-issue-opening] a[title="jett"]:visible');
   await expect(jett).toHaveAttribute("href", /\/@jett$/);
   await expect(jett.locator("img")).toHaveAttribute("src", `data:image/png;base64,${JETT_AVATAR}`);
 
-  const mona = detail.locator('[data-repo-issue-comment] a[title="mona"]');
+  const mona = detail.locator('[data-repo-issue-comment] a[title="mona"]:visible');
   await expect(mona).toHaveAttribute("href", /\/@mona$/);
   await expect(mona).toHaveAttribute("data-issue-actor-state", "initial");
   await expect(mona).toHaveText("M");

@@ -227,6 +227,7 @@
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
       watchUserNames();
+      document.documentElement.dataset.composerHost = "1";
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

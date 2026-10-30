@@ -203,54 +203,108 @@ The sweep turned up three red workflows on `main`:
   because a reloaded page needs it to read the retained messages. The specs
   now count it as `RETAINED_KEY_ADVERTISEMENTS`.
 
-With the browser on the local build, 39 App specs still fail (local run,
-2026-10-29). These were hidden while the suite tested production, and each
-needs a decision: is the spec stale, or did the page regress? Until they are
-fixed, World browser E2E stays red at its last step:
+With the browser on the local build, 39 App specs still failed (local run,
+2026-10-29). They had been hidden while the suite tested production. The
+2026-10-30 fixes below sorted each one into a stale spec or a page regression.
 
-- `dashboard-agent-session-detail` (256, 375, 410): no "waived" text and no
-  `[data-org-agent-compare]` link in the session detail.
-- `dashboard-agents-page` (100): the count reads "3 sessions · 1 working",
-  the spec expects "1 working · 3 total".
-- `dashboard-calendar-activity` (115, 160, 185): no repository history
-  requests, no "more" day cell, an empty grid.
-- `dashboard-desktop-agents` (213): the first confirm dialog is "Delete this
-  agent.", not the merge.
-- `dashboard-development-links` (119, 146): the issue's Development section
-  has no pull link; the posted links differ.
-- `dashboard-global-search-page-filter` (418): no `[data-org-agent-session]`
-  rows.
-- `dashboard-home` (119): `[data-composer-slot]` stays visible when the
-  composer does not mount.
-- `dashboard-insights-contributors` (14): the profile link has no title.
-- `dashboard-issue-avatar-image-markup` (114) and
-  `dashboard-issue-detail-description` (149, 212): the author appears twice in
-  the issue conversation.
-- `dashboard-issue-filters` (214, 287, 313, 495): sort options differ, the
-  Code tab and Pulls tab clicks time out, no issue skeleton.
-- `dashboard-new-repository` (76, 114, 247): the "New repository" button
-  click times out; the modal stays hidden.
-- `dashboard-org-repo` (28): no `forkmesh/forkmesh` heading.
-- `dashboard-pull-files-deep-link` (232): no inline thread toggle.
-- `dashboard-record-list-links` (130): middle-click opens a blank tab.
-- `dashboard-repo-activity-graph` (103, 134, 175): no
-  `[data-repo-activity-graph]`.
-- `dashboard-repo-branches` (536): the bulk update sends a different branch
-  list.
-- `dashboard-repo-forks` (12): no `[data-repo-fork-count]` in the about
-  actions.
-- `direct-messages` (70, 119): the sign-up helper finds no email field.
-- `network-relay-stats` (4): "No managed mirror hosts are reachable right
-  now." instead of "No desktop hosts …".
-- `node-origin-docs-blog-session` (24): one session read, not two.
-- `private-chat-channels` (6, 209, 464): the invited user's replay shows "No
-  messages"; `#chat-channel-manage` stays visible for a non-manager; the room
-  list reads "Worldshipping".
-- `site-footer-world-frame` (25): no World frame found.
+## The 2026-10-30 fixes
+
+Page regressions, fixed in the page:
+
+- **Plugin navigation hid core tabs** (`dashboard-issue-filters` 287, 313).
+  `renderPluginNavigation` (`dashboard/js/04-account.js`) read a
+  `/api/plugins/` reply with no `plugins` list as "nothing installed" and hid
+  Code, Issues and Pull requests. Such a reply is now treated as unknown, as
+  `www/public/api-client.js` already did.
+- **"fixes #N" in a pull comment stopped linking the issue**
+  (`dashboard-development-links` 146). When 83bfd4f074 moved the local event
+  into `applyRepoPullLocalEvent`, the calls to `renderRepoRecordDevelopment`
+  and `linkPullCommentIssues` were dropped. `handlePullReviewSubmit` makes them
+  again.
+- **The Mirrors badge showed the tree's stale count** (`dashboard-org-repo`
+  28). `updateRepoLiveCounts` no longer takes `mirrors` from tree counts once
+  the live mirror list has loaded for that repository.
+- **The home prompt slot could stay on "Loading prompt..."**
+  (`dashboard-home` 119, flaky in CI). See
+  [web-composer.md](../app/web-composer.md).
+- **World refused to be framed by www.forkmesh.com**
+  (`site-footer-world-frame` 25). The cutover rewrite left
+  `frame-ancestors 'self' https://forkmesh.com https://forkmesh.com` in
+  `www/public/_headers`: `tools/cutover_rehost.py` restores `www.` only in
+  quoted, comma-separated lists, not in space-separated policy lists. Both
+  `/world` rules name `https://www.forkmesh.com` again.
+
+The test Worker config (`world/browser_tests/wrangler.browser-tests.toml`)
+drifted from `app/wrangler.toml`:
+
+- `/signup` was served as the static `signup.html`, without the Worker's
+  one-use `contact_…` email field, so `direct-messages` could not sign up.
+  `/signup` and `/signup/` now run the Worker first.
+- `APP_ORIGIN` was unset. The ingress lets a WebSocket upgrade through only
+  when its origin equals `APP_ORIGIN`, so every real socket got a 426 and the
+  chat stayed on "Disconnected". It is now `http://127.0.0.1:4179`.
+- The `FORKMESH_NOTE_ROOM`, `FORKMESH_CRON_WATCHDOG`, `FORKMESH_CRON_RUNNER`,
+  `FORKMESH_DISCORD_GATE` and `FORKMESH_ORG_OFFICE` Durable Object bindings
+  match production now (migration tag `browser-tests-v2`).
+
+`chat-view-once` 454 builds its fake camera clip with ffmpeg, which the
+runner does not have; the workflow installs it before the World step.
+
+Stale specs, updated to the page's intended behaviour:
+
+- `dashboard-agent-session-detail` (256, 375, 410): the security preflight is
+  gone on purpose (`docs/agents/README.md`), and the toolbar's Diff button
+  replaced the compare link; the Branch row still links the compare page,
+  whose heading is "Comparing".
+- `dashboard-agents-page` (100): the count reads "N sessions · M working" and
+  the working icon spins (790d31d7b3).
+- `dashboard-calendar-activity` (115, 160, 185): the calendar is a package
+  page; the spec registers it.
+- `dashboard-desktop-agents` (213): merge raises no confirm; only delete does.
+- `dashboard-development-links` (119): pull links use `/pull/N`.
+- `dashboard-global-search-page-filter` (418): a repository the user owns
+  reads `/agent-sessions`, not `/agent-bots`.
+- `dashboard-insights-contributors` (14): names go through
+  `issuePersonNameHtml`, which marks `data-issue-person` instead of a title.
+- `dashboard-issue-avatar-image-markup` (114),
+  `dashboard-issue-detail-description` (149, 212): the page renders a wide
+  and a phone avatar and shows one (290f3071c2); the specs count visible ones.
+- `dashboard-issue-filters` (214, 287, 495): "Newest" sorts first, a re-read
+  needs `.forkmesh` in the root tree, and issues load through `/blobs`.
+- `dashboard-new-repository` (76, 114, 247): "New repository" opens its own
+  page, `/dashboard/repos/new`, not a modal.
+- `dashboard-org-repo` (28): the title row holds Fork and Star, and a
+  "Source of truth" row leads the mirrors list.
+- `dashboard-pull-files-deep-link` (232): comment files load through
+  `/blobs`.
+- `dashboard-record-list-links` (130): the spec read the new tab's URL before
+  its navigation started.
+- `dashboard-repo-activity-graph` (103, 134, 175): Insights opens on Pulse;
+  the graph is under `?view=contributors`.
+- `dashboard-repo-branches` (536): the first update goes alone, the rest as
+  one batch ([branch-ops.md](../app/branch-ops.md)).
+- `dashboard-repo-forks` (12): the fork count is in the title row.
+- `direct-messages` (70, 119): since 22473e237a an account must confirm its
+  email before it writes. The spec confirms each account through
+  `/api/accounts/verify-email` with a link token built from the test
+  `DATA_KEY`; the test Worker sends no mail, so no newer link replaces it.
+  Since 3d7fccfeed the direct-message search leaves out private profiles, so
+  the outsider, not bob, goes private, and the spec checks that neither the
+  directory nor the search lists them. Only message frames notify, so bob's
+  unread count is the four messages; the sealed key advertisement is retained
+  but not counted.
+- `network-relay-stats` (4): the empty state says "No managed mirror hosts"
+  (ccfad67575).
+- `node-origin-docs-blog-session` (24): `site-header.js` keeps the session
+  read in `sessionStorage` for 5 minutes, so Docs then Blog read it once.
+- `private-chat-channels` (6, 209, 464): each account has its own chat key
+  since 2026-10-22, so the invited user connects (and leaves a key) before
+  the admin sends; managers may open settings on public channels; the room
+  list drops the leading "#".
 
 Run one spec against the local Worker with
 `CI=1 FORKMESH_BROWSER_FULL=1 npx playwright test tests/<spec> --retries=0`
-in `app/browser_tests`. On this box `pywrangler dev` started (2026-10-29).
+in `app/browser_tests`.
 
 ## Reproducing the browser suites locally
 
@@ -266,3 +320,26 @@ sets `baseURL` and `webServer` to `python3 -m http.server <port>` in
 load, and CI's single retry absorbs that. For the suites that need the
 Worker, read the failing tests from the annotations of the GitHub run
 (`tools/github_actions_status.py` prints the first one).
+
+Two ways to start the Worker anyway (2026-10-30):
+
+- Point the host at an address Cloudflare's DNS-over-HTTPS returns, in a
+  private mount namespace: `unshare -rm sh -c 'mount --bind <hosts-copy>
+  /etc/hosts && exec "$@"' sh <command>`. Even then `workerd`'s own connect to
+  that address timed out again and again on this network, while `curl` from the
+  same namespace answered in milliseconds.
+- Seed the Pyodide bundle cache instead. Set `MINIFLARE_WORKERD_PATH` to a
+  wrapper that adds `--pyodide-bundle-disk-cache-dir=<dir>` after `serve`, and
+  put the bundles in that folder with `curl`. The files are
+  `pyodide_<version>_<revision>_<backport>.capnp.bin` on
+  `pyodide-capnp-bin.edgeworker.net` (for example
+  `pyodide_314.0.6_2026-08-17_8.capnp.bin`). The versions and revisions are
+  in the `workerd` binary's strings next to the `pythonWorkers2026…` flag
+  names; probe the backport numbers with a one-byte range request. With the
+  cache the Worker starts with no outbound connection at all.
+
+`build_site_assets.py cutover` deletes and rebuilds `app/dist`, and a running
+`pywrangler dev` then answers 500 for every static file until it restarts. To
+rebuild while the Worker runs, serve a copy of `dist` (a scratch config whose
+`[assets] directory` points at it) and `rsync -a --delete` the new build into
+that copy.
