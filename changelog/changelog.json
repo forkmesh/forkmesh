@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-30", "area": "Desktop", "text": "On Linux, a ForkMesh app-menu icon left over from an old install now opens the current app instead of an outdated copy that stopped with a mirror Actions error."},
   {"date": "2026-10-30", "area": "Market", "text": "Marketing: every table, on the web and in the desktop app, now sorts by any column when you click its header; click again to reverse the order."},
   {"date": "2026-10-30", "area": "Market", "text": "Marketing's ready X post now has an optional field for the post's link when you mark it posted, so the link stays with the post's history."},
   {"date": "2026-10-30", "area": "Desktop", "text": "Marketing: double-click a row in a channel's Recorded numbers to correct its numbers, and the browser extension no longer reads a post's views on an X profile as the account's."},
