@@ -55,6 +55,7 @@ KEPT = {
     "08-repo-detail-network.js": ["other ForkMesh instances"],
     "09-workflows.js": ["an n8n or ForkMesh workflow file"],
     "09-apps.js": ["Open Market in the ForkMesh desktop or phone app"],
+    "09-mirror-quota.js": ["start your own ForkMesh instance"],
 }
 
 
