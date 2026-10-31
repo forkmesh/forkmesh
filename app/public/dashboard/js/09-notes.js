@@ -38,10 +38,29 @@
     owner_required: "Only the note's owner can do that.",
     editor_required: "You need edit access to do that.",
     note_not_found: "This note no longer exists, or you no longer have access to it.",
+    page_not_found: "This page no longer exists, or you no longer have access to it.",
+    invalid_page: "Something on this page isn't valid. Check the title, description and outline.",
+    too_many_entries: "A page can hold up to 300 entries.",
+    invalid_emoji: "That isn't an emoji. Type or paste a single emoji.",
+    version_conflict: "Someone saved a newer version. Load the latest and try again.",
     get upstream_unavailable() { return `${platformName()} is restarting. Try again in a few seconds.`; },
     get sealed() { return `${platformName()} is restarting. Try again in a few seconds.`; },
   };
   const NOTE_READ_RETRY_DELAYS_MS = [500, 1500, 4000];
+  const NOTE_PAGE_ACCENTS = {
+    blue: "rgb(var(--dashboard-primary-rgb))", purple: "#8250df", pink: "#bf3989", red: "#cf222e",
+    orange: "#d1600f", yellow: "#bf8700", teal: "#1b8a8f", gray: "#6e7781",
+  };
+  const NOTE_PAGE_MAX_ENTRIES = 300;
+  const NOTE_PAGE_MAX_DEPTH = 3;
+  const NOTE_PAGE_MOBILE = "(max-width: 767px)";
+  const NOTE_EMOJI_CHOICES = [
+    "📝", "📌", "📎", "📚", "📖", "📒", "📓", "📔", "📁", "📂", "📅", "📆", "✅", "🎯", "🚀", "💡",
+    "🔥", "⭐", "✨", "🎉", "💜", "💙", "💬", "🔒", "🔑", "🔧", "🔨", "🧪", "🐛", "📈", "📊", "💰",
+    "🏠", "🌍", "🌱", "☕", "🍕", "🎵", "🎨", "📷", "🏆", "🤝", "👋", "👀", "🙂", "😀", "🤔", "🧠",
+  ];
+  const NOTE_KEYCAP = String.fromCodePoint(0x20E3);
+  const NOTE_VS16 = String.fromCodePoint(0xFE0F);
 
   async function noteRequest(path, method = "GET", body = null) {
     const headers = { accept: "application/json" };
@@ -108,6 +127,11 @@
     return /^[0-9a-f]{32}$/.test(id) ? id : "";
   }
 
+  function notePageLinkedId() {
+    const id = new URLSearchParams(location.search).get("page") || "";
+    return /^[0-9a-f]{32}$/.test(id) ? id : "";
+  }
+
   function noteLinkedComment() {
     const id = new URLSearchParams(location.search).get("comment") || "";
     return /^[0-9a-f]{32}$/.test(id) ? id : "";
@@ -116,9 +140,37 @@
   function rememberNoteInUrl(note) {
     if (!location.pathname.startsWith("/dashboard/notes")) return;
     const url = new URL(location.href);
-    if (url.searchParams.get("note") === note.id) return;
+    if (url.searchParams.get("note") === note.id && !url.searchParams.has("page")) return;
+    url.searchParams.delete("page");
     url.searchParams.set("note", note.id);
     history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  }
+
+  function rememberNotePageInUrl(pageId, noteId = "") {
+    if (!location.pathname.startsWith("/dashboard/notes")) return;
+    const url = new URL(location.href);
+    url.searchParams.delete("page"); url.searchParams.delete("note"); url.searchParams.delete("comment");
+    url.searchParams.set("page", pageId);
+    if (noteId) url.searchParams.set("note", noteId);
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  }
+
+  function noteEmojiValid(value) {
+    const text = String(value || "");
+    const points = [...text];
+    if (!points.length || points.length > 16 || new TextEncoder().encode(text).length > 64) return false;
+    return points.every((char, index) => {
+      if (/[\s\p{Cc}]/u.test(char)) return false;
+      if (/[0-9#*]/.test(char)) {
+        return points[index + 1] === NOTE_KEYCAP || (points[index + 1] === NOTE_VS16 && points[index + 2] === NOTE_KEYCAP);
+      }
+      if (char.codePointAt(0) < 128) return false;
+      return /[\p{S}\p{M}\p{Cf}]/u.test(char);
+    });
+  }
+
+  function noteEmojiHtml(emoji, className = "notes-emoji") {
+    return emoji ? `<span class="${className}">${escapeHtml(emoji)}</span>` : "";
   }
 
   async function copyNoteLink(url, place, failure) {
@@ -249,6 +301,7 @@
       if (view.selected && !fresh.has(view.selected.id)) return;
       renderNoteList();
     } catch (_) {}
+    void loadNotePages();
   }
 
   function renderNoteRow(note) {
@@ -265,7 +318,7 @@
       : `You can ${note.role === "editor" ? "edit" : "view"}`;
     return `
       <button type="button" data-note-id="${escapeHtml(note.id)}" aria-selected="${isSelected ? "true" : "false"}" data-unread="${unread ? "true" : "false"}"${(note.shares || []).length ? " data-people" : ""} class="notes-row">
-        <span class="notes-row-head">${unread ? `<span class="notes-row-dot" title="${escapeHtml(Number(note.unreadComments || 0) ? `Changed since you last opened it · ${noteCountLabel(note.unreadComments, "new comment", "new comments")}` : "Changed since you last opened it")}" aria-label="Unread"></span>` : ""}<span class="notes-row-title">${escapeHtml(note.title || "Untitled note")}</span></span>
+        <span class="notes-row-head">${unread ? `<span class="notes-row-dot" title="${escapeHtml(Number(note.unreadComments || 0) ? `Changed since you last opened it · ${noteCountLabel(note.unreadComments, "new comment", "new comments")}` : "Changed since you last opened it")}" aria-label="Unread"></span>` : ""}${noteEmojiHtml(note.emoji, "notes-row-emoji")}<span class="notes-row-title">${escapeHtml(note.title || "Untitled note")}</span></span>
         <span class="notes-row-vis" data-visibility="${note.visibility === "public" ? "public" : "private"}" title="${escapeHtml(status)}" aria-label="${escapeHtml(status)}">${noteIcon(noteVisibilityIcon(note))}${escapeHtml(status)}</span>
         <span class="notes-row-line" title="${escapeHtml(access)}">${escapeHtml(access)}</span>
         ${noteSharePeopleHtml(note)}
@@ -300,7 +353,7 @@
         ["Shared with you", notes.filter((note) => note.role !== "owner")],
       ].filter(([, rows]) => rows.length);
       list.innerHTML = groups.map(([label, rows]) =>
-        (groups.length > 1 ? `<div class="notes-group">${label}</div>` : "")
+        (groups.length > 1 || view.pages?.length ? `<div class="notes-group">${label}</div>` : "")
         + rows.map(renderNoteRow).join("")).join("");
     }
     refreshNoteIcons();
@@ -314,6 +367,7 @@
     const view = state.notesView, query = noteSearchQuery();
     const generation = ++view.searchGeneration;
     clearTimeout(view.searchTimer);
+    renderNotePages();
     if (!query) { view.searchMatches = null; renderNoteList(); return; }
     renderNoteList();
     view.searchTimer = setTimeout(async () => {
@@ -346,10 +400,14 @@
   function renderNotePreview() {
     const title = $("[data-note-title]")?.value || "Untitled note";
     const markdown = $("[data-note-markdown]")?.value || "";
+    const emoji = state.notesView.selected?.emoji || "";
     const heading = $("[data-note-preview-title]");
     if (heading) heading.textContent = title;
     const crumb = $("[data-note-crumb]");
     if (crumb) crumb.textContent = title;
+    document.querySelectorAll("[data-note-preview-emoji], [data-note-crumb-emoji]").forEach((node) => {
+      node.textContent = emoji; node.hidden = !emoji;
+    });
     const preview = $("[data-note-preview]");
     if (preview) {
       preview.innerHTML = markdown.trim()
@@ -373,18 +431,14 @@
       button.setAttribute("aria-pressed", button.dataset.noteMode === mode ? "true" : "false"));
   }
 
-  function renderNoteShares(note) {
-    const shareTitle = $("[data-note-share-title]");
-    if (shareTitle) shareTitle.textContent = note.title || "Untitled note";
+  function noteShareListHtml(shares, scope) {
     const owner = state.session?.nodeName || "You";
-    const people = $("[data-note-shares]");
-    if (people) {
-      people.innerHTML = `
+    return `
         <div class="notes-person">
           ${noteAvatarTagHtml(owner, "notes-avatar", `style="background:${noteAvatarColor(owner)}"`, escapeHtml(noteInitials(owner)))}
           <div class="min-w-0"><div class="notes-person-name">${issuePersonNameHtml(owner, "")}</div><div class="notes-person-hint">You</div></div>
           <span class="notes-person-hint">Owner</span><span></span>
-        </div>` + (note.shares || []).map((share) => {
+        </div>` + shares.map((share) => {
         const key = `${escapeHtml(share.type)}:${escapeHtml(share.name)}`;
         return `
         <div class="notes-person">
@@ -392,14 +446,20 @@
             ? `<span class="notes-avatar" data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}">${escapeHtml(noteInitials(share.name))}</span>`
             : noteAvatarTagHtml(share.name, "notes-avatar", `data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}"`, escapeHtml(noteInitials(share.name)))}
           <div class="min-w-0"><div class="notes-person-name">${share.type === "organization" ? escapeHtml(share.name) : issuePersonNameHtml(share.name, "")}</div><div class="notes-person-hint">${share.type === "organization" ? "Organization" : "User"}</div></div>
-          <select data-note-share-role-change="${key}" aria-label="Access for ${escapeHtml(share.name)}">
+          <select data-${scope}-share-role-change="${key}" aria-label="Access for ${escapeHtml(share.name)}">
             <option value="editor" ${share.role === "editor" ? "selected" : ""}>Can edit</option>
             <option value="viewer" ${share.role !== "editor" ? "selected" : ""}>Can view</option>
           </select>
-          <button type="button" data-note-unshare="${key}" class="notes-chip-x" title="Remove access" aria-label="Remove ${escapeHtml(share.name)}">${noteIcon("x")}</button>
+          <button type="button" data-${scope}-unshare="${key}" class="notes-chip-x" title="Remove access" aria-label="Remove ${escapeHtml(share.name)}">${noteIcon("x")}</button>
         </div>`;
       }).join("");
-    }
+  }
+
+  function renderNoteShares(note) {
+    const shareTitle = $("[data-note-share-title]");
+    if (shareTitle) shareTitle.textContent = note.title || "Untitled note";
+    const people = $("[data-note-shares]");
+    if (people) people.innerHTML = noteShareListHtml(note.shares || [], "note");
     const accessRow = $("[data-note-access-row]");
     if (accessRow) accessRow.hidden = !(note.shares || []).length;
     const accessLink = $("[data-note-access-link]");
@@ -446,10 +506,22 @@
     refreshNoteIcons();
   }
 
+  function renderNoteEmojiButton(note) {
+    const button = $("[data-note-emoji-open]"); if (!button) return;
+    const canEdit = noteCanEdit(note), emoji = note.emoji || "";
+    const label = canEdit ? (emoji ? "Change emoji" : "Add an emoji") : `Emoji ${emoji}`;
+    button.innerHTML = emoji ? escapeHtml(emoji) : noteIcon("smile-plus");
+    button.dataset.empty = emoji ? "false" : "true";
+    button.disabled = !canEdit;
+    button.hidden = !canEdit && !emoji;
+    button.title = canEdit ? label : "";
+    button.setAttribute("aria-label", label);
+  }
+
   function renderNoteEditor(note, { keepDraft = false } = {}) {
     const view = state.notesView;
-    $("[data-note-empty]").hidden = Boolean(note);
-    $("[data-note-editor]").hidden = !note;
+    $("[data-note-empty]").hidden = Boolean(note) || Boolean(view.pageId);
+    $("[data-note-editor]").hidden = !note || Boolean(view.pageId);
     if (!note) { renderNoteList(); return; }
     const canEdit = noteCanEdit(note), isOwner = note.role === "owner";
     const title = $("[data-note-title]"), markdown = $("[data-note-markdown]");
@@ -473,6 +545,7 @@
     $("[data-note-delete]").hidden = !isOwner;
     $("[data-note-delete-sep]").hidden = !isOwner;
     renderNoteMode(note);
+    renderNoteEmojiButton(note);
     renderNotePreview();
     renderNoteShares(note);
     renderNoteLinks(note);
@@ -658,6 +731,7 @@
     try {
       const payload = await noteRequest("/api/notes");
       view.items = payload.notes || []; view.loading = false; notesError(""); renderNoteList();
+      if (view.pageId && !selectId) return;
       const id = selectId || (view.items.some((item) => item.id === view.selected?.id) ? view.selected.id : view.items[0]?.id);
       if (id) await selectNote(id);
       else view.selected = null;
@@ -675,7 +749,7 @@
     try {
       const payload = await noteRequest(`/api/notes/${id}`);
       const same = view.selected?.id === payload.note.id;
-      if (!same) { view.conflict = null; $("[data-note-conflict]").hidden = true; }
+      if (!same) { view.conflict = null; view.emojiPending = null; $("[data-note-conflict]").hidden = true; }
       storeNote(payload.note);
       rememberNoteInUrl(payload.note);
       renderNoteEditor(view.selected, { keepDraft: keepDraft && same && view.localDirty });
@@ -699,6 +773,7 @@
   async function createNote() {
     noteNotice("");
     await flushNoteSave();
+    closeNotePage();
     try {
       const payload = await noteRequest("/api/notes", "POST", { title: "Untitled note", markdown: "" });
       if (state.notesView.filter !== "all" && state.notesView.filter !== "mine") setNoteFilter("all");
@@ -744,13 +819,15 @@
     const view = state.notesView, note = view.selected;
     clearTimeout(view.saveTimer);
     if (!note || !noteCanEdit(note) || view.conflict) return;
-    if (!view.localDirty && !("visibility" in extra)) return;
+    const emoji = view.emojiPending;
+    if (!view.localDirty && !("visibility" in extra) && emoji === null) return;
     const title = $("[data-note-title]").value, markdown = $("[data-note-markdown]").value;
     setNoteSaveState("saving");
     try {
       const payload = await noteRequest(`/api/notes/${note.id}`, "PATCH", {
-        baseVersion: note.version, title, markdown, ...extra,
+        baseVersion: note.version, title, markdown, ...(emoji === null ? {} : { emoji }), ...extra,
       });
+      if (view.emojiPending === emoji) view.emojiPending = null;
       if (view.selected?.id !== note.id) {
         view.items = view.items.map((item) => item.id === note.id ? { ...item, ...payload.note } : item);
         renderNoteList();
@@ -941,7 +1018,7 @@
   }
 
   function closeNotePopovers() {
-    for (const [panel, trigger] of [["[data-note-share-panel]", "[data-note-share-open]"], ["[data-note-menu]", "[data-note-menu-open]"], ["[data-note-people-panel]", "[data-note-presence]"]]) {
+    for (const [panel, trigger] of [["[data-note-share-panel]", "[data-note-share-open]"], ["[data-note-menu]", "[data-note-menu-open]"], ["[data-note-people-panel]", "[data-note-presence]"], ["[data-note-emoji-panel]", "[data-note-emoji-open]"], ["[data-note-page-share-panel]", "[data-note-page-share-open]"]]) {
       const element = $(panel); if (element) element.hidden = true;
       $(trigger)?.setAttribute("aria-expanded", "false");
     }
@@ -1010,8 +1087,10 @@
     $("[data-note-link-input]")?.focus();
   }
 
+  function noteShareScope() { return state.notesView.shareScope || "note"; }
+
   function noteShareQuery() {
-    return ($("[data-note-share-name]")?.value || "").trim().replace(/^@/, "").toLowerCase();
+    return ($(`[data-${noteShareScope()}-share-name]`)?.value || "").trim().replace(/^@/, "").toLowerCase();
   }
 
   function loadNoteShareOrgs() {
@@ -1025,13 +1104,13 @@
   }
 
   function renderNoteShareSuggestions(items, index = items.length ? 0 : -1) {
-    const view = state.notesView;
-    const list = $("[data-note-share-suggestions]"), input = $("[data-note-share-name]");
+    const view = state.notesView, scope = noteShareScope();
+    const list = $(`[data-${scope}-share-suggestions]`), input = $(`[data-${scope}-share-name]`);
     if (!list || !input) return;
     view.shareSuggestions = items; view.shareSuggestionIndex = index;
     const open = items.length > 0 && document.activeElement === input;
     list.innerHTML = open ? items.map((item, position) => `
-      <button type="button" role="option" id="note-share-option-${position}" tabindex="-1" data-note-share-option="${position}" aria-selected="${position === index ? "true" : "false"}">
+      <button type="button" role="option" id="${scope}-share-option-${position}" tabindex="-1" data-${scope}-share-option="${position}" aria-selected="${position === index ? "true" : "false"}">
         <span class="notes-avatar" data-type="${escapeHtml(item.type)}" style="background:${noteAvatarColor(item.name)}">${escapeHtml(noteInitials(item.name))}</span>
         <span class="notes-person-name">${escapeHtml(item.name)}</span>
         <span class="notes-person-hint">${item.type === "organization" ? "Organization" : "User"}</span>
@@ -1039,8 +1118,8 @@
     list.hidden = !open;
     input.setAttribute("aria-expanded", open ? "true" : "false");
     if (open && index >= 0) {
-      input.setAttribute("aria-activedescendant", `note-share-option-${index}`);
-      list.querySelector(`#note-share-option-${index}`)?.scrollIntoView({ block: "nearest" });
+      input.setAttribute("aria-activedescendant", `${scope}-share-option-${index}`);
+      list.querySelector(`#${scope}-share-option-${index}`)?.scrollIntoView({ block: "nearest" });
     } else input.removeAttribute("aria-activedescendant");
   }
 
@@ -1058,7 +1137,8 @@
       ]);
       if (generation !== view.shareGeneration) return;
       const owner = String(state.session?.nodeName || "").toLowerCase();
-      const taken = new Set((view.selected?.shares || []).map((share) => `${share.type}:${String(share.name).toLowerCase()}`));
+      const current = noteShareScope() === "note-page" ? view.page?.page?.shares : view.selected?.shares;
+      const taken = new Set((current || []).map((share) => `${share.type}:${String(share.name).toLowerCase()}`));
       const items = [
         ...users.filter((name) => name && name !== owner).map((name) => ({ type: "user", name })),
         ...orgs.filter((name) => name.includes(query)).map((name) => ({ type: "organization", name })),
@@ -1071,13 +1151,46 @@
   }
 
   function chooseNoteShareCandidate(item) {
-    const input = $("[data-note-share-name]"); if (!input || !item) return;
+    const scope = noteShareScope();
+    const input = $(`[data-${scope}-share-name]`); if (!input || !item) return;
     input.value = item.name;
-    $("[data-note-share-type]").value = item.type;
+    $(`[data-${scope}-share-type]`).value = item.type;
     state.notesView.shareGeneration++;
     clearTimeout(state.notesView.shareTimer);
     renderNoteShareSuggestions([]);
     input.focus();
+  }
+
+  function wireNoteShareField(scope) {
+    const view = state.notesView;
+    const shareName = $(`[data-${scope}-share-name]`);
+    const suggestions = $(`[data-${scope}-share-suggestions]`);
+    shareName?.addEventListener("input", () => { view.shareScope = scope; searchNoteShareCandidates(); });
+    shareName?.addEventListener("focus", () => { view.shareScope = scope; if (noteShareQuery()) searchNoteShareCandidates(); });
+    shareName?.addEventListener("blur", () => { view.shareGeneration++; renderNoteShareSuggestions([]); });
+    shareName?.addEventListener("keydown", (event) => {
+      view.shareScope = scope;
+      const items = view.shareSuggestions || [];
+      if (suggestions.hidden || !items.length) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        renderNoteShareSuggestions(items, (view.shareSuggestionIndex + step + items.length) % items.length);
+      } else if (event.key === "Escape") {
+        event.stopPropagation(); view.shareGeneration++; renderNoteShareSuggestions([]);
+      } else if ((event.key === "Enter" || event.key === "Tab") && view.shareSuggestionIndex >= 0) {
+        const item = items[view.shareSuggestionIndex];
+        const exact = item.name === noteShareQuery() && item.type === $(`[data-${scope}-share-type]`).value;
+        if (event.key === "Tab" || !exact) event.preventDefault();
+        chooseNoteShareCandidate(item);
+      }
+    });
+    suggestions?.addEventListener("mousedown", (event) => event.preventDefault());
+    suggestions?.addEventListener("click", (event) => {
+      const option = event.target.closest(`[data-${scope}-share-option]`); if (!option) return;
+      view.shareScope = scope;
+      chooseNoteShareCandidate(view.shareSuggestions[Number(option.getAttribute(`data-${scope}-share-option`))]);
+    });
   }
 
   async function updateNoteShare(body, method, message) {
@@ -1636,6 +1749,852 @@
     });
   }
 
+  function openNoteEmojiPicker(target, trigger) {
+    const view = state.notesView, panel = $("[data-note-emoji-panel]");
+    if (!panel || !trigger) return;
+    const wasOpen = !panel.hidden && view.emojiTarget === target;
+    closeNotePopovers();
+    if (wasOpen) return;
+    view.emojiTarget = target;
+    const current = (target === "page" ? view.pageDraft?.emoji : view.selected?.emoji) || "";
+    $("[data-note-emoji-grid]").innerHTML = NOTE_EMOJI_CHOICES.map((emoji) =>
+      `<button type="button" data-note-emoji-choice="${emoji}" aria-label="${emoji}" aria-pressed="${emoji === current ? "true" : "false"}">${emoji}</button>`).join("");
+    const input = $("[data-note-emoji-input]");
+    input.value = "";
+    $("[data-note-emoji-remove]").disabled = !current;
+    noteNotice("emoji", "");
+    panel.hidden = false;
+    const app = $("[data-note-app]").getBoundingClientRect(), at = trigger.getBoundingClientRect();
+    panel.style.top = `${Math.max(8, at.bottom - app.top + 6)}px`;
+    panel.style.left = `${Math.max(8, Math.min(app.width - panel.offsetWidth - 8, at.left - app.left))}px`;
+    trigger.setAttribute("aria-expanded", "true");
+    input.focus();
+    refreshNoteIcons();
+  }
+
+  function chooseNoteEmoji(emoji) {
+    const view = state.notesView;
+    if (emoji && !noteEmojiValid(emoji)) { noteNotice("emoji", NOTE_ERRORS.invalid_emoji, "bad"); return; }
+    closeNotePopovers();
+    if (view.emojiTarget === "page") {
+      if (!view.pageDraft) return;
+      view.pageDraft.emoji = emoji;
+      renderNotePageDraftEmoji();
+      $("[data-note-page-emoji]")?.focus();
+      return;
+    }
+    const note = view.selected;
+    if (!note || !noteCanEdit(note)) return;
+    $("[data-note-emoji-open]")?.focus();
+    if ((note.emoji || "") === emoji && view.emojiPending === null) return;
+    view.emojiPending = emoji;
+    storeNote({ ...note, emoji });
+    renderNoteEditor(view.selected, { keepDraft: true });
+    void saveNote();
+  }
+
+  function wireNoteEmoji() {
+    $("[data-note-emoji-open]")?.addEventListener("click", (event) => {
+      event.stopPropagation(); openNoteEmojiPicker("note", event.currentTarget);
+    });
+    const panel = $("[data-note-emoji-panel]");
+    panel?.addEventListener("click", (event) => {
+      const choice = event.target.closest("[data-note-emoji-choice]");
+      if (choice) { chooseNoteEmoji(choice.dataset.noteEmojiChoice); return; }
+      if (event.target.closest("[data-note-emoji-remove]")) chooseNoteEmoji("");
+    });
+    $("[data-note-emoji-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = $("[data-note-emoji-input]").value.trim();
+      if (!value) { $("[data-note-emoji-input]").focus(); return; }
+      chooseNoteEmoji(value);
+    });
+    panel?.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation(); closeNotePopovers();
+      (state.notesView.emojiTarget === "page" ? $("[data-note-page-emoji]") : $("[data-note-emoji-open]"))?.focus();
+    });
+  }
+
+  function notePageAccent(accent) { return NOTE_PAGE_ACCENTS[accent] || NOTE_PAGE_ACCENTS.blue; }
+
+  function notePageCanEdit(page) { return ["owner", "editor"].includes(page?.role); }
+
+  function notePageUrl(id) { return `${location.origin}/dashboard/notes?page=${encodeURIComponent(id)}`; }
+
+  function notePageEntryId() { return crypto.randomUUID().replace(/-/g, "").slice(0, 16); }
+
+  function notePageEntryTitle(entry, note) {
+    const label = String(entry.label || "").trim();
+    if (label) return label;
+    if (entry.kind === "note") return note?.title || "Untitled note";
+    if (entry.kind === "link") return String(entry.url || "").replace(/^https:\/\//, "");
+    return "Untitled section";
+  }
+
+  function notePageRows(outline, collapsed) {
+    const open = [];
+    return outline.map((entry) => {
+      while (open.length && open[open.length - 1].depth >= entry.depth) open.pop();
+      const hidden = open.some((section) => collapsed.get(section.id));
+      const parents = open.map((section) => section.id);
+      if (entry.kind === "section") open.push(entry);
+      return { entry, hidden, parents };
+    });
+  }
+
+  function notePageSummary(page) {
+    return {
+      id: page.id, title: page.title, emoji: page.emoji, description: page.description, accent: page.accent,
+      layout: page.layout, showEmoji: page.showEmoji, role: page.role, version: page.version,
+      createdAt: page.createdAt, updatedAt: page.updatedAt, shares: page.shares || [],
+      entries: Array.isArray(page.outline) ? page.outline.length : Number(page.entries || 0),
+    };
+  }
+
+  function renderNotePages() {
+    const box = $("[data-note-pages]"); if (!box) return;
+    const view = state.notesView, query = noteSearchQuery(), all = view.pages || [];
+    const pages = all.filter((page) => !query || String(page.title || "").toLowerCase().includes(query));
+    const rows = pages.map((page) => {
+      const title = page.title || "Untitled page";
+      const count = noteCountLabel(page.entries, "entry", "entries");
+      return `<button type="button" class="notes-page-row" data-note-page-id="${escapeHtml(page.id)}" aria-selected="${view.pageId === page.id ? "true" : "false"}" title="${escapeHtml(`${title} · ${count}`)}">
+          <span class="notes-page-row-icon">${page.emoji ? escapeHtml(page.emoji) : noteIcon("book-open")}</span>
+          <span class="notes-row-title">${escapeHtml(title)}</span>
+          <span class="notes-page-mark" style="background:${notePageAccent(page.accent)}"></span>
+          <span class="notes-page-count" aria-label="${escapeHtml(count)}">${Number(page.entries || 0)}</span>
+        </button>`;
+    }).join("");
+    const empty = view.pagesError ? escapeHtml(view.pagesError)
+      : view.pages === null ? "Loading pages…"
+      : query && all.length ? ""
+      : all.length ? "" : "Gather notes into one page you can share.";
+    box.innerHTML = `<div class="notes-group notes-pages-head"><span>Pages</span><button type="button" data-note-page-new class="notes-icon-btn" title="New page" aria-label="New page">${noteIcon("plus")}</button></div>`
+      + (rows || (empty ? `<p class="notes-pages-empty">${empty}</p>` : ""));
+    refreshNoteIcons();
+  }
+
+  async function loadNotePages() {
+    const view = state.notesView;
+    if (!state.session?.sessionToken) return;
+    try {
+      const payload = await noteRequest("/api/notes/pages");
+      view.pages = (payload.pages || []).map(notePageSummary); view.pagesError = "";
+    } catch (error) {
+      if (view.pages === null) view.pages = [];
+      view.pagesError = error.status === 404 ? "" : `Pages are unavailable: ${error.message}`;
+    }
+    renderNotePages();
+    renderNoteList();
+  }
+
+  function renderNoteMain() {
+    const view = state.notesView, paging = Boolean(view.pageId);
+    $("[data-note-page-view]").hidden = !paging;
+    $("[data-note-editor]").hidden = paging || !view.selected;
+    $("[data-note-empty]").hidden = paging || Boolean(view.selected);
+  }
+
+  function leaveNoteEditor() {
+    const view = state.notesView;
+    closeNotePopovers();
+    const socket = view.socket;
+    view.socket = null; view.socketNoteId = ""; socket?.close();
+    clearInterval(view.presenceTimer); view.peers = new Map();
+    clearTimeout(view.saveTimer);
+    Object.assign(view, {
+      selected: null, localDirty: false, conflict: null, emojiPending: null, comments: null,
+      commentDraft: null, commentEditing: "", commentFocus: "", activity: null, linking: false,
+    });
+    $("[data-note-conflict]").hidden = true;
+    $("[data-note-versions-panel]").hidden = true;
+  }
+
+  async function openNotePage(id, { noteId = "", customize = false } = {}) {
+    const view = state.notesView;
+    await flushNoteSave();
+    if (view.selected) leaveNoteEditor();
+    closeNotePopovers();
+    if (view.pageId !== id) {
+      closeNotePageCustomize();
+      view.page = null; view.pageContent = new Map(); view.pageCollapsed = new Map();
+    }
+    view.pageId = id; view.pageNoteId = noteId; view.pageOutlineOpen = false;
+    rememberNotePageInUrl(id, noteId);
+    renderNoteMain(); renderNotePage(); renderNotePages(); renderNoteList();
+    showNoteEditorOnMobile();
+    await loadNotePage(id);
+    if (customize && view.pageId === id && view.page) openNotePageCustomize();
+  }
+
+  function closeNotePage() {
+    const view = state.notesView;
+    if (!view.pageId) return;
+    closeNotePopovers(); closeNotePageCustomize();
+    view.pageId = ""; view.page = null; view.pageNoteId = ""; view.pageContent = new Map();
+    view.pageGeneration++;
+    renderNoteMain(); renderNotePages();
+  }
+
+  async function loadNotePage(id) {
+    const view = state.notesView, generation = ++view.pageGeneration;
+    try {
+      const payload = await noteRequest(`/api/notes/pages/${encodeURIComponent(id)}?content=1`);
+      if (generation !== view.pageGeneration || view.pageId !== id) return;
+      applyNotePage(payload);
+    } catch (error) {
+      if (generation !== view.pageGeneration || view.pageId !== id) return;
+      if (error.status === 404) {
+        view.pages = (view.pages || []).filter((page) => page.id !== id);
+        closeNotePage();
+        noteNotice("main", NOTE_ERRORS.page_not_found, "bad");
+        await loadNotes();
+      } else noteNotice("page", error.message, "bad");
+    }
+  }
+
+  function applyNotePage(payload) {
+    const view = state.notesView, page = payload.page || {}, notes = payload.notes || {};
+    const outline = page.outline || [];
+    view.page = { page: { ...page, outline }, notes };
+    for (const [noteId, note] of Object.entries(notes)) {
+      if (typeof note?.markdown === "string") view.pageContent.set(noteId, note.markdown);
+    }
+    for (const entry of outline) {
+      if (entry.kind === "section" && !view.pageCollapsed.has(entry.id)) view.pageCollapsed.set(entry.id, Boolean(entry.collapsed));
+    }
+    const summary = notePageSummary(view.page.page);
+    view.pages = (view.pages || []).some((row) => row.id === page.id)
+      ? view.pages.map((row) => row.id === page.id ? summary : row)
+      : [summary, ...(view.pages || [])];
+    const readable = outline.filter((entry) => entry.kind === "note" && notes[entry.noteId]);
+    if (!readable.some((entry) => entry.noteId === view.pageNoteId)) view.pageNoteId = readable[0]?.noteId || "";
+    const picked = notePageRows(outline, view.pageCollapsed).find(({ entry }) => entry.kind === "note" && entry.noteId === view.pageNoteId);
+    if (picked?.hidden && page.layout !== "continuous") picked.parents.forEach((sectionId) => view.pageCollapsed.set(sectionId, false));
+    rememberNotePageInUrl(page.id, view.pageNoteId);
+    renderNotePage(); renderNotePages();
+    if (page.layout !== "continuous" && view.pageNoteId) markNotePageSeen(view.pageNoteId);
+    void fillNotePageContent();
+  }
+
+  function markNotePageSeen(noteId) {
+    const view = state.notesView, note = view.page?.notes?.[noteId];
+    if (!note) return;
+    if (note.unread) {
+      note.unread = false;
+      view.items = view.items.map((item) => item.id === noteId ? { ...item, unread: false, unreadComments: 0 } : item);
+      renderNoteList(); renderNotePageOutline();
+    }
+    if (["owner", "editor", "viewer"].includes(note.role)) {
+      void noteRequest(`/api/notes/${encodeURIComponent(noteId)}/activity`, "POST", { kind: "view" }).catch(() => {});
+    }
+  }
+
+  async function fillNotePageContent() {
+    const view = state.notesView, data = view.page;
+    if (!data) return;
+    const id = data.page.id, notes = data.notes || {};
+    const wanted = data.page.layout === "continuous"
+      ? [...new Set(data.page.outline.filter((entry) => entry.kind === "note" && notes[entry.noteId]).map((entry) => entry.noteId))]
+      : [view.pageNoteId].filter((noteId) => noteId && notes[noteId]);
+    const missing = wanted.filter((noteId) => !view.pageContent.has(noteId) && !view.pageFetching.has(noteId));
+    if (!missing.length) return;
+    missing.forEach((noteId) => view.pageFetching.add(noteId));
+    for (let index = 0; index < missing.length; index += 4) {
+      const content = view.pageContent;
+      await Promise.all(missing.slice(index, index + 4).map(async (noteId) => {
+        try {
+          const payload = await noteRequest(`/api/notes/${encodeURIComponent(noteId)}`);
+          content.set(noteId, String(payload.note?.markdown || ""));
+        } catch (_) {
+          content.set(noteId, null);
+        } finally { view.pageFetching.delete(noteId); }
+      }));
+      if (view.pageId === id) renderNotePageNotes();
+    }
+  }
+
+  function renderNotePageOutlineOpen() {
+    const view = state.notesView;
+    const body = $("[data-note-page-body]");
+    if (body) body.dataset.outlineOpen = view.pageOutlineOpen ? "true" : "false";
+    $("[data-note-page-outline-toggle]")?.setAttribute("aria-expanded", view.pageOutlineOpen ? "true" : "false");
+  }
+
+  function renderNotePage() {
+    const view = state.notesView, data = view.page;
+    const page = data?.page || (view.pages || []).find((row) => row.id === view.pageId) || {};
+    const canEdit = notePageCanEdit(page), isOwner = page.role === "owner";
+    const title = page.title || (data ? "Untitled page" : "Loading page…");
+    $("[data-note-page-view]")?.style.setProperty("--page-accent", notePageAccent(page.accent));
+    const crumb = $("[data-note-page-crumb]");
+    if (crumb) crumb.textContent = title;
+    const crumbEmoji = $("[data-note-page-crumb-emoji]");
+    if (crumbEmoji) { crumbEmoji.textContent = page.emoji || ""; crumbEmoji.hidden = !page.emoji; }
+    const pill = $("[data-note-page-access]");
+    if (pill) {
+      const label = !page.role ? "" : isOwner ? ((page.shares || []).length ? "Shared" : "Private") : canEdit ? "Can edit" : "View only";
+      pill.innerHTML = label ? noteIcon(isOwner ? ((page.shares || []).length ? "users" : "lock") : canEdit ? "pencil" : "eye") + escapeHtml(label) : "";
+      pill.hidden = !label;
+    }
+    $("[data-note-page-customize-open]").hidden = !canEdit;
+    $("[data-note-page-share-open]").hidden = !isOwner;
+    if (!isOwner) { const panel = $("[data-note-page-share-panel]"); if (panel) panel.hidden = true; }
+    const heroEmoji = $("[data-note-page-emoji-view]");
+    if (heroEmoji) { heroEmoji.textContent = page.emoji || ""; heroEmoji.hidden = !page.emoji; }
+    const heading = $("[data-note-page-title]");
+    if (heading) heading.textContent = title;
+    const description = $("[data-note-page-description]");
+    if (description) {
+      const text = String(page.description || "").trim();
+      description.innerHTML = text ? renderMarkdown(text) : "";
+      description.hidden = !text;
+    }
+    renderNotePageOutline();
+    renderNotePageNotes();
+    renderNotePageOutlineOpen();
+    if (isOwner) renderNotePageShares();
+    refreshNoteIcons();
+  }
+
+  function renderNotePageOutline() {
+    const view = state.notesView, nav = $("[data-note-page-outline]");
+    if (!nav) return;
+    const data = view.page;
+    if (!data) { nav.innerHTML = ""; return; }
+    const page = data.page, notes = data.notes || {};
+    const canEdit = notePageCanEdit(page);
+    const rows = notePageRows(page.outline, view.pageCollapsed).filter((row) => !row.hidden);
+    if (!rows.length) {
+      nav.innerHTML = `<p class="notes-pages-empty">Nothing on this page yet.${canEdit ? " Choose Customize to add notes, sections and links." : ""}</p>`;
+      return;
+    }
+    nav.innerHTML = rows.map(({ entry }) => {
+      const depth = Math.max(0, Math.min(NOTE_PAGE_MAX_DEPTH, Number(entry.depth || 0)));
+      const style = `style="--depth:${depth}"`;
+      if (entry.kind === "section") {
+        const collapsed = Boolean(view.pageCollapsed.get(entry.id));
+        return `<button type="button" class="notes-page-entry" data-kind="section" data-note-page-section="${escapeHtml(entry.id)}" aria-expanded="${collapsed ? "false" : "true"}" ${style}>${noteIcon(collapsed ? "chevron-right" : "chevron-down")}<span class="notes-page-entry-label">${escapeHtml(notePageEntryTitle(entry))}</span></button>`;
+      }
+      if (entry.kind === "link") {
+        const url = /^https:\/\//i.test(entry.url || "") ? entry.url : "";
+        return `<a class="notes-page-entry" data-kind="link" data-note-page-link="${escapeHtml(entry.id)}" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(url)}" ${style}>${noteIcon("external-link")}<span class="notes-page-entry-label">${escapeHtml(notePageEntryTitle(entry))}</span></a>`;
+      }
+      const note = notes[entry.noteId];
+      if (!note) {
+        return `<div class="notes-page-entry" data-kind="locked" data-note-page-locked="${escapeHtml(entry.id)}" title="You don't have access to this note" ${style}>${noteIcon("lock")}<span class="notes-page-entry-label">${escapeHtml(String(entry.label || "").trim() || "Locked note")}<span class="notes-page-entry-hint">You don't have access to this note</span></span></div>`;
+      }
+      const current = view.pageNoteId === entry.noteId;
+      const unread = Boolean(note.unread) && !(current && page.layout !== "continuous");
+      const emoji = page.showEmoji !== false && note.emoji
+        ? `<span class="notes-page-entry-emoji">${escapeHtml(note.emoji)}</span>` : noteIcon("file-text");
+      return `<button type="button" class="notes-page-entry" data-kind="note" data-note-page-entry="${escapeHtml(entry.id)}" data-note-page-note="${escapeHtml(entry.noteId)}" aria-current="${current ? "true" : "false"}" ${style}>${emoji}<span class="notes-page-entry-label">${escapeHtml(notePageEntryTitle(entry, note))}</span>${unread ? '<span class="notes-row-dot" title="Changed since you last opened it" aria-label="Unread"></span>' : ""}</button>`;
+    }).join("");
+    refreshNoteIcons();
+  }
+
+  function notePageNoteHtml(entry, note) {
+    const markdown = state.notesView.pageContent.get(note.id);
+    const body = markdown === undefined ? '<p class="notes-preview-empty">Loading…</p>'
+      : markdown === null ? '<p class="notes-preview-empty">This note could not be loaded.</p>'
+      : markdown.trim() ? renderMarkdown(markdown) : '<p class="notes-preview-empty">Nothing written yet.</p>';
+    const edited = noteEditedLabel(note);
+    return `<article class="notes-page-note" id="note-page-${escapeHtml(entry.id)}" data-note-page-anchor="${escapeHtml(entry.id)}">
+        <header class="notes-page-note-head">
+          <h2 class="notes-page-note-title">${noteEmojiHtml(note.emoji)}<span>${escapeHtml(notePageEntryTitle(entry, note))}</span></h2>
+          <button type="button" class="notes-btn" data-note-page-open-editor="${escapeHtml(note.id)}">${noteIcon("square-pen")}Open in editor</button>
+        </header>
+        ${edited ? `<p class="notes-page-note-meta">${escapeHtml(edited)}</p>` : ""}
+        <div class="notes-preview">${body}</div>
+      </article>`;
+  }
+
+  function renderNotePageNotes() {
+    const view = state.notesView, target = $("[data-note-page-notes]");
+    if (!target) return;
+    const data = view.page;
+    if (!data) { target.innerHTML = '<p class="notes-page-placeholder">Loading page…</p>'; return; }
+    const page = data.page, notes = data.notes || {};
+    target.dataset.layout = page.layout === "continuous" ? "continuous" : "outline";
+    if (page.layout === "continuous") {
+      target.innerHTML = page.outline.map((entry) => {
+        if (entry.kind === "section") return `<h2 class="notes-page-section" id="note-page-${escapeHtml(entry.id)}" data-note-page-anchor="${escapeHtml(entry.id)}">${escapeHtml(notePageEntryTitle(entry))}</h2>`;
+        if (entry.kind !== "note") return "";
+        const note = notes[entry.noteId];
+        if (!note) return `<p class="notes-page-locked" data-note-page-anchor="${escapeHtml(entry.id)}">${noteIcon("lock")}${escapeHtml(String(entry.label || "").trim() || "Locked note")} · You don't have access to this note</p>`;
+        return notePageNoteHtml(entry, note);
+      }).join("") || '<p class="notes-page-placeholder">Nothing on this page yet.</p>';
+    } else {
+      const entry = page.outline.find((item) => item.kind === "note" && item.noteId === view.pageNoteId && notes[item.noteId]);
+      target.innerHTML = entry ? notePageNoteHtml(entry, notes[entry.noteId])
+        : `<p class="notes-page-placeholder">${page.outline.length ? "Pick a note from the outline." : "Nothing on this page yet."}</p>`;
+    }
+    refreshNoteIcons();
+  }
+
+  function pickNotePageNote(noteId, entryId) {
+    const view = state.notesView, page = view.page?.page;
+    if (!page) return;
+    view.pageNoteId = noteId;
+    rememberNotePageInUrl(page.id, noteId);
+    if (window.matchMedia(NOTE_PAGE_MOBILE).matches) view.pageOutlineOpen = false;
+    renderNotePageOutlineOpen();
+    if (page.layout === "continuous") {
+      renderNotePageOutline();
+      $(`[data-note-page-notes] [data-note-page-anchor="${CSS.escape(entryId)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+    renderNotePageOutline(); renderNotePageNotes();
+    const content = $("[data-note-page-content]");
+    if (content) content.scrollTop = 0;
+    markNotePageSeen(noteId);
+    void fillNotePageContent();
+  }
+
+  async function openNoteFromPage(noteId) {
+    closeNotePage();
+    showNoteEditorOnMobile();
+    await selectNote(noteId);
+  }
+
+  async function createNotePage() {
+    const view = state.notesView;
+    noteNotice("");
+    try {
+      const payload = await noteRequest("/api/notes/pages", "POST", {});
+      const page = payload.page;
+      view.pages = [notePageSummary(page), ...(view.pages || []).filter((row) => row.id !== page.id)];
+      await openNotePage(page.id, { customize: true });
+    } catch (error) { noteNotice("main", error.message, "bad"); }
+  }
+
+  function notePageDraftFrom(page) {
+    return {
+      title: page.title || "", emoji: page.emoji || "", description: page.description || "",
+      accent: NOTE_PAGE_ACCENTS[page.accent] ? page.accent : "blue",
+      layout: page.layout === "continuous" ? "continuous" : "outline",
+      showEmoji: page.showEmoji !== false,
+      outline: (page.outline || []).map((entry) => ({
+        id: entry.id, kind: entry.kind, depth: Number(entry.depth || 0), label: entry.label || "",
+        noteId: entry.noteId || "", url: entry.url || "", collapsed: Boolean(entry.collapsed),
+      })),
+    };
+  }
+
+  function openNotePageCustomize() {
+    const view = state.notesView, page = view.page?.page;
+    if (!page || !notePageCanEdit(page)) return;
+    closeNotePopovers();
+    view.pageDraft = notePageDraftFrom(page);
+    view.pageDraftVersion = page.version;
+    $("[data-note-page-conflict]").hidden = true;
+    $("[data-note-page-add-box]").hidden = true;
+    noteNotice("page-customize", "");
+    renderNotePageCustomize();
+    $("[data-note-page-customize]").hidden = false;
+    $("[data-note-page-customize-open]")?.setAttribute("aria-expanded", "true");
+    $('[data-note-page-field="title"]')?.focus();
+  }
+
+  function closeNotePageCustomize() {
+    const view = state.notesView;
+    view.pageDraft = null;
+    const drawer = $("[data-note-page-customize]");
+    if (drawer) drawer.hidden = true;
+    $("[data-note-page-customize-open]")?.setAttribute("aria-expanded", "false");
+  }
+
+  function renderNotePageDraftEmoji() {
+    const button = $("[data-note-page-emoji]"), emoji = state.notesView.pageDraft?.emoji || "";
+    if (!button) return;
+    button.innerHTML = emoji ? escapeHtml(emoji) : noteIcon("smile-plus");
+    button.dataset.empty = emoji ? "false" : "true";
+    button.setAttribute("aria-label", emoji ? `Page emoji ${emoji}. Change emoji` : "Add an emoji");
+    button.title = emoji ? "Change emoji" : "Add an emoji";
+    refreshNoteIcons();
+  }
+
+  function renderNotePageCustomize() {
+    const view = state.notesView, draft = view.pageDraft, page = view.page?.page;
+    if (!draft || !page) return;
+    $('[data-note-page-field="title"]').value = draft.title;
+    $('[data-note-page-field="description"]').value = draft.description;
+    $('[data-note-page-field="showEmoji"]').checked = draft.showEmoji;
+    renderNotePageDraftEmoji();
+    $("[data-note-page-accents]").innerHTML = Object.entries(NOTE_PAGE_ACCENTS).map(([name, color]) =>
+      `<button type="button" role="radio" class="notes-page-swatch" data-note-page-accent-choice="${name}" aria-checked="${draft.accent === name ? "true" : "false"}" aria-label="${name[0].toUpperCase()}${name.slice(1)}" title="${name[0].toUpperCase()}${name.slice(1)}" style="background:${color}"></button>`).join("");
+    document.querySelectorAll("[data-note-page-layout-choice]").forEach((button) =>
+      button.setAttribute("aria-pressed", button.dataset.notePageLayoutChoice === draft.layout ? "true" : "false"));
+    $("[data-note-page-delete]").hidden = page.role !== "owner";
+    renderNotePageEditList();
+  }
+
+  function renderNotePageEditList(focus = null) {
+    const view = state.notesView, draft = view.pageDraft, list = $("[data-note-page-edit-list]");
+    if (!draft || !list) return;
+    const notes = view.page?.notes || {};
+    const total = draft.outline.length;
+    list.innerHTML = draft.outline.map((entry, index) => {
+      const note = entry.kind === "note" ? notes[entry.noteId] || view.items.find((item) => item.id === entry.noteId) : null;
+      const locked = entry.kind === "note" && !note;
+      const kindName = { note: "Note", section: "Section", link: "Link" }[entry.kind] || "Entry";
+      const placeholder = entry.kind === "note" ? (note?.title || "A note you can't open") : entry.kind === "section" ? "Section name" : "Link text";
+      const icon = entry.kind === "note" && note?.emoji ? escapeHtml(note.emoji)
+        : noteIcon(locked ? "lock" : { note: "file-text", section: "heading", link: "link" }[entry.kind] || "dot");
+      const tool = (action, iconName, label, disabled = false, pressed = null) =>
+        `<button type="button" class="notes-icon-btn" data-note-page-edit-action="${action}" title="${label}" aria-label="${label}"${pressed === null ? "" : ` aria-pressed="${pressed ? "true" : "false"}"`}${disabled ? " disabled" : ""}>${noteIcon(iconName)}</button>`;
+      return `<li class="notes-page-edit" data-note-page-edit="${escapeHtml(entry.id)}" data-kind="${escapeHtml(entry.kind)}" style="--depth:${Number(entry.depth || 0)}">
+          <span class="notes-page-grip" data-note-page-grip title="Drag to reorder">${noteIcon("grip-vertical")}</span>
+          <span class="notes-page-edit-kind" title="${kindName}">${icon}</span>
+          <span class="notes-page-edit-fields">
+            <input data-note-page-entry-label value="${escapeHtml(entry.label)}" maxlength="200" placeholder="${escapeHtml(placeholder)}" aria-label="${kindName} label" />
+            ${entry.kind === "link" ? `<input data-note-page-entry-url value="${escapeHtml(entry.url)}" maxlength="2000" inputmode="url" placeholder="https://" aria-label="Link address" />` : ""}
+          </span>
+          <span class="notes-page-edit-tools">
+            ${entry.kind === "section" ? tool("collapse", "chevrons-down-up", "Start collapsed", false, entry.collapsed) : ""}
+            ${tool("outdent", "chevron-left", "Outdent", entry.depth <= 0)}
+            ${tool("indent", "chevron-right", "Indent", entry.depth >= NOTE_PAGE_MAX_DEPTH)}
+            ${tool("up", "arrow-up", "Move up", index === 0)}
+            ${tool("down", "arrow-down", "Move down", index === total - 1)}
+            ${tool("remove", "x", "Remove")}
+          </span>
+        </li>`;
+    }).join("") || '<li class="notes-page-edit-empty">No entries yet. Add a note, a section or a link.</li>';
+    document.querySelectorAll("[data-note-page-add]").forEach((button) => { button.disabled = total >= NOTE_PAGE_MAX_ENTRIES; });
+    if (focus) {
+      const row = list.querySelector(`[data-note-page-edit="${CSS.escape(focus.id)}"]`);
+      const control = row?.querySelector(focus.selector);
+      (control && !control.disabled ? control : row?.querySelector("[data-note-page-entry-label]"))?.focus();
+      if (focus.select) control?.select?.();
+    }
+    refreshNoteIcons();
+  }
+
+  function renderNotePageAddResults() {
+    const view = state.notesView, target = $("[data-note-page-add-results]");
+    if (!target) return;
+    const query = String($("[data-note-page-add-search]")?.value || "").trim().toLowerCase();
+    const onPage = new Set((view.pageDraft?.outline || []).filter((entry) => entry.kind === "note").map((entry) => entry.noteId));
+    const matches = view.items.filter((note) => !query || String(note.title || "").toLowerCase().includes(query)).slice(0, 8);
+    target.innerHTML = matches.map((note) => `<button type="button" role="option" data-note-page-add-note="${escapeHtml(note.id)}">
+        <span class="notes-page-edit-kind">${note.emoji ? escapeHtml(note.emoji) : noteIcon("file-text")}</span>
+        <span class="notes-page-entry-label">${escapeHtml(note.title || "Untitled note")}</span>
+        ${onPage.has(note.id) ? '<span class="notes-person-hint">On the page</span>' : ""}
+      </button>`).join("") || `<p class="notes-pages-empty">${query ? "No notes match." : "You have no notes yet."}</p>`;
+    refreshNoteIcons();
+  }
+
+  function addNotePageEntry(entry, selector = "[data-note-page-entry-label]", select = false) {
+    const view = state.notesView, draft = view.pageDraft;
+    if (!draft) return;
+    if (draft.outline.length >= NOTE_PAGE_MAX_ENTRIES) { noteNotice("page-customize", NOTE_ERRORS.too_many_entries, "bad"); return; }
+    const full = { id: notePageEntryId(), depth: 0, label: "", noteId: "", url: "", collapsed: false, ...entry };
+    draft.outline.push(full);
+    noteNotice("page-customize", "");
+    renderNotePageEditList({ id: full.id, selector, select });
+    $(`[data-note-page-edit="${CSS.escape(full.id)}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function editNotePageEntry(id, action) {
+    const draft = state.notesView.pageDraft;
+    if (!draft) return;
+    const index = draft.outline.findIndex((entry) => entry.id === id);
+    if (index < 0) return;
+    const entry = draft.outline[index];
+    const selector = `[data-note-page-edit-action="${action}"]`;
+    if (action === "remove") {
+      draft.outline.splice(index, 1);
+      const next = draft.outline[Math.min(index, draft.outline.length - 1)];
+      renderNotePageEditList(next ? { id: next.id, selector } : null);
+      return;
+    }
+    if (action === "indent") entry.depth = Math.min(NOTE_PAGE_MAX_DEPTH, entry.depth + 1);
+    if (action === "outdent") entry.depth = Math.max(0, entry.depth - 1);
+    if (action === "collapse") entry.collapsed = !entry.collapsed;
+    if (action === "up" && index > 0) draft.outline.splice(index - 1, 0, ...draft.outline.splice(index, 1));
+    if (action === "down" && index < draft.outline.length - 1) draft.outline.splice(index + 1, 0, ...draft.outline.splice(index, 1));
+    renderNotePageEditList({ id, selector });
+  }
+
+  function moveNotePageEntry(id, targetId, after) {
+    const draft = state.notesView.pageDraft;
+    if (!draft || id === targetId) return;
+    const from = draft.outline.findIndex((entry) => entry.id === id);
+    if (from < 0) return;
+    const [entry] = draft.outline.splice(from, 1);
+    const to = draft.outline.findIndex((item) => item.id === targetId);
+    draft.outline.splice(to < 0 ? draft.outline.length : to + (after ? 1 : 0), 0, entry);
+    renderNotePageEditList();
+  }
+
+  async function saveNotePageDraft() {
+    const view = state.notesView, page = view.page?.page, draft = view.pageDraft;
+    if (!page || !draft || view.pageSaving) return;
+    const badLink = draft.outline.find((entry) => entry.kind === "link" && !/^https:\/\/[^\s/]+\S*$/i.test(entry.url.trim()));
+    const badSection = draft.outline.find((entry) => entry.kind === "section" && !entry.label.trim());
+    const bad = badLink || badSection;
+    if (bad) {
+      noteNotice("page-customize", badLink ? "Links need an address that starts with https://" : "Give every section a name.", "bad");
+      $(`[data-note-page-edit="${CSS.escape(bad.id)}"] ${badLink ? "[data-note-page-entry-url]" : "[data-note-page-entry-label]"}`)?.focus();
+      return;
+    }
+    if (draft.description.length > 2000) { noteNotice("page-customize", "The description can be up to 2000 characters.", "bad"); return; }
+    const body = {
+      baseVersion: view.pageDraftVersion,
+      title: draft.title.trim(), emoji: draft.emoji, description: draft.description,
+      accent: draft.accent, layout: draft.layout, showEmoji: draft.showEmoji,
+      outline: draft.outline.map((entry) => ({
+        id: entry.id, kind: entry.kind, depth: entry.depth, label: entry.label.trim(),
+        noteId: entry.kind === "note" ? entry.noteId : "", url: entry.kind === "link" ? entry.url.trim() : "",
+        collapsed: entry.kind === "section" && entry.collapsed,
+      })),
+    };
+    view.pageSaving = true;
+    const button = $("[data-note-page-save]");
+    if (button) button.disabled = true;
+    noteNotice("page-customize", "");
+    try {
+      const payload = await noteRequest(`/api/notes/pages/${encodeURIComponent(page.id)}`, "PATCH", body);
+      if (view.pageId !== page.id) return;
+      for (const entry of body.outline) if (entry.kind === "section") view.pageCollapsed.set(entry.id, entry.collapsed);
+      closeNotePageCustomize();
+      if (payload.page && view.page) {
+        view.page = { ...view.page, page: { ...view.page.page, ...payload.page, outline: payload.page.outline || body.outline } };
+        renderNotePage();
+      }
+      noteNotice("page", "Page saved");
+      await loadNotePage(page.id);
+    } catch (error) {
+      if (error.status === 409) {
+        $("[data-note-page-conflict]").hidden = false;
+        noteNotice("page-customize", "");
+      } else noteNotice("page-customize", error.message, "bad");
+    } finally {
+      view.pageSaving = false;
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function deleteNotePage() {
+    const view = state.notesView, page = view.page?.page;
+    if (!page || page.role !== "owner") return;
+    if (!window.confirm(`Delete “${page.title || "Untitled page"}”? The notes on it are kept.`)) return;
+    try {
+      await noteRequest(`/api/notes/pages/${encodeURIComponent(page.id)}`, "DELETE", {});
+      view.pages = (view.pages || []).filter((row) => row.id !== page.id);
+      closeNotePage();
+      $("[data-note-app]").dataset.mobile = "list";
+      noteNotice("main", "Page deleted");
+      await loadNotes();
+    } catch (error) { noteNotice("page-customize", error.message, "bad"); }
+  }
+
+  function renderNotePageShares() {
+    const page = state.notesView.page?.page;
+    if (!page) return;
+    const title = $("[data-note-page-share-title]");
+    if (title) title.textContent = page.title || "Untitled page";
+    const people = $("[data-note-page-shares]");
+    if (people) people.innerHTML = noteShareListHtml(page.shares || [], "note-page");
+    const link = $("[data-note-page-access-link]");
+    if (link) { link.href = notePageUrl(page.id); link.textContent = notePageUrl(page.id).replace(/^https?:\/\//, ""); }
+    refreshNoteIcons();
+  }
+
+  async function updateNotePageShare(body, method, message) {
+    const view = state.notesView, page = view.page?.page;
+    if (!page) return false;
+    try {
+      const payload = await noteRequest(`/api/notes/pages/${encodeURIComponent(page.id)}/shares`, method, body);
+      if (view.page?.page?.id !== page.id) return true;
+      view.page.page = { ...view.page.page, shares: payload.shares || [] };
+      view.pages = (view.pages || []).map((row) => row.id === page.id ? { ...row, shares: payload.shares || [] } : row);
+      renderNotePage();
+      noteNotice("page-share", message);
+      if ((payload.sharedNotes || []).length) void refreshNoteList();
+      return true;
+    } catch (error) { noteNotice("page-share", error.message, "bad"); return false; }
+  }
+
+  function wireNotePages() {
+    const view = state.notesView;
+    $("[data-note-pages]")?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-note-page-new]")) { void createNotePage(); return; }
+      const row = event.target.closest("[data-note-page-id]");
+      if (!row) return;
+      noteNotice("");
+      if (row.dataset.notePageId === view.pageId) { showNoteEditorOnMobile(); return; }
+      void openNotePage(row.dataset.notePageId);
+    });
+    $("[data-note-page-back]")?.addEventListener("click", () => { $("[data-note-app]").dataset.mobile = "list"; });
+    $("[data-note-page-outline-toggle]")?.addEventListener("click", () => {
+      view.pageOutlineOpen = !view.pageOutlineOpen; renderNotePageOutlineOpen();
+    });
+    $("[data-note-page-outline]")?.addEventListener("click", (event) => {
+      const section = event.target.closest("[data-note-page-section]");
+      if (section) {
+        const id = section.dataset.notePageSection;
+        view.pageCollapsed.set(id, !view.pageCollapsed.get(id));
+        renderNotePageOutline();
+        $(`[data-note-page-section="${CSS.escape(id)}"]`)?.focus();
+        return;
+      }
+      const entry = event.target.closest("[data-note-page-entry]");
+      if (entry) pickNotePageNote(entry.dataset.notePageNote, entry.dataset.notePageEntry);
+      if (event.target.closest("[data-note-page-link]") && window.matchMedia(NOTE_PAGE_MOBILE).matches) {
+        view.pageOutlineOpen = false; renderNotePageOutlineOpen();
+      }
+    });
+    $("[data-note-page-notes]")?.addEventListener("click", (event) => {
+      const open = event.target.closest("[data-note-page-open-editor]");
+      if (open) void openNoteFromPage(open.dataset.notePageOpenEditor);
+    });
+
+    $("[data-note-page-customize-open]")?.addEventListener("click", () => {
+      if ($("[data-note-page-customize]").hidden) openNotePageCustomize(); else closeNotePageCustomize();
+    });
+    document.querySelectorAll("[data-note-page-customize-close]").forEach((button) =>
+      button.addEventListener("click", closeNotePageCustomize));
+    $("[data-note-page-emoji]")?.addEventListener("click", (event) => {
+      event.stopPropagation(); openNoteEmojiPicker("page", event.currentTarget);
+    });
+    const drawer = $("[data-note-page-customize]");
+    const onField = (event) => {
+      const draft = view.pageDraft;
+      if (!draft) return;
+      const target = event.target;
+      if (target.matches("[data-note-page-field]")) {
+        const field = target.dataset.notePageField;
+        draft[field] = target.type === "checkbox" ? target.checked : target.value;
+        return;
+      }
+      const row = target.closest("[data-note-page-edit]");
+      const entry = row && draft.outline.find((item) => item.id === row.dataset.notePageEdit);
+      if (entry && target.matches("[data-note-page-entry-label]")) entry.label = target.value;
+      if (entry && target.matches("[data-note-page-entry-url]")) entry.url = target.value;
+      if (event.type === "input" && target.matches("[data-note-page-add-search]")) renderNotePageAddResults();
+    };
+    drawer?.addEventListener("input", onField);
+    drawer?.addEventListener("change", onField);
+    drawer?.addEventListener("click", (event) => {
+      const draft = view.pageDraft;
+      if (!draft) return;
+      const accent = event.target.closest("[data-note-page-accent-choice]");
+      if (accent) { draft.accent = accent.dataset.notePageAccentChoice; renderNotePageCustomize(); $(`[data-note-page-accent-choice="${draft.accent}"]`)?.focus(); return; }
+      const layout = event.target.closest("[data-note-page-layout-choice]");
+      if (layout) {
+        draft.layout = layout.dataset.notePageLayoutChoice;
+        document.querySelectorAll("[data-note-page-layout-choice]").forEach((button) =>
+          button.setAttribute("aria-pressed", button.dataset.notePageLayoutChoice === draft.layout ? "true" : "false"));
+        return;
+      }
+      const add = event.target.closest("[data-note-page-add]");
+      if (add) {
+        const kind = add.dataset.notePageAdd;
+        if (kind === "note") {
+          const box = $("[data-note-page-add-box]");
+          box.hidden = !box.hidden;
+          if (!box.hidden) { $("[data-note-page-add-search]").value = ""; renderNotePageAddResults(); $("[data-note-page-add-search]").focus(); }
+        } else if (kind === "section") addNotePageEntry({ kind: "section", label: "New section" }, "[data-note-page-entry-label]", true);
+        else addNotePageEntry({ kind: "link", url: "https://" }, "[data-note-page-entry-url]");
+        return;
+      }
+      const pick = event.target.closest("[data-note-page-add-note]");
+      if (pick) { addNotePageEntry({ kind: "note", noteId: pick.dataset.notePageAddNote }); renderNotePageAddResults(); return; }
+      const action = event.target.closest("[data-note-page-edit-action]");
+      if (action) { editNotePageEntry(action.closest("[data-note-page-edit]").dataset.notePageEdit, action.dataset.notePageEditAction); return; }
+      if (event.target.closest("[data-note-page-delete]")) { void deleteNotePage(); return; }
+      if (event.target.closest("[data-note-page-reload]")) {
+        void (async () => { await loadNotePage(view.pageId); openNotePageCustomize(); })();
+      }
+    });
+    drawer?.addEventListener("keydown", (event) => {
+      if (!event.target.matches("[data-note-page-add-search]")) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        $("[data-note-page-add-results] [data-note-page-add-note]")?.click();
+      } else if (event.key === "Escape") {
+        event.stopPropagation(); $("[data-note-page-add-box]").hidden = true; $('[data-note-page-add="note"]')?.focus();
+      }
+    });
+    $("[data-note-page-form]")?.addEventListener("submit", (event) => { event.preventDefault(); void saveNotePageDraft(); });
+    const list = $("[data-note-page-edit-list]");
+    list?.addEventListener("pointerdown", (event) => {
+      const grip = event.target.closest("[data-note-page-grip]");
+      if (grip) grip.closest("[data-note-page-edit]").draggable = true;
+    });
+    list?.addEventListener("dragstart", (event) => {
+      const row = event.target.closest("[data-note-page-edit]");
+      if (!row) return;
+      view.pageDrag = row.dataset.notePageEdit;
+      row.dataset.dragging = "true";
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", view.pageDrag);
+    });
+    list?.addEventListener("dragover", (event) => {
+      const row = event.target.closest("[data-note-page-edit]");
+      if (!row || !view.pageDrag) return;
+      event.preventDefault();
+      const box = row.getBoundingClientRect();
+      list.querySelectorAll("[data-drop]").forEach((item) => { if (item !== row) delete item.dataset.drop; });
+      row.dataset.drop = event.clientY > box.top + box.height / 2 ? "after" : "before";
+    });
+    list?.addEventListener("drop", (event) => {
+      const row = event.target.closest("[data-note-page-edit]");
+      if (!row || !view.pageDrag) return;
+      event.preventDefault();
+      moveNotePageEntry(view.pageDrag, row.dataset.notePageEdit, row.dataset.drop === "after");
+      view.pageDrag = "";
+    });
+    list?.addEventListener("dragend", () => {
+      view.pageDrag = "";
+      list.querySelectorAll("[data-note-page-edit]").forEach((item) => {
+        item.draggable = false; delete item.dataset.drop; delete item.dataset.dragging;
+      });
+    });
+
+    wireNoteShareField("note-page");
+    $("[data-note-page-share-open]")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      renderNotePageShares();
+      noteNotice("page-share", "");
+      toggleNotePopover("[data-note-page-share-panel]", "[data-note-page-share-open]");
+    });
+    $("[data-note-page-share-form]")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      view.shareScope = "note-page";
+      const input = $("[data-note-page-share-name]"), name = input.value.trim().replace(/^@/, "");
+      if (!name) { input.focus(); return; }
+      view.shareGeneration++; clearTimeout(view.shareTimer); renderNoteShareSuggestions([]);
+      const includeNotes = Boolean($("[data-note-page-share-include]")?.checked);
+      const added = await updateNotePageShare({
+        type: $("[data-note-page-share-type]").value, name, role: $("[data-note-page-share-role]").value, includeNotes,
+      }, "POST", includeNotes ? `Shared the page and your notes on it with ${name}` : `Shared the page with ${name}`);
+      if (added) { input.value = ""; $("[data-note-page-share-panel]").hidden = false; input.focus(); }
+    });
+    $("[data-note-page-shares]")?.addEventListener("change", (event) => {
+      const select = event.target.closest("[data-note-page-share-role-change]");
+      if (!select) return;
+      const [type, name] = select.dataset.notePageShareRoleChange.split(":");
+      void updateNotePageShare({ type, name, role: select.value }, "POST", `${name} can now ${select.value === "editor" ? "edit" : "view"} the page`);
+    });
+    $("[data-note-page-shares]")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-note-page-unshare]");
+      if (!button) return;
+      const [type, name] = button.dataset.notePageUnshare.split(":");
+      void updateNotePageShare({ type, name }, "DELETE", `Removed ${name}`);
+    });
+    $("[data-note-page-copy-link]")?.addEventListener("click", async () => {
+      const page = view.page?.page;
+      if (!page) return;
+      try {
+        await navigator.clipboard.writeText(notePageUrl(page.id));
+        noteNotice("page-share", "Link copied");
+      } catch (_) { noteNotice("page-share", `Couldn't copy the link: ${notePageUrl(page.id)}`, "bad"); }
+    });
+  }
+
   function onNoteEdited() {
     renderNotePreview();
     scheduleNoteSave();
@@ -1659,7 +2618,10 @@
       comments: null, commentsOpen: false, commentsTimer: 0, commentsGeneration: 0,
       commentsRenderTimer: 0, commentDraft: null, commentEditing: "", commentFocus: "",
       pendingComment: noteLinkedComment(), mention: null, selectionSource: "",
-      lastTypedAt: 0, editingTimer: 0,
+      lastTypedAt: 0, editingTimer: 0, emojiPending: null, emojiTarget: "note", shareScope: "note",
+      pages: null, pagesError: "", pageId: "", page: null, pageNoteId: "", pageContent: new Map(),
+      pageFetching: new Set(), pageCollapsed: new Map(), pageGeneration: 0, pageOutlineOpen: false,
+      pageDraft: null, pageDraftVersion: 0, pageSaving: false, pageDrag: "",
     });
     try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
@@ -1687,6 +2649,7 @@
     });
     $("[data-note-list]")?.addEventListener("click", (event) => {
       const row = event.target.closest("[data-note-id]"); if (!row) return;
+      closeNotePage();
       showNoteEditorOnMobile();
       if (row.dataset.noteId !== view.selected?.id) { noteNotice(""); void selectNote(row.dataset.noteId); }
     });
@@ -1728,7 +2691,7 @@
     $("[data-note-share-open]")?.addEventListener("click", (event) => { event.stopPropagation(); toggleNotePopover("[data-note-share-panel]", "[data-note-share-open]"); });
     $("[data-note-menu-open]")?.addEventListener("click", (event) => { event.stopPropagation(); toggleNotePopover("[data-note-menu]", "[data-note-menu-open]"); });
     document.addEventListener("click", (event) => {
-      if (!event.target.closest(".notes-pop, [data-note-share-open], [data-note-menu-open], [data-note-presence], [data-note-live]")) closeNotePopovers();
+      if (!event.target.closest(".notes-pop, [data-note-share-open], [data-note-menu-open], [data-note-presence], [data-note-live], [data-note-emoji-open], [data-note-page-emoji], [data-note-page-share-open]")) closeNotePopovers();
     });
     $("[data-note-versions-open]")?.addEventListener("click", () => {
       closeNotePopovers(); $("[data-note-versions-panel]").hidden = false; void loadNoteVersions();
@@ -1757,38 +2720,15 @@
     });
     $("[data-note-conflict-theirs]")?.addEventListener("click", () => {
       const latest = view.conflict; if (!latest) return;
-      view.conflict = null; $("[data-note-conflict]").hidden = true;
+      view.conflict = null; view.emojiPending = null; $("[data-note-conflict]").hidden = true;
       storeNote(latest); renderNoteEditor(latest);
     });
 
     // Sharing and publishing.
-    const shareName = $("[data-note-share-name]");
-    shareName?.addEventListener("input", searchNoteShareCandidates);
-    shareName?.addEventListener("focus", () => { if (noteShareQuery()) searchNoteShareCandidates(); });
-    shareName?.addEventListener("blur", () => { view.shareGeneration++; renderNoteShareSuggestions([]); });
-    shareName?.addEventListener("keydown", (event) => {
-      const items = view.shareSuggestions || [];
-      if ($("[data-note-share-suggestions]").hidden || !items.length) return;
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        const step = event.key === "ArrowDown" ? 1 : -1;
-        renderNoteShareSuggestions(items, (view.shareSuggestionIndex + step + items.length) % items.length);
-      } else if (event.key === "Escape") {
-        event.stopPropagation(); view.shareGeneration++; renderNoteShareSuggestions([]);
-      } else if ((event.key === "Enter" || event.key === "Tab") && view.shareSuggestionIndex >= 0) {
-        const item = items[view.shareSuggestionIndex];
-        const exact = item.name === noteShareQuery() && item.type === $("[data-note-share-type]").value;
-        if (event.key === "Tab" || !exact) event.preventDefault();
-        chooseNoteShareCandidate(item);
-      }
-    });
-    $("[data-note-share-suggestions]")?.addEventListener("mousedown", (event) => event.preventDefault());
-    $("[data-note-share-suggestions]")?.addEventListener("click", (event) => {
-      const option = event.target.closest("[data-note-share-option]"); if (!option) return;
-      chooseNoteShareCandidate(view.shareSuggestions[Number(option.dataset.noteShareOption)]);
-    });
+    wireNoteShareField("note");
     $("[data-note-share-form]")?.addEventListener("submit", async (event) => {
       event.preventDefault();
+      view.shareScope = "note";
       const input = $("[data-note-share-name]"), name = input.value.trim().replace(/^@/, "");
       if (!name) { input.focus(); return; }
       view.shareGeneration++; clearTimeout(view.shareTimer); renderNoteShareSuggestions([]);
@@ -1897,8 +2837,18 @@
       } catch (error) { noteNotice("main", error.message, "bad"); }
     });
 
+    wireNoteEmoji();
+    wireNotePages();
     renderNoteList();
-    void loadNotes(noteLinkedId());
+    renderNotePages();
+    const linkedPage = notePageLinkedId();
+    if (linkedPage) {
+      view.pageId = linkedPage; view.pageNoteId = noteLinkedId();
+      renderNoteMain(); renderNotePage(); showNoteEditorOnMobile();
+      void loadNotePage(linkedPage);
+      void loadNotes();
+    } else void loadNotes(noteLinkedId());
+    void loadNotePages();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) void refreshNoteList(); });
     view.listTimer = setInterval(() => void refreshNoteList(), 60000);
   }

@@ -21,7 +21,35 @@
             .notes-seg button { flex: 1; border-radius: .3rem; padding: .15rem .6rem; font-size: .75rem; color: var(--nt-muted); white-space: nowrap; }
             .notes-seg button[aria-pressed="true"] { background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 0 0 1px var(--nt-border); }
             .notes-filters { margin: 0 .85rem .35rem; }
-            .notes-list { flex: 1; min-height: 0; overflow-y: auto; padding: .25rem .5rem .75rem; }
+            .notes-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+            .notes-list { padding: .25rem .5rem .75rem; }
+            .notes-pages { padding: 0 .5rem; }
+            .notes-pages-head { display: flex; align-items: center; justify-content: space-between; padding-top: .35rem; padding-bottom: .15rem; }
+            .notes-pages-head .notes-icon-btn { width: 1.5rem; height: 1.5rem; }
+            .notes-pages-empty { padding: .25rem .5rem .5rem; font-size: .72rem; line-height: 1.4; color: var(--nt-muted); }
+            .notes-page-row { display: grid; width: 100%; grid-template-columns: 1.25rem minmax(0, 1fr) auto auto; align-items: center; gap: .45rem; border-radius: .375rem; padding: .35rem .5rem; text-align: left; }
+            .notes-page-row:hover { background: var(--nt-hover); }
+            .notes-page-row[aria-selected="true"] { background: var(--nt-selected); }
+            .notes-page-row-icon { display: grid; place-items: center; font-size: .9rem; line-height: 1; color: var(--nt-muted); }
+            .notes-page-mark { width: .5rem; height: .5rem; border-radius: 2px; }
+            .notes-page-count { min-width: 1ch; font-size: .68rem; color: var(--nt-faint); font-variant-numeric: tabular-nums; text-align: right; }
+            .notes-row-emoji { flex: none; font-size: .8rem; line-height: 1; }
+            .notes-emoji { margin-right: .4rem; }
+            .notes-title-row { display: flex; align-items: center; gap: .5rem; }
+            .notes-emoji-btn { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; flex: none; border-radius: .375rem; font-size: 1.5rem; line-height: 1; color: var(--nt-muted); }
+            .notes-emoji-btn:hover { background: var(--nt-hover); color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-emoji-btn:disabled { cursor: default; background: transparent; }
+            [data-view="notes"] .notes-emoji-btn[data-empty="true"] svg.lucide { width: 1.15rem; height: 1.15rem; }
+            .notes-emoji-pop { z-index: 40; width: 18.5rem; padding: .5rem; }
+            .notes-emoji-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
+            .notes-emoji-grid button { display: grid; place-items: center; aspect-ratio: 1; border-radius: .3rem; font-size: 1.15rem; line-height: 1; }
+            .notes-emoji-grid button:hover, .notes-emoji-grid button:focus-visible { background: var(--nt-hover); outline: none; }
+            .notes-emoji-grid button[aria-pressed="true"] { background: var(--nt-selected); box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-emoji-form { display: flex; gap: .4rem; margin-top: .5rem; }
+            .notes-emoji-form .notes-field input { height: calc(var(--dashboard-control-height-sm) - 2px); font-size: var(--dashboard-control-font); }
+            .notes-emoji-pop .notes-notice { margin: 0; padding: .4rem 0 0; }
+            .notes-emoji-remove { margin-top: .5rem; }
+            .notes-emoji-remove:disabled { opacity: .45; pointer-events: none; }
             .notes-group { padding: .75rem .5rem .25rem; font-size: 12px; font-weight: 600; color: var(--nt-muted); }
             .notes-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 1px .5rem; border-radius: .375rem; padding: .45rem .5rem; text-align: left; }
             .notes-row:hover { background: var(--nt-hover); }
@@ -46,7 +74,8 @@
             .notes-main { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; }
             .notes-bar { display: flex; min-height: 3.1rem; flex-wrap: wrap; align-items: center; gap: .6rem; border-bottom: 1px solid var(--nt-soft); padding: .45rem .75rem .45rem 1rem; }
             .notes-crumb { display: flex; min-width: 0; flex: 1; align-items: center; gap: .4rem; font-size: .8rem; color: var(--nt-muted); }
-            .notes-crumb [data-note-back] { display: none; }
+            .notes-crumb [data-note-back], .notes-crumb [data-note-page-back] { display: none; }
+            .notes-crumb-emoji { flex: none; line-height: 1; }
             .notes-crumb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-pill { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--nt-border); border-radius: 999px; padding: 0 .45rem; font-size: .68rem; line-height: 1.15rem; white-space: nowrap; }
             .notes-pill svg.lucide { width: .7rem; height: .7rem; }
@@ -246,6 +275,77 @@
             .notes-modal::backdrop { background: rgb(1 4 9 / .6); }
             .notes-modal .notes-field input { height: calc(var(--dashboard-control-height) - 2px); font-size: var(--dashboard-control-font); }
             .notes-modal .notes-notice { margin: .5rem 0 0; }
+            .notes-page-body { display: grid; flex: 1; min-height: 0; grid-template-columns: 15rem minmax(0, 1fr); }
+            .notes-page-outline { min-height: 0; overflow-y: auto; border-right: 1px solid var(--nt-soft); padding: .6rem .5rem 1rem; }
+            .notes-page-entry { display: flex; width: 100%; min-width: 0; align-items: center; gap: .4rem; border-radius: .375rem; padding: .3rem .5rem .3rem calc(.5rem + var(--depth, 0) * .9rem); text-align: left; font-size: .8rem; color: rgb(var(--dashboard-foreground-rgb) / .9); }
+            .notes-page-entry:hover { background: var(--nt-hover); }
+            .notes-page-entry[aria-current="true"] { background: var(--nt-selected); color: var(--nt-accent); }
+            .notes-page-entry[data-kind="section"] { margin-top: .35rem; font-size: .72rem; font-weight: 600; color: var(--nt-muted); }
+            .notes-page-entry[data-kind="section"]:first-child { margin-top: 0; }
+            .notes-page-entry[data-kind="link"]:hover .notes-page-entry-label { color: var(--nt-accent); }
+            .notes-page-entry[data-kind="locked"] { cursor: default; color: var(--nt-faint); }
+            .notes-page-entry[data-kind="locked"]:hover { background: transparent; }
+            [data-view="notes"] .notes-page-entry svg.lucide { width: .85rem; height: .85rem; color: var(--nt-muted); }
+            .notes-page-entry-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .notes-page-entry-hint { display: block; overflow: hidden; text-overflow: ellipsis; font-size: .66rem; }
+            .notes-page-entry-emoji { flex: none; width: .95rem; text-align: center; font-size: .85rem; line-height: 1; }
+            .notes-page-outline-toggle { display: none; }
+            .notes-page-doc { width: 100%; max-width: 48rem; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
+            .notes-page-hero { margin-bottom: 1.5rem; border-top: 3px solid var(--page-accent); padding-top: 1rem; }
+            .notes-page-hero-emoji { display: inline-grid; place-items: center; width: 3rem; height: 3rem; margin-bottom: .6rem; border-radius: .5rem; background: color-mix(in srgb, var(--page-accent) 16%, transparent); font-size: 1.8rem; line-height: 1; }
+            .notes-page-title { margin: 0; font-size: 1.75rem; font-weight: 600; letter-spacing: -.01em; color: rgb(var(--dashboard-foreground-rgb)); text-wrap: balance; }
+            .notes-page-description { margin-top: .5rem; font-size: .88rem; color: var(--nt-muted); }
+            .notes-page-note { scroll-margin-top: 1rem; }
+            .notes-page-notes[data-layout="continuous"] .notes-page-note { margin-bottom: 1.75rem; border-bottom: 1px solid var(--nt-soft); padding-bottom: 1.75rem; }
+            .notes-page-note-head { display: flex; align-items: center; gap: .6rem; }
+            .notes-page-note-title { min-width: 0; flex: 1; margin: 0; font-size: 1.3rem; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-page-note-meta { margin: .15rem 0 .75rem; font-size: .7rem; color: var(--nt-faint); }
+            .notes-page-section { margin: 1.25rem 0 1rem; scroll-margin-top: 1rem; font-size: .8rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--nt-muted); }
+            .notes-page-locked { display: flex; align-items: center; gap: .4rem; margin: 0 0 1.75rem; font-size: .8rem; color: var(--nt-faint); }
+            .notes-page-placeholder { font-size: .85rem; color: var(--nt-faint); }
+            .notes-page-drawer { width: min(28rem, 100%); }
+            .notes-page-form { display: grid; flex: 1; min-height: 0; align-content: start; gap: .45rem; overflow-y: auto; padding: .8rem 1.1rem 1rem; }
+            .notes-page-label { margin-top: .45rem; font-size: 12px; font-weight: 600; color: var(--nt-muted); }
+            .notes-page-label:first-child { margin-top: 0; }
+            .notes-page-form .notes-field input { height: calc(var(--dashboard-control-height) - 2px); font-size: var(--dashboard-control-font); }
+            .notes-page-form textarea { width: 100%; resize: vertical; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .35rem .55rem; font-size: var(--dashboard-control-font); outline: none; }
+            .notes-page-form textarea:focus { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-page-form .notes-emoji-btn { width: var(--dashboard-control-height); height: var(--dashboard-control-height); border: 1px solid var(--nt-border); font-size: 1.1rem; }
+            .notes-page-form .notes-seg { justify-self: start; }
+            .notes-page-swatches { display: flex; flex-wrap: wrap; gap: .45rem; }
+            .notes-page-swatch { width: 1.4rem; height: 1.4rem; border: 2px solid rgb(var(--dashboard-popover-rgb)); border-radius: 50%; box-shadow: 0 0 0 1px var(--nt-border); }
+            .notes-page-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--nt-primary); }
+            .notes-page-check { display: flex; align-items: center; gap: .45rem; font-size: var(--dashboard-control-font); }
+            .notes-page-check input { accent-color: rgb(var(--dashboard-primary-rgb)); }
+            .notes-page-edit-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--nt-soft); border-radius: .375rem; }
+            .notes-page-edit { display: grid; grid-template-columns: .9rem 1.25rem minmax(0, 1fr) auto; align-items: center; gap: .3rem; padding: .25rem .3rem .25rem calc(.3rem + var(--depth, 0) * 1rem); }
+            .notes-page-edit + .notes-page-edit { border-top: 1px solid var(--nt-soft); }
+            .notes-page-edit[data-drop="before"] { box-shadow: inset 0 2px 0 var(--nt-primary); }
+            .notes-page-edit[data-drop="after"] { box-shadow: inset 0 -2px 0 var(--nt-primary); }
+            .notes-page-edit[data-dragging="true"] { opacity: .5; }
+            .notes-page-grip { display: grid; place-items: center; cursor: grab; color: var(--nt-faint); }
+            [data-view="notes"] .notes-page-grip svg.lucide { width: .8rem; height: .8rem; }
+            .notes-page-edit-kind { display: grid; place-items: center; font-size: .85rem; line-height: 1; color: var(--nt-muted); }
+            [data-view="notes"] .notes-page-edit-kind svg.lucide { width: .85rem; height: .85rem; }
+            .notes-page-edit-fields { display: grid; min-width: 0; gap: 2px; }
+            .notes-page-edit-fields input { min-width: 0; height: 1.6rem; border: 1px solid transparent; border-radius: .3rem; background: transparent; padding: 0 .35rem; font-size: .78rem; outline: none; }
+            .notes-page-edit-fields input:hover { border-color: var(--nt-soft); }
+            .notes-page-edit-fields input:focus { border-color: var(--nt-primary); background: rgb(var(--dashboard-background-rgb)); box-shadow: inset 0 0 0 1px var(--nt-primary); }
+            .notes-page-edit[data-kind="section"] [data-note-page-entry-label] { font-weight: 600; }
+            .notes-page-edit-tools { display: flex; }
+            .notes-page-edit-tools .notes-icon-btn { width: 1.4rem; height: 1.4rem; }
+            [data-view="notes"] .notes-page-edit-tools svg.lucide { width: .8rem; height: .8rem; }
+            .notes-page-edit-empty { padding: .7rem; text-align: center; font-size: .72rem; color: var(--nt-muted); }
+            .notes-page-add { display: flex; flex-wrap: wrap; gap: .4rem; }
+            .notes-page-add .notes-btn:disabled { opacity: .45; pointer-events: none; }
+            .notes-page-add-box { display: grid; gap: .3rem; }
+            .notes-page-add-results { display: grid; max-height: 12rem; overflow-y: auto; }
+            .notes-page-add-results button { display: flex; height: var(--dashboard-menu-row-height); min-width: 0; align-items: center; gap: .45rem; border-radius: var(--dashboard-control-radius); padding: 0 .5rem; text-align: left; font-size: var(--dashboard-control-font); }
+            .notes-page-add-results button:hover, .notes-page-add-results button:focus-visible { background: var(--nt-selected); outline: none; }
+            .notes-page-drawer-foot { display: flex; align-items: center; gap: .4rem; border-top: 1px solid var(--nt-soft); padding: .6rem 1.1rem; }
+            .notes-page-drawer-foot .notes-btn:disabled { opacity: .6; pointer-events: none; }
+            .notes-page-drawer .notes-banner { margin: .75rem 1.1rem 0; }
+            .notes-page-include { margin-top: .7rem; }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
             @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(20rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
             @media (max-width: 767px) {
@@ -260,6 +360,13 @@
               .notes-doc { padding: 1.25rem 1.1rem 2.5rem; }
               .notes-title, .notes-preview-title { font-size: 1.35rem; }
               .notes-faces, .notes-crumb-path { display: none; }
+              .notes-crumb [data-note-page-back] { display: inline-grid; }
+              .notes-page-outline-toggle { display: inline-flex; }
+              .notes-page-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+              .notes-page-outline { display: none; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--nt-soft); }
+              .notes-page-body[data-outline-open="true"] .notes-page-outline { display: block; }
+              .notes-page-doc { padding: 1.25rem 1.1rem 2.5rem; }
+              .notes-page-title { font-size: 1.35rem; }
             }
             @media (prefers-reduced-motion: reduce) { [data-view="notes"] * { animation: none !important; transition: none !important; } }
           </style>
@@ -279,7 +386,10 @@
                 <button type="button" data-note-filter="shared" aria-pressed="false">Shared</button>
                 <button type="button" data-note-filter="public" aria-pressed="false">Published</button>
               </div>
-              <div data-note-list class="notes-list"></div>
+              <div class="notes-scroll">
+                <div data-note-pages class="notes-pages" aria-label="Pages"></div>
+                <div data-note-list class="notes-list"></div>
+              </div>
             </aside>
 
             <div class="notes-main">
@@ -300,6 +410,7 @@
                   <div class="notes-crumb">
                     <button data-note-back type="button" class="notes-icon-btn" aria-label="Back to notes"><i data-lucide="chevron-left"></i></button>
                     <span class="notes-crumb-path">Notes /</span>
+                    <span data-note-crumb-emoji class="notes-crumb-emoji" hidden></span>
                     <span data-note-crumb class="notes-crumb-title"></span>
                     <span data-note-visibility class="notes-pill"></span>
                   </div>
@@ -332,7 +443,10 @@
                 <div data-note-work class="notes-work" data-mode="split">
                   <div data-note-write-pane class="notes-pane">
                     <div class="notes-doc">
-                      <input data-note-title maxlength="200" class="notes-title" placeholder="Untitled note" aria-label="Note title" />
+                      <div class="notes-title-row">
+                        <button data-note-emoji-open type="button" class="notes-emoji-btn" data-empty="true" aria-haspopup="dialog" aria-expanded="false" aria-label="Add an emoji" title="Add an emoji"><i data-lucide="smile-plus"></i></button>
+                        <input data-note-title maxlength="200" class="notes-title" placeholder="Untitled note" aria-label="Note title" />
+                      </div>
                       <div data-note-links class="notes-chips"></div>
                       <p data-note-notice="links" class="notes-notice" role="status" hidden></p>
                       <div data-note-toolbar class="notes-toolbar" role="toolbar" aria-label="Formatting">
@@ -352,7 +466,7 @@
                   </div>
                   <div data-note-preview-pane class="notes-pane">
                     <div class="notes-doc">
-                      <h1 data-note-preview-title class="notes-preview-title"></h1>
+                      <h1 class="notes-preview-title"><span data-note-preview-emoji class="notes-emoji" hidden></span><span data-note-preview-title></span></h1>
                       <article data-note-preview class="notes-preview"></article>
                     </div>
                   </div>
@@ -454,6 +568,123 @@
                   <div data-note-versions class="notes-versions"></div>
                 </aside>
               </div>
+
+              <div data-note-page-view class="notes-main" style="flex:1" hidden>
+                <header class="notes-bar">
+                  <div class="notes-crumb">
+                    <button data-note-page-back type="button" class="notes-icon-btn" aria-label="Back to notes"><i data-lucide="chevron-left"></i></button>
+                    <span class="notes-crumb-path">Pages /</span>
+                    <span data-note-page-crumb-emoji class="notes-crumb-emoji" hidden></span>
+                    <span data-note-page-crumb class="notes-crumb-title"></span>
+                    <span data-note-page-access class="notes-pill" hidden></span>
+                  </div>
+                  <button data-note-page-outline-toggle type="button" class="notes-btn notes-page-outline-toggle" aria-expanded="false" aria-controls="note-page-outline"><i data-lucide="list-tree"></i>Outline</button>
+                  <button data-note-page-customize-open type="button" class="notes-btn" aria-expanded="false" aria-controls="note-page-customize" hidden><i data-lucide="settings-2"></i>Customize</button>
+                  <button data-note-page-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false" hidden><i data-lucide="user-plus"></i>Share</button>
+                </header>
+                <p data-note-notice="page" class="notes-notice" role="status" hidden></p>
+                <div data-note-page-body class="notes-page-body" data-outline-open="false">
+                  <nav data-note-page-outline id="note-page-outline" class="notes-page-outline" aria-label="Page outline"></nav>
+                  <div data-note-page-content class="notes-pane">
+                    <div class="notes-page-doc">
+                      <header class="notes-page-hero">
+                        <span data-note-page-emoji-view class="notes-page-hero-emoji" hidden></span>
+                        <h1 data-note-page-title class="notes-page-title"></h1>
+                        <div data-note-page-description class="notes-preview notes-page-description" hidden></div>
+                      </header>
+                      <div data-note-page-notes class="notes-page-notes"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div data-note-page-share-panel class="notes-pop notes-share" role="dialog" aria-label="Share page" hidden>
+                  <div class="notes-pop-sec">
+                    <h2>Share “<span data-note-page-share-title></span>”</h2>
+                    <form data-note-page-share-form class="notes-invite">
+                      <div class="notes-field">
+                        <select data-note-page-share-type aria-label="Share with"><option value="user">User</option><option value="organization">Org</option></select>
+                        <input data-note-page-share-name autocomplete="off" placeholder="Username or organization" aria-label="Name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="note-page-share-suggestions" />
+                        <select data-note-page-share-role aria-label="Role"><option value="editor">Can edit</option><option value="viewer">Can view</option></select>
+                      </div>
+                      <button type="submit" class="notes-btn">Invite</button>
+                      <div data-note-page-share-suggestions id="note-page-share-suggestions" class="notes-suggest" role="listbox" aria-label="Matching people and organizations" hidden></div>
+                    </form>
+                    <label class="notes-page-check notes-page-include"><input data-note-page-share-include type="checkbox" checked />Also share the notes on this page</label>
+                    <div data-note-page-shares class="notes-people"></div>
+                    <div class="notes-access">
+                      <div class="notes-person-name">Link to this page</div>
+                      <div class="notes-person-hint">Only people this page is shared with can open it.</div>
+                      <div class="notes-copy">
+                        <a data-note-page-access-link></a>
+                        <button data-note-page-copy-link type="button">Copy link</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p data-note-notice="page-share" class="notes-notice" role="status" hidden></p>
+                </div>
+
+                <aside data-note-page-customize id="note-page-customize" class="notes-drawer notes-page-drawer" aria-label="Customize page" hidden>
+                  <div class="notes-drawer-head">
+                    <h2>Customize page</h2>
+                    <button data-note-page-customize-close type="button" class="notes-icon-btn" aria-label="Close customize"><i data-lucide="x"></i></button>
+                  </div>
+                  <div data-note-page-conflict class="notes-banner fm-flash fm-flash-warning" role="alert" hidden>
+                    <i data-lucide="triangle-alert"></i>
+                    <div class="fm-flash-body">
+                      <span class="fm-flash-title">This page changed</span>
+                      <p>Someone saved it while you were customizing. Load the latest version, then make your changes again.</p>
+                    </div>
+                    <div class="fm-flash-actions">
+                      <button data-note-page-reload type="button" class="fm-btn fm-btn-sm">Load latest</button>
+                    </div>
+                  </div>
+                  <form data-note-page-form id="note-page-form" class="notes-page-form">
+                    <div class="notes-page-label">Title</div>
+                    <div class="notes-title-row">
+                      <button data-note-page-emoji type="button" class="notes-emoji-btn" data-empty="true" aria-haspopup="dialog" aria-label="Add an emoji" title="Add an emoji"><i data-lucide="smile-plus"></i></button>
+                      <div class="notes-field"><input data-note-page-field="title" maxlength="200" placeholder="Untitled page" aria-label="Page title" /></div>
+                    </div>
+                    <label class="notes-page-label" for="note-page-description">Description</label>
+                    <textarea data-note-page-field="description" id="note-page-description" rows="3" maxlength="2000" placeholder="Shown above the notes. Markdown works."></textarea>
+                    <div class="notes-page-label">Colour</div>
+                    <div data-note-page-accents class="notes-page-swatches" role="radiogroup" aria-label="Colour"></div>
+                    <div class="notes-page-label">Layout</div>
+                    <div class="notes-seg" role="group" aria-label="Layout">
+                      <button type="button" data-note-page-layout-choice="outline" aria-pressed="true">Outline</button>
+                      <button type="button" data-note-page-layout-choice="continuous" aria-pressed="false">Continuous</button>
+                    </div>
+                    <label class="notes-page-check"><input data-note-page-field="showEmoji" type="checkbox" checked />Show the notes' emoji in the outline</label>
+                    <div class="notes-page-label">Outline</div>
+                    <ol data-note-page-edit-list class="notes-page-edit-list" aria-label="Outline entries"></ol>
+                    <div class="notes-page-add">
+                      <button data-note-page-add="note" type="button" class="notes-btn"><i data-lucide="file-plus"></i>Add note</button>
+                      <button data-note-page-add="section" type="button" class="notes-btn"><i data-lucide="heading"></i>Add section</button>
+                      <button data-note-page-add="link" type="button" class="notes-btn"><i data-lucide="link"></i>Add link</button>
+                    </div>
+                    <div data-note-page-add-box class="notes-page-add-box" hidden>
+                      <div class="notes-field"><input data-note-page-add-search autocomplete="off" placeholder="Search your notes" aria-label="Search your notes" /></div>
+                      <div data-note-page-add-results class="notes-page-add-results" role="listbox" aria-label="Notes to add"></div>
+                    </div>
+                  </form>
+                  <p data-note-notice="page-customize" class="notes-notice" role="status" hidden></p>
+                  <div class="notes-page-drawer-foot">
+                    <button data-note-page-delete type="button" class="notes-btn notes-btn-danger"><i data-lucide="trash-2"></i>Delete page</button>
+                    <span style="flex:1"></span>
+                    <button data-note-page-customize-close type="button" class="notes-btn">Cancel</button>
+                    <button data-note-page-save type="submit" form="note-page-form" class="notes-btn">Save</button>
+                  </div>
+                </aside>
+              </div>
+            </div>
+
+            <div data-note-emoji-panel class="notes-pop notes-emoji-pop" role="dialog" aria-label="Choose an emoji" hidden>
+              <div data-note-emoji-grid class="notes-emoji-grid"></div>
+              <form data-note-emoji-form class="notes-emoji-form">
+                <div class="notes-field"><input data-note-emoji-input autocomplete="off" maxlength="64" placeholder="Type or paste any emoji" aria-label="Emoji" /></div>
+                <button type="submit" class="notes-btn">Use</button>
+              </form>
+              <p data-note-notice="emoji" class="notes-notice" role="status" hidden></p>
+              <button data-note-emoji-remove type="button" class="notes-btn notes-emoji-remove"><i data-lucide="x"></i>Remove</button>
             </div>
           </div>
 

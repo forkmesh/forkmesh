@@ -13,9 +13,11 @@ content, so it is only stored encrypted). `POST /api/notes` and
 the listing included, answers `emoji` (`""` when there is none). Only the
 owner and editors can change it.
 
-An emoji is 1–16 code points and at most 64 UTF-8 bytes, with no whitespace
-or control characters and no ASCII letters. Digits, `#` and `*` are allowed
-only as keycaps (followed by U+20E3). Anything else is `invalid_emoji`. Any
+An emoji is 1–16 code points and at most 64 UTF-8 bytes. Every character
+must be a symbol, a combining mark or a format character (zero-width joiners,
+variation selectors), so no letters, whitespace or punctuation; digits, `#`
+and `*` are allowed only in keycaps (the text holds U+20E3, with or without
+U+FE0F before it). Anything else is `invalid_emoji`. Any
 emoji a keyboard can type works, including skin tones, flags and ZWJ
 sequences.
 
@@ -99,6 +101,21 @@ Errors: `page_not_found`, `invalid_page` (a field fails its rule),
   page" ticked by default.
 - `/dashboard/notes?page=<id>` (and `&note=<noteId>` to pick a note) opens the
   page on every platform.
+
+### On the web dashboard
+
+`app/public/dashboard/js/09-notes.js` and the Notes view partial. The page
+view replaces the note editor while a page is open; **Open in editor** leaves
+the page and selects the note. A section folds the entries after it that are
+indented deeper than it, up to the next entry at its own depth or shallower.
+Picking a note in the outline layout records a `view` on that note, as opening
+it in the editor does, so its unread dot clears. The emoji field checks the
+rules above before sending, and also refuses ASCII punctuation and characters
+outside the symbol, mark and format categories, as the server does; a keycap
+may carry U+FE0F before U+20E3. **New page** and **Save** are neutral buttons,
+leaving the green one for **New note**. `app/browser_tests/tests/dashboard-notes-pages.spec.js`
+covers the picker, the outline, both layouts, customizing, a version conflict,
+sharing with `includeNotes`, the `?page=&note=` link and the phone outline.
 
 ## Tests
 
