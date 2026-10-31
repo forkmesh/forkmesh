@@ -18,7 +18,7 @@ class QLocalSocket;
 // for the project's permission before it runs.
 //
 // Claude Code enforces it through a PreToolUse hook (claudeHookSettings())
-// that sends each Bash/WebFetch/WebSearch call to this process over a local
+// that sends each Bash/Monitor/WebFetch/WebSearch call to this process over a local
 //
 // The gate works at the tool level. It catches the calls an agent makes the
 // ordinary way; it is not a network sandbox against an agent determined to
@@ -34,7 +34,8 @@ struct ExternalCall {
 // Whether `command` (a shell command line) reaches the network, and where.
 // `cwd` resolves named git remotes; a remote that is a local path is local.
 ExternalCall classifyCommand(const QString &command, const QString &cwd);
-// Same for a Claude Code tool call (Bash, WebFetch, WebSearch).
+bool isShellTool(const QString &toolName);
+// Same for a Claude Code tool call (Bash, Monitor, WebFetch, WebSearch).
 ExternalCall classifyToolCall(const QString &toolName, const QJsonObject &input,
                               const QString &cwd);
 

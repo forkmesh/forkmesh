@@ -652,6 +652,13 @@ void testClassifier()
         QStringLiteral("WebSearch"), QJsonObject{{QStringLiteral("query"), QStringLiteral("x")}},
         {});
     check(search.external, QStringLiteral("WebSearch is external"));
+    const agentnet::ExternalCall monitor = agentnet::classifyToolCall(
+        QStringLiteral("Monitor"),
+        QJsonObject{{QStringLiteral("command"),
+                     QStringLiteral("curl -s https://docs.example.org/feed")}},
+        {});
+    check(monitor.external && monitor.target == QLatin1String("docs.example.org"),
+          QStringLiteral("a Monitor command is classified like a Bash command"));
     check(!agentnet::classifyToolCall(QStringLiteral("Read"),
                                       QJsonObject{{QStringLiteral("file_path"),
                                                    QStringLiteral("/etc/hosts")}},
@@ -797,6 +804,17 @@ void testHookSettings()
                   .size() == 1,
           QStringLiteral("hook settings install one PreToolUse matcher"));
     check(object.value(QStringLiteral("hooks"))
+              .toObject()
+              .value(QStringLiteral("PreToolUse"))
+              .toArray()
+              .first()
+              .toObject()
+              .value(QStringLiteral("matcher"))
+              .toString()
+              .split(QLatin1Char('|'))
+              .contains(QStringLiteral("Monitor")),
+          QStringLiteral("the PreToolUse gate also matches the Monitor tool"));
+    check(object.value(QStringLiteral("hooks"))
                   .toObject()
                   .value(QStringLiteral("PostToolUseFailure"))
                   .toArray()
@@ -890,6 +908,19 @@ void testServer()
     check(seen.size() == 1 && seen.first().risk.destructive == QLatin1String("recursive delete") &&
               output.contains(QLatin1String("\"deny\"")),
           QStringLiteral("a destructive local command reaches the handler (%1)").arg(output));
+    seen.clear();
+
+    output = runHook(
+        server.socketPath(),
+        QJsonObject{{QStringLiteral("tool_name"), QStringLiteral("Monitor")},
+                    {QStringLiteral("tool_input"),
+                     QJsonObject{{QStringLiteral("command"), QStringLiteral("rm -rf build")},
+                                 {QStringLiteral("timeout_ms"), 30000}}},
+                    {QStringLiteral("cwd"), QDir::tempPath()}},
+        &exitCode);
+    check(seen.size() == 1 && seen.first().risk.destructive == QLatin1String("recursive delete") &&
+              output.contains(QLatin1String("\"deny\"")),
+          QStringLiteral("a destructive Monitor command reaches the handler (%1)").arg(output));
     seen.clear();
 
     QTemporaryDir agents;
