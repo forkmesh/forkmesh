@@ -10550,6 +10550,47 @@ void checkRailSortAndGroups(MainWindow &window)
           QStringLiteral("the sort applies inside each group (%1)")
               .arg(peopleKeys.join(QStringLiteral(", "))));
 
+    QWidget *peopleHeading = nullptr;
+    for (QWidget *widget :
+         window.findChildren<QWidget *>(QStringLiteral("railGroupSeparator")))
+        if (widget->property("forkmeshRailGroupId").toString() == QStringLiteral("people"))
+            peopleHeading = widget;
+    const auto clickHeading = [](QWidget *target) {
+        const QPoint at = target->rect().center();
+        for (QEvent::Type type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, QPointF(at), QPointF(target->mapToGlobal(at)),
+                              Qt::LeftButton,
+                              type == QEvent::MouseButtonRelease ? Qt::NoButton
+                                                                 : Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(target, &event);
+        }
+        QCoreApplication::processEvents();
+    };
+    if (peopleHeading)
+        clickHeading(peopleHeading);
+    QStringList folded = window.testRailOrderKeys();
+    const int foldedPeople = folded.indexOf(QStringLiteral("group:people"));
+    const QString afterPeople = folded.value(foldedPeople + 1);
+    check(peopleHeading && foldedPeople > 0 &&
+              (afterPeople.startsWith(QStringLiteral("group:")) ||
+               afterPeople == QStringLiteral("|")) &&
+              !folded.contains(QStringLiteral("chat")) &&
+              peopleHeading->isVisibleTo(window.testRailLayout()->parentWidget()) &&
+              peopleHeading->property("railGroupCollapsed").toBool() &&
+              QSettings().value(QStringLiteral("ui/railCollapsedGroups")).toStringList() ==
+                  QStringList{QStringLiteral("people")} &&
+              !window.testRailHiddenKeys().contains(QStringLiteral("chat")),
+          QStringLiteral("clicking a rail group heading folds its items away and "
+                         "keeps the heading (%1)")
+              .arg(folded.join(QStringLiteral(", "))));
+    if (peopleHeading)
+        clickHeading(peopleHeading);
+    check(window.testRailOrderKeys() == grouped &&
+              !QSettings().contains(QStringLiteral("ui/railCollapsedGroups")),
+          QStringLiteral("clicking the heading again shows the group's items (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+
     const QString daily = window.testCreateRailGroup(QStringLiteral("Daily"));
     window.testAssignRailGroup(QStringLiteral("stats"), daily);
     window.testAssignRailGroup(QStringLiteral("chat"), daily);
@@ -29608,6 +29649,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                                           QStringLiteral("Closed"),
                                           QStringLiteral("Merged"),
                                           QStringLiteral("All"),
+                                          QStringLiteral("Review all"),
                                           QStringLiteral("Merge all"),
                                           QStringLiteral("Delete closed and merged")};
             QStringList captions;
@@ -29768,12 +29810,22 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   {ledgerPull(13, QStringLiteral("open"))}),
               QStringLiteral("the pull list shows a loading row while the first "
                              "load runs and drops it once the rows arrive"));
+        check(window.testClickPullRowDiffButton(
+                  {ledgerPull(21, QStringLiteral("open")),
+                   ledgerPull(22, QStringLiteral("open"))},
+                  22) == 22,
+              QStringLiteral("hovering a pull row shows a button that opens that "
+                             "pull's changes in Git without selecting the row"));
     }
     bool prFixButtonFound = false;
     bool prHeaderStyleUniform = true;
+    QWidget *branchPullReviewBar =
+        window.findChild<QWidget *>(QStringLiteral("branchPullReviewBar"));
     for (QPushButton *b : window.findChildren<QPushButton *>()) {
         if (b->text() == QStringLiteral("Fix") && !b->menu())
             prFixButtonFound = true;
+        if (branchPullReviewBar && branchPullReviewBar->isAncestorOf(b))
+            continue;
         if (b->text() == QStringLiteral("AI review") ||
             b->text() == QStringLiteral("Fix all") ||
             b->text() == QStringLiteral("Merge") ||

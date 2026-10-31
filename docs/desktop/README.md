@@ -35,6 +35,7 @@ Topic pages in this folder:
 - [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
 - [browser.md](browser.md): the embedded browser (Browser tab and side browser), the Chromium switches and blocked hosts that ungoogle it, its profile
+- [busy-ring.md](busy-ring.md): the spinning ring around a button's icon while its work runs, and around an active left-rail icon, on desktop, web and phones
 - [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
@@ -160,7 +161,7 @@ Everything is in `desktop/`.
   (`handleButtonPanelDrop`, which outlines the bar while the icon is over it
   and calls `moveButtonToPanel`). A bar the icon may not live in refuses the
   drag, so the drop keeps the same rules as the "Move to …" menu. All of this is stored as JSON under `ui/*`
-  settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
+  settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`, `ui/railCollapsedGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
 - **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
   folder member, shortcut or plugin too, but not Home) and pick "Hide from
@@ -180,6 +181,17 @@ Everything is in `desktop/`.
   (`addHomeTileRailActions`). The left rail's background menu has a "Hidden
   from the rail" list to show one or all again. Moving the button to another
   bar, dropping it on the rail, or "Reset button placement" also shows it again.
+- **Folding a rail group.** With grouping on, clicking a group heading
+  (`RailGroupSeparator::onToggle`, `toggleRailGroupCollapsed`) folds the
+  group; clicking it again unfolds it. The folded group ids are a string list
+  in `ui/railCollapsedGroups`, removed when empty or when the group is deleted.
+  `applyRailOrder` keeps the heading and parks the group's buttons in
+  `railHiddenItems` the same way as hidden items, so their own visibility is
+  untouched and Home and the command palette still reach them; a folder in a
+  folded group stays in the layout but hidden, so its members keep their
+  place. The heading remembers its folded items (`collapsedItems`), and
+  `refreshRailGroupSeparators` keeps it shown while any of them is not
+  explicitly hidden, so a folded group can always be opened again.
 - **Pinned workflows.** Workflows (special agents among them) can be pinned to
   four places around the window: the top bar beside the activity indicators,
   under the left rail, the side rail at the right edge and the status bar

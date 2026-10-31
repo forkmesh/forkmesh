@@ -1945,8 +1945,11 @@ void MainWindow::applyRailOrder()
         unusedSeparators.append(it.value());
         ++it;
     }
+    QList<QWidget *> collapsedItems;
+    QList<QWidget *> collapsedFolders;
     if (railGrouped()) {
         const RailGroups::State &groups = railGroupState();
+        const QStringList collapsedGroups = railCollapsedGroups();
         QHash<QString, QList<QWidget *>> byGroup;
         for (QWidget *widget : std::as_const(top))
             byGroup[railEntryGroup(groups, folders,
@@ -1970,16 +1973,36 @@ void MainWindow::applyRailOrder()
                 separator->onDropKey = [this, id](const QString &key) {
                     assignRailItemToGroup(key, id);
                 };
+                separator->onToggle = [this, id] { toggleRailGroupCollapsed(id); };
                 m_railGroupSeparators.insert(group.id, separator);
             } else if (separator->name() != group.name) {
                 separator->setName(group.name);
             }
             unusedSeparators.removeAll(separator);
             rows.append(separator);
-            rows += items;
+            const bool collapsed = collapsedGroups.contains(group.id);
+            separator->setCollapsed(collapsed);
+            separator->collapsedItems.clear();
+            if (!collapsed) {
+                rows += items;
+                continue;
+            }
+            for (QWidget *item : items) {
+                separator->collapsedItems.append(item);
+                if (dynamic_cast<RailFolderWidget *>(item)) {
+                    collapsedFolders.append(item);
+                    rows.append(item);
+                } else {
+                    collapsedItems.append(item);
+                }
+            }
         }
         top = rows;
     }
+    for (const QPointer<RailFolderWidget> &folder :
+         std::as_const(m_railFolderWidgets))
+        if (folder && !stale.contains(folder))
+            folder->setVisible(!collapsedFolders.contains(folder.data()));
     for (RailGroupSeparator *separator : std::as_const(unusedSeparators)) {
         separator->hide();
         if (RailGroups::indexOf(railGroupState(), separator->id()) < 0) {
@@ -2010,7 +2033,7 @@ void MainWindow::applyRailOrder()
     for (auto it = m_railFolderWidgets.cbegin(); it != m_railFolderWidgets.cend();
          ++it)
         it.value()->setMembers(members.value(it.key()));
-    for (QWidget *widget : std::as_const(hidden))
+    for (QWidget *widget : std::as_const(hidden) + collapsedItems)
         parkHiddenRailItem(widget);
     m_appNavigationRailLayout->addStretch();
     for (const QPointer<RailFolderWidget> &folder : std::as_const(stale)) {
@@ -2768,6 +2791,14 @@ void MainWindow::deleteRailGroup(const QString &groupId)
     if (!RailGroups::remove(railGroupState(), groupId))
         return;
     saveRailGroupState();
+    QStringList collapsed = railCollapsedGroups();
+    if (collapsed.removeAll(groupId)) {
+        QSettings settings;
+        if (collapsed.isEmpty())
+            settings.remove(kRailCollapsedGroupsSetting);
+        else
+            settings.setValue(kRailCollapsedGroupsSetting, collapsed);
+    }
     applyRailOrder();
 }
 
@@ -2897,9 +2928,20 @@ private:
         const int height = separator->height();
         if (!railExpanded()) {
             const int line = qMin(20, qMax(0, width - 12));
-            painter.fillRect(QRect((width - line) / 2, height / 2, line, 1),
-                             Theme::color(dropping ? Theme::Role::Accent
-                                                   : Theme::Role::Border));
+            const QColor lineColor = Theme::color(dropping ? Theme::Role::Accent
+                                                           : Theme::Role::Border);
+            if (!separator->isCollapsed()) {
+                painter.fillRect(QRect((width - line) / 2, height / 2, line, 1),
+                                 lineColor);
+                return;
+            }
+            const int half = qMax(0, line / 2 - 6);
+            painter.fillRect(QRect((width - line) / 2, height / 2, half, 1),
+                             lineColor);
+            painter.fillRect(QRect((width + line) / 2 - half, height / 2, half, 1),
+                             lineColor);
+            paintRailGroupChevron(painter, QPointF(width / 2.0, height / 2.0), true,
+                                  Theme::color(Theme::Role::FgSubtle));
             return;
         }
         QFont font = separator->font();
@@ -2910,13 +2952,20 @@ private:
         painter.setFont(font);
         painter.setPen(Theme::color(dropping ? Theme::Role::AccentFg
                                              : Theme::Role::FgSubtle));
+        const int chevron = separator->chevronShown() ? 12 : 0;
         const QRect text(kNextRailHeadingLeft, height - kNextRailHeadingText,
                          qMax(0, width - 2 * kNextRailHeadingLeft),
                          kNextRailHeadingText);
-        painter.drawText(text, Qt::AlignLeft | Qt::AlignVCenter,
+        painter.drawText(text.adjusted(0, 0, -chevron, 0),
+                         Qt::AlignLeft | Qt::AlignVCenter,
                          QFontMetrics(font).elidedText(separator->name(),
                                                        Qt::ElideRight,
-                                                       text.width()));
+                                                       text.width() - chevron));
+        if (chevron)
+            paintRailGroupChevron(painter,
+                                  QPointF(text.right() - 3.5, text.center().y() + 0.5),
+                                  separator->isCollapsed(),
+                                  Theme::color(Theme::Role::FgSubtle));
         if (dropping)
             painter.fillRect(QRect(text.left(), height - 2, text.width(), 1),
                              Theme::color(Theme::Role::Accent));
@@ -2951,8 +3000,13 @@ void MainWindow::refreshRailGroupSeparators()
     RailGroupSeparator *separator = nullptr;
     bool any = false;
     const auto settle = [&] {
-        if (separator)
-            separator->setVisible(separator->isCustom() || any);
+        if (!separator)
+            return;
+        if (separator->isCollapsed())
+            for (const QPointer<QWidget> &item : std::as_const(separator->collapsedItems))
+                any = any || (item && (dynamic_cast<RailFolderWidget *>(item.data()) ||
+                                       !item->isHidden()));
+        separator->setVisible(separator->isCustom() || any);
     };
     for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
         QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
@@ -2965,9 +3019,32 @@ void MainWindow::refreshRailGroupSeparators()
             polishRailGroupHeading(this, next);
             continue;
         }
+        if (dynamic_cast<RailFolderWidget *>(widget) && separator &&
+            separator->isCollapsed())
+            continue;
         any = any || !content || widget->isVisibleTo(content);
     }
     settle();
+}
+
+QStringList MainWindow::railCollapsedGroups() const
+{
+    return QSettings().value(kRailCollapsedGroupsSetting).toStringList();
+}
+
+void MainWindow::toggleRailGroupCollapsed(const QString &groupId)
+{
+    if (groupId.isEmpty())
+        return;
+    QStringList collapsed = railCollapsedGroups();
+    if (!collapsed.removeAll(groupId))
+        collapsed.append(groupId);
+    QSettings settings;
+    if (collapsed.isEmpty())
+        settings.remove(kRailCollapsedGroupsSetting);
+    else
+        settings.setValue(kRailCollapsedGroupsSetting, collapsed);
+    applyRailOrder();
 }
 
 void MainWindow::scheduleRailCountSort()

@@ -628,6 +628,10 @@ unchanged.
     Classic's green line.
   - Right-click menus, drag and drop, tooltips, group ids and the
     `ui/railGrouped` setting are unchanged.
+  - Clicking a heading folds or unfolds its group (see the README's
+    "Folding a rail group"). A folded heading shows a right-pointing chevron
+    at its right end, an unfolded one a down chevron while hovered; in the
+    collapsed rail a folded group's hairline breaks around a small chevron.
 - **Sidebar header** (`buildSidebarHeader`).
   - The workspace button is 40 px with a 13 px semibold title and an up/down
     chevron (`chevronsUpDownPixmap`). It now opens the workspace switcher
@@ -677,10 +681,10 @@ unchanged.
 
 **Left out on purpose.**
 
-- *MORE fold chevron.* The rail has no foldable groups. Folding would hide
-  rail buttons, and `refreshRailGroupSeparators` hides a heading whose rows
-  are all hidden, so the heading would disappear and the group could not be
-  opened again. Every feature that toggles rail buttons would also fight it.
+- *MORE fold chevron* was left out until 2026-10-31: folding by `hide()`
+  would have made `refreshRailGroupSeparators` drop the heading and fought
+  every feature that toggles rail buttons. Groups now fold by parking their
+  buttons instead (README, "Folding a rail group").
 - *WORKSPACE / BUSINESS / SYSTEM group names.* The headings show the app's
   own groups (Work, People, Network, Insights, Packages, Tools, Shortcuts,
   More, and custom groups). They appear only when grouping is on in the

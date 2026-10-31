@@ -1828,6 +1828,10 @@ public:
         assignRailItemToGroup(key, groupId);
     }
     void testDeleteRailGroup(const QString &groupId) { deleteRailGroup(groupId); }
+    void testToggleRailGroupCollapsed(const QString &groupId)
+    {
+        toggleRailGroupCollapsed(groupId);
+    }
     QStringList testRailSortMenuActions();
     QPushButton *testRailSortButton() const;
     bool testRailFolderExpanded(const QString &folderId) const;
@@ -2871,6 +2875,7 @@ public:
     // "conflict ahead behind dirty worktree". Empty when no row shows it.
     QString testPullListBranchMeta(int number) const;
     QString testPullListRowTooltip(int number) const;
+    int testClickPullRowDiffButton(const QList<PullRequest> &pulls, int number);
     QString testPullConflictNoticeBody(const PullRequest &pull,
                                        const QStringList &conflictFiles) const
     {
@@ -7586,6 +7591,8 @@ private:
     void assignRailItemToGroup(const QString &key, const QString &groupId);
     void adoptRailGroupsFromLayout();
     void refreshRailGroupSeparators();
+    QStringList railCollapsedGroups() const;
+    void toggleRailGroupCollapsed(const QString &groupId);
     void scheduleRailCountSort();
     bool canPopOutRailItem(QWidget *item) const;
     void popOutRailItemLater(QWidget *item, QWidget *spinner = nullptr);
@@ -7613,6 +7620,8 @@ private:
     RailShortcuts::State &railShortcutState();
     void saveRailShortcutState();
     void syncRailShortcutTiles();
+    void refreshRailShortcutBusy();
+    void refreshShortcutRailActivity();
     void activateRailShortcut(const QString &id);
     void removeRailShortcut(const QString &id);
     bool handlePageButtonEvent(QObject *watched, QEvent *event);

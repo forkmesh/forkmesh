@@ -1170,13 +1170,127 @@
       if (button._idleHtml === undefined) button._idleHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.innerHTML = loadingHtml(escapeHtml(label));
+      const icon = button.querySelector("svg, i[data-lucide]");
+      button.innerHTML = icon ? `${icon.outerHTML} ${escapeHtml(label)}` : loadingHtml(escapeHtml(label));
+      if (icon) setButtonBusyRing(button, true);
       return;
     }
     if (button._idleHtml !== undefined) button.innerHTML = button._idleHtml;
     button._idleHtml = undefined;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    setButtonBusyRing(button, false);
+  }
+
+  const BUSY_RING_CAP_MS = 60000;
+  const busyRings = new WeakMap();
+
+  function busyRingIcon(button) {
+    for (const icon of button.querySelectorAll("svg, i[data-lucide], img")) {
+      if (icon.closest(".fm-busy-ring")) continue;
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return icon;
+    }
+    return null;
+  }
+
+  function placeBusyRing(button, ring) {
+    const icon = busyRingIcon(button);
+    if (!icon) {
+      ring.setAttribute("data-outline", "");
+      Object.assign(ring.style, { left: "0", top: "0", width: "100%", height: "100%" });
+      return;
+    }
+    ring.removeAttribute("data-outline");
+    const box = button.getBoundingClientRect();
+    const at = icon.getBoundingClientRect();
+    const side = Math.min(at.width, at.height) + 8;
+    Object.assign(ring.style, {
+      left: `${at.left - box.left - button.clientLeft + (at.width - side) / 2}px`,
+      top: `${at.top - box.top - button.clientTop + (at.height - side) / 2}px`,
+      width: `${side}px`,
+      height: `${side}px`,
+    });
+  }
+
+  function buttonStillBusy(button) {
+    return button.isConnected && (button.disabled || button.getAttribute("aria-busy") === "true");
+  }
+
+  function setButtonBusyRing(button, busy, editor = null) {
+    if (!button) return;
+    const entry = busyRings.get(button);
+    if (!busy) {
+      if (!entry) return;
+      busyRings.delete(button);
+      entry.observer.disconnect();
+      clearTimeout(entry.cap);
+      clearInterval(entry.editorWatch);
+      entry.ring.remove();
+      button.classList.remove("fm-busy-host");
+      return;
+    }
+    if (entry) {
+      if (!entry.ring.isConnected) button.append(entry.ring);
+      placeBusyRing(button, entry.ring);
+      return;
+    }
+    const ring = document.createElement("span");
+    ring.className = "fm-busy-ring";
+    ring.setAttribute("aria-hidden", "true");
+    if (getComputedStyle(button).position === "static") button.classList.add("fm-busy-host");
+    button.append(ring);
+    placeBusyRing(button, ring);
+    const observer = new MutationObserver(() => {
+      if (!buttonStillBusy(button)) {
+        setButtonBusyRing(button, false);
+      } else if (!ring.isConnected) {
+        button.append(ring);
+        placeBusyRing(button, ring);
+      }
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled", "aria-busy"], childList: true });
+    const cap = setTimeout(() => setButtonBusyRing(button, false), BUSY_RING_CAP_MS);
+    const editorWatch = editor ? setInterval(() => {
+      if (busyEditorText(editor) === "") setButtonBusyRing(button, false);
+    }, 400) : 0;
+    busyRings.set(button, { ring, observer, cap, editorWatch });
+  }
+
+  let busyPressEditor = null;
+
+  function busyEditorText(element) {
+    if (!element) return null;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
+    if (element.isContentEditable) return element.textContent || "";
+    return null;
+  }
+
+  function noteBusyPressEditor(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = document.activeElement;
+    busyPressEditor = button && busyEditorText(editor) ? editor : null;
+  }
+
+  function watchButtonBusy(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = busyPressEditor;
+    busyPressEditor = null;
+    if (!button || button.disabled || button.hasAttribute("data-no-busy") ||
+        button.getAttribute("role") === "switch" || button.hasAttribute("aria-haspopup")) return;
+    setTimeout(() => setTimeout(() => {
+      if (editor && busyEditorText(editor) === "") return;
+      if (buttonStillBusy(button) && !busyRings.has(button)) setButtonBusyRing(button, true, editor);
+    }, 0), 0);
+  }
+
+  document.addEventListener("pointerdown", noteBusyPressEditor, true);
+  document.addEventListener("click", watchButtonBusy, true);
+
+  function setNavWorking(nav, working) {
+    for (const icon of document.querySelectorAll(`[data-nav="${nav}"] .dashboard-nav-icon`)) {
+      icon.classList.toggle("is-working", Boolean(working));
+    }
   }
 
   // One formatter for the page: building an Intl.NumberFormat per call cost
@@ -60038,7 +60152,7 @@ Your reply
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agent-profiles": "/dashboard-page-agent-profiles.js?v=5f1b0cdbc981",
-    "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
+    "agents": "/dashboard-page-agents.js?v=a3f434dc50d9",
     "apps": "/dashboard-page-apps.js?v=9e800893389a",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
@@ -60106,6 +60220,7 @@ Your reply
     runnersEl,
     sendTextToPrompt,
     setAgentLoginStatus,
+    setNavWorking,
     setRepoTab,
     showAgentLoginModal,
     shownAccountName,

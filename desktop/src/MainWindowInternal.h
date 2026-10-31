@@ -54,6 +54,7 @@
 #include "DesignTokens.h"
 #include "NextShellHooks.h"
 #include "UiKit.h"
+#include "BusyRing.h"
 #include "VerticalIconButton.h"
 #include "VirtualMachineRuntime.h"
 
@@ -4240,6 +4241,8 @@ const QString kRailFoldersSetting = QStringLiteral("ui/railFolders");
 const QString kRailSortModeSetting = QStringLiteral("ui/railSortMode");
 const QString kRailGroupedSetting = QStringLiteral("ui/railGrouped");
 const QString kRailGroupsSetting = QStringLiteral("ui/railGroups");
+const QString kRailCollapsedGroupsSetting =
+    QStringLiteral("ui/railCollapsedGroups");
 const QString kRailOrderSetting = QStringLiteral("ui/railOrder");
 const QString kRailHiddenSetting = QStringLiteral("ui/railHidden");
 const QString kRailItemMimeType =
@@ -9007,17 +9010,18 @@ public:
             m_spinAngle = (m_spinAngle + 30) % 360;
             update();
         });
-        m_blinkTimer = new QTimer(this);
-        m_blinkTimer->setInterval(550);
-        connect(m_blinkTimer, &QTimer::timeout, this, [this] {
-            m_blinkOn = !m_blinkOn;
-            update();
-        });
         m_desktopOfflineTimer = new QTimer(this);
         m_desktopOfflineTimer->setInterval(80);
         connect(m_desktopOfflineTimer, &QTimer::timeout, this, [this] {
             m_desktopOfflineStep = (m_desktopOfflineStep + 1) % kDesktopOfflineSteps;
             update();
+        });
+        setProperty("fmBusyPaintsSelf", true);
+        m_ringTimer = new QTimer(this);
+        m_ringTimer->setInterval(busyring::kFrameMs);
+        connect(m_ringTimer, &QTimer::timeout, this, [this] {
+            if (!window()->isMinimized())
+                update();
         });
     }
 
@@ -9183,14 +9187,22 @@ public:
         if (m_blink == on)
             return;
         m_blink = on;
-        m_blinkOn = true;
-        if (m_blink && isVisible())
-            m_blinkTimer->start();
-        else
-            m_blinkTimer->stop();
+        syncRingTimer();
         update();
     }
     bool activityBlink() const { return m_blink; }
+
+    void setRailActive(bool on)
+    {
+        if (m_active == on)
+            return;
+        m_active = on;
+        syncRingTimer();
+        update();
+    }
+    bool railActive() const { return m_active; }
+    bool busy() const { return m_busy; }
+    bool ringShown() const { return m_active || m_busy || m_blink; }
 
     void setDesktopOffline(bool on)
     {
@@ -9212,21 +9224,33 @@ public:
     }
 
 protected:
+    bool event(QEvent *e) override
+    {
+        if (e->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent *>(e)->propertyName() == "fmBusy") {
+            const bool busy = property("fmBusy").toBool();
+            if (m_busy != busy) {
+                m_busy = busy;
+                syncRingTimer();
+                update();
+            }
+        }
+        return QPushButton::event(e);
+    }
     void showEvent(QShowEvent *e) override
     {
         if (m_syncing)
             m_spinTimer->start();
-        if (m_blink)
-            m_blinkTimer->start();
         if (m_desktopOffline)
             m_desktopOfflineTimer->start();
         QPushButton::showEvent(e);
+        syncRingTimer();
     }
     void hideEvent(QHideEvent *e) override
     {
         m_spinTimer->stop();
-        m_blinkTimer->stop();
         m_desktopOfflineTimer->stop();
+        m_ringTimer->stop();
         QPushButton::hideEvent(e);
     }
     void paintEvent(QPaintEvent *) override
@@ -9279,6 +9303,9 @@ protected:
         else
             p.drawPixmap(iconRect.topLeft(),
                          tintedOcticonPixmap(m_iconName, fg, iconPx));
+        if (ringShown())
+            busyring::paint(p, busyring::aroundIcon(iconRect), busyring::accent(),
+                            busyring::phase());
 
         // Commits waiting to sync: an amber "N↑" pill on the icon's left
         // shoulder, kept clear of the blue changed-files badge (or the sync
@@ -9372,17 +9399,6 @@ protected:
                              s));
         }
 
-        if (m_blink && m_blinkOn) {
-            const int d = 8;
-            const QRect lamp(iconRect.right() - 2, iconRect.bottom() - d + 1,
-                             d, d);
-            p.setPen(Qt::NoPen);
-            p.setBrush(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")));
-            p.drawEllipse(lamp.adjusted(-2, -2, 2, 2));
-            p.setBrush(QColor("#3fb950"));
-            p.drawEllipse(lamp);
-        }
-
         if (m_desktopOffline) {
             const int d = 8;
             const QRect dot(iconRect.left() - d + 2, iconRect.bottom() - d + 1,
@@ -9432,11 +9448,19 @@ private:
         state.captionAlwaysVisible = m_captionAlwaysVisible;
         state.captionVisible = captionVisible();
         state.blink = m_blink;
-        state.blinkOn = m_blinkOn;
+        state.busy = ringShown();
         state.desktopOffline = m_desktopOffline;
         state.desktopOfflineLevel = desktopOfflineLevel();
         state.iconPainter = m_iconPainter;
         return state;
+    }
+
+    void syncRingTimer()
+    {
+        if (ringShown() && isVisible())
+            m_ringTimer->start();
+        else
+            m_ringTimer->stop();
     }
 
     int railButtonWidth() const
@@ -9486,13 +9510,14 @@ private:
     bool m_badgeBeside = false;
     bool m_captionAlwaysVisible = true;
     bool m_blink = false;
-    bool m_blinkOn = true;
+    bool m_active = false;
+    bool m_busy = false;
     bool m_desktopOffline = false;
     static constexpr int kDesktopOfflineSteps = 30;
     int m_desktopOfflineStep = 0;
     QTimer *m_spinTimer = nullptr;
-    QTimer *m_blinkTimer = nullptr;
     QTimer *m_desktopOfflineTimer = nullptr;
+    QTimer *m_ringTimer = nullptr;
     int m_spinAngle = 0;
     std::function<void()> m_badgeObserver;
     std::function<void()> m_badgeOrderObserver;
@@ -9970,6 +9995,28 @@ private:
     bool m_dragInside = false;
 };
 
+inline void paintRailGroupChevron(QPainter &painter, const QPointF &center,
+                                  bool collapsed, const QColor &color)
+{
+    const qreal r = 2.5;
+    const QPolygonF chevron =
+        collapsed ? QPolygonF{center + QPointF(-r / 2, -r),
+                              center + QPointF(r / 2, 0),
+                              center + QPointF(-r / 2, r)}
+                  : QPolygonF{center + QPointF(-r, -r / 2),
+                              center + QPointF(0, r / 2),
+                              center + QPointF(r, -r / 2)};
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(color, 1.4);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawPolyline(chevron);
+    painter.restore();
+}
+
 class RailGroupSeparator : public QWidget
 {
 public:
@@ -9980,6 +10027,8 @@ public:
         setObjectName(QStringLiteral("railGroupSeparator"));
         setProperty("forkmeshRailGroupId", id);
         setAcceptDrops(custom);
+        setAttribute(Qt::WA_Hover, true);
+        setCursor(Qt::PointingHandCursor);
         setName(name);
         followRailCaptionPreference();
     }
@@ -9987,21 +10036,40 @@ public:
     QString id() const { return m_id; }
     QString name() const { return m_name; }
     bool isCustom() const { return m_custom; }
+    bool isCollapsed() const { return m_collapsed; }
     std::function<void(const QString &)> onDropKey;
+    std::function<void()> onToggle;
+    QList<QPointer<QWidget>> collapsedItems;
+
+    void setCollapsed(bool collapsed)
+    {
+        if (m_collapsed == collapsed)
+            return;
+        m_collapsed = collapsed;
+        setProperty("railGroupCollapsed", collapsed);
+        setName(m_name);
+    }
 
     void setName(const QString &name)
     {
         m_name = name;
-        setAccessibleName(QStringLiteral("%1 group").arg(name));
+        setAccessibleName(
+            QStringLiteral("%1 group, %2")
+                .arg(name, m_collapsed ? QStringLiteral("collapsed")
+                                       : QStringLiteral("expanded")));
+        const QString click = m_collapsed ? QStringLiteral("Click to show its items.")
+                                          : QStringLiteral("Click to collapse it.");
         setToolTip(m_custom
-                       ? QStringLiteral("%1\nDrop a rail icon here to add it. "
+                       ? QStringLiteral("%1\n%2 Drop a rail icon here to add it. "
                                         "Right-click to rename, move or remove.")
-                             .arg(name)
-                       : QStringLiteral("%1\nRight-click to move this group or "
-                                        "add one of your own.")
-                             .arg(name));
+                             .arg(name, click)
+                       : QStringLiteral("%1\n%2 Right-click to move this group "
+                                        "or add one of your own.")
+                             .arg(name, click));
         update();
     }
+
+    bool chevronShown() const { return m_collapsed || underMouse(); }
 
     void followRailCaptionPreference()
     {
@@ -10014,6 +10082,44 @@ public:
     }
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_pressed = true;
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        const bool clicked = m_pressed && event->button() == Qt::LeftButton &&
+                             rect().contains(event->position().toPoint());
+        m_pressed = false;
+        if (!clicked) {
+            QWidget::mouseReleaseEvent(event);
+            return;
+        }
+        event->accept();
+        if (onToggle) {
+            const auto toggle = onToggle;
+            QTimer::singleShot(0, this, [toggle] { toggle(); });
+        }
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        QWidget::enterEvent(event);
+        update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QWidget::leaveEvent(event);
+        update();
+    }
+
     void dragEnterEvent(QDragEnterEvent *event) override
     {
         if (!m_custom || !event->mimeData()->hasFormat(kRailItemMimeType))
@@ -10052,7 +10158,16 @@ protected:
         const QColor text = Theme::remapColor(QColor(dark ? "#8b949e" : "#656d76"));
         const int midY = height() / 2;
         if (!captionShown()) {
-            p.fillRect(QRect(6, midY, width() - 12, 1), line);
+            if (!m_collapsed) {
+                p.fillRect(QRect(6, midY, width() - 12, 1), line);
+                return;
+            }
+            const int gap = 6;
+            const int center = width() / 2;
+            p.fillRect(QRect(6, midY, qMax(0, center - gap - 6), 1), line);
+            p.fillRect(QRect(center + gap, midY, qMax(0, width() - 6 - center - gap), 1),
+                       line);
+            paintRailGroupChevron(p, QPointF(center, height() / 2.0), true, text);
             return;
         }
         QFont f = font();
@@ -10061,16 +10176,21 @@ protected:
         f.setCapitalization(QFont::AllUppercase);
         p.setFont(f);
         const QFontMetrics fm(f);
+        const int chevron = chevronShown() ? 9 : 0;
         const QString caption =
-            fm.elidedText(m_name, Qt::ElideRight, qMax(0, width() - 8));
+            fm.elidedText(m_name, Qt::ElideRight, qMax(0, width() - 8 - chevron));
         const int textWidth = fm.horizontalAdvance(caption);
         const int left = 4;
         p.setPen(text);
         p.drawText(QRect(left, 0, textWidth + 1, height()),
                    Qt::AlignLeft | Qt::AlignVCenter, caption);
         const int lineLeft = left + textWidth + 3;
-        if (lineLeft < width() - 4)
-            p.fillRect(QRect(lineLeft, midY, width() - 4 - lineLeft, 1), line);
+        const int lineRight = width() - 4 - chevron;
+        if (lineLeft < lineRight)
+            p.fillRect(QRect(lineLeft, midY, lineRight - lineLeft, 1), line);
+        if (chevron)
+            paintRailGroupChevron(p, QPointF(width() - 4 - chevron / 2.0, height() / 2.0),
+                                  m_collapsed, text);
     }
 
 private:
@@ -10083,6 +10203,8 @@ private:
     QString m_name;
     bool m_custom = false;
     bool m_dropping = false;
+    bool m_collapsed = false;
+    bool m_pressed = false;
 };
 
 QString whisperDir();

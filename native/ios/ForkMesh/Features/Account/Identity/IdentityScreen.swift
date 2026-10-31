@@ -174,7 +174,7 @@ struct IdentityScreen: View {
             SettingsTextField(label: "Link", text: $linkText)
             HStack(spacing: FmSpace.x2) {
                 FmOutlinedButton("Scan", icon: "qr_code_scanner_outlined", onPressed: { showScanner = true })
-                FmOutlinedButton("Check link", icon: "link", onPressed: linkText.isEmpty ? nil : { link?.review(linkText) })
+                FmOutlinedButton("Check link", icon: "link", busy: false, onPressed: linkText.isEmpty ? nil : { link?.review(linkText) })
             }
             if let model = link {
                 if let grant = model.pending {
@@ -312,7 +312,7 @@ private struct VerifyKitSheet: View {
                     SettingsNote(text: "Open a kit and type its passphrase. Nothing is installed or sent anywhere; this only proves the kit opens.")
                     FmOutlinedButton(kitText.isEmpty ? "Choose a kit" : "Kit loaded", icon: "folder_open_outlined", onPressed: { importing = true })
                     SettingsTextField(label: "Passphrase", text: $passphrase, secure: true)
-                    FmFilledButton(working ? "Checking…" : "Check kit", icon: "task_alt", fillWidth: true,
+                    FmFilledButton(working ? "Checking…" : "Check kit", icon: "task_alt", fillWidth: true, busy: working,
                                    onPressed: kitText.isEmpty || working ? nil : { Task { @MainActor in await check() } })
                     if !message.isEmpty {
                         SettingsNote(text: message, color: ok ? fm.success : fm.danger)
