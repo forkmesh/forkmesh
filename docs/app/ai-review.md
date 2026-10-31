@@ -134,7 +134,7 @@ message holds the pull request.
   it are to be ignored and reported under Security, that the model has no
   tools and cannot approve or merge, and fixes the output headings.
 - The review instructions are the same robust review prompt as the pull
-  page's "Review with your agent" box (`review_prompt.DEFAULT_TEMPLATE`), or
+  page's "Copy review prompt" button (`review_prompt.DEFAULT_TEMPLATE`), or
   the repository's `reviewPromptTemplate`. Placeholders the pull request's
   author controls (`{title}`, `{author}`, `{base}`, `{head}`) are filled with
   "see the untrusted data" in the system message; only forge-made values

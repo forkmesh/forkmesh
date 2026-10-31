@@ -53,6 +53,12 @@ Marking a file viewed is the review's unit of progress, so it answers:
 2. after 280ms the file folds, keeping its header where it was, and the view
    moves to the next file below that is not viewed yet, as the phone app does.
 
+Folding one of the last files would shorten the list below the reader, so the
+scroller would clamp and drop the page past the folded header. The fold pads
+the list with a blank tail (`data-repo-pull-diff-tail`) just tall enough to keep
+the header where it was. The tail shrinks and goes away as the reader scrolls
+back up, without moving anything on screen, and a re-render drops it.
+
 A second click inside that window wins: the fold checks a token first.
 Un-marking unfolds the file with a short fade-in and does not move. With
 `prefers-reduced-motion` nothing animates and the fold and move happen at once.

@@ -10,6 +10,7 @@ jobs:
   desktop:
     steps:
       - name: Critical Qt client contracts
+        timeout-minutes: 220
         run: |
           set -eu
           ci_tmp="$PWD/.forkmesh-ci-tmp"

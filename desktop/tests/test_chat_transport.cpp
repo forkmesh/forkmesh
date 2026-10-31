@@ -102,6 +102,12 @@ bool waitUntil(const std::function<bool()> &predicate, int timeoutMs)
     return predicate();
 }
 
+void settleSends()
+{
+    forkmesh::chatv3::ChatDevice::waitForWrites();
+    waitUntil([] { return false; }, 100);
+}
+
 class WebSocketHarness
 {
 public:
@@ -2649,6 +2655,7 @@ void testDirectRoomResealsUndeliveredMessages()
     for (const QByteArray &raw : std::as_const(harness.textFrames))
         if (RoomSeal::isKeyFrame(inner(raw)))
             nodeKey = inner(raw);
+    settleSends();
     harness.textFrames.clear();
 
     const QString direct = QStringLiteral("direct:") + QString(32, QLatin1Char('d'));
@@ -2809,6 +2816,7 @@ void testDirectRoomRatchetRecovery()
         return false;
     };
 
+    settleSends();
     harness.textFrames.clear();
     const QString sentId = node.sendChat(direct, QStringLiteral("ratchet hello"));
     check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),

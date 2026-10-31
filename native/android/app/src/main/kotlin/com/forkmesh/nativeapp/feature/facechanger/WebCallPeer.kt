@@ -20,6 +20,7 @@ import android.webkit.WebView
 import com.forkmesh.nativeapp.chat.CallQuality
 import com.forkmesh.nativeapp.chat.CallQualityEvent
 import com.forkmesh.nativeapp.chat.CallQualityHistory
+import com.forkmesh.nativeapp.chat.DirectCallConnection
 import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.DirectCallPeer
 import com.forkmesh.nativeapp.chat.DirectCallPeerFactory
@@ -50,6 +51,9 @@ class WebCallPeers(
     private val previewState = MutableStateFlow(false)
     private val routeState = MutableStateFlow("")
     private val qualityState = MutableStateFlow(CallQualityHistory())
+    private val remoteVideoState = MutableStateFlow(false)
+    private val remoteVideoSeenState = MutableStateFlow(false)
+    private val micLostState = MutableStateFlow(false)
 
     @Volatile
     private var previewPeer: WebCallPeer? = null
@@ -70,6 +74,17 @@ class WebCallPeers(
     val previewing: StateFlow<Boolean> = previewState.asStateFlow()
     val route: StateFlow<String> = routeState.asStateFlow()
     val quality: StateFlow<CallQualityHistory> = qualityState.asStateFlow()
+    val remoteVideo: StateFlow<Boolean> = remoteVideoState.asStateFlow()
+    val remoteVideoSeen: StateFlow<Boolean> = remoteVideoSeenState.asStateFlow()
+    val micLost: StateFlow<Boolean> = micLostState.asStateFlow()
+
+    fun live(): WebCallPeer? = livePeer
+
+    private fun resetCall() {
+        remoteVideoState.value = false
+        remoteVideoSeenState.value = false
+        micLostState.value = false
+    }
 
     val busy: Boolean get() = livePeer != null
 
@@ -82,12 +97,20 @@ class WebCallPeers(
             if (livePeer === made) {
                 livePeer = null
                 routeState.value = ""
+                resetCall()
             }
             if (livePeer == null && previewPeer == null) qualityState.value = CallQualityHistory()
         }
         made = peer
         qualityState.value = CallQualityHistory()
         peer.onQuality = { event -> if (livePeer === peer || previewPeer === peer) qualityState.update { it.add(event) } }
+        peer.onRemoteVideo = { on, seen ->
+            if (livePeer === peer) {
+                remoteVideoState.value = on
+                remoteVideoSeenState.value = seen
+            }
+        }
+        peer.onMic = { ok -> if (livePeer === peer) micLostState.value = !ok }
         return peer
     }
 
@@ -147,6 +170,7 @@ class WebCallPeers(
     }
 
     override fun makePeer(media: DirectCallKind, iceServers: List<String>): DirectCallPeer {
+        resetCall()
         val video = media == DirectCallKind.VIDEO
         val previewed = previewPeer
         if (previewed != null && previewMedia == media) {
@@ -158,7 +182,7 @@ class WebCallPeers(
             watchRoute(previewed)
             try {
                 previewed.dropRecording()
-                previewed.request("setup", listOf(media.wire, iceServers, "", voice()))
+                previewed.request("setup", setupArguments(media, iceServers, ""))
                 if (!video) learn(previewed, false)
             } catch (error: Exception) {
                 if (livePeer === previewed) livePeer = null
@@ -173,7 +197,7 @@ class WebCallPeers(
         watchRoute(peer)
         try {
             viewState.value = peer.load()
-            peer.request("setup", listOf(media.wire, iceServers, if (video) face() else "", voice()))
+            peer.request("setup", setupArguments(media, iceServers, if (video) face() else ""))
             learn(peer, video)
         } catch (error: Exception) {
             if (livePeer === peer) livePeer = null
@@ -181,6 +205,13 @@ class WebCallPeers(
             throw error
         }
         return peer
+    }
+
+    private fun setupArguments(media: DirectCallKind, iceServers: List<String>, face: String): List<Any?> =
+        listOf(media.wire, iceServers, face, voice(), "", "", null, SETUP_OPTIONS)
+
+    companion object {
+        val SETUP_OPTIONS = mapOf("resilient" to true, "staged" to true)
     }
 }
 
@@ -204,6 +235,13 @@ class WebCallPeer internal constructor(
     override var onIceCandidate: ((Map<String, Any?>) -> Unit)? = null
     override var onLive: (() -> Unit)? = null
     override var onClosed: (() -> Unit)? = null
+    override var onConnection: ((DirectCallConnection) -> Unit)? = null
+
+    @Volatile
+    var onRemoteVideo: ((Boolean, Boolean) -> Unit)? = null
+
+    @Volatile
+    var onMic: ((Boolean) -> Unit)? = null
 
     @Volatile
     private var webView: WebView? = null
@@ -298,6 +336,19 @@ class WebCallPeer internal constructor(
                 val quality = CallQuality.parse(message) ?: return
                 deliver { onQuality?.invoke(quality) }
             }
+            "connection" -> {
+                val state = DirectCallConnection.from(jsonText(message["state"])) ?: return
+                deliver { onConnection?.invoke(state) }
+            }
+            "remote-video" -> {
+                val on = message["on"] == true
+                val seen = message["seen"] == true
+                deliver { onRemoteVideo?.invoke(on, seen) }
+            }
+            "mic" -> {
+                val ok = message["ok"] == true
+                deliver { onMic?.invoke(ok) }
+            }
             "live" -> deliver { onLive?.invoke() }
             "closed" -> deliver { onClosed?.invoke() }
         }
@@ -354,6 +405,21 @@ class WebCallPeer internal constructor(
     override fun offer(): Map<String, Any?> = description(request("offer", emptyList()))
 
     override fun answer(offer: Map<String, Any?>): Map<String, Any?> = description(request("answer", listOf(offer)))
+
+    override fun restartOffer(): Map<String, Any?> = description(request("restart", emptyList()))
+
+    override fun resumeMedia() {
+        later("wake", emptyList())
+    }
+
+    fun setLayout(mini: Boolean) {
+        later("layout", listOf(if (mini) "mini" else "full"))
+    }
+
+    private fun later(op: String, args: List<Any?>) {
+        if (closed) return
+        callbacks.execute { if (!closed) runCatching { request(op, args) } }
+    }
 
     override fun acceptAnswer(answer: Map<String, Any?>) {
         request("accept", listOf(answer))

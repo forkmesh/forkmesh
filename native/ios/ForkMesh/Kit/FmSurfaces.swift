@@ -393,19 +393,27 @@ struct FmIconButton<Content: View>: View {
 
     private let label: String
     private let onPressed: (() -> Void)?
+    private let busy: Bool?
     private let content: Content
+    @State private var tap: FmBusyTap = FmBusyTap()
 
-    init(label: String, onPressed: (() -> Void)?, @ViewBuilder content: () -> Content) {
+    init(label: String, busy: Bool? = nil, onPressed: (() -> Void)?, @ViewBuilder content: () -> Content) {
         self.label = label
+        self.busy = busy
         self.onPressed = onPressed
         self.content = content()
     }
 
+    private var working: Bool {
+        return busy ?? tap.busy
+    }
+
     private func press() {
-        guard let onPressed = onPressed else {
+        guard let onPressed = onPressed, !working else {
             return
         }
         FmHaptics.tap(.forLabel(label, fallback: .click))
+        tap.mark()
         onPressed()
     }
 
@@ -415,8 +423,10 @@ struct FmIconButton<Content: View>: View {
                 .frame(width: 48, height: 48)
         }
         .buttonStyle(FmIconButtonStyle(highlight: fm.textPrimary.opacity(0.08)))
-        .disabled(onPressed == nil)
-        .opacity(onPressed == nil ? 0.38 : 1)
+        .disabled(onPressed == nil || working)
+        .opacity(onPressed == nil && !working ? 0.38 : 1)
+        .fmBusyRing(working, size: 36)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
         .accessibilityLabel(Text(label))
     }
 }
@@ -425,8 +435,11 @@ extension FmIconButton where Content == FmIcon {
     /// `FmIconButton(icon: Icon(Icons.refresh, size: 20), ...)`. Inside an
     /// IconButton Material draws the glyph at 24pt in the on-surface colour
     /// (textPrimary) unless the call site says otherwise.
-    init(icon: String, label: String, size: CGFloat = 24, color: Color? = nil, onPressed: (() -> Void)?) {
-        self.init(label: label, onPressed: onPressed) {
+    init(
+        icon: String, label: String, size: CGFloat = 24, color: Color? = nil, busy: Bool? = nil,
+        onPressed: (() -> Void)?
+    ) {
+        self.init(label: label, busy: busy, onPressed: onPressed) {
             FmIcon(icon, size: size, color: color, tone: .primary)
         }
     }

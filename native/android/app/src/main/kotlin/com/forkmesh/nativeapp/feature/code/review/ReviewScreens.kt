@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
 import com.forkmesh.nativeapp.ui.theme.FmType
@@ -76,6 +77,8 @@ import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.launch
+import com.forkmesh.nativeapp.collab.PullState
+import com.forkmesh.nativeapp.feature.code.collab.PullDoneCard
 
 internal class PullReviewScreen(private val repo: Repository, private val number: Int) : Screen() {
     private val session = PullReviewSession(repo.owner, repo.name, number, CodeServices.ledgerReader(), CodeServices.writer(repo))
@@ -181,7 +184,7 @@ internal fun ThreadCard(session: ReviewThreadActions, thread: ReviewThread, onCh
         for (event in thread.events) {
             if (event.body.isBlank() && event.type == "thread-state") continue
             Column {
-                Text(event.displayAuthor.take(24) + if (session.isPending(event)) " · sending" else "", style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+                Text(event.displayAuthor.take(24) + if (session.isPending(event)) " · sending" else "", style = Fm.text.labelSmall, color = Fm.colors.textTertiary, modifier = Modifier.openProfile(event.authorName))
                 if (event.body.isNotBlank()) LinkedText(event.body, RepoRef(session.owner, session.name), style = LocalTextStyle.current.copy(color = Fm.colors.textPrimary))
                 if (event.suggestionPatch.isNotEmpty()) Mono(event.suggestionPatch)
             }
@@ -381,8 +384,16 @@ internal fun PullWorkflowCards(repo: Repository, pull: PublishedPull, navigator:
             tick.bump()
         }
     }
+    val pullState = if (state == PullMergeState.Merged) PullState.Merged else PullState.of(pull)
     Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
-        InfoCard("Merge") {
+        if (pullState != PullState.Open) {
+            PullDoneCard(pull, pullState) {
+                Row(Modifier.padding(top = FmSpace.x2), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                    FmToneButton("Review files", onPressed = { navigator.push(PullReviewScreen(repo, pull.number)) }, icon = "rate_review_outlined")
+                }
+                FmInlineStatus(mergeStatus)
+            }
+        } else InfoCard("Merge") {
             FmStatusBadge(mergeStateLabel(state), toneOf(state.tone))
             Note(PullMergeRules.headline(state, pull.base))
             Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {

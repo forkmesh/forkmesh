@@ -12,6 +12,8 @@ data class PushTarget(val projectId: String, val pingId: String, val href: Strin
 
     fun notificationId(): Int = (projectId + "\n" + pingId).hashCode() and 0x7fffffff
 
+    fun cachedRow(lookup: (String) -> ForkNotification?): ForkNotification? = if (pingId.isEmpty()) null else lookup(pingId)
+
     fun rowExtra(): String? {
         val row = ping ?: return null
         val text = runCatching { Json.stringify(row.toJson()) }.getOrNull() ?: return null
@@ -37,6 +39,9 @@ data class PushTarget(val projectId: String, val pingId: String, val href: Strin
             val agent = InboxRoutes.route(ping.kind, ping.href, ping.meta, ping.repo) as? Route.Agent
             return PushTarget(projectId, ping.id, ping.href, agent?.id.orEmpty(), ping)
         }
+
+        fun fromIntent(trusted: Boolean, project: String?, ping: String?, href: String?, agent: String?, row: String?): PushTarget? =
+            if (trusted) from(project, ping, href, agent, row) else null
 
         fun from(project: String?, ping: String?, href: String?, agent: String? = null, row: String? = null): PushTarget? {
             val cleanProject = ProjectDefaults.canonicalId(project?.trim().orEmpty())

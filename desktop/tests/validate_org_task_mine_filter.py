@@ -5,8 +5,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HEADER = (ROOT / "src/MainWindow.h").read_text(encoding="utf-8")
-TASKS = (ROOT / "src/MainWindowTasks.cpp").read_text(encoding="utf-8")
+PLUGIN = ROOT.parent / "marketplace/packages/tasks/content/desktop"
+HEADER = (PLUGIN / "TasksPage.h").read_text(encoding="utf-8")
+TASKS = (PLUGIN / "TasksPage.cpp").read_text(encoding="utf-8")
 
 
 def between(source: str, start: str, end: str) -> str:
@@ -23,8 +24,8 @@ def main() -> None:
 
     builder = between(
         TASKS,
-        "QWidget *MainWindow::buildOrganizationTasksSection()",
-        "void MainWindow::requestOrganizationTasks(",
+        "QWidget *TasksPage::buildOrganizationTasksSection()",
+        "void TasksPage::requestOrganizationTasks(",
     )
     assert 'setAccessibleName(\n        QStringLiteral("Mine"))' in builder
     assert 'QStringLiteral("organizationTaskMineFilterAction")' in builder
@@ -38,15 +39,15 @@ def main() -> None:
 
     strip = between(
         TASKS,
-        "void MainWindow::rebuildOrganizationTaskPeopleStrip()",
-        "QJsonObject MainWindow::organizationTaskForRow(",
+        "void TasksPage::rebuildOrganizationTaskPeopleStrip()",
+        "QJsonObject TasksPage::organizationTaskForRow(",
     )
     assert 'QStringLiteral("organizationTaskPerson")' in strip
     assert "return left == actor;" in strip
     assert 'QStringLiteral("Everyone")' in strip
     assert 'QStringLiteral("Bot")' in strip
     assert 'QStringLiteral("Unassigned")' in strip
-    assert "chatSenderAvatarSource(QString(), name)" in strip
+    assert "accountPicture(name)" in strip
 
     matcher = between(
         TASKS,
@@ -60,8 +61,8 @@ def main() -> None:
 
     renderer = between(
         TASKS,
-        "void MainWindow::renderOrganizationTaskRows(",
-        "void MainWindow::openCreatedOrganizationTask(",
+        "void TasksPage::renderOrganizationTaskRows(",
+        "void TasksPage::openCreatedOrganizationTask(",
     )
     assert "mineOnly" in renderer
     assert "organizationTaskAssignedTo(task, m_organizationTaskActor)" in renderer
@@ -73,8 +74,8 @@ def main() -> None:
 
     payload = between(
         TASKS,
-        "void MainWindow::applyOrganizationTasks(",
-        "bool MainWindow::replaceOrganizationTask(",
+        "void TasksPage::applyOrganizationTasks(",
+        "bool TasksPage::replaceOrganizationTask(",
     )
     assert "rebuildOrganizationTaskPeopleStrip();" in payload
 

@@ -326,7 +326,7 @@ struct GlassesRadarChip: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             glasses > 0
-                ? "Glasses Alert: \(glasses == 1 ? "smart glasses" : "\(glasses) smart glasses") nearby, \(count) devices heard"
+                ? "Glasses Alert: \(glasses == 1 ? "smart glasses or a camera" : "\(glasses) smart glasses or cameras") nearby, \(count) devices heard"
                 : "Glasses Alert scanning, \(count == 1 ? "1 device" : "\(count) devices") heard")
         .accessibilityHint("Opens Glasses Alert")
         .accessibilityAddTraits(.isButton)

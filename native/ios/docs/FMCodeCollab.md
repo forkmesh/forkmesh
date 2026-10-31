@@ -20,16 +20,36 @@ native/android `collab/*.kt`.
   the error), never a crash. Extra inits `(repo:issue:)`, `(repo:pull:)`, `(repo:discussion:)`
   for callers already holding the record (no loading state); `(repo:pull:)` still reads the full
   record behind it, because the list rows carry no `changes.patch` or `commits.mbox`.
-- The pull request page, top to bottom: the header (status chips, head → base branch labels,
-  author and age, description), the changed files card (up to eight rows and "Review changes",
-  which pushes `PullChangesScreen`), the phone merge card (including `Merge & delete`, which merges
-  exact pinned commits and deletes the head branch in the same merge transaction), the review card (Approve, Request
-  changes and Comment as `FmToneButton`s, plus the thread subscription), the desktop requests
-  ("On the desktop": only the requests that fit the pull's state, `PullShipCommands.offered`,
-  as short tone chips with the full label as the accessibility label), the timeline and the
-  federated replies. Pull to refresh re-reads the record; a merge from the phone refreshes it too.
-  The buttons are the compact tone chips of the agent session's "On the desktop" card
-  (`AgentChipRow` + `FmToneButton`).
+- The pull request page follows GitHub's order, top to bottom: the header (the Open / Merged /
+  Closed pill from `PullState`, `#N`, the "Ann wants to merge 3 commits into main from fix/a"
+  line from `PullState.summary`, head → base branch labels), the changed files card (up to eight
+  rows and "Review changes", which pushes `PullChangesScreen`), the Conversation card (the
+  description as the opening comment, then `PullTimeline.events`), the federated replies, the
+  merge card, the review card and the desktop requests ("On the desktop": only the requests that
+  fit the pull's state, `PullShipCommands.offered`, as short tone chips with the full label as
+  the accessibility label). Pull to refresh re-reads the record; a merge from the phone
+  refreshes it too. The buttons are the compact tone chips of the agent session's "On the
+  desktop" card (`AgentChipRow` + `FmToneButton`).
+- The merge card of an open pull holds `Merge pull request` and `Merge & delete` (exact pinned
+  commits; `Merge & delete` deletes the head branch in the same merge transaction). A merged
+  pull shows "Pull request successfully merged and closed" there instead, and a closed one
+  "Closed with unmerged commits" (`PullDoneCard`), so nothing on the page suggests the pull can
+  still be merged. The review card then keeps only Comment and the thread subscription:
+  `PullState.reviewable` is false once a pull is merged or closed.
+- The timeline gets a "Merged" entry for a merged pull (`PullTimeline.mergedEvent`), built from
+  `pull.md`'s `status`, `mergedAt` and `mergedBy`, placed by time among the events (signed events
+  carry seconds or milliseconds, `PullTimeline.epochMs`), or last when `mergedAt` is missing. A
+  mesh merge (`server/merge.go`) writes no `mergedBy`, so that entry names no one.
+- `NewPullSheet(repo:head:)` is the GitHub compare form: Base and Compare branch menus (from
+  `branches`), a live comparison on the mirror (`compare`: commit count and the changed files
+  card), Title (filled from the branch name when empty) and Description. "Paste a patch
+  instead" keeps the old pasted-diff form for this repository. When the repository has saved
+  forks on other instances (`remote-forks`, `docs/app/remote-forks.md`), a **Send to** menu
+  lists them: the pull is then signed for the target's owner and name, its head is
+  `<this host>/<owner>/<repo>:<branch>`, and it is posted straight to the target's
+  `/api/repo/<owner>/<repo>/pulls` with no session (`InboxService.openRemotePull`), the same
+  request the website's Send to makes. Model: `NewPullModel` and `PullCompose` in
+  `FMCode/Collab/PullCompose.swift`.
 - `PullChangesScreen(repo:pull:files:commits:scope:)`: the pull's own patch in
   `DiffReviewStream` (viewed state per file is kept under `owner/name/pull/<n>`), with a Commits
   tab when the pull carries a `commits.mbox`; each commit opens `PatchCommitScreen`. An open
@@ -87,7 +107,7 @@ native/android `collab/*.kt`.
   row: `meta` = number, author, age, comment count and patch `diffStat`; `branches`, `snippet`,
   latest `review` verdict), `PullDetail`,
   `PullShipCommands`, `DesktopCommand`, `PullTimeline`, `PullReview`, `PullMerge`,
-  `NewPullComposer`, `DiscussionCard`, `DiscussionDetail`, `NewDiscussionComposer`,
+  `NewPullComposer`, `PullState`, `PullCompose`, `NewPullModel`, `DiscussionCard`, `DiscussionDetail`, `NewDiscussionComposer`,
   `FederatedThread` (`canOpenBacklink`: https, host, no user info), `NewIssueComposer`,
   `BranchDiff`, `DiffFileListLogic`, `DiffFileRowText`. Free functions: `issueMatchesFilters`,
   `issueFilterValues/Options`, `normalizeIssueFilters`, `formatUsd`, `issueStatusText`,

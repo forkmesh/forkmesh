@@ -182,8 +182,15 @@ def test_mirrors_action_badge_uses_the_live_membership_list():
     # must agree with the list rendered in the Mirrors panel.
     assert "const mirrorCount = mirrors.length;" in loader
     assert "data.summary?.mirrors" not in loader
-    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount });" in loader
+    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });" in loader
     assert 'setRepoTabCount("mirrors", mirrorCount);' in loader
+
+    counts = DASHBOARD_JS[
+        DASHBOARD_JS.index("function updateRepoLiveCounts(")
+        : DASHBOARD_JS.index("function repoCount(repo, keys)")
+    ]
+    assert "repoMirrorLoadedKey === repoKey(repo).toLowerCase()" in counts
+    assert 'if (key === "mirrors" && mirrorsListed) return;' in counts
 
 
 def test_mirrors_tab_drops_the_reading_column_width_cap():

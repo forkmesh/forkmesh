@@ -9,4 +9,4 @@ The package is discovered exclusively through `marketplace/catalog.json`.
 Removing that catalog entry removes its staged dashboard page and navigation.
 
 On the desktop, Notes opens in its own window and answers the top search box
-(`desktop/src/MainWindowNotes.cpp`, `desktop/src/MainWindowSearch.cpp`).
+(`content/desktop/NotesPage.cpp`, built as its own module, `notes.so`).

@@ -52,7 +52,11 @@ def test_replayed_self_messages_are_rendered_after_refresh():
             source.index("function renderChatEntry("):
             source.index("async function verifyAdminDelete(")
         ]
-        assert 'entry.senderId === selfId ? "self" : kind' in render_entry
+        assert re.search(
+            r'entry\.senderId === selfId(?: \|\| isOwnViewOnceEntry\(entry\))?\s*'
+            r'\?\s*"self"\s*:\s*kind',
+            render_entry,
+        )
 
 
 def test_dashboard_history_starts_at_five_and_reveals_viewport_sized_batches():

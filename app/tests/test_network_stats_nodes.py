@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """network_stats headline "Nodes" count contract (adhoc #93).
 
-The dashboard Network panel showed a "Nodes" figure (stats.hosts) that came from
-a raw COUNT of host_presence rows, while the node *list* it sits above came from
-stats.onlineNodes. Those disagreed: a raw row count double-counts a node hosting
-several repos and inflates the total with ad-hoc/private tunnels that have no
-public catalog record and are never named. The count must equal the number of
-DISTINCT, publicly known nodes that are online — the same set as onlineNodes — so
-the Network panel agrees with the Mirror nodes list on who is live.
+The headline "Nodes" figure (stats.hosts) must equal the number of DISTINCT,
+publicly known nodes that are online, the same set as stats.onlineNodes, so the
+Network panel agrees with the Mirror nodes list on who is live. A node seen
+through both its signed HTTPS endpoint and its account heartbeat counts once.
+The retired host_presence table is never read.
 """
 
 import ast
@@ -37,35 +35,29 @@ def _load(*names, extra_globals=None):
 
 
 NOW = 1_000_000_000_000
-STALE_MS = 90_000  # HOST_PRESENCE_STALE_MS stand-in for the test
+STALE_MS = 90_000
 
 
-def _run(host_rows):
+def _run(endpoint_nodes, account_nodes):
     """Exercise the real network_stats + _live_online_nodes over stubbed D1 rows.
 
-    host_rows: list of (repo_bi, owner_bi, is_private, owner_name) describing the
-    fresh host_presence rows joined to repositories. owner_name=None models an
-    ad-hoc tunnel with no public catalog record (LEFT JOIN misses -> owner_bi None,
-    data None), which must not be counted or named.
+    endpoint_nodes: (node_bi, name) of healthy signed HTTPS endpoints.
+    account_nodes: (name_bi, name) of fresh account heartbeats.
     """
+    queries = []
+
     async def d1_all(env, sql, *args):
-        if "host_presence hp" in sql:
-            rows = []
-            for repo_bi, owner_bi, is_private, owner in host_rows:
-                rows.append({
-                    "repo_bi": repo_bi,
-                    "owner_bi": owner_bi if owner is not None else None,
-                    "is_private": is_private,
-                    "data": {
-                        "owner": owner,
-                        "name": "repo",
-                        "visibility": "private" if is_private else "public",
-                    } if owner is not None else None,
-                })
-            return rows
-        return []  # account_presence query -> none online via account presence
+        queries.append(sql)
+        if "FROM mirror_https_endpoints" in sql:
+            return [{"node_bi": key, "name": name}
+                    for key, name in endpoint_nodes]
+        if "FROM account_presence" in sql:
+            return [{"name_bi": key, "name": name, "data": None}
+                    for key, name in account_nodes]
+        return []
 
     async def d1_first(env, sql, *args):
+        queries.append(sql)
         return {}
 
     async def noop(*a, **k):
@@ -86,14 +78,12 @@ def _run(host_rows):
             "REPOSITORIES_COUNT_MEMO_MAX_AGE_MS": 600_000,
             "_CATALOG_REV_PROBE": {"ts": 0, "rev": None},
             "CATALOG_REV_PROBE_TTL_MS": 10_000,
-            "HOST_PRESENCE_STALE_MS": STALE_MS,
             "ONLINE_SAMPLE_WINDOW_MS": STALE_MS,
             "MAX_NODE_NAME": 64,
             "LAMPORTS_PER_SOL": 1_000_000_000,
             "NETWORK_STATS_CACHE_KEY": "k",
             "NETWORK_STATS_TTL": 20,
             "ensure_schema": noop,
-            "notify_stale_hosts_offline": noop,
             "d1_run": noop,
             "d1_all": d1_all,
             "d1_first": d1_first,
@@ -108,7 +98,7 @@ def _run(host_rows):
         },
     )
     asyncio.run(g["network_stats"](None))
-    return captured
+    return captured, queries
 
 
 async def _identity(data):
@@ -119,32 +109,24 @@ async def _const(value):
     return value
 
 
-def test_hosts_counts_distinct_online_nodes_not_tunnels():
-    # newnewnode hosts two repos (two presence rows), plus one distinct mirror.
-    out = _run([
-        ("bi:newnewnode/a", "bi:newnewnode", 0, "newnewnode"),
-        ("bi:newnewnode/b", "bi:newnewnode", 0, "newnewnode"),
-        ("bi:vm1/a", "bi:vm1", 0, "vm1"),
-    ])
+def test_hosts_counts_distinct_online_nodes_not_sources():
+    out, _queries = _run(
+        [("bi:newnewnode", "newnewnode"), ("bi:vm1", "vm1")],
+        [("bi:newnewnode", "newnewnode")],
+    )
     assert sorted(out["onlineNodes"]) == ["newnewnode", "vm1"]
-    # Two distinct nodes -> 2, even though there are three host_presence rows.
     assert out["hosts"] == 2
     assert out["hosts"] == len(out["onlineNodes"])
 
 
-def test_adhoc_and_private_tunnels_are_not_counted_or_named():
-    # A public mirror, an ad-hoc tunnel (no catalog record), and a private repo.
-    out = _run([
-        ("bi:newnewnode/a", "bi:newnewnode", 0, "newnewnode"),
-        ("bi:adhoc/x", None, 0, None),          # no public catalog record
-        ("bi:secret/y", "bi:secret", 1, "secret"),  # private repo
-    ])
-    assert out["onlineNodes"] == ["newnewnode"]
+def test_network_stats_never_reads_the_retired_host_presence_table():
+    out, queries = _run([("bi:vm1", "vm1")], [])
     assert out["hosts"] == 1
-    assert out["hosts"] == len(out["onlineNodes"])
+    assert queries
+    assert not any("host_presence" in sql for sql in queries)
 
 
 if __name__ == "__main__":
-    test_hosts_counts_distinct_online_nodes_not_tunnels()
-    test_adhoc_and_private_tunnels_are_not_counted_or_named()
+    test_hosts_counts_distinct_online_nodes_not_sources()
+    test_network_stats_never_reads_the_retired_host_presence_table()
     print("ok")

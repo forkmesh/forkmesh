@@ -11,6 +11,11 @@ SHARED = ROOT / "desktop" / "src" / "MainWindowShared.cpp"
 
 FAKE_CMAKE = """#!/usr/bin/env bash
 echo "fake cmake $*"
+if [ "$1" = "-B" ]; then
+    mkdir -p build
+    : > build/CMakeCache.txt
+    : > build/build.ninja
+fi
 if [ "$1" = "--build" ]; then
     if [ -n "${FAKE_CMAKE_FAIL:-}" ]; then
         echo "MainWindow.cpp:12:3: error: expected ';' before '}' token"
@@ -118,3 +123,105 @@ def test_wording_matches_the_desktop_rebuild_and_restart_log():
     assert '"build pass 1: $1 parallel jobs, HEAD $head"' in run_sh
     for status in ("Configuring...", "Rebuilding..."):
         assert f'"{status}"' in setup and f'fm_status "{status}"' in run_sh
+
+
+def test_second_run_skips_the_configure_step(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    assert _run(repo, env).returncode == 0
+    result = _run(repo, env)
+    assert result.returncode == 0, result.stderr
+    assert "launched-fake-forkmesh" in result.stdout
+    assert "$ cmake -B build" not in result.stdout
+    assert "==> Configuring..." not in result.stdout
+    assert re.search(r"^==> Built in \S+ \(build \S+\)$", result.stdout, re.M)
+    assert "build tree already configured; skipping the configure step" in result.stderr
+
+
+def test_a_cache_rewritten_elsewhere_configures_again(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    assert _run(repo, env).returncode == 0
+    cache = repo / "desktop" / "build" / "CMakeCache.txt"
+    later = cache.stat().st_mtime + 10
+    os.utime(cache, (later, later))
+    result = _run(repo, env)
+    assert result.returncode == 0, result.stderr
+    assert "$ cmake -B build" in result.stdout
+
+
+def test_changed_configure_arguments_configure_again(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    assert _run(repo, env).returncode == 0
+    stamp = repo / "desktop" / "build" / "run-sh-configure.args"
+    stamp.write_text(stamp.read_text().replace("-DFORKMESH_BUILD_TESTS=OFF", "-DFORKMESH_BUILD_TESTS=ON"))
+    os.utime(stamp, (stamp.stat().st_mtime + 10,) * 2)
+    result = _run(repo, env)
+    assert result.returncode == 0, result.stderr
+    assert "$ cmake -B build" in result.stdout
+
+
+def test_launch_starts_the_last_build_without_building(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    missing = _run(repo, env, "launch")
+    assert missing.returncode == 1
+    assert "!! Nothing is built in" in missing.stderr
+    assert _run(repo, env).returncode == 0
+    result = _run(repo, env, "launch")
+    assert result.returncode == 0, result.stderr
+    assert "launched-fake-forkmesh" in result.stdout
+    assert "fake cmake" not in result.stdout
+    assert "==> Built in" not in result.stdout
+    assert not (repo / "desktop" / "build" / ".run-sh.lock").exists()
+
+
+def test_the_build_lock_is_released_after_each_mode(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    lock = repo / "desktop" / "build" / ".run-sh.lock"
+    for mode in ("run", "rebuild", "launch", "clean"):
+        result = _run(repo, env, mode)
+        assert result.returncode == 0, (mode, result.stderr)
+        assert not lock.exists(), mode
+    assert not (repo / "desktop" / "build").exists()
+
+
+def test_a_running_build_makes_the_next_one_wait(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    lock = repo / "desktop" / "build" / ".run-sh.lock"
+    lock.mkdir(parents=True)
+    holder = subprocess.Popen(["sleep", "30"])
+    try:
+        (lock / "pid").write_text(f"{holder.pid}\n")
+        waiting = subprocess.Popen(
+            ["bash", str(repo / "desktop" / "run.sh")],
+            cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            waiting.wait(timeout=3)
+            raise AssertionError("run.sh did not wait for the running build")
+        except subprocess.TimeoutExpired:
+            pass
+        assert not (repo / "desktop" / "build" / "forkmesh").exists()
+        holder.kill()
+        holder.wait()
+        out, err = waiting.communicate(timeout=30)
+    finally:
+        holder.kill()
+    assert waiting.returncode == 0, err
+    assert "==> Waiting for the build already running in" in err
+    assert f"(pid {holder.pid})" in err
+    assert "removing the stale build lock" in err
+    assert "launched-fake-forkmesh" in out
+    assert not lock.exists()
+
+
+def test_a_lock_left_by_a_dead_build_is_taken_over(tmp_path):
+    repo, env = _sandbox(tmp_path)
+    lock = repo / "desktop" / "build" / ".run-sh.lock"
+    lock.mkdir(parents=True)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    (lock / "pid").write_text(f"{dead.pid}\n")
+    result = _run(repo, env)
+    assert result.returncode == 0, result.stderr
+    assert "Waiting for the build" not in result.stderr
+    assert "launched-fake-forkmesh" in result.stdout
+    assert not lock.exists()

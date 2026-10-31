@@ -16,6 +16,7 @@
 #include <QPalette>
 #include <QTimer>
 #include <QToolTip>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
@@ -75,6 +76,98 @@ QString trendText(double percent)
 }
 
 using forkmesh::resizedFont;
+
+struct NextLook {
+    bool on = false;
+    bool edges = false;
+    QColor surface;
+    QColor hover;
+    QColor border;
+    QColor borderStrong;
+    QColor fg;
+    QColor muted;
+    QColor subtle;
+    QColor accent;
+    QColor accentSubtle;
+    QColor success;
+    QColor warning;
+    QColor danger;
+};
+
+NextLook nextLook(const QWidget *widget)
+{
+    NextLook look;
+    const QVariantMap map = widget->property("nextColors").toMap();
+    if (map.isEmpty())
+        return look;
+    const auto pick = [&map](const char *key) {
+        return map.value(QLatin1String(key)).value<QColor>();
+    };
+    look.on = true;
+    look.edges = map.value(QStringLiteral("edges")).toBool();
+    look.surface = pick("surface");
+    look.hover = pick("surfaceRaised");
+    look.border = pick("border");
+    look.borderStrong = pick("borderStrong");
+    look.fg = pick("fg");
+    look.muted = pick("fgMuted");
+    look.subtle = pick("fgSubtle");
+    look.accent = pick("accent");
+    look.accentSubtle = pick("accentSubtle");
+    look.success = pick("success");
+    look.warning = pick("warning");
+    look.danger = pick("danger");
+    return look;
+}
+
+bool nextOn(const QWidget *widget)
+{
+    return !widget->property("nextColors").toMap().isEmpty();
+}
+
+QColor statusColor(StatsTileStatus status, const NextLook &look)
+{
+    if (!look.on)
+        return statusColor(status);
+    switch (status) {
+    case StatsTileStatus::Good:
+        return look.success;
+    case StatsTileStatus::Warning:
+        return look.warning;
+    case StatsTileStatus::Critical:
+        return look.danger;
+    case StatsTileStatus::None:
+        break;
+    }
+    return QColor();
+}
+
+int insetX(const QWidget *widget)
+{
+    return nextOn(widget) ? 16 : kInsetX;
+}
+
+int insetY(const QWidget *widget)
+{
+    return nextOn(widget) ? 12 : kInsetY;
+}
+
+QFont pixelFont(const QFont &base, int px, QFont::Weight weight = QFont::Normal)
+{
+    QFont font = base;
+    font.setPixelSize(px);
+    font.setWeight(weight);
+    return font;
+}
+
+QFont valueFontFor(const QWidget *widget, bool single)
+{
+    if (nextOn(widget))
+        return pixelFont(widget->font(), single ? 22 : 28, QFont::DemiBold);
+    QFont font = resizedFont(widget->font(), single ? 7.0 : 13.0);
+    font.setWeight(QFont::DemiBold);
+    return font;
+}
 
 int clampSpan(int span)
 {
@@ -281,7 +374,9 @@ double StatsDashboard::updateFade(const QString &id, qint64 now) const
 
 QRect StatsDashboard::updateDotRect(const Tile &tile) const
 {
-    const QRect inner = tile.rect.adjusted(kInsetX, kInsetY, -kInsetX, -kInsetY);
+    const int ix = insetX(this);
+    const int iy = insetY(this);
+    const QRect inner = tile.rect.adjusted(ix, iy, -ix, -iy);
     return QRect(inner.right() - kUpdateDot + 1, inner.top() + (16 - kUpdateDot) / 2,
                  kUpdateDot, kUpdateDot);
 }
@@ -650,7 +745,8 @@ void StatsDashboard::relayout(int width)
                           tile.cell.height() * side + (tile.cell.height() - 1) * kGap);
         bottom = qMax(bottom, tile.rect.bottom() + 1);
 
-        const QRect inner = tile.rect.adjusted(kInsetX, kInsetY, -kInsetX, -kInsetY);
+        const QRect inner = tile.rect.adjusted(insetX(this), insetY(this),
+                                               -insetX(this), -insetY(this));
         tile.removeButton = QRect(inner.right() - kControlSize + 1, inner.top(),
                                   kControlSize, kControlSize);
         tile.sizeButton = tile.removeButton.translated(-kControlSize - kControlGap, 0);
@@ -660,11 +756,12 @@ void StatsDashboard::relayout(int width)
         if (hasSeries) {
             // Title, value and note stack at the top; the chart takes the
             // full width below them, whatever the tile's span.
-            const QFont valueFont = resizedFont(font(), single ? 7.0 : 13.0);
+            const QFont valueFont = valueFontFor(this, single);
             const int textBottom =
                 inner.top() + 18 + QFontMetrics(valueFont).height() + 18;
-            tile.plot = QRect(inner.left(), textBottom + 4, inner.width(),
-                              inner.bottom() - textBottom - 4);
+            const int plotGap = nextOn(this) ? 10 : 4;
+            tile.plot = QRect(inner.left(), textBottom + plotGap, inner.width(),
+                              inner.bottom() - textBottom - plotGap);
             if (tile.plot.height() < 18 || tile.plot.width() < 24)
                 tile.plot = QRect();
         }
@@ -720,6 +817,9 @@ bool StatsDashboard::darkSurface() const
 
 QColor StatsDashboard::accentColor() const
 {
+    const NextLook look = nextLook(this);
+    if (look.on && look.accent.isValid())
+        return look.accent;
     // Dataviz reference palette, categorical slot 1, stepped per surface.
     return QColor(darkSurface() ? QStringLiteral("#3987e5")
                                 : QStringLiteral("#2a78d6"));
@@ -727,6 +827,9 @@ QColor StatsDashboard::accentColor() const
 
 QColor StatsDashboard::mutedColor() const
 {
+    const NextLook look = nextLook(this);
+    if (look.on && look.muted.isValid())
+        return look.muted;
     return palette().color(QPalette::PlaceholderText);
 }
 
@@ -756,6 +859,16 @@ void StatsDashboard::paintEvent(QPaintEvent *event)
             continue;
         if (m_dragging && tile.placement.id == m_pressedTile) {
             dragged = i;
+            const NextLook look = nextLook(this);
+            if (look.on) {
+                QColor edge = look.accent;
+                edge.setAlpha(150);
+                painter.setPen(QPen(edge, 1));
+                painter.setBrush(look.accentSubtle);
+                painter.drawRoundedRect(QRectF(tile.rect).adjusted(0.5, 0.5, -0.5, -0.5),
+                                        12, 12);
+                continue;
+            }
             // The slot the tile will land in.
             QColor outline = accentColor();
             outline.setAlpha(160);
@@ -784,6 +897,28 @@ void StatsDashboard::paintEvent(QPaintEvent *event)
 
 void StatsDashboard::paintEmptyState(QPainter &painter) const
 {
+    const NextLook look = nextLook(this);
+    if (look.on) {
+        const QRectF box = QRectF(0, 0, width(), qMin(256, height())).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.setPen(QPen(look.borderStrong, 1, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(box, 12, 12);
+        const QFont heading = pixelFont(font(), 14, QFont::Medium);
+        const QFont hint = pixelFont(font(), 12);
+        const int headingHeight = QFontMetrics(heading).height();
+        const int hintHeight = QFontMetrics(hint).height();
+        const int top = int(box.center().y()) - (headingHeight + 4 + hintHeight) / 2;
+        painter.setFont(heading);
+        painter.setPen(look.fg);
+        painter.drawText(QRect(0, top, width(), headingHeight), Qt::AlignCenter,
+                         QStringLiteral("No tiles on the board"));
+        painter.setFont(hint);
+        painter.setPen(look.muted);
+        painter.drawText(QRect(0, top + headingHeight + 4, width(), hintHeight),
+                         Qt::AlignCenter,
+                         QStringLiteral("Use Add tile, or Reset to bring the default set back."));
+        return;
+    }
     painter.setPen(mutedColor());
     painter.setFont(font());
     painter.drawText(rect(), Qt::AlignCenter | Qt::TextWordWrap,
@@ -796,23 +931,48 @@ void StatsDashboard::paintTile(QPainter &painter, const Tile &tile,
                                bool hovered, bool ghost) const
 {
     const QPalette colors = palette();
+    const NextLook look = nextLook(this);
     QColor border = colors.color(QPalette::Mid);
     border.setAlpha(hovered || ghost ? 220 : 140);
-    if (ghost) {
+    if (look.on) {
+        const QColor status = statusColor(tile.data.status, look);
+        QColor edge = ghost ? look.borderStrong : look.border;
+        if (status.isValid()) {
+            edge = status;
+            edge.setAlpha(hovered || ghost ? 170 : 110);
+        }
+        const QRectF outline = QRectF(tile.rect).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.setPen(QPen(edge, 1));
+        painter.setBrush(hovered || ghost ? look.hover : look.surface);
+        painter.drawRoundedRect(outline, 12, 12);
+        if (status.isValid() && look.edges) {
+            QPainterPath shape;
+            shape.addRoundedRect(outline, 12, 12);
+            painter.save();
+            painter.setClipPath(shape);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(status);
+            painter.drawRect(QRect(tile.rect.left(), tile.rect.top(), kStatusEdge - 1,
+                                   tile.rect.height()));
+            painter.restore();
+        }
+    } else if (ghost) {
         QColor shadow(0, 0, 0, darkSurface() ? 120 : 50);
         painter.setPen(Qt::NoPen);
         painter.setBrush(shadow);
         painter.drawRoundedRect(QRectF(tile.rect).translated(0, 4).adjusted(2, 2, -2, -2),
                                 kRadius, kRadius);
     }
-    const QColor status = statusColor(tile.data.status);
+    const QColor status = look.on ? QColor() : statusColor(tile.data.status);
     if (status.isValid())
         border = QColor(status.red(), status.green(), status.blue(),
                         hovered || ghost ? 230 : 150);
     const QRectF outline = QRectF(tile.rect).adjusted(0.5, 0.5, -0.5, -0.5);
-    painter.setPen(QPen(border, 1));
-    painter.setBrush(colors.color(QPalette::Base));
-    painter.drawRoundedRect(outline, kRadius, kRadius);
+    if (!look.on) {
+        painter.setPen(QPen(border, 1));
+        painter.setBrush(colors.color(QPalette::Base));
+        painter.drawRoundedRect(outline, kRadius, kRadius);
+    }
     if (status.isValid()) {
         // A faint wash of the status colour and a solid edge down the left.
         QPainterPath shape;
@@ -830,14 +990,15 @@ void StatsDashboard::paintTile(QPainter &painter, const Tile &tile,
         painter.restore();
     }
 
-    const QRect inner = tile.rect.adjusted(kInsetX, kInsetY, -kInsetX, -kInsetY);
+    const QRect inner = tile.rect.adjusted(insetX(this), insetY(this), -insetX(this),
+                                           -insetY(this));
     const bool single = tile.cell.width() == 1 && tile.cell.height() == 1;
     const StatsTileCatalogEntry *entry = catalogEntry(tile.placement.id);
     const QString title = entry ? entry->title : tile.placement.id;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const double fade = hovered || ghost ? 0.0 : updateFade(tile.placement.id, now);
 
-    const QFont labelFont = resizedFont(font(), -1.0);
+    const QFont labelFont = look.on ? pixelFont(font(), 12) : resizedFont(font(), -1.0);
     const int controlsWidth = hovered ? 2 * kControlSize + kControlGap + 6
                                       : (fade > 0 ? kUpdateDot + 6 : 0);
     painter.setFont(labelFont);
@@ -847,10 +1008,12 @@ void StatsDashboard::paintTile(QPainter &painter, const Tile &tile,
                      QFontMetrics(labelFont).elidedText(title, Qt::ElideRight,
                                                         labelRect.width()));
 
-    QFont valueFont = resizedFont(font(), single ? 7.0 : 13.0);
-    valueFont.setWeight(QFont::DemiBold);
+    const QFont valueFont = valueFontFor(this, single);
     painter.setFont(valueFont);
-    painter.setPen(colors.color(QPalette::Text));
+    if (look.on)
+        painter.setPen(tile.data.available ? look.fg : look.subtle);
+    else
+        painter.setPen(colors.color(QPalette::Text));
     const int valueHeight = QFontMetrics(valueFont).height();
     const QRect valueRect(inner.left(), inner.top() + 18, inner.width(), valueHeight);
     const QString value = tile.data.available ? tile.data.value
@@ -882,9 +1045,11 @@ void StatsDashboard::paintTile(QPainter &painter, const Tile &tile,
             QColor tone = mutedColor();
             const bool up = percent > 0;
             if (tile.data.trend == StatsTrendPolarity::UpIsGood)
-                tone = statusColor(up ? StatsTileStatus::Good : StatsTileStatus::Critical);
+                tone = statusColor(up ? StatsTileStatus::Good : StatsTileStatus::Critical,
+                                   look);
             else if (tile.data.trend == StatsTrendPolarity::DownIsGood)
-                tone = statusColor(up ? StatsTileStatus::Critical : StatsTileStatus::Good);
+                tone = statusColor(up ? StatsTileStatus::Critical : StatsTileStatus::Good,
+                                   look);
             const QRect chipRect(left, top, chipWidth, chipHeight);
             QColor fill = tone;
             fill.setAlpha(darkSurface() ? 46 : 30);
@@ -923,7 +1088,7 @@ void StatsDashboard::paintTile(QPainter &painter, const Tile &tile,
     }
 
     painter.setFont(labelFont);
-    painter.setPen(mutedColor());
+    painter.setPen(look.on ? look.subtle : mutedColor());
     const QString note = tile.data.available ? tile.data.note
                                              : QStringLiteral("No data yet");
     const QRect noteRect(inner.left(), valueRect.bottom() + 2, inner.width() - noteReserve, 16);
@@ -945,10 +1110,13 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
         return;
     const bool labelled = tile.plot.height() >= 60;
     const QRect area = labelled ? tile.plot.adjusted(0, 12, 0, -14) : tile.plot;
+    const NextLook look = nextLook(this);
     const QColor accent = accentColor();
-    const QColor surface = palette().color(QPalette::Base);
+    const QColor surface = look.on ? (hoverPoint >= 0 ? look.hover : look.surface)
+                                   : palette().color(QPalette::Base);
     QColor muted = mutedColor();
-    const QFont tickFont = resizedFont(font(), -2.0);
+    const QColor tickInk = look.on ? look.subtle : muted;
+    const QFont tickFont = look.on ? pixelFont(font(), 10) : resizedFont(font(), -2.0);
     const QFontMetrics tickMetrics(tickFont);
     double maximum = 0;
     int maxIndex = 0;
@@ -964,11 +1132,11 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
         // Recessive baseline and the peak value, so the scale is readable.
         QColor grid = muted;
         grid.setAlpha(70);
-        painter.setPen(QPen(grid, 1));
+        painter.setPen(QPen(look.on ? look.border : grid, 1));
         painter.drawLine(QPointF(area.left(), area.bottom() + 0.5),
                          QPointF(area.right(), area.bottom() + 0.5));
         painter.setFont(tickFont);
-        painter.setPen(muted);
+        painter.setPen(tickInk);
         painter.drawText(QRect(tile.plot.left(), tile.plot.top(), tile.plot.width(), 12),
                          Qt::AlignLeft | Qt::AlignVCenter,
                          QStringLiteral("peak %1").arg(compactNumber(maximum)));
@@ -986,7 +1154,8 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
             if (bar.height() < 1.5 && series.values.at(i) > 0)
                 bar.setTop(bar.bottom() - 1.5);
             painter.setPen(Qt::NoPen);
-            const QColor tone = statusColor(series.tones.value(i, StatsTileStatus::None));
+            const QColor tone =
+                statusColor(series.tones.value(i, StatsTileStatus::None), look);
             QColor fill = tone.isValid() ? tone : accent;
             if (hoverPoint >= 0 && hoverPoint != i)
                 fill.setAlpha(150);
@@ -1006,7 +1175,7 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
                 const QString label = series.labels.value(i);
                 if (!label.isEmpty() && tickMetrics.horizontalAdvance(label) <= slot - 2) {
                     painter.setFont(tickFont);
-                    painter.setPen(muted);
+                    painter.setPen(tickInk);
                     painter.drawText(QRectF(top.x() - slot / 2.0, area.bottom() + 2,
                                             slot, 12),
                                      Qt::AlignHCenter | Qt::AlignVCenter, label);
@@ -1021,7 +1190,7 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
     QPainterPath line(tile.points.first());
     for (int i = 1; i < tile.points.size(); ++i)
         line.lineTo(tile.points.at(i));
-    if (tile.points.size() >= 2) {
+    if (tile.points.size() >= 2 && !look.on) {
         QPainterPath fill = line;
         fill.lineTo(tile.points.last().x(), area.bottom());
         fill.lineTo(tile.points.first().x(), area.bottom());
@@ -1033,17 +1202,20 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
         painter.drawPath(fill);
     }
     muted.setAlpha(190);
-    painter.setPen(QPen(muted, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    if (look.on)
+        painter.setPen(QPen(accent, 1.75, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    else
+        painter.setPen(QPen(muted, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
     painter.drawPath(line);
     painter.setPen(Qt::NoPen);
-    const QColor latest = statusColor(tile.data.status);
+    const QColor latest = statusColor(tile.data.status, look);
     painter.setBrush(latest.isValid() ? latest : accent);
     painter.drawEllipse(tile.points.last(), 3.0, 3.0);
 
     if (labelled) {
         painter.setFont(tickFont);
-        painter.setPen(mutedColor());
+        painter.setPen(tickInk);
         const QRect ticks(area.left(), area.bottom() + 2, area.width(), 12);
         painter.drawText(ticks, Qt::AlignLeft | Qt::AlignVCenter, series.labels.value(0));
         painter.drawText(ticks, Qt::AlignRight | Qt::AlignVCenter,
@@ -1071,16 +1243,19 @@ void StatsDashboard::paintSeries(QPainter &painter, const Tile &tile,
 
 void StatsDashboard::paintControls(QPainter &painter, const Tile &tile) const
 {
-    QColor ink = mutedColor();
-    const QColor surface = palette().color(QPalette::Button);
+    const NextLook look = nextLook(this);
+    QColor ink = look.on ? look.subtle : mutedColor();
+    const QColor surface = look.on ? look.surface : palette().color(QPalette::Button);
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
     for (const QRect &button : {tile.sizeButton, tile.removeButton}) {
-        painter.setPen(Qt::NoPen);
+        painter.setPen(look.on ? QPen(look.border, 1) : QPen(Qt::NoPen));
         painter.setBrush(surface);
-        painter.drawRoundedRect(button, 4, 4);
+        painter.drawRoundedRect(look.on ? QRectF(button).adjusted(0.5, 0.5, -0.5, -0.5)
+                                        : QRectF(button),
+                                4, 4);
     }
-    painter.setPen(QPen(ink, 1.4, Qt::SolidLine, Qt::RoundCap));
+    painter.setPen(QPen(ink, look.on ? 1.2 : 1.4, Qt::SolidLine, Qt::RoundCap));
     painter.setBrush(Qt::NoBrush);
     // Size: a 2 × 2 of small squares.
     const QRect s = tile.sizeButton.adjusted(5, 5, -5, -5);
@@ -1260,6 +1435,11 @@ void StatsDashboard::leaveEvent(QEvent *event)
 
 bool StatsDashboard::event(QEvent *event)
 {
+    if (event->type() == QEvent::DynamicPropertyChange &&
+        static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() == "nextColors") {
+        relayout(width());
+        update();
+    }
     if (event->type() == QEvent::ToolTip) {
         auto *help = static_cast<QHelpEvent *>(event);
         const QPoint pos = help->pos();

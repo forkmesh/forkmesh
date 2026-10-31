@@ -41,6 +41,17 @@ final class KeychainBackend: ThrowingSecureBackend, @unchecked Sendable {
         }
     }
 
+    static func isLockedUntilFirstUnlock() -> Bool {
+        let lookup: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: KeychainStore.defaultService,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var found: CFTypeRef?
+        return SecItemCopyMatching(lookup as CFDictionary, &found) == errSecInteractionNotAllowed
+    }
+
     private func query(_ key: String?) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

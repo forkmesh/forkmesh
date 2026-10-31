@@ -115,7 +115,10 @@ does not also need an `email`, because the dashboard writes a missing email
 back as `""`, and requiring one left the home stuck on "Loading prompt...".
 When the dashboard has booted (`forkmesh:composer-host`) and the dock still
 does not mount (a node session, an iframe), the slot is hidden rather than
-left showing its placeholder.
+left showing its placeholder. `dashboard.js` loads first and can finish booting
+before `dashboard-composer.js` has added its listener, so the boot also sets
+`<html data-composer-host="1">` and the composer, on load, treats that flag as
+the event it missed (the home spec "hides the prompt slot" failed on this).
 
 `installErrorActions()` adds Copy and Send to prompt buttons to every
 dashboard error element; `showErrorNotice()` replaces `window.alert()`. The

@@ -24,11 +24,15 @@ def _load(names, extra_globals):
     return namespace
 
 
-def _admin_namespace(records, admins):
+def _admin_namespace(records, admins, revoked=()):
     async def blind_index(_env, value):
         return "bi:" + value
 
-    async def d1_first(_env, sql, name_bi):
+    async def d1_first(_env, sql, name_bi, *args):
+        if "FROM account_devices" in sql:
+            if (name_bi, *args) in set(revoked):
+                return {"enabled": 0, "revoked_at": 1}
+            return None
         assert sql == "SELECT is_admin FROM users WHERE user_bi=?"
         name = name_bi[len("bi:"):]
         return {"is_admin": 1 if name in admins else 0}
@@ -41,7 +45,8 @@ def _admin_namespace(records, admins):
         return pubkey == "admin-key" and sig == "good"
 
     return _load(
-        {"_is_admin_flag", "_is_admin", "_admin_authorized"},
+        {"_is_admin_flag", "_is_admin", "_admin_authorized",
+         "_account_key_revoked"},
         {
             "blind_index": blind_index,
             "d1_first": d1_first,
@@ -95,6 +100,15 @@ def test_signed_admin_requests_need_an_enrolled_authenticator():
     assert unenrolled is None
     assert member is None
     assert bad_sig is None
+
+
+
+def test_signed_admin_requests_refuse_a_revoked_device_key():
+    ns = _admin_namespace(
+        _records(), {"enrolled"}, revoked=[("bi:enrolled", "admin-key")])
+    authorized = asyncio.run(
+        ns["_admin_authorized"](None, "enrolled", "now", "good", b"x"))
+    assert authorized is None
 
 
 def test_otpauth_uri_names_forkmesh_and_the_account():

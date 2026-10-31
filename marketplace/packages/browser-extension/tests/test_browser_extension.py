@@ -745,3 +745,38 @@ def test_the_refresh_panel_plans_and_runs_against_the_marketing_worker():
         env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
     assert "checks passed" in result.stdout
+
+
+def test_a_repository_page_shows_its_details_and_mirrors_from_the_popup():
+    repo_background = (EXTENSION / "repo.js").read_text(encoding="utf-8")
+    repo_popup = (EXTENSION / "popup-repo.js").read_text(encoding="utf-8")
+    assert 'importScripts("repo.js");' in BACKGROUND
+    assert "self.ForkMeshRepoBackground.install({ api, settings, handlers: HANDLERS });" in BACKGROUND
+    assert 'for (const type of ["fm-repo-info", "fm-repo-mirror", "fm-repo-open"]) POPUP_ONLY.add(type);' in BACKGROUND
+    assert '<script src="popup-repo.js"></script>' in POPUP_HTML
+    assert "data-repo-mirror" in POPUP_HTML and "ForkMeshRepoPopup.render(" in POPUP
+    assert 'credentials: "omit"' in repo_background
+    assert '"/api/repository-imports", "POST", { sourceUrl: page.canonicalUrl, mode: "import" }' in repo_background
+    assert "providerToken" not in repo_background
+    assert "fetch(" not in repo_popup and "chrome.storage" not in repo_popup
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_repository_card_agrees_with_the_import_service():
+    sys.path.insert(0, str(REPO / "app" / "src"))
+    try:
+        import repository_imports
+    finally:
+        sys.path.pop(0)
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "background_repo_harness.js")],
+        capture_output=True, text=True, timeout=120, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
+    line = next(row for row in result.stdout.splitlines() if row.startswith("RESULT "))
+    found = json.loads(line[len("RESULT "):])
+    for key, value in found["ids"].items():
+        provider, external = key.split(":")
+        assert value == repository_imports.external_repository_id(provider, external)
+    for url in found["canonical"]:
+        assert repository_imports.parse_provider_source(url)["canonicalUrl"] == url

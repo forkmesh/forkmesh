@@ -4,6 +4,7 @@
 import ast
 import asyncio
 import base64
+import json
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -29,6 +30,7 @@ FUNCS = {
     "_accept_issue_submission",
     "_queue_issue_actions",
     "_queued_issue_inbox_event",
+    "_issue_event_signature_stored",
     "_bind_session_author",
     "_inbox_author_over_quota",
     "_best_effort_inbox_side_effect",
@@ -69,7 +71,8 @@ class _Request:
 SIGNER_KEY = "MXcj4dF_" + "A" * 35
 
 
-def _issue_handler_namespace(inserted, wakes, queued_rows=(), session=""):
+def _issue_handler_namespace(inserted, wakes, queued_rows=(), session="",
+                             stored_events=()):
 
     class _Date:
         @staticmethod
@@ -152,7 +155,20 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=(), session=""):
         assert allow_unverified is True
         return ("bi:" + session, {"name": session}) if session else ("", None)
 
+    async def repo_gateway_json(_env, owner, repo, action_query):
+        assert (owner, repo) == ("source", "forkmesh")
+        assert action_query.startswith("blobs?path=")
+        return {"blobs": {".forkmesh/issues/7/issue.json": json.dumps(
+            {"number": 7, "events": list(stored_events)})}}
+
     ns = _load_functions({
+        "_forkbot_repo_gateway_json": repo_gateway_json,
+        "_forkbot_issue_json_candidates": lambda number: [
+            ".forkmesh/issues/%d/issue.json" % number],
+        "_forkbot_blob_text": lambda blob: blob or "",
+        "json": json,
+        "ISSUE_REPLAY_CHECKED_EVENT_TYPES": frozenset(
+            {"comment", "edit", "vote"}),
         "_repo_feature_off": feature_on,
         "Date": _Date,
         "json_response": json_response,
@@ -312,6 +328,55 @@ def test_the_signed_in_account_names_a_web_key_comment():
     assert response == {"status": 201, "data": {"ok": True, "number": 7}}
     assert inserted[0][1]["event"]["authorName"] == "carol"
     assert inserted[0][1]["event"]["authorVerified"] is True
+
+
+def _stored_edit(sig="sig-edit", target="comment-1"):
+    return {"type": "edit", "id": "edit-1", "author": "web-author",
+            "target": target, "body": "old text", "sig": sig}
+
+
+def test_a_replayed_edit_with_a_new_id_and_target_is_not_queued():
+    inserted = []
+    ns = _issue_handler_namespace(
+        inserted, [], stored_events=[_stored_edit()])
+    replay = dict(_stored_edit(), id="edit-again", target="comment-2")
+    response = asyncio.run(ns["issues_handler"](
+        object(), _Request({"number": 7, "event": replay}),
+        "source", "forkmesh"))
+
+    assert response == {"status": 200, "data": {
+        "ok": True, "number": 7, "alreadyApplied": True}}
+    assert inserted == []
+
+
+def test_a_replayed_comment_or_vote_is_not_queued_twice():
+    for event in (
+            {"type": "comment", "id": "c-1", "author": "web-author",
+             "body": "hi", "sig": "sig-comment"},
+            {"type": "vote", "id": "v-1", "author": "web-author",
+             "sig": "sig-vote"}):
+        inserted = []
+        ns = _issue_handler_namespace(inserted, [], stored_events=[event])
+        replay = dict(event, id="fresh-id")
+        response = asyncio.run(ns["issues_handler"](
+            object(), _Request({"number": 7, "event": replay}),
+            "source", "forkmesh"))
+        assert response["data"].get("alreadyApplied") is True
+        assert inserted == []
+
+
+def test_a_comment_with_a_signature_not_in_the_issue_is_queued():
+    inserted = []
+    ns = _issue_handler_namespace(
+        inserted, [], stored_events=[_stored_edit()])
+    body = {"number": 7, "event": {
+        "type": "comment", "author": "web-author", "body": "new",
+        "sig": "sig-new"}}
+    response = asyncio.run(
+        ns["issues_handler"](object(), _Request(body), "source", "forkmesh"))
+
+    assert response == {"status": 201, "data": {"ok": True, "number": 7}}
+    assert len(inserted) == 1
 
 
 def test_a_key_bound_to_another_account_than_the_session_is_refused():

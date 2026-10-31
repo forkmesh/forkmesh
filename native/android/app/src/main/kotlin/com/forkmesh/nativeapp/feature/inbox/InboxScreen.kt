@@ -66,6 +66,12 @@ import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
+import com.forkmesh.nativeapp.feature.account.projects.ProjectIcon
+import com.forkmesh.nativeapp.inbox.InboxSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.platform.testTag
 
 class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
     override val extendsUnderTabBar: Boolean get() = true
@@ -224,6 +230,8 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
 private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, onDelete: () -> Unit, onPrompt: () -> Unit, onMarkRead: () -> Unit) {
     val c = Fm.colors
     var menu by remember { mutableStateOf(false) }
+    val activeProject = Services.get<ProjectsService>()?.active?.collectAsState()?.value
+    val instance = if (item.source == InboxSource.Local) null else activeProject
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
         if (value == SwipeToDismissBoxValue.EndToStart) {
             FmSoundCues.play(SoundCue.DELETE)
@@ -256,11 +264,17 @@ private fun SwipeRow(item: InboxItem, onShow: () -> Unit, onOpen: () -> Unit, on
                             append(if (item.unread) "Unread. " else "Read. ")
                             append("${item.kindLabel}. ${item.title}")
                             if (item.repo.isNotEmpty()) append(", ${item.repo}")
+                            if (instance != null) append(". From ${instance.label}")
                         }
                     },
                 verticalAlignment = Alignment.Top,
             ) {
-                FmIcon(item.icon, size = 22.dp, tint = if (item.unread) c.accent else c.textTertiary)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+                    FmIcon(item.icon, size = 22.dp, tint = if (item.unread) c.accent else c.textTertiary)
+                    if (instance != null) {
+                        Box(Modifier.testTag("inbox-row-instance-logo")) { ProjectIcon(instance, size = 16.dp) }
+                    }
+                }
                 Spacer(Modifier.width(FmSpace.x3))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -31,8 +31,10 @@
                 "avatar": "herald",
                 "description": "Keeps the ForkMesh X account's next post ready: reads which past posts got views, likes, replies and reposts, the open campaigns and marketing plan, and what just shipped, then writes one post with an image and leaves it on the X channel page in the Marketing package, where anyone on the team can copy it or post it from a phone in one tap. Never posts itself.",
                 "focus": "Always Have the Next Post Ready",
-                "improvementCycles": 3,
+                "improvementCycles": 5,
                 "improvementNotes": [
+                    "When `$FORKMESH_AGENT_SCRATCH` is empty, check `~/projects/forkmesh/data/core/state/herald-scratch-*` first and make a new dated folder there, instead of searching around. A package's `preview/market.webp` is already 16:9 and makes a quick first-party image for a Market post.",
+                    "Before choosing a server-side angle, check the newest autodeploy log in `~/projects/forkmesh/logs/fleet/autodeploy/` against the code on main. It proves \"live\" without needing approval for git or for opening forkmesh.com pages.",
                     "When a mention only confirms or holds the current ready post, check its id, age and image with one `marketing_x_context` call and stop. Don't redo the evidence read.",
                     "Check the App Store lookup and the posted history together before choosing a release angle. The store showed 1.4.1 was already announced, which ruled out a fourth phone post in a row and saved a draft.",
                     "For a release post, first check what is actually live (the App Store status check plus Apple's public lookup API by app id), because the docs alone said 1.4.x was rejected while the store had already approved it; and ask up front for approval to open the landing page and run read-only git."
@@ -95,6 +97,6 @@
             "y": 0
         }
     ],
-    "updatedAtMs": 1792070824045,
+    "updatedAtMs": 1793391478683,
     "version": 1
 }

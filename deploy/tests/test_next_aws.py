@@ -437,14 +437,15 @@ def test_ingress_rules_mirror_the_rendered_nftables(tmp_path):
             tcp = {int(p) for p in line.split("{")[1].split("}")[0].split(",")}
         if line.startswith("udp dport {"):
             udp = line.split("{")[1].split("}")[0].replace(" ", "").split(",")
-    assert {(r[1]) for r in rules if r[0] == "tcp"} == tcp
+    assert {(r[1]) for r in rules if r[0] == "tcp"} == tcp | {22}
     singles = {int(p) for p in udp if "-" not in p}
     ranges = {tuple(int(x) for x in p.split("-")) for p in udp if "-" in p}
     assert {r[1] for r in rules if r[0] == "udp" and r[1] == r[2]} == singles
     assert {(r[1], r[2]) for r in rules if r[0] == "udp" and r[1] != r[2]} == ranges
     assert wg_port in singles
-    assert next_aws.ingress_rules("runner") == {("tcp", 22, 22, "0.0.0.0/0")}
-    assert ("tcp", 22, 22, "203.0.113.0/24") in next_aws.ingress_rules(
+    assert next_aws.ingress_rules("runner") == {("tcp", 22, 22, "0.0.0.0/0"),
+                                                ("tcp", 822, 822, "0.0.0.0/0")}
+    assert ("tcp", 822, 822, "203.0.113.0/24") in next_aws.ingress_rules(
         "runner", ssh_sources=["203.0.113.7/24"])
     with pytest.raises(ToolError):
         next_aws.ingress_rules("runner", ssh_sources=["::/0"])
@@ -492,8 +493,9 @@ def test_create_executes_key_group_and_instance_then_records_aws(tmp_path, sandb
     assert group["GroupName"] == "fmnext-runner"
     assert group["TagSpecification.1.Tag.1.Key"] == "forkmesh-next"
     ingress = fake.mutations()[2][2]
-    assert ingress["IpPermissions.1.FromPort"] == "22"
-    assert "IpPermissions.2.IpProtocol" not in ingress
+    assert {ingress["IpPermissions.1.FromPort"],
+            ingress["IpPermissions.2.FromPort"]} == {"22", "822"}
+    assert "IpPermissions.3.IpProtocol" not in ingress
     run = fake.mutations()[3][2]
     assert run["NetworkInterface.1.SecurityGroupId.1"] == "sg-0aaaabbbbccccdddd"
     assert run["MetadataOptions.HttpTokens"] == "required"

@@ -55,6 +55,11 @@ def commit(repo, files, message):
     return git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True)
+def no_tmp_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(tmp_path / "no-labels"))
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "src"
@@ -392,6 +397,57 @@ def test_a_run_requeued_after_a_desktop_restart_follows_its_new_workspace(repo, 
     assert [run["workspace"] for run in auto.running_runs(tmp_path / "actions")] == [second]
 
 
+def tmp_disk(tmp_path, monkeypatch, target=None):
+    labels, device = tmp_path / "labels", tmp_path / "dev" / "sdz1"
+    labels.mkdir()
+    device.parent.mkdir()
+    device.write_text("")
+    (labels / "TMP").symlink_to(device)
+    mount = target or tmp_path / "media" / "TMP"
+    mount.mkdir(parents=True)
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/root / ext4 rw 0 0\n%s %s ext4 rw 0 0\n" % (
+        device, str(mount).replace(" ", "\\040")))
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(labels))
+    monkeypatch.setattr(auto, "TMP_DISK_MOUNTS", str(mounts))
+    return mount
+
+
+def test_tmp_disk_mount_matches_the_labelled_device_and_unescapes_spaces(tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch, tmp_path / "media" / "T M P")
+    assert auto.tmp_disk_mount() == mount
+    assert auto.sandbox_dirs(tmp_path / "actions") == [
+        tmp_path / "actions" / "sandbox", mount / "ForkMesh" / "actions" / "sandbox"]
+
+
+def test_no_tmp_disk_leaves_only_the_data_sandbox(tmp_path):
+    assert auto.tmp_disk_mount() is None
+    assert auto.sandbox_dirs(tmp_path / "actions") == [tmp_path / "actions" / "sandbox"]
+
+
+def test_a_tmp_disk_that_is_labelled_but_not_mounted_is_ignored(tmp_path, monkeypatch):
+    tmp_disk(tmp_path, monkeypatch)
+    (tmp_path / "mounts").write_text("/dev/root / ext4 rw 0 0\n")
+    assert auto.tmp_disk_mount() is None
+
+
+def test_a_run_whose_sandbox_is_on_the_tmp_disk_is_deployed(repo, tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch)
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    head = commit(repo, {"app/a.py": "tmp disk\n"}, "tmp disk")
+    legacy = make_run(tmp_path / "actions", 7903, head)
+    fast = (mount / "ForkMesh" / "actions" / "sandbox" / "forkmesh-run-7903-1790000099999"
+            / "workspace")
+    fast.mkdir(parents=True)
+    agent.tick()
+    assert agent.attached[7903] is not None
+    settle(agent, clock)
+    assert calls == [(head, "auto")]
+    assert result_line(fast).startswith(auto.RESULT_MARK + " ok deployed ")
+    assert not (legacy / auto.SINK_NAME).exists()
+
+
 def test_paused_or_disarmed_agent_answers_without_deploying(repo, tmp_path):
     clock, calls = Clock(), []
     agent = agent_for(repo, tmp_path, clock, calls, armed=False)
@@ -699,9 +755,59 @@ def test_a_failing_go_test_fails_the_gate_with_its_output(tmp_path, monkeypatch)
     lines = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted", "FAIL"]
     monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
         "server": (1, auto.failing_go_ids("server", lines), lines)})
+    again = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted again",
+             "FAIL"]
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        1, auto.failing_go_ids(module, again), again))
     with pytest.raises(auto.ToolError, match="server::TestAgentWork"):
         pipeline.test_gate("target", "base")
-    assert "key folder accepted" in "\n".join(log.lines)
+    assert "key folder accepted again" in "\n".join(log.lines)
+
+
+def test_a_go_test_that_only_fails_under_load_passes_when_rerun_alone(tmp_path, monkeypatch):
+    log = auto.Log(echo=False)
+    pipeline = auto.Pipeline(tmp_path, log, state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    monkeypatch.setattr(pipeline, "archive", lambda commit, work: None)
+    monkeypatch.setattr(pipeline, "venv", lambda src: tmp_path / "venv")
+    monkeypatch.setattr(pipeline, "prestage", lambda work, venv: None)
+    monkeypatch.setattr(pipeline, "test_files", lambda src: [])
+    lines = ["--- FAIL: TestCoreDeath (6.97s)", "    --- FAIL: TestCoreDeath/silent (3.56s)",
+             "        call_test.go:161: audio came back after 543ms, target 500 ms", "FAIL"]
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
+        "server": (1, auto.failing_go_ids("server", lines), lines)})
+    reruns = []
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        reruns.append((module, sorted(failures))) or (0, set(), ["ok"])))
+    pipeline.test_gate("target", None)
+    assert reruns == [("server", ["server::TestCoreDeath", "server::TestCoreDeath/silent"])]
+    assert "passed when rerun alone" in "\n".join(log.lines)
+
+
+def test_a_go_rerun_runs_only_the_failed_top_level_tests_one_package_at_a_time(tmp_path,
+                                                                               monkeypatch):
+    root = tmp_path / "goroot"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "go").write_text("")
+    monkeypatch.setattr(auto.shutil, "which",
+                        lambda name: str(root / "bin" / "go") if name == "go" else "/usr/bin/" + name)
+    seen = []
+
+    def fake_stream(command, say, **_kwargs):
+        seen.append(command)
+        say("--- FAIL: TestMultipath (1.0s)")
+        return 1
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    code, failures, _lines = pipeline.go_rerun(
+        tmp_path / "work", tmp_path / "venv", "server",
+        {"server::TestMultipath/blackhole", "server::TestMultipath", "server::TestCoreDeath"})
+    assert (code, failures) == (1, {"server::TestMultipath"})
+    assert seen[0][-10:] == [str(root.resolve() / "bin" / "go"), "test", "-C", "server",
+                             "-count=1", "-p", "1", "-run", "^(TestCoreDeath|TestMultipath)$",
+                             "./..."]
+    assert "--unshare-all" in seen[0]
 
 
 def test_go_tests_run_offline_in_the_sandbox_with_the_host_toolchain(tmp_path, monkeypatch):
@@ -1476,7 +1582,7 @@ def test_gate_one_names_the_fleet_branch_main_is_missing(repo, monkeypatch):
     def silent(hosts, **kwargs):
         raise GuardError("n2 did not answer /api/version (HTTP 0); the fleet must be "
                          "healthy before a deploy")
-    monkeypatch.setattr(auto, "live_revs", silent)
+    monkeypatch.setattr(auto, "live_fleet", silent)
     target = git(repo, "rev-parse", "main")
     with pytest.raises(GuardError, match=r"n2 did not answer .*fleet/remove-core-n2 not "
                                          r"merged into main"):
@@ -1484,3 +1590,258 @@ def test_gate_one_names_the_fleet_branch_main_is_missing(repo, monkeypatch):
     git(repo, "branch", "-m", "fleet/remove-core-n2", "fleet/remove-core-n9")
     with pytest.raises(GuardError, match=r"healthy before a deploy$"):
         pipeline._execute(target, target[:12], None, {})
+
+
+def answering(down=(), errors=(), rev="abc1234", revs=None):
+    def run(command, **kwargs):
+        if command[0] != "curl":
+            return subprocess.run(command, **kwargs)
+        target = command[command.index("--resolve") + 1]
+        ip = target.rsplit(":", 1)[1]
+        if ip in down:
+            return subprocess.CompletedProcess(command, 7, "\n000", "")
+        if ip in errors:
+            return subprocess.CompletedProcess(command, 0, "bad\n503", "")
+        body = json.dumps({"rev": (revs or {}).get(ip, rev)})
+        return subprocess.CompletedProcess(command, 0, body + "\n200", "")
+    return run
+
+
+def test_gate_one_skips_a_core_that_stays_silent_when_a_majority_answers():
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+    said = []
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.11",)),
+                                    say=said.append, sleep=sleep, clock=lambda: now[0],
+                                    dns={})
+    assert revs == {"n2": "abc1234", "n3": "abc1234"}
+    assert skipped == {"n1": "no answer to /api/version for 5 min"}
+    assert now[0] >= auto.UNREACHABLE_WAIT_SECONDS, "a blip is asked again first"
+
+
+def test_gate_one_skips_a_drained_core_without_waiting_for_it():
+    dns = {"n1": {"in_dns": True}, "n2": {"in_dns": False, "held": True},
+           "n3": {"in_dns": True}}
+    slept = []
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.12",)),
+                                    sleep=slept.append, clock=lambda: 0.0, dns=dns)
+    assert revs == {"n1": "abc1234", "n3": "abc1234"}
+    assert skipped == {"n2": "held out of DNS"}
+    assert slept == [auto.CURL_RETRY_SECONDS] * (auto.CURL_ATTEMPTS - 1)
+    dns["n2"] = {"in_dns": False}
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(), sleep=slept.append,
+                                    clock=lambda: 0.0, dns=dns)
+    assert skipped == {"n2": "out of DNS"} and "n2" not in revs
+
+
+def test_gate_one_never_skips_below_two_healthy_cores():
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+    dns = {"n2": {"in_dns": False, "held": True}}
+    with pytest.raises(GuardError, match=r"only 1 of 3 cores are healthy .* needs 2"):
+        auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.11",)),
+                        sleep=sleep, clock=lambda: now[0], dns=dns)
+
+
+def test_gate_one_still_fails_on_an_error_from_a_core_in_dns():
+    with pytest.raises(GuardError, match=r"n1 did not answer /api/version \(HTTP 503\)"):
+        auto.live_fleet(offline_hosts(), run=answering(errors=("203.0.113.11",)),
+                        sleep=lambda s: None, clock=lambda: 0.0, dns={})
+    revs, skipped = auto.live_fleet(
+        offline_hosts(), run=answering(errors=("203.0.113.11",)), sleep=lambda s: None,
+        clock=lambda: 0.0, dns={"n1": {"in_dns": False}})
+    assert skipped == {"n1": "out of DNS"}
+
+
+def skip_repo(repo, supported=True):
+    base = git(repo, "rev-parse", "HEAD")
+    text = 'SKIP_ENV = "FMNEXT_DEPLOY_SKIP"\n' if supported else "old = 1\n"
+    target = commit(repo, {"app/a.py": "b\n", "tools/next_deploy.py": text}, "change")
+    return base, target
+
+
+def skip_pipeline(repo, tmp_path, monkeypatch, live, skipped):
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"),
+                             skip_tests=True)
+    calls = {"tool": [], "verify": []}
+    monkeypatch.setattr(auto, "live_fleet", lambda hosts, **kwargs: (dict(live),
+                                                                     dict(skipped)))
+    monkeypatch.setattr(pipeline, "worktree", lambda target: tmp_path / "wt")
+    monkeypatch.setattr(pipeline, "tool", lambda worktree, lock, args, timeout: calls[
+        "tool"].append((args, pipeline.skip_env)))
+    monkeypatch.setattr(auto, "verify", lambda hosts, rev, say, **kwargs: calls[
+        "verify"].append([n["name"] for n in hosts["nodes"]]) or True)
+    return pipeline, calls
+
+
+def test_a_deploy_with_a_core_down_ships_to_the_others_and_names_it(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch, {"n1": base[:12]},
+                                    {"n2": "no answer to /api/version for 5 min"})
+    result = pipeline._execute(target, target[:12], _RollLock(),
+                               {"roll": [], "rev": target[:12], "target": target})
+    assert result["ok"] and result["skipped"] == {
+        "n2": "no answer to /api/version for 5 min"}
+    assert result["deployedNodes"] == ["n1"]
+    assert "skipped n2 (no answer" in result["message"]
+    assert [args[0] for args, _env in calls["tool"]] == ["build", "upload", "migrate",
+                                                         "restart"]
+    assert {env for _args, env in calls["tool"]} == {"n2"}
+    assert calls["verify"] == [["n1"]]
+    notifier = FakeNotifier()
+    result["nodesOk"] = True
+    state = auto.record_outcome(result, notifier, print, state_dir=tmp_path / "state")
+    assert state["behind"]["nodes"] == ["n2"] and state["behind"]["roll"] == []
+    assert notifier.sent[-1][1] == "deploy-skipped:%s" % target[:12]
+
+
+def test_a_deploy_without_skips_tells_next_deploy_to_skip_nothing(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch,
+                                    {"n1": base[:12], "n2": base[:12]}, {})
+    result = pipeline._execute(target, target[:12], _RollLock(), {"roll": []})
+    assert result["ok"] and result["skipped"] == {}
+    assert {env for _args, env in calls["tool"]} == {""}
+    auto.save_state({"behind": {"nodes": ["n2"], "roll": []}}, tmp_path / "state")
+    state = auto.record_outcome(dict(result, nodesOk=True), None, print,
+                                state_dir=tmp_path / "state")
+    assert "behind" not in state
+
+
+def test_a_skip_is_refused_when_the_target_next_deploy_cannot_skip(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo, supported=False)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch, {"n1": base[:12]},
+                                    {"n2": "held out of DNS"})
+    with pytest.raises(GuardError, match="cannot skip a core"):
+        pipeline._execute(target, target[:12], _RollLock(), {"roll": []})
+    assert calls["tool"] == []
+
+
+def test_a_roll_with_a_skipped_core_rolls_the_others_and_remembers_it(
+        tmp_path, monkeypatch):
+    pipeline, commands = _roll_pipeline(tmp_path, monkeypatch, 0)
+    monkeypatch.setattr(pipeline, "_execute", lambda target, rev, lock, result: dict(
+        result, ok=True, deployed=True, roll=["deploy/core/ids.py"], message="deployed",
+        skipped={"n2": "held out of DNS"}, deployedNodes=["n1", "n3"]))
+    result = pipeline.execute("f" * 40)
+    assert commands[0][0] == [sys.executable, "tools/next_fleet.py", "roll", "n1", "n3",
+                              "--execute"]
+    assert result["rolledNodes"] == ["n1", "n3"]
+    state = auto.record_outcome(result, FakeNotifier(), print,
+                                state_dir=tmp_path / "state")
+    assert state["behind"] == dict(state["behind"], nodes=["n2"], roll=["n2"])
+    later = dict(result, skipped={}, rolled=False, rolledNodes=[], roll=[])
+    state = auto.record_outcome(later, None, print, state_dir=tmp_path / "state")
+    assert state["behind"]["nodes"] == [] and state["behind"]["roll"] == ["n2"], (
+        "a later deploy that reached n2 does not give it the missed roll")
+
+
+def catch_up_setup(repo, tmp_path, monkeypatch, node_rev, behind, held=False,
+                   roll_code=0):
+    base = git(repo, "rev-parse", "HEAD")
+    target = commit(repo, {"app/a.py": "c\n"}, "deployed")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "armed").write_text("")
+    auto.save_state({"behind": behind}, state_dir)
+    revs = {"203.0.113.11": target[:12],
+            "203.0.113.12": {"base": base[:12], "target": target[:12]}.get(node_rev,
+                                                                          node_rev)}
+    calls = []
+
+    class CatchUpPipeline(auto.Pipeline):
+        def worktree(self, commit_):
+            calls.append(("worktree", commit_))
+            return tmp_path / "wt"
+
+        def tool(self, worktree, lock, args, timeout):
+            calls.append(tuple(args))
+
+    def fake_stream(command, say, **kwargs):
+        calls.append(tuple(command[1:]))
+        return roll_code
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    monkeypatch.setattr(auto.common, "DeployLock", lambda what: _RollLock())
+    monkeypatch.setattr(auto, "verify", lambda hosts, rev, say, **kwargs: calls.append(
+        ("verify", [n["name"] for n in hosts["nodes"]], rev)) or True)
+    monkeypatch.setenv("FMNEXT_DIST_DIR", str(tmp_path / "dist"))
+    dns = {"n2": {"in_dns": False, "held": held}}
+    notifier = FakeNotifier()
+    outcome = auto.catch_up(repo, auto.Log(echo=False), state_dir=state_dir,
+                            notifier=notifier, pipeline_class=CatchUpPipeline,
+                            run=answering(revs=revs), dns=dns)
+    return target, calls, outcome, auto.load_state(state_dir), notifier
+
+
+def test_a_skipped_core_that_returns_is_brought_to_what_the_others_run(
+        repo, tmp_path, monkeypatch):
+    target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "base", {"nodes": ["n2"], "roll": ["n2"]})
+    rev = target[:12]
+    assert outcome["released"] == ["n2"] and outcome["rolled"] == ["n2"]
+    assert calls == [("worktree", target), ("build", "--execute"),
+                     ("upload", "n2", "--rev", rev, "--execute"),
+                     ("restart", "n2", "--rev", rev, "--execute"),
+                     ("tools/next_fleet.py", "roll", "n2", "--execute"),
+                     ("verify", ["n2"], rev)]
+    assert "behind" not in state
+    assert notifier.sent == [("n2 caught up", "core-caught-up:n2:%s" % rev, False)]
+
+
+def test_a_returned_core_already_on_the_release_only_gets_its_roll(
+        repo, tmp_path, monkeypatch):
+    target, calls, outcome, state, _ = catch_up_setup(
+        repo, tmp_path, monkeypatch, "target", {"nodes": [], "roll": ["n2"]})
+    assert [c[0] for c in calls] == ["worktree", "tools/next_fleet.py", "verify"]
+    assert "behind" not in state
+
+
+def test_a_held_core_is_left_alone_until_it_is_released(repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "base", {"nodes": ["n2"], "roll": []}, held=True)
+    assert calls == [] and outcome["released"] == []
+    assert state["behind"]["nodes"] == ["n2"] and notifier.sent == []
+
+
+def test_a_core_ahead_of_the_others_is_not_rolled_back(repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "fedcba987654", {"nodes": ["n2"], "roll": []})
+    assert calls == [] and "catch it up by hand" in outcome["errors"]["n2"]
+    assert state["behind"]["nodes"] == ["n2"]
+    assert notifier.sent == [("n2 cannot catch up", "core-catch-up-failed:n2", True)]
+
+
+def test_a_failed_catch_up_roll_is_reported_once_and_tried_again(
+        repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "target", {"nodes": [], "roll": ["n2"]},
+        roll_code=1)
+    assert outcome["errors"]["n2"] == "next_fleet roll n2 exited 1"
+    assert state["behind"]["roll"] == ["n2"]
+    assert state["behind"]["notified"] == {"n2": "next_fleet roll n2 exited 1"}
+    assert notifier.sent[-1][1] == "core-catch-up-failed:n2"
+
+
+def test_the_agent_checks_skipped_cores_on_its_idle_ticks(tmp_path, monkeypatch):
+    started = []
+    monkeypatch.setattr(auto, "catch_up", lambda *a, **k: started.append(k["state_dir"]))
+    now = [1000.0]
+    agent = auto.Agent(tmp_path, tmp_path / "runs", clock=lambda: now[0],
+                       state_dir=tmp_path / "state")
+    agent.maybe_catch_up()
+    assert agent.catch_up_worker is None, "nothing behind: no thread"
+    auto.save_state({"behind": {"nodes": ["n2"], "roll": []}}, tmp_path / "state")
+    agent.maybe_catch_up()
+    assert agent.catch_up_worker is None, "the next check waits CATCH_UP_SECONDS"
+    now[0] += auto.CATCH_UP_SECONDS
+    agent.maybe_catch_up()
+    agent.catch_up_worker.join(5)
+    assert started == [tmp_path / "state"]

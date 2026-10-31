@@ -315,7 +315,9 @@ def test_the_terms_match_the_revenue_contest():
                    "expires after 7 days without meaningful outreach",
                    "not already in an active forkmesh sales conversation",
                    "through patreon", "own payment method", "refunds, chargebacks",
-                   "in good standing for 30 days", "no self-referrals"):
+                   "in good standing for 30 days", "no self-referrals",
+                   "form w-9 (us persons)", "w-8ben (non-us individuals)",
+                   "w-8ben-e (non-us entities)", "tax reporting or withholding"):
         assert phrase in terms, phrase
 
 

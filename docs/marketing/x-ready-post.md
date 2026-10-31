@@ -31,7 +31,12 @@ an image, for a person to copy or post.
    **Post on X**; on a phone that is the system share sheet.
 4. **The next one starts.** The post closes on Mark posted or Skip, a
    completed iOS share, `POST /x-post` with the same text, or a synced X post
-   with the same text. The desktop then starts Herald again.
+   with the same text. The desktop then starts Herald again. Every surface
+   has an optional **Link to the post** field next to Mark posted: the link
+   goes in the `url` of the `PATCH` and is kept in the closed post's history,
+   so the "Last post" line can open it and Herald can see what went out. Skip
+   never sends it. The worker checks the link like any posted link
+   (`invalid_post_url`) and saves X links as `https://x.com/<user>/status/<id>`.
 
 ## Rules
 

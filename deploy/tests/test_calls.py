@@ -79,8 +79,8 @@ def test_unit_settings_and_public_addresses(tmp_path):
             "Environment=FORKMESH_CALLS_HTTP=127.0.0.1:7881",
             "Environment=FORKMESH_CALLS_UDP=:3479",
             "Environment=FORKMESH_CALLS_ADDRESSES=%s" % ",".join(addresses),
-            "Environment=FORKMESH_CALLS_ORIGINS=https://%s"
-            % render.served_app_host(fleet),
+            "Environment=FORKMESH_CALLS_ORIGINS=%s"
+            % ",".join(render.calls_origins(fleet)),
             "MemoryHigh=200M", "MemoryMax=256M", "MemorySwapMax=0",
             "Restart=on-failure", "NoNewPrivileges=true",
             "ProtectSystem=strict", "CapabilityBoundingSet=",
@@ -94,13 +94,21 @@ def test_unit_settings_and_public_addresses(tmp_path):
         assert item in deny
 
 
-def test_origins_cover_the_served_and_next_app_names(tmp_path):
+def test_origins_cover_the_served_and_next_app_and_world_names(tmp_path):
     fleet = calls_fleet(tmp_path, origins=["https://forkmesh.com"])
     fleet["production"] = {"app_host": "app.forkmesh.com",
                            "world_host": "world.forkmesh.com"}
     assert render.calls_origins(fleet) == [
         "https://app.forkmesh.com", "https://%s" % fleet["app_host"],
+        "https://world.forkmesh.com", "https://%s" % fleet["world_host"],
         "https://forkmesh.com"]
+
+
+def test_origins_without_production_names_list_each_host_once(tmp_path):
+    fleet = calls_fleet(tmp_path)
+    fleet.pop("production", None)
+    assert render.calls_origins(fleet) == [
+        "https://%s" % fleet["app_host"], "https://%s" % fleet["world_host"]]
 
 
 def test_secret_is_a_credential_and_never_rendered(tmp_path, sandbox):

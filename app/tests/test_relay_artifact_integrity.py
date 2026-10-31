@@ -25,6 +25,7 @@ GATEWAY = ROOT / "tools" / "mirror_gateway.py"
 RELEASES = ROOT / "desktop" / "src" / "MainWindowReleases.cpp"
 CONTROL_NODE = ROOT / "desktop" / "src" / "MainWindowControlNode.cpp"
 INTERNAL = ROOT / "desktop" / "src" / "MainWindowInternal.h"
+INTERNAL4 = ROOT / "desktop" / "src" / "MainWindowInternal4.cpp"
 
 
 def test_release_blob_gateway_verifies_content_hash_before_streaming():
@@ -44,9 +45,17 @@ def test_release_blob_gateway_verifies_content_hash_before_streaming():
     ]
     assert "SHA256_RE.fullmatch(digest)" in release_spec
     assert "(root / \"sha256\" / digest[:2] / digest / \"data\").resolve()" in release_spec
-    assert "hmac.compare_digest(_sha256_file(path), digest)" in release_spec
-    assert 'raise GatewayError("release blob integrity check failed")' in release_spec
-    assert "return StreamSpec(" in release_spec
+    check = "if not _release_digest_matches(path, digest):"
+    failure = 'raise GatewayError("release blob integrity check failed")'
+    assert check in release_spec and failure in release_spec
+    assert (release_spec.index(check) < release_spec.index(failure)
+            < release_spec.index("return StreamSpec("))
+    helper = gateway[
+        gateway.index("def _release_digest_matches("):
+        gateway.index("\ndef ", gateway.index("def _release_digest_matches(") + 1)
+    ]
+    assert "hmac.compare_digest(_sha256_file(path), digest)" in helper
+    assert "info.st_size, info.st_mtime_ns, info.st_ino" in helper
 
 
 def test_desktop_gateway_config_names_the_release_store_it_serves():
@@ -65,12 +74,11 @@ def test_desktop_gateway_config_names_the_release_store_it_serves():
 
     # One definition of the layout the publisher and the gateway both address:
     # <mirror>/forkmesh-releases, sharded as sha256/<aa>/<hash>/data below it.
-    assert (
-        'inline QString mirrorReleaseStoreRoot(const QString &mirrorPath)'
-        in internal
-    )
-    assert 'filePath(QStringLiteral("forkmesh-releases"))' in internal
-    assert "QDir(mirrorReleaseStoreRoot(mirrorPath))" in internal
+    assert "QString mirrorReleaseStoreRoot(const QString &mirrorPath);" in internal
+    definitions = INTERNAL4.read_text(encoding="utf-8")
+    assert "QString mirrorReleaseStoreRoot(const QString &mirrorPath)\n{" in definitions
+    assert 'filePath(QStringLiteral("forkmesh-releases"))' in definitions
+    assert "QDir(mirrorReleaseStoreRoot(mirrorPath))" in definitions
 
 
 def test_gateway_defaults_the_release_store_beside_the_mirror():

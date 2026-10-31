@@ -27,6 +27,44 @@ bar ([app/recent-push-banner.md](app/recent-push-banner.md)).
 Anyone else gets `403 push_forbidden` before any core is contacted, audited
 as `git.push_authorize`. Anonymous requests get a `401` Basic challenge.
 
+The same rule covers every commit the App makes on a user's behalf: web file
+edits, renames and deletes (`/file-edit`), release notes, assets and tags
+(`/release-edit`), project boards and security advisory ledgers all push
+through `repository_file_edits._push`, which calls `_core_push_permitted`
+for a core-held repository and answers `403 push_forbidden` otherwise.
+Before this, those routes needed only write permission (an organization
+admin, maintainer or write-team member). That let a non-owner commit to the
+flagship's `main` or create a release tag there, and the operator's source
+checkout takes the cores' `main` and deploys it
+(`test_core_held_save_needs_an_organization_owner`,
+`test_core_held_commit_paths_needs_an_organization_owner`,
+`test_a_maintainer_cannot_tag_a_core_held_repository`). Write-permission
+holders still propose changes as pull requests. On a repository that is not
+core-held nothing changed.
+
+## Who serves the flagship
+
+When `HOSTED_GIT_CORE_NODES` is set, only those cores serve, pin and merge
+the flagship. The flagship is `forkmesh/forkmesh` and the node it is linked
+to, found by `_flagship_core_nodes` in `app/src/entry.py`.
+
+- `_https_mirror_public_context` sets the routing set (`nodes`) to the
+  cores, so read candidates, the direct-mirror 307 target, release blobs and
+  owner-merge executors are always cores.
+- The flagship quorum (`_https_mirror_flagship_quorum`, also in
+  `_https_mirror_accepted_forkmesh_refs`) counts only core endpoints.
+- The catalog peer-quorum recovery is skipped for the flagship.
+
+Mirrors run by anyone else may still publish a catalog record in the
+flagship's group and appear in `groupNodes`, but they never serve it and
+their agreement never admits a state. Before this, any two accounts could
+register endpoints in the group, sign a digest, and be routed flagship clones
+and fetches. A mirror's proof is its own signature over the digest it
+claims, and the App never sees the bytes behind a 307. Without
+`HOSTED_GIT_CORE_NODES` (development, self-hosted instances) the old
+group-based routing applies (`test_flagship_serving_nodes_are_the_fleet_cores_only`,
+`test_flagship_context_and_quorum_never_count_outside_mirrors`).
+
 Credentials:
 
 - Basic with the account name or email as the username and either the

@@ -588,6 +588,14 @@ class Membership:
         return (now - self._leader_seen <= QUORUM_LOSS_SECONDS
                 and now - self._write_ok <= QUORUM_LOSS_SECONDS + 5)
 
+    @property
+    def read_only(self):
+        if self.paused or self.leaving or self.self_quarantined:
+            return False
+        if time.monotonic() - self._started <= QUORUM_LOSS_SECONDS:
+            return False
+        return not self.quorum
+
     def member_states(self):
         now = self.clock()
         return {node: member_state(row, now)
@@ -612,6 +620,7 @@ class Membership:
                                if self.quarantine else None),
                 "active": list(self.active), "live": list(self.active),
                 "hosting": self.hosting, "quorum": self.quorum,
+                "readOnly": self.read_only,
                 "replica": self.replica, "routing": self.routing,
                 "members": self.members,
                 "memberStatus": self.member_states(),

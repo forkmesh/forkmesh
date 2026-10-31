@@ -24,6 +24,8 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `world-reaction-pops.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list, the live diagnostics chart, on-air signs, on-screen reaction pops ([voice.md](voice.md)) |
+| `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | The Genie spider in the 3D World: model, 100 acts with things nearby ([genie-spider.md](genie-spider.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
@@ -142,9 +144,13 @@ On a software renderer the browser specs gate on frames, not milliseconds:
 
 - The input-response test keeps its 100 ms budget on hardware; under
   SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
-  doubled for SwiftShader's frame-to-frame jitter) and drops its first camera
-  drag, which carries about 700 ms of one-time work (816 ms against ~130 ms for
-  the next four on the mobile viewport).
+  doubled for SwiftShader's frame-to-frame jitter) and drops its first two
+  camera drags, one in each direction. Each carries about 500–700 ms of
+  one-time work for the part of the town it brings into view (816 ms against
+  ~130 ms for the next four on the mobile viewport). Dropping only the first
+  drag failed the GitHub runs of 25 Oct 2026: the first drag the other way
+  measured 615–1123 ms against a twelve-frame budget of 600–1000 ms, and the
+  three after it stayed under five frames.
 - `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
   a hardware run; under SwiftShader it asks that the world keeps presenting
   (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
@@ -341,6 +347,14 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   attributes, records `WORLD_BOOT.interactive()` and fires
   `forkmesh:world-interactive`. The WebGL fallback, an import failure and a
   10 s watchdog also remove the card.
+- **Compact retry before the fallback.** `prepareWorldRenderer()` opens the
+  WebGL2 context early. If the full plan's context cannot be created (a
+  software GL such as Mesa llvmpipe, or a GPU process that fails
+  `BindToCurrentSequence`), it tries once more with the compact plan
+  (no antialias, default power preference) and, if that one opens, switches
+  the visit to safe mode so `createWorldScene` builds the matching compact
+  renderer. The "could not start the 3D renderer" fallback shows only when
+  both fail. A context whose `WebGLRenderer` throws is released at once.
 - **Sliced construction.** `createWorldScene` yields between slices; frames
   hold up to 32 ms of construction work. Construction-time canvases queue
   their painter; first-view plates paint before the reveal and the rest in
@@ -387,7 +401,13 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
 - **Performance bar and profiler** (`createWorldProfiler`, only while an
   admin bar is shown): frame phases, per-callback cost, draw-call attribution
   by World element, GPU timer queries; `auditWorldScene` finds duplicate
-  geometries/materials, instancing candidates and culling opt-outs.
+  geometries/materials, instancing candidates and culling opt-outs. Both
+  copy paths (the drawer's Copy button and the boot log's report provider)
+  go through `perfCopyReport()`, which samples a fresh profile window and
+  re-runs the audit on it, so the findings and the Frame budget table
+  describe the same frames. The button used to print the newest window
+  beside findings from the last periodic audit, so one report could show
+  two different `renderer.render` costs.
 - **Render stall monitor** (`scene/render-stalls.js`): splits frames over
   50 ms into program compiles, texture uploads, shadow and reflection draws,
   and scene update parts (matrix walk, animation, labels, camera). Long
@@ -438,7 +458,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   `transform` or `backdrop-filter` on an ancestor of the phone HUD's fixed
   avatar badge. An element given `display` in the component layer needs a
   `[hidden] { display: none; }` rule. Avoid `backdrop-filter` over the live
-  canvas.
+  canvas. Rules for retired UI go with it: the chat terminal and quick
+  channel strip (now the HUD island's native chat), the avatar action menu
+  (the island toolbar), the `.world-loading-curtain` (inlined in
+  `index.html`) and the HTML aquarium controls (the 3D reef panel) were
+  removed from `world.css` on 2026-10-24; tests check they stay gone.
 
 ## User interface
 
@@ -769,6 +793,17 @@ them without changing page.
   hid every bug drawn after it. A house, its label and each bug with an https
   `url` are `instance-hexagon` picks, so clicking one opens that link in a new
   tab.
+- **Neighbour scene draw cost.** A terrarium's bugs are one draw: their icons
+  share one canvas atlas and one `forkmesh-instance-hex-bug-board` mesh whose
+  vertex shader turns each quad to face the camera like a sprite. The board
+  uses `alphaTest` instead of blending, so overlapping icons need no sorting
+  and it casts no shadow. Each bug keeps a hidden `Sprite` with
+  `raycastProxy`, which carries the `neighbour-bug` pick. Unpicked meshes
+  (glass panes, frames, windows, lamps, trees) are then merged by material
+  (`mergeMeshesByMaterial` with `skip` for anything interactive). Before this a
+  32-bug scene cost 64 draws, 43 of them transparent; now it costs 19, 5
+  transparent. The hex layer is the `instance-hexes` World element
+  ("Neighbour hexagons"), so the profiler names its draws.
 - **Bug icons through home.** An instance's raw-file route sends no CORS
   header, so a cross-origin icon cannot be drawn into a WebGL texture and
   every bug fell back to its initial. The World loads each icon from its own
@@ -1005,6 +1040,8 @@ them without changing page.
 
 ## Related docs
 
+- [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
+- [genie-spider.md](genie-spider.md): the Genie spider that follows you around the World
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)

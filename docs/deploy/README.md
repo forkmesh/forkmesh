@@ -11,7 +11,7 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 | Path | Responsibility |
 | --- | --- |
-| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
+| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[autoscale]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[self_deploy]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
 | `deploy/fleet.example.toml` | annotated template |
 | `deploy/core/render.py` | renders a node's files into a tree plus `MANIFEST.json`; never reads secrets |
 | `deploy/core/caddy_routes.py` | Caddy route snippets shipped with each release |
@@ -35,9 +35,10 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 - **Render, then push.** `render.py` produces files only;
   `next_fleet.py install <node> --steps …` copies them and runs each step over
-  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `files`,
-  `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`). Runner steps: `base`, `files`,
-  `start`, `daemon`.
+  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `ssh-port`,
+  `files`, `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`).
+  Runner steps: `base`, `ssh-port`, `files`, `start`, `daemon`. SSH runs on
+  `ssh_port` ([ssh-port.md](ssh-port.md)).
 - **Secrets never rendered.** Units load encrypted credentials by name
   (`LoadCredentialEncrypted=`). With `[app] vault = true` the app gets only
   bootstrap credentials and starts sealed ([VAULT.md](../VAULT.md)).
@@ -48,6 +49,13 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 - **Rolling restart gate.** Each node must report `/readyz` and the new
   `BUILD_REV`; a failing node goes back to its previous release and the rollout
   stops. Migrations run once, through any healthy rqlite node.
+- **A core down does not block a release.** `upload`, `restart` and `all`
+  leave out a core that is held or out of DNS (`dns-health.json`, the
+  `next_dns.py` health loop) or that SSH cannot reach, as long as a majority
+  of the cores and at least two still get it (`deploy_quorum`); otherwise
+  they refuse. `--skip nN` names the cores to leave out instead. The deploy
+  manifest records `skipped`, and `restart nN` of that release later clears
+  it (`caughtUp`). See [auto-deploy.md](auto-deploy.md), "Skipped cores".
 - **Speed.** One multiplexed SSH connection per node
   (`FMNEXT_SSH_MULTIPLEX=0` disables it), parallel uploads with the migration
   alongside, venv reuse when requirements are unchanged, a wheelhouse cache,

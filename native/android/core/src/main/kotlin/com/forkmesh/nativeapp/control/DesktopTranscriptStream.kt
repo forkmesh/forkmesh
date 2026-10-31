@@ -11,6 +11,7 @@ class DesktopTranscriptStream(
     val sessionId: Int,
     since: Int = 0,
     private val onEnded: (String) -> Unit = {},
+    val desktopKey: String = "",
     private val onDelta: (AgentTranscriptDelta) -> Unit,
 ) {
     private val lock = Any()
@@ -40,7 +41,7 @@ class DesktopTranscriptStream(
         hold(this)
         synchronized(lock) {
             stopped = false
-            if (tap == null) tap = hub.addEventTap { event -> onEvent(event) }
+            if (tap == null) tap = hub.addEventTap(desktopKey) { event -> onEvent(event) }
             if (linkToken == null) linkToken = hub.addLinkListener { linkChanged() }
         }
         return follow()
@@ -70,7 +71,7 @@ class DesktopTranscriptStream(
             linkToken?.let { hub.removeLinkListener(it) }
             tap = null
             linkToken = null
-            link = hub.currentLink
+            link = hub.openLink(desktopKey)
         }
         if (!release(this) && link != null) {
             worker.execute { runCatching { link.request("agents.unfollow", mapOf("id" to sessionId), 5_000) } }
@@ -89,7 +90,7 @@ class DesktopTranscriptStream(
             generation
         }
         try {
-            val link = hub.link()
+            val link = hub.link(desktopKey)
             synchronized(lock) { followedLink = link }
             val answer = link.request("agents.follow", mapOf("id" to sessionId, "since" to next), 20_000)
             val queued = synchronized(lock) {
@@ -181,7 +182,7 @@ class DesktopTranscriptStream(
     private fun fill(since: Int, attempt: Int) {
         val params: Map<String, Any?> = if (since > 0) mapOf("id" to sessionId, "since" to since) else mapOf("id" to sessionId)
         val answer = try {
-            hub.request("agents.transcript", params)
+            hub.request("agents.transcript", params, 20_000, desktopKey)
         } catch (_: Throwable) {
             synchronized(lock) {
                 if (stopped || attempt != generation) return
@@ -213,7 +214,7 @@ class DesktopTranscriptStream(
     private fun linkChanged() {
         val refollow = synchronized(lock) {
             if (stopped || awaiting) return
-            val current = hub.currentLink
+            val current = hub.openLink(desktopKey)
             if (current != null && current === followedLink) return
             isStreaming = false
             current != null
@@ -233,7 +234,7 @@ class DesktopTranscriptStream(
 
         fun release(stream: DesktopTranscriptStream): Boolean = synchronized(holders) {
             holders.removeAll { it.get().let { other -> other == null || other === stream } }
-            holders.any { it.get()?.let { other -> other.hub === stream.hub && other.sessionId == stream.sessionId } == true }
+            holders.any { it.get()?.let { other -> other.hub === stream.hub && other.sessionId == stream.sessionId && other.desktopKey == stream.desktopKey } == true }
         }
 
         fun unseen(delta: AgentTranscriptDelta, after: Int): AgentTranscriptDelta? {

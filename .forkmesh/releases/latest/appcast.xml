@@ -5,32 +5,32 @@
     <description>ForkMesh desktop client updates</description>
     <language>en</language>
     <item>
-      <title>ForkMesh 1.2.8 (linux)</title>
-      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
-      <sparkle:version>1.2.8</sparkle:version>
-      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
-      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/a7930b0b08a14c5055eb5c4a159cf6b03c8151e133d1d9d5d9cf1e509837c4d7?filename=forkmesh-linux-x86_64.AppImage" sparkle:version="1.2.8" length="110082552" type="application/octet-stream" />
+      <title>ForkMesh 1.5.0 (linux)</title>
+      <pubDate>Thu, 29 Oct 2026 00:51:58 +0000</pubDate>
+      <sparkle:version>1.5.0</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/48493a8c5e3cf752191e65e90d9bc33c4a3e6ddee521311f559190cca6768c60?filename=forkmesh-linux-x86_64.AppImage" sparkle:version="1.5.0" length="106121720" type="application/octet-stream" />
     </item>
     <item>
-      <title>ForkMesh 1.2.8 (macos)</title>
-      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
-      <sparkle:version>1.2.8</sparkle:version>
-      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
-      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/dc239153216ddca7776570543173f6305a9c6589b5cfd2c2e3eabd60bb550b59?filename=forkmesh-macos-arm64.dmg" sparkle:version="1.2.8" length="219710331" type="application/octet-stream" />
+      <title>ForkMesh 1.5.0 (macos)</title>
+      <pubDate>Thu, 29 Oct 2026 00:51:58 +0000</pubDate>
+      <sparkle:version>1.5.0</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/8991bcc9e47c807b1ef5fd0d16ab2c643b050013ba3dc90736ed5c448d2f6040?filename=forkmesh-macos-arm64.dmg" sparkle:version="1.5.0" length="214746483" type="application/octet-stream" />
     </item>
     <item>
-      <title>ForkMesh 1.2.8 (macos)</title>
-      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
-      <sparkle:version>1.2.8</sparkle:version>
-      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
-      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/dc239153216ddca7776570543173f6305a9c6589b5cfd2c2e3eabd60bb550b59?filename=forkmesh-macos-x86_64.dmg" sparkle:version="1.2.8" length="219710331" type="application/octet-stream" />
+      <title>ForkMesh 1.5.0 (macos)</title>
+      <pubDate>Thu, 29 Oct 2026 00:51:58 +0000</pubDate>
+      <sparkle:version>1.5.0</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/8991bcc9e47c807b1ef5fd0d16ab2c643b050013ba3dc90736ed5c448d2f6040?filename=forkmesh-macos-x86_64.dmg" sparkle:version="1.5.0" length="214746483" type="application/octet-stream" />
     </item>
     <item>
-      <title>ForkMesh 1.2.8 (windows)</title>
-      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
-      <sparkle:version>1.2.8</sparkle:version>
-      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
-      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/6facf31980bcb13902561822c8d810aa5f1abea3d00be700e5f460b45c25231f?filename=forkmesh-windows-x86_64-setup.exe" sparkle:version="1.2.8" length="103630728" type="application/octet-stream" />
+      <title>ForkMesh 1.5.0 (windows)</title>
+      <pubDate>Thu, 29 Oct 2026 00:51:58 +0000</pubDate>
+      <sparkle:version>1.5.0</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/7889aad7fd55d490d603ffe75603b50a0da1099fed7bf218b14ec317e29efbd6?filename=forkmesh-windows-x86_64-setup.exe" sparkle:version="1.5.0" length="96940752" type="application/octet-stream" />
     </item>
   </channel>
 </rss>

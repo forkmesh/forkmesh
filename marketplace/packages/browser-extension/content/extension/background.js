@@ -16,6 +16,7 @@
 // The Password Vault shares this worker: its cryptography, its client, and
 // the handlers that tie them to the popup (see vault.js).
 importScripts("vault-crypto.js", "vault-client.js", "vault.js");
+importScripts("repo.js");
 
 const DEFAULT_BASE_URL = "https://app.forkmesh.com";
 const STORED = ["baseUrl", "sessionToken", "account", "organization"];
@@ -3323,6 +3324,7 @@ const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-s
   "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-log-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-reddit-auto-update", "fm-reddit-accounts-change", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
   "fm-refresh-plan", "fm-refresh-run", "fm-refresh-channel"]);
 POPUP_ONLY.add("fm-toot-set-track");
+for (const type of ["fm-repo-info", "fm-repo-mirror", "fm-repo-open"]) POPUP_ONLY.add(type);
 const CAPTURE_PAGE_ONLY = new Set(["fm-marketing-capture-job", "fm-marketing-capture-continue"]);
 
 
@@ -3429,6 +3431,7 @@ const HANDLERS = {
 };
 
 const vaultBackground = self.ForkMeshVaultBackground.install({ api, settings, handlers: HANDLERS });
+self.ForkMeshRepoBackground.install({ api, settings, handlers: HANDLERS });
 
 // The vault answers this extension's own pages only (the popup). A content
 // script has a tab behind it; whatever happens inside Gmail, Zoho Mail, a

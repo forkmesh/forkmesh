@@ -369,13 +369,16 @@ def fleet_ports(fleet=None):
 
 
 def ingress_rules(role, fleet=None, ssh_sources=("0.0.0.0/0",)):
+    import render
     rules = set()
     for cidr in ssh_sources:
         try:
             network = ipaddress.IPv4Network(str(cidr), strict=False)
         except ValueError:
             raise ToolError("--ssh-from %r is not an IPv4 address or CIDR" % cidr) from None
-        rules.add(("tcp", 22, 22, str(network)))
+        for port in sorted({render.ssh_port(fleet) if fleet else
+                            common.fleet_ssh_port(), common.LEGACY_SSH_PORT}):
+            rules.add(("tcp", port, port, str(network)))
     if role == "core":
         wg_port, turn_tcp, turn_udp, relay = fleet_ports(fleet)
         for port in [80, 443] + turn_tcp:

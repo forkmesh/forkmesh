@@ -21,6 +21,44 @@ qint64 pointTotal(const MemoryUsageChart::Point &point)
     return total;
 }
 
+constexpr int kNextHeaderHeight = 40;
+constexpr int kNextInset = 12;
+constexpr int kNextAxisWidth = 48;
+constexpr int kNextTimeRow = 22;
+constexpr qreal kNextRadius = 12.0;
+
+bool nextLook(const QWidget *widget)
+{
+    return widget->property("nextAccent").value<QColor>().isValid();
+}
+
+QColor lookColor(const QWidget *widget, const char *name, const QColor &fallback)
+{
+    const QColor color = widget->property(name).value<QColor>();
+    return color.isValid() ? color : fallback;
+}
+
+QString axisLabel(qint64 bytes)
+{
+    const double mib = double(bytes) / (1024.0 * 1024.0);
+    if (mib >= 1024.0)
+        return QStringLiteral("%1 GB").arg(mib / 1024.0, 0, 'f', mib >= 10240.0 ? 0 : 1);
+    if (mib >= 10.0 || mib == 0.0)
+        return QStringLiteral("%1 MB").arg(qRound(mib));
+    return QStringLiteral("%1 MB").arg(mib, 0, 'f', 1);
+}
+
+qint64 timeStepMs(qint64 windowMs, int width)
+{
+    const int room = qMax(1, width / 84);
+    for (qint64 step : {5000LL, 10000LL, 15000LL, 20000LL, 30000LL, 60000LL, 120000LL,
+                        300000LL, 600000LL, 900000LL, 1800000LL, 3600000LL}) {
+        if (windowMs / step <= room)
+            return step;
+    }
+    return 3600000LL;
+}
+
 } // namespace
 
 MemoryUsageChart::MemoryUsageChart(QWidget *parent)
@@ -89,6 +127,9 @@ qint64 MemoryUsageChart::niceCeiling(qint64 bytes)
 
 QRect MemoryUsageChart::plotRect() const
 {
+    if (nextLook(this))
+        return rect().adjusted(kNextInset + kNextAxisWidth, kNextHeaderHeight + 16,
+                               -(kNextInset + 8), -(kNextInset + kNextTimeRow));
     return rect().adjusted(64, 10, -12, -22);
 }
 
@@ -119,6 +160,115 @@ void MemoryUsageChart::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing, true);
     const QRect plot = plotRect();
     const QColor text = palette().color(QPalette::WindowText);
+    if (nextLook(this)) {
+        const QColor fg = lookColor(this, "nextFg", text);
+        const QColor muted = lookColor(this, "nextMuted", fg);
+        const QColor subtle = lookColor(this, "nextSubtle", muted);
+        const QColor border = lookColor(this, "nextBorder", subtle);
+        const QColor strong = lookColor(this, "nextBorderStrong", border);
+        const QColor surface = lookColor(this, "nextSurface", palette().color(QPalette::Base));
+        const QColor window = lookColor(this, "nextBg", surface);
+        const QColor accent = lookColor(this, "nextAccent", fg);
+
+        p.setPen(QPen(border, 1));
+        p.setBrush(surface);
+        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), kNextRadius,
+                          kNextRadius);
+        p.drawLine(QPointF(1, kNextHeaderHeight + 0.5),
+                   QPointF(width() - 1, kNextHeaderHeight + 0.5));
+
+        const QRect head(16, 0, qMax(0, width() - 32), kNextHeaderHeight);
+        QFont titleFont = font();
+        titleFont.setPixelSize(13);
+        titleFont.setWeight(QFont::Medium);
+        QFont valueFont = font();
+        valueFont.setPixelSize(12);
+        const QString value =
+            m_points.isEmpty() ? QString() : SystemStats::formatBytes(pointTotal(m_points.last()));
+        const int valueWidth = QFontMetrics(valueFont).horizontalAdvance(value);
+        p.setFont(valueFont);
+        p.setPen(muted);
+        p.drawText(head, Qt::AlignRight | Qt::AlignVCenter, value);
+        p.setFont(titleFont);
+        p.setPen(fg);
+        p.drawText(head.adjusted(0, 0, -(valueWidth + 12), 0),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   QFontMetrics(titleFont).elidedText(property("nextTitle").toString(),
+                                                      Qt::ElideRight,
+                                                      qMax(0, head.width() - valueWidth - 12)));
+
+        const qint64 ceiling = niceCeiling(peakTotal());
+        QFont axisFont = font();
+        axisFont.setPixelSize(10);
+        p.setFont(axisFont);
+        for (int i = 0; i <= 4; ++i) {
+            const qreal y = plot.bottom() + 0.5 - qreal(plot.height()) * i / 4;
+            QPen grid(border, 1);
+            if (i > 0)
+                grid.setDashPattern({2.0, 4.0});
+            p.setPen(grid);
+            p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+            p.setPen(subtle);
+            p.drawText(QRectF(kNextInset, y - 8, plot.left() - kNextInset - 8, 16),
+                       Qt::AlignRight | Qt::AlignVCenter, axisLabel(ceiling * i / 4));
+        }
+
+        if (m_points.isEmpty() || m_bands.isEmpty()) {
+            p.setFont(valueFont);
+            p.setPen(muted);
+            p.drawText(plot, Qt::AlignCenter, QStringLiteral("Sampling…"));
+            return;
+        }
+
+        const qint64 newest = m_points.last().timestampMs;
+        const qint64 oldest = newest - m_windowMs;
+        const auto xFor = [&](qint64 t) {
+            return plot.left() + double(t - oldest) / double(m_windowMs) * plot.width();
+        };
+        const auto yFor = [&](qint64 v) {
+            return plot.bottom() - double(v) / double(ceiling) * plot.height();
+        };
+
+        const qint64 step = timeStepMs(m_windowMs, plot.width());
+        const QFontMetrics axisMetrics(axisFont);
+        p.setPen(subtle);
+        for (qint64 t = (oldest / step + 1) * step; t <= newest; t += step) {
+            const QString label =
+                QDateTime::fromMSecsSinceEpoch(t).toString(QStringLiteral("HH:mm:ss"));
+            const int labelWidth = axisMetrics.horizontalAdvance(label);
+            const int x = qRound(xFor(t));
+            QRect box(x - labelWidth / 2, plot.bottom() + 6, labelWidth, 16);
+            if (box.left() < plot.left() - kNextAxisWidth / 2 || box.right() > width() - 4)
+                continue;
+            p.drawText(box, Qt::AlignCenter, label);
+        }
+
+        QPainterPath line;
+        for (int i = 0; i < m_points.size(); ++i) {
+            const QPointF at(xFor(m_points.at(i).timestampMs), yFor(pointTotal(m_points.at(i))));
+            if (i == 0)
+                line.moveTo(at);
+            else
+                line.lineTo(at);
+        }
+        QPen pen(accent, 2);
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(line);
+
+        if (m_hoverIndex >= 0 && m_hoverIndex < m_points.size()) {
+            const Point &point = m_points.at(m_hoverIndex);
+            const qreal x = xFor(point.timestampMs);
+            p.setPen(QPen(strong, 1));
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+            p.setPen(QPen(window, 2));
+            p.setBrush(accent);
+            p.drawEllipse(QPointF(x, yFor(pointTotal(point))), 4.5, 4.5);
+        }
+        return;
+    }
     QColor grid = text;
     grid.setAlphaF(0.12);
     QColor muted = text;

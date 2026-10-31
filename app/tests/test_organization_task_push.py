@@ -154,7 +154,8 @@ def test_the_desktop_answers_the_tasks_topic_with_a_board_read():
         (DESKTOP / name).read_text(encoding="utf-8")
         for name in MAIN_WINDOW_REPOS_SOURCES
     )
-    tasks = (DESKTOP / "MainWindowTasks.cpp").read_text(encoding="utf-8")
+    bridge = (DESKTOP / "MainWindowTaskBridge.cpp").read_text(encoding="utf-8")
+    store = (DESKTOP / "OrganizationTaskStore.cpp").read_text(encoding="utf-8")
     handler = repos.split("&NodeEventSocket::eventReceived", 1)[1].split(
         "&NodeEventSocket::agentStatusResult", 1)[0]
     assert 'topic == QLatin1String("tasks")' in handler
@@ -165,17 +166,18 @@ def test_the_desktop_answers_the_tasks_topic_with_a_board_read():
         "return;", 1)[0]
     assert "scheduleRelaySync" not in tasks_branch
 
-    event = tasks.split("void MainWindow::onOrganizationTaskEvent()", 1)[1] \
-        .split("void MainWindow::drainPendingOrganizationTaskEvent()", 1)[0]
-    # Page built -> refresh the table (which also sets the badge); page not
-    # built -> refresh the badge and the payload it will first render from.
-    assert "refreshOrganizationTasks();" in event
-    assert "m_organizationTasksLoaded = false;" in event
-    assert "refreshOrganizationTaskBadge();" in event
+    wake = bridge.split("void MainWindow::onOrganizationTaskEvent()", 1)[1] \
+        .split("\n}\n", 1)[0]
+    assert "handleEvent();" in wake
+    event = store.split("void OrganizationTaskStore::handleEvent()", 1)[1] \
+        .split("\n}\n", 1)[0]
+    # The store holds the board whether or not the Tasks page is built, so
+    # the event re-reads it once and every listener renders the answer.
+    assert "refresh();" in event
     # A push that lands while a read is in flight is remembered, because that
     # read may have been issued before the write it is about.
-    assert "m_organizationTaskEventPending = true;" in event
-    assert tasks.count("drainPendingOrganizationTaskEvent(); });") == 3
+    assert "m_eventPending = true;" in event
+    assert store.count("drainPendingEvent(); });") == 1
 
 
 def test_a_reconnect_rereads_the_board_but_a_first_connect_does_not():

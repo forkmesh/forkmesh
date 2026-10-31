@@ -1,15 +1,24 @@
 import FMChat
 import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
 final class CallQualityMonitor {
     private(set) var history = CallQualityHistory()
+    private(set) var diagnosis = CallDiagnosis.empty
+    @ObservationIgnored var video = false
+    @ObservationIgnored var sending = true
     @ObservationIgnored private var playout: Task<Void, Never>?
 
     func apply(_ event: CallQualityEvent) {
         history.apply(event)
+        if event.live {
+            rediagnose()
+        } else if diagnosis != CallDiagnosis.empty {
+            diagnosis = CallDiagnosis.empty
+        }
         startPlayout()
     }
 
@@ -17,14 +26,28 @@ final class CallQualityMonitor {
         history.push(level: level)
     }
 
+    func queue(levels: [CallVoiceLevel]) {
+        history.queue(levels)
+        startPlayout()
+    }
+
     func push(sample: CallQualitySample) {
         history.push(sample: sample)
+        rediagnose()
     }
 
     func reset() {
         playout?.cancel()
         playout = nil
         history.reset()
+        diagnosis = CallDiagnosis.empty
+        CallDiagnosticsBook.shared.finish()
+    }
+
+    private func rediagnose() {
+        let next = CallDiagnostics.diagnose(history.samples, video: video, sending: sending)
+        diagnosis = next
+        CallDiagnosticsBook.shared.refreshed(next)
     }
 
     private func startPlayout() {
@@ -145,25 +168,37 @@ struct CallSparkline: View {
 struct CallQualityWidget: View {
     let monitor: CallQualityMonitor
     var video = false
+    var sending = true
     var peerLabel = "Them"
     @AppStorage(CallQuality.openKey) private var open = false
 
     var body: some View {
         let history = monitor.history
         VStack(alignment: .leading, spacing: 6) {
-            Button(action: { open.toggle() }) {
-                pill(history)
+            HStack(spacing: 6) {
+                Button(action: { open.toggle() }) {
+                    pill(history)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(history.accessibilityLabel)
+                .accessibilityHint(open ? "Hides the live charts" : "Shows live charts")
+                .accessibilityIdentifier("chat-call-quality")
+                if history.live {
+                    CallDiagnosticsButton(monitor: monitor)
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(history.accessibilityLabel)
-            .accessibilityHint(open ? "Hides the live charts" : "Shows live charts")
-            .accessibilityIdentifier("chat-call-quality")
             if open {
                 card(history)
                     .transition(.opacity)
             }
         }
         .environment(\.colorScheme, .dark)
+        .onAppear {
+            monitor.video = video
+            monitor.sending = sending
+        }
+        .onChange(of: video) { (_: Bool, now: Bool) in monitor.video = now }
+        .onChange(of: sending) { (_: Bool, now: Bool) in monitor.sending = now }
     }
 
     private func pill(_ history: CallQualityHistory) -> some View {
@@ -256,4 +291,215 @@ struct CallQualityWidget: View {
 
 private extension String {
     func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
+}
+
+@MainActor
+@Observable
+final class CallDiagnosticsBook {
+    static let shared = CallDiagnosticsBook()
+
+    private(set) var memory = CallDiagnosticsMemory()
+    @ObservationIgnored private var tracker = CallDiagnosticsTracker()
+
+    private init() {
+        memory = Self.load()
+    }
+
+    private static func load() -> CallDiagnosticsMemory {
+        CallDiagnosticsMemory(json: UserDefaults.standard.string(forKey: CallDiagnostics.key))
+    }
+
+    private func save() {
+        UserDefaults.standard.set(memory.json, forKey: CallDiagnostics.key)
+    }
+
+    func opened(_ diagnosis: CallDiagnosis) {
+        memory = Self.load()
+        tracker.opened(diagnosis, memory: &memory)
+        save()
+    }
+
+    func refreshed(_ diagnosis: CallDiagnosis) {
+        guard !tracker.pending.isEmpty else { return }
+        if tracker.refreshed(diagnosis, memory: &memory) { save() }
+    }
+
+    func finish() {
+        guard !tracker.pending.isEmpty else { return }
+        memory = Self.load()
+        if tracker.finished(memory: &memory) { save() }
+    }
+
+    func saveLesson(_ text: String) -> Bool {
+        memory = Self.load()
+        guard CallDiagnostics.rememberNote(&memory, text) else { return false }
+        save()
+        return true
+    }
+
+    static var environment: CallDiagnosticsEnvironment {
+        var system = utsname()
+        uname(&system)
+        let model = withUnsafeBytes(of: &system.machine) { (raw: UnsafeRawBufferPointer) -> String in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let device = UIDevice.current
+        let agent = "ForkMesh iOS \(version) (\(model); \(device.systemName) \(device.systemVersion); native call screen)"
+        let memory = (Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded()
+        return CallDiagnosticsEnvironment(
+            userAgent: agent, cores: ProcessInfo.processInfo.activeProcessorCount, memory: memory, connection: "")
+    }
+}
+
+struct OpenedCallDiagnosis: Identifiable {
+    let id = UUID()
+    let diagnosis: CallDiagnosis
+}
+
+struct CallDiagnosticsButton: View {
+    let monitor: CallQualityMonitor
+    @State private var shown: OpenedCallDiagnosis?
+
+    var body: some View {
+        let diagnosis = monitor.diagnosis
+        Button(action: { open(diagnosis) }) {
+            Circle()
+                .fill(diagnosis.problem ? FmColors.dangerOnDark : Color.white.opacity(0.4))
+                .frame(width: 8, height: 8)
+                .frame(width: 26, height: 26)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(
+                    Circle().stroke(
+                        diagnosis.severity == .bad ? FmColors.dangerOnDark : Color.white.opacity(0.12),
+                        lineWidth: diagnosis.severity == .bad ? 1 : 0.5)
+                )
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Call diagnostics: \(diagnosis.summary)")
+        .accessibilityHint("Shows diagnostics and how to fix them")
+        .accessibilityIdentifier("chat-call-diagnostics")
+        .sheet(item: $shown) { (opened: OpenedCallDiagnosis) in
+            CallDiagnosticsSheet(diagnosis: opened.diagnosis)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func open(_ diagnosis: CallDiagnosis) {
+        CallDiagnosticsBook.shared.opened(diagnosis)
+        shown = OpenedCallDiagnosis(diagnosis: diagnosis)
+    }
+}
+
+struct CallDiagnosticsSheet: View {
+    let diagnosis: CallDiagnosis
+    @Environment(\.dismiss) private var dismiss
+    @State private var lesson = ""
+    @State private var status = ""
+
+    private var book: CallDiagnosticsBook { CallDiagnosticsBook.shared }
+
+    var body: some View {
+        let memory = book.memory
+        let prompt = CallDiagnostics.prompt(diagnosis, memory, environment: CallDiagnosticsBook.environment)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: FmSpace.x4) {
+                    if diagnosis.issues.isEmpty {
+                        let lines = CallDiagnostics.describe(diagnosis.metrics)
+                        Text(lines.isEmpty ? "Measurements start once the call connects." : lines.joined(separator: ". "))
+                            .font(.system(size: 15))
+                    }
+                    ForEach(Array(diagnosis.issues.enumerated()), id: \.element.id) {
+                        (entry: (offset: Int, element: CallDiagnosisIssue)) in
+                        issueView(entry.offset + 1, entry.element, memory: memory)
+                    }
+                    VStack(alignment: .leading, spacing: FmSpace.x2) {
+                        Text(CallDiagnostics.promptLabel(diagnosis, memory))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(prompt)
+                            .font(.system(size: 12).monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(FmSpace.x3)
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                            .accessibilityIdentifier("chat-call-diagnostics-prompt")
+                        Button {
+                            UIPasteboard.general.string = prompt
+                            status = "Copied. Paste it into your AI assistant."
+                        } label: {
+                            Label("Copy prompt", systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("chat-call-diagnostics-copy")
+                    }
+                    VStack(alignment: .leading, spacing: FmSpace.x2) {
+                        TextField("Paste the LESSON line from the answer", text: $lesson, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(1...4)
+                            .accessibilityLabel("Lesson from the answer")
+                            .accessibilityIdentifier("chat-call-diagnostics-lesson")
+                        Button("Save lesson", action: saveLesson)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("chat-call-diagnostics-save")
+                    }
+                    if !status.isEmpty {
+                        Text(status)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
+                }
+                .padding(FmSpace.x4)
+            }
+            .navigationTitle(diagnosis.heading)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .accessibilityIdentifier("chat-call-diagnostics-sheet")
+    }
+
+    private func issueView(_ number: Int, _ issue: CallDiagnosisIssue, memory: CallDiagnosticsMemory) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(issue.severity == .bad ? FmColors.danger : FmColors.warning)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text("\(number). \(issue.title)")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            Text(issue.detail + " " + issue.cause)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            ForEach(Array(CallDiagnostics.rankFixes(issue, memory).enumerated()), id: \.element.id) {
+                (entry: (offset: Int, element: CallDiagnosisFix)) in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(entry.offset + 1).")
+                        .font(.system(size: 14).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Text(CallDiagnostics.fixLabel(entry.element))
+                        .font(.system(size: 14))
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func saveLesson() {
+        if book.saveLesson(lesson) {
+            lesson = ""
+            status = "Saved. The next prompt starts from it."
+        } else {
+            status = "Paste the LESSON line first."
+        }
+    }
 }

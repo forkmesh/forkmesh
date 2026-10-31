@@ -138,7 +138,9 @@ async function mockIssuesPage(page, options = {}) {
       };
     } else if (url.pathname === "/api/repo/acme/widgets/tree") {
       let entries = [];
-      if (treePath === ".forkmesh/issues") {
+      if (treePath === "") {
+        entries = [{ type: "tree", name: ".forkmesh" }];
+      } else if (treePath === ".forkmesh/issues") {
         if (typeof options.onIssuesTree === "function") {
           await options.onIssuesTree();
         }
@@ -224,7 +226,7 @@ test("issue type and sort controls change the visible rows", async ({ page }) =>
     "All types", "Standard issues", "Agent tasks",
   ]);
   await expect(sort.locator("option")).toHaveText([
-    "Recently updated", "Newest", "Oldest", "Highest priority", "Most commented",
+    "Newest", "Recently updated", "Oldest", "Highest priority", "Most commented",
   ]);
 
   await sort.selectOption("oldest");
@@ -355,7 +357,7 @@ test("issue views, qualifiers and the New issue menu work like GitHub", async ({
   const rows = page.locator("[data-repo-issues] [data-repo-record-number]");
   await expect(rows).toHaveCount(ISSUES.length, { timeout: 15_000 });
   const query = page.locator('[data-repo-filter-query="issues"]');
-  const views = page.locator("[data-repo-issue-views]");
+  const views = page.locator("nav[data-repo-issue-views]");
   const heading = page.locator("[data-repo-issue-view-title]");
 
   await expect(views.locator('[data-repo-issue-view="issues"]')).toHaveAttribute("aria-current", "true");
@@ -387,9 +389,9 @@ test("issue views, qualifiers and the New issue menu work like GitHub", async ({
   await expect(reopen).toBeVisible();
   await page.reload();
   await expect(rows).toHaveCount(ISSUES.length, { timeout: 15_000 });
-  await expect(page.locator("[data-repo-issue-views]")).toBeHidden();
+  await expect(page.locator("nav[data-repo-issue-views]")).toBeHidden();
   await page.locator('[data-repo-issue-views-toggle][aria-label="Show issue views"]').click();
-  await expect(page.locator("[data-repo-issue-views]")).toBeVisible();
+  await expect(page.locator("nav[data-repo-issue-views]")).toBeVisible();
 
   // Import CSV lives in the New issue menu.
   await page.locator("[data-repo-issue-new-menu] summary").click();
@@ -515,6 +517,11 @@ test("opening an issue paints its page from the clicked row before the mirror an
   await expect(page.locator("[data-repo-issues] [data-repo-record-number]")).toHaveCount(
     ISSUES.length, { timeout: 15_000 },
   );
+  await page.route((url) => url.pathname === "/api/repo/acme/widgets/blobs"
+    && url.searchParams.getAll("path").some((path) => path.endsWith("/1/issue-1.json")), async (route) => {
+    await blobHeld;
+    return route.fallback();
+  });
 
   await page.locator('[data-repo-issues] [data-repo-record-number="1"]').click();
   await expect(page).toHaveURL(/\/acme\/widgets\/issues\/1$/);
@@ -524,7 +531,7 @@ test("opening an issue paints its page from the clicked row before the mirror an
   await expect(skeleton).toContainText("Alice opened");
   await expect(skeleton.locator(".issue-label")).toHaveText(["bug", "backend"]);
   // The list's own chrome has already stepped aside.
-  await expect(page.locator("[data-repo-issue-views]")).toBeHidden();
+  await expect(page.locator("nav[data-repo-issue-views]")).toBeHidden();
   await expect(page.locator('[data-repo-filter-query="issues"]')).toBeHidden();
 
   releaseBlob();
@@ -538,12 +545,54 @@ test("opening an issue paints its page from the clicked row before the mirror an
   await expect(page.locator("[data-repo-issues] [data-repo-record-number]")).toHaveCount(
     ISSUES.length, { timeout: 15_000 },
   );
-  await expect(page.locator("[data-repo-issue-views]")).toBeVisible();
+  await expect(page.locator("nav[data-repo-issue-views]")).toBeVisible();
   await expect(page.locator('[data-repo-record-detail="issues"]')).toHaveCount(0);
 
   // Browser Back returns to the issue page.
   await page.goBack();
   await expect(page.locator('[data-repo-record-detail="issues"] [data-repo-issue-title-heading]'))
     .toHaveText("Fix the parser #1", { timeout: 15_000 });
-  await expect(page.locator("[data-repo-issue-views]")).toBeHidden();
+  await expect(page.locator("nav[data-repo-issue-views]")).toBeHidden();
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("issue toolbar buttons share one height and the list header stays compact", async ({
+    page,
+  }) => {
+    await mockIssuesPage(page);
+    await page.goto("/acme/widgets/issues");
+    await expect(page.locator("[data-repo-issues] [data-repo-record-number]")).toHaveCount(
+      ISSUES.length,
+    );
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+
+    const heights = await page.evaluate(() => [
+      "[data-repo-issues-refresh]",
+      "[data-repo-issue-new]",
+      "[data-repo-issue-new-menu] summary",
+      "[data-repo-issue-view-select]",
+    ].map((selector) => document.querySelector(selector).getBoundingClientRect().height));
+    expect(new Set(heights).size).toBe(1);
+    const tops = await page.evaluate(() => [
+      "[data-repo-issue-view-select]",
+      "[data-repo-issues-refresh]",
+      "[data-repo-issue-new]",
+    ].map((selector) => document.querySelector(selector).getBoundingClientRect().top));
+    expect(new Set(tops).size).toBe(1);
+
+    const header = page.locator("[data-repo-issue-list-header]");
+    const filters = page.locator("[data-repo-issue-list-filters]");
+    const filterBox = await filters.boundingBox();
+    expect(filterBox.height).toBeLessThanOrEqual(32);
+    expect((await header.boundingBox()).height).toBeLessThanOrEqual(80);
+    expect(await filters.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    expect((await page.locator('[data-dashboard-issue-filter="open"]').boundingBox()).height)
+      .toBeLessThanOrEqual(32);
+
+    const row = page.locator('[data-repo-issues] a[data-repo-record-number="3"]');
+    expect((await row.boundingBox()).height).toBeLessThanOrEqual(56);
+    await expect(row.locator("[data-repo-issue-row-title]")).toHaveCSS("font-size", "14px");
+  });
 });

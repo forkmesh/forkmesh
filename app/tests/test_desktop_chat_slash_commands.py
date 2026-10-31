@@ -400,7 +400,14 @@ def test_desktop_chat_header_opens_channel_settings_from_the_info_button():
     )
     assert "canManageConversation(m_currentConversation)" in gate
     assert "isOfficeConversation(m_currentConversation)" in gate
-    assert "m_channelSettingsButton->setVisible(manageable)" in gate
+    assert "m_channelSettingsButton->setVisible(\n        !m_currentConversation.isEmpty() &&\n        !isDirectConversation(m_currentConversation));" in gate
+    dialog = _region(
+        MESSAGES,
+        "void MainWindow::openChannelSettings()",
+        "void MainWindow::promptDeleteRoom(",
+    )
+    assert "const bool manage = m_officeChannelMirror->canManageConversation(target);" in dialog
+    assert "if (!manage) {" in dialog
     assert "refreshChannelSettingsButton();" in MESSAGES
 
 

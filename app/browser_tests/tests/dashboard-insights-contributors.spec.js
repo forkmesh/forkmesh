@@ -151,7 +151,10 @@ test("Insights links resolvable contributors to their ForkMesh profiles", async 
           closedPulls: 13, closedUnmergedPulls: 0,
         },
       };
-    } else if (url.pathname.startsWith("/api/accounts/")) {
+    } else if (
+      url.pathname.startsWith("/api/accounts/")
+      && !["sessions", "name-case"].includes(url.pathname.slice("/api/accounts/".length))
+    ) {
       const name = decodeURIComponent(url.pathname.slice("/api/accounts/".length));
       accountLookups.push(name);
       body = accounts[name] || { ok: true, exists: false, available: true, name };
@@ -172,7 +175,7 @@ test("Insights links resolvable contributors to their ForkMesh profiles", async 
   await expect(insights).toContainText("ForkMesh Deploy");
   const mirrorLink = insights.locator('a[href$="/@mirror23"]');
   await expect(mirrorLink).toHaveText("mirror23");
-  await expect(mirrorLink).toHaveAttribute("title", "ForkMesh profile @mirror23");
+  await expect(mirrorLink).toHaveAttribute("data-issue-person", "mirror23");
   // The account name itself is the link, not a separate badge beside it.
   await expect(insights.locator('a[href$="/@jett"]')).toHaveText("jett");
 

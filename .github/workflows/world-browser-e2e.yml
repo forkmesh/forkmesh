@@ -11,12 +11,12 @@ permissions:
 
 concurrency:
   group: forkmesh-world-browser-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   world-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +50,9 @@ jobs:
       - name: Install the pinned Chromium headless shell
         working-directory: world/browser_tests
         run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Install ffmpeg for the fake camera clip
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Exercise WebGL, keyboard, touch, and two-client privacy
         working-directory: world/browser_tests

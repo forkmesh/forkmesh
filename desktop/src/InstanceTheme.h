@@ -17,13 +17,14 @@ struct Colors {
     bool isEmpty() const { return dark.isEmpty() && light.isEmpty(); }
     bool operator==(const Colors &other) const
     {
-        return dark == other.dark && light == other.light;
+        return dark == other.dark && light == other.light && name == other.name;
     }
     bool operator!=(const Colors &other) const { return !(*this == other); }
 };
 
 QMap<QString, QString> roleColors(const QJsonObject &tokens, bool dark);
 Colors fromInstanceDocument(const QJsonObject &document);
+QString label(const Colors &colors);
 QJsonObject toJson(const Colors &colors);
 Colors fromJson(const QJsonObject &object);
 Colors stored();

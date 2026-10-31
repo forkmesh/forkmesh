@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 from types import SimpleNamespace
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,8 @@ def _runtime(
     valid_session=True,
     account_rec=None,
     activity_seen=0,
+    admin=False,
+    admin_path="",
 ):
     calls = []
     audits = []
@@ -77,6 +80,10 @@ def _runtime(
     def response(body, status=200, **kwargs):
         return {"body": body, "status": status, **kwargs}
 
+    async def admin_flag(_env, name):
+        calls.append(("admin_flag", name))
+        return admin
+
     namespace = {
         "ACCOUNT_EMAIL_STATUS_DELIVERED": "delivered",
         "ACCOUNT_EMAIL_STATUS_FAILED": "failed",
@@ -84,6 +91,9 @@ def _runtime(
         "Date": SimpleNamespace(now=lambda: now),
         "MAX_NODE_NAME": 63,
         "_account_revoke_sessions": revoke,
+        "_admin_path": lambda _env: admin_path,
+        "_is_admin_flag": admin_flag,
+        "quote": quote,
         "_account_session_lookup": lookup,
         "_account_session_invalid_error": invalid_error,
         "_audit_sensitive_action": audit,
@@ -106,6 +116,7 @@ def _runtime(
     }
     exec(_source("_account_last_seen"), namespace)
     exec(_source("_account_email_activity"), namespace)
+    exec(_source("_account_admin_link"), namespace)
     exec(_source("_account_sessions"), namespace)
     return namespace["_account_sessions"], calls, audits, lookups
 
@@ -193,6 +204,38 @@ def test_session_list_reports_last_seen_and_last_email():
     assert activity[2] == ("account-bi", "account-bi")
     # No subject, body, or recipient address is stored or returned.
     assert "@" not in json.dumps(response["body"]["account"])
+
+
+def test_session_list_carries_the_admin_console_link_for_admins_only():
+    rows = [{"session_id": "c" * 32, "expires_at": 3_000_000}]
+    sessions, calls, _audits, _lookups = _runtime(
+        rows=rows, admin=True, admin_path="secret-console",
+        account_rec={"name": "alice", "totp_enrolled": True})
+    response = asyncio.run(sessions(
+        object(), SimpleNamespace(method="GET", headers={})))
+    account = response["body"]["account"]
+    assert account["isAdmin"] is True
+    assert account["adminUrl"] == "/secret-console?admin=alice"
+
+    sessions, _calls, _audits, _lookups = _runtime(
+        rows=rows, admin=True, account_rec={
+            "name": "alice", "totp_enrolled": True})
+    account = asyncio.run(sessions(
+        object(), SimpleNamespace(method="GET", headers={})))["body"]["account"]
+    assert account["isAdmin"] is True
+    assert "adminUrl" not in account
+
+    for rec, flag in (({"name": "alice"}, True),
+                      ({"name": "alice", "totp_enrolled": True}, False)):
+        sessions, calls, _audits, _lookups = _runtime(
+            rows=rows, admin=flag, admin_path="secret-console",
+            account_rec=rec)
+        account = asyncio.run(sessions(
+            object(), SimpleNamespace(method="GET", headers={})))["body"]["account"]
+        assert "isAdmin" not in account
+        assert "adminUrl" not in account
+        if not rec.get("totp_enrolled"):
+            assert not any(call[0] == "admin_flag" for call in calls)
 
 
 def test_cookie_session_list_renews_the_long_lived_cookie():

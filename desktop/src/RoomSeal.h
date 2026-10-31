@@ -263,6 +263,7 @@ private:
         bool loaded = false;
         qint64 counter = 0;
         qint64 reserved = 0;
+        quint64 reserveTicket = 0;
         bool seenLoaded = false;
         QHash<QString, Seen> seen;
         bool ratchetsLoaded = false;

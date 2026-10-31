@@ -23,6 +23,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.ParcelUuid
 import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.glasses.GlassesAdvert
 import com.forkmesh.nativeapp.glasses.GlassesCensus
@@ -266,7 +267,7 @@ class GlassesWatchService : Service() {
         val notification = Notification.Builder(this, STATUS_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_ping)
             .setContentTitle("Glasses Alert is watching")
-            .setContentText("Scanning Bluetooth for Meta smart glasses near you")
+            .setContentText("Scanning Bluetooth for smart glasses and cameras near you")
             .setOngoing(true)
             .setShowWhen(false)
             .setCategory(Notification.CATEGORY_SERVICE)
@@ -285,7 +286,7 @@ class GlassesWatchService : Service() {
         if (manager.getNotificationChannel(STATUS_CHANNEL) != null) return
         manager.createNotificationChannel(
             NotificationChannel(STATUS_CHANNEL, "Glasses Alert watching", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Shown while Glasses Alert scans Bluetooth for smart glasses."
+                description = "Shown while Glasses Alert scans Bluetooth for smart glasses and cameras."
                 setShowBadge(false)
             },
         )
@@ -320,6 +321,9 @@ class GlassesWatchService : Service() {
     private fun launchScan(scanner: BluetoothLeScanner, wanted: ScanDuty): Boolean {
         val filters = GlassesSignatures.COMPANY_IDS.map { id ->
             ScanFilter.Builder().setManufacturerData(id, ByteArray(0), ByteArray(0)).build()
+        } + GlassesSignatures.SERVICE_UUIDS.flatMap { id ->
+            val uuid = ParcelUuid.fromString("0000%04X-0000-1000-8000-00805F9B34FB".format(id))
+            listOf(ScanFilter.Builder().setServiceUuid(uuid).build(), ScanFilter.Builder().setServiceData(uuid, ByteArray(0)).build())
         }
         val settings = ScanSettings.Builder()
             .setScanMode(wanted.scanMode)
@@ -422,9 +426,8 @@ class GlassesWatchService : Service() {
         if (!scanning) return
         val advert = advert(result) ?: return
         trackHoming.hear(advert.address, advert.rssi, GlassesCompass.heading.value, System.currentTimeMillis())
-        if (advert.companyIds.any { it in GlassesSignatures.COMPANY_IDS }) return
-        if (GlassesSignatures.nameMatches(advert.name)) {
-            handle(advert)
+        if (GlassesSignatures.kind(advert) != null) {
+            if (!GlassesSignatures.watched(advert)) handle(advert)
             return
         }
         NearbyKinds.device(advert, System.currentTimeMillis())?.let(census::observe)

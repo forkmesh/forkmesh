@@ -1,0 +1,30 @@
+{
+  "name": "poker",
+  "version": "1.0.0",
+  "description": "No-limit Texas Hold'em with other ForkMesh users for virtual chips.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["poker", "texas holdem", "cards", "game", "multiplayer"],
+  "interface": {
+    "displayName": "Poker",
+    "shortDescription": "Texas Hold'em with ForkMesh friends.",
+    "longDescription": "Sit down at a felt table with other ForkMesh users and play no-limit Texas Hold'em for virtual chips, with a dealer, blinds, side pots, turn clocks, bots to fill empty seats, table chat and casino sounds on the web, desktop and phones.",
+    "developerName": "ForkMesh",
+    "category": "Fun",
+    "capabilities": ["Interactive"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "How many chips do I have?",
+      "Which poker tables are open?",
+      "What beats a flush?"
+    ],
+    "brandColor": "#0D5C3A"
+  }
+}

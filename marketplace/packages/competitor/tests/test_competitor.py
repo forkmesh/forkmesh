@@ -121,6 +121,28 @@ def test_competitor_profiles_are_encrypted_shared_and_filter_ready():
     assert deleted["data"]["deleted"] is True
 
 
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    created = call(runtime.use("POST", body={
+        "name": "Northstar", "website": "https://northstar.example"}),
+        "/api/competitors/acme/items")
+    assert created["status"] == 201
+    item = created["data"]["competitor"]["id"]
+    runtime.db.execute("UPDATE org_members SET role='guest' WHERE member_bi='bi:charlie'")
+    for path in ("/api/competitors/acme", f"/api/competitors/acme/items/{item}"):
+        guest = call(runtime.use("GET", actor="charlie"), path)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    runtime.db.execute("UPDATE org_members SET role='auditor' WHERE member_bi='bi:charlie'")
+    assert call(runtime.use("GET", actor="charlie"), "/api/competitors/acme")["status"] == 200
+    for method, path, body in (
+            ("POST", "/api/competitors/acme/items", {"name": "Mallory"}),
+            ("PATCH", f"/api/competitors/acme/items/{item}", {"status": "archived"}),
+            ("DELETE", f"/api/competitors/acme/items/{item}", {})):
+        refused = call(runtime.use(method, "charlie", body), path)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
+    assert runtime.db.execute("SELECT COUNT(*) FROM competitor_profiles").fetchone()[0] == 1
+
+
 def test_competitor_rejects_bad_urls_and_uninstalled_access():
     runtime = Runtime()
     bad = call(runtime.use("POST", body={"name": "Bad", "website": "http://bad"}),

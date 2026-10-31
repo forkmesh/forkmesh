@@ -359,6 +359,7 @@ internal class InstanceFeedScreen(
                         icon = "send",
                         tone = FmTone.Success,
                         filled = true,
+                        busy = posting,
                     )
                 }
             }

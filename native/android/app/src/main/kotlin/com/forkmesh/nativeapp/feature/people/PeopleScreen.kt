@@ -510,6 +510,8 @@ private fun PeopleProfileSheet(person: PeopleRanked, viewer: String, onDismiss: 
                                 Text(profile.location, style = Fm.text.bodySmall, color = c.textSecondary)
                             }
                         }
+                        Text("Tips", style = Fm.text.titleSmall, color = c.textPrimary)
+                        ProfileTipContent(profile.name, profile.tipAddress)
                     }
                     !model?.error.isNullOrEmpty() -> Text(model?.error.orEmpty(), style = Fm.text.bodyMedium, color = c.textSecondary)
                     else -> Text("Loading profile…", style = Fm.text.bodyMedium, color = c.textSecondary)

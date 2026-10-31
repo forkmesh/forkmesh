@@ -90,8 +90,8 @@ internal suspend fun showNewCoveDialog(messenger: FmMessenger, repoSlug: String)
                 Modifier.fillMaxWidth().padding(top = FmSpace.x3),
                 horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
             ) {
-                FmTextButton(onClick = { usePassword = false }, enabled = usePassword) { Text("Accounts I invite") }
-                FmTextButton(onClick = { usePassword = true }, enabled = !usePassword) { Text("Anyone with a password") }
+                FmTextButton(onClick = { usePassword = false }, enabled = usePassword, busy = false) { Text("Accounts I invite") }
+                FmTextButton(onClick = { usePassword = true }, enabled = !usePassword, busy = false) { Text("Anyone with a password") }
             }
             if (usePassword) {
                 FmTextField(

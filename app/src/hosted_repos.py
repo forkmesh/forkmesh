@@ -768,10 +768,10 @@ async def replicas(runtime, raw):
         if fork and item["visibility"] == "public" and fork[0] in public_ids:
             item["forkOf"], item["network"] = fork
         elif upstream and item["visibility"] == "public":
-            clone_url = await _upstream_clone_url(
+            parent = await _upstream_parent(
                 runtime, upstream[0], upstream_urls)
-            if clone_url:
-                item["forkUpstream"] = dict(upstream[0], cloneUrl=clone_url)
+            if parent:
+                item["forkUpstream"] = parent
                 item["network"] = upstream[1]
         push_report = push_reports.get(repo_id)
         if isinstance(push_report, dict) and hasattr(
@@ -824,7 +824,7 @@ async def replicas(runtime, raw):
                              "removed": removed})
 
 
-async def _upstream_clone_url(runtime, upstream, cache):
+async def _upstream_parent(runtime, upstream, cache):
     key = (upstream["owner"] + "/" + upstream["name"]).lower()
     if key not in cache:
         parent = None
@@ -834,10 +834,21 @@ async def _upstream_clone_url(runtime, upstream, cache):
                     upstream["owner"], upstream["name"])
             except Exception:
                 parent = None
-        cache[key] = ""
+        cache[key] = None
         if isinstance(parent, dict):
-            cache[key] = (fork_clone_url(parent.get("cloneUrl"))
-                          or upstream["cloneUrl"])
+            served = ""
+            if hasattr(runtime, "fork_parent_alias"):
+                try:
+                    served = str(await runtime.fork_parent_alias(
+                        upstream["owner"], upstream["name"]) or "").lower()
+                except Exception:
+                    served = ""
+            if not OWNER_RE.fullmatch(served):
+                served = upstream["owner"]
+            cache[key] = dict(
+                upstream, owner=served,
+                cloneUrl=(fork_clone_url(parent.get("cloneUrl"))
+                          or upstream["cloneUrl"]))
     return cache[key]
 
 

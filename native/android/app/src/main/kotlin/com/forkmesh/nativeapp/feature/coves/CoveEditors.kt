@@ -120,6 +120,7 @@ class CoveDocumentScreen(private val repo: CoveRepo, private val coveId: String,
                         }
                     },
                     enabled = dirty && !saving,
+                    busy = saving,
                 ) { Text(if (saving) "Saving…" else "Save") }
             }
             error?.let {
@@ -162,8 +163,8 @@ private fun CoveSpreadsheetEditor(text: String, onChange: (String) -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x2), horizontalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
             FmTextButton(onClick = { commit(grid + listOf(List(columns) { "" })) }) { Text("Add row") }
             FmTextButton(onClick = { commit(grid.map { it + "" }) }) { Text("Add column") }
-            FmTextButton(onClick = { commit(grid.dropLast(1)) }, enabled = grid.size > 1) { Text("Delete last row") }
-            FmTextButton(onClick = { commit(grid.map { it.dropLast(1) }) }, enabled = columns > 1) { Text("Delete last column") }
+            FmTextButton(onClick = { commit(grid.dropLast(1)) }, enabled = grid.size > 1, busy = false) { Text("Delete last row") }
+            FmTextButton(onClick = { commit(grid.map { it.dropLast(1) }) }, enabled = columns > 1, busy = false) { Text("Delete last column") }
         }
         Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState()).padding(FmSpace.x2)) {
             Column {

@@ -11,6 +11,7 @@
 #include "PrivateMirrorStore.h"
 #include "PublicMirrorRuntime.h"
 #include "RunnerSetupHandoff.h"
+#include "UiKit.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -25,8 +26,11 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QLocale>
+#include <QMenu>
 #include <QNetworkReply>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -39,6 +43,9 @@
 #include <QTextDocument>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QtMath>
+
+#include <functional>
 
 using namespace forkmesh::ui;
 
@@ -72,7 +79,372 @@ QLabel *cardSubheading(const QString &text)
     QFont font = label->font();
     font.setBold(true);
     label->setFont(font);
+    if (Theme::isNext())
+        label->setProperty("controlNextRole", QStringLiteral("subheading"));
     return label;
+}
+
+const char *const kControlTabIcon = "controlNextIcon";
+const char *const kControlTabFitted = "controlNextFitted";
+const char *const kControlTabClassicWidth = "controlClassicWidth";
+constexpr int kControlTabHeight = 36;
+constexpr int kControlTabIconPx = 14;
+constexpr int kControlTabPad = 10;
+constexpr int kControlBodyMaxWidth = 1100;
+
+QString controlNextTabIcon(const QString &icon)
+{
+    if (icon == QLatin1String("broadcast"))
+        return QStringLiteral("sync");
+    if (icon == QLatin1String("cloud"))
+        return QStringLiteral("broadcast");
+    return icon;
+}
+
+class ControlTabStyler : public QObject
+{
+public:
+    explicit ControlTabStyler(QObject *parent) : QObject(parent) {}
+
+    void adopt(VerticalIconButton *tile, const QString &icon)
+    {
+        if (!tile)
+            return;
+        tile->setProperty(kControlTabIcon, icon);
+        tile->installEventFilter(this);
+        fit(tile);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        const QEvent::Type type = event->type();
+        if (type != QEvent::Paint && type != QEvent::Show && type != QEvent::FontChange &&
+            type != QEvent::Polish && type != QEvent::StyleChange)
+            return false;
+        auto *tile = dynamic_cast<VerticalIconButton *>(watched);
+        if (!tile)
+            return false;
+        if (type == QEvent::Polish || type == QEvent::StyleChange) {
+            QPointer<VerticalIconButton> guarded(tile);
+            QTimer::singleShot(0, tile, [guarded] {
+                if (guarded)
+                    fit(guarded);
+            });
+            return false;
+        }
+        if (type != QEvent::Paint) {
+            fit(tile);
+            return false;
+        }
+        if (!active(tile)) {
+            release(tile);
+            return false;
+        }
+        if (tile->size() != preferred(tile)) {
+            QPointer<VerticalIconButton> guarded(tile);
+            QTimer::singleShot(0, tile, [guarded] {
+                if (guarded)
+                    fit(guarded);
+            });
+        }
+        paint(tile);
+        return true;
+    }
+
+private:
+    static bool active(const VerticalIconButton *tile)
+    {
+        return Theme::isNext() && !tile->inRail();
+    }
+
+    static QFont labelFont(const QWidget *tile)
+    {
+        QFont font = tile->font();
+        font.setPixelSize(13);
+        font.setWeight(QFont::Medium);
+        return font;
+    }
+
+    static QSize preferred(const VerticalIconButton *tile)
+    {
+        const int label =
+            qCeil(QFontMetricsF(labelFont(tile)).horizontalAdvance(tile->text())) + 2;
+        return QSize(kControlTabPad + kControlTabIconPx + 6 + label + kControlTabPad,
+                     kControlTabHeight);
+    }
+
+    static void fit(VerticalIconButton *tile)
+    {
+        if (!active(tile)) {
+            release(tile);
+            return;
+        }
+        if (!tile->property(kControlTabFitted).toBool()) {
+            tile->setProperty(kControlTabClassicWidth,
+                              tile->minimumWidth() == tile->maximumWidth()
+                                  ? tile->minimumWidth()
+                                  : -1);
+        }
+        const QSize want = preferred(tile);
+        if (tile->minimumSize() != want || tile->maximumSize() != want)
+            tile->setFixedSize(want);
+        tile->setProperty(kControlTabFitted, true);
+    }
+
+    static void release(VerticalIconButton *tile)
+    {
+        if (!tile->property(kControlTabFitted).toBool())
+            return;
+        tile->setProperty(kControlTabFitted, false);
+        const int width = tile->property(kControlTabClassicWidth).toInt();
+        if (width > 0) {
+            tile->setFixedWidth(width);
+        } else {
+            tile->setMinimumWidth(0);
+            tile->setMaximumWidth(QWIDGETSIZE_MAX);
+        }
+        tile->setMinimumHeight(0);
+        tile->setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+
+    static void paint(VerticalIconButton *tile)
+    {
+        QPainter painter(tile);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const bool enabled = tile->isEnabled();
+        const bool hovered = enabled && tile->underMouse();
+        const bool checked = tile->isChecked();
+        const bool toggle =
+            tile->objectName() == QLatin1String("controlNodeHelpToggle");
+        const int width = tile->width();
+        const int height = tile->height();
+        QColor fg = Theme::color(checked || hovered ? Theme::Role::Fg
+                                                    : Theme::Role::FgMuted);
+        if (!enabled)
+            fg = Theme::color(Theme::Role::FgSubtle);
+        if (toggle && checked) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Theme::color(Theme::Role::SurfaceRaised));
+            painter.drawRoundedRect(QRectF(2, 5, width - 4, height - 10), 6, 6);
+        }
+        const QRect iconRect(kControlTabPad, (height - kControlTabIconPx) / 2,
+                             kControlTabIconPx, kControlTabIconPx);
+        const QString icon = tile->property(kControlTabIcon).toString();
+        if (!icon.isEmpty())
+            painter.drawPixmap(iconRect.topLeft(),
+                               tintedOcticonPixmap(icon, fg, kControlTabIconPx));
+        const QFont font = labelFont(tile);
+        const int x = iconRect.right() + 1 + 6;
+        const int room = qMax(0, width - x - kControlTabPad + 2);
+        painter.setFont(font);
+        painter.setPen(fg);
+        painter.drawText(QRect(x, 0, room, height), Qt::AlignVCenter | Qt::AlignLeft,
+                         QFontMetrics(font).elidedText(tile->text(), Qt::ElideRight, room));
+        if (checked && !toggle) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Theme::color(Theme::Role::AccentFg));
+            painter.drawRoundedRect(QRectF(8, height - 2, qMax(0, width - 16), 2), 1, 1);
+        }
+    }
+};
+
+class ControlStatusDot : public QWidget
+{
+public:
+    ControlStatusDot(QLabel *status, QWidget *spinner, QWidget *parent = nullptr)
+        : QWidget(parent), m_status(status), m_spinner(spinner)
+    {
+        setObjectName(QStringLiteral("controlNextStatusDot"));
+        setFixedSize(6, 16);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        if (status)
+            status->installEventFilter(this);
+        if (spinner)
+            spinner->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        Q_UNUSED(watched);
+        const QEvent::Type type = event->type();
+        if (type == QEvent::Paint || type == QEvent::Show || type == QEvent::Hide)
+            update();
+        return false;
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        if (!m_status || (m_spinner && m_spinner->isVisible()))
+            return;
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Theme::color(tone()));
+        painter.drawEllipse(QRectF(0, 5, 6, 6));
+    }
+
+private:
+    Theme::Role tone() const
+    {
+        const QString text = m_status->text();
+        if (!m_status->styleSheet().isEmpty() ||
+            text.contains(QLatin1String("failed"), Qt::CaseInsensitive) ||
+            text.contains(QLatin1String("not found"), Qt::CaseInsensitive) ||
+            text.contains(QLatin1String("could not start"), Qt::CaseInsensitive))
+            return Theme::Role::Danger;
+        if (text.startsWith(QLatin1String("Force is armed")))
+            return Theme::Role::Warning;
+        if (text.startsWith(QLatin1String("Ready")) ||
+            text.contains(QLatin1String("succeeded"), Qt::CaseInsensitive) ||
+            text.contains(QLatin1String("finished"), Qt::CaseInsensitive))
+            return Theme::Role::Success;
+        return Theme::Role::FgSubtle;
+    }
+
+    QPointer<QLabel> m_status;
+    QPointer<QWidget> m_spinner;
+};
+
+class ControlShowWhenEnabled : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::EnabledChange && Theme::isNext()) {
+            if (auto *widget = qobject_cast<QWidget *>(watched))
+                widget->setVisible(widget->isEnabled());
+        }
+        return false;
+    }
+};
+
+void arrangeNextDeployCard(QFrame *card, QVBoxLayout *col, const QString &icon,
+                           const QString &title, QWidget *spinner, QLabel *status,
+                           const QList<QPushButton *> &actions,
+                           const QList<QWidget *> &hidden)
+{
+    if (!card || !col)
+        return;
+    QList<QWidget *> ordered;
+    std::function<void(QLayout *)> collect = [&](QLayout *layout) {
+        for (int index = 0; index < layout->count(); ++index) {
+            QLayoutItem *item = layout->itemAt(index);
+            if (QWidget *widget = item->widget())
+                ordered.append(widget);
+            else if (QLayout *nested = item->layout())
+                collect(nested);
+        }
+    };
+    collect(col);
+    while (QLayoutItem *item = col->takeAt(0))
+        delete item;
+
+    card->setProperty("controlNextCard", true);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(0);
+
+    auto *head = new QHBoxLayout;
+    head->setContentsMargins(16, 14, 16, 14);
+    head->setSpacing(12);
+    auto *glyph = new QLabel;
+    glyph->setObjectName(QStringLiteral("controlNextCardIcon"));
+    glyph->setFixedSize(16, 18);
+    glyph->setAlignment(Qt::AlignLeft | Qt::AlignBottom);
+    glyph->setPixmap(tintedOcticonPixmap(icon, Theme::color(Theme::Role::FgMuted), 16));
+    head->addWidget(glyph, 0, Qt::AlignTop);
+    auto *titleCol = new QVBoxLayout;
+    titleCol->setContentsMargins(0, 0, 0, 0);
+    titleCol->setSpacing(2);
+    auto *heading = new QLabel(title);
+    heading->setObjectName(QStringLiteral("controlNextCardTitle"));
+    titleCol->addWidget(heading);
+    auto *statusRow = new QHBoxLayout;
+    statusRow->setContentsMargins(0, 0, 0, 0);
+    statusRow->setSpacing(6);
+    if (status) {
+        status->setProperty("controlNextRole", QStringLiteral("status"));
+        statusRow->addWidget(new ControlStatusDot(status, spinner), 0, Qt::AlignTop);
+    }
+    if (spinner)
+        statusRow->addWidget(spinner, 0, Qt::AlignTop);
+    if (status)
+        statusRow->addWidget(status, 1);
+    titleCol->addLayout(statusRow);
+    head->addLayout(titleCol, 1);
+    for (QPushButton *button : actions) {
+        if (button)
+            head->addWidget(button, 0, Qt::AlignTop);
+    }
+    col->addLayout(head);
+
+    auto *rule = new QFrame;
+    rule->setObjectName(QStringLiteral("controlNextCardRule"));
+    rule->setFrameShape(QFrame::NoFrame);
+    rule->setFixedHeight(1);
+    col->addWidget(rule);
+
+    auto *body = new QVBoxLayout;
+    body->setContentsMargins(16, 16, 16, 16);
+    body->setSpacing(10);
+    for (QWidget *widget : std::as_const(ordered)) {
+        auto *asButton = qobject_cast<QPushButton *>(widget);
+        if (widget == spinner || widget == status ||
+            (asButton && actions.contains(asButton)))
+            continue;
+        if (hidden.contains(widget)) {
+            widget->setVisible(false);
+            continue;
+        }
+        body->addWidget(widget);
+    }
+    col->addLayout(body);
+}
+
+void polishControlNextChrome(QWidget *page)
+{
+    if (!page)
+        return;
+    const auto buttons = page->findChildren<QPushButton *>();
+    for (QPushButton *button : buttons) {
+        if (dynamic_cast<VerticalIconButton *>(button) ||
+            button->property("controlNextButton").isValid())
+            continue;
+        const bool primary =
+            button->property("buttonSize").toString() == QLatin1String("primary");
+        button->setProperty("controlNextButton",
+                            primary ? QStringLiteral("primary") : QStringLiteral("outline"));
+        if (!button->property("nextIconRole").isValid())
+            button->setProperty("nextIconRole",
+                                int(primary ? Theme::Role::Bg : Theme::Role::Fg));
+        applyStoredOcticon(button);
+    }
+    for (const char *name :
+         {"controlPermissionsTable", "exportValuesTable", "exportDataTable",
+          "importValuesTable", "contributorRewardsTable", "rewardPoolIntentsTable"}) {
+        auto *table = page->findChild<QTableWidget *>(QLatin1String(name));
+        if (!table || table->property("dataTable").toBool())
+            continue;
+        table->setProperty("dataTable", true);
+        if (table->testAttribute(Qt::WA_WState_Polished)) {
+            QEvent polish(QEvent::Polish);
+            QCoreApplication::sendEvent(table, &polish);
+        }
+    }
+    const auto forms = page->findChildren<QFormLayout *>();
+    for (QFormLayout *form : forms) {
+        form->setHorizontalSpacing(16);
+        form->setVerticalSpacing(8);
+        for (int row = 0; row < form->rowCount(); ++row) {
+            QLayoutItem *item = form->itemAt(row, QFormLayout::LabelRole);
+            if (QWidget *label = item ? item->widget() : nullptr)
+                label->setProperty("controlNextRole", QStringLiteral("fieldLabel"));
+        }
+    }
 }
 
 // The export and import pages list secrets by name. Masking is a screen
@@ -147,6 +519,8 @@ QTableWidget *systemValuesTable(const QString &objectName)
     return table;
 }
 
+constexpr int kValueTooltipChars = 2000;
+
 void appendValueRow(QTableWidget *table, const QString &section,
                     const QString &name, const QString &value)
 {
@@ -156,8 +530,8 @@ void appendValueRow(QTableWidget *table, const QString &section,
     table->insertRow(row);
     table->setItem(row, 0, new QTableWidgetItem(section));
     table->setItem(row, 1, new QTableWidgetItem(name));
-    auto *valueItem = new QTableWidgetItem(value);
-    valueItem->setToolTip(value);
+    auto *valueItem = new QTableWidgetItem(forkmesh::ui::kit::cellDisplayText(value));
+    valueItem->setToolTip(forkmesh::ui::kit::cellDisplayText(value, kValueTooltipChars));
     table->setItem(row, 2, valueItem);
 }
 
@@ -395,9 +769,14 @@ QWidget *MainWindow::buildControlNodeSection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("controlNodeSection"));
+    const bool next = Theme::isNext();
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(24, kRepoTabRowTopInset, 24, 24);
     outer->setSpacing(8);
+    if (next) {
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+    }
 
     auto *tabs = new QTabWidget;
     tabs->setObjectName(QStringLiteral("controlNodeTabs"));
@@ -425,7 +804,31 @@ QWidget *MainWindow::buildControlNodeSection()
         auto *bodyCol = new QVBoxLayout(body);
         bodyCol->setContentsMargins(2, 6, 2, 12);
         bodyCol->setSpacing(14);
-        bodyCol->addWidget(card);
+        if (next) {
+            bodyCol->setContentsMargins(24, 20, 24, 24);
+            bodyCol->setSpacing(12);
+            const auto addCentred = [bodyCol](QWidget *widget) {
+                auto *row = new QHBoxLayout;
+                row->setContentsMargins(0, 0, 0, 0);
+                row->setSpacing(0);
+                row->addStretch(0);
+                row->addWidget(widget, 1);
+                row->addStretch(0);
+                bodyCol->addLayout(row);
+            };
+            if (!card->property("controlNextBare").toBool()) {
+                auto *heading = new QLabel(name);
+                heading->setObjectName(QStringLiteral("controlNextSectionTitle"));
+                heading->setMaximumWidth(kControlBodyMaxWidth);
+                heading->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                addCentred(heading);
+            }
+            card->setMaximumWidth(kControlBodyMaxWidth);
+            card->setSizePolicy(QSizePolicy::Expanding, card->sizePolicy().verticalPolicy());
+            addCentred(card);
+        } else {
+            bodyCol->addWidget(card);
+        }
         bodyCol->addStretch();
         auto *scroll = new QScrollArea;
         scroll->setObjectName(QStringLiteral("controlNodeTabScroll"));
@@ -442,6 +845,8 @@ QWidget *MainWindow::buildControlNodeSection()
         tile->setChecked(index == 0);
         tile->setToolTip(name);
         tile->setOcticonName(icon);
+        if (next)
+            tile->setProperty(kControlTabIcon, controlNextTabIcon(icon));
         tabGroup->addButton(tile, index);
         tabRow->addWidget(tile);
         tabTiles.append(tile);
@@ -453,6 +858,10 @@ QWidget *MainWindow::buildControlNodeSection()
     deployCol->setSpacing(14);
     deployCol->addWidget(buildNodeDeployCard());
     deployCol->addWidget(buildSiteDeployCard());
+    if (next) {
+        deployCol->setSpacing(20);
+        deployCards->setProperty("controlNextBare", true);
+    }
     addTab(deployCards, QStringLiteral("Site deployment"),
            QStringLiteral("Deploy"), QStringLiteral("rocket"));
 
@@ -498,6 +907,11 @@ QWidget *MainWindow::buildControlNodeSection()
     serviceButtons->addWidget(logsButton);
     serviceButtons->addStretch();
     serviceCol->addLayout(serviceButtons);
+    if (next) {
+        serviceCard->setProperty("controlNextCard", true);
+        serviceCol->setContentsMargins(16, 16, 16, 16);
+    }
+    const int mirrorsTabIndex = tabs->count();
     addTab(serviceCard, QStringLiteral("Mirror client"),
            QStringLiteral("Mirrors"), QStringLiteral("broadcast"));
 
@@ -593,6 +1007,10 @@ QWidget *MainWindow::buildControlNodeSection()
             "ledger allocations; Completed on-chain transfers include a "
             "confirmed transaction signature. ForkMesh never stores a user's "
             "wallet private key.")));
+    if (next) {
+        identityCard->setProperty("controlNextCard", true);
+        identityCol->setContentsMargins(16, 16, 16, 16);
+    }
     addTab(identityCard, QStringLiteral("Keys and wallet"),
            QStringLiteral("Keys"), QStringLiteral("key"));
 
@@ -775,6 +1193,10 @@ QWidget *MainWindow::buildControlNodeSection()
         QStringLiteral("Local deployment output appears here; credentials are redacted."));
     applyLogFont(m_controlNodeOutput);
     cloudflareCol->addWidget(m_controlNodeOutput);
+    if (next) {
+        cloudflareCard->setProperty("controlNextCard", true);
+        cloudflareCol->setContentsMargins(16, 16, 16, 16);
+    }
     m_controlCloudflareTabIndex = tabs->count();
     addTab(cloudflareCard, QStringLiteral("Cloudflare relay"),
            QStringLiteral("Relay"), QStringLiteral("cloud"));
@@ -806,9 +1228,75 @@ QWidget *MainWindow::buildControlNodeSection()
     for (VerticalIconButton *tile : std::as_const(tabTiles))
         tile->setFixedWidth(tileWidth);
 
+    QPointer<QLabel> relayDot;
+    QPointer<QLabel> relayLabel;
+    if (next) {
+        helpTile->setProperty(kControlTabIcon, QStringLiteral("info"));
+        auto *head = new QHBoxLayout;
+        head->setContentsMargins(24, 14, 24, 4);
+        head->setSpacing(12);
+        auto *titleCol = new QVBoxLayout;
+        titleCol->setContentsMargins(0, 0, 0, 0);
+        titleCol->setSpacing(2);
+        auto *title = new QLabel(QStringLiteral("Control"));
+        title->setObjectName(QStringLiteral("controlNextTitle"));
+        titleCol->addWidget(title);
+        auto *lede = new QLabel(QStringLiteral(
+            "Deploy, mirrors, keys and the relay for the fleet that serves "
+            "forkmesh.com"));
+        lede->setObjectName(QStringLiteral("controlNextLede"));
+        lede->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        titleCol->addWidget(lede);
+        head->addLayout(titleCol, 1);
+        auto *relayRow = new QHBoxLayout;
+        relayRow->setContentsMargins(0, 0, 0, 0);
+        relayRow->setSpacing(6);
+        relayDot = new QLabel;
+        relayDot->setObjectName(QStringLiteral("controlNextRelayDot"));
+        relayDot->setFixedSize(6, 6);
+        relayRow->addWidget(relayDot, 0, Qt::AlignVCenter);
+        relayLabel = new QLabel;
+        relayLabel->setObjectName(QStringLiteral("controlNextRelayStatus"));
+        relayLabel->setTextFormat(Qt::PlainText);
+        relayRow->addWidget(relayLabel, 0, Qt::AlignVCenter);
+        head->addLayout(relayRow);
+        outer->addLayout(head);
+
+        for (VerticalIconButton *tile : std::as_const(tabTiles))
+            tabRow->removeWidget(tile);
+        while (QLayoutItem *item = tabRow->takeAt(0))
+            delete item;
+        tabRow->setContentsMargins(14, 4, 24, 0);
+        tabRow->setSpacing(0);
+        QList<VerticalIconButton *> ordered;
+        if (!tabTiles.isEmpty())
+            ordered.append(tabTiles.first());
+        if (mirrorsTabIndex > 0 && mirrorsTabIndex < tabTiles.size())
+            ordered.append(tabTiles.at(mirrorsTabIndex));
+        for (VerticalIconButton *tile : std::as_const(tabTiles)) {
+            if (!ordered.contains(tile))
+                ordered.append(tile);
+        }
+        auto *styler = new ControlTabStyler(page);
+        for (VerticalIconButton *tile : std::as_const(ordered)) {
+            tabRow->addWidget(tile);
+            styler->adopt(tile, tile->property(kControlTabIcon).toString());
+        }
+        tabRow->addStretch();
+    }
+
     outer->addLayout(tabRow);
+    if (next) {
+        auto *rule = new QFrame;
+        rule->setObjectName(QStringLiteral("controlNextHeaderRule"));
+        rule->setFrameShape(QFrame::NoFrame);
+        rule->setFixedHeight(1);
+        outer->addWidget(rule);
+    }
     QLabel *privacyHint = controlHint(privacy);
     privacyHint->setObjectName(QStringLiteral("controlNodePrivacyHint"));
+    if (next)
+        privacyHint->setContentsMargins(24, 12, 24, 0);
     outer->addWidget(privacyHint);
     tabs->tabBar()->hide();
     outer->addWidget(tabs, 1);
@@ -835,6 +1323,27 @@ QWidget *MainWindow::buildControlNodeSection()
         }
     });
     m_controlNodeRefreshTimer->start();
+    if (next) {
+        const auto updateRelay = [this, relayDot, relayLabel] {
+            if (!relayDot || !relayLabel)
+                return;
+            const bool connected = m_backend != nullptr;
+            const QString tone =
+                connected ? QStringLiteral("success") : QStringLiteral("warning");
+            relayLabel->setText(connected ? QStringLiteral("Relay connected")
+                                          : QStringLiteral("Relay offline"));
+            if (m_controlNodeHealth && !m_controlNodeHealth->text().isEmpty())
+                relayLabel->setToolTip(m_controlNodeHealth->text());
+            if (relayDot->property("tone").toString() != tone) {
+                relayDot->setProperty("tone", tone);
+                relayDot->style()->unpolish(relayDot);
+                relayDot->style()->polish(relayDot);
+            }
+        };
+        connect(m_controlNodeRefreshTimer, &QTimer::timeout, relayLabel.data(), updateRelay);
+        updateRelay();
+        polishControlNextChrome(page);
+    }
     return page;
 }
 
@@ -1318,28 +1827,28 @@ void MainWindow::runControlNodeHealthCheck()
                     : QStringLiteral("git OK"));
     results <<
         (forkmesh::control::findCloudflareBootstrapScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("Cloudflare bootstrap source missing")
              : QStringLiteral("Cloudflare bootstrap OK"));
     results <<
         (forkmesh::control::findCloudflareTunnelBootstrapScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("Tunnel bootstrap missing")
              : QStringLiteral("Tunnel bootstrap OK"));
     results <<
         (forkmesh::control::findMirrorGatewayScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("mirror gateway missing")
              : QStringLiteral("mirror gateway OK"));
     results <<
         (forkmesh::control::findCloudflaredInstallerScript(
-             QStringLiteral(FORKMESH_SOURCE_DIR),
+             forkmesh::sourceDir(),
              QCoreApplication::applicationDirPath())
                  .isEmpty()
              ? QStringLiteral("verified cloudflared installer missing")
@@ -1568,7 +2077,7 @@ bool MainWindow::rebuildDirectMirrorGatewayConfiguration(
     const QString origin = normalizedHttpsOrigin(hostname);
     const QString gatewayScript =
         forkmesh::control::findMirrorGatewayScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath());
     if (gatewayScript.isEmpty()) {
         if (error)
@@ -1755,7 +2264,7 @@ void MainWindow::provisionDirectMirrorEndpoint(bool dryRun)
     const QString tunnelScript =
         forkmesh::control::
             findCloudflareTunnelBootstrapScript(
-                QStringLiteral(FORKMESH_SOURCE_DIR),
+                forkmesh::sourceDir(),
                 QCoreApplication::applicationDirPath());
     QString python =
         QStandardPaths::findExecutable(
@@ -2066,7 +2575,7 @@ void MainWindow::runCloudflareBootstrap(bool dryRun)
     }
     const QString script =
         forkmesh::control::findCloudflareBootstrapScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         flashMessage(
@@ -2566,7 +3075,7 @@ void MainWindow::exportCompleteSystemBundle()
         forkmesh::paths::dataDir(),
         settings.fileName(),
         forkmesh::control::siteDeployEnvFilePath(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         deployment, &error, systemExportExcludedNames());
     bool written = false;
@@ -2757,7 +3266,7 @@ void MainWindow::refreshSystemExportValues()
                    QStringLiteral("Native settings file"),
                    QDir::toNativeSeparators(settings.fileName()));
     const QString workerEnvironment = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     appendValueRow(m_exportValuesTable, QStringLiteral("Files"),
                    QStringLiteral("Worker environment"),
@@ -3407,7 +3916,7 @@ QWidget *MainWindow::buildSiteDeployCard()
     m_siteDeployStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_siteDeployStatus->setWordWrap(true);
     const QString deployScript = forkmesh::control::findSiteDeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_siteDeployReadyStatus =
         deployScript.isEmpty()
@@ -3508,6 +4017,71 @@ QWidget *MainWindow::buildSiteDeployCard()
                        "redacted."));
     applyLogFont(m_siteDeployOutput);
     col->addWidget(m_siteDeployOutput);
+    if (Theme::isNext()) {
+        QList<QPushButton *> extraTargets;
+        for (QPushButton *button : std::as_const(m_siteDeployTargetButtons)) {
+            if (button && button != m_siteDeployButton)
+                extraTargets.append(button);
+        }
+        auto *more = new QPushButton(QStringLiteral("More targets"));
+        more->setObjectName(QStringLiteral("siteDeployMoreButton"));
+        more->setCursor(Qt::PointingHandCursor);
+        more->setToolTip(QStringLiteral(
+            "Deploy app, World or www on its own, arm Force for the next run, "
+            "or export and import a complete system"));
+        more->setLayoutDirection(Qt::RightToLeft);
+        more->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+        setOcticon(more, QStringLiteral("kebab-horizontal"), 14);
+        auto *menu = new QMenu(more);
+        menu->setToolTipsVisible(true);
+        QList<QPointer<QPushButton>> entries;
+        for (QPushButton *button : std::as_const(extraTargets))
+            entries.append(button);
+        entries.append(QPointer<QPushButton>());
+        entries.append(m_siteDeployForceButton);
+        entries.append(QPointer<QPushButton>());
+        entries.append(exportSystem);
+        entries.append(newDeployment);
+        connect(menu, &QMenu::aboutToShow, more, [menu, entries] {
+            menu->clear();
+            bool separate = false;
+            for (const QPointer<QPushButton> &button : entries) {
+                if (!button) {
+                    separate = true;
+                    continue;
+                }
+                if (separate && !menu->isEmpty())
+                    menu->addSeparator();
+                separate = false;
+                QAction *action = menu->addAction(button->icon(), button->text());
+                action->setToolTip(button->toolTip());
+                action->setEnabled(button->isEnabled());
+                if (button->isCheckable()) {
+                    action->setCheckable(true);
+                    action->setChecked(button->isChecked());
+                }
+                QPointer<QPushButton> target = button;
+                QObject::connect(action, &QAction::triggered, menu, [target] {
+                    if (target)
+                        target->click();
+                });
+            }
+        });
+        more->setMenu(menu);
+        if (m_siteDeployCancelButton) {
+            m_siteDeployCancelButton->installEventFilter(new ControlShowWhenEnabled(card));
+            m_siteDeployCancelButton->setVisible(m_siteDeployCancelButton->isEnabled());
+        }
+        QList<QWidget *> hidden;
+        for (QPushButton *button : std::as_const(extraTargets))
+            hidden.append(button);
+        hidden << m_siteDeployForceButton << exportSystem << newDeployment;
+        arrangeNextDeployCard(card, col, QStringLiteral("cloud"),
+                              QStringLiteral("Deploy workers"), m_siteDeploySpinner,
+                              m_siteDeployStatus,
+                              {m_siteDeployButton, more, m_siteDeployCancelButton},
+                              hidden);
+    }
     return card;
 }
 
@@ -3531,7 +4105,7 @@ void MainWindow::runSiteDeploy(const QString &target)
     const bool force =
         m_siteDeployForceButton && m_siteDeployForceButton->isChecked();
     const QString script = forkmesh::control::findSiteDeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         const QString missing = QStringLiteral(
@@ -3758,7 +4332,7 @@ QWidget *MainWindow::buildNodeDeployCard()
     m_nodeDeployStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_nodeDeployStatus->setWordWrap(true);
     const QString script = forkmesh::control::findNextAutodeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_nodeDeployStatus->setText(
         script.isEmpty()
@@ -3795,6 +4369,11 @@ QWidget *MainWindow::buildNodeDeployCard()
         QStringLiteral("next_autodeploy.py output appears here live."));
     applyLogFont(m_nodeDeployOutput);
     col->addWidget(m_nodeDeployOutput);
+    if (Theme::isNext())
+        arrangeNextDeployCard(card, col, QStringLiteral("rocket"),
+                              QStringLiteral("Deploy the app to every node"),
+                              m_nodeDeploySpinner, m_nodeDeployStatus,
+                              {m_nodeDeployButton}, {});
     return card;
 }
 
@@ -3808,7 +4387,7 @@ void MainWindow::runNodeDeploy()
         return;
     }
     const QString script = forkmesh::control::findNextAutodeployScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (script.isEmpty()) {
         const QString missing = QStringLiteral(
@@ -4021,7 +4600,7 @@ QWidget *MainWindow::buildCloudflareTokenCard()
     m_controlTokenTargets->setObjectName(QStringLiteral("mutedLabel"));
     m_controlTokenTargets->setWordWrap(true);
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     m_controlTokenTargets->setText(
         envPath.isEmpty()
@@ -4464,7 +5043,7 @@ void MainWindow::generateCloudflareApiToken()
         return;
     }
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     if (QMessageBox::question(
             this, QStringLiteral("Generate a Cloudflare API token"),
@@ -4604,7 +5183,7 @@ QStringList MainWindow::rememberVultrApiKey(const QString &apiKey,
     }
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     bool retryable = false;
@@ -4647,7 +5226,7 @@ void MainWindow::adoptRotatedCloudflareToken(const QString &token)
     applied << QStringLiteral("this device's CLOUDFLARE_API_TOKEN variable");
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     if (envPath.isEmpty()) {
@@ -4716,7 +5295,7 @@ QStringList MainWindow::rememberCloudflareApiToken(const QString &token,
     }
 
     const QString envPath = forkmesh::control::siteDeployEnvFilePath(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     QString envError;
     bool envChanged = false;

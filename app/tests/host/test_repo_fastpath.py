@@ -31,6 +31,7 @@ TREE = {"ok": True, "commit": COMMIT, "entries": [
 class StubGateway(BaseHTTPRequestHandler):
     seen: list = []
     status = 200
+    raw_type = ("image/png", "logo.png")
 
     def log_message(self, *_args):
         pass
@@ -49,10 +50,11 @@ class StubGateway(BaseHTTPRequestHandler):
             op = parts.path.rsplit("/", 1)[1]
             if op == "raw":
                 body = b"\x89PNG-bytes"
+                media, name = StubGateway.raw_type
                 self.send_response(200)
-                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Type", media)
                 self.send_header("Content-Disposition",
-                                 'inline; filename="logo.png"')
+                                 'inline; filename="%s"' % name)
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
@@ -77,7 +79,8 @@ class StubGateway(BaseHTTPRequestHandler):
 def gateway():
     StubGateway.seen = []
     StubGateway.status = 200
-    server = ThreadingHTTPServer(("127.0.0.1", 0), StubGateway)
+    StubGateway.raw_type = ("image/png", "logo.png")
+    server =ThreadingHTTPServer(("127.0.0.1", 0), StubGateway)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield "http://127.0.0.1:%d" % server.server_address[1]
@@ -166,6 +169,162 @@ def test_commit_pinned_read_is_immutable(gateway):
     assert headers["content-type"] == "image/png"
     assert headers["content-disposition"] == 'inline; filename="logo.png"'
     assert headers["cache-control"] == IMMUTABLE
+
+
+def test_raw_active_content_is_a_sandboxed_download(gateway):
+    for media, name in (("application/atom+xml", "feed.atom"),
+                        ("application/rdf+xml", "x.rdf"),
+                        ("application/mathml+xml", "x.mml"),
+                        ("text/html; charset=utf-8", "x.html"),
+                        ("image/svg+xml", "x.svg"),
+                        ("multipart/x-mixed-replace; boundary=x", "x.bin")):
+        StubGateway.raw_type = (media, name)
+        for ref in ("main", COMMIT):
+            status, headers, _body = call(gateway, scope(
+                "/api/repo/forkmesh/forkmesh/raw",
+                "path=%s&ref=%s" % (name, ref)))
+            assert status == 200
+            assert headers["content-type"] == "application/octet-stream", media
+            assert headers["content-disposition"] == "attachment", media
+            assert headers["content-security-policy"] == \
+                "default-src 'none'; sandbox"
+
+
+def test_every_fast_path_answer_carries_the_sandbox_policy(gateway):
+    _status, headers, _body = call(gateway, scope(
+        "/api/repo/forkmesh/forkmesh/raw", "path=logo.png&ref=main"))
+    assert headers["content-type"] == "image/png"
+    assert headers["content-security-policy"] == "default-src 'none'; sandbox"
+    for query in ("path=README.md&ref=main", "path=README.md&ref=" + COMMIT):
+        _status, headers, _body = call(gateway, scope(
+            "/api/repo/forkmesh/forkmesh/blob", query))
+        assert headers["content-security-policy"] == \
+            "default-src 'none'; sandbox"
+
+
+def test_active_content_rule_matches_the_worker_router():
+    from forkmesh_host.repo_fastpath import active_content_type
+    worker = importlib.import_module("edge_routing").active_content_type
+    for media in ("", "text/html", "TEXT/HTML; charset=utf-8",
+                  "application/atom+xml", "application/xhtml+xml",
+                  "image/svg+xml", "text/javascript", "application/ecmascript",
+                  "multipart/related", "image/png", "application/pdf",
+                  "text/plain; charset=utf-8", "application/json",
+                  "application/octet-stream"):
+        assert active_content_type(media) == worker(media), media
+
+
+def run_on_one_fast_path(base, steps):
+    from forkmesh_host import repo_views
+    repo_views._public.clear()
+
+    async def main():
+        fast = _fast_path(base)
+        answers = []
+
+        async def serve(sc):
+            sent = []
+
+            async def send(message):
+                sent.append(message)
+            handled = await fast.handle(sc, send)
+            if not handled:
+                return None
+            headers = {k.decode(): v.decode() for k, v in sent[0]["headers"]}
+            return sent[0]["status"], headers, b"".join(
+                m.get("body", b"") for m in sent[1:])
+        try:
+            for step in steps:
+                answers.append(await step(fast, serve))
+        finally:
+            await fast.aclose()
+        return answers
+    try:
+        return asyncio.run(main())
+    finally:
+        repo_views._public.clear()
+
+
+PINNED = ("/api/repo/forkmesh/forkmesh/blob", "path=README.md&ref=" + COMMIT)
+OTHER_PINNED = ("/api/repo/forkmesh/forkmesh/tree", "path=src&ref=" + COMMIT)
+
+
+def entries_for(fast, prefix="/v1/public/repositories/forkmesh/forkmesh/"):
+    return [key for key in fast.immutable._entries if key.startswith(prefix)]
+
+
+def test_memory_hit_after_the_repository_went_private_falls_through(gateway):
+    async def first(fast, serve):
+        return await serve(scope(*PINNED))
+
+    async def hidden(fast, serve):
+        StubGateway.status = 404
+        return await serve(scope(*PINNED)), entries_for(fast)
+
+    answers = run_on_one_fast_path(gateway, [first, hidden])
+    assert answers[0][0] == 200
+    assert answers[1] == (None, [])
+
+
+def test_a_gateway_404_rechecks_visibility_before_the_next_memory_hit(gateway):
+    async def warm(fast, serve):
+        await serve(scope(*PINNED))
+        return await serve(scope(*PINNED))
+
+    async def miss(fast, serve):
+        StubGateway.status = 404
+        return await serve(scope(*OTHER_PINNED))
+
+    async def hit(fast, serve):
+        return await serve(scope(*PINNED)), entries_for(fast)
+
+    answers = run_on_one_fast_path(gateway, [warm, miss, hit])
+    assert answers[0][0] == 200
+    assert answers[1] is None
+    assert answers[2] == (None, [])
+
+
+def test_host_read_of_a_cached_pinned_url_rechecks_visibility(gateway):
+    url = ("/v1/public/repositories/forkmesh/forkmesh/blob?"
+           "path=README.md&ref=" + COMMIT)
+
+    async def first(fast, serve):
+        return (await fast.read(url, immutable=True))[0]
+
+    async def hidden(fast, serve):
+        StubGateway.status = 404
+        return (await fast.read(url, immutable=True))[0], entries_for(fast)
+
+    assert run_on_one_fast_path(gateway, [first, hidden]) == [200, (404, [])]
+
+
+def test_an_unreachable_gateway_withholds_but_keeps_memory_entries(gateway):
+    async def first(fast, serve):
+        return await serve(scope(*PINNED))
+
+    async def down(fast, serve):
+        StubGateway.status = 503
+        return await serve(scope(*PINNED)), len(entries_for(fast))
+
+    answers = run_on_one_fast_path(gateway, [first, down])
+    assert answers[0][0] == 200
+    assert answers[1] == (None, 1)
+
+
+def test_other_repositories_keep_their_memory_entries():
+    from forkmesh_host.repo_fastpath import ImmutableCache, url_repository
+    cache = ImmutableCache()
+    for key in ("/v1/public/repositories/forkmesh/forkmesh/blob?ref=a",
+                "/v1/public/repositories/forkmesh/forkmesh-2/blob?ref=a",
+                "/v1/public/repositories/forkmesh/forkmesh/tree?ref=a"):
+        cache.put(key, "application/json", b"{}")
+    cache.drop_prefix("/v1/public/repositories/forkmesh/forkmesh/")
+    assert list(cache._entries) == [
+        "/v1/public/repositories/forkmesh/forkmesh-2/blob?ref=a"]
+    assert cache.bytes == 2
+    assert url_repository(
+        "/v1/public/repositories/a%2Db/r.x/tree?path=") == ("a-b", "r.x")
+    assert url_repository("/v1/public/repositories/a/r") is None
 
 
 def test_anything_but_200_falls_through_to_the_worker(gateway):

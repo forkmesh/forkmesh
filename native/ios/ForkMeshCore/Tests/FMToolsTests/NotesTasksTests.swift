@@ -99,9 +99,9 @@ final class NotesTests: XCTestCase {
         let list = NotesListModel(call: api.call, clock: clock)
         await list.load()
         XCTAssertEqual(list.rows.map(\.title), ["Launch plan", "Team handbook"])
-        XCTAssertTrue(list.rows[0].subtitle.contains("Shared with 1"))
-        XCTAssertEqual(list.rows[0].subtitle, "Edited just now · Shared with 1")
-        XCTAssertTrue(list.rows[1].subtitle.contains("Read only"))
+        XCTAssertEqual(list.rows[0].reach, .shared)
+        XCTAssertTrue(list.rows[0].subtitle.hasPrefix("Today "))
+        XCTAssertFalse(list.rows[1].subtitle.contains("Read only"))
 
         list.query = "hand"
         XCTAssertEqual(list.rows.map(\.title), ["Team handbook"])

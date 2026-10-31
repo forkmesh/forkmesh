@@ -27,8 +27,14 @@ public:
     void setRemoteInput(bool remote);
     bool remoteInput() const { return m_remoteInput; }
     void feed(const QByteArray &bytes);
+    void sendInput(const QByteArray &bytes);
+    QString plainText() const;
+    bool applicationCursorKeys() const { return m_appCursorKeys; }
+    int gridColumns() const { return m_cols; }
+    int gridRows() const { return m_rows; }
 
 signals:
+    void outputArrived();
     void started();
     void finished(int exitCode);
     void signInUrlDetected(const QUrl &url);

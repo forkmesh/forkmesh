@@ -204,14 +204,15 @@ const documentRef = {
 const camera = track("video", "camera");
 const mic = track("audio", "mic");
 const stages = [];
-function createFaceStageImpl({ cameraStream, faceId }) {
+function createFaceStageImpl({ cameraStream, faceId, faceImage }) {
   const stage = {
     track: track("video", "stage-" + stages.length),
     current: faceId,
+    image: faceImage,
     stopped: false,
     source: cameraStream,
     face() { return this.current; },
-    setFace(id) { this.current = id; },
+    setFace(id, image) { this.current = id; this.image = image; },
     stop() { this.stopped = true; },
   };
   stages.push(stage);
@@ -250,6 +251,7 @@ const calls = createChatCalls({
   RTCPeerConnectionImpl: FakePeer,
   documentRef,
   storage,
+  avatarImage: () => "data:image/png;base64,QVZBVEFS",
   facesSupported: () => true,
   createFaceStageImpl,
   setTimeoutImpl: () => 1,
@@ -278,6 +280,12 @@ out.previewIsCamera = elements["chat-call-local"].srcObject.getTracks()[0] === c
 out.forgotten = stored.has("forkmesh.chat.callFace");
 calls.setFace("maya");
 out.secondStage = stages.length === 2 && calls.face() === "maya";
+elements["chat-call-face"].value = "avatar";
+elements["chat-call-face"].fire("change");
+out.avatarFace = calls.face();
+out.avatarStage = [stages[1].current, stages[1].image];
+out.avatarRemembered = stored.get("forkmesh.chat.callFace");
+out.avatarPicked = elements["chat-call-face"].value;
 calls.hangUp();
 out.stoppedOnHangup = stages[1].stopped && camera.stopped;
 console.log(JSON.stringify(out));
@@ -439,7 +447,10 @@ def test_landmark_smoothing_settles_on_the_new_position():
 
 def test_call_face_picker_swaps_the_stage_and_remembers_the_choice():
     data = _node(CALLS_HARNESS, "chat-calls.js")
-    assert data["options"] == ["", "maya", "theo", "kofi", "ingrid", "ren", "custom"]
+    assert data["options"] == ["", "avatar", "maya", "theo", "kofi", "ingrid", "ren", "custom"]
+    assert data["avatarFace"] == "avatar"
+    assert data["avatarStage"] == ["custom", "data:image/png;base64,QVZBVEFS"]
+    assert data["avatarRemembered"] == "avatar"
     assert data["savedFace"] == "kofi"
     assert data["pickerShown"] is True
     assert data["previewIsStage"] is True

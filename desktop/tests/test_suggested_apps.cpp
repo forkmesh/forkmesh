@@ -57,6 +57,22 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    const SuggestedApp &webengine = forkmesh::environment::embeddedBrowserComponent();
+    if (suggestedAppById(webengine.id))
+        return 1;
+    const auto aptWebEngine =
+        suggestedAppInstallPlan(webengine, {QStringLiteral("apt-get")});
+    if (!aptWebEngine.isAvailable() || !aptWebEngine.requiresAdministrator ||
+        !includes(aptWebEngine.arguments, QStringLiteral("qt6-webengine-dev"))) {
+        return 1;
+    }
+    const auto dnfWebEngine =
+        suggestedAppInstallPlan(webengine, {QStringLiteral("dnf")});
+    if (!includes(dnfWebEngine.arguments, QStringLiteral("qt6-qtwebengine-devel")))
+        return 1;
+    if (suggestedAppInstallPlan(webengine, {QStringLiteral("winget")}).isAvailable())
+        return 1;
+
     const auto npmCodex =
         suggestedAppInstallPlan(*codex, {QStringLiteral("npm")});
     const auto npmClaude =

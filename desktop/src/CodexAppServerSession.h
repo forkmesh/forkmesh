@@ -112,6 +112,7 @@ private:
     void emitItemStarted(const QJsonObject &item);
     void emitItemCompleted(const QJsonObject &item);
     void emitSpecialItemNotice(const QJsonObject &item);
+    void noteUnshownMessage(const QString &method, const QJsonObject &params);
     void emitToolUse(const QJsonObject &item);
     void emitToolResult(const QJsonObject &item);
     void finishSyntheticTools(const QString &turnId);

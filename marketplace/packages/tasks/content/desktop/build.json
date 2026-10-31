@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "TasksPage.h",
+    "TasksPage.cpp"
+  ],
+  "mocHeaders": []
+}
