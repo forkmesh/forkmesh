@@ -436,7 +436,7 @@ object NavigationFeature {
         }
         register(Route.Kind.Release, base) { route -> repoTarget((route as Route.Release).repo, RepoDetailTab.Releases) }
         register(Route.Kind.Notes, base) { NotesScreen() }
-        register(Route.Kind.Note, base) { route -> NoteEditorScreen((route as Route.Note).id.ifEmpty { null }) }
+        register(Route.Kind.Note, base) { route -> (route as Route.Note).let { NoteEditorScreen(it.id.ifEmpty { null }, it.comment) } }
         register(Route.Kind.Tasks, base) { TasksScreen() }
         register(Route.Kind.Task, base) { TasksScreen() }
         register(Route.Kind.Vault, base) { VaultScreen() }

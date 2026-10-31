@@ -2,7 +2,11 @@
   "schemaVersion": 1,
   "sources": [
     "NotesPage.h",
-    "NotesPage.cpp"
+    "NotesPage.cpp",
+    "NoteCommentsPanel.h",
+    "NoteCommentsPanel.cpp",
+    "NotePresenceFaces.h",
+    "NotePresenceFaces.cpp"
   ],
   "mocHeaders": []
 }

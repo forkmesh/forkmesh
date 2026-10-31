@@ -8,6 +8,10 @@
   // and lightweight presence.
   const NOTE_AUTOSAVE_MS = 1500;
   const NOTE_PRESENCE_MS = 15000;
+  const NOTE_EDITING_MS = 10000;
+  const NOTE_COMMENTS_REFRESH_MS = 300;
+  const NOTE_COMMENT_CONTEXT = 32;
+  const NOTE_QUOTE_MAX = 1000;
   const NOTE_MODE_KEY = "forkmesh.notes.mode";
   const NOTE_SEARCH_MS = 250;
   const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
@@ -19,6 +23,7 @@
     view: "eye", web: "globe", edit: "pencil", create: "file-plus", restore: "rotate-ccw",
     share: "user-plus", role: "user-cog", unshare: "user-minus", publish: "globe", unpublish: "eye-off",
     link: "link", unlink: "unlink", export: "download", "copy-link": "copy", task: "list-todo", issue: "circle-dot",
+    comment: "message-square", resolve: "circle-check", reopen: "undo-2",
   };
   const NOTE_TASK_DETAILS_MAX = 4000;
   const NOTE_ISSUE_BODY_MAX = 60000;
@@ -108,6 +113,11 @@
     return /^[0-9a-f]{32}$/.test(id) ? id : "";
   }
 
+  function noteLinkedComment() {
+    const id = new URLSearchParams(location.search).get("comment") || "";
+    return /^[0-9a-f]{32}$/.test(id) ? id : "";
+  }
+
   function rememberNoteInUrl(note) {
     if (!location.pathname.startsWith("/dashboard/notes")) return;
     const url = new URL(location.href);
@@ -190,20 +200,81 @@
     return true;
   }
 
+  function noteEditedWhen(value, now = new Date()) {
+    const at = new Date(typeof value === "number" ? value : Date.parse(value || "") || 0);
+    if (!at.getTime()) return "";
+    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      - new Date(at.getFullYear(), at.getMonth(), at.getDate())) / 86400000);
+    if (days === 0) return `Today ${time}`;
+    if (days === 1) return `Yesterday ${time}`;
+    if (at.getFullYear() === now.getFullYear()) return `${at.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
+    return at.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function noteEditedLabel(note) {
+    const when = noteEditedWhen(note.updatedAt);
+    if (!when) return "";
+    const by = String(note.lastEditedBy || "");
+    return `Edited ${when}${by && by !== noteMe() ? ` · by ${by}` : ""}`;
+  }
+
+  function noteSharePeopleHtml(note) {
+    const shares = (note.shares || []).filter((share) => share.name);
+    if (!shares.length) return "";
+    return `<span class="notes-row-people" title="${escapeHtml(noteSharedWithLabel(note))}">${shares.slice(0, 3).map((share) =>
+      `<span class="notes-avatar" data-type="${share.type === "organization" ? "organization" : "user"}" style="background:${noteAvatarColor(share.name)}">${escapeHtml(noteInitials(share.name))}</span>`).join("")}${shares.length > 3 ? `<span class="notes-avatar notes-row-more">+${shares.length - 3}</span>` : ""}</span>`;
+  }
+
+  function markNoteSeen(id) {
+    const view = state.notesView;
+    view.items = view.items.map((item) => item.id === id ? { ...item, unread: false, unreadComments: 0 } : item);
+    if (view.selected?.id === id) view.selected = { ...view.selected, unread: false, unreadComments: 0 };
+    renderNoteList();
+  }
+
+  function noteStillWatching() {
+    const view = state.notesView;
+    if (!view.selected || Date.now() - (view.seenAt || 0) < 5000) return;
+    view.seenAt = Date.now();
+    void recordNoteActivity("view");
+  }
+
+  async function refreshNoteList() {
+    const view = state.notesView;
+    if (!state.session?.sessionToken || document.hidden) return;
+    try {
+      const payload = await noteRequest("/api/notes");
+      const fresh = new Map((payload.notes || []).map((note) => [note.id, note]));
+      view.items = (payload.notes || []).map((note) => {
+        const known = view.items.find((item) => item.id === note.id);
+        const merged = { ...known, ...note };
+        return note.id === view.selected?.id ? { ...merged, unread: false, unreadComments: 0 } : merged;
+      });
+      if (view.selected && !fresh.has(view.selected.id)) return;
+      renderNoteList();
+    } catch (_) {}
+  }
+
   function renderNoteRow(note) {
     const isSelected = state.notesView.selected?.id === note.id;
     const status = noteStatusLabel(note);
+    const unread = Boolean(note.unread) && !isSelected;
+    const edited = noteEditedLabel(note);
+    const updated = note.updatedAt ? new Date(typeof note.updatedAt === "number" ? note.updatedAt : Date.parse(note.updatedAt)).toLocaleString() : "";
+    const comments = Number(note.openComments || 0);
     // Owners see who else can read the note; collaborators see what they
     // are allowed to do with someone else's note.
     const access = note.role === "owner"
       ? noteSharedWithLabel(note)
       : `You can ${note.role === "editor" ? "edit" : "view"}`;
     return `
-      <button type="button" data-note-id="${escapeHtml(note.id)}" aria-selected="${isSelected ? "true" : "false"}" class="notes-row">
-        <span class="notes-row-title">${escapeHtml(note.title || "Untitled note")}</span>
-        <span class="notes-row-vis" data-visibility="${note.visibility === "public" ? "public" : "private"}" title="${escapeHtml(status)}" aria-label="${escapeHtml(status)}">${noteIcon(noteVisibilityIcon(note))}</span>
+      <button type="button" data-note-id="${escapeHtml(note.id)}" aria-selected="${isSelected ? "true" : "false"}" data-unread="${unread ? "true" : "false"}"${(note.shares || []).length ? " data-people" : ""} class="notes-row">
+        <span class="notes-row-head">${unread ? `<span class="notes-row-dot" title="${escapeHtml(Number(note.unreadComments || 0) ? `Changed since you last opened it · ${noteCountLabel(note.unreadComments, "new comment", "new comments")}` : "Changed since you last opened it")}" aria-label="Unread"></span>` : ""}<span class="notes-row-title">${escapeHtml(note.title || "Untitled note")}</span></span>
+        <span class="notes-row-vis" data-visibility="${note.visibility === "public" ? "public" : "private"}" title="${escapeHtml(status)}" aria-label="${escapeHtml(status)}">${noteIcon(noteVisibilityIcon(note))}${escapeHtml(status)}</span>
         <span class="notes-row-line" title="${escapeHtml(access)}">${escapeHtml(access)}</span>
-        <span class="notes-row-meta"><span class="notes-row-when">${escapeHtml(relativeTimeLabel(note.updatedAt))}</span>${noteStatsHtml(note)}</span>
+        ${noteSharePeopleHtml(note)}
+        <span class="notes-row-meta"><span class="notes-row-when" title="${escapeHtml(updated)}">${escapeHtml(edited || relativeTimeLabel(note.updatedAt))}</span>${comments ? `<span class="notes-row-stat" title="${escapeHtml(noteCountLabel(comments, "open comment", "open comments"))}" aria-label="${escapeHtml(noteCountLabel(comments, "open comment", "open comments"))}">${noteIcon("message-square")}${comments}</span>` : ""}${noteStatsHtml(note)}</span>
       </button>`;
   }
 
@@ -289,6 +360,7 @@
       preview.innerHTML = markdown.trim()
         ? renderMarkdown(markdown)
         : '<p class="notes-preview-empty">Nothing written yet.</p>';
+      markNoteCommentsInPreview(preview);
     }
     const words = markdown.split(/\s+/).filter(Boolean).length;
     const counts = $("[data-note-counts]");
@@ -506,6 +578,9 @@
       case "copy-link": return "copied the link";
       case "task": return "turned it into a task";
       case "issue": return detail.repo ? `filed issue ${ref} from it` : "filed an issue from it";
+      case "comment": return detail.reply ? "replied to a comment" : "commented";
+      case "resolve": return "resolved a comment";
+      case "reopen": return "reopened a comment";
       default: return escapeHtml(entry.kind);
     }
   }
@@ -610,7 +685,12 @@
       rememberNoteInUrl(payload.note);
       renderNoteEditor(view.selected, { keepDraft: keepDraft && same && view.localDirty });
       if (same) scheduleNoteActivity();
-      else { view.activity = null; renderNoteActivity(); void recordNoteActivity("view"); }
+      else {
+        view.activity = null; renderNoteActivity(); void recordNoteActivity("view");
+        view.seenAt = Date.now(); markNoteSeen(payload.note.id);
+        view.comments = null; view.commentDraft = null; view.commentEditing = ""; view.commentFocus = "";
+        renderNoteComments(); void loadNoteComments();
+      }
     } catch (error) {
       if (error.status === 404 && view.selected?.id === id) {
         noteNotice("main", NOTE_ERRORS.note_not_found, "bad");
@@ -722,32 +802,73 @@
     }
   }
 
+  function noteMe() { return String(state.session?.nodeName || "").toLowerCase(); }
+
+  function notePresenceState() {
+    const view = state.notesView;
+    return noteCanEdit(view.selected) && Date.now() - (view.lastTypedAt || 0) < NOTE_EDITING_MS ? "editing" : "viewing";
+  }
+
   function sendNotePresence() {
     const socket = state.notesView.socket;
     if (socket?.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ type: "presence", clientId: state.notesView.clientId }));
+    socket.send(JSON.stringify({ type: "presence", clientId: state.notesView.clientId, state: notePresenceState() }));
+  }
+
+  function noteTyped() {
+    const view = state.notesView;
+    const was = notePresenceState();
+    view.lastTypedAt = Date.now();
+    if (was !== "editing") { sendNotePresence(); renderNotePresence(); }
+    clearTimeout(view.editingTimer);
+    view.editingTimer = setTimeout(() => { sendNotePresence(); renderNotePresence(); }, NOTE_EDITING_MS + 50);
+  }
+
+  function notePeople(now = Date.now()) {
+    const view = state.notesView, byName = new Map();
+    for (const [id, peer] of view.peers) {
+      if (now - peer.seen > NOTE_PRESENCE_MS * 2.5) { view.peers.delete(id); continue; }
+      const editing = peer.state === "editing" || now - (peer.draftAt || 0) < 5000;
+      const known = byName.get(peer.name);
+      if (!known || (editing && known.state !== "editing")) byName.set(peer.name, { name: peer.name, state: editing ? "editing" : "viewing" });
+    }
+    return [...byName.values()].sort((a, b) => (a.state === "editing" ? 0 : 1) - (b.state === "editing" ? 0 : 1) || a.name.localeCompare(b.name));
+  }
+
+  function notePresenceLabel(people, open) {
+    if (!open) return "Offline — edits still save";
+    const editing = people.filter((person) => person.state === "editing");
+    if (editing.length === 1) return `${editing[0].name} is editing…`;
+    if (editing.length > 1) return `${editing[0].name} and ${noteCountLabel(editing.length - 1, "other", "others")} are editing…`;
+    if (people.length === 1) return `Live · ${people[0].name} is viewing`;
+    return people.length ? `Live · ${people.length} others here` : "Live";
   }
 
   function renderNotePresence() {
     const view = state.notesView;
-    const now = Date.now();
-    for (const [id, peer] of view.peers) {
-      if (now - peer.seen > NOTE_PRESENCE_MS * 2.5) view.peers.delete(id);
-    }
-    const peers = [...view.peers.values()];
+    const people = notePeople();
     const faces = $("[data-note-presence]");
     if (faces) {
-      faces.innerHTML = peers.slice(0, 4).map((peer) =>
-        noteAvatarTagHtml(peer.name, "notes-face", `style="background:${noteAvatarColor(peer.name)}" title="${escapeHtml(peer.name)} is here"`, escapeHtml(noteInitials(peer.name)))).join("");
+      faces.hidden = !people.length;
+      faces.innerHTML = people.slice(0, 4).map((person) =>
+        `<span class="notes-face" data-state="${person.state}" style="background:${noteAvatarColor(person.name)}" title="${escapeHtml(person.name)} · ${person.state}">${escapeHtml(noteInitials(person.name))}${person.state === "editing" ? `<span class="notes-face-badge">${noteIcon("pencil")}</span>` : ""}</span>`).join("")
+        + (people.length > 4 ? `<span class="notes-face notes-face-more" title="${escapeHtml(people.slice(4).map((person) => person.name).join(", "))}">+${people.length - 4}</span>` : "");
+      faces.setAttribute("aria-label", people.length ? `People here: ${people.map((person) => `${person.name} ${person.state}`).join(", ")}` : "People here");
     }
     const live = $("[data-note-live]");
-    if (!live) return;
-    const open = view.socket?.readyState === WebSocket.OPEN;
-    const editing = peers.find((peer) => now - (peer.draftAt || 0) < 5000);
-    live.textContent = !open ? "Offline — edits still save"
-      : editing ? `${editing.name} is editing…`
-      : peers.length ? `Live · ${peers.length === 1 ? `${peers[0].name} is here` : `${peers.length} others here`}`
-      : "Live";
+    if (live) live.textContent = notePresenceLabel(people, view.socket?.readyState === WebSocket.OPEN);
+    const list = $("[data-note-people-list]");
+    if (list && !$("[data-note-people-panel]").hidden) {
+      const me = noteMe();
+      const rows = [...(me ? [{ name: me, state: notePresenceState(), self: true }] : []), ...people.filter((person) => person.name !== me)];
+      list.innerHTML = rows.map((person) => `<div class="notes-here">
+          <span class="notes-avatar" style="background:${noteAvatarColor(person.name)}">${escapeHtml(noteInitials(person.name))}</span>
+          <span class="notes-person-name">${person.self ? "You" : escapeHtml(person.name)}</span>
+          <span class="notes-here-state" data-state="${person.state}">${noteIcon(person.state === "editing" ? "pencil" : "eye")}${person.state === "editing" ? "Editing" : "Viewing"}</span>
+        </div>`).join("") + (people.length ? "" : `<p class="notes-comments-empty">Nobody else has this note open.</p>`);
+      refreshNoteIcons();
+    }
+    if (faces?.innerHTML.includes("data-lucide")) refreshNoteIcons();
   }
 
   function connectNoteSocket(note) {
@@ -777,10 +898,14 @@
       if (["presence", "cursor", "draft"].includes(frame.type) && frame.clientId && frame.clientId !== view.clientId) {
         const known = view.peers.has(frame.clientId);
         const peer = view.peers.get(frame.clientId) || { draftAt: 0 };
-        view.peers.set(frame.clientId, { ...peer, name: String(frame.name || "Collaborator").slice(0, 32), seen: Date.now() });
-        // Answer a newcomer once so they see who was already here.
+        const peerState = frame.type === "draft" || frame.state === "editing" ? "editing"
+          : frame.type === "cursor" ? peer.state || "viewing" : "viewing";
+        view.peers.set(frame.clientId, { ...peer, name: String(frame.name || "Collaborator").slice(0, 32), seen: Date.now(), state: peerState });
         if (!known) sendNotePresence();
       }
+      if (frame.type === "leave" && frame.clientId) view.peers.delete(frame.clientId);
+      if (frame.type === "note-comments") scheduleNoteComments();
+      if (["note-comments", "note-updated"].includes(frame.type)) noteStillWatching();
       if (frame.type === "draft" && frame.clientId && frame.clientId !== view.clientId) {
         view.peers.get(frame.clientId).draftAt = Date.now();
         // Never overwrite keystrokes that haven't been saved yet.
@@ -821,7 +946,7 @@
   }
 
   function closeNotePopovers() {
-    for (const [panel, trigger] of [["[data-note-share-panel]", "[data-note-share-open]"], ["[data-note-menu]", "[data-note-menu-open]"]]) {
+    for (const [panel, trigger] of [["[data-note-share-panel]", "[data-note-share-open]"], ["[data-note-menu]", "[data-note-menu-open]"], ["[data-note-people-panel]", "[data-note-presence]"]]) {
       const element = $(panel); if (element) element.hidden = true;
       $(trigger)?.setAttribute("aria-expanded", "false");
     }
@@ -1065,10 +1190,466 @@
     } finally { setNoteConverting(false); }
   }
 
+  function noteCommentsOpenCount() {
+    return (state.notesView.comments?.comments || []).filter((comment) => !comment.parentId && !comment.resolvedAt).length;
+  }
+
+  function applyNoteComments(noteId, payload) {
+    const view = state.notesView;
+    if (view.selected?.id !== noteId) return;
+    view.comments = { comments: payload.comments || [], people: payload.people || [], canResolve: Boolean(payload.canResolve) };
+    if (view.pendingComment && view.comments.comments.some((comment) => comment.id === view.pendingComment)) {
+      const wanted = view.comments.comments.find((comment) => comment.id === view.pendingComment);
+      view.commentFocus = wanted.parentId || wanted.id;
+      view.pendingComment = "";
+      setNoteCommentsOpen(true);
+      requestAnimationFrame(() => $(`[data-note-thread="${view.commentFocus}"]`)?.scrollIntoView({ block: "nearest" }));
+    }
+    renderNoteComments();
+    renderNotePreview();
+  }
+
+  async function loadNoteComments() {
+    const view = state.notesView, note = view.selected;
+    if (!note || !state.session?.sessionToken) return;
+    const generation = ++view.commentsGeneration;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/comments`);
+      if (generation === view.commentsGeneration) applyNoteComments(note.id, payload);
+    } catch (error) {
+      if (generation === view.commentsGeneration && view.selected?.id === note.id) noteNotice("comments", error.message, "bad");
+    }
+  }
+
+  function scheduleNoteComments() {
+    const view = state.notesView;
+    clearTimeout(view.commentsTimer);
+    view.commentsTimer = setTimeout(() => void loadNoteComments(), NOTE_COMMENTS_REFRESH_MS);
+  }
+
+  async function sendNoteComment(path, method, body, success = "") {
+    const view = state.notesView, note = view.selected;
+    if (!note) return null;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/comments${path}`, method, body);
+      view.commentsGeneration++;
+      applyNoteComments(note.id, payload);
+      scheduleNoteActivity();
+      noteNotice("comments", success);
+      return payload;
+    } catch (error) {
+      noteNotice("comments", error.message, "bad");
+      return null;
+    }
+  }
+
+  function noteLocateQuote(markdown, comment) {
+    const quote = String(comment.quote || "");
+    if (!quote) return null;
+    const prefix = String(comment.prefix || ""), suffix = String(comment.suffix || "");
+    let best = null;
+    for (let at = markdown.indexOf(quote); at !== -1; at = markdown.indexOf(quote, at + 1)) {
+      const score = (prefix && markdown.slice(Math.max(0, at - prefix.length), at) === prefix ? 2 : 0)
+        + (suffix && markdown.slice(at + quote.length, at + quote.length + suffix.length) === suffix ? 2 : 0);
+      const distance = Math.abs(at - Number(comment.start || 0));
+      if (!best || score > best.score || (score === best.score && distance < best.distance)) {
+        best = { start: at, end: at + quote.length, score, distance };
+      }
+    }
+    return best;
+  }
+
+  function noteCommentThreads() {
+    const all = state.notesView.comments?.comments || [];
+    const markdown = $("[data-note-markdown]")?.value || "";
+    const threads = all.filter((comment) => !comment.parentId).map((comment) => ({
+      ...comment,
+      replies: all.filter((reply) => reply.parentId === comment.id),
+      anchor: noteLocateQuote(markdown, comment),
+    }));
+    const rank = (thread) => !thread.quote ? 0 : thread.anchor ? 1 : 2;
+    const order = (a, b) => rank(a) - rank(b) || (a.anchor?.start || 0) - (b.anchor?.start || 0) || a.createdAt - b.createdAt;
+    return {
+      open: threads.filter((thread) => !thread.resolvedAt).sort(order),
+      resolved: threads.filter((thread) => thread.resolvedAt).sort(order),
+    };
+  }
+
+  function noteCommentBodyHtml(comment) {
+    const mentioned = new Set((comment.mentions || []).map((name) => String(name).toLowerCase()));
+    return escapeHtml(comment.body || "")
+      .replace(/(^|[^\w@])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)/gi, (whole, lead, name) =>
+        mentioned.has(name.toLowerCase()) ? `${lead}<span class="notes-mention">@${name}</span>` : whole)
+      .replace(/\n/g, "<br>");
+  }
+
+  function noteCommentHtml(comment) {
+    const view = state.notesView;
+    const mine = Boolean(comment.author) && comment.author === noteMe();
+    const canDelete = mine || view.selected?.role === "owner";
+    const tools = (mine ? `<button type="button" class="notes-icon-btn" data-note-comment-edit="${comment.id}" title="Edit" aria-label="Edit comment">${noteIcon("pencil")}</button>` : "")
+      + (canDelete ? `<button type="button" class="notes-icon-btn" data-note-comment-delete="${comment.id}" title="Delete" aria-label="Delete comment">${noteIcon("trash-2")}</button>` : "");
+    const body = view.commentEditing === comment.id
+      ? `<form class="notes-comment-form" data-note-comment-edit-form="${comment.id}">
+          <textarea data-note-comment-input rows="2" aria-label="Edit comment">${escapeHtml(comment.body || "")}</textarea>
+          <div class="notes-comment-actions"><button type="button" class="notes-btn" data-note-comment-edit-cancel>Cancel</button><button type="submit" class="notes-btn notes-btn-primary">Save</button></div>
+        </form>`
+      : `<div class="notes-comment-body">${noteCommentBodyHtml(comment)}</div>`;
+    return `<div class="notes-comment" data-note-comment="${comment.id}">
+        <div class="notes-comment-head">
+          <span class="notes-avatar" style="background:${noteAvatarColor(comment.author)}">${escapeHtml(noteInitials(comment.author))}</span>
+          <span class="notes-comment-who">${mine ? "You" : escapeHtml(comment.author || "Someone")}</span>
+          <time class="notes-comment-time" title="${escapeHtml(comment.createdAt ? new Date(comment.createdAt).toLocaleString() : "")}">${escapeHtml(comment.createdAt ? relativeTimeLabel(comment.createdAt) : "")}${comment.editedAt ? " · edited" : ""}</time>
+          ${tools ? `<span class="notes-comment-tools">${tools}</span>` : ""}
+        </div>
+        ${body}
+      </div>`;
+  }
+
+  function noteThreadHtml(thread) {
+    const view = state.notesView;
+    const canResolve = view.comments?.canResolve || thread.author === noteMe();
+    const quote = thread.quote
+      ? `<button type="button" class="notes-thread-quote" data-note-thread-jump="${thread.id}"${thread.anchor ? "" : ' data-detached="true" title="This text is no longer in the note"'}>${escapeHtml(thread.quote)}</button>`
+      : `<span class="notes-thread-general">On the whole note</span>`;
+    const resolve = canResolve
+      ? `<button type="button" class="notes-icon-btn" data-note-thread-resolve="${thread.id}" title="${thread.resolvedAt ? "Reopen" : "Resolve"}" aria-label="${thread.resolvedAt ? "Reopen thread" : "Resolve thread"}">${noteIcon(thread.resolvedAt ? "undo-2" : "check")}</button>`
+      : "";
+    const footer = thread.resolvedAt
+      ? `<p class="notes-thread-resolved">Resolved${thread.resolvedBy ? ` by ${escapeHtml(thread.resolvedBy === noteMe() ? "you" : thread.resolvedBy)}` : ""} ${escapeHtml(relativeTimeLabel(thread.resolvedAt))}</p>`
+      : `<form class="notes-reply" data-note-reply-form="${thread.id}">
+          <textarea data-note-comment-input rows="1" placeholder="Reply… use @ to mention" aria-label="Reply"></textarea>
+          <button type="submit" class="notes-icon-btn" aria-label="Send reply">${noteIcon("send")}</button>
+        </form>`;
+    return `<li class="notes-thread" data-note-thread="${thread.id}"${view.commentFocus === thread.id ? ' data-focus="true"' : ""}>
+        <div class="notes-thread-top">${quote}${resolve}</div>
+        ${noteCommentHtml(thread)}
+        ${thread.replies.map(noteCommentHtml).join("")}
+        ${footer}
+      </li>`;
+  }
+
+  function renderNoteComments() {
+    const view = state.notesView;
+    const count = noteCommentsOpenCount();
+    const label = $("[data-note-comments-count]");
+    if (label) label.textContent = count ? String(count) : "Comments";
+    $("[data-note-comments-toggle]")?.setAttribute("title", count ? `${noteCountLabel(count, "open comment", "open comments")}` : "Comments");
+    const panel = $("[data-note-comments]");
+    if (!panel || panel.hidden) return;
+    const kept = {};
+    let focused = null;
+    panel.querySelectorAll("form").forEach((form) => {
+      const key = form.dataset.noteReplyForm ? `reply:${form.dataset.noteReplyForm}` : form.dataset.noteCommentEditForm ? `edit:${form.dataset.noteCommentEditForm}` : form.matches("[data-note-comment-new]") ? "new" : "";
+      const input = form.querySelector("[data-note-comment-input]");
+      if (!key || !input) return;
+      kept[key] = input.value;
+      if (document.activeElement === input) focused = { key, start: input.selectionStart, end: input.selectionEnd };
+    });
+    const composer = $("[data-note-comment-composer]");
+    const draft = view.commentDraft;
+    composer.innerHTML = draft ? `<form class="notes-comment-new" data-note-comment-new>
+        <blockquote>${draft.quote ? escapeHtml(draft.quote) : "On the whole note"}</blockquote>
+        <textarea data-note-comment-input rows="3" placeholder="Add a comment… use @ to mention" aria-label="New comment"></textarea>
+        <div class="notes-comment-actions"><button type="button" class="notes-btn" data-note-comment-cancel>Cancel</button><button type="submit" class="notes-btn notes-btn-primary">Comment</button></div>
+      </form>` : "";
+    const { open, resolved } = noteCommentThreads();
+    $("[data-note-comment-list]").innerHTML = open.map(noteThreadHtml).join("")
+      || (view.comments ? `<li class="notes-comments-empty">${resolved.length ? "No open comments." : "No comments yet. Select text in the note and choose Comment."}</li>` : `<li class="notes-comments-empty">Loading comments…</li>`);
+    const resolvedBox = $("[data-note-comment-resolved]");
+    resolvedBox.hidden = !resolved.length;
+    $("[data-note-comment-resolved-label]").textContent = `Resolved (${resolved.length})`;
+    $("[data-note-comment-resolved-list]").innerHTML = resolved.map(noteThreadHtml).join("");
+    panel.querySelectorAll("form").forEach((form) => {
+      const key = form.dataset.noteReplyForm ? `reply:${form.dataset.noteReplyForm}` : form.dataset.noteCommentEditForm ? `edit:${form.dataset.noteCommentEditForm}` : form.matches("[data-note-comment-new]") ? "new" : "";
+      const input = form.querySelector("[data-note-comment-input]");
+      if (!key || !input) return;
+      if (key in kept) input.value = kept[key];
+      if (focused?.key === key) { input.focus(); input.setSelectionRange(focused.start, focused.end); }
+    });
+    refreshNoteIcons();
+  }
+
+  function setNoteCommentsOpen(open) {
+    const view = state.notesView;
+    view.commentsOpen = open;
+    if (open && view.activityOpen) setNoteActivityOpen(false, false);
+    const panel = $("[data-note-comments]");
+    if (panel) panel.hidden = !open;
+    const toggle = $("[data-note-comments-toggle]");
+    toggle?.setAttribute("aria-pressed", open ? "true" : "false");
+    toggle?.setAttribute("aria-label", open ? "Hide comments" : "Show comments");
+    if (!open) { view.commentDraft = null; hideNoteMentions(); }
+    renderNoteComments();
+  }
+
+  function noteFindRendered(markdown, text) {
+    const exact = markdown.indexOf(text);
+    if (exact !== -1) return { start: exact, end: exact + text.length };
+    const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean).sort((a, b) => b.length - a.length);
+    for (const line of lines) {
+      const at = markdown.indexOf(line);
+      if (at !== -1) return { start: at, end: at + line.length };
+    }
+    return null;
+  }
+
+  function noteSelectionAnchor() {
+    const view = state.notesView;
+    const area = $("[data-note-markdown]"), markdown = area?.value || "";
+    let range = null;
+    if (view.selectionSource === "write" && area && area.selectionEnd > area.selectionStart) {
+      range = { start: area.selectionStart, end: area.selectionEnd };
+    } else {
+      const selection = window.getSelection();
+      const text = String(selection?.toString() || "").trim();
+      if (text && $("[data-note-preview]")?.contains(selection.anchorNode)) range = noteFindRendered(markdown, text);
+    }
+    if (!range) return null;
+    let { start, end } = range;
+    while (start < end && /\s/.test(markdown[start])) start += 1;
+    while (end > start && /\s/.test(markdown[end - 1])) end -= 1;
+    if (end <= start) return null;
+    end = Math.min(end, start + NOTE_QUOTE_MAX);
+    return {
+      quote: markdown.slice(start, end),
+      prefix: markdown.slice(Math.max(0, start - NOTE_COMMENT_CONTEXT), start),
+      suffix: markdown.slice(end, end + NOTE_COMMENT_CONTEXT),
+      start, end,
+    };
+  }
+
+  function startNoteComment(anchor) {
+    const view = state.notesView;
+    if (!view.selected) return;
+    view.commentDraft = anchor || { quote: "", prefix: "", suffix: "", start: 0, end: 0 };
+    $("[data-note-comment-float]").hidden = true;
+    setNoteCommentsOpen(true);
+    $("[data-note-comment-new] [data-note-comment-input]")?.focus();
+  }
+
+  function commentOnNoteSelection() {
+    const anchor = noteSelectionAnchor();
+    if (!anchor) { noteNotice("main", "Select some text in the note first, or use the comments panel to comment on the whole note.", "bad"); return; }
+    noteNotice("main", "");
+    startNoteComment(anchor);
+  }
+
+  function showNoteCommentFloat(event) {
+    const view = state.notesView;
+    const button = $("[data-note-comment-float]");
+    if (!button || !view.selected) return;
+    setTimeout(() => {
+      const anchor = noteSelectionAnchor();
+      if (!anchor) { button.hidden = true; return; }
+      const body = $(".notes-body").getBoundingClientRect();
+      button.style.left = `${Math.max(8, Math.min(body.width - 120, event.clientX - body.left + 8))}px`;
+      button.style.top = `${Math.max(8, event.clientY - body.top + 12)}px`;
+      button.hidden = false;
+      refreshNoteIcons();
+    }, 0);
+  }
+
+  function jumpToNoteThread(id) {
+    const view = state.notesView;
+    view.commentFocus = id;
+    const thread = noteCommentThreads().open.concat(noteCommentThreads().resolved).find((item) => item.id === id);
+    renderNoteComments();
+    renderNotePreview();
+    if (!thread?.anchor) return;
+    const area = $("[data-note-markdown]");
+    if (area && $("[data-note-work]").dataset.mode !== "preview") {
+      area.focus({ preventScroll: true });
+      area.setSelectionRange(thread.anchor.start, thread.anchor.end);
+      const lines = area.value.slice(0, thread.anchor.start).split("\n").length;
+      const lineHeight = parseFloat(getComputedStyle(area).lineHeight) || 20;
+      area.scrollTop = Math.max(0, (lines - 3) * lineHeight);
+      area.closest(".notes-pane")?.scrollTo?.({ top: Math.max(0, area.offsetTop + (lines - 3) * lineHeight - 40), behavior: "smooth" });
+    }
+    $(`[data-note-thread-mark="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function markNoteCommentsInPreview(preview) {
+    const view = state.notesView;
+    if (!view.comments || !preview) return;
+    for (const thread of noteCommentThreads().open) {
+      if (!thread.anchor) continue;
+      const needle = thread.quote.split("\n").map((line) => line.replace(/[*_`#>~]|\[|\]\([^)]*\)|^\s*[-+]\s+(\[[ xX]\]\s+)?|^\s*\d+\.\s+/g, "").trim()).find(Boolean);
+      if (!needle) continue;
+      const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.parentElement?.closest(".notes-comment-mark")) continue;
+        const at = node.nodeValue.indexOf(needle);
+        if (at === -1) continue;
+        const target = node.splitText(at);
+        target.splitText(needle.length);
+        const mark = document.createElement("mark");
+        mark.className = "notes-comment-mark";
+        mark.dataset.noteThreadMark = thread.id;
+        if (view.commentFocus === thread.id) mark.dataset.focus = "true";
+        mark.title = `${thread.author || "Someone"}: ${thread.body}`.slice(0, 200);
+        target.replaceWith(mark);
+        mark.appendChild(target);
+        break;
+      }
+    }
+  }
+
+  function hideNoteMentions() {
+    const list = $("[data-note-mention-list]");
+    if (list) list.hidden = true;
+    state.notesView.mention = null;
+  }
+
+  function renderNoteMentions(input) {
+    const view = state.notesView;
+    const list = $("[data-note-mention-list]");
+    const before = input.value.slice(0, input.selectionStart);
+    const match = /(^|[^\w@])@([a-z0-9-]{0,62})$/i.exec(before);
+    const me = noteMe();
+    const options = match ? (view.comments?.people || []).filter((name) => name !== me && name.startsWith(match[2].toLowerCase())).slice(0, 6) : [];
+    if (!options.length) { hideNoteMentions(); return; }
+    const index = view.mention?.input === input ? Math.min(view.mention.index, options.length - 1) : 0;
+    view.mention = { input, options, index, from: before.length - match[2].length - 1 };
+    input.closest("form").appendChild(list);
+    list.innerHTML = options.map((name, position) => `<button type="button" role="option" data-note-mention-option="${position}" aria-selected="${position === index ? "true" : "false"}">
+        <span class="notes-avatar" style="background:${noteAvatarColor(name)}">${escapeHtml(noteInitials(name))}</span>
+        <span class="notes-person-name">${escapeHtml(name)}</span><span></span>
+      </button>`).join("");
+    list.hidden = false;
+  }
+
+  function chooseNoteMention(position) {
+    const mention = state.notesView.mention;
+    if (!mention) return;
+    const input = mention.input, name = mention.options[position];
+    const caret = input.selectionStart;
+    input.value = `${input.value.slice(0, mention.from)}@${name} ${input.value.slice(caret)}`;
+    const next = mention.from + name.length + 2;
+    input.focus(); input.setSelectionRange(next, next);
+    hideNoteMentions();
+  }
+
+  async function submitNoteCommentForm(form) {
+    const view = state.notesView;
+    const input = form.querySelector("[data-note-comment-input]");
+    const body = input.value.trim();
+    if (!body) { input.focus(); return; }
+    if (body.length > 4000) { noteNotice("comments", "Comments can be up to 4000 characters.", "bad"); return; }
+    hideNoteMentions();
+    form.querySelectorAll("button, textarea").forEach((control) => { control.disabled = true; });
+    let done;
+    if (form.matches("[data-note-comment-new]")) {
+      const draft = view.commentDraft || {};
+      done = await sendNoteComment("", "POST", draft.quote ? { body, quote: draft.quote, prefix: draft.prefix, suffix: draft.suffix, start: draft.start, end: draft.end } : { body });
+      if (done) { view.commentDraft = null; view.commentFocus = done.comment?.id || ""; input.value = ""; }
+    } else if (form.dataset.noteReplyForm) {
+      done = await sendNoteComment("", "POST", { body, parentId: form.dataset.noteReplyForm });
+      if (done) input.value = "";
+    } else if (form.dataset.noteCommentEditForm) {
+      done = await sendNoteComment(`/${form.dataset.noteCommentEditForm}`, "PATCH", { body });
+      if (done) view.commentEditing = "";
+    }
+    form.querySelectorAll("button, textarea").forEach((control) => { control.disabled = false; });
+    renderNoteComments();
+  }
+
+  function wireNoteComments() {
+    const view = state.notesView;
+    $("[data-note-comments-toggle]")?.addEventListener("click", () => setNoteCommentsOpen(!view.commentsOpen));
+    $("[data-note-comments-close]")?.addEventListener("click", () => setNoteCommentsOpen(false));
+    $("[data-note-comment-general]")?.addEventListener("click", () => startNoteComment(null));
+    $("[data-note-comment-selection]")?.addEventListener("click", commentOnNoteSelection);
+    $("[data-note-comment-float]")?.addEventListener("mousedown", (event) => event.preventDefault());
+    $("[data-note-comment-float]")?.addEventListener("click", commentOnNoteSelection);
+    const area = $("[data-note-markdown]");
+    for (const type of ["mouseup", "keyup", "select"]) area?.addEventListener(type, () => { view.selectionSource = "write"; });
+    area?.addEventListener("mouseup", showNoteCommentFloat);
+    $("[data-note-preview]")?.addEventListener("mouseup", (event) => { view.selectionSource = "preview"; showNoteCommentFloat(event); });
+    $("[data-note-preview]")?.addEventListener("click", (event) => {
+      const mark = event.target.closest("[data-note-thread-mark]");
+      if (!mark || String(window.getSelection()?.toString() || "")) return;
+      setNoteCommentsOpen(true); jumpToNoteThread(mark.dataset.noteThreadMark);
+      $(`[data-note-thread="${mark.dataset.noteThreadMark}"]`)?.scrollIntoView({ block: "nearest" });
+    });
+    document.addEventListener("selectionchange", () => {
+      const button = $("[data-note-comment-float]");
+      if (button && !button.hidden && !noteSelectionAnchor()) button.hidden = true;
+    });
+    const panel = $("[data-note-comments]");
+    panel?.addEventListener("submit", (event) => {
+      const form = event.target.closest("form"); if (!form) return;
+      event.preventDefault(); void submitNoteCommentForm(form);
+    });
+    panel?.addEventListener("input", (event) => {
+      if (event.target.matches("[data-note-comment-input]")) renderNoteMentions(event.target);
+    });
+    panel?.addEventListener("keydown", (event) => {
+      if (!event.target.matches("[data-note-comment-input]")) return;
+      const mention = view.mention;
+      if (mention && !$("[data-note-mention-list]").hidden) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          mention.index = (mention.index + (event.key === "ArrowDown" ? 1 : -1) + mention.options.length) % mention.options.length;
+          renderNoteMentions(event.target); return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); chooseNoteMention(mention.index); return; }
+        if (event.key === "Escape") { event.stopPropagation(); hideNoteMentions(); return; }
+      }
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault(); void submitNoteCommentForm(event.target.closest("form"));
+      }
+    });
+    panel?.addEventListener("focusout", (event) => {
+      if (event.target.matches("[data-note-comment-input]")) setTimeout(() => { if (!panel.contains(document.activeElement) || !document.activeElement.matches("[data-note-comment-input]")) hideNoteMentions(); }, 150);
+    });
+    $("[data-note-mention-list]")?.addEventListener("mousedown", (event) => event.preventDefault());
+    $("[data-note-mention-list]")?.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-note-mention-option]");
+      if (option) chooseNoteMention(Number(option.dataset.noteMentionOption));
+    });
+    panel?.addEventListener("click", (event) => {
+      const jump = event.target.closest("[data-note-thread-jump]");
+      if (jump) { jumpToNoteThread(jump.dataset.noteThreadJump); return; }
+      const resolve = event.target.closest("[data-note-thread-resolve]");
+      if (resolve) {
+        const thread = (view.comments?.comments || []).find((item) => item.id === resolve.dataset.noteThreadResolve);
+        if (thread) void sendNoteComment(`/${thread.id}`, "PATCH", { resolved: !thread.resolvedAt }, thread.resolvedAt ? "Thread reopened" : "Thread resolved");
+        return;
+      }
+      const edit = event.target.closest("[data-note-comment-edit]");
+      if (edit) { view.commentEditing = edit.dataset.noteCommentEdit; renderNoteComments(); panel.querySelector(`[data-note-comment-edit-form="${view.commentEditing}"] textarea`)?.focus(); return; }
+      if (event.target.closest("[data-note-comment-edit-cancel]")) { view.commentEditing = ""; renderNoteComments(); return; }
+      if (event.target.closest("[data-note-comment-cancel]")) { view.commentDraft = null; renderNoteComments(); return; }
+      const remove = event.target.closest("[data-note-comment-delete]");
+      if (remove) {
+        const comment = (view.comments?.comments || []).find((item) => item.id === remove.dataset.noteCommentDelete);
+        if (!comment) return;
+        const replies = (view.comments.comments || []).filter((item) => item.parentId === comment.id).length;
+        if (!window.confirm(replies ? `Delete this comment and its ${noteCountLabel(replies, "reply", "replies")}?` : "Delete this comment?")) return;
+        void sendNoteComment(`/${comment.id}`, "DELETE", {}, "Comment deleted");
+        return;
+      }
+      const thread = event.target.closest("[data-note-thread]");
+      if (thread && !event.target.closest("button, a, textarea, form") && view.commentFocus !== thread.dataset.noteThread) jumpToNoteThread(thread.dataset.noteThread);
+    });
+    $("[data-note-presence]")?.addEventListener("click", (event) => {
+      event.stopPropagation(); toggleNotePopover("[data-note-people-panel]", "[data-note-presence]"); renderNotePresence();
+    });
+    $("[data-note-live]")?.addEventListener("click", (event) => {
+      event.stopPropagation(); toggleNotePopover("[data-note-people-panel]", "[data-note-presence]"); renderNotePresence();
+    });
+  }
+
   function onNoteEdited() {
     renderNotePreview();
     scheduleNoteSave();
     sendNoteDraft();
+    noteTyped();
+    if (state.notesView.commentsOpen) {
+      clearTimeout(state.notesView.commentsRenderTimer);
+      state.notesView.commentsRenderTimer = setTimeout(renderNoteComments, 400);
+    }
   }
 
   function initNotesPage() {
@@ -1080,13 +1661,21 @@
       shareGeneration: 0, shareTimer: 0, searchMatches: null, searchGeneration: 0,
       searchTimer: 0, converting: false, activity: null, activityTab: "all",
       activityTimer: 0, activityGeneration: 0, activityOpen: false,
+      comments: null, commentsOpen: false, commentsTimer: 0, commentsGeneration: 0,
+      commentsRenderTimer: 0, commentDraft: null, commentEditing: "", commentFocus: "",
+      pendingComment: noteLinkedComment(), mention: null, selectionSource: "",
+      lastTypedAt: 0, editingTimer: 0,
     });
     try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
     let activityPreference = "";
     try { activityPreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; } catch (_) {}
     setNoteActivityOpen(activityPreference ? activityPreference === "open" : !window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches, false);
-    $("[data-note-activity-toggle]")?.addEventListener("click", () => setNoteActivityOpen(!view.activityOpen));
+    $("[data-note-activity-toggle]")?.addEventListener("click", () => {
+      if (!view.activityOpen && view.commentsOpen) setNoteCommentsOpen(false);
+      setNoteActivityOpen(!view.activityOpen);
+    });
+    wireNoteComments();
     $("[data-note-activity-close]")?.addEventListener("click", () => setNoteActivityOpen(false));
     $("[data-note-activity]")?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-note-activity-tab]");
@@ -1123,6 +1712,7 @@
     $("[data-view=\"notes\"]")?.addEventListener("keydown", (event) => {
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "s") { event.preventDefault(); void flushNoteSave(); return; }
+      if (mod && event.altKey && event.code === "KeyM") { event.preventDefault(); commentOnNoteSelection(); return; }
       if (mod && event.target.matches("[data-note-markdown]") && ["b", "i"].includes(event.key.toLowerCase())) {
         event.preventDefault(); formatNoteSelection(event.key.toLowerCase() === "b" ? "bold" : "italic"); return;
       }
@@ -1130,6 +1720,8 @@
         if (view.linking) { view.linking = false; renderNoteLinks(view.selected); return; }
         closeNotePopovers(); $("[data-note-versions-panel]").hidden = true;
         if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.activityOpen) setNoteActivityOpen(false, false);
+        if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.commentsOpen && !view.commentDraft) setNoteCommentsOpen(false);
+        $("[data-note-comment-float]").hidden = true;
       }
     });
     window.addEventListener("beforeunload", (event) => {
@@ -1141,7 +1733,7 @@
     $("[data-note-share-open]")?.addEventListener("click", (event) => { event.stopPropagation(); toggleNotePopover("[data-note-share-panel]", "[data-note-share-open]"); });
     $("[data-note-menu-open]")?.addEventListener("click", (event) => { event.stopPropagation(); toggleNotePopover("[data-note-menu]", "[data-note-menu-open]"); });
     document.addEventListener("click", (event) => {
-      if (!event.target.closest(".notes-pop, [data-note-share-open], [data-note-menu-open]")) closeNotePopovers();
+      if (!event.target.closest(".notes-pop, [data-note-share-open], [data-note-menu-open], [data-note-presence], [data-note-live]")) closeNotePopovers();
     });
     $("[data-note-versions-open]")?.addEventListener("click", () => {
       closeNotePopovers(); $("[data-note-versions-panel]").hidden = false; void loadNoteVersions();
@@ -1312,6 +1904,8 @@
 
     renderNoteList();
     void loadNotes(noteLinkedId());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) void refreshNoteList(); });
+    view.listTimer = setInterval(() => void refreshNoteList(), 60000);
   }
   return { initNotesPage };
   };

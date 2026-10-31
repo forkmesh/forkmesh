@@ -144,7 +144,7 @@ sealed class Route {
     data object Docs : Route() { override val kind get() = Kind.Docs }
     data class Search(val query: String, val scope: SearchScope) : Route() { override val kind get() = Kind.Search }
     data object Notes : Route() { override val kind get() = Kind.Notes }
-    data class Note(val id: String) : Route() { override val kind get() = Kind.Note }
+    data class Note(val id: String, val comment: String? = null) : Route() { override val kind get() = Kind.Note }
     data class Tasks(val filter: String?) : Route() { override val kind get() = Kind.Tasks }
     data class Task(val id: String) : Route() { override val kind get() = Kind.Task }
     data class Calendar(val date: String?, val mode: CalendarMode) : Route() { override val kind get() = Kind.Calendar }

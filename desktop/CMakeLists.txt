@@ -2693,6 +2693,18 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-note-comments-tests
+        tests/test_note_comments.cpp
+        src/NoteComments.h
+    )
+    target_include_directories(forkmesh-note-comments-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-comments-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-note-comments-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-note-request-proof-tests
         tests/test_note_request_proof.cpp
         src/NoteRequestProof.h
@@ -4721,6 +4733,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-note-request-proof-tests)
     add_test(NAME forkmesh-note-tools-tests
              COMMAND forkmesh-note-tools-tests)
+    add_test(NAME forkmesh-note-comments-tests
+             COMMAND forkmesh-note-comments-tests)
     add_test(NAME forkmesh-tip-tests COMMAND forkmesh-tip-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests

@@ -85,6 +85,27 @@ class NotesApi(private val api: ApiService) {
     fun addLink(id: String, link: NoteLink): List<NoteLink> = NoteLink.list(call("POST", "/$id/links", link.body())["links"])
 
     fun removeLink(id: String, link: NoteLink): List<NoteLink> = NoteLink.list(call("DELETE", "/$id/links", link.body())["links"])
+
+    fun recordView(id: String) {
+        call("POST", "/$id/activity", linkedMapOf("kind" to "view"))
+    }
+
+    fun comments(id: String): NoteCommentsPayload = NoteCommentsPayload.from(call("GET", "/$id/comments"))
+
+    fun addComment(id: String, body: String, parentId: String? = null, quote: NoteQuote? = null): NoteCommentsPayload {
+        val payload = linkedMapOf<String, Any?>("body" to body.trim())
+        if (!parentId.isNullOrEmpty()) payload["parentId"] = parentId else quote?.let { payload.putAll(it.body()) }
+        return NoteCommentsPayload.from(call("POST", "/$id/comments", payload))
+    }
+
+    fun editComment(id: String, commentId: String, body: String): NoteCommentsPayload =
+        NoteCommentsPayload.from(call("PATCH", "/$id/comments/$commentId", linkedMapOf("body" to body.trim())))
+
+    fun resolveComment(id: String, commentId: String, resolved: Boolean): NoteCommentsPayload =
+        NoteCommentsPayload.from(call("PATCH", "/$id/comments/$commentId", linkedMapOf("resolved" to resolved)))
+
+    fun deleteComment(id: String, commentId: String): NoteCommentsPayload =
+        NoteCommentsPayload.from(call("DELETE", "/$id/comments/$commentId"))
 }
 
 class NoteConflictException(val latest: JsonObject) : RuntimeException("version_conflict")
