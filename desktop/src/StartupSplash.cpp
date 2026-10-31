@@ -377,7 +377,8 @@ void StartupSplash::pump(bool force)
 {
     if (!isVisible())
         return;
-    if (m_hostPainting) {
+    if (m_hostPainting ||
+        (m_host && m_host->testAttribute(Qt::WA_WState_InPaintEvent))) {
         update(damageRect());
         return;
     }
