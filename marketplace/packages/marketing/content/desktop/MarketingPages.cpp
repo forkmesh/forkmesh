@@ -381,23 +381,23 @@ QString compactMoney(double cents, const QString &currency)
 
 qint64 weekStartOf(qint64 at)
 {
-    const QDate day = QDateTime::fromMSecsSinceEpoch(at, QTimeZone::UTC).date();
-    return QDateTime(day.addDays(1 - day.dayOfWeek()), QTime(0, 0), QTimeZone::UTC).toMSecsSinceEpoch();
+    const QDate day = QDateTime::fromMSecsSinceEpoch(at, QTimeZone::utc()).date();
+    return QDateTime(day.addDays(1 - day.dayOfWeek()), QTime(0, 0), QTimeZone::utc()).toMSecsSinceEpoch();
 }
 
 QString weekLabel(qint64 at)
 {
-    return QDateTime::fromMSecsSinceEpoch(at, QTimeZone::UTC).toString(QStringLiteral("MMM d, yyyy"));
+    return QDateTime::fromMSecsSinceEpoch(at, QTimeZone::utc()).toString(QStringLiteral("MMM d, yyyy"));
 }
 
 QString utcDate(qint64 at)
 {
-    return QDateTime::fromMSecsSinceEpoch(at, QTimeZone::UTC).toString(QStringLiteral("yyyy-MM-dd"));
+    return QDateTime::fromMSecsSinceEpoch(at, QTimeZone::utc()).toString(QStringLiteral("yyyy-MM-dd"));
 }
 
 qint64 utcMidnight(const QDate &date)
 {
-    return QDateTime(date, QTime(0, 0), QTimeZone::UTC).toMSecsSinceEpoch();
+    return QDateTime(date, QTime(0, 0), QTimeZone::utc()).toMSecsSinceEpoch();
 }
 
 QString icon(const QString &level, const DashboardColors &colors)
@@ -3009,7 +3009,7 @@ void MarketingFeature::editFunnelWeek(const QJsonObject &week)
     auto *form = new QFormLayout;
     const qint64 start = number(week, "weekStart") > 0 ? qint64(number(week, "weekStart"))
                                                        : weekStartOf(QDateTime::currentMSecsSinceEpoch());
-    auto *day = new QDateEdit(QDateTime::fromMSecsSinceEpoch(start, QTimeZone::UTC).date());
+    auto *day = new QDateEdit(QDateTime::fromMSecsSinceEpoch(start, QTimeZone::utc()).date());
     day->setCalendarPopup(true);
     day->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     form->addRow(QStringLiteral("Week containing"), day);

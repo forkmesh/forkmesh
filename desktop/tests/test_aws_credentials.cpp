@@ -98,7 +98,7 @@ void testCallerIdentityRequestAndParsing()
 {
     const Credentials credentials{accessKey(), secretKey(), QStringLiteral("eu-west-1")};
     const Request request = callerIdentityRequest(
-        credentials, QDateTime(QDate(2026, 9, 30), QTime(12, 0, 0), QTimeZone::UTC));
+        credentials, QDateTime(QDate(2026, 9, 30), QTime(12, 0, 0), QTimeZone::utc()));
     check(request.method == "POST" &&
               request.url.toString() == QLatin1String("https://sts.eu-west-1.amazonaws.com/"),
           "STS regional endpoint");
@@ -237,7 +237,7 @@ void testPanel(const QString &root)
     PanelOptions options;
     options.keyPath = keyPath;
     options.clock = [] {
-        return QDateTime(QDate(2026, 9, 30), QTime(8, 30, 0), QTimeZone::UTC);
+        return QDateTime(QDate(2026, 9, 30), QTime(8, 30, 0), QTimeZone::utc());
     };
     options.fleetConfigDirectory = [fleetDir] { return fleetDir; };
     options.transport = [requests, reply](const Request &request, QObject *, ReplyHandler done) {

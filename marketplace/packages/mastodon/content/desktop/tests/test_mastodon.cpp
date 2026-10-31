@@ -351,7 +351,7 @@ void testBodies()
               body.value(QStringLiteral("media_ids")).toArray().isEmpty() && body.contains(QStringLiteral("spoiler_text")) &&
               body.value(QStringLiteral("poll")).toObject().value(QStringLiteral("options")).toArray().size() == 2,
           "an edit clears media and warning explicitly and keeps the poll");
-    draft.scheduledAt = QDateTime(QDate(2030, 1, 2), QTime(3, 4), QTimeZone::UTC);
+    draft.scheduledAt = QDateTime(QDate(2030, 1, 2), QTime(3, 4), QTimeZone::utc());
     check(composeBody(draft, false).value(QStringLiteral("scheduled_at")).toString() == QLatin1String("2030-01-02T03:04:00Z"),
           "scheduled posts send a UTC time");
 

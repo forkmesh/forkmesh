@@ -20,7 +20,7 @@ using namespace forkmesh::smb;
 struct Node {
     bool folder = false;
     QByteArray data;
-    QDateTime modified = QDateTime(QDate(2026, 10, 1), QTime(12, 0), QTimeZone::UTC);
+    QDateTime modified = QDateTime(QDate(2026, 10, 1), QTime(12, 0), QTimeZone::utc());
 };
 
 class Server
