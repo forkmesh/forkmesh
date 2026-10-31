@@ -82,7 +82,7 @@ def _run_catalog_get(count):
     namespace = _load(
         "catalog_handler", "method_name", "safe_segment", "clean_string",
         "served_mirror_groups", "repo_clone_online", "repo_mirror_group_key",
-        "_catalog_logical_owners",
+        "_catalog_logical_owners", "_catalog_organization_projection",
         extra_globals={
             "Date": type("D", (), {"now": staticmethod(lambda: NOW)}),
             "HOST_PRESENCE_STALE_MS": 600_000,

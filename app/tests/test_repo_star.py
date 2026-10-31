@@ -42,6 +42,13 @@ def _load_functions(extra_globals):
     assert found == FUNCS, "missing functions: %s" % sorted(FUNCS - found)
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
     namespace = dict(extra_globals)
+    async def _no_organization(*_args):
+        return ""
+
+    async def _same_key(_env, key):
+        return key
+    namespace.setdefault("_repo_organization", _no_organization)
+    namespace.setdefault("_repo_public_key", _same_key)
     namespace.setdefault("bounded_json_request", json_from_request_double)
     namespace.setdefault("_award_stargazer_for_repo", _no_badge)
     exec(compile(module, str(ENTRY), "exec"), namespace)

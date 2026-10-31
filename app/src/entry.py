@@ -16717,14 +16717,14 @@ async def _catalog_logical_owners(env, repository_rows):
     routes = list(dict.fromkeys(
         (
             clean_string(record.get("owner"), MAX_NODE_NAME).strip().lower(),
-            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip(),
+            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip().lower(),
         )
         for record, _owner_bi in rows
     ))
     for offset in range(0, len(routes), 40):
         chunk = routes[offset:offset + 40]
         where = " OR ".join(
-            "(r.node_owner=? AND r.repo=?)" for _route in chunk)
+            "(r.node_owner=? AND lower(r.repo)=?)" for _route in chunk)
         arguments = [
             item for route in chunk for item in route
         ]
@@ -16739,7 +16739,8 @@ async def _catalog_logical_owners(env, repository_rows):
             route = (
                 clean_string(
                     value.get("node_owner"), MAX_NODE_NAME).strip().lower(),
-                clean_string(value.get("repo"), MAX_REPO_SEGMENT).strip(),
+                clean_string(
+                    value.get("repo"), MAX_REPO_SEGMENT).strip().lower(),
             )
             organization = clean_string(
                 value.get("name"), MAX_NODE_NAME).strip().lower()
@@ -16750,13 +16751,14 @@ async def _catalog_logical_owners(env, repository_rows):
     for record, owner_bi in rows:
         route = (
             clean_string(record.get("owner"), MAX_NODE_NAME).strip().lower(),
-            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip(),
+            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip().lower(),
         )
         logical = []
         user_owner = user_by_owner_bi.get(owner_bi, "")
-        if user_owner:
+        organizations = organization_by_route.get(route, [])
+        if user_owner and len(organizations) != 1:
             logical.append({"kind": "user", "owner": user_owner})
-        for organization in organization_by_route.get(route, []):
+        for organization in organizations:
             if not any(
                     value["kind"] == "organization"
                     and value["owner"] == organization
@@ -17426,6 +17428,8 @@ async def _repo_about_public(env, request, owner, repo):
         if callable(group_record_resolver) else rec
     )
     origin = _ap_origin(env, request)
+    if display_owner == owner:
+        display_owner = await _repo_organization(env, owner, repo) or owner
     handle = ap.repo_handle(str(display_owner).lower(), str(repo).lower())
     logo_url = ""
     banner_url = ""
@@ -29469,6 +29473,43 @@ async def _org_repo_node(env, org, repo):
         return ""
 
 
+async def _repo_organization(env, node, repo):
+    node = str(node or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    if not valid_node_name(node) or not repo:
+        return ""
+    now = int(Date.now())
+    key = "\x00" + node + "/" + repo
+    hit = _ORG_ALIAS_MEMO.get(key)
+    if hit and now - hit[1] < ORG_ALIAS_MEMO_TTL_MS:
+        return hit[0]
+    try:
+        await ensure_schema(env)
+        rows = await d1_all(
+            env, "SELECT o.name AS name FROM org_repos r JOIN orgs o ON "
+            "o.org_bi=r.org_bi WHERE r.node_owner=? AND lower(r.repo)=? LIMIT 2",
+            node, repo)
+    except Exception:
+        return ""
+    names = [str(row.get("name") or "").strip().lower()
+             for row in rows or []]
+    organization = names[0] if (
+        len(names) == 1 and valid_node_name(names[0])
+        and names[0] != node) else ""
+    if len(_ORG_ALIAS_MEMO) >= ORG_ALIAS_MEMO_MAX:
+        _ORG_ALIAS_MEMO.clear()
+    _ORG_ALIAS_MEMO[key] = (organization, now)
+    return organization
+
+
+async def _repo_public_key(env, key):
+    owner, _, name = str(key or "").strip().partition("/")
+    if not owner or not name or "/" in name:
+        return str(key or "").strip()
+    organization = await _repo_organization(env, owner, name)
+    return (organization or owner) + "/" + name
+
+
 async def org_alias_rewrite(env, request, url):
     # Organization repo aliases (issue #388): the /<org>/<repo> git endpoints
     # and every /api/repo/<org>/<repo>/... path serve the linked node's repo
@@ -36592,6 +36633,8 @@ async def repo_card_handler(env, request, owner, repo):
                     env, candidate_owner, candidate_repo) == owner:
                 display_owner = candidate_owner
             display_repo = candidate_repo
+    if display_owner == owner:
+        display_owner = await _repo_organization(env, owner, repo) or owner
     card_version = parse_qs(parts.query).get("v", [""])[0]
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", card_version):
         card_version = ""
@@ -36612,7 +36655,8 @@ async def repo_card_handler(env, request, owner, repo):
         return json_response({"error": "not_found"}, status=404)
     rec = (await decrypt_row(env, row.get("data"))) or {}
     stars_row = await d1_first(
-        env, "SELECT COUNT(*) AS n FROM repo_stars WHERE repo_bi=?", repo_bi)
+        env, "SELECT COUNT(*) AS n FROM repo_stars WHERE repo_bi=?",
+        await blind_index(env, (display_owner + "/" + repo).lower()))
     followers = 0
     if await _ap_enabled(env):
         handle = ap.repo_handle(
@@ -36703,7 +36747,7 @@ async def _public_repo_owner(env, request, owner, repo, pattern):
             return requested_owner
     except Exception:
         pass
-    return public_owner
+    return await _repo_organization(env, public_owner, repo) or public_owner
 
 
 async def _index_repo_fork_edge(env, record, prior, account_bi, repo_bi):
@@ -36724,6 +36768,8 @@ async def _index_repo_fork_edge(env, record, prior, account_bi, repo_bi):
         was_fork = bool(clean_string((prior or {}).get("forkedFrom", ""), 130))
         if not parent and not was_fork:
             return
+        if parent:
+            parent = await _repo_public_key(env, parent)
         fork_owner = clean_string(record.get("owner", ""), MAX_REPO_SEGMENT)
         fork_name = clean_string(record.get("name", ""), MAX_REPO_SEGMENT)
         if (
@@ -36919,8 +36965,8 @@ async def _web_fork_create(env, request, source_owner, source_name,
         catalog = await decrypt_row(env, row.get("data"))
         if (
             isinstance(catalog, dict)
-            and clean_string(catalog.get("forkedFrom", ""), 170).lower()
-            == parent
+            and await _repo_public_key(env, clean_string(
+                catalog.get("forkedFrom", ""), 170).lower()) == parent
         ):
             existing = _web_fork_job_response({
                 "sourceOwner": source_owner,
@@ -38339,6 +38385,13 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     public_href = globals().get("_repo_public_href")
     if callable(public_href):
         href = await public_href(env, href)
+    public_key = globals().get("_repo_public_key")
+    if callable(public_key) and repo and repo.count("/") == 1:
+        shown = await public_key(env, repo)
+        if shown != repo:
+            title = str(title or "").replace(repo, shown)
+            body = str(body or "").replace(repo, shown)
+            repo = shown
     payload = notification_payload(
         kind, title, body=body, repo=repo, href=href, actor=actor,
         source=source, ts=now, meta=meta)
@@ -54380,8 +54433,10 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
     setting = await _repo_short_setting_row(env)
     owner = repo_short_urls.canonical_owner(setting)
     parts = [p for p in str(path or "").split("/") if p]
-    if not owner or len(parts) < 2:
+    if len(parts) < 2:
         return None
+    if not owner:
+        return await _repo_organization_path(env, parts, query, public_only)
     first = unquote(parts[0]).lower()
     if first != owner:
         name = unquote(parts[1])
@@ -54396,6 +54451,20 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
     if hit is None or await _repo_name_is_account(env, hit[1], True):
         return None
     return hit[0]
+
+
+async def _repo_organization_path(env, parts, query, public_only):
+    first = unquote(parts[0]).lower()
+    name = unquote(parts[1])
+    if not repo_short_urls.OWNER_RE.fullmatch(first):
+        return None
+    organization = await _repo_organization(env, first, name)
+    if not organization or organization == first:
+        return None
+    if public_only and await _repo_is_private(env, first, name):
+        return None
+    return "/" + "/".join([quote(organization, safe="")] + parts[1:]) + (
+        "?" + query if query else "")
 
 
 async def _short_repo_board(env, rows):

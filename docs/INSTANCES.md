@@ -988,6 +988,57 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   bounded per request by `FORKMESH_MAX_GIT_PUSH_BODY_BYTES` (256 MiB), which
   incremental pushes do not reach.
 
+## Moving organization repositories' public facts (`org_repo_identity.py`)
+
+An organization repository is stored under the member who created it, and
+since the organization became its public owner (docs/HOSTED_REPOS.md, "The
+organization is the public owner") new forks, stars, views and fork edges are
+recorded under `<org>/<repo>`. Records written before that name
+`<member>/<repo>`. `python -m forkmesh_host org-repo-identity` moves them. It
+is a dry run unless `--apply` is given; run it as root like `instance-repo`
+(the database work runs as `forkmesh-app`):
+
+```
+cd /opt/forkmesh-instance/src/app/host
+/opt/forkmesh-instance/venv/bin/python -m forkmesh_host org-repo-identity \
+  [--organization <org>] [--apply] \
+  --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It considers every public repository linked to exactly one organization
+(`org_repos`; a repository linked to two keeps the member) and prints one
+JSON line:
+
+- `dryRun`: `true` unless `--apply`.
+- `repositories`: `{organization, member, name}` per linked repository.
+- `forks`: one entry per fork that still needs work, `{fork, from, to,
+  record, edge}`. `record` is `rewrite` (a core-written hosted fork whose
+  `forkedFrom` changes from `from` to `to` through `_pin_hosted_state`, as
+  `instance-repo --fork-of` does), `signed-kept` or `not-hosted-kept` (a
+  record a node signed or published: its `forkedFrom` is left alone because
+  the signature binds it, and the node's next publication keeps it; only the
+  edge moves), or `unchanged`. `edge` is `rekey` when the `repo_forks` row is
+  not yet keyed on `to` (applied with `_index_repo_fork_edge`, which keys it
+  on the organization), `ok`, or `none` for a private fork.
+- `tables`: one entry per table with rows under the member key, `{table,
+  from, to, rows}` (`totals` for views): `repo_stars`, `pull_batch_sent`,
+  `repo_remote_forks` are moved row by row, a row already present under the
+  organization wins and the member copy is dropped; `repo_views` /
+  `issue_views` rows move to the organization and their totals are added.
+  The statements also merge a viewer present under both keys (hits added,
+  first and last view widened, the viewer counted once), but a viewer key
+  is derived from the repository address it was counted under
+  (`_repo_viewer_key`), so a member-address key never equals an
+  organization-address key: someone who viewed the repository at both
+  addresses stays two viewers.
+
+Each table moves in one transaction. A second run prints empty `forks` and
+`tables`, so the command is idempotent and safe to rerun after a partial run.
+Run the dry run first, check that every `from` is a member address of a
+repository you expect, then rerun with `--apply`.
+
 ## White label
 
 - `INSTANCE_NAME` names the instance: email sender and card, page titles,

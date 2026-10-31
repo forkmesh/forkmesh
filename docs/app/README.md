@@ -219,7 +219,9 @@ exhaust memory. Browser tests:
 - **Organization aliases.** Organization repositories reach handlers with
   `owner` rewritten to the backing node (`org_alias_rewrite`). Anything public
   (ActivityPub handles, note text, links) must use the organization name from
-  the original URL; privacy and repository rows use the node.
+  the original URL, or `_repo_organization` when the URL names the member
+  (docs/HOSTED_REPOS.md, "The organization is the public owner"); privacy,
+  permissions and repository rows use the node.
 - **Repository read actions.** Every action in `REPO_HOST_RE`
   (`app/src/urls.py`) must be in `REPO_HOST_READ_ACTIONS`
   (`app/src/app_runtime.py`), or it answers the cacheable 410
