@@ -1360,6 +1360,39 @@ QStringList dropUnreadableRefs(const QString &gitDir, const QString &gitErrors)
     return dropped;
 }
 
+QStringList emptyLooseObjectsNamed(const QString &gitErrors)
+{
+    static const QRegularExpression emptyObject(QStringLiteral(
+        "object file [^\\n]*?objects[/\\\\]([0-9a-f]{2})[/\\\\]"
+        "([0-9a-f]{38}|[0-9a-f]{62}) is empty"));
+    QStringList objects;
+    QRegularExpressionMatchIterator it = emptyObject.globalMatch(gitErrors);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        const QString object =
+            match.captured(1) + QLatin1Char('/') + match.captured(2);
+        if (!objects.contains(object))
+            objects.append(object);
+    }
+    return objects;
+}
+
+QStringList removeEmptyLooseObjects(const QString &gitDir,
+                                    const QString &gitErrors)
+{
+    QStringList removed;
+    const QDir objects(QDir(gitDir).filePath(QStringLiteral("objects")));
+    for (const QString &object : emptyLooseObjectsNamed(gitErrors)) {
+        const QString path = objects.filePath(object);
+        const QFileInfo info(path);
+        if (!info.isFile() || info.isSymLink() || info.size() != 0)
+            continue;
+        if (QFile::remove(path))
+            removed.append(QString(object).remove(QLatin1Char('/')));
+    }
+    return removed;
+}
+
 RefreshOutcome convergeSourceCheckoutFromRoutes(
     const QString &checkoutPath, const QList<MirrorRoute> &mirrorRoutes,
     const std::function<void()> &afterEachReachableRoute)
