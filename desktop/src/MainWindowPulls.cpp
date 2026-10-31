@@ -987,15 +987,27 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
         QStringLiteral("pullDeleteClosedAndMergedButton"));
     m_pullMergeAllAiButton = pullActionButton(
         QStringLiteral("Merge all"), "sparkle",
-        QStringLiteral("Start an AI agent in this repository's own checkout "
-                       "(no branch, no permission prompts) that reviews every "
-                       "open pull request for security issues, bugs and code "
-                       "that does not fit, merges the safe ones into their base "
-                       "cleanly, then deletes the merged pull requests and "
+        QStringLiteral("Draft a prompt in the composer, with no branch, for an AI "
+                       "agent that reviews every open pull request for security "
+                       "issues, bugs and code that does not fit and merges the "
+                       "safe ones into their base cleanly. When that agent "
+                       "finishes, ForkMesh deletes the merged pull requests and "
                        "their branches"));
     m_pullMergeAllAiButton->setObjectName(QStringLiteral("pullMergeAllAiButton"));
     connect(m_pullMergeAllAiButton, &QPushButton::clicked, this,
             &MainWindow::mergeAllPullsWithAgent);
+    m_pullReviewAllAiButton = pullActionButton(
+        QStringLiteral("Review all"), "eye",
+        QStringLiteral("Draft a prompt in the composer, with no branch, for an AI "
+                       "agent that reviews every open pull request for security, "
+                       "stability and maintainability. When that agent finishes, "
+                       "ForkMesh approves the pull requests with no issues and "
+                       "requests changes on the rest, with a review thread and a "
+                       "one-click fix on each finding and a summary naming the "
+                       "model that reviewed"));
+    m_pullReviewAllAiButton->setObjectName(QStringLiteral("pullReviewAllAiButton"));
+    connect(m_pullReviewAllAiButton, &QPushButton::clicked, this,
+            &MainWindow::reviewAllPullsWithAgent);
     connect(m_pullImportButton, &QPushButton::clicked, this,
             &MainWindow::importPatchAsPull);
     auto *actionBar = new QFrame;
@@ -1012,6 +1024,7 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
     toolbar->addWidget(m_pullShowClosedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowMergedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowAllButton, 0, Qt::AlignTop);
+    toolbar->addWidget(m_pullReviewAllAiButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullMergeAllAiButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullDeleteClosedAndMergedButton, 0, Qt::AlignTop);
     toolbar->addStretch(1);
@@ -5634,6 +5647,9 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
                 [this](const QString &href) {
                     if (href.startsWith(QLatin1String("applyfix:")))
                         applyPullSuggestionFix(href.mid(9));
+                    else if (href.startsWith(QLatin1String("forkmesh-pull-thread:")) &&
+                             m_currentPullNumber > 0)
+                        openPullDiffInGitView(m_currentPullNumber);
                     else
                         openBodyReference(href);
                 });

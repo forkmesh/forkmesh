@@ -6738,14 +6738,16 @@ void MainWindow::quickAddIssue()
                 m_issueQuickAdd->clear();
             return;
         }
+        const bool directCheckout =
+            m_promptWorktreeCheck && !m_promptWorktreeCheck->isChecked();
         const int agentSessionId = startAdHocAgentForRepo(
             issuesRepoIndex(), prompt, provider, createPr, model, QString(),
             /*genie=*/false, /*switchToTab=*/false, QString(), QString(),
-            quickAddAgentBaseBranchForGitView(), /*priority=*/50,
-            /*directCheckout=*/m_promptWorktreeCheck &&
-                !m_promptWorktreeCheck->isChecked(),
+            quickAddAgentBaseBranchForGitView(), /*priority=*/50, directCheckout,
             QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
         if (agentSessionId > 0) {
+            adoptPullAgentDrafts(agentSessionId, issuesRepoIndex(), prompt,
+                                 directCheckout);
             m_issueQuickAdd->clear();
             clearQuickAddImages();
             // Working straight in the checkout is a one-prompt choice: re-tick
@@ -9124,18 +9126,23 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
 {
     if (!qApp || !testAttribute(Qt::WA_WState_Created))
         return false;
+    const auto *widget = qobject_cast<QWidget *>(obj);
+    const bool ownWindow = !widget || widget->window() == this;
 
     switch (event->type()) {
     case QEvent::MouseMove: {
         auto *mouse = static_cast<QMouseEvent *>(event);
         updateFramelessResizeCursor(
-            resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint()));
+            ownWindow ? resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint())
+                      : Qt::Edges());
         return false;
     }
     case QEvent::HoverMove: {
         auto *hover = static_cast<QHoverEvent *>(event);
         updateFramelessResizeCursor(
-            resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint())));
+            ownWindow
+                ? resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint()))
+                : Qt::Edges());
         return false;
     }
     case QEvent::Leave:
@@ -9144,7 +9151,7 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
         return false;
     case QEvent::MouseButtonPress: {
         auto *mouse = dynamic_cast<QMouseEvent *>(event);
-        if (!mouse || mouse->button() != Qt::LeftButton)
+        if (!ownWindow || !mouse || mouse->button() != Qt::LeftButton)
             return false;
         const Qt::Edges edges =
             resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint());
@@ -9158,7 +9165,8 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
         return false;
     }
     case QEvent::MouseButtonRelease:
-        updateFramelessResizeCursor(resizeEdgesAtGlobalPos(QCursor::pos()));
+        updateFramelessResizeCursor(
+            ownWindow ? resizeEdgesAtGlobalPos(QCursor::pos()) : Qt::Edges());
         return false;
     case QEvent::WindowStateChange:
         updateFramelessResizeCursor({});

@@ -2565,7 +2565,8 @@ bool PullStore::addThreadComment(int number, const QString &path,
                                  const QString &side, int lineStart, int lineEnd,
                                  const QString &body,
                                  const QString &suggestionPatch,
-                                 const PullAnchor &anchor, QString *error)
+                                 const PullAnchor &anchor, QString *error,
+                                 QString *threadId)
 {
     if (!canWrite()) {
         if (error)
@@ -2583,13 +2584,16 @@ bool PullStore::addThreadComment(int number, const QString &path,
     ev.patchset = anchor.patchset;
     ev.anchorLines = anchor.anchorLines;
     ev = makeSignedEvent(number, ev);
-    return appendEvent(
-        number, ev,
-        QStringLiteral("pull #%1: thread on %2:%3")
-            .arg(number)
-            .arg(path)
-            .arg(lineStart),
-        error);
+    if (!appendEvent(number, ev,
+                     QStringLiteral("pull #%1: thread on %2:%3")
+                         .arg(number)
+                         .arg(path)
+                         .arg(lineStart),
+                     error))
+        return false;
+    if (threadId)
+        *threadId = ev.threadId.isEmpty() ? ev.id : ev.threadId;
+    return true;
 }
 
 bool PullStore::addThreadReply(int number, const QString &threadId,

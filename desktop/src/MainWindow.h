@@ -48,6 +48,7 @@
 #include "PullStore.h"
 #include "PullReviewModel.h"
 #include "PullMergeAll.h"
+#include "PullReviewAll.h"
 #include "MergeQueue.h"
 #include "CoveStore.h"
 #include "ActionStore.h"
@@ -6745,10 +6746,38 @@ private:
     void startPullMergeAll(const QString &owner, const QString &name,
                            const QList<PullRequest> &open, bool switchToTab,
                            std::function<void(const forkmesh::pullmergeall::Launch &)> done);
+    void preparePullMergeAll(
+        const QString &owner, const QString &name, const QList<PullRequest> &open,
+        std::function<void(const QList<forkmesh::pullmergeall::Target> &,
+                           const QStringList &)> ready);
     forkmesh::pullmergeall::Launch launchPullMergeAllAgent(
         const QString &owner, const QString &name,
         const QList<forkmesh::pullmergeall::Target> &targets,
         const QStringList &skipped, bool switchToTab);
+    void recordPullMergeAllRun(int sessionId, const QString &owner, const QString &name,
+                               const QList<forkmesh::pullmergeall::Target> &targets,
+                               const QStringList &skipped);
+    void draftPullMergeAllPrompt(int repoIndex,
+                                 const QList<forkmesh::pullmergeall::Target> &targets,
+                                 const QStringList &skipped);
+    void fillComposerForPullDraft(int repoIndex, const QString &prompt,
+                                  const QString &notice, QWidget *from);
+    void adoptPullAgentDrafts(int sessionId, int repoIndex, const QString &prompt,
+                              bool directCheckout);
+    void adoptPullMergeAllDraft(int sessionId, const RepositoryRecord &repo,
+                                const QString &prompt);
+    void flyToComposer(QWidget *from);
+    void reviewAllPullsWithAgent();
+    QString pullReviewAllBlocker(int repoIndex);
+    void draftPullReviewAllPrompt(int repoIndex,
+                                  const QList<forkmesh::pullmergeall::Target> &targets,
+                                  const QStringList &skipped);
+    void adoptPullReviewAllDraft(int sessionId, const RepositoryRecord &repo,
+                                 const QString &prompt);
+    void finishPullReviewAllRun(int sessionId);
+    void loadPullReviewAllRuns();
+    void savePullReviewAllRuns();
+    int activePullReviewAllSession(const QString &owner, const QString &name);
     void handleLocalControlPullsRequest(int connectionId, int requestId,
                                         const QString &method, const QJsonObject &params);
     void answerLocalControlPullsRequest(int connectionId, int requestId,
@@ -13718,6 +13747,13 @@ private:
     QHash<int, forkmesh::pullmergeall::Run> m_pullMergeAllRuns;
     bool m_pullMergeAllRunsLoaded = false;
     bool m_pullMergeAllPreparing = false;
+    forkmesh::pullmergeall::Draft m_pullMergeAllDraft;
+    QPushButton *m_pullReviewAllAiButton = nullptr;
+    QHash<int, forkmesh::pullreviewall::Run> m_pullReviewAllRuns;
+    bool m_pullReviewAllRunsLoaded = false;
+    QSet<int> m_pullReviewAllPosting;
+    forkmesh::pullmergeall::Draft m_pullReviewAllDraft;
+    QString m_pullReviewAllDraftReport;
     QSet<int> m_pullMergeAllCleaning;
     QWidget *m_pullDetail = nullptr;
     QLabel *m_pullTitle = nullptr;
