@@ -811,6 +811,8 @@ set(FORKMESH_APP_SOURCES
     src/PowerSourceReader.cpp
     src/PingFixes.h
     src/PingFixes.cpp
+    src/PingBatch.h
+    src/PingBatch.cpp
     src/AgentUsageResetClock.h
     src/AgentUsageResetClock.cpp
     src/MainnodeRoom.h
@@ -5064,6 +5066,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-ping-fixes-tests
         COMMAND forkmesh-ping-fixes-tests)
+
+    qt_add_executable(forkmesh-ping-batch-tests
+        tests/test_ping_batch.cpp
+        src/PingBatch.h
+        src/PingBatch.cpp
+    )
+    target_include_directories(forkmesh-ping-batch-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-ping-batch-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-ping-batch-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-ping-batch-tests
+        COMMAND forkmesh-ping-batch-tests)
 
     qt_add_executable(forkmesh-agent-usage-reset-clock-tests
         tests/test_agent_usage_reset_clock.cpp

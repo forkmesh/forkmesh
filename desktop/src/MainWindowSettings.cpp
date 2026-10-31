@@ -12614,7 +12614,8 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
         reportUserVisibleError(QStringLiteral("notice"), QString(), text,
                                QString(), pingId);
     if (unsolicited) {
-        if (!pingsPaused() && forkmesh::pings::pingKindEnabled(kind))
+        if (!pingsPaused() && forkmesh::pings::pingKindEnabled(kind) &&
+            admitPingSound())
             forkmesh::sonify::UiSounds::play(
                 error ? forkmesh::sonify::Cue::Error
                       : forkmesh::sonify::Cue::Arrive);
