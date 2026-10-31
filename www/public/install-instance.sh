@@ -1357,7 +1357,7 @@ import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
         "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
-        "webFirewall", "whiteLabel", "privacyMode", "followUrl", "followRef", "followOwner"]
+        "followUrl", "followRef", "followOwner", "webFirewall", "whiteLabel", "privacyMode"]
 values = dict(zip(keys, sys.argv[1:]))
 for optional in ("platformUrl", "webFirewall", "followUrl", "followRef", "followOwner"):
     if not values[optional]:
@@ -1373,9 +1373,9 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
-    "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "${CFG_followUrl:-}" "${CFG_followRef:-}" "${CFG_followOwner:-}" \
-    "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" \
+    "${CFG_followUrl:-}" "${CFG_followRef:-}" "${CFG_followOwner:-}" "${CFG_webFirewall:-}" \
+    "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
