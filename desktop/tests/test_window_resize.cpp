@@ -10550,6 +10550,47 @@ void checkRailSortAndGroups(MainWindow &window)
           QStringLiteral("the sort applies inside each group (%1)")
               .arg(peopleKeys.join(QStringLiteral(", "))));
 
+    QWidget *peopleHeading = nullptr;
+    for (QWidget *widget :
+         window.findChildren<QWidget *>(QStringLiteral("railGroupSeparator")))
+        if (widget->property("forkmeshRailGroupId").toString() == QStringLiteral("people"))
+            peopleHeading = widget;
+    const auto clickHeading = [](QWidget *target) {
+        const QPoint at = target->rect().center();
+        for (QEvent::Type type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, QPointF(at), QPointF(target->mapToGlobal(at)),
+                              Qt::LeftButton,
+                              type == QEvent::MouseButtonRelease ? Qt::NoButton
+                                                                 : Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(target, &event);
+        }
+        QCoreApplication::processEvents();
+    };
+    if (peopleHeading)
+        clickHeading(peopleHeading);
+    QStringList folded = window.testRailOrderKeys();
+    const int foldedPeople = folded.indexOf(QStringLiteral("group:people"));
+    const QString afterPeople = folded.value(foldedPeople + 1);
+    check(peopleHeading && foldedPeople > 0 &&
+              (afterPeople.startsWith(QStringLiteral("group:")) ||
+               afterPeople == QStringLiteral("|")) &&
+              !folded.contains(QStringLiteral("chat")) &&
+              peopleHeading->isVisibleTo(window.testRailLayout()->parentWidget()) &&
+              peopleHeading->property("railGroupCollapsed").toBool() &&
+              QSettings().value(QStringLiteral("ui/railCollapsedGroups")).toStringList() ==
+                  QStringList{QStringLiteral("people")} &&
+              !window.testRailHiddenKeys().contains(QStringLiteral("chat")),
+          QStringLiteral("clicking a rail group heading folds its items away and "
+                         "keeps the heading (%1)")
+              .arg(folded.join(QStringLiteral(", "))));
+    if (peopleHeading)
+        clickHeading(peopleHeading);
+    check(window.testRailOrderKeys() == grouped &&
+              !QSettings().contains(QStringLiteral("ui/railCollapsedGroups")),
+          QStringLiteral("clicking the heading again shows the group's items (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+
     const QString daily = window.testCreateRailGroup(QStringLiteral("Daily"));
     window.testAssignRailGroup(QStringLiteral("stats"), daily);
     window.testAssignRailGroup(QStringLiteral("chat"), daily);
