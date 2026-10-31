@@ -441,6 +441,8 @@ struct PeopleProfileSheet: View {
                 } else {
                     stats(profile)
                     about(profile)
+                    Text("Tips").fmText(.titleSmall, color: fm.textPrimary)
+                    ProfileTipContent(name: profile.name, address: profile.tipAddress)
                 }
             } else if !model.error.isEmpty {
                 Text(model.error).fmText(.bodyMedium, color: fm.textSecondary)

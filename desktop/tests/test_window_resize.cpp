@@ -5074,6 +5074,11 @@ void checkChatUsernameProfile(MainWindow &window)
     check(sender && profile && profile->windowTitle() == QStringLiteral("ada"),
           QStringLiteral("clicking a chat username opens the user's profile, "
                          "not the node/agent page"));
+    check(profile &&
+              profile->findChild<QWidget *>(QStringLiteral("chatUserProfileTips")) &&
+              profile->findChild<QLabel *>(QStringLiteral("chatUserProfileTipQr")) &&
+              profile->findChild<QLabel *>(QStringLiteral("chatUserProfileTipAddress")),
+          QStringLiteral("the profile card carries the Solana tip QR section"));
     if (profile)
         profile->close();
     delete row;

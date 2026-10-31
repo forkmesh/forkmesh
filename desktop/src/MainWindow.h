@@ -10688,6 +10688,7 @@ private:
                                const QString &senderName);
     void showChatUserProfile(const MemberInfo &member, const QStringList &nodeLines);
     bool openUserProfile(const QString &account, const QString &name = QString());
+    void linkAvatarToProfile(QWidget *avatar, const QString &account);
     void promptAddChannel();
     void promptAddPrivateChannel();
     void showNewPrivateRoomDialog();

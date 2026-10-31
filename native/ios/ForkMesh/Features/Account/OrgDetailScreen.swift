@@ -283,6 +283,7 @@ private struct OrgMemberRow: View {
                     .fmText(.bodyMedium, weight: FmType.emphasis)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .opensProfile(member.name)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 OrgRoleBadge(role: member.role)
                 if canManage {
@@ -486,6 +487,7 @@ private struct TeamRoster: View {
                             HStack {
                                 Text(member.name)
                                     .fmText(.bodyMedium, weight: FmType.emphasis)
+                                    .opensProfile(member.name)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 if model.canManage {
                                     FmIconButton(

@@ -21,6 +21,10 @@ public struct AccountProfile: Equatable, Sendable {
     public let mirrorCount: Int
     public var timeZone: String = ""
     public var avatar: String = ""
+    public var solana: String = ""
+    public var links: [ProfileLink] = []
+    public var mastodon: String = ""
+    public var mastodonUrl: String = ""
 
     public static func parse(_ map: JSONObject, requested: String) -> AccountProfile {
         let nodes = map.strings("nodes").filter { NodeLink.isNodeName($0.lowercased()) }
@@ -42,7 +46,11 @@ public struct AccountProfile: Equatable, Sendable {
             following: max(0, map.int("following")),
             mirrorCount: max(0, map.int("mirrorCount")),
             timeZone: zone(map.str("profileTimezone")),
-            avatar: map.str("avatarPng"))
+            avatar: map.str("avatarPng"),
+            solana: map.str("solana").trimmingCharacters(in: .whitespaces),
+            links: ProfileLink.parseAll(map.maps("profileLinks")),
+            mastodon: String(map.str("mastodon").prefix(120)),
+            mastodonUrl: ProfileLink.isWebUrl(map.str("mastodonUrl")) ? map.str("mastodonUrl") : "")
     }
 
     static func zone(_ raw: String) -> String {
@@ -77,7 +85,56 @@ public struct AccountProfile: Equatable, Sendable {
         !isNode && !viewer.isEmpty && viewer.lowercased() == name.lowercased()
     }
 
+    public var tipAddress: String { SolanaAddress.valid(solana) }
+
+    public var walletQRText: String { SolanaAddress.qrText(solana) }
+
     public var identityQRText: String { pubkey.isEmpty ? "" : "forkmesh:identity/\(name.lowercased())/\(pubkey)" }
+}
+
+public struct ProfileLink: Equatable, Sendable {
+    public let label: String
+    public let url: String
+    public let verified: Bool
+
+    public init(label: String, url: String, verified: Bool) {
+        self.label = label
+        self.url = url
+        self.verified = verified
+    }
+
+    public static func isWebUrl(_ url: String) -> Bool {
+        url.count <= 500 && (url.hasPrefix("https://") || url.hasPrefix("http://"))
+    }
+
+    public static func parseAll(_ items: [JSONObject]) -> [ProfileLink] {
+        let links = items.compactMap { (item: JSONObject) -> ProfileLink? in
+            let url = item.str("url").trimmingCharacters(in: .whitespaces)
+            guard isWebUrl(url) else { return nil }
+            var label = String(item.str("label").trimmingCharacters(in: .whitespaces).prefix(60))
+            if label.isEmpty { label = item.str("domain").isEmpty ? url : item.str("domain") }
+            return ProfileLink(label: label, url: url, verified: item.bool("verified"))
+        }
+        return Array(links.prefix(10))
+    }
+}
+
+public enum SolanaAddress {
+    private static let alphabet = Set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+
+    public static func isValid(_ address: String) -> Bool {
+        (32...44).contains(address.count) && address.allSatisfy { alphabet.contains($0) }
+    }
+
+    public static func valid(_ address: String) -> String {
+        let trimmed = address.trimmingCharacters(in: .whitespaces)
+        return isValid(trimmed) ? trimmed : ""
+    }
+
+    public static func qrText(_ address: String) -> String {
+        let trimmed = valid(address)
+        return trimmed.isEmpty ? "" : "solana:\(trimmed)"
+    }
 }
 
 @MainActor

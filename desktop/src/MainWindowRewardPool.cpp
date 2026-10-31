@@ -948,6 +948,7 @@ void MainWindow::renderContributorRewards(const QJsonArray &rewards)
             avatar->setPixmap(chatActorAvatar(
                 QStringLiteral("user:") + recipient.toLower(), recipient, 20));
             avatar->setToolTip(QStringLiteral("@") + recipient);
+            linkAvatarToProfile(avatar, recipient);
             recipientLayout->addWidget(avatar);
             auto *names = new QWidget;
             auto *namesLayout = new QVBoxLayout(names);
@@ -958,6 +959,7 @@ void MainWindow::renderContributorRewards(const QJsonArray &rewards)
                 QStringLiteral("contributorRewardRecipientHandle"));
             handle->setTextFormat(Qt::PlainText);
             handle->setToolTip(QStringLiteral("ForkMesh @") + recipient);
+            linkAvatarToProfile(handle, recipient);
             namesLayout->addWidget(handle);
             if (!discordIdentity.isEmpty()) {
                 auto *discord = new QLabel(discordIdentity);

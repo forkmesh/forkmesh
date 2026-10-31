@@ -6462,6 +6462,8 @@ void MainWindow::refreshChatWorkspaceUser()
             Theme::chatColor(online ? QStringLiteral("chatOnline")
                                     : QStringLiteral("chatFaint")),
             Theme::chatColor(QStringLiteral("chatRailFooter"))));
+        linkAvatarToProfile(m_chatWorkspaceAvatar, owner);
+        linkAvatarToProfile(m_chatWorkspaceUser, owner);
     }
 }
 

@@ -433,6 +433,38 @@ final class AccountProfileTests: XCTestCase {
         XCTAssertEqual(profile.identityQRText, "forkmesh:identity/alice/pk")
     }
 
+    func testTipAddressLinksAndAvatar() {
+        let profile = AccountProfile.parse([
+            "exists": true, "name": "alice", "kind": "user", "avatarPng": "iVBOR",
+            "solana": "So11111111111111111111111111111111111111112",
+            "mastodon": "@alice@x.social", "mastodonUrl": "https://x.social/@alice",
+            "profileLinks": [
+                ["label": "Blog", "url": "https://alice.dev", "verified": true],
+                ["label": "", "url": "https://two.dev", "domain": "two.dev"],
+                ["label": "Bad", "url": "javascript:alert(1)"],
+            ],
+        ], requested: "alice")
+        XCTAssertEqual(profile.tipAddress, "So11111111111111111111111111111111111111112")
+        XCTAssertEqual(profile.walletQRText, "solana:So11111111111111111111111111111111111111112")
+        XCTAssertEqual(profile.avatar, "iVBOR")
+        XCTAssertEqual(profile.links, [
+            ProfileLink(label: "Blog", url: "https://alice.dev", verified: true),
+            ProfileLink(label: "two.dev", url: "https://two.dev", verified: false),
+        ])
+        XCTAssertEqual(profile.mastodonUrl, "https://x.social/@alice")
+        let junk = AccountProfile.parse(["exists": true, "name": "bob", "solana": "0OIl", "mastodonUrl": "ftp://x"], requested: "bob")
+        XCTAssertEqual(junk.tipAddress, "")
+        XCTAssertEqual(junk.walletQRText, "")
+        XCTAssertEqual(junk.mastodonUrl, "")
+    }
+
+    func testPeopleProfileKeepsOnlyAValidTipAddress() {
+        XCTAssertEqual(
+            PeopleProfile.parse(["solana": "So11111111111111111111111111111111111111112"], requested: "a").tipAddress,
+            "So11111111111111111111111111111111111111112")
+        XCTAssertEqual(PeopleProfile.parse(["solana": "not an address"], requested: "a").tipAddress, "")
+    }
+
     func testPrivateAndNodeProfiles() {
         XCTAssertTrue(AccountProfile.parse(["exists": true, "name": "p", "profilePrivate": true], requested: "p").isPrivate)
         let node = AccountProfile.parse(["exists": true, "name": "box", "kind": "node", "owner": "alice", "online": true], requested: "box")

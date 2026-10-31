@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, issuePersonNameHtml, platformName, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
+  const { $, escapeHtml, issuePersonNameHtml, issuePersonProfileHref, platformName, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
@@ -127,6 +127,13 @@
   function noteInitials(name) {
     const parts = String(name || "?").replace(/[^\p{L}\p{N}\s_-]/gu, "").split(/[\s_-]+/).filter(Boolean);
     return ((parts[0]?.[0] || "?") + (parts[1]?.[0] || "")).slice(0, 2);
+  }
+
+  function noteAvatarTagHtml(name, className, attrs, inner) {
+    const href = issuePersonProfileHref(String(name || "").trim().toLowerCase());
+    return href
+      ? `<a href="${escapeHtml(href)}" class="${className}" ${attrs} aria-label="@${escapeHtml(name)} profile">${inner}</a>`
+      : `<span class="${className}" ${attrs}>${inner}</span>`;
   }
 
   function noteAvatarColor(name) {
@@ -307,14 +314,16 @@
     if (people) {
       people.innerHTML = `
         <div class="notes-person">
-          <span class="notes-avatar" style="background:${noteAvatarColor(owner)}">${escapeHtml(noteInitials(owner))}</span>
+          ${noteAvatarTagHtml(owner, "notes-avatar", `style="background:${noteAvatarColor(owner)}"`, escapeHtml(noteInitials(owner)))}
           <div class="min-w-0"><div class="notes-person-name">${issuePersonNameHtml(owner, "")}</div><div class="notes-person-hint">You</div></div>
           <span class="notes-person-hint">Owner</span><span></span>
         </div>` + (note.shares || []).map((share) => {
         const key = `${escapeHtml(share.type)}:${escapeHtml(share.name)}`;
         return `
         <div class="notes-person">
-          <span class="notes-avatar" data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}">${escapeHtml(noteInitials(share.name))}</span>
+          ${share.type === "organization"
+            ? `<span class="notes-avatar" data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}">${escapeHtml(noteInitials(share.name))}</span>`
+            : noteAvatarTagHtml(share.name, "notes-avatar", `data-type="${escapeHtml(share.type)}" style="background:${noteAvatarColor(share.name)}"`, escapeHtml(noteInitials(share.name)))}
           <div class="min-w-0"><div class="notes-person-name">${share.type === "organization" ? escapeHtml(share.name) : issuePersonNameHtml(share.name, "")}</div><div class="notes-person-hint">${share.type === "organization" ? "Organization" : "User"}</div></div>
           <select data-note-share-role-change="${key}" aria-label="Access for ${escapeHtml(share.name)}">
             <option value="editor" ${share.role === "editor" ? "selected" : ""}>Can edit</option>
@@ -729,7 +738,7 @@
     const faces = $("[data-note-presence]");
     if (faces) {
       faces.innerHTML = peers.slice(0, 4).map((peer) =>
-        `<span class="notes-face" style="background:${noteAvatarColor(peer.name)}" title="${escapeHtml(peer.name)} is here">${escapeHtml(noteInitials(peer.name))}</span>`).join("");
+        noteAvatarTagHtml(peer.name, "notes-face", `style="background:${noteAvatarColor(peer.name)}" title="${escapeHtml(peer.name)} is here"`, escapeHtml(noteInitials(peer.name)))).join("");
     }
     const live = $("[data-note-live]");
     if (!live) return;

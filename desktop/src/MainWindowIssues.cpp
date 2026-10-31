@@ -4857,6 +4857,7 @@ void MainWindow::addIssueThreadCard(const Issue &issue, const IssueEvent &ev,
         avatar->setPixmap(authorAvatar);
     }
     avatar->setToolTip(who);
+    linkAvatarToProfile(avatar, ev.authorName);
     rowLayout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *card = new QWidget;
@@ -5550,6 +5551,7 @@ void MainWindow::addIssueActivityRow(const IssueEvent &ev, const QString &html)
         avatar->setPixmap(pixmap);
     }
     avatar->setToolTip(who);
+    linkAvatarToProfile(avatar, ev.authorName);
     auto *avatarColumn = new QWidget(row);
     avatarColumn->setFixedWidth(36);
     auto *avatarLayout = new QHBoxLayout(avatarColumn);
