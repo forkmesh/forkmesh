@@ -39,6 +39,7 @@ enum class ShellBarLabels(override val raw: String, val title: String) : ShellRa
 }
 
 enum class ShellBarSelection(override val raw: String, val title: String) : ShellRaw {
+    lens("lens", "Lens"),
     fill("fill", "Fill"),
     outline("outline", "Outline"),
     glow("glow", "Glow"),
@@ -84,10 +85,10 @@ data class ShellBarMetrics(
 data class ShellBarStyle(
     var shape: ShellBarShape = ShellBarShape.capsule,
     var fill: ShellBarFill = ShellBarFill.glass,
-    var icons: ShellHomeIconStyle = ShellHomeIconStyle.outline,
+    var icons: ShellHomeIconStyle = ShellHomeIconStyle.filled,
     var size: ShellBarSize = ShellBarSize.medium,
     var labels: ShellBarLabels = ShellBarLabels.always,
-    var selection: ShellBarSelection = ShellBarSelection.fill,
+    var selection: ShellBarSelection = ShellBarSelection.lens,
     var width: ShellBarWidth = ShellBarWidth.full,
     var corner: Double = 0.5,
     var spacing: Double = 0.0,
