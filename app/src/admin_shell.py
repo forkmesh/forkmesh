@@ -209,7 +209,8 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,
 .ab-menu,.ab-close,.ab-scrim{display:none}
 .ab-search{display:flex;align-items:center;gap:8px;height:36px;
   width:min(380px,100%);padding:0 10px;border:1px solid var(--border);
-  border-radius:8px;background:var(--canvas);color:var(--muted);margin:0}
+  border-radius:8px;background:var(--canvas);color:var(--muted);margin:0;
+  min-width:0}
 .ab-search input{border:0;background:transparent;outline:0;flex:1;min-width:0;
   color:var(--fg);height:34px}
 .ab-search input::placeholder{color:var(--muted)}
@@ -220,6 +221,9 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-bg);
   color:var(--accent-strong);display:inline-flex;align-items:center;
   justify-content:center;font-weight:600;font-size:13px;flex:none}
+.ab-top .avatar{position:relative;overflow:hidden}
+.ab-top .avatar img{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;border-radius:50%}
 .ab-content{padding:24px 28px 64px;max-width:1360px;width:100%}
 
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
@@ -564,6 +568,7 @@ details.more-text[open] summary{margin-bottom:6px}
     outline-offset:2px}
   .ab-top{padding:0 16px}
   .ab-top .chip{display:none}
+  .ab-exit span{display:none}
   .ab-content{padding:18px 16px 48px}
   .cols-4{grid-template-columns:minmax(0,1fr)}
   .segments{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1255,6 +1260,9 @@ def sidebar(active, console="", badges=None, theme="system", next_path="/",
             theme_control(theme, next_path, subpages)))
 
 
+DASHBOARD_HREF = "/dashboard"
+
+
 def top_bar(console="", account="", search_value=""):
     search = ""
     if console:
@@ -1267,13 +1275,23 @@ def top_bar(console="", account="", search_value=""):
             '</form>' % (esc(console), icon("search"), esc(search_value)))
     avatar = ""
     if account:
-        avatar = ('<span class="avatar" title="Signed in as %s">%s</span>'
-                  % (esc(account), esc(initials(account))))
+        avatar = (
+            '<span class="avatar" title="Signed in as %s"><span>%s</span>'
+            '<img src="/api/accounts/%s/avatar" alt="" decoding="async">'
+            '</span>' % (
+                esc(account), esc(initials(account)),
+                esc(quote(str(account).strip().lower(), safe=""))))
+    exit_link = (
+        '<a class="btn btn-sm ab-exit" href="%s" aria-label="Back to dashboard" '
+        'title="Leave admin and open your dashboard">%s'
+        '<span>Back to dashboard</span></a>'
+        % (DASHBOARD_HREF, icon("logout")))
     return (
         '<header class="ab-top"><label for="ab-nav" class="ab-menu" '
         'title="Open navigation">%s<span class="sr">Open navigation</span>'
         '</label>%s<div class="grow"></div><span class="chip">%sAll times in UTC'
-        '</span>%s</header>' % (icon("menu"), search, icon("calendar"), avatar))
+        '</span>%s%s</header>' % (icon("menu"), search, icon("calendar"),
+                                  exit_link, avatar))
 
 
 def document(title, body, theme="system", head_extra=""):
