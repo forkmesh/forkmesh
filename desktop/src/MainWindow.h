@@ -1828,6 +1828,10 @@ public:
         assignRailItemToGroup(key, groupId);
     }
     void testDeleteRailGroup(const QString &groupId) { deleteRailGroup(groupId); }
+    void testToggleRailGroupCollapsed(const QString &groupId)
+    {
+        toggleRailGroupCollapsed(groupId);
+    }
     QStringList testRailSortMenuActions();
     QPushButton *testRailSortButton() const;
     bool testRailFolderExpanded(const QString &folderId) const;
@@ -7587,6 +7591,8 @@ private:
     void assignRailItemToGroup(const QString &key, const QString &groupId);
     void adoptRailGroupsFromLayout();
     void refreshRailGroupSeparators();
+    QStringList railCollapsedGroups() const;
+    void toggleRailGroupCollapsed(const QString &groupId);
     void scheduleRailCountSort();
     bool canPopOutRailItem(QWidget *item) const;
     void popOutRailItemLater(QWidget *item, QWidget *spinner = nullptr);
