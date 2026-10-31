@@ -2996,6 +2996,12 @@ class Default:
             instance_launch._bind_runtime(globals())
             return await instance_launch.route(self.env, request, url.path)
 
+        if url.path in ("/api/forum-mirrors", "/api/forum-mirrors/"):
+            import forum_mirror_setup
+            forum_mirror_setup._bind_runtime(globals())
+            return await forum_mirror_setup.forum_mirrors_handler(
+                self.env, request)
+
         # Anonymous docs/page feedback: like/dislike clicks with optional text.
         if url.path in ("/api/feedback", "/api/feedback/"):
             return await feedback_handler(self.env, request)

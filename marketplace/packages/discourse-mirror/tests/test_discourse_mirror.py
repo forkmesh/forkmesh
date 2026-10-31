@@ -347,6 +347,49 @@ def test_the_forum_layout_needs_an_existing_checkout(forum, tmp_path):
         sync(forum, layout="forum", repository=str(tmp_path / "missing"))
 
 
+def test_ci_mode_reads_its_settings_from_the_repository_and_commits_the_forum(forum, tmp_path, capsys):
+    seed(forum)
+    checkout = forum_checkout(forum, tmp_path)
+    settings = checkout / ".forkmesh" / "forum" / "source" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"origin": forum.origin, "uploads": False, "delaySeconds": 0,
+                                    "ignoreRobots": True, "maxTopicsPerRun": 2}))
+    sleeps = []
+    original = dm.Client.__init__
+
+    def recording(self, entry, sleep=None):
+        original(self, entry, sleep=sleeps.append)
+        assert entry["delaySeconds"] == 1.0 and not entry.get("ignoreRobots")
+
+    dm.Client.__init__ = recording
+    try:
+        assert dm.main(["ci", "--workspace", str(checkout), "--max-minutes", "5"]) == 0
+    finally:
+        dm.Client.__init__ = original
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out["fetched"] == 2 and out["pending"] == 1 and out["uploads"] == 0
+    root = checkout / ".forkmesh" / "forum"
+    assert json.loads((root / "forum.json").read_text())["counts"]["topics"] == 2
+    assert git_log(checkout)[0].endswith("2 topics updated, 1 still to copy")
+    assert (checkout / "work.txt").read_text() == "unsaved work"
+
+
+def test_ci_mode_needs_settings(tmp_path, capsys):
+    assert dm.main(["ci", "--workspace", str(tmp_path)]) == 1
+    assert "does not name a forum" in capsys.readouterr().err
+
+
+def test_a_run_stops_at_its_time_limit_and_keeps_what_it_copied(forum, tmp_path):
+    seed(forum)
+    checkout = forum_checkout(forum, tmp_path)
+    entry = forum.config.resolved({**forum.entry, "layout": "forum", "repository": str(checkout)})
+    mirror = dm.Mirror(entry, sleep=lambda _: None)
+    mirror.deadline = 0.0
+    result = mirror.sync()
+    assert result["fetched"] == 0 and result["stoppedAtTimeLimit"] and result["pending"] == 3
+    assert result["error"] is None and result["commit"]
+
+
 def test_robots_txt_is_honoured_unless_the_operator_has_permission(forum):
     seed(forum)
     forum.robots = "User-agent: *\nDisallow: /\n"

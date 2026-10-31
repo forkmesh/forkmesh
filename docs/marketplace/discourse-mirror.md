@@ -31,6 +31,32 @@ controls (a mirror node, the deploy box or a desktop), like
 `tools/hosted_repository_sync.py`. ForkMesh carries the result as an ordinary
 repository; nothing on the App or the desktop changes.
 
+## Starting a mirror from the web (instance admins)
+
+An instance admin starts a mirror without a shell from
+`/start-discourse-mirror` ([repo-forum](../app/repo-forum.md#starting-a-mirror)).
+The copy then runs in the repository itself, as the scheduled workflow
+`.forkmesh/discourse-mirror.yml` on the instance's own Actions runner
+([instance-actions](../server/instance-actions.md)):
+
+- `.forkmesh/forum/tool/discourse_mirror.py` is this importer, committed into
+  the repository by the setup. A clone of the repository can carry on the
+  mirror anywhere.
+- `.forkmesh/forum/source/settings.json` holds the forum address and options:
+  `uploads`, `uploadHosts`, `maxUploadBytes`, `maxUploadBytesPerRun`,
+  `revisitPerRun`, `delaySeconds` (never under 1 second), `maxTopicsPerRun`
+  (400 by default), `commitName`, `commitEmail`. `ignoreRobots` is not read
+  from it: a web-started mirror always follows robots.txt.
+- The workflow runs twice an hour (minutes chosen at random, so instances do
+  not all start at once) and on demand. `discourse_mirror.py ci --max-minutes 45`
+  copies until it has done `maxTopicsPerRun` topics or 45 minutes have passed.
+  It then saves, rebuilds the list files and commits `.forkmesh/forum`.
+  `git push origin HEAD:<branch>` publishes the commit with the job's
+  `actions-push` grant (`permissions: contents: write`), rebasing once if the
+  branch moved.
+- Large forums therefore take several runs for the first copy. The Forum tab
+  shows each run's topics when it finishes.
+
 ## What a `site` copy holds
 
 ```text

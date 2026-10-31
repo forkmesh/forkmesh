@@ -428,6 +428,19 @@ How it works, and why:
 `tests/background_repo_harness.js` drives `repo.js` under a fake browser; the
 pytest wrapper checks its ids and canonical URLs against the server module.
 
+## Mirroring a Discourse forum
+
+On a page of a Discourse forum (its `<meta name="generator">` starts with
+"Discourse"), the popup shows the forum's name and **Mirror this forum**.
+`forum.js` reads only that meta tag and the site name, through `activeTab`
+and `scripting` when the popup opens, so no host permission is asked for and
+nothing is read from pages you do not open the popup on. The button opens
+`<your ForkMesh server>/start-discourse-mirror?forum=<forum address>`. On an
+instance where you are an admin, that page sets up the mirror; on any other
+server it explains how to start an instance of your own, with the forum
+address carried along. Both messages (`fm-forum-detect`, `fm-forum-mirror`)
+answer the popup only.
+
 ## What leaves the browser
 
 - **CRM**: only when you press a button, send a message, or open your own
@@ -467,6 +480,8 @@ extension's storage with the host permission Chrome granted.
 | `popup-vault.js`   | The popup's Password Vault section.                           |
 | `repo.js`          | Repository pages: provider details, ForkMesh status, Mirror.  |
 | `popup-repo.js`    | The popup's repository card.                                  |
+| `forum.js`         | Discourse forum pages: detect the forum, open the mirror setup. |
+| `popup-forum.js`   | The popup's "Mirror this forum" card.                         |
 | `panel.js`         | The CRM panel and header, shared by every page and the popup. |
 | `content.js`       | Reads the open email in Gmail and Zoho Mail; tracks sends.    |
 | `zoho-sort.js`     | The sort header and inbox-zero tools above a Zoho Mail list. |

@@ -85,6 +85,8 @@
         margin: 8px 0 10px; color: var(--ink-strong);
       }
       .start-sub { color: var(--ink-soft); max-width: 600px; margin: 0 auto; line-height: 1.55; font-size: 14.5px; }
+      .start-discourse-link { margin: 12px 0 0; font-size: 13.5px; }
+      .start-discourse-link a { color: var(--link); }
       .plot-banner {
         margin: 14px auto 0; width: fit-content; max-width: 100%;
         border: 1px solid var(--card-border); background: var(--panel-bg);
@@ -380,6 +382,8 @@
             shows you each step live. It takes about fifteen minutes.
           </p>
           <p class="plot-banner" data-start-plot hidden></p>
+          <p class="plot-banner" data-start-forum hidden></p>
+          <p class="start-discourse-link"><a href="/start-discourse-mirror" data-start-discourse-link>Mirroring a Discourse forum? Start a Discourse mirror</a></p>
         </header>
 
         <form id="start-form" data-start-form autocomplete="off" novalidate>

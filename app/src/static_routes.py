@@ -100,6 +100,7 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "notes",
     "office",
     "start",
+    "start-discourse-mirror",
     # Referral share links (/r/<name>) are worker-owned counters.
     "r",
     "admin",
@@ -352,6 +353,7 @@ BLOCKED_STATIC_HTML_PATHS = frozenset({
     "/verify-pending.html",
     "/mirror-payouts.html",
     "/start.html",
+    "/start-discourse-mirror.html",
     "/referral/index.html",
     "/hackathon/me/index.html",
     "/microjobs/index.html",

@@ -10,6 +10,7 @@ const APP_PATHS = new Set([
   "/reset-password",
   "/signup",
   "/start",
+  "/start-discourse-mirror",
 ]);
 
 // /@name is the one App-rendered document WWW proxies instead of redirecting,

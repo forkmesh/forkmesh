@@ -405,6 +405,7 @@ CACHE_BUSTED_ASSETS = (
     "security-report.js",
     "mirror-payouts.js",
     "start.js",
+    "start-discourse-mirror.js",
     "leaderboards.js",
     "ledger.js",
     "hackathon.js",

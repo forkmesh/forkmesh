@@ -144,6 +144,7 @@ async function renderStatus(status) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   void ForkMeshVaultPopup.render(tab?.url || "");
   void ForkMeshRepoPopup.render(tab?.url || "");
+  void ForkMeshForumPopup.render(tab);
   await renderReddit();
   await pollRedditWalk();
   await renderHere();
@@ -980,6 +981,7 @@ async function renderPanel() {
 document.addEventListener("DOMContentLoaded", () => {
   ForkMeshVaultPopup.bind(send);
   ForkMeshRepoPopup.bind(send);
+  ForkMeshForumPopup.bind(send);
   $("[data-sign-in-form]").addEventListener("submit", signIn);
   $("[data-organization]").addEventListener("change", async (event) => {
     await send({ type: "fm-set-organization", organization: event.target.value });

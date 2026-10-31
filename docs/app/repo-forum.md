@@ -154,10 +154,91 @@ topics with new posts and the order of "New & Unread Topics" under a topic.
 **Reply** links to the topic on the source forum until ForkMesh accepts posts
 (phase 2). The heart shows the imported like count but is not a button yet.
 
+## Starting a mirror
+
+`/start-discourse-mirror` (`app/public/start-discourse-mirror.{html,js}`,
+API `app/src/forum_mirror_setup.py`) sets a mirror up in a few clicks. Its
+design (owner decision, 2026-10-31):
+
+- The copying runs on the instance's own server, as a scheduled Actions
+  workflow in the repository, never on forkmesh.com.
+- **Only an admin of the instance** (`users.is_admin`, `_is_admin`) can check a
+  forum or start a mirror. So people mirror forums on their own ForkMesh at
+  their own subdomain.
+
+**What the page shows**
+
+| Visitor | The page shows |
+| --- | --- |
+| Signed out | A sign-in link that returns to the page with `?forum=` kept |
+| Signed in, not an admin (for example on forkmesh.com) | How to start an instance of their own. The link is `/start?forum=<address>` on forkmesh.com, `https://forkmesh.com/start?forum=…` elsewhere |
+| Admin | The forum's address and a **Check** button, the repository (a new public one, created with `POST /api/hosted-repositories`, or one they own), the agreement checkbox, and whether to copy pictures |
+
+**`GET /api/forum-mirrors?origin=<address>`** (admins only) checks a forum
+from the server:
+
+- `robots.txt` at the host root, read for user agent
+  `ForkMeshDiscourseMirror`. A 401 or 403 counts as "no copying".
+- `/site.json` (public Discourse with categories) and `/about.json` (title,
+  topic and post counts).
+- It returns `ready`, `problem`, the counts, and an estimate of requests,
+  hours and runs.
+- The address must be https and pass `repository_webhooks.clean_url`: no
+  private addresses, internal names or ForkMesh's own hosts, and no
+  credentials or query. A path of up to four segments is allowed. Every
+  request goes out with `redirect: manual`, through the host's egress guard.
+- Without `origin`, it answers `{ok, actor, admin}` so the page knows who is
+  signed in.
+
+**`POST /api/forum-mirrors`** takes `{owner, repo, branch, origin, uploads,
+agree: true}` and:
+
+1. Checks the forum again; anything not `ready` is refused (409).
+2. Requires write access (`repository_file_edits._permission`). On the cores,
+   only the organization's owners may push.
+3. Commits three files in one commit authored by the admin
+   (`commit_paths`):
+   - `.forkmesh/discourse-mirror.yml`;
+   - the importer, read through `market_packages.entrypoint_file("discourse-mirror", "mirror")`;
+   - `.forkmesh/forum/source/settings.json`, which records who started the
+     mirror and their agreement.
+4. Turns the repository's `forum` switch on.
+5. Dispatches the workflow (`runner_actions.dispatch`) when the instance runs
+   Actions (`ACTIONS_INSTANCE_RUNNER`). Otherwise it reports
+   `actions_unavailable`, and the page says nothing copies until Actions are
+   on.
+6. Writes `repository.forum_mirror` to the audit log.
+
+A brand-new repository may not be readable for a few seconds. The page
+retries on `push_unavailable` or `branch_not_found` up to six times, three
+seconds apart.
+
+**The other ways in**
+
+- **`/start`** links to the page under its title. With `?forum=<address>`,
+  it says the mirror will be finished on the new instance. Its "Open my
+  instance" then goes to `https://<instance>/start-discourse-mirror?forum=…`,
+  where the admin who just signed in finishes it in one click.
+- **The browser extension** (2.29.0) spots a Discourse forum in the tab it is
+  opened on and offers **Mirror this forum**. That opens the page on the
+  extension's ForkMesh server with `?forum=` filled in
+  (`content/extension/README.md`, "Mirroring a Discourse forum").
+
+The page is registered like `/start`:
+- `CORE_RESERVED_ROUTE_PREFIXES` and `BLOCKED_STATIC_HTML_PATHS` in
+  `static_routes.py`;
+- `CACHE_BUSTED_ASSETS`;
+- `run_worker_first` in `app/wrangler.toml`;
+- and, on forkmesh.com, `APP_PATHS` in `www/worker.js` plus a 308 in
+  `www/public/_redirects`.
+
 ## Roadmap
 
 - **Phase 1 (done, 2026-10-31).** Format v1, the importer's `forum` layout,
   and the web Forum tab, read-only.
+- **Setup from the web (done, 2026-10-31).** `/start-discourse-mirror`, the
+  link from `/start`, the extension's Mirror this forum, and the scheduled
+  in-repository workflow.
 - **Phase 2: native signed records.** A new collaboration kind, `forum`. It is
   not an extension of discussions: their one-file-per-comment layout and fixed
   categories would break every existing reader of `discussion.md`.

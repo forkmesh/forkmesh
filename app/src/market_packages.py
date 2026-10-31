@@ -257,6 +257,24 @@ def catalog_packages(root=ROOT):
     return rows
 
 
+def entrypoint_file(package_id, entrypoint, root=ROOT):
+    catalog = _read_json(Path(root) / "catalog.json") or {}
+    for entry in (catalog.get("packages") or [])[:MAX_PACKAGES]:
+        if not isinstance(entry, dict) or entry.get("id") != package_id:
+            continue
+        relative = str(entry.get("manifest") or "")
+        manifest_path = Path(root) / relative
+        if not relative.endswith("manifest.json") or ".." in relative or not _inside(Path(root), manifest_path):
+            return None
+        manifest = _read_json(manifest_path) or {}
+        target = str((manifest.get("entrypoints") or {}).get(entrypoint) or "")
+        if not target.startswith("content/") or ".." in target:
+            return None
+        path = manifest_path.parent / target
+        return path if _inside(manifest_path.parent, path) and path.is_file() else None
+    return None
+
+
 def staged_packages():
     try:
         from plugin_registry import MARKET_PACKAGES

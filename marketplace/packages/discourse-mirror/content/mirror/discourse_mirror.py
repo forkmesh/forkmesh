@@ -56,6 +56,9 @@ DEFAULTS = {
     "layout": "site",
 }
 FORUM_PATH = ".forkmesh/forum"
+CI_SETTINGS = FORUM_PATH + "/source/settings.json"
+CI_KEYS = ("uploads", "uploadHosts", "maxUploadBytes", "maxUploadBytesPerRun", "revisitPerRun", "delaySeconds",
+           "commitName", "commitEmail")
 FORUM_PAGE_SIZE = 50
 FORUM_POSTS_PER_CHUNK = 100
 FORUM_LATEST_PER_CATEGORY = 3
@@ -70,6 +73,10 @@ class MirrorError(Exception):
 
 
 class RedirectRefused(MirrorError):
+    pass
+
+
+class TimeUp(Exception):
     pass
 
 
@@ -724,6 +731,7 @@ class Mirror:
         self.upload_budget = int(forum["maxUploadBytesPerRun"])
         self.stats = {"fetched": 0, "revisited": 0, "removed": 0, "uploads": 0, "pending": 0}
         self.rendered: list[int] = []
+        self.deadline: float | None = None
 
     def sync(self, full: bool = False, max_topics: int | None = None) -> dict:
         ensure_repository(Path(self.forum["repository"]), self.forum["branch"], create=not self.forum_layout)
@@ -751,13 +759,17 @@ class Mirror:
         error = None
         try:
             for topic_id in queue:
+                self.check_time()
                 self.fetch_topic(topic_id, refresh=False)
             for topic_id in revisit:
+                self.check_time()
                 self.fetch_topic(topic_id, refresh=True)
                 self.stats["revisited"] += 1
         except MirrorError as stopped:
             error = str(stopped)
             log(error)
+        except TimeUp:
+            self.stats["stoppedAtTimeLimit"] = True
         self.stats["pending"] = sum(1 for row in self.store.index.values() if not row.get("fetched_at"))
         self.store.collect_uploads()
         self.store.meta.update(
@@ -782,6 +794,10 @@ class Mirror:
             renderer.render(changed_only=True)
         commit = commit_repository(self.forum, self.summary_line())
         return {**self.stats, "requests": self.client.requests, "commit": commit, "error": error}
+
+    def check_time(self) -> None:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            raise TimeUp()
 
     def summary_line(self) -> str:
         parts = [f"{self.stats['fetched']} topics updated"]
@@ -1396,11 +1412,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sync.add_argument("--no-push", action="store_true", help="commit but do not push")
     render = commands.add_parser("render", help="rebuild the HTML pages from the saved topics")
     render.add_argument("name")
+    ci = commands.add_parser(
+        "ci", help=f"copy into the repository this runs in, using {CI_SETTINGS} (for a scheduled workflow)")
+    ci.add_argument("--workspace", help="repository checkout (default: $GITHUB_WORKSPACE or the current folder)")
+    ci.add_argument("--max-minutes", type=float, default=45, help="stop fetching after this long and commit")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.command == "ci":
+        return run_ci(args)
     try:
         data_dir = Path(args.data_dir).expanduser() if args.data_dir else default_data_dir()
         if args.command == "check":
@@ -1470,6 +1492,31 @@ def main(argv: list[str] | None = None) -> int:
     except MirrorError as error:
         print(f"discourse_mirror: {error}", file=sys.stderr)
         return 1
+
+
+def ci_forum(workspace: Path) -> dict:
+    settings = read_json(workspace / CI_SETTINGS, None)
+    if not isinstance(settings, dict) or not settings.get("origin"):
+        raise MirrorError(f"{workspace / CI_SETTINGS} does not name a forum")
+    forum = {key: settings[key] for key in CI_KEYS if key in settings}
+    forum.update(name="ci", origin=normalize_origin(settings["origin"]), repository=str(workspace),
+                 layout="forum", maxTopicsPerRun=int(settings.get("maxTopicsPerRun") or 400))
+    forum["delaySeconds"] = max(1.0, float(forum.get("delaySeconds") or 1.0))
+    return {**DEFAULTS, **forum}
+
+
+def run_ci(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace or os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
+    try:
+        forum = ci_forum(workspace)
+        mirror = Mirror(forum)
+        mirror.deadline = time.monotonic() + max(1.0, args.max_minutes) * 60
+        result = mirror.sync()
+    except MirrorError as error:
+        print(f"discourse_mirror: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"forum": forum["origin"], **result}))
+    return 1 if result["error"] else 0
 
 
 if __name__ == "__main__":

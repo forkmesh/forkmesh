@@ -45,6 +45,20 @@
     banner.textContent = `You came from plot ${plot} in the World.`;
     banner.hidden = false;
   }
+  const forumMirror = (() => {
+    try {
+      const value = new URL(params.get("forum") || "");
+      return value.protocol === "https:" && !value.username && !value.password ? `${value.origin}${value.pathname.replace(/\/+$/, "")}` : "";
+    } catch {
+      return "";
+    }
+  })();
+  if (forumMirror) {
+    const banner = $("[data-start-forum]");
+    banner.textContent = `Once your instance is ready, you finish mirroring ${new URL(forumMirror).host} there.`;
+    banner.hidden = false;
+    $("[data-start-discourse-link]").href = `/start-discourse-mirror?forum=${encodeURIComponent(forumMirror)}`;
+  }
 
   const slug = (value) =>
     value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[0-9-]+/, "").slice(0, 39);
@@ -1163,7 +1177,10 @@
 
   const finishOk = (launch) => {
     stop();
-    const url = launch.url || (launch.domain ? `https://${launch.domain}/` : "/");
+    const instanceUrl = launch.url || (launch.domain ? `https://${launch.domain}/` : "/");
+    const url = forumMirror
+      ? new URL(`/start-discourse-mirror?forum=${encodeURIComponent(forumMirror)}`, new URL(instanceUrl, location.href)).href
+      : instanceUrl;
     const done = $("[data-start-done]");
     done.hidden = false;
     $("[data-start-open]").href = url;
