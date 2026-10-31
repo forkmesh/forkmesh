@@ -1118,7 +1118,7 @@ public:
         return m_coreLogTally;
     }
     QPushButton *testLogFilterChip(const QString &category) const;
-    int testLogFilterChipCount(const QString &category) const
+    qint64 testLogFilterChipCount(const QString &category) const
     {
         return logFilterChipCount(category);
     }
@@ -4906,6 +4906,7 @@ private:
     void restartCloudLogMonitor();
     void releaseCloudLogMonitorProcess();
     void applyDebugBarStartupPreference();
+    void setDebugChartsExpanded(bool expanded);
     void readCloudLogMonitorOutput();
     void consumeCloudLogMonitorBytes(const QByteArray &chunk);
     void drainCloudLogMonitorRecords();
@@ -10467,7 +10468,9 @@ private:
     QVector<LogTimelineSeries> logTimelineSeries() const;
     void rebuildLogFilterButtons(); // (re)build the category chip row
     void syncDebugActivityLightCategories();
-    int logFilterChipCount(const QString &category) const;
+    qint64 logFilterChipCount(const QString &category) const;
+    void recountLogTotals();
+    void forgetLogTotal(const QString &badge);
     void updateLogFilterChipCounts(); // refresh the counts without rebuilding
     void updateCloudLogFilterChip();
     void refreshLogTimelineChart();
@@ -12756,6 +12759,16 @@ private:
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
     QWidget *m_debugStallTile = nullptr;
+    QWidget *m_debugTokensInTile = nullptr;
+    QWidget *m_debugTokensOutTile = nullptr;
+    qint64 m_debugTokensInTotal = 0;
+    qint64 m_debugTokensOutTotal = 0;
+    qint64 m_debugLastTokensInTotal = -1;
+    qint64 m_debugLastTokensOutTotal = -1;
+    QVector<QWidget *> m_debugChartTiles;
+    QVector<QWidget *> m_debugTileQuads;
+    QPushButton *m_debugChartsExpandButton = nullptr;
+    bool m_debugChartsExpanded = false;
     qint64 m_debugStallPeakSinceSampleMs = 0;
     qint64 m_debugStallLongestMs = 0;
     qint64 m_debugStallLastAtMs = 0;
@@ -15908,6 +15921,8 @@ private:
     QHash<QString, QHash<QString, QString>> m_typing; // conversation -> peerId -> name
     QStringList m_networkLog;
     QHash<QString, int> m_logFilterCounts;
+    QHash<QString, qint64> m_logCategoryTotals;
+    qint64 m_logTotalLines = 0;
     int m_networkLogDiskLines = 0;              // lines in the live on-disk file
     qint64 m_networkLogClearedAtMs = 0;
     // Bucketed line counts for the whole 30-day retention window, including the

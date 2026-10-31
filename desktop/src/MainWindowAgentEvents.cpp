@@ -691,6 +691,8 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         QPair<qint64, qint64> &flow = m_sessionTokenFlow[sessionId];
         flow.first += step.in;
         flow.second += step.out;
+        m_debugTokensInTotal += step.in;
+        m_debugTokensOutTotal += step.out;
     }
     if (ev.value(QStringLiteral("type")).toString() == QLatin1String("assistant")) {
         const QJsonObject message = ev.value(QStringLiteral("message")).toObject();

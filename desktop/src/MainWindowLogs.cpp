@@ -1049,6 +1049,8 @@ QWidget *MainWindow::buildLogSection()
             m_logSearchEdit->clear();
         }
         m_logFilterCounts.clear();
+        m_logCategoryTotals.clear();
+        m_logTotalLines = 0;
         m_logRenderFrom = 0; // nothing left to page back into once cleared
         m_logFilterEmptyNotice = false;
         m_logLivePending.clear();

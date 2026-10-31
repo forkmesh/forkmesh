@@ -352,7 +352,7 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
     const int iconPx = kRailIconPx;
     const QRect iconRect =
         row ? QRect(kRowIconLeft, (height - iconPx) / 2, iconPx, iconPx)
-            : QRect((width - iconPx) / 2,
+            : QRect(state.badgeBeside ? kBadgeBesideIconLeft : (width - iconPx) / 2,
                     state.captionVisible ? 6 : (height - iconPx) / 2, iconPx,
                     iconPx);
     if (state.iconPainter)
@@ -465,7 +465,9 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
             const QFont pillFont = sizedFont(button, 9, QFont::DemiBold);
             const int h = 14;
             const int w = pillWidth(pillFont, badgeText, h);
-            const QRectF pill(iconRect.right() - w + h / 2.0 + 2,
+            const QRectF pill(state.badgeBeside
+                                  ? iconRect.right() - kBadgeBesideOverlap + 1.0
+                                  : iconRect.right() - w + h / 2.0 + 2,
                               qMax(0.0, double(iconRect.top() - 5)), w, h);
             paintPill(painter, pill, badgeText,
                       Theme::color(state.badgeUrgent ? Theme::Role::Danger

@@ -32,6 +32,7 @@ struct RailButtonPaintState {
     bool accent = false;
     bool syncing = false;
     bool compact = false;
+    bool badgeBeside = false;
     bool captionAlwaysVisible = true;
     bool captionVisible = false;
     bool blink = false;
