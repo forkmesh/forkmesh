@@ -36,6 +36,13 @@ struct Run
     QList<Target> targets;
 };
 
+struct Draft
+{
+    Run run;
+    QString prompt;
+    QStringList skipped;
+};
+
 QString promptTitle(const QString &title);
 bool safeRefName(const QString &ref);
 QString agentPrompt(const QString &owner, const QString &name,
@@ -49,6 +56,9 @@ QString missingCodeReason(bool branchBacked, const QString &head,
                           const QString &base);
 QString errorMessage(const QString &code);
 QString launchMessage(const Launch &launch);
+QString draftMessage(int count, const QStringList &skipped);
+bool draftMatches(const Draft &draft, const QString &owner, const QString &name,
+                  const QString &prompt);
 
 QJsonObject runToJson(const Run &run);
 bool runFromJson(const QJsonObject &object, Run *run);

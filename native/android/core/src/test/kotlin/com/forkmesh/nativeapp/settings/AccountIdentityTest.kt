@@ -414,6 +414,36 @@ class AccountProfileTest {
         expect(!SolanaAddress.isValid("0OIl"))
     }
 
+    fun testTipAddressLinksAndAvatar() {
+        val profile = AccountProfile.parse(
+            mapOf(
+                "exists" to true, "name" to "alice", "kind" to "user", "avatarPng" to "iVBOR",
+                "solana" to "So11111111111111111111111111111111111111112",
+                "mastodon" to "@alice@x.social", "mastodonUrl" to "https://x.social/@alice",
+                "profileLinks" to listOf(
+                    mapOf("label" to "Blog", "url" to "https://alice.dev", "verified" to true),
+                    mapOf("label" to "", "url" to "https://two.dev", "domain" to "two.dev"),
+                    mapOf("label" to "Bad", "url" to "javascript:alert(1)"),
+                ),
+            ),
+            "alice",
+        )
+        assertEq("So11111111111111111111111111111111111111112", profile.tipAddress)
+        assertEq("iVBOR", profile.avatar)
+        assertEq(listOf(ProfileLink("Blog", "https://alice.dev", true), ProfileLink("two.dev", "https://two.dev", false)), profile.links)
+        assertEq("https://x.social/@alice", profile.mastodonUrl)
+        val junk = AccountProfile.parse(mapOf("exists" to true, "name" to "bob", "solana" to "0OIl", "mastodonUrl" to "ftp://x"), "bob")
+        assertEq("", junk.tipAddress)
+        assertEq("", junk.walletQrText)
+        assertEq("", junk.mastodonUrl)
+        assertEq("", SolanaAddress.qrText(""))
+    }
+
+    fun testPeopleProfileKeepsOnlyAValidTipAddress() {
+        assertEq("So11111111111111111111111111111111111111112", PeopleProfile.parse(mapOf("solana" to "So11111111111111111111111111111111111111112"), "a").tipAddress)
+        assertEq("", PeopleProfile.parse(mapOf("solana" to "not an address"), "a").tipAddress)
+    }
+
     fun testPrivateAndNodeProfiles() {
         expect(AccountProfile.parse(mapOf("exists" to true, "name" to "p", "profilePrivate" to true), "p").isPrivate)
         val node = AccountProfile.parse(mapOf("exists" to true, "name" to "box", "kind" to "node", "owner" to "alice", "online" to true), "box")

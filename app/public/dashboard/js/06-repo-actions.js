@@ -692,7 +692,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
+      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -757,7 +757,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
-        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `

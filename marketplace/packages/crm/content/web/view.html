@@ -26,6 +26,7 @@
               [data-view="crm"] textarea.crm-cell { resize: vertical; }
               [data-view="crm"] .crm-row:hover { background: rgb(var(--dashboard-foreground-rgb) / .03); }
               [data-view="crm"] .crm-row.crm-selected { background: rgb(var(--dashboard-ring-rgb) / .12); }
+              [data-view="crm"] .crm-cell-picked { background: rgb(var(--dashboard-ring-rgb) / .16); box-shadow: inset 2px 0 0 rgb(var(--dashboard-ring-rgb)), inset -2px 0 0 rgb(var(--dashboard-ring-rgb)); user-select: none; }
               [data-view="crm"] .crm-row-actions { opacity: 0; transition: opacity .12s ease; }
               [data-view="crm"] .crm-row:hover .crm-row-actions, [data-view="crm"] .crm-row:focus-within .crm-row-actions { opacity: 1; }
               @media (pointer: coarse) { [data-view="crm"] .crm-row-actions { opacity: 1; } }

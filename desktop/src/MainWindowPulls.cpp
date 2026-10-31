@@ -987,15 +987,27 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
         QStringLiteral("pullDeleteClosedAndMergedButton"));
     m_pullMergeAllAiButton = pullActionButton(
         QStringLiteral("Merge all"), "sparkle",
-        QStringLiteral("Start an AI agent in this repository's own checkout "
-                       "(no branch, no permission prompts) that reviews every "
-                       "open pull request for security issues, bugs and code "
-                       "that does not fit, merges the safe ones into their base "
-                       "cleanly, then deletes the merged pull requests and "
+        QStringLiteral("Draft a prompt in the composer, with no branch, for an AI "
+                       "agent that reviews every open pull request for security "
+                       "issues, bugs and code that does not fit and merges the "
+                       "safe ones into their base cleanly. When that agent "
+                       "finishes, ForkMesh deletes the merged pull requests and "
                        "their branches"));
     m_pullMergeAllAiButton->setObjectName(QStringLiteral("pullMergeAllAiButton"));
     connect(m_pullMergeAllAiButton, &QPushButton::clicked, this,
             &MainWindow::mergeAllPullsWithAgent);
+    m_pullReviewAllAiButton = pullActionButton(
+        QStringLiteral("Review all"), "eye",
+        QStringLiteral("Draft a prompt in the composer, with no branch, for an AI "
+                       "agent that reviews every open pull request for security, "
+                       "stability and maintainability. When that agent finishes, "
+                       "ForkMesh approves the pull requests with no issues and "
+                       "requests changes on the rest, with a review thread and a "
+                       "one-click fix on each finding and a summary naming the "
+                       "model that reviewed"));
+    m_pullReviewAllAiButton->setObjectName(QStringLiteral("pullReviewAllAiButton"));
+    connect(m_pullReviewAllAiButton, &QPushButton::clicked, this,
+            &MainWindow::reviewAllPullsWithAgent);
     connect(m_pullImportButton, &QPushButton::clicked, this,
             &MainWindow::importPatchAsPull);
     auto *actionBar = new QFrame;
@@ -1012,6 +1024,7 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
     toolbar->addWidget(m_pullShowClosedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowMergedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowAllButton, 0, Qt::AlignTop);
+    toolbar->addWidget(m_pullReviewAllAiButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullMergeAllAiButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullDeleteClosedAndMergedButton, 0, Qt::AlignTop);
     toolbar->addStretch(1);
@@ -3443,6 +3456,7 @@ void MainWindow::openPullDiffInGitView(int pullNumber)
     }
 
     m_branchDiffPullNumber = pullNumber;
+    updateBranchPullReviewBar();
     showOverviewCommits();
     const QString dir = repoGitDir();
     const QString reviewHead = resolvablePullHead(pr);
@@ -4467,6 +4481,15 @@ void MainWindow::paintPullDiffLineSelection()
 void MainWindow::rerenderPullInlineDiff()
 {
     if (m_pullInlineView == m_branchDiffView && m_branchDiffView) {
+        rerenderBranchPullDiff();
+        return;
+    }
+    renderPullDiff();
+}
+
+void MainWindow::rerenderBranchPullDiff()
+{
+    if (m_branchDiffView) {
         if (m_branchDiffLastValid) {
             beginBranchDiffLog(
                 m_branchDiffPullNumber >= 0
@@ -4480,9 +4503,7 @@ void MainWindow::rerenderPullInlineDiff()
         } else {
             renderBranchScopeDiff();
         }
-        return;
     }
-    renderPullDiff();
 }
 
 void MainWindow::openPullInlineComposer()
@@ -4869,6 +4890,38 @@ QList<PullEvent> MainWindow::testBranchReviewEvents(const QString &branch) const
 {
     return pullStoreForCurrentRepo().readBranchReviewEvents(branch);
 }
+
+QString MainWindow::testBranchPullReviewBarText() const
+{
+    if (!m_branchPullReviewBar || m_branchPullReviewBar->isHidden() ||
+        !m_branchPullReviewLabel || !m_branchPullReviewSubmitButton)
+        return QString();
+    QString text = m_branchPullReviewLabel->text() + QLatin1Char('|') +
+                   m_branchPullReviewSubmitButton->text();
+    if (m_branchPullReviewDiscardButton &&
+        !m_branchPullReviewDiscardButton->isHidden())
+        text += QLatin1Char('|') + m_branchPullReviewDiscardButton->text();
+    return text;
+}
+
+bool MainWindow::testQueueBranchPullInlineComment(const QString &body)
+{
+    if (!m_pullInlineCommentEdit || !m_pullInlineBranch.isEmpty() ||
+        m_pullInlinePath.isEmpty() || m_branchDiffPullNumber < 0)
+        return false;
+    const int before = pullInlineDraftCount(m_branchDiffPullNumber);
+    m_pullInlineCommentEdit->setPlainText(body);
+    queuePullInlineComment();
+    return pullInlineDraftCount(m_branchDiffPullNumber) == before + 1;
+}
+
+bool MainWindow::testFinishBranchPullReview(const QString &state,
+                                            const QString &body, QString *error)
+{
+    if (m_branchDiffPullNumber < 0)
+        return false;
+    return finishBranchPullReview(m_branchDiffPullNumber, state, body, error);
+}
 #endif
 
 bool MainWindow::finishBranchInlineComment(QString *error)
@@ -4975,16 +5028,36 @@ void MainWindow::submitPullInlineReviewBatch()
         submitPullInlineCommentNow();
         return;
     }
+    if (m_branchDiffView && m_pullInlineView == m_branchDiffView &&
+        m_branchDiffPullNumber >= 0) {
+        openBranchPullReviewDialog();
+        return;
+    }
     if (m_pullInlineCommentEdit && !m_pullInlinePath.isEmpty() &&
         !m_pullInlineCommentEdit->toPlainText().trimmed().isEmpty())
         queuePullInlineComment();
-    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size() ||
-        m_currentPullNumber < 0)
+    if (m_currentPullNumber < 0)
         return;
+    const int number = m_currentPullNumber;
+    const QStringList failures = postPullInlineDrafts(number);
+    updatePullInlineReviewBatchBar();
+    reloadPulls();
+    showPull(number);
+    if (m_pullInlineView == m_branchDiffView)
+        rerenderPullInlineDiff();
+    if (!failures.isEmpty())
+        QMessageBox::warning(this, QStringLiteral("Submit review"),
+                             failures.join(QLatin1Char('\n')));
+}
+
+QStringList MainWindow::postPullInlineDrafts(int number)
+{
+    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size() ||
+        number < 0)
+        return {};
     const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
     const QString repoKey =
         (repo.owner + QLatin1Char('/') + repo.name).toLower();
-    const int number = m_currentPullNumber;
     QList<PullInlineDraft> remaining;
     QStringList failures;
     for (const PullInlineDraft &draft : std::as_const(m_pullInlineDrafts)) {
@@ -5004,14 +5077,7 @@ void MainWindow::submitPullInlineReviewBatch()
         }
     }
     m_pullInlineDrafts = remaining;
-    updatePullInlineReviewBatchBar();
-    reloadPulls();
-    showPull(number);
-    if (m_pullInlineView == m_branchDiffView)
-        rerenderPullInlineDiff();
-    if (!failures.isEmpty())
-        QMessageBox::warning(this, QStringLiteral("Submit review"),
-                             failures.join(QLatin1Char('\n')));
+    return failures;
 }
 
 void MainWindow::discardPullInlineReviewBatch()
@@ -5032,10 +5098,8 @@ void MainWindow::discardPullInlineReviewBatch()
     updatePullInlineReviewBatchBar();
 }
 
-void MainWindow::updatePullInlineReviewBatchBar()
+int MainWindow::pullInlineDraftCount(int number) const
 {
-    if (!m_pullInlineBatchBar)
-        return;
     QString repoKey;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
@@ -5043,8 +5107,17 @@ void MainWindow::updatePullInlineReviewBatchBar()
     }
     int count = 0;
     for (const PullInlineDraft &draft : std::as_const(m_pullInlineDrafts))
-        if (draft.repoKey == repoKey && draft.number == m_currentPullNumber)
+        if (draft.repoKey == repoKey && draft.number == number)
             ++count;
+    return count;
+}
+
+void MainWindow::updatePullInlineReviewBatchBar()
+{
+    updateBranchPullReviewBar();
+    if (!m_pullInlineBatchBar)
+        return;
+    const int count = pullInlineDraftCount(m_currentPullNumber);
     m_pullInlineBatchBar->setVisible(count > 0);
     if (m_pullInlineBatchLabel)
         m_pullInlineBatchLabel->setText(
@@ -5056,6 +5129,227 @@ void MainWindow::updatePullInlineReviewBatchBar()
             count > 0 ? QStringLiteral("Submit review (%1)").arg(count)
                       : QStringLiteral("Submit review"));
     }
+}
+
+QWidget *MainWindow::buildBranchPullReviewBar()
+{
+    m_branchPullReviewBar = new QWidget;
+    auto *outer = new QHBoxLayout(m_branchPullReviewBar);
+    outer->setContentsMargins(0, 0, 12, 0);
+    outer->setSpacing(0);
+    auto *card = new QFrame(m_branchPullReviewBar);
+    card->setObjectName("issueCommentCard");
+    auto *row = new QHBoxLayout(card);
+    row->setContentsMargins(10, 6, 10, 6);
+    row->setSpacing(6);
+    m_branchPullReviewLabel = new QLabel(card);
+    m_branchPullReviewLabel->setObjectName("hintLabel");
+    m_branchPullReviewLabel->setTextFormat(Qt::PlainText);
+    m_branchPullReviewLabel->setSizePolicy(QSizePolicy::Ignored,
+                                           QSizePolicy::Preferred);
+    m_branchPullReviewAiButton =
+        new QPushButton(QStringLiteral("AI review"), card);
+    m_branchPullReviewAiButton->setToolTip(
+        QStringLiteral("Ask an AI to review this pull request's diff. Each "
+                       "finding is posted as a review thread on the lines of "
+                       "code it concerns."));
+    m_branchPullReviewDiscardButton =
+        new QPushButton(QStringLiteral("Discard drafts"), card);
+    m_branchPullReviewSubmitButton =
+        new QPushButton(QStringLiteral("Review changes"), card);
+    m_branchPullReviewSubmitButton->setToolTip(
+        QStringLiteral("Post your draft comments with a summary, and comment, "
+                       "approve or request changes"));
+    for (QPushButton *button :
+         {m_branchPullReviewAiButton, m_branchPullReviewDiscardButton,
+          m_branchPullReviewSubmitButton}) {
+        button->setObjectName("ghostButton");
+        button->setProperty("buttonSize", "sm");
+        button->setCursor(Qt::PointingHandCursor);
+    }
+    setOcticon(m_branchPullReviewAiButton, "eye", 14);
+    setOcticon(m_branchPullReviewDiscardButton, "trash", 14);
+    setOcticon(m_branchPullReviewSubmitButton, "paper-airplane", 14);
+    row->addWidget(m_branchPullReviewLabel, 1);
+    row->addWidget(m_branchPullReviewAiButton);
+    row->addWidget(m_branchPullReviewDiscardButton);
+    row->addWidget(m_branchPullReviewSubmitButton);
+    outer->addWidget(card, 1);
+    connect(m_branchPullReviewAiButton, &QPushButton::clicked, this, [this] {
+        if (m_branchDiffPullNumber < 0)
+            return;
+        if (m_currentPullNumber != m_branchDiffPullNumber)
+            showPull(m_branchDiffPullNumber);
+        reviewCurrentPullWithAi();
+        updateBranchPullReviewBar();
+    });
+    connect(m_branchPullReviewDiscardButton, &QPushButton::clicked, this, [this] {
+        if (m_branchDiffPullNumber < 0)
+            return;
+        if (m_currentPullNumber != m_branchDiffPullNumber)
+            showPull(m_branchDiffPullNumber);
+        m_pullInlineView = m_branchDiffView;
+        discardPullInlineReviewBatch();
+    });
+    connect(m_branchPullReviewSubmitButton, &QPushButton::clicked, this,
+            &MainWindow::openBranchPullReviewDialog);
+    m_branchPullReviewBar->hide();
+    return m_branchPullReviewBar;
+}
+
+const PullRequest *MainWindow::branchDiffPull() const
+{
+    if (m_branchDiffPullNumber < 0)
+        return nullptr;
+    for (const PullRequest &pr : std::as_const(m_currentPulls))
+        if (pr.number == m_branchDiffPullNumber)
+            return &pr;
+    return nullptr;
+}
+
+void MainWindow::updateBranchPullReviewBar()
+{
+    if (!m_branchPullReviewBar)
+        return;
+    const PullRequest *pr = branchDiffPull();
+    m_branchPullReviewBar->setVisible(pr != nullptr);
+    if (!pr)
+        return;
+    const bool open = pr->status == QLatin1String("open");
+    const int drafts = pullInlineDraftCount(pr->number);
+    QString text = QStringLiteral("Reviewing PR #%1").arg(pr->number);
+    if (pr->archivedOnCodeBranch)
+        text += QString::fromUtf8(" \xC2\xB7 archived, read only");
+    else if (drafts > 0)
+        text += QString::fromUtf8(" \xC2\xB7 %1 draft comment%2 ready to submit")
+                    .arg(drafts)
+                    .arg(drafts == 1 ? QString() : QStringLiteral("s"));
+    else
+        text += QString::fromUtf8(
+            " \xC2\xB7 click or drag line numbers to comment");
+    m_branchPullReviewLabel->setText(text);
+    m_branchPullReviewLabel->setToolTip(text);
+    const bool reviewable =
+        open && !pr->archivedOnCodeBranch && !pr->patch.trimmed().isEmpty();
+    m_branchPullReviewAiButton->setVisible(reviewable);
+    m_branchPullReviewAiButton->setEnabled(reviewable && !m_aiReview);
+    m_branchPullReviewDiscardButton->setVisible(drafts > 0);
+    m_branchPullReviewSubmitButton->setEnabled(!pr->archivedOnCodeBranch);
+    m_branchPullReviewSubmitButton->setText(
+        drafts > 0 ? QStringLiteral("Submit review (%1)").arg(drafts)
+                   : QStringLiteral("Review changes"));
+}
+
+void MainWindow::openBranchPullReviewDialog()
+{
+    const PullRequest *found = branchDiffPull();
+    if (!found || found->archivedOnCodeBranch)
+        return;
+    const int number = found->number;
+    const bool open = found->status == QLatin1String("open");
+    if (m_currentPullNumber != number)
+        showPull(number);
+    if (m_pullInlineBranch.isEmpty() && m_pullInlineCommentEdit &&
+        !m_pullInlinePath.isEmpty() &&
+        !m_pullInlineCommentEdit->toPlainText().trimmed().isEmpty())
+        queuePullInlineComment();
+    const int drafts = pullInlineDraftCount(number);
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Review pull request #%1").arg(number));
+    dialog.resize(520, 320);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *hint = new QLabel(
+        drafts > 0
+            ? QStringLiteral("%1 draft comment%2 will be posted with this review.")
+                  .arg(drafts)
+                  .arg(drafts == 1 ? QString() : QStringLiteral("s"))
+            : QStringLiteral("No draft comments yet. Click or drag line numbers "
+                             "in the diff to add some, or leave a summary."));
+    hint->setObjectName("hintLabel");
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto *summary = new MarkdownEditor;
+    summary->setObjectName("issueCommentEditor");
+    summary->setPlaceholderText(QString::fromUtf8("Leave a review summary\xE2\x80\xA6"));
+    summary->setMinimumHeight(120);
+    layout->addWidget(summary, 1);
+    auto *buttons = new QHBoxLayout;
+    auto *cancel = new QPushButton(QStringLiteral("Cancel"));
+    auto *requestChanges = new QPushButton(QStringLiteral("Request changes"));
+    auto *approve = new QPushButton(QStringLiteral("Approve"));
+    auto *comment = new QPushButton(QStringLiteral("Comment"));
+    for (QPushButton *button : {cancel, requestChanges, approve, comment}) {
+        button->setObjectName("ghostButton");
+        button->setProperty("buttonSize", "sm");
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAutoDefault(false);
+    }
+    setOcticon(requestChanges, "alert", 14);
+    setOcticon(approve, "check-circle", 14);
+    setOcticon(comment, "comment", 14);
+    requestChanges->setVisible(open);
+    approve->setVisible(open);
+    buttons->addWidget(cancel);
+    buttons->addStretch();
+    buttons->addWidget(requestChanges);
+    buttons->addWidget(approve);
+    buttons->addWidget(comment);
+    layout->addLayout(buttons);
+
+    QString state;
+    connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
+    const auto choose = [&dialog, &state](const QString &chosen) {
+        state = chosen;
+        dialog.accept();
+    };
+    connect(requestChanges, &QPushButton::clicked, &dialog,
+            [&] { choose(QStringLiteral("changes_requested")); });
+    connect(approve, &QPushButton::clicked, &dialog,
+            [&] { choose(QStringLiteral("approved")); });
+    connect(comment, &QPushButton::clicked, &dialog,
+            [&] { choose(QStringLiteral("commented")); });
+    summary->setFocus();
+    if (dialog.exec() != QDialog::Accepted || state.isEmpty())
+        return;
+    QString error;
+    if (!finishBranchPullReview(number, state, summary->markdown().trimmed(),
+                                &error))
+        QMessageBox::warning(this, QStringLiteral("Submit review"), error);
+}
+
+bool MainWindow::finishBranchPullReview(int number, const QString &state,
+                                        const QString &body, QString *error)
+{
+    const bool verdict = state != QLatin1String("commented");
+    if (!verdict && body.isEmpty() && pullInlineDraftCount(number) == 0) {
+        if (error)
+            *error = QStringLiteral("Write a summary or add a line comment "
+                                    "before submitting the review.");
+        return false;
+    }
+    QStringList problems = postPullInlineDrafts(number);
+    if (verdict || !body.isEmpty()) {
+        QString reviewError;
+        if (!postPullReviewEvent(number, state, body, &reviewError))
+            problems.append(reviewError);
+    }
+    reloadPulls();
+    showPull(number);
+    updatePullInlineReviewBatchBar();
+    if (m_branchDiffPullNumber == number)
+        rerenderBranchPullDiff();
+    if (problems.isEmpty())
+        flashMessage(state == QLatin1String("approved")
+                         ? QStringLiteral("Approved pull request #%1.").arg(number)
+                     : state == QLatin1String("changes_requested")
+                         ? QStringLiteral("Requested changes on pull request #%1.")
+                               .arg(number)
+                         : QStringLiteral("Review posted on pull request #%1.")
+                               .arg(number));
+    if (error)
+        *error = problems.join(QLatin1Char('\n'));
+    return problems.isEmpty();
 }
 
 void MainWindow::onPullDiffAnchorClicked(const QUrl &url)
@@ -5279,6 +5573,13 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
         avatar->setText(QString());
         avatar->setPixmap(authorAvatar);
     }
+    {
+        static const QRegularExpression userLink(
+            QStringLiteral("forkmesh-user:([a-z0-9-]+)"));
+        const QRegularExpressionMatch linked = userLink.match(headerHtml);
+        if (linked.hasMatch())
+            linkAvatarToProfile(avatar, linked.captured(1));
+    }
     rowLayout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *card = new QWidget;
@@ -5353,6 +5654,9 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
                 [this](const QString &href) {
                     if (href.startsWith(QLatin1String("applyfix:")))
                         applyPullSuggestionFix(href.mid(9));
+                    else if (href.startsWith(QLatin1String("forkmesh-pull-thread:")) &&
+                             m_currentPullNumber > 0)
+                        openPullDiffInGitView(m_currentPullNumber);
                     else
                         openBodyReference(href);
                 });
@@ -6893,24 +7197,29 @@ void MainWindow::submitPullReview(const QString &state)
     if (m_currentPullNumber < 0 || !m_pullComposer)
         return;
     const QString body = m_pullComposer->markdown().trimmed();
-    PullStore store = pullStoreForCurrentRepo();
-    PullEvent ev;
-    ev.type = QStringLiteral("review");
-    ev.state = state;
-    ev.body = body;
-    ev = store.makeSignedEvent(m_currentPullNumber, ev);
     QString error;
-    if (store.canWrite()) {
-        if (!store.addReview(m_currentPullNumber, state, body, &error)) {
-            QMessageBox::warning(this, "Review", error);
-            return;
-        }
-    } else {
-        submitPullEventToInbox(m_currentPullNumber, ev);
+    if (!postPullReviewEvent(m_currentPullNumber, state, body, &error)) {
+        QMessageBox::warning(this, "Review", error);
+        return;
     }
     m_pullComposer->setMarkdown(QString());
     reloadPulls();
     showPull(m_currentPullNumber);
+}
+
+bool MainWindow::postPullReviewEvent(int number, const QString &state,
+                                     const QString &body, QString *error)
+{
+    PullStore store = pullStoreForCurrentRepo();
+    if (store.canWrite())
+        return store.addReview(number, state, body, error);
+    PullEvent ev;
+    ev.type = QStringLiteral("review");
+    ev.state = state;
+    ev.body = body;
+    ev = store.makeSignedEvent(number, ev);
+    submitPullEventToInbox(number, ev);
+    return true;
 }
 
 void MainWindow::updatePullActionState()
@@ -7260,6 +7569,7 @@ void MainWindow::updatePullActionState()
         m_pullReviewAiButton->setVisible(reviewable);
         m_pullReviewAiButton->setEnabled(reviewable && !m_aiReview);
     }
+    updateBranchPullReviewBar();
     if (m_pullFixAllAiButton) {
         int unresolved = 0;
         if (have && open)
@@ -8970,7 +9280,10 @@ void MainWindow::aiReviewHandleReply(const QString &text)
     if (repoIndex == m_repoDetailIndex) {
         reloadPulls();
         showPull(number);
+        if (m_branchDiffPullNumber == number)
+            rerenderBranchPullDiff();
     }
+    updateBranchPullReviewBar();
     flashMessage(findings.isEmpty()
                      ? QStringLiteral("AI review: no issues found on PR #%1.")
                            .arg(number)

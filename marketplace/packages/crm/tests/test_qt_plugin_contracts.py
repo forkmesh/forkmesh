@@ -435,7 +435,7 @@ def test_desktop_contact_rows_copy_an_outreach_prompt_for_their_sheet():
 
 
 def test_desktop_contact_table_is_sortable_hideable_reorderable_and_extensible():
-    setup = FEATURE.split("m_contactsTable = new QTableWidget(0, 0);", 1)[1]
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
     setup = setup.split("contactsPageLayout->addWidget(m_contactsBody)", 1)[0]
     # Drag to reorder, click to sort, right-click for the column menu.
     for call in ("setSectionsMovable(true)", "setSectionsClickable(true)",
@@ -644,7 +644,7 @@ def test_desktop_csv_import_confirms_the_column_mapping_before_writing():
 
 
 def test_desktop_contacts_multi_select_and_move_to_a_pipeline_from_a_right_click():
-    setup = FEATURE.split("m_contactsTable = new QTableWidget(0, 0);", 1)[1]
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
     setup = setup.split("contactsPageLayout->addWidget(m_contactsBody)", 1)[0]
     # Ctrl/Shift+click extends the selection; a modified click never opens
     # the cell editor or the email link.

@@ -74,6 +74,30 @@ int main(int argc, char **argv)
     check(prompt.contains(QStringLiteral("`.forkmesh/`")), "prompt keeps the ledger off limits");
     check(prompt.contains(QStringLiteral("uncommitted changes")), "prompt stops on a dirty checkout");
 
+    Draft draft;
+    draft.run.owner = QStringLiteral("acme");
+    draft.run.name = QStringLiteral("app");
+    draft.run.targets = {target(3, QStringLiteral("feature/a"))};
+    draft.prompt = prompt;
+    check(draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"), prompt),
+          "the drafted prompt sent as is starts the run");
+    check(draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"),
+                       prompt.section(QLatin1Char('\n'), 0, 0) +
+                           QStringLiteral("\nOnly the first one, please.")),
+          "an edited draft that keeps its heading still starts the run");
+    check(!draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"),
+                        QStringLiteral("Fix the login page")),
+          "an unrelated prompt does not start the run");
+    check(!draftMatches(draft, QStringLiteral("acme"), QStringLiteral("other"), prompt),
+          "the draft only starts its own repository's run");
+    Draft emptyDraft = draft;
+    emptyDraft.run.targets.clear();
+    check(!draftMatches(emptyDraft, QStringLiteral("acme"), QStringLiteral("app"), prompt),
+          "a draft without pull requests starts nothing");
+    check(draftMessage(2, {QStringLiteral("#9 (gone)")}).contains(QStringLiteral("2 pull request(s)")) &&
+              draftMessage(2, {QStringLiteral("#9 (gone)")}).contains(QStringLiteral("Left out: #9 (gone)")),
+          "the draft notice counts the pull requests and names the ones left out");
+
     QHash<int, Run> runs;
     Run run;
     run.owner = QStringLiteral("acme");

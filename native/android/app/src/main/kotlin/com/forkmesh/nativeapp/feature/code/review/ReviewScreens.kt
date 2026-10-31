@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
 import com.forkmesh.nativeapp.ui.theme.FmType
@@ -183,7 +184,7 @@ internal fun ThreadCard(session: ReviewThreadActions, thread: ReviewThread, onCh
         for (event in thread.events) {
             if (event.body.isBlank() && event.type == "thread-state") continue
             Column {
-                Text(event.displayAuthor.take(24) + if (session.isPending(event)) " · sending" else "", style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+                Text(event.displayAuthor.take(24) + if (session.isPending(event)) " · sending" else "", style = Fm.text.labelSmall, color = Fm.colors.textTertiary, modifier = Modifier.openProfile(event.authorName))
                 if (event.body.isNotBlank()) LinkedText(event.body, RepoRef(session.owner, session.name), style = LocalTextStyle.current.copy(color = Fm.colors.textPrimary))
                 if (event.suggestionPatch.isNotEmpty()) Mono(event.suggestionPatch)
             }
