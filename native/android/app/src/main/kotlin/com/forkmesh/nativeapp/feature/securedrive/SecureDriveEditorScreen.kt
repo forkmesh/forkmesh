@@ -112,7 +112,7 @@ class SecureDriveEditorScreen(
             subtitle = status,
             onBack = { if (editor?.dirty == true) discard = true else navigator.pop() },
             actions = {
-                if (editable) FmTextButton(onClick = { save() }, enabled = editor?.dirty == true) { Text("Save") }
+                if (editable) FmTextButton(onClick = { save() }, enabled = editor?.dirty == true, busy = false) { Text("Save") }
             },
         ) {
             val file = opened

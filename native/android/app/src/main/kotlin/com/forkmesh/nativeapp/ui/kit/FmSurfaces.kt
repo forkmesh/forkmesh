@@ -271,8 +271,9 @@ fun FmIconButton(
     color: Color? = null,
     colors: IconButtonColors? = null,
     iconSize: Dp = 24.dp,
+    busy: Boolean? = null,
 ) {
-    FmIconButton(label = label, onPressed = onPressed, modifier = modifier, color = color, colors = colors) {
+    FmIconButton(label = label, onPressed = onPressed, modifier = modifier, color = color, colors = colors, busy = busy) {
         FmIcon(icon, size = iconSize)
     }
 }
@@ -284,12 +285,14 @@ fun FmIconButton(
     modifier: Modifier = Modifier,
     color: Color? = null,
     colors: IconButtonColors? = null,
+    busy: Boolean? = null,
     icon: @Composable () -> Unit,
 ) {
     val haptics = FmHaptics.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val enabled = onPressed != null
+    val tap = rememberFmBusyTap(enabled)
     val tint = when {
         colors != null -> if (enabled) colors.contentColor else colors.disabledContentColor
         else -> color ?: Fm.colors.textPrimary
@@ -298,6 +301,7 @@ fun FmIconButton(
         Box(
             modifier
                 .size(48.dp)
+                .fmBusyRing(tap.busy(busy), inset = 7.dp)
                 .alpha(if (enabled) 1f else 0.38f)
                 .clickable(
                     interactionSource = interaction,
@@ -305,6 +309,7 @@ fun FmIconButton(
                     enabled = enabled,
                     role = Role.Button,
                 ) {
+                    tap.tapped()
                     haptics.tap(SoundCue.forLabel(label, SoundCue.CLICK))
                     onPressed?.invoke()
                 }

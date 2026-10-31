@@ -1646,7 +1646,7 @@ QVector<HomeGroup> MainWindow::homeGridGroups() const
             tile.badge = rail->badgeCount();
             tile.urgent = rail->badgeUrgent();
             tile.pending = rail->pendingSyncCount();
-            tile.live = rail->syncing() || rail->activityBlink();
+            tile.live = rail->syncing() || rail->ringShown();
             tile.alert = rail->alertTint();
             tile.desktopOffline = rail->desktopOffline();
         }

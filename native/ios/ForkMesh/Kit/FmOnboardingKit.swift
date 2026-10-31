@@ -31,8 +31,21 @@ struct FmPillPressStyle: ButtonStyle {
 
 struct FmPillButton: View {
     let label: String
-    var kind: FmPillKind = .primary
+    let kind: FmPillKind
+    let busy: Bool?
     let onPressed: (() -> Void)?
+    @State private var tap: FmBusyTap = FmBusyTap()
+
+    init(label: String, kind: FmPillKind = .primary, busy: Bool? = nil, onPressed: (() -> Void)?) {
+        self.label = label
+        self.kind = kind
+        self.busy = busy
+        self.onPressed = onPressed
+    }
+
+    private var working: Bool {
+        return busy ?? tap.busy
+    }
 
     private var fill: some ShapeStyle {
         switch kind {
@@ -53,8 +66,12 @@ struct FmPillButton: View {
 
     var body: some View {
         Button {
+            guard let onPressed = onPressed, !working else {
+                return
+            }
             FmHaptics.tap()
-            onPressed?()
+            tap.mark()
+            onPressed()
         } label: {
             Text(label)
                 .fmText(.titleMedium, color: kind == .primary ? Color.black : Color.white, weight: .semibold)
@@ -65,11 +82,13 @@ struct FmPillButton: View {
                 .overlay {
                     Capsule().strokeBorder(Color.white.opacity(kind == .primary ? 0.6 : 0.05), lineWidth: 1)
                 }
+                .fmBusyRing(working, corner: FmRadius.full, color: kind == .primary ? Color.black : Color.white)
                 .contentShape(Capsule())
         }
         .buttonStyle(FmPillPressStyle(kind: kind))
-        .opacity(onPressed == nil ? 0.55 : 1)
-        .disabled(onPressed == nil)
+        .opacity(onPressed == nil && !working ? 0.55 : 1)
+        .disabled(onPressed == nil || working)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
     }
 }
 

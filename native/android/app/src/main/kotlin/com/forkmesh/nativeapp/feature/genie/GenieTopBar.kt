@@ -308,6 +308,7 @@ private fun GenieAutoSendReview(receipt: GenieAutoSendReceipt, onDone: () -> Uni
                 },
                 enabled = rating > 0 && !saving,
                 modifier = Modifier.semantics { testTag = "auto-send-review-save" },
+                busy = saving,
             ) { Text("Save") }
         }
         Column(
