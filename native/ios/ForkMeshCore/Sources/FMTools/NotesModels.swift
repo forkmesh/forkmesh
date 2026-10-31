@@ -1184,7 +1184,7 @@ public final class NoteShareModel {
     public let isPage: Bool
     public var includeNotes = true
     public static let includeNotesLabel = "Also share the notes on this page"
-    public static let pageSubtitle = "Viewers can read the page; editors can change it."
+    public static let pageSubtitle = "People with access can open this page in ForkMesh. Each note on it opens only for people who can open that note."
     public static let pageAccessHint = "Only people this page is shared with can open it."
     public private(set) var shares: [JSONObject]
     public private(set) var suggestions: [NoteShareSuggestion] = []

@@ -488,43 +488,91 @@ On screen:
   text removes the highlight.
 - Comment boxes offer `@` suggestions as chips under the field.
 
-### Pages and note emoji (logic only so far)
+### Pages and note emoji
 
-The contract is `docs/app/notes-pages.md`. FMTools' `NotePages.swift` holds
-the logic, tested in `Tests/FMToolsTests/NotePagesTests.swift`; the screens
-are not built yet.
+The contract is `docs/app/notes-pages.md`; the look and wording follow
+Android's `NotePagesScreens.kt`. FMTools' `NotePages.swift` holds the logic,
+tested in `Tests/FMToolsTests/NotePagesTests.swift`;
+`native/ios/ForkMesh/Features/Tools/NotePagesViews.swift` holds the views.
 
-- `NoteEmoji.clean` applies the server's rule on the device (1–16 code
-  points, at most 64 UTF-8 bytes, no whitespace, control characters or other
-  ASCII, symbols and marks only), with Android's keycap rule: a digit, `#` or
-  `*` must be followed by U+20E3, or by U+FE0F then U+20E3. `NoteEmoji.common`
-  is Android's 40-emoji picker set; the error reads "Use a single emoji, such
-  as 📝 or 🇫🇷."
-- `NoteEditorModel.setEmoji` sends `emoji` in the note PATCH, or with the next
-  save when there are unsaved edits, or in the POST of a new note; a
-  `version_conflict` reloads and retries once. List rows and the editor
-  header show the emoji before the title. There is no picker on iOS yet.
-- `NotePagesModel` lists (`GET /api/notes/pages`) and creates pages ("1
-  entry" / "n entries"). `NotePageModel` loads
-  `GET /api/notes/pages/<id>?content=1`, fetches the markdown of notes that
-  came without it, builds the outline rows (`NotePageOutline.rows`: sections
-  that collapse the entries under them until the next section at the same or
-  a shallower depth, as on the web; notes with emoji and unread dots; links;
-  locked entries "You don't have access to this note"), edits a draft
-  (title, emoji, description, accent, layout, show emoji, and the outline:
-  add notes by title search, sections and `https://` links; rename, indent,
-  outdent, move up and down, drag-style `move(from:to:)`, remove) and saves
-  it with `baseVersion`, keeping the draft after a conflict. Only the owner
-  deletes a page.
-- `NoteShareModel(page: true)` shares a page through
-  `/api/notes/pages/<id>/shares` with `includeNotes` (on by default, "Also
-  share the notes on this page"), without name suggestions, since that route
-  has none.
-
-Not done on iOS yet: the Pages group in the list, the page screen, the
-Customize sheet, the emoji picker, page sharing on screen, and the
-`/dashboard/notes?page=<id>[&note=<id>]` deep link (the `RouteParser` case was
-left out so a link never opens a placeholder).
+- **Emoji rule.** `NoteEmoji.clean` applies the server's rule on the device
+  (1–16 code points, at most 64 UTF-8 bytes, no whitespace, control
+  characters or other ASCII, symbols and marks only), with Android's keycap
+  rule: a digit, `#` or `*` must be followed by U+20E3, or by U+FE0F then
+  U+20E3. The error reads "Use a single emoji, such as 📝 or 🇫🇷."
+- **Emoji picker** (`NoteEmojiPickerSheet`): "Emoji" with **Remove** when
+  one is set, Android's 40-emoji grid (`NoteEmoji.common`, eight across), and
+  "Type or paste any emoji" with **Use**. The field is a `UITextField` that
+  asks for the emoji keyboard (`textInputMode` picks the `emoji` input
+  mode), so the system emoji keyboard opens first.
+- **Note emoji.** The editor header has an emoji button before the title
+  (`NoteEmojiButton`: the emoji, or an add-reaction icon); owners and editors
+  tap it to open the picker, viewers only see the emoji.
+  `NoteEditorModel.setEmoji` sends `emoji` in the note PATCH, or with the
+  next save when there are unsaved edits, or in the POST of a new note; a
+  `version_conflict` reloads and retries once. List rows show the emoji
+  before the title.
+- **Pages in the list** (`NotePagesSection`, above the notes while the search
+  box is empty): "Pages" with **New page**, each page with its emoji tile,
+  title in the page colour and "n entries", and "Gather notes into a page you
+  can share, with an outline." when there are none; then a "Notes" heading.
+  New page creates the page (`NotePagesModel.create`) and opens it with
+  Customize. Pages reload whenever the list appears.
+- **Page colours** (`notePageColor`, Android's values): Blue is the theme
+  accent; Purple `#AF52DE` / dark `#BF5AF2`, Pink `#FF2D55` / `#FF375F`, Red
+  `#FF3B30` / `#FF453A`, Orange `#C93400` / `#FF9F0A`, Yellow `#B25000` /
+  `#FFD60A`, Teal `#00788A` / `#40C8E0`, Gray `#6C6C70` / `#98989D`.
+- **Page screen** (`NotePageScreen`, route `.notePage(id:note:)`): the header
+  shows the emoji, the title in bold page colour and the description
+  rendered in a tinted box. Under "Outline" (or "Contents" for the continuous
+  layout) come the rows from `NotePageModel.rows`:
+  - sections in the page colour that collapse and expand;
+  - notes with an unread dot, their emoji when "Show note emoji in the
+    outline" is on, and a bold title when unread;
+  - links that open in Safari (`UIApplication.open`);
+  - locked entries with a lock and "You don't have access to this note".
+  An empty page says "Nothing on this page yet. Tap Customize to add notes,
+  sections and links." (or "Nothing on this page yet." for viewers).
+- **Outline layout.** Tapping a note shows it rendered (`NotePreview`): a
+  back link to the page, the note's emoji and title, "Edited Today 3:14 PM ·
+  by bob", **Open in editor** (pushes `.note(id:)`), the body, and previous /
+  next buttons. Opening a note records a view (`POST
+  /api/notes/<id>/activity` with `{"kind": "view"}`, once per note while the
+  page is open) and clears its dot locally through `NoteViewsSeen`.
+- **Continuous layout.** Every note follows the outline in order, each with
+  the same heading and **Open in editor**; tapping a note in the outline
+  scrolls to it, and `?note=` scrolls there on open. Notes that came without
+  markdown are fetched one by one (`ensureAllBodies`).
+- **Toolbar.** **Customize** (owners and editors), **Share** (owner), and a ⋯
+  menu with **Copy link** (`/dashboard/notes?page=<id>`) and, for the owner,
+  **Delete page** behind "Delete page?" / "“<title>” will be removed for
+  everyone it's shared with. The notes on it are not deleted."
+- **Customize sheet** (`NotePageCustomizeSheet`, a `List` in a sheet with
+  Cancel and Save; Save is enabled once something changed):
+  - the emoji button and title ("Untitled page");
+  - "Description (Markdown)";
+  - "Colour": eight swatches;
+  - "Layout": Outline / Continuous, and "Show note emoji in the outline";
+  - "Outline" with "n of 300". Rows reorder by drag (`onMove`) and delete by
+    swipe (`onDelete`), and each has a ⋯ menu with Rename, Indent, Outdent,
+    Move up, Move down and Remove; VoiceOver gets Rename, Indent, Outdent,
+    Move up and Move down as actions.
+  - **Add note** ("Search your notes" over your notes, by title), **Add
+    section** ("Section name") and **Add link** ("Label", an `https://` URL;
+    "Links must start with https://").
+  Saving sends every field with `baseVersion`; after a conflict the draft
+  stays and the sheet says "Someone else changed this page. Save again to
+  keep your version."
+- **Share** opens the note share sheet in page mode (`NoteShareModel(page:
+  true)`): `/api/notes/pages/<id>/shares`, the subtitle "People with access
+  can open this page in ForkMesh. Each note on it opens only for people who
+  can open that note.", "Also share the notes on this page" on by default
+  (`includeNotes`), and no name suggestions, since that route has none.
+- **Opening from a link.** `RouteParser` maps
+  `/dashboard/notes?page=<id>` to `.notePage(id:)` and `&note=<noteId>` to
+  `.notePage(id:note:)` (both must be safe path segments); a page link wins
+  over `?note=` alone, and `/dashboard/notes/<id>` stays a note
+  (`RouteParserTests`).
 
 ### Tests
 
@@ -538,4 +586,8 @@ opening a thread from a link, picking and commenting on a selection, viewers
 commenting, the room's `note-comments` frame) and `NotesListDetailsTests.swift`
 (the last-edit formatter in fixed UTC, Tokyo and New York calendars, badges,
 avatars, unread and the recorded view, the long-press header and actions).
-`FMApiTests/RouteParserTests.swift` covers the `comment` link.
+`NotePagesTests.swift` covers the emoji rule, outline rows and collapsing,
+outline editing, the pages list, loading a page with its notes, the recorded
+view, customizing and conflicts, sharing with `includeNotes`, deleting, and
+note emoji in the editor and the list.
+`FMApiTests/RouteParserTests.swift` covers the `comment` and `page` links.

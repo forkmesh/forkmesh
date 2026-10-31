@@ -13,12 +13,16 @@ import UniformTypeIdentifiers
 struct NotesScreen: View {
     @Environment(\.fmPalette) private var fm
     @State private var model: NotesListModel?
+    @State private var pages: NotePagesModel?
     @State private var openedId: String?
     @State private var editorOpen: Bool = false
 
     init() {
         if let api = Services.get(ApiService.self) {
             _model = State(initialValue: NotesListModel(api: api, me: Services.get(AuthService.self)?.session?.nodeName ?? ""))
+            _pages = State(initialValue: NotePagesModel(call: { (method: String, suffix: String, body: JSONObject?) in
+                try await api.notesApi(method, suffix, body)
+            }))
         } else {
             _model = State(initialValue: nil)
         }
@@ -42,8 +46,13 @@ struct NotesScreen: View {
 
     @ViewBuilder private var content: some View {
         if let model = model {
-            NotesList(model: model, onOpen: open)
+            NotesList(model: model, pages: pages, onOpen: open)
                 .task { await model.load() }
+                .onAppear {
+                    if let pages = pages {
+                        Task { await pages.load() }
+                    }
+                }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         FmIconButton(icon: "refresh", label: "Refresh", onPressed: { Task { await model.load() } })
@@ -208,6 +217,7 @@ private struct NoteShareAvatar: View {
 private struct NotesList: View {
     @Environment(\.fmPalette) private var fm
     @Bindable var model: NotesListModel
+    let pages: NotePagesModel?
     let onOpen: (String?) -> Void
     @State private var notice: FmNotice?
     @State private var share: ToolsSheet<NoteShareModel>?
@@ -315,7 +325,7 @@ private struct NotesList: View {
             FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "sticky_note_2_outlined", title: NotesListModel.unavailableTitle, message: model.error)
-        } else if model.notes.isEmpty {
+        } else if model.notes.isEmpty && (pages?.loaded != true) {
             ScrollView {
                 FmEmptyState(icon: "sticky_note_2_outlined", title: NotesListModel.emptyTitle, message: NotesListModel.emptyMessage)
             }
@@ -341,6 +351,18 @@ private struct NotesList: View {
                 if notice != nil {
                     FmNoticeLine($notice)
                         .padding(.horizontal, FmSpace.x4)
+                }
+                if let pages = pages, pages.loaded, model.query.dartTrimmed.isEmpty {
+                    NotePagesSection(model: pages, onNew: {
+                        Task {
+                            let created: (id: String?, outcome: ToolsOutcome) = await pages.create()
+                            if let id = created.id {
+                                NotePageNavigation.openPage(id, customize: true)
+                            } else if let next = created.outcome.notice {
+                                notice = FmNotice(next.message, isError: next.isError)
+                            }
+                        }
+                    })
                 }
                 if model.rows.isEmpty {
                     Text(model.emptyFilterMessage)
@@ -577,6 +599,7 @@ private struct NoteEditorBody: View {
     @Binding var notice: FmNotice?
     let onCopy: (URL?) -> Void
     @State private var linking: Bool = false
+    @State private var pickingEmoji: Bool = false
 
     var body: some View {
         if model.loading {
@@ -601,12 +624,7 @@ private struct NoteEditorBody: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
             HStack(spacing: FmSpace.x2) {
-                if !model.emoji.isEmpty {
-                    Text(model.emoji)
-                        .fmText(.titleLarge)
-                        .accessibilityLabel(Text("Emoji \(model.emoji)"))
-                        .accessibilityIdentifier("note-emoji")
-                }
+                NoteEmojiButton(emoji: model.emoji, editable: model.canEdit, onTap: { pickingEmoji = true })
                 TextField("", text: titleBinding, prompt: Text("Title").foregroundColor(fm.textTertiary))
                     .fmText(.titleLarge)
                     .textInputAutocapitalization(.sentences)
@@ -649,6 +667,12 @@ private struct NoteEditorBody: View {
         .padding(.horizontal, FmSpace.x4)
         .padding(.top, FmSpace.x2)
         .padding(.bottom, FmSpace.x4)
+        .sheet(isPresented: $pickingEmoji) {
+            NoteEmojiPickerSheet(current: model.emoji) { (emoji: String) in
+                pickingEmoji = false
+                Task { report(await model.setEmoji(emoji)) }
+            }
+        }
     }
 
     private var metaLine: String {
@@ -848,7 +872,7 @@ private struct NoteExport: Transferable {
     }
 }
 
-private struct NotePreview: View {
+struct NotePreview: View {
     @Environment(\.fmPalette) private var fm
     let markdown: String
 
@@ -993,7 +1017,7 @@ private struct NoteHistorySheet: View {
 }
 
 /// Owner-only sharing: people or organizations, as viewers or editors.
-private struct NoteShareSheet: View {
+struct NoteShareSheet: View {
     @Environment(\.fmPalette) private var fm
     @Bindable var model: NoteShareModel
     @State private var notice: FmNotice?
@@ -1001,7 +1025,7 @@ private struct NoteShareSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                FmPanelHeader(title: NoteShareModel.title, subtitle: NoteShareModel.subtitle)
+                FmPanelHeader(title: NoteShareModel.title, subtitle: model.subtitleText)
                 if model.shares.isEmpty {
                     Text(NoteShareModel.notShared)
                         .fmText(.bodyMedium, color: fm.textSecondary)
@@ -1012,6 +1036,14 @@ private struct NoteShareSheet: View {
                 }
                 addRow
                 suggestions
+                if model.isPage {
+                    Toggle(NoteShareModel.includeNotesLabel, isOn: $model.includeNotes)
+                        .fmText(.bodyMedium)
+                        .tint(fm.accent)
+                        .padding(.horizontal, FmSpace.x4)
+                        .padding(.bottom, FmSpace.x2)
+                        .accessibilityIdentifier("note-page-share-include-notes")
+                }
                 if notice != nil {
                     FmNoticeLine($notice)
                         .padding(.horizontal, FmSpace.x4)
@@ -1115,7 +1147,7 @@ private struct NoteShareSheet: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
-            Text(NoteShareModel.accessHint)
+            Text(model.accessHintText)
                 .fmText(.bodySmall, color: fm.textTertiary)
             HStack(spacing: FmSpace.x2) {
                 FmOutlinedButton("Copy link", icon: "content_copy", onPressed: {

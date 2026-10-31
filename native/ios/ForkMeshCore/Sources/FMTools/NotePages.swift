@@ -347,9 +347,8 @@ public struct NotePageDraft: Equatable, Sendable {
 public final class NotePageModel {
     public static let maxDescription = 2000
     public static let conflictMessage = "Someone else changed this page. Save again to keep your version."
-    public static let deleteConfirmation = ToolsConfirmation(
-        title: "Delete page?", message: "This removes the page for everyone it is shared with. The notes on it are not deleted.",
-        confirm: "Delete", cancel: "Cancel", destructive: true)
+    public static let noteFailed = "This note could not be loaded."
+    public static let emptyNote = "This note is empty."
 
     @ObservationIgnored private let call: ToolsApiCall
     @ObservationIgnored private let sleep: ToolsSleep
@@ -423,6 +422,52 @@ public final class NotePageModel {
         _ = seenTick
         guard let page else { return [] }
         return NotePageOutline.rows(page.outline, notes: notes, showEmoji: page.showEmoji, seen: seen)
+    }
+
+    public var deleteConfirmation: ToolsConfirmation {
+        let title = page?.title ?? "Untitled page"
+        return ToolsConfirmation(
+            title: "Delete page?",
+            message: "\u{201C}\(title)\u{201D} will be removed for everyone it's shared with. The notes on it are not deleted.",
+            confirm: "Delete", cancel: "Cancel", destructive: true)
+    }
+
+    public var emptyMessage: String {
+        canEdit ? "Nothing on this page yet. Tap Customize to add notes, sections and links." : "Nothing on this page yet."
+    }
+
+    public var readableNoteIds: [String] {
+        var taken = Set<String>()
+        return allRows.compactMap(\.noteId).filter { taken.insert($0).inserted }
+    }
+
+    public func neighbours(_ id: String) -> (previous: NotePageNote?, next: NotePageNote?) {
+        let order = readableNoteIds
+        guard let index = order.firstIndex(of: id) else { return (nil, nil) }
+        let previous = index > 0 ? notes[order[index - 1]] : nil
+        let next = index + 1 < order.count ? notes[order[index + 1]] : nil
+        return (previous, next)
+    }
+
+    @ObservationIgnored private var viewsSent: Set<String> = []
+
+    public func recordView(_ id: String) async {
+        guard notes[id] != nil, viewsSent.insert(id).inserted else { return }
+        _ = try? await call("POST", "/\(id)/activity", ["kind": "view"])
+    }
+
+    public func editedLine(_ note: NotePageNote, me: String, nowMillis: Int64, calendar: Calendar = .current) -> String {
+        guard note.updatedAt > 0 else { return "" }
+        return "Edited " + NoteEditTime.line(note.updatedAt, editedBy: note.lastEditedBy, me: me, nowMillis: nowMillis, calendar: calendar)
+    }
+
+    public func closeNote() {
+        selectedNoteId = nil
+    }
+
+    public var draftChanged: Bool {
+        guard let page, let draft else { return false }
+        return draft != NotePageDraft(page)
     }
 
     public func toggle(_ sectionId: String) {

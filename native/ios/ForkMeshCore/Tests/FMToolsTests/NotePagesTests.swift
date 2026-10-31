@@ -190,6 +190,25 @@ final class NotePageModelTests: XCTestCase {
         XCTAssertFalse(model.rows[1].unread)
         model.toggle("sec-more-1")
         XCTAssertEqual(model.rows.count, 6)
+        XCTAssertEqual(model.readableNoteIds, [noteId, secondNoteId])
+        XCTAssertNil(model.neighbours(noteId).previous)
+        XCTAssertEqual(model.neighbours(noteId).next?.id, secondNoteId)
+        XCTAssertEqual(model.neighbours(secondNoteId).previous?.id, noteId)
+        XCTAssertNil(model.neighbours(lockedNoteId).next)
+        model.closeNote()
+        XCTAssertNil(model.selectedNoteId)
+        await model.recordView(noteId)
+        await model.recordView(noteId)
+        await model.recordView(lockedNoteId)
+        XCTAssertEqual(api.calls.filter { $0.suffix.hasSuffix("/activity") }.map(\.suffix), ["/\(noteId)/activity"])
+        XCTAssertEqual(api.calls.last { $0.suffix.hasSuffix("/activity") }?.body, ["kind": "view"])
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let first = model.note(noteId)!
+        XCTAssertEqual(model.editedLine(first, me: "alice", nowMillis: 100, calendar: utc), "Edited Today 12:00 AM · by bob")
+        XCTAssertEqual(model.editedLine(first, me: "bob", nowMillis: 100, calendar: utc), "Edited Today 12:00 AM")
+        XCTAssertEqual(model.deleteConfirmation.message, "\u{201C}Launch hub\u{201D} will be removed for everyone it's shared with. The notes on it are not deleted.")
+        XCTAssertEqual(model.emptyMessage, "Nothing on this page yet. Tap Customize to add notes, sections and links.")
     }
 
     @MainActor
@@ -221,6 +240,7 @@ final class NotePageModelTests: XCTestCase {
         let model = NotePageModel(pageId: pageId, call: api.call, sleep: { _ in }, seen: NoteViewsSeen())
         await model.load()
         model.startCustomize()
+        XCTAssertFalse(model.draftChanged)
         XCTAssertEqual(model.draft?.title, "Launch hub")
         XCTAssertEqual(model.draft?.outline.count, 6)
         await model.loadMyNotes()
@@ -229,6 +249,7 @@ final class NotePageModelTests: XCTestCase {
         model.noteQuery = ""
         XCTAssertEqual(model.noteChoices.map(\.title), ["Budget", "Retro"])
         model.addNote("ffffffffffffffffffffffffffff0001")
+        XCTAssertTrue(model.draftChanged)
         XCTAssertEqual(model.noteChoices.map(\.title), ["Retro"])
         XCTAssertFalse(model.addSection("   "))
         XCTAssertTrue(model.addSection("Later"))
@@ -324,6 +345,7 @@ final class NotePageModelTests: XCTestCase {
         let viewer = NotePageModel(pageId: pageId, call: viewerApi.call, sleep: { _ in }, seen: NoteViewsSeen())
         await viewer.load()
         XCTAssertFalse(viewer.canEdit)
+        XCTAssertEqual(viewer.emptyMessage, "Nothing on this page yet.")
         XCTAssertNil(viewer.shareModel())
         viewer.startCustomize()
         XCTAssertNil(viewer.draft)
