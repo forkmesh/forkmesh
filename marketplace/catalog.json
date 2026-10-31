@@ -27,6 +27,7 @@
     { "id": "calendar", "version": "1.1.0", "manifest": "packages/calendar/manifest.json" },
     { "id": "notes", "version": "1.1.0", "manifest": "packages/notes/manifest.json" },
     { "id": "discord", "version": "1.0.0", "manifest": "packages/discord/manifest.json" },
+    { "id": "discourse-mirror", "version": "1.0.0", "manifest": "packages/discourse-mirror/manifest.json" },
     { "id": "gemma-4", "version": "1.0.0", "manifest": "packages/gemma-4/manifest.json" },
     { "id": "nemotron-3-ultra", "version": "1.0.0", "manifest": "packages/nemotron-3-ultra/manifest.json" },
     { "id": "nemotron-3.5-lightning", "version": "1.0.0", "manifest": "packages/nemotron-3.5-lightning/manifest.json" },
