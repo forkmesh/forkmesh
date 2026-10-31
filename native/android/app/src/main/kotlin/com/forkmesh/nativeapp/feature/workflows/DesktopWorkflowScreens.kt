@@ -200,6 +200,7 @@ class DesktopWorkflowScreen(private val rowId: String) : Screen() {
                         if (busy) "Asking the desktop…" else "Run on the desktop",
                         onPressed = if (busy || !row.enabled || row.error.isNotEmpty()) null else ({ scope.launch { prepare(store, "run", row, status) } }),
                         icon = "play_arrow", tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
+                        busy = busy,
                     )
                     if (!row.enabled) Text("It is turned off on the desktop.", style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
                 }

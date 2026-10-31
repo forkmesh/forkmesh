@@ -278,7 +278,7 @@ private struct StepsContent: View {
                 }
                 HStack(spacing: FmSpace.x2) {
                     FmFilledButton(
-                        heart.saving ? "Saving…" : HeartTapModel.saveLabel, icon: "favorite_outline",
+                        heart.saving ? "Saving…" : HeartTapModel.saveLabel, icon: "favorite_outline", busy: heart.saving,
                         onPressed: heart.canSave ? { Task { await heart.save() } } : nil)
                     .accessibilityIdentifier("steps-heart-save")
                     Spacer(minLength: 0)

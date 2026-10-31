@@ -7620,6 +7620,8 @@ private:
     RailShortcuts::State &railShortcutState();
     void saveRailShortcutState();
     void syncRailShortcutTiles();
+    void refreshRailShortcutBusy();
+    void refreshShortcutRailActivity();
     void activateRailShortcut(const QString &id);
     void removeRailShortcut(const QString &id);
     bool handlePageButtonEvent(QObject *watched, QEvent *event);
