@@ -62,6 +62,20 @@ bottom edge holding up to `ShellBarStyle.capacity` slots: `limit` (3 to 8,
 default 6; a folder is one slot) per row, times one or two rows. Home is always
 one of them (`ShellBarPrefs.keep`).
 
+The bar floats: `ShellBottomBar.sideMargin` in from each side and
+`floatHeight` above the bottom edge. The Glass fill is a heavy material blur
+with a dark tint, so the bar takes its colour from what passes behind it; Clear
+is the iOS 26 clear glass. The default look is filled icons and the Lens
+selection: `ShellBarLens`, a colourless pane wider than its slot, drawn once
+behind the cells. It slides on its own spring, because a pick runs with
+animations off, and stretches briefly as it moves. A small `lensInset` centres
+the row, so the lens keeps the same gap to the bar's edge at both ends. The bar
+has no outline: `ShellBarBevel` lights the top edge and shades the bottom, which
+with the soft shadow reads as a rounded surface. Reduce Motion moves the lens
+without the slide or the stretch. The Settings preview and the iPad pane draw it
+in place. Saved styles keep their own selection, and older apps
+read an unknown `lens` as the default.
+
 - Every pick runs through `ShellBottomBar.run`, which records the use and acts
   with animations disabled, so pages appear in place.
 - Every bottom-bar button lands on its first page: `HomeShell.landOnTop` gives
@@ -577,11 +591,14 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   `StarterPack` count as installed until the project removes them.
 - `ProjectLegacyMarker` is written once per project from existing per-project
   data; projects created on the phone are marked new.
-- **Starter pack.** A new project shows `StarterPackView` ("Choose how to
-  start": Minimal, Standard, Everything; Standard preselected; Continue) once,
-  from `AppHomeView` while `SettingsService.needsStarterPack` (new project, no
-  `<namespace>packages/starter-pack` yet). Continue stores the pack id
-  (`PhonePackages.chooseStarterPack`) and republishes the gate. Unset reads as
+- **Starter pack.** A new project shows `StarterPackPage` ("Choose how to
+  start": chips and a swipeable carousel of Minimal, Standard, Everything;
+  Standard preselected) once, as a step of `OnboardingFlowView`
+  ([ONBOARDING.md](ONBOARDING.md)), from `AppHomeView` while
+  `SettingsService.needsStarterPack` (new project, no
+  `<namespace>packages/starter-pack` yet). "Start with <pack>" stores the pack
+  id (`PhonePackages.chooseStarterPack`) and republishes the gate; Skip stores
+  the default pack. Unset reads as
   `standard`; legacy projects never see it.
 - Gated surfaces: Home, the bar, the iPad sidebar, the You hub, global search,
   the command palette, Genie routes, Home Screen quick actions, the new agent
@@ -975,6 +992,12 @@ that) over a light scrim, with no title, Done button, recents or project
 switcher: tapping outside it or choosing an item closes it, and choosing an
 item pushes the destination onto the current tab. On iPad the same items are
 sidebar sections (§7).
+
+The controls sit in one soft card, each on a matching icon tile so their labels
+line up (`FmMenuTile` on Android). Account actions are equal-width buttons when
+they fit, and the version and diagnostics follow a hairline with no box behind
+them. The slowness warning is a tinted pill, so it reads as a notice rather than
+an error.
 
 | Group | Items |
 |---|---|

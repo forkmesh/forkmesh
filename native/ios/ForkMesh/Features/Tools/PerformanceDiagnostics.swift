@@ -67,12 +67,12 @@ struct DiagnosticsSendButton: View {
         Button(action: action) {
             Label(alert.label, systemImage: alert.detected ? "exclamationmark.triangle.fill" : "stethoscope")
                 .labelStyle(.titleAndIcon)
-                .fmText(compact ? .labelSmall : .labelMedium, color: alert.detected ? Color.white : fm.textSecondary)
+                .fmText(compact ? .labelSmall : .labelMedium, color: alert.detected ? fm.danger : fm.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, compact ? FmSpace.x2 : FmSpace.x3)
                 .padding(.vertical, compact ? FmSpace.x1 : FmSpace.x2)
-                .background(Capsule().fill(alert.detected ? fm.danger : fm.bgOverlay))
+                .background(Capsule().fill(alert.detected ? fm.danger.opacity(fm.dark ? 0.2 : 0.1) : fm.bgOverlay))
                 .frame(minHeight: compact ? 32 : 44)
                 .contentShape(Rectangle())
         }

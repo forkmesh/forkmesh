@@ -815,9 +815,9 @@
       ? `${renderRepoActionsExecutor(repo, view)}${notice}${pending}${renderRepoActionsWorkflowBar(repo, view, workflow)}<div data-repo-actions-runs>${renderRepoActionsRuns(repo, view, workflow)}</div>`
       : `${notice}${renderRepoActionsEmptyState(view)}`;
     target.innerHTML = `
-      <div class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view, repo)}</nav>
-        <div class="min-w-0">${main}</div>
+      <div data-repo-rail-layout class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
+        <nav data-repo-rail aria-label="Workflows" class="min-w-0 border-b border-border md:border-b-0 md:border-r"><div data-repo-rail-inner><h2 class="fm-rail-title hidden lg:block">Actions</h2><div data-repo-actions-workflows class="grid content-start gap-0.5 p-2 lg:p-0">${renderRepoActionsWorkflowList(view, repo)}</div></div></nav>
+        <div data-repo-rail-main class="min-w-0"><div class="overflow-hidden rounded-lg border border-border bg-background">${main}</div></div>
       </div>`;
     const nextRef = target.querySelector("[data-repo-actions-dispatch-ref]");
     if (nextRef && chosenRef && Array.from(nextRef.options).some((option) => option.value === chosenRef)) {

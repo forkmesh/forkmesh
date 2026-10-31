@@ -136,6 +136,16 @@ from 0 to 50 (`invalid_forks`); blank lines and repeats are dropped. The write
 is audited as `instance.sidebar`. Reading a stored row stays lenient
 (`instance_sidebar.parse`) so a hand-written row keeps working.
 
+The row also holds `devto`, a dev.to account name (`[a-z0-9_]{1,30}`, a leading
+`@` is dropped on write, `invalid_devto` otherwise; `""` when unset). When it is
+set, Home's "Latest from the blog" card shows that account's newest posts
+instead of the instance's own blog feed (`loadHomeDevtoPosts` in
+`05-repo-list-explorer.js`): the browser makes one credential-less read of the
+public `https://dev.to/api/articles` API per Home load, keeps only `https://dev.to`
+post links and cover images from `media2.dev.to` or
+`dev-to-uploads.s3.amazonaws.com`, and opens posts in a new tab. Visitors'
+browsers contact dev.to only on an instance whose admin set the account.
+
 The browser keeps the last setting it saw in `localStorage`
 (`forkmesh.sidebarSetting`), so the next page draws the pinned lists at once
 instead of the usual order first. While the repository list is still loading,
@@ -157,6 +167,22 @@ the member's name before the organization became the public owner still
 counts). Dismissing writes all of them, and the tip
 stays hidden if any of them is set. "Dismiss for all repositories" on Issues
 is still the single `forkmesh.issue-contribution-tip.v1:all` key.
+
+## Left rails on every repository tab
+
+Discussions, Insights, Actions, Security, Agents and Settings use the Issues
+layout (`data-repo-rail-layout`): a rail flush against the left edge that stays
+put while the page scrolls, with the content beside it.
+
+- **Agents:** the rail lists status views (`REPO_AGENT_STATUS_VIEWS` in
+  `06-repo-content.js`): all sessions, running (the active statuses), finished,
+  and failed (failed, error, stopped or cancelled), each with its count.
+- **Settings:** `renderRepoSettingsRail` in `08-repo-detail-network.js` lists one
+  entry per `data-repo-settings-section` card, marks the card at the top of the
+  screen as the page scrolls, and a search hides the cards and entries whose
+  title, text or input placeholders do not contain every typed word.
+- A repository without its own logo shows the instance's logo (the header
+  `img.brand-mark`, a same-origin image path only) in place of the book icon.
 
 ## Views sidebar
 
@@ -249,7 +275,9 @@ belong next to the name, where people look for them. In the About rail they
 read as stats, and the Fork button was hidden behind the Forks count, so
 web-only visitors never found it. Under the tab bar and above the content grid,
 `renderRepoTitleRow` in `08-repo-detail-network.js` draws one row with a bottom
-border, on every tab:
+border. Since October 2026 it shows on the Code tab only
+(`data-repo-title-row` is hidden on the others), so every other tab starts
+right under the tab strip:
 
 - **Left:** the repository logo (`nativeRepositoryLogoMarkup`) or the owner's
   initial, the name in bold, and a Public/Private `fm-label`. Under the name is

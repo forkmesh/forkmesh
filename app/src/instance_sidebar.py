@@ -8,6 +8,7 @@ FORKS_DEFAULT = 3
 _NAME = r"[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9_])?"
 _OWNER = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 PINNED_RE = re.compile(r"(?:" + _OWNER + r"/)?" + _NAME)
+DEVTO_RE = re.compile(r"[a-z0-9_]{1,30}")
 
 
 def parse(doc):
@@ -25,7 +26,9 @@ def parse(doc):
         forks = int(doc.get("forks", FORKS_DEFAULT))
     except (TypeError, ValueError):
         forks = FORKS_DEFAULT
-    return {"pinned": pinned, "forks": max(0, min(FORKS_MAX, forks))}
+    devto = str(doc.get("devto") or "").strip().lower()
+    return {"pinned": pinned, "forks": max(0, min(FORKS_MAX, forks)),
+            "devto": devto if DEVTO_RE.fullmatch(devto) else ""}
 
 
 def clean(value):
@@ -51,4 +54,10 @@ def clean(value):
     if isinstance(forks, bool) or not isinstance(forks, int) \
             or not 0 <= forks <= FORKS_MAX:
         return None, "invalid_forks"
-    return {"pinned": pinned, "forks": forks}, ""
+    devto = value.get("devto", "")
+    if not isinstance(devto, str):
+        return None, "invalid_devto"
+    devto = devto.strip().lstrip("@").lower()
+    if devto and not DEVTO_RE.fullmatch(devto):
+        return None, "invalid_devto"
+    return {"pinned": pinned, "forks": forks, "devto": devto}, ""

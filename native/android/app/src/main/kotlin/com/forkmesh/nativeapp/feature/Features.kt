@@ -26,7 +26,6 @@ import com.forkmesh.nativeapp.feature.chat.DirectCallOverlay
 import com.forkmesh.nativeapp.feature.code.CodeFeature
 import com.forkmesh.nativeapp.feature.hosts.HostsFeature
 import com.forkmesh.nativeapp.feature.market.PackageGateFeature
-import com.forkmesh.nativeapp.feature.market.StarterPackScreen
 import com.forkmesh.nativeapp.feature.localrepos.LocalRepoAgentLauncher
 import com.forkmesh.nativeapp.feature.composer.ComposerFeature
 import com.forkmesh.nativeapp.feature.localrepos.LocalReposFeature
@@ -125,10 +124,8 @@ object Features {
         AccountFeature.Gate {
             val starterPackPending by PackageGateFeature.starterPackPending.collectAsState()
             val permissionsIntroPending by com.forkmesh.nativeapp.feature.account.PermissionsIntro.pending.collectAsState()
-            if (permissionsIntroPending) {
-                com.forkmesh.nativeapp.feature.account.PermissionsIntroScreen()
-            } else if (starterPackPending) {
-                StarterPackScreen(onContinue = PackageGateFeature::chooseStarterPack)
+            if (permissionsIntroPending || starterPackPending) {
+                com.forkmesh.nativeapp.feature.account.OnboardingFlow(permissionsIntroPending, starterPackPending)
             } else {
                 Box(Modifier.fillMaxSize(), propagateMinConstraints = true) {
                     NavigatorHost(navigator, onExit)

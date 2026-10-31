@@ -87,18 +87,22 @@ def test_headers_do_not_force_the_session_read_on_load():
 
 
 def test_desktop_status_and_note_reads_are_not_timed():
-    # The minute tick repaints local state only: no latency probe, status read
-    # or page probe rides it.
+    # The minute tick repaints local state only: no status read or page probe
+    # rides it, and the latency probe only while the desktop has switched
+    # itself offline (so it notices the relay coming back).
     tick = QT_MAIN[
         QT_MAIN.index("m_relayLatencyTimer = new QTimer(this);"):
         QT_MAIN.index("m_relayLatencyTimer->start(")
     ]
     for network_call in (
-        "probeRelayLatency();",
         "refreshFooterWebsiteStatus",
         "refreshDesktopWebsiteProbes();",
     ):
         assert network_call not in tick
+    assert tick.count("probeRelayLatency();") <= 1
+    if "probeRelayLatency();" in tick:
+        guarded = "if (m_offlineMode && m_offlineModeAuto)\n            probeRelayLatency();"
+        assert guarded in tick, "an online desktop must not probe the relay every minute"
     # Activation re-reads behind a freshness floor instead.
     assert "void MainWindow::refreshFooterStatusOnActivation()" in QT_CHAT
     assert "kFooterStatusHealthyFloorMs = 15 * 60 * 1000;" in QT_CHAT

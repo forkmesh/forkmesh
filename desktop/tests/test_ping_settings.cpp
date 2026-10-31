@@ -35,7 +35,7 @@ void check(bool condition, const char *message)
 qint64 utcMs(int year, int month, int day, int hour, int minute)
 {
     return QDateTime(QDate(year, month, day), QTime(hour, minute),
-                     QTimeZone::UTC)
+                     QTimeZone::utc())
         .toMSecsSinceEpoch();
 }
 

@@ -83,32 +83,64 @@ struct YouHubSheet: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x2) {
+        VStack(alignment: .leading, spacing: FmSpace.x3) {
             header
-            Divider()
             VStack(spacing: 0) {
                 pocketRow
+                rowDivider
                 suggestionToggle
-                diagnosticsToggle
+                if settings != nil {
+                    rowDivider
+                    diagnosticsToggle
+                }
             }
-            Divider()
+            .padding(.horizontal, FmSpace.x3)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(fm.textPrimary.opacity(0.05)))
             items
+            footerDivider
             versionRow
         }
         .padding(FmSpace.x3)
     }
 
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(fm.border.opacity(0.7))
+            .frame(height: 0.5)
+            .padding(.leading, 40)
+    }
+
+    private var footerDivider: some View {
+        Rectangle()
+            .fill(fm.border.opacity(0.7))
+            .frame(height: 0.5)
+    }
+
+    private func tile(_ symbol: String, tint: Color? = nil) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(tint ?? fm.accent)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill((tint ?? fm.accent).opacity(0.12)))
+    }
+
+    private var subtitle: String {
+        state.guest ? "Exploring as a guest" : state.statusDescription
+    }
+
     private var header: some View {
         HStack(spacing: FmSpace.x2) {
             HStack(spacing: FmSpace.x2) {
-                AvatarWithDot(state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng, size: 40)
+                AvatarWithDot(state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng, size: 44)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(state.guest ? "Guest" : state.name)
                         .fmText(.titleSmall)
                         .lineLimit(1)
-                    if !state.statusDescription.isEmpty {
-                        Text(state.statusDescription)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
                             .fmText(.bodySmall, color: fm.textSecondary)
                             .lineLimit(1)
                     }
@@ -140,7 +172,6 @@ struct YouHubSheet: View {
                     ForEach(groups.flatMap(\.items)) { (item: HubItem) in
                         chip(item)
                     }
-                    Spacer(minLength: 0)
                 }
                 VStack(spacing: 0) {
                     ForEach(groups.flatMap(\.items)) { (item: HubItem) in
@@ -167,18 +198,22 @@ struct YouHubSheet: View {
     }
 
     private func chip(_ item: HubItem) -> some View {
-        let destructive: Bool = item.action == .signOut
+        let tint: Color = item.action == .signOut ? fm.danger : fm.textPrimary
         return Button {
             choose(item.action)
         } label: {
             Label(item.title, systemImage: item.symbol)
                 .labelStyle(.titleAndIcon)
-                .fmText(.labelMedium, color: destructive ? fm.danger : fm.textPrimary)
+                .fmText(.labelLarge, color: tint)
                 .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, FmSpace.x3)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.07)))
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .tint(destructive ? fm.danger : fm.textPrimary)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("hub-item-\(item.id)")
     }
 
@@ -193,9 +228,7 @@ struct YouHubSheet: View {
                 diagnosticsButton
             }
         }
-        .padding(.horizontal, FmSpace.x2)
-        .padding(.vertical, FmSpace.x2)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fm.bgElevated))
+        .padding(.horizontal, FmSpace.x1)
     }
 
     private var versionButton: some View {
@@ -235,15 +268,17 @@ struct YouHubSheet: View {
             onClose()
             ShellPocket.shared.lock()
         } label: {
-            Label {
+            HStack(spacing: FmSpace.x3) {
+                tile(walking ? "figure.walk" : "lock.iphone")
+                    .symbolEffect(.pulse, options: .repeating, isActive: walking)
                 Text(walking ? "Pocket mode, walking" : "Pocket mode")
                     .fmText(.bodyMedium)
-            } icon: {
-                Image(systemName: walking ? "figure.walk" : "lock.iphone")
-                    .foregroundStyle(fm.accent)
-                    .symbolEffect(.pulse, options: .repeating, isActive: walking)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(fm.textTertiary)
             }
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -253,17 +288,15 @@ struct YouHubSheet: View {
 
     private var suggestionToggle: some View {
         Toggle(isOn: Binding<Bool>(get: { suggestions.on }, set: { (on: Bool) in suggestions.setOn(on) })) {
-            Label {
+            HStack(spacing: FmSpace.x3) {
+                tile("sparkles")
                 Text("Suggestion mode")
                     .fmText(.bodyMedium)
-            } icon: {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(fm.accent)
             }
         }
         .tint(fm.accent)
         .controlSize(.small)
-        .frame(minHeight: 36)
+        .frame(minHeight: 46)
         .accessibilityIdentifier("hub-suggestion-mode")
     }
 
@@ -273,17 +306,15 @@ struct YouHubSheet: View {
                 get: { settings.showTelemetryStrip },
                 set: { (value: Bool) in settings.setShowTelemetryStrip(value) })
             ) {
-                Label {
+                HStack(spacing: FmSpace.x3) {
+                    tile("waveform.path.ecg")
                     Text("Diagnostics")
                         .fmText(.bodyMedium)
-                } icon: {
-                    Image(systemName: "waveform.path.ecg")
-                        .foregroundStyle(fm.accent)
                 }
             }
             .tint(fm.accent)
             .controlSize(.small)
-            .frame(minHeight: 36)
+            .frame(minHeight: 46)
             .accessibilityIdentifier("hub-diagnostics-strip")
         }
     }
@@ -292,14 +323,12 @@ struct YouHubSheet: View {
         title: String, symbol: String, id: String, destructive: Bool = false, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label {
+            HStack(spacing: FmSpace.x3) {
+                tile(symbol, tint: destructive ? fm.danger : nil)
                 Text(title)
                     .fmText(.bodyMedium, color: destructive ? fm.danger : fm.textPrimary)
-            } icon: {
-                Image(systemName: symbol)
-                    .foregroundStyle(destructive ? fm.danger : fm.accent)
             }
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

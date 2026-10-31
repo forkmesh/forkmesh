@@ -88,7 +88,7 @@ def test_only_an_admin_reads_or_writes_the_setting(rt):
     assert call(rt, "POST", "", {"pinned": ["widgets"], "forks": 5}).status == 401
     assert stored(rt) is None
     read = call(rt, account="alice")
-    assert read.data == {"ok": True, "sidebar": {"pinned": [], "forks": 3},
+    assert read.data == {"ok": True, "sidebar": {"pinned": [], "forks": 3, "devto": ""},
                          "limits": {"pinned": 10, "forks": 50}}
     assert read.cache_control == "no-store"
 
@@ -96,12 +96,12 @@ def test_only_an_admin_reads_or_writes_the_setting(rt):
 def test_a_valid_write_is_stored_normalized_and_audited(rt):
     reply = call(rt, "POST", "alice", {"pinned": [" Widgets ", "acme/tools", "widgets", ""], "forks": 20})
     assert reply.status == 200
-    assert reply.data["sidebar"] == {"pinned": ["widgets", "acme/tools"], "forks": 20}
+    assert reply.data["sidebar"] == {"pinned": ["widgets", "acme/tools"], "forks": 20, "devto": ""}
     assert stored(rt) == reply.data["sidebar"]
     assert call(rt, account="alice").data["sidebar"] == reply.data["sidebar"]
     assert rt.audits == [("alice", "instance.sidebar", reply.data["sidebar"])]
     cleared = call(rt, "POST", "alice", {"pinned": [], "forks": 0})
-    assert stored(rt) == cleared.data["sidebar"] == {"pinned": [], "forks": 0}
+    assert stored(rt) == cleared.data["sidebar"] == {"pinned": [], "forks": 0, "devto": ""}
 
 
 @pytest.mark.parametrize("sidebar, error", [
@@ -113,6 +113,8 @@ def test_a_valid_write_is_stored_normalized_and_audited(rt):
     ({"pinned": [7], "forks": 3}, "invalid_pinned"),
     ({"pinned": ["r%d" % n for n in range(11)], "forks": 3}, "too_many_pinned"),
     ({"pinned": [], "forks": 51}, "invalid_forks"),
+    ({"pinned": [], "forks": 3, "devto": "dev.to/x"}, "invalid_devto"),
+    ({"pinned": [], "forks": 3, "devto": 7}, "invalid_devto"),
     ({"pinned": [], "forks": -1}, "invalid_forks"),
     ({"pinned": [], "forks": "5"}, "invalid_forks"),
     ({"pinned": [], "forks": True}, "invalid_forks"),
@@ -122,7 +124,7 @@ def test_an_invalid_write_is_refused_and_changes_nothing(rt, sidebar, error):
     call(rt, "POST", "alice", {"pinned": ["widgets"], "forks": 20})
     reply = call(rt, "POST", "alice", sidebar)
     assert (reply.status, reply.data) == (400, {"error": error})
-    assert stored(rt) == {"pinned": ["widgets"], "forks": 20}
+    assert stored(rt) == {"pinned": ["widgets"], "forks": 20, "devto": ""}
 
 
 def test_bad_json_is_refused(rt):
@@ -132,9 +134,11 @@ def test_bad_json_is_refused(rt):
 def test_reading_a_hand_edited_row_stays_lenient():
     assert instance_sidebar.parse({"pinned": ["Widgets", "widgets", "x"] + ["r%d" % n for n in range(20)],
                                    "forks": 999}) == {
-        "pinned": ["widgets", "x"] + ["r%d" % n for n in range(8)], "forks": 50}
-    assert instance_sidebar.parse("junk") == {"pinned": [], "forks": 3}
-    assert instance_sidebar.parse({"pinned": "widgets", "forks": "x"}) == {"pinned": [], "forks": 3}
+        "pinned": ["widgets", "x"] + ["r%d" % n for n in range(8)], "forks": 50, "devto": ""}
+    assert instance_sidebar.parse("junk") == {"pinned": [], "forks": 3, "devto": ""}
+    assert instance_sidebar.parse({"pinned": "widgets", "forks": "x"}) == {"pinned": [], "forks": 3, "devto": ""}
+    assert instance_sidebar.parse({"devto": "ACMEBLOG"})["devto"] == "acmeblog"
+    assert instance_sidebar.parse({"devto": "<b>"})["devto"] == ""
 
 
 def test_the_route_and_the_settings_section_are_wired():
@@ -152,3 +156,9 @@ def test_the_route_and_the_settings_section_are_wired():
     assert "async function initInstanceSidebarSection()" in bundle
     page = (PUBLIC / "dashboard" / "settings" / "index.html").read_text(encoding="utf-8")
     assert "data-instance-sidebar-form" in page
+
+
+def test_a_devto_account_is_stored_lower_case_without_the_at(rt):
+    reply = call(rt, "POST", "alice", {"pinned": [], "forks": 3, "devto": " @ACMEBLOG "})
+    assert reply.status == 200
+    assert stored(rt) == reply.data["sidebar"] == {"pinned": [], "forks": 3, "devto": "acmeblog"}

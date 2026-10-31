@@ -260,9 +260,9 @@
 
   function activityShellHtml(repo) {
     const nav = ACTIVITY_VIEWS.map((item) => `<li><a href="${escapeHtml(activityHref(repo, item.id, activityView.period, activityView.scope))}" data-activity-view="${item.id}"${item.id === activityView.view ? ' aria-current="page"' : ""}><i data-lucide="${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}</span></a></li>`).join("");
-    return `<div data-repo-activity class="grid min-w-0 gap-5 py-2 md:grid-cols-[16rem_minmax(0,1fr)]">
-      <nav class="fm-activity-nav min-w-0" aria-label="Activity views"><ul class="flex flex-wrap gap-1">${nav}</ul></nav>
-      <div data-activity-main class="grid min-w-0 content-start gap-5" aria-live="polite" aria-busy="true"></div>
+    return `<div data-repo-activity data-repo-rail-layout class="grid min-w-0 gap-5 py-2 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <nav data-repo-rail class="fm-activity-nav min-w-0" aria-label="Activity views"><div data-repo-rail-inner><h2 class="fm-rail-title hidden lg:block">Insights</h2><ul class="flex flex-wrap gap-1">${nav}</ul></div></nav>
+      <div data-activity-main data-repo-rail-main class="grid min-w-0 content-start gap-5" aria-live="polite" aria-busy="true"></div>
     </div>`;
   }
 

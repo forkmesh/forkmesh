@@ -1352,11 +1352,12 @@ def format_report(report: Mapping[str, Any], stage: str) -> list[str]:
 
 def hook_script(stage: str, script: Path, organization_policy: Path | None,
                 repository: str) -> bytes:
-    arguments = ["python3", "-I", str(script), "hook", stage]
+    arguments = ["python3", "-I", str(script), "hook"]
     if organization_policy is not None:
         arguments += ["--org-policy", str(organization_policy)]
     if repository:
         arguments += ["--repository", repository]
+    arguments.append(stage)
     return ("#!/bin/sh\n%s\nexec %s \"$@\"\n" % (
         HOOK_MARKER, " ".join(shlex.quote(item) for item in arguments))).encode()
 
@@ -1630,7 +1631,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_argument("--corpus", default=str(
         Path(__file__).resolve().parents[1]
         / "conformance" / "secrets" / "v1" / "corpus.json"))
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(argv)
+    if extra and args.command == "hook":
+        if any(item.startswith("-") for item in extra):
+            parser.error("unrecognized arguments: %s" % " ".join(extra))
+        args.hook_arguments = list(args.hook_arguments) + extra
+    elif extra:
+        parser.error("unrecognized arguments: %s" % " ".join(extra))
 
     try:
         if args.command == "contract":

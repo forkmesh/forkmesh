@@ -13,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+#include <QThreadPool>
 
 #include <cmath>
 #include <iostream>
@@ -629,6 +630,44 @@ static void testPipeArguments()
           QStringLiteral("an unknown player is not fed PCM"));
 }
 
+static void testPipeProgramsAreProbedOncePerPath()
+{
+#if defined(Q_OS_LINUX)
+    QTemporaryDir first;
+    QTemporaryDir second;
+    if (!first.isValid() || !second.isValid())
+        return;
+    const auto writeStub = [](const QString &path) {
+        QFile script(path);
+        script.open(QIODevice::WriteOnly);
+        script.write("#!/bin/sh\nexit 0\n");
+        script.close();
+        script.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                              QFileDevice::ExeOwner);
+    };
+    const QByteArray oldPath = qgetenv("PATH");
+    const QString aplay = first.path() + QStringLiteral("/aplay");
+    writeStub(aplay);
+    qputenv("PATH", first.path().toUtf8());
+    check(Player::availablePipePrograms() == QStringList{QStringLiteral("aplay")},
+          QStringLiteral("the probe finds the installed player"));
+    QFile::remove(aplay);
+    check(Player::availablePipePrograms() == QStringList{QStringLiteral("aplay")},
+          QStringLiteral("the answer is kept for this PATH, so start() does "
+                         "not search PATH again"));
+
+    const QString paplay = second.path() + QStringLiteral("/paplay");
+    writeStub(paplay);
+    qputenv("PATH", second.path().toUtf8());
+    Player::warmPipePrograms();
+    QThreadPool::globalInstance()->waitForDone(5000);
+    QFile::remove(paplay);
+    check(Player::availablePipePrograms() == QStringList{QStringLiteral("paplay")},
+          QStringLiteral("the warm-up probes a new PATH on a worker thread"));
+    qputenv("PATH", oldPath);
+#endif
+}
+
 static void testStopDoesNotWaitForThePlayer()
 {
 #if defined(Q_OS_LINUX)
@@ -1109,6 +1148,7 @@ int main(int argc, char **argv)
     testMixer();
     testSonifier();
     testPipeArguments();
+    testPipeProgramsAreProbedOncePerPath();
     testStopDoesNotWaitForThePlayer();
     testUiCues();
     testCueLabelsAndWeights();

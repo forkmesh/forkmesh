@@ -250,7 +250,11 @@ QHash<QString, qint64> residentBytesIn(const QString &smaps, const QHash<QString
             out[current] += (space < 0 ? amount : amount.left(space)).toLongLong() * 1024;
             continue;
         }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
         const QRegularExpressionMatch match = mapping.matchView(line);
+#else
+        const QRegularExpressionMatch match = mapping.match(line);
+#endif
         if (match.hasMatch()) {
             QString file = match.captured(1).trimmed();
             if (file.endsWith(QLatin1String(" (deleted)")))

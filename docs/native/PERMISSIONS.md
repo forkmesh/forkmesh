@@ -6,13 +6,15 @@ short screen says up front what may come up and why.
 
 ## The intro screen
 
-`PermissionsIntroView` (`native/ios/ForkMesh/Features/Account/`) shows once on
+`PermissionsIntroPage` (`native/ios/ForkMesh/Features/Account/`) is the first
+step of `OnboardingFlowView` ([ONBOARDING.md](ONBOARDING.md)). It shows once on
 a fresh install, after sign-in or "Explore as guest" and before the starter
-pack. It is one scrollable page: a drawn illustration (a shield with
-notification, nearby, camera and photo badges, gently floating unless Reduce
-Motion is on), the title "We only ask when it matters", one row per
-permission with the moment it is asked, a note that saying no keeps the rest
-of the app working, and a "Sounds good" button. It requests nothing itself.
+pack: a hero card that counts "Asked up front" down to 0 and lists one row per
+permission with a short `hint` for the moment it is asked, the title "We only
+ask when it matters", and the note that saying no keeps the rest of the app
+working. VoiceOver reads each row's full `reason`. "Let's Get Started" moves to
+the starter pack; Skip and "skip and start" finish onboarding with the default
+pack. Finishing sets the intro to seen.
 
 The text lives in `PermissionPacing` (FMAccount) so a core test keeps it to
 five short rows. Installs that predate this change never see the screen:
@@ -40,7 +42,7 @@ mesh starts at launch as before, so nearby messages keep arriving.
 
 ## Android
 
-Android shows the same screen (`PermissionsIntroScreen`,
+Android shows the same page (`PermissionsIntroPage`,
 `native/android/app/.../feature/account/`), with its text in `PermissionPacing`
 (`core/.../account`) and the same `permissions/intro` and
 `permissions/nearby-opened` keys. Installs that predate the change skip it and

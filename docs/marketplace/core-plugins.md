@@ -69,7 +69,7 @@ packs, Standard preselected, with a single Continue:
 desktop keep the off-by-default rule.
 
 - Where: iOS `StarterPack` beside `PackageGate.starterPackages` in
-  `FMApi/Navigation/PackageGate.swift`, screen `StarterPackView`, shown by
+  `FMApi/Navigation/PackageGate.swift`, screen `StarterPackPage`, shown by
   `AppHomeView` while `SettingsService.needsStarterPack`; Android
   `StarterPack` beside `PackageGate.STARTER` in `C/market/PackageGate.kt`,
   screen `StarterPackScreen`, shown by `Features.Root` while

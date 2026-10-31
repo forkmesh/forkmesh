@@ -654,7 +654,11 @@ HeaderInfo classifyHeader(const QString &rawHeader, const QString &language)
 int countMatches(const QRegularExpression &re, QStringView text)
 {
     int count = 0;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     QRegularExpressionMatchIterator it = re.globalMatchView(text);
+#else
+    QRegularExpressionMatchIterator it = re.globalMatch(text);
+#endif
     while (it.hasNext()) {
         it.next();
         ++count;

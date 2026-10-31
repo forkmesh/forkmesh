@@ -185,6 +185,7 @@ const backgroundContext = {
   setTimeout: (callback) => setImmediate(callback),
   importScripts() {},
   ForkMeshVaultBackground: { install: () => ({ forget: async () => {} }) },
+  ForkMeshRepoBackground: { install: () => {} },
   async fetch(url, options) {
     const target = new URL(url);
     const body = options.body === undefined ? null : JSON.parse(options.body);

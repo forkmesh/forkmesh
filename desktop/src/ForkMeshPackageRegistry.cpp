@@ -503,7 +503,7 @@ bool PackageRegistry::projectCreatedBefore(const QDate &date) const
         return false;
     if (!m_projectCreated.isValid())
         return true;
-    return m_projectCreated < QDateTime(date, QTime(0, 0), QTimeZone::UTC);
+    return m_projectCreated < QDateTime(date, QTime(0, 0), QTimeZone::utc());
 }
 
 bool PackageRegistry::isLegacyProject() const

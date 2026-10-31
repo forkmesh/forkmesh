@@ -36,6 +36,36 @@ void check(bool condition, const QString &what)
     }
 }
 
+QtMessageHandler g_previousHandler = nullptr;
+QStringList g_warnings;
+
+void recordWarnings(QtMsgType type, const QMessageLogContext &context,
+                    const QString &message)
+{
+    if (type == QtWarningMsg)
+        g_warnings.append(message);
+    if (g_previousHandler)
+        g_previousHandler(type, context, message);
+}
+
+class FirstPaintHost : public QWidget
+{
+public:
+    forkmesh::ui::StartupSplash *splash = nullptr;
+    bool finishedSplash = false;
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QWidget::paintEvent(event);
+        if (finishedSplash || !splash)
+            return;
+        finishedSplash = true;
+        splash->noteHostPainted(QStringLiteral("Main window painted"));
+        splash->finish(QStringLiteral("Workspace open"));
+    }
+};
+
 bool colorsClose(const QColor &actual, const QColor &expected, int tolerance = 2)
 {
     return std::abs(actual.red() - expected.red()) <= tolerance &&
@@ -263,5 +293,32 @@ int main(int argc, char **argv)
           QStringLiteral("child scrim composites over the host backing store"));
 
     delete splash;
+
+    {
+        FirstPaintHost firstPaint;
+        firstPaint.resize(640, 480);
+        auto *paintSplash = new forkmesh::ui::StartupSplash(
+            true, QStringLiteral("test"), QStringLiteral("unknown"));
+        paintSplash->show();
+        QApplication::processEvents();
+        paintSplash->attachTo(&firstPaint);
+        firstPaint.splash = paintSplash;
+        g_warnings.clear();
+        g_previousHandler = qInstallMessageHandler(recordWarnings);
+        firstPaint.show();
+        for (int i = 0; i < 5 && !firstPaint.finishedSplash; ++i)
+            QApplication::processEvents();
+        firstPaint.repaint();
+        QApplication::processEvents();
+        qInstallMessageHandler(g_previousHandler);
+        check(firstPaint.finishedSplash,
+              QStringLiteral("the host's first paint finishes the splash"));
+        check(!g_warnings.join(QLatin1Char('\n'))
+                   .contains(QStringLiteral("Recursive repaint")),
+              QStringLiteral("finishing the splash inside the host's first "
+                             "paint queues its frame instead of repainting "
+                             "recursively"));
+        delete paintSplash;
+    }
     return failures == 0 ? 0 : 1;
 }

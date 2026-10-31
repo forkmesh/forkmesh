@@ -127,8 +127,10 @@ private struct ChatScreenBody: View {
                 onCompose: { composing = true }, onSearch: { searchRequest = ChatSearchRequest() },
                 onClose: { closeChannels() })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { drawerBackdrop }
-            .shadow(color: .black.opacity(0.3), radius: 18, x: 6)
+            .background {
+                drawerBackdrop
+                    .shadow(color: Color.black.opacity(fm.dark ? 0.3 : 0.08), radius: 18, x: 6)
+            }
             .transition(.move(edge: .leading))
             .zIndex(2)
         }
