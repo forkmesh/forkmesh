@@ -294,6 +294,13 @@ removed, keeping `latest` and `candidate-1.2.8`, the one it was promoted from.
 - `tag_commit` is the commit the tag pointed to at signing; verifiers check
   `git merge-base --is-ancestor <tag_commit> <tag>`. An empty `build_commit` is
   left out of the signed header so legacy manifests keep their bytes.
+- After publishing, the release host moves the tag onto the metadata commit
+  that carries the promoted manifest (`parked_tag_target()` in
+  `tools/forkmesh-release-host.py`), so `git rev-parse <tag>^{commit}` is
+  normally a later commit than `tag_commit`, not equal to it. That is the
+  defined relation, not tampering: v1.5.0 signs `510b0448b745` and its tag
+  peels to `0193ce5d3e88`, 105 commits later, which the ancestor check accepts.
+  This is the one definition; other documents link here.
 - Asset names: `forkmesh-<os>-<arch>[.exe]`, `.AppImage`, `.dmg`,
   `-setup.exe`, `forkmesh-mirror-node-linux-x86_64`,
   `forkmesh-android-universal.apk`.
