@@ -3971,6 +3971,10 @@ private:
     void startLocalControl();
     // Creates the control server (LAN or relay, whichever reaches it first).
     bool ensureLocalControlServer();
+    bool remoteControlOn() const;
+    void setRemoteControlOn(bool on);
+    void refreshRemoteControlViews();
+    void openPhoneSettings();
     void handleLocalControlRequest(int connectionId, int requestId,
                                    const QString &method,
                                    const QJsonObject &params);
@@ -12719,6 +12723,7 @@ private:
     QComboBox *m_voiceDeviceCombo = nullptr;
     SettingsSectionsView *m_settingsSections = nullptr;
     int m_voiceSettingsTabIndex = -1;
+    int m_phoneSettingsTabIndex = -1;
     int m_pingsSettingsTabIndex = -1;
     PingSettingsPanel *m_pingSettingsPanel = nullptr;
     // The administrator card on Settings > Pings, shown only to admins.
