@@ -372,6 +372,11 @@ most of it fits above the fold, and it reports more:
 - `totals.liveVisitors`: visitors with an event in the last five minutes,
   present only when the range ends within five minutes of now.
 
+The breakdown cards render into a `display: contents` wrapper inside the
+`.an-dash` grid, so each card's `order` places it among the fixed cards.
+Outbound links, like referrer URLs, are shown as text (host, then path
+underneath), never as links: a visitor controls `$elements` and `$referrer`.
+
 ### Campaign results (1.1.0)
 
 `campaigns` attributes each **session** to its first touch: the `utm_*`

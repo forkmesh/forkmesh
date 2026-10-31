@@ -1819,7 +1819,6 @@ def _referrer_url(value):
 
 
 def _outbound_link(event):
-    """The link a click left the site by: an anchor's href on another host."""
     elements = event["p"].get("$elements")
     for element in elements if isinstance(elements, list) else ():
         if not isinstance(element, dict) or element.get("tag") != "a":
@@ -1966,7 +1965,6 @@ def overview(events, query, context, start, end):
             previous.append(event)
     totals, sessions = _overview_totals(current, context)
     previous_totals, _ = _overview_totals(previous, context)
-    # Live: visitors seen in the last five minutes, when the range ends now.
     now = getattr(context, "now", None)
     if now is not None and abs(now - end) <= 5 * 60000:
         totals["liveVisitors"] = len({context.actor(event) for event in current

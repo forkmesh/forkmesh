@@ -881,7 +881,6 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["averageSessionMs", "Avg. session", fmtDuration, true],
     ["sites", "Sites", fmtInt, true],
   ];
-  // order places each card in the overview grid (see .an-dash in view.html).
   const BREAKDOWN_CARDS = [
     { key: "sites", title: "Sites", hint: "Click one to filter", column: "Site", order: 3 },
     { key: "pages", title: "Pages", picks: [["pages", "Top"], ["entryPages", "Entry"], ["exitPages", "Exit"]], column: "Path", order: 10 },
@@ -901,7 +900,6 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   async function loadOverview() {
     const host = state.overviewHost;
-    // Sites are listed by bare host, so www. and a port count as the same site.
     const pattern = `^(www\\.)?${host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(:\\d+)?$`;
     state.overview = await query("overview", host ? { filters: [{ type: "event", property: "$host", operator: "regex", value: [pattern] }] } : {});
     renderOverview();
@@ -1057,8 +1055,6 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     if (pick === "outboundLinks") return "Clicks";
     return SESSION_PICKS.has(pick) ? "Sessions" : "Views";
   }
-  // A URL as its host with the rest underneath, so long links stay readable.
-  // Text only: a visitor controls $referrer and $elements, so never an href.
   function linkLabel(value) {
     const match = /^https?:\/\/([^/]+)(.*)$/i.exec(String(value || ""));
     if (!match) return `<span class="an-break">${h(value)}</span>`;

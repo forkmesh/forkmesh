@@ -156,8 +156,6 @@
             .an-hours-ramp { display: inline-block; width: 5rem; height: .5rem; margin: 0 .3rem; border-radius: 2px; vertical-align: middle; background: linear-gradient(90deg, rgb(var(--an-seq-rgb) / .12), rgb(var(--an-seq-rgb) / 1)); }
             .an-scroll-meter { display: inline-block; width: 3rem; height: 6px; margin-right: .35rem; border-radius: 3px; vertical-align: middle; background: rgb(var(--an-seq-rgb) / .16); overflow: hidden; }
             .an-scroll-meter > span { display: block; height: 100%; background: var(--an-s1); }
-            /* Overview: one dense grid. Breakdown cards join it through an
-               display:contents wrapper; each card's order sets its place. */
             .an-dash { display: grid; gap: .5rem; grid-template-columns: minmax(0, 1fr); }
             @media (min-width: 760px) { .an-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); } .an-dash .an-span-2 { grid-column: span 2; } }
             @media (min-width: 1280px) { .an-dash { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
