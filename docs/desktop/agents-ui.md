@@ -1033,8 +1033,10 @@ the Claude desktop app's Code tab, and lays them out the same way.
   (`preferences.epitaxyPrefs`: `dframe-code-sections` for the section order,
   `dframe-group-scopes` for named groups and their members,
   `starred-local-code-sessions` for Pinned). It is read off the GUI thread
-  every 5 s while the page is on screen (`requestSessionsDesktopIndex`), and
-  the list only redraws when something changed.
+  every 2 s while the page is on screen (`requestSessionsDesktopIndex`), and
+  the list only redraws when something changed (a title, `lastActivityAt`,
+  Waiting, Running, a group or a pin). The same tick rewrites each row's age
+  from `SessionsPageUi::listedAt`, so "1m" turns into "2m" without a redraw.
 - A record is matched to a ForkMesh session by `claudeAppSessionId`, an
   imported session's `claudeImportId`, an outside session's id, then by the
   agent worktree it ran in (`<repo>/.worktrees/<worktreeName>`); a matched
@@ -1046,10 +1048,19 @@ the Claude desktop app's Code tab, and lays them out the same way.
   the outside-session setting. Running means the transcript was written in the
   last 90 s.
 - `arrangeSidebar` builds the groups: Pinned, then each named group in the
-  Claude app's order (empty groups hidden), then one group per folder (the
-  last folder of the session's working directory, so an agent worktree is its
-  own group) in natural order (`15-…` before `30-…` before `2625-…`), newest
-  session first inside each group. ForkMesh sessions the Claude app does not
+  Claude app's order (empty groups hidden), then the `sessions` section. Its
+  `groupBy` decides the layout (2026-10-31): `none` (the Claude app's
+  default, and what a missing value means) puts every remaining session in
+  one **Recents** group, as the Claude app's sidebar does; any other value
+  gives one group per folder (the last folder of the session's working
+  directory, so an agent worktree is its own group) in natural order
+  (`15-…` before `30-…` before `2625-…`). Every group is sorted by recency,
+  newest first unless the section's `ascending` is set.
+- Recency is the Claude app's own `lastActivityAt` for any row that has a
+  Claude app record, matched ForkMesh agents included (`desktopAt`), so the
+  order and the age column match the Claude app's sidebar. A ForkMesh session
+  with no record keeps its own activity time. A record with no title shows
+  "General coding session", as the Claude app does. ForkMesh sessions the Claude app does not
   have go in their worktree's folder group, or the checkout's. Group headings
   put the fold chevron after the name, as the Claude app does
   (`kSessionTrailingChevronRole`).

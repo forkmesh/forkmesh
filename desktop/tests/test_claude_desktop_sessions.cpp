@@ -190,7 +190,7 @@ static void testDesktopIndex()
               "{}\n");
     const QByteArray config = QStringLiteral(R"({"preferences":{"epitaxyPrefs":{
         "dframe-code-sections":{"acct/org":{"sections":[
-          {"id":"sessions","kind":"sessions","order":5,"shown":true},
+          {"id":"sessions","kind":"sessions","order":5,"shown":true,"groupBy":"project"},
           {"id":"pinned","kind":"pinned","order":0,"shown":true},
           {"id":"routines","kind":"routines","order":1,"shown":false},
           {"id":"cg-empty","kind":"manual","name":"Desktop app","order":2,"shown":true,"members":[]},
@@ -233,6 +233,24 @@ static void testDesktopIndex()
     check(groups.first().key == QLatin1String("@claude:cg-infra"), "manual group key");
     check(groups.at(1).items.size() == 2 && items.at(groups.at(1).items.first()).at == 2000,
           "a folder lists its newest session first");
+
+    DesktopIndex flat = index;
+    for (DesktopSection &section : flat.sections)
+        if (section.kind == QLatin1String("sessions"))
+            section.groupBy = QStringLiteral("none");
+    const QList<SidebarGroup> recents = arrangeSidebar(flat, items);
+    check(recents.size() == 2 && recents.at(1).label == QLatin1String("Recents") &&
+              recents.at(1).key == QLatin1String("@claude:recents"),
+          "group by none lists the ungrouped sessions under Recents");
+    QList<qint64> order;
+    for (int item : recents.at(1).items)
+        order << items.at(item).at;
+    check(order == QList<qint64>({2000, 1000, 900, 500}),
+          "Recents lists every ungrouped session newest first");
+    flat.sections.clear();
+    const QList<SidebarGroup> bare = arrangeSidebar(flat, items);
+    check(bare.size() == 1 && bare.first().items.size() == items.size(),
+          "without the Claude app's layout every session goes under Recents");
 }
 
 static void testNaturalOrder()
