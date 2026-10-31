@@ -98,10 +98,10 @@ def test_top_bar_leads_back_to_the_dashboard_and_shows_the_account_picture():
     assert 'aria-label="Back to dashboard"' in exit_link.group(0)
     assert "<span>Back to dashboard</span>" in top
     assert top.index("ab-exit") < top.index('class="avatar"')
-    assert ('<object data="/api/accounts/ada-lovelace/avatar" '
-            'aria-hidden="true"><span>AL</span></object>') in top
-    assert "<img" not in top
-    assert ".ab-top .avatar object{width:100%;height:100%" in shell.STYLE
+    assert ('<span>AL</span><img src="/api/accounts/ada-lovelace/avatar" '
+            'alt="" decoding="async">') in top
+    assert "<object" not in top
+    assert ".ab-top .avatar img{position:absolute;inset:0" in shell.STYLE
     assert ".ab-exit span{display:none}" in shell.STYLE
 
     signed_out = shell.render_page("Overview", "", console="/ops")
@@ -113,7 +113,7 @@ def test_top_bar_avatar_path_cannot_be_steered_by_the_account_name():
     shell = _load()
     page = shell.render_page("Overview", "", account='../x"?y=1')
 
-    assert 'data="/api/accounts/..%2Fx%22%3Fy%3D1/avatar"' in page
+    assert 'src="/api/accounts/..%2Fx%22%3Fy%3D1/avatar"' in page
 
 
 def test_console_links_and_search_need_a_known_console_path():

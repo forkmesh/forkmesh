@@ -221,9 +221,9 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-bg);
   color:var(--accent-strong);display:inline-flex;align-items:center;
   justify-content:center;font-weight:600;font-size:13px;flex:none}
-.ab-top .avatar{overflow:hidden}
-.ab-top .avatar object{width:100%;height:100%;display:flex;align-items:center;
-  justify-content:center;border-radius:50%;pointer-events:none}
+.ab-top .avatar{position:relative;overflow:hidden}
+.ab-top .avatar img{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;border-radius:50%}
 .ab-content{padding:24px 28px 64px;max-width:1360px;width:100%}
 
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
@@ -1276,12 +1276,11 @@ def top_bar(console="", account="", search_value=""):
     avatar = ""
     if account:
         avatar = (
-            '<span class="avatar" title="Signed in as %s">'
-            '<object data="/api/accounts/%s/avatar" aria-hidden="true">'
-            '<span>%s</span></object></span>' % (
-                esc(account),
-                esc(quote(str(account).strip().lower(), safe="")),
-                esc(initials(account))))
+            '<span class="avatar" title="Signed in as %s"><span>%s</span>'
+            '<img src="/api/accounts/%s/avatar" alt="" decoding="async">'
+            '</span>' % (
+                esc(account), esc(initials(account)),
+                esc(quote(str(account).strip().lower(), safe=""))))
     exit_link = (
         '<a class="btn btn-sm ab-exit" href="%s" aria-label="Back to dashboard" '
         'title="Leave admin and open your dashboard">%s'

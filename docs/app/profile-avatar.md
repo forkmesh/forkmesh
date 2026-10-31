@@ -45,10 +45,13 @@ A fork usually carries an older copy of its parent's roster, so the parent of ea
 
 The admin shell (`app/src/admin_shell.py`, `top_bar`) used to draw only the
 signed-in account's initials. It now draws the same uploaded account picture
-the dashboard header shows, from `/api/accounts/<name>/avatar`, inside an
-`<object>` whose fallback content is the initials: the shell is script-free,
-and an `<img>` whose source answers 404 shows a broken-image icon in Chrome,
-while an `<object>` shows its fallback. The top bar also has a "Back to
+the dashboard header shows, from `/api/accounts/<name>/avatar`, as an
+`<img alt="">` laid over the initials: the shell is script-free, an image
+with an empty `alt` that answers 404 draws nothing, so an account with no
+picture shows its initials. It is not an `<object>` with the initials as
+fallback content: every admin page's Content-Security-Policy has
+`object-src 'none'` (or `default-src 'none'`), which blocks the object, so
+the picture would never show; all of them allow `img-src 'self'`. The top bar also has a "Back to
 dashboard" button (`/dashboard`) that leaves admin; at phone width it keeps
 only its icon. The admin shell does not read contributor rosters, so an
 admin with no uploaded picture keeps the initials there.
