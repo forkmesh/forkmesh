@@ -987,11 +987,11 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
         QStringLiteral("pullDeleteClosedAndMergedButton"));
     m_pullMergeAllAiButton = pullActionButton(
         QStringLiteral("Merge all"), "sparkle",
-        QStringLiteral("Start an AI agent in this repository's own checkout "
-                       "(no branch, no permission prompts) that reviews every "
-                       "open pull request for security issues, bugs and code "
-                       "that does not fit, merges the safe ones into their base "
-                       "cleanly, then deletes the merged pull requests and "
+        QStringLiteral("Draft a prompt in the composer, with no branch, for an AI "
+                       "agent that reviews every open pull request for security "
+                       "issues, bugs and code that does not fit and merges the "
+                       "safe ones into their base cleanly. When that agent "
+                       "finishes, ForkMesh deletes the merged pull requests and "
                        "their branches"));
     m_pullMergeAllAiButton->setObjectName(QStringLiteral("pullMergeAllAiButton"));
     connect(m_pullMergeAllAiButton, &QPushButton::clicked, this,

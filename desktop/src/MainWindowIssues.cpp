@@ -6738,14 +6738,16 @@ void MainWindow::quickAddIssue()
                 m_issueQuickAdd->clear();
             return;
         }
+        const bool directCheckout =
+            m_promptWorktreeCheck && !m_promptWorktreeCheck->isChecked();
         const int agentSessionId = startAdHocAgentForRepo(
             issuesRepoIndex(), prompt, provider, createPr, model, QString(),
             /*genie=*/false, /*switchToTab=*/false, QString(), QString(),
-            quickAddAgentBaseBranchForGitView(), /*priority=*/50,
-            /*directCheckout=*/m_promptWorktreeCheck &&
-                !m_promptWorktreeCheck->isChecked(),
+            quickAddAgentBaseBranchForGitView(), /*priority=*/50, directCheckout,
             QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
         if (agentSessionId > 0) {
+            adoptPullMergeAllDraft(agentSessionId, issuesRepoIndex(), prompt,
+                                   directCheckout);
             m_issueQuickAdd->clear();
             clearQuickAddImages();
             // Working straight in the checkout is a one-prompt choice: re-tick

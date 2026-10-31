@@ -6729,10 +6729,23 @@ private:
     void startPullMergeAll(const QString &owner, const QString &name,
                            const QList<PullRequest> &open, bool switchToTab,
                            std::function<void(const forkmesh::pullmergeall::Launch &)> done);
+    void preparePullMergeAll(
+        const QString &owner, const QString &name, const QList<PullRequest> &open,
+        std::function<void(const QList<forkmesh::pullmergeall::Target> &,
+                           const QStringList &)> ready);
     forkmesh::pullmergeall::Launch launchPullMergeAllAgent(
         const QString &owner, const QString &name,
         const QList<forkmesh::pullmergeall::Target> &targets,
         const QStringList &skipped, bool switchToTab);
+    void recordPullMergeAllRun(int sessionId, const QString &owner, const QString &name,
+                               const QList<forkmesh::pullmergeall::Target> &targets,
+                               const QStringList &skipped);
+    void draftPullMergeAllPrompt(int repoIndex,
+                                 const QList<forkmesh::pullmergeall::Target> &targets,
+                                 const QStringList &skipped);
+    void adoptPullMergeAllDraft(int sessionId, int repoIndex, const QString &prompt,
+                                bool directCheckout);
+    void flyToComposer(QWidget *from);
     void handleLocalControlPullsRequest(int connectionId, int requestId,
                                         const QString &method, const QJsonObject &params);
     void answerLocalControlPullsRequest(int connectionId, int requestId,
@@ -13702,6 +13715,7 @@ private:
     QHash<int, forkmesh::pullmergeall::Run> m_pullMergeAllRuns;
     bool m_pullMergeAllRunsLoaded = false;
     bool m_pullMergeAllPreparing = false;
+    forkmesh::pullmergeall::Draft m_pullMergeAllDraft;
     QSet<int> m_pullMergeAllCleaning;
     QWidget *m_pullDetail = nullptr;
     QLabel *m_pullTitle = nullptr;

@@ -1178,14 +1178,17 @@ QWidget *MainWindow::buildHomeGridSection()
                         prompt += QLatin1Char('\n');
                     prompt += promptAttachmentLine(attachment);
                 }
+                const bool directCheckout =
+                    m_promptWorktreeCheck && !m_promptWorktreeCheck->isChecked();
                 const int id = startAdHocAgentForRepo(
                     issuesRepoIndex(), prompt, provider,
                     m_quickAddCreatePr && m_quickAddCreatePr->isChecked(), model,
                     QString(), false, false, QString(), QString(),
-                    hero->branchChoice, 50,
-                    m_promptWorktreeCheck && !m_promptWorktreeCheck->isChecked(),
+                    hero->branchChoice, 50, directCheckout,
                     QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
                 if (id > 0) {
+                    adoptPullMergeAllDraft(id, issuesRepoIndex(), prompt,
+                                           directCheckout);
                     recordQuickAddHistory(text);
                     m_issueQuickAdd->clear();
                     clearQuickAddImages();

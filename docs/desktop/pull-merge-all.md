@@ -13,28 +13,44 @@ Part of [the desktop docs](README.md). Code: `desktop/src/PullMergeAll.*`
 where this node has a working checkout.
 
 1. It takes every open pull request in the list, oldest first, up to 200.
-2. After the operator confirms, a worker finds the local branch for each one.
-   This is the same lookup **Fix** uses (`localPullAgentBranch`). A pull request
-   that arrived as a signed patch gets its `pr/<n>` branch built from the patch
-   first (`PullStore::ensurePullHeadRef`). Pull requests still without a
-   branch are then looked up in the cloud ([Pulling branches from the
+2. A worker finds the local branch for each one. This is the same lookup
+   **Fix** uses (`localPullAgentBranch`). A pull request that arrived as a
+   signed patch gets its `pr/<n>` branch built from the patch first
+   (`PullStore::ensurePullHeadRef`). Pull requests still without a branch are
+   then looked up in the cloud ([Pulling branches from the
    cloud](#pulling-branches-from-the-cloud)). A pull request is left out, with
-   a reason in the notice and the agent log, when its code is on neither this
-   node nor the cloud, its branch or base name fails `safeRefName`, or its
-   base is not a local branch.
-3. One agent starts through `startAdHocAgentForRepo` with
-   `directCheckout = true` and mode `Auto`. It runs in the repository's own
-   checkout with no agent branch, no worktree and no permission prompts, so its
-   merges land on the real base branch. Only Claude Code and Codex can run
-   without a worktree. If the default provider is anything else, the run uses
-   Claude Code.
-4. The agent reviews each pull request for security issues, bugs and code that
+   a reason in the notice, when its code is on neither this node nor the
+   cloud, its branch or base name fails `safeRefName`, or its base is not a
+   local branch.
+3. The button does not start the agent itself
+   (`draftPullMergeAllPrompt`). It writes the prompt into the composer,
+   points the composer at the repository, turns off the composer's
+   **Own branch and worktree** toggle, and picks Claude Code when the
+   composer is on a provider that cannot run without a worktree (only Claude
+   Code and Codex can). A copy of the button flies from the toolbar into the
+   composer (`flyToComposer`) so the operator sees where the prompt went. If
+   the composer is detached into its own window, the flight is skipped.
+4. The operator reviews the prompt, the agent mode and the model, and sends
+   it. The agent runs in the repository's own checkout with no agent branch
+   and no worktree, so its merges land on the real base branch.
+5. When the sent prompt still starts with the drafted heading, the repository
+   matches and the branch toggle was off (`pullmergeall::draftMatches`),
+   `adoptPullMergeAllDraft` saves the run for that session, as the old direct
+   launch did. A prompt sent with its own branch, or an unrelated prompt,
+   is just an ordinary agent.
+6. The agent reviews each pull request for security issues, bugs and code that
    breaks the repository's rules, fixes what it can in follow-up commits, merges
    with `git merge --no-ff`, and builds and tests before moving on. It skips a
    pull request that is malicious or cannot be fixed without changing what it
    is for.
-5. When the run finishes successfully, `notifyAgentDone` calls
+7. When the run finishes successfully, `notifyAgentDone` calls
    `finishPullMergeAllRun`, and ForkMesh cleans up (next section).
+
+Until 2026-10-31 the button asked for confirmation and started the agent at
+once in mode `Auto`, which left no chance to read or change the prompt. The
+phones still start it directly ([From a phone](#from-a-phone)), through
+`startPullMergeAll`, which shares the preparation step
+(`preparePullMergeAll`) with the button.
 
 ## Pulling branches from the cloud
 
