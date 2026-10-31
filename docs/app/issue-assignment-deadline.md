@@ -1,6 +1,7 @@
 # Assignment deadline on issues
 
-A repository can give assignees a time limit. When it does, each assignee in
+Part of [the App docs](README.md). A repository can give assignees a time
+limit. When it does, each assignee in
 an open issue's sidebar gets a small progress bar under their name: the time
 since they were assigned against the limit, with the time left as text
 ("18 h left", "45 min left", "3 d left", "overdue by 2 h").

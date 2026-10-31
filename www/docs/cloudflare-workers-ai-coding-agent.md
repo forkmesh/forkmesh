@@ -2,7 +2,8 @@
 
 `tools/forkmesh_coding_agent.py` is a standard-library coding agent with
 pluggable model providers: Cloudflare Workers AI, Ollama, or any
-OpenAI-compatible local server. The desktop embeds it.
+OpenAI-compatible local server. The desktop embeds it; how agents fit into
+ForkMesh is on [Working with coding agents](coding-agents.md).
 
 ## Architecture
 

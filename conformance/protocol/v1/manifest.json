@@ -6,7 +6,7 @@
   "documents": [
     {
       "path": "www/docs/protocol/README.md",
-      "sha256": "ba5eb19376fd18b1d28b2800fb7d66d61e569b65fdfe9e24d289e882222b073e"
+      "sha256": "950fd6c5392c54b99bfa48e0a63c5c49a5e5cadecd6d319c9a77978db6cdac4c"
     },
     {
       "path": "www/docs/protocol/encoding-and-identifiers.md",
@@ -26,7 +26,7 @@
     },
     {
       "path": "www/docs/protocol/threat-model.md",
-      "sha256": "4e316ca0b1f2de5ffc10a65d03970e9d0659301fc6794a7488aabad220b95102"
+      "sha256": "a073e74d1a27fccfe8414c30e004be3329d7e602a285e9d0bb7084997e9a5925"
     },
     {
       "path": "www/docs/design/conflict-safe-collaboration.md",

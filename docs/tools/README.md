@@ -7,7 +7,9 @@ standard-library Python run from the repository root with
 `python3 tools/<name>.py --help`. App-specific tools live next to their app
 (`app/tools/`, `world/tools/`, `marketplace/tools/`, `desktop/scripts/`,
 `native/ios/tools/`). Fleet tools run on the operator machine; those that
-change something are dry runs unless given `--execute`.
+change something are dry runs unless given `--execute`. Home:
+[docs/README.md](../README.md); what the fleet looks like:
+[architecture](../../www/docs/architecture.md).
 
 ## Code map
 
@@ -36,7 +38,7 @@ change something are dry runs unless given `--execute`.
 | `free_disk_space.py` | Deletes agent scratch, build and test debris nothing uses; run step by step on the desktop by the **Free disk space** workflow in Workflows ([free-disk-space.md](free-disk-space.md)) |
 | `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
 | `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
-| `cutover_*.py`, `rehost.py` | Hostname and cutover tooling ([CUTOVER.md](../CUTOVER.md)) |
+| `cutover_*.py`, `rehost.py` | Hostname rewrite, DNS, TLS, identity and data move tooling kept from the move to the self-hosted cores ([CUTOVER.md](../CUTOVER.md)) |
 
 **Forum reach** ([../app/forum-reach.md](../app/forum-reach.md)):
 `forum_static_export.py` writes a static, read-only, JavaScript-free copy of
@@ -139,13 +141,9 @@ is [OPERATIONS.md](../OPERATIONS.md).
   paths, so application data never lands where `git add -A` reaches it.
 - `forkmesh_layout.py apply` refuses to run while the desktop, its services,
   Actions runs or git operations are live.
-- There is no CI quarantine. `KNOWN_MAIN_FAILURES` in `app/tests/conftest.py`
-  and `world/tests/conftest.py` marked listed tests `xfail` only when
-  `FORKMESH_CI_KNOWN_FAILURES=1`, which nothing set. On 15 Oct 2026 its 53
-  ids were 8 tests that no longer existed, 43 that passed and 2 that were
-  fixed instead, so the lists and the hook were removed.
-  `test_ci_has_no_failure_quarantine` keeps them out: a failing test is fixed
-  or deleted, not listed.
+- There is no CI quarantine: a failing test is fixed or deleted, not listed
+  as a known failure. An old `xfail` list rotted unnoticed (most entries passed
+  or no longer existed); `test_ci_has_no_failure_quarantine` keeps it out.
 - `deploy/`, `app/host/`, `tools/next_*` and `tools/cutover_*` keep the
   fleet's own zone names for the core nodes, so `rehost.py --check` reports
   hosts to rewrite.

@@ -1,23 +1,23 @@
 # Mirror quota
 
-All of it is the `mirror-quota` instance plugin (an `OPT_IN` plugin: off on
-instances until an admin turns it on under Plugins, and off on forkmesh.com
-unless `FORKMESH_CORE_PLUGINS` names it). While it is off there is no card,
-no `/<owner>/<repo>/mirror` page, no call for mirrors on the feeds, lite
-pages or issue list, and `/api/repo/<o>/<r>/mirror-quota` answers 404.
+Part of the [App docs](README.md). A repository can set a goal of healthy
+copies kept elsewhere ("we want 10 healthy mirrors") and list the copies
+people run. A "Mirrors" card at the bottom of the About rail shows the count,
+each copy's health and how to add one.
 
-Part of [the App docs](README.md). A repository can set a goal of healthy
-copies kept elsewhere ("we want 10 healthy mirrors running") and list the
-copies people run. The repository page shows the count, each copy's health
-and how to add one, in a "Mirrors" card at the bottom of the About rail.
+It is the `mirror-quota` instance plugin, `OPT_IN`: off on an instance until
+an admin turns it on under Plugins, and off on forkmesh.com unless
+`FORKMESH_CORE_PLUGINS` names it. While it is off there is no card, no
+`/<owner>/<repo>/mirror` page, no call for mirrors on the feeds, lite pages or
+issue list, the cron phase does nothing, and `/api/repo/<o>/<r>/mirror-quota`
+answers 404 (`plugin_on`, from `instance_features.enabled_ids`).
 
-The feature was asked for by the example instance
-(`forum.example.org`), which mirrors the GitHub forum
-`github.com/example/forum` into `example/forum` with
-[forge sync](../../www/docs/forge-sync.md) and runs a "let's build 10
-mirrors" campaign so the forum survives censorship or a takedown of either
-site. Because the issues are committed under `.forkmesh/issues`, a plain
-`git clone --mirror` carries the whole forum.
+The example instance `forum.example.org` mirrors `github.com/example/forum`
+into `example/forum` with [forge sync](../../www/docs/forge-sync.md) and asks
+for 10 mirrors so the forum survives a takedown of either site. The issues are
+committed under `.forkmesh/issues`, so a plain `git clone --mirror` carries
+the whole forum. Why independent copies matter:
+[censorship resilience](../../www/docs/censorship-resilience.md).
 
 Code: `app/src/mirror_quota.py` (API, health rules, cron job),
 `app/public/dashboard/js/09-mirror-quota.js` (card and dialog),
@@ -27,12 +27,14 @@ view). Tests: `app/tests/test_mirror_quota.py`,
 
 ## What is counted
 
-These are not the ForkMesh mirror fleet. The Mirrors tab and the "Direct
+These are not the ForkMesh mirror fleet
+([mirroring](../../www/docs/mirroring.md)). The Mirrors tab and the "Direct
 access" list (`GET /api/repo/<o>/<r>/mirrors`) are ForkMesh nodes that serve
 the repository with signed proofs and are routed to; on an instance they are
-hidden because one node serves everything ([../INSTANCES.md](../INSTANCES.md#dashboard-on-an-instance)).
-The quota counts plain git copies anywhere, which the instance never routes
-to: it only checks that they answer and are current.
+hidden because one node serves everything
+([INSTANCES.md](../INSTANCES.md#dashboard-on-an-instance)). The quota counts
+plain git copies anywhere, which the instance never routes to: it only checks
+that they answer and are current.
 
 The card's rows:
 
@@ -70,7 +72,7 @@ Migration `0283_repo_mirror_quota.sql`:
 
 Both tables are in `_REPO_SCOPED_TABLES` (purged with the repository) and in
 `tools/next_rekey.py` (`BI_COLUMNS`, `CIPHER_COLUMNS`); see
-[../REKEY.md](../REKEY.md).
+[REKEY.md](../REKEY.md).
 
 ## API
 
@@ -126,25 +128,19 @@ Cron phase `mirror-quota` runs at minute 3 of every five
 2. Up to 6 due `repo_mirror_registry` rows, oldest first, each checked and
    then due again in 15 minutes plus up to 3 minutes of jitter.
 
-The run stops starting checks after 15 seconds: the cron tick has a 35-second
-budget (`CRON_DISPATCH_TIMEOUT_MS`) shared with the other phases, so each
-check gets 10 seconds rather than the 20 a standalone checker would allow.
-At six checks every five minutes, 18 mirrors keep a 15-minute cadence; more
-are checked less often, oldest first. A new mirror is first due within the
-3-minute jitter, not at once, so a mirror deleted and added again never
-jumps ahead of the ones already waiting, and one account lists at most 3
-mirrors of a repository (`MAX_MIRRORS_PER_ACCOUNT`, added 2026-10-24 after a
-review showed that a few re-added mirrors could take every check slot).
+The run stops starting checks after 15 seconds and each check gets 10: the
+cron tick's 35-second budget (`CRON_DISPATCH_TIMEOUT_MS`) is shared with the
+other phases. At six checks every five minutes, 18 mirrors keep a 15-minute
+cadence; more are checked less often, oldest first. A new mirror is first due
+within the 3-minute jitter, so deleting and re-adding a mirror never jumps the
+queue, and one account lists at most 3 mirrors of a repository
+(`MAX_MIRRORS_PER_ACCOUNT`) so a few accounts cannot take every check slot.
 "Healthy" means only that the mirror advertises the current head commit; a
 server that replays the ref listing without the objects behind it passes.
 
 The body of a check has its own deadline (`BODY_TIMEOUT_SECONDS`, 10 s from
-the first read, checked on every chunk): the fetch timeout covers only the
-headers, and a mirror that sent one byte at a time used to hold the whole
-cron tick. The API and the cron phase both answer as if absent while the
-`mirror-quota` plugin is off (`plugin_on`, from
-`instance_features.enabled_ids`), on forkmesh.com too unless
-`FORKMESH_CORE_PLUGINS` names it.
+the first read, checked on every chunk), because the fetch timeout covers only
+the headers and a mirror sending one byte at a time would hold the cron tick.
 
 **One check** is `git ls-remote` without git: `GET <url>/info/refs?service=git-upload-pack`
 through the App's `fetch`, so the host's egress guard applies (public

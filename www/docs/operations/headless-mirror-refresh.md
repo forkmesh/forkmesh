@@ -3,7 +3,9 @@
 `tools/headless_mirror_refresh.py` is the fail-closed bridge between an
 SSH-writable bare Git repository and `mirror_gateway.py`. It never loads a node
 private key, age identity, API token or wallet key: all signing and encryption
-go through the bounded protocol of `headless_mirror_identity.py`.
+go through the bounded protocol of
+[`headless_mirror_identity.py`](headless-mirror-identity.md). Background:
+[mirroring](../mirroring.md), [self-hosting](../self-hosting.md).
 
 ## Modes
 
@@ -21,7 +23,8 @@ catalog never advertises refs the running gateway does not serve. A failed
 
 ## Configuration
 
-The contract is `www/docs/headless-mirror-refresh.schema.json`
+The contract is
+[`headless-mirror-refresh.schema.json`](../headless-mirror-refresh.schema.json)
 (`type: forkmesh.headless-mirror-refresh`). The runtime also rejects duplicate,
 unknown and secret-shaped fields, oversized JSON, unsafe modes, wrong owners and
 symlinks. Key fields:

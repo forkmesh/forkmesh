@@ -1,16 +1,15 @@
 # Folder About boxes
 
 A repository page shows an **About** box on the right: description, website
-and links. Any folder in a repository can have its own About box too. This is
-useful for monorepos that keep one project per folder: opening the folder on
-the web shows that project's name, logo, description, website, links and
-topics instead of an empty right-hand side.
+and links. Any folder can have its own About box too, so a monorepo with one
+project per folder shows each project's name, logo, description, website,
+links and topics when you open its folder.
+Other repository features are listed in the [docs index](README.md).
 
 ## Add an About box to a folder
 
-Commit a file named `.forkmesh/info.json` inside the folder. It is the same
-file name the repository uses for its own About (`.forkmesh/info.json` at the
-top of the repository), so one convention covers both.
+Commit `.forkmesh/info.json` inside the folder: the same file the repository
+uses for its own About at its root.
 
 ```
 bolt-c/
@@ -110,8 +109,7 @@ initials when there is no picture), and a "+N" link to the file.
 
 ## What stays the same
 
-Folders without an About file (and not in a project table) look exactly as
-before. The repository's own About box on the main page is unchanged; inside a
-folder that has an About, the folder's box takes the right-hand column.
-Private repositories show folder About boxes and logos only to people who can
-read the repository.
+Folders without an About file (and not in a project table) are unchanged.
+Inside a folder that has an About, the folder's box takes the right-hand
+column. Private repositories show folder About boxes and logos only to people
+who can read the repository.

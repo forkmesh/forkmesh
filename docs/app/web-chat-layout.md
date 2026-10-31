@@ -1,39 +1,29 @@
 # Web chat layout
 
 The website has one chat page, `/chat` (`app/public/chat.html`,
-`app/public/chat.js`, `app/public/chat.css`). Home page: [README.md](README.md).
-Related: [web-composer.md](web-composer.md),
-[chat-private-rooms.md](chat-private-rooms.md).
-
-## One chat page (2026-10-23)
-
-There used to be two: `/chat`, the full client (World `#general`, the
+`app/public/chat.js`, `app/public/chat.css`): World `#general`, the
 `#general`/`#random`/`#welcome` channels, private channels, direct messages,
-calls, threads, channel settings), and `/dashboard/chat`, a dashboard page that
-showed only the public World room and linked to `/chat` for everything else.
-They are now one page at `/chat`:
+calls, threads and channel settings. Part of [the App docs](README.md).
+Related: [web-composer.md](web-composer.md),
+[chat-private-rooms.md](chat-private-rooms.md),
+[chat-member-stats.md](chat-member-stats.md) (the activity line under each
+person).
+
+## The retired `/dashboard/chat`
 
 - `/dashboard/chat` and `/dashboard/chat/` 308 to `/chat`, keeping the query
-  (`LEGACY_PAGE_PATHS` in `app/src/static_routes.py`), and the legacy
-  `/dashboard?section=chat` goes there too. Both are permanent redirects, so
-  the entries stay.
-- The dashboard sidebar's Chat link, the dashboard's `?section=` shim and
-  World's page switcher and "open full chat" button open `/chat`. World's
-  `#general` board still opens World's own chat panel, as does an old
-  `/dashboard/chat` link inside World.
-- The dashboard page is gone from `dashboard_shell.PAGES` (with its view
-  partial, its built document and its `chatscript` shell token), so
-  `/dashboard/chat` is no longer excluded from `run_worker_first` and
-  reaches the Worker for the redirect. The global composer's chat-page pill
-  lift (`dashboard-composer.js`) and the ad slot's chat exception went with it.
-- From the dashboard page, `/chat` takes the member activity line under each
-  person in the people pane ([chat-member-stats.md](chat-member-stats.md)).
-- The rest of the dashboard page was World chat in a dashboard frame, and
-  World keeps it: `app/public/dashboard-chat.js` is still the World chat client
+  (`LEGACY_PAGE_PATHS` in `app/src/static_routes.py`), as does
+  `/dashboard?section=chat`. They are permanent redirects, so the entries stay.
+- The dashboard sidebar's Chat link, the `?section=` shim and World's page
+  switcher and "open full chat" button open `/chat`. World's `#general` board,
+  and an old `/dashboard/chat` link inside World, open World's own chat panel.
+- The page is not in `dashboard_shell.PAGES`, so `/dashboard/chat` is not
+  excluded from `run_worker_first` and reaches the app for the redirect.
+- `app/public/dashboard-chat.js` is still the World chat client
   (`world/public/world/world.js` loads it), with the `#world-*` space
   channels, avatar emotes, the task and issue composer actions and
-  organization Discord channels. Its rail, member list and day grouping only
-  ran on the dashboard page and do nothing without that markup.
+  organization Discord channels. Its rail, member list and day grouping
+  do nothing without the old dashboard markup.
 
 ## Layout
 
@@ -77,20 +67,16 @@ World thread dialog's title rule matches `.fm-dialog-title` as well as the old
 
 The "Type below to join" blankslate and the rail's "Type to join" line carry
 `data-chat-empty`, and `clearEmptyState()` looks for that child before each
-new row. It used to read the whole `textContent` of both logs for every
-message, a cost that grows with the history. A World profile on 2026-10-22
-showed the Discord refresh's append slices (`finish @ dashboard-chat.js`)
-taking 4.3 s of main thread over 42 slices, up to 1.3 s each, although each
-slice is meant to stop after 6 ms; that whole-log read was the only
-per-message step that grows with the log.
+new row. Never read the logs' whole `textContent` per message: its cost grows
+with the history, and it once made Discord refresh append slices (meant to
+stop after 6 ms) take up to 1.3 s each.
 
-## Links and the World embed (2026-10-24)
+## Links and the World embed
 
-`/chat#room=<channel id>` and the new `/chat#direct=<conversation id>` open
-that conversation. The room link used to be read before the channel list had
-loaded, so a fresh page cleared the hash and stayed on #general; it now loads
-the channel or direct-message list first when the conversation is not known
-yet.
+`/chat#room=<channel id>` and `/chat#direct=<conversation id>` open that
+conversation. When the conversation is not known yet the page loads the
+channel or direct-message list first, so a fresh page does not drop the hash
+and fall back to #general.
 
 `/chat?embed=world` is the World's conversation pane: the same page without
 the site header, the room list and the people column, set on `<html>` before

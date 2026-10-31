@@ -1,7 +1,7 @@
 # Permission prompts on the phone
 
-A fresh install of the iOS app shows no system permission prompt at launch or
-at sign-in. Each permission is asked the first time a feature needs it, and a
+Part of [the native docs](README.md). A fresh install of the iOS app shows no
+system permission prompt at launch or at sign-in. Each permission is asked the first time a feature needs it, and a
 short screen says up front what may come up and why.
 
 ## The intro screen
@@ -17,9 +17,9 @@ the starter pack; Skip and "skip and start" finish onboarding with the default
 pack. Finishing sets the intro to seen.
 
 The text lives in `PermissionPacing` (FMAccount) so a core test keeps it to
-five short rows. Installs that predate this change never see the screen:
-`PermissionPacing.settle` marks them `seen` on their first launch with this
-build (`native/ios/docs/FMAccount.md`).
+five short rows. Installs that predate the screen never see it:
+`PermissionPacing.settle` marks them `seen` on their first launch with it
+([FMAccount.md](../../native/ios/docs/FMAccount.md)).
 
 ## When each permission is asked
 
@@ -32,21 +32,21 @@ build (`native/ios/docs/FMAccount.md`).
 | Photos | attaching or saving a picture | each feature |
 | Health, motion | turning on Pedometer, Water Intake, Sleep or another Health tool | `HealthFeature` |
 
-Before this change the app asked for notifications at sign-in and started the
-`#mesh` room at launch, which brought up the Local Network prompt before the
-user had seen anything. Calls still ring while notifications are not asked
-yet: `start` registers for calls only (`native/ios/docs/FMApi.md`).
+Starting `#mesh` at launch would raise the Local Network prompt before the
+user has seen anything, so it waits. Calls ring while notifications are not
+asked yet: `start` registers for calls only
+([FMApi.md](../../native/ios/docs/FMApi.md)).
 
 Once `#mesh` has been opened, `permissions/nearby-opened` is stored and the
-mesh starts at launch as before, so nearby messages keep arriving.
+mesh starts at launch, so nearby messages keep arriving.
 
 ## Android
 
 Android shows the same page (`PermissionsIntroPage`,
 `native/android/app/.../feature/account/`), with its text in `PermissionPacing`
 (`core/.../account`) and the same `permissions/intro` and
-`permissions/nearby-opened` keys. Installs that predate the change skip it and
-keep the mesh starting at launch.
+`permissions/nearby-opened` keys. Older installs skip it and keep the mesh
+starting at launch.
 
 | Permission | Asked when | Code |
 | --- | --- | --- |
@@ -57,6 +57,4 @@ keep the mesh starting at launch.
 | Photos | the system photo picker, which needs no permission | `PhotoPicker` |
 | Physical activity | turning on Pedometer or Sleep | `StepsScreen`, `SleepScreen` |
 
-Before this change Android asked for notifications as soon as a session
-existed and started `#mesh` at launch, so the nearby devices prompt came up
-before the user had seen anything. See [ANDROID.md](ANDROID.md), section 27.
+See [ANDROID.md](ANDROID.md), section 27.

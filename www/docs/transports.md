@@ -6,6 +6,9 @@ tool plans a route for a URL, runs Git over the first permitted route that
 answers (never falling back to a forbidden one), traces the Git process for
 leaks in private postures, probes routes, and chooses which local addresses may
 be advertised.
+The adversaries these postures answer are in the
+[threat model](protocol/threat-model.md); see also
+[Censorship resilience](censorship-resilience.md).
 
 Formats: profile `forkmesh-transport-profile-v1`, plan
 `forkmesh-transport-plan-v1`, health report `forkmesh-transport-health-v1`,

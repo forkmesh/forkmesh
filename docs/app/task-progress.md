@@ -1,6 +1,6 @@
 # Organization task progress
 
-Every organization task carries `progress` (0 to 100), a plain column
+Part of [the App docs](README.md). Every organization task carries `progress` (0 to 100), a plain column
 `organization_tasks.progress` so updates do not re-seal the task body. A done
 task reports `100`; the stored value returns on "Mark undone".
 

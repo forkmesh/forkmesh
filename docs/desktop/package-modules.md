@@ -5,8 +5,9 @@ Part of [the desktop docs](README.md). Code: `desktop/cmake/ForkMeshPackageModul
 
 Optional marketplace packages that only talk to the window through
 `NativePackageRegistration` are built as separate shared modules instead of
-being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
-`src/PackageModules.{h,cpp}`).
+being linked into `forkmesh`. The goal is a desktop that is an empty shell
+plus plugins ([shell.md](shell.md)); the marketplace side is in
+[../marketplace/plugins.md](../marketplace/plugins.md).
 
 - **Build.** Every plugin listed for the build ([plugins.md](../marketplace/plugins.md))
   that has `content/desktop/build.json` and is not `coreLinked` becomes
@@ -14,16 +15,16 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
   `package`, `file`, `entrypoints`) when `FORKMESH_PACKAGE_MODULES` is on
   (default on for Linux, off elsewhere, where listed plugins are linked into
   the app). The list comes from the generator
-  (`FORKMESH_PLUGIN_MODULE_CANDIDATES`); there is no hand-kept list any more.
+  (`FORKMESH_PLUGIN_MODULE_CANDIDATES`); there is no hand-kept list.
   The module also carries the plugin's own files (`plugins/<id>.qrc`); the
   core keeps only its listing files. Configure removes module files the
   configuration no longer builds. Modules link Qt Multimedia, OpenGL, WebP
-  and (since 2026-10-25, for the Video Mix DJ Studio's YouTube decks) Qt
-  WebEngine when the build has them. The linker records only the libraries a
-  module uses, so most modules need nothing the app has not loaded. Qt
-  WebEngine is the exception since 2026-10-28: the app no longer links it on
-  Linux ([browser](browser.md#the-engine-is-a-module)), so Face Changer and
-  the Video Mix DJ Studio map it when they load, like the `web-engine` module
+  and Qt WebEngine (for the Video Mix DJ Studio's YouTube decks) when the
+  build has them. The linker records only the libraries a module uses, so most
+  modules need nothing the app has not loaded. Qt WebEngine is the exception:
+  the app does not link it on Linux
+  ([browser](browser.md#the-engine-is-a-module)), so Face Changer and the
+  Video Mix DJ Studio map it when they load, like the `web-engine` module
   does. Modules resolve the app's symbols through
   the `-rdynamic` export the stall watchdog already needs, so the app binary
   does not grow. Installed-by-default plugins (agent-watch, analytics, docs)
@@ -32,12 +33,8 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
 - **Include folders.** A plugin's sources see `desktop/src` and their own
   `content/desktop` folder only (a source property from the generator's
   `FORKMESH_PACKAGE_<ID>_INCLUDE_DIRS`); the app target sees `desktop/src` and
-  the core-linked plugins' folders. Until 2026-10-23 the app and every module
-  got all 42 plugin folders on their command lines, so adding or removing any
-  plugin (about once a day that month) changed every compile command and
-  rebuilt the whole app and every plugin, modules on or off. Now it changes
-  none: the configure comparison in [Measurements](#measurements) shows it.
-  No plugin includes another plugin's headers, and the core includes only the
+  the core-linked plugins' folders, so adding or removing a plugin changes no
+  other compile command (see [Measurements](#measurements)). No plugin includes another plugin's headers, and the core includes only the
   core-linked ones; a plugin that needs another's header has to say so here.
 - **Loading.** At start the app reads only the sidecars (from `packages/` beside
   the binary, `../lib/forkmesh/packages`, the install prefix's
@@ -55,8 +52,9 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
   user-installed marketplace content. A module file or its folder that another
   user (or a group other than the user's own) can write is refused.
 - **Install.** `install.sh` copies the modules to `~/.local/lib/forkmesh/packages`
-  and removes ones the build no longer produces; Rebuild & restart and auto-update do the same beside the installed app (`modules::installBeside`); `cmake --install`
-  puts them in `<libdir>/forkmesh/packages`.
+  and removes ones the build no longer produces; Rebuild & restart and
+  auto-update do the same beside the installed app (`modules::installBeside`);
+  `cmake --install` puts them in `<libdir>/forkmesh/packages`.
 - **Test.** `ctest -R forkmesh-package-modules-resolve` checks that every
   module's undefined symbols are provided by the app or its own libraries, so a
   new window-to-package reference fails the build's tests instead of the user's
@@ -65,17 +63,15 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
 ## Plugins built apart from the window
 
 `MainWindow.h` and `MainWindowInternal.h` are the app's precompiled header and
-change many times a day (149 commits touched `MainWindow.h` in the week to
-2026-10-25). Every file that includes them recompiles on each change, so a
-plugin whose code was written as `MainWindow` methods was rebuilt by every
-`run.sh` even when nobody had touched it. A plugin's sources now include only
+change many times a day; every file that includes them recompiles on each
+change. So a plugin's sources include only
 `NativePackageExtension.h` and small, stable core headers (`OcticonIcons.h`,
 `Theme.h`, `DesignTokens.h`, ...), never `MainWindow.h` or
 `MainWindowInternal.h`, and reach the window only through `NativePackageHost`.
 Then a window change rebuilds none of them; a change to
 `NativePackageExtension.h` rebuilds every module, which is rare.
 
-What moved out of the window (2026-10-25):
+What moved out of the window:
 
 | Plugin | Was | Now |
 | --- | --- | --- |
@@ -84,7 +80,7 @@ What moved out of the window (2026-10-25):
 | Notes | `MainWindowNotes.cpp`, section 16 | `NotesPage` in `notes.so` |
 | Tasks | `MainWindowTasks.cpp` (about 8,000 lines), section 15 | `TasksPage` in `tasks.so`; the catalog stays in core as `OrganizationTaskStore` |
 
-The pages are ordinary native package pages now: they appear on the rail
+The pages are ordinary native package pages: they appear on the rail
 when the package is installed here, under their old rail keys (`notes`,
 `calendar`, `tasks`) so a saved rail order or folder still finds them, and
 their search hits come from the page. Section indexes 15, 16 and 19 stay
@@ -117,9 +113,7 @@ plugin API it includes change:
   generated headers. It fails when a plugin object depends on a window header,
   the per-commit headers, the app's precompiled header or its `forkmesh.dir` /
   `forkmesh_autogen` output, or another plugin's files, and when a core object
-  depends on a module plugin's files. On 2026-10-25, with Tasks moved out
-  too, it checked 180 plugin objects and 431 core objects with no problems.
-  Other generators print SKIP.
+  depends on a module plugin's files. Other generators print SKIP.
 
 Core-linked plugins (`coreLinked`) are part of the app and exempt until they
 move out.
@@ -188,9 +182,9 @@ A page holding a `QWebEngineView` (a `QQuickWidget` inside), a
 `QOpenGLWidget` or a `QRhiWidget` needs its top-level window composed by
 Qt's RHI. Qt 6 decides a window's surface type when it first creates the
 native window, so adding such a child to a window already on screen makes
-Qt destroy the native window and create it again: on Wayland the window
-vanished and came back about a second after every start, because package
-pages are built after the first paint (task 2683). A contribution that puts
+Qt destroy the native window and create it again (on Wayland the window
+vanishes and comes back, because package pages are built after the first
+paint). A contribution that puts
 one on its page while the page is built sets `gpuSurface` (Face Changer,
 Synapse, Video Mix DJ Studio). Before its first show the window calls
 `MainWindow::prepareStartupComposition()` (`MainWindowMarket.cpp`): when a
@@ -207,15 +201,14 @@ show.
 
 To check it, run the window in a sandbox `HOME` on Wayland with
 `WAYLAND_DEBUG=client`: count `xdg_surface#N.get_toplevel` lines whose
-surface gets a `wl_surface.attach`. Before the fix the main window
-("ForkMesh v<version>") had two, the second about a second after the first.
+surface gets a `wl_surface.attach`; the main window ("ForkMesh v<version>")
+should have one, not two.
 
 ## Measurements
 
-Taken 2026-10-15 on the 36-core Linux build box while other agents were
-building (load average 9–33). Debug builds with `-O0 -g0`, the same stage, run
-offscreen in a fresh sandboxed `HOME` (no packages installed), interleaved
-A/B: "compiled in" is `-DFORKMESH_PACKAGE_MODULES=OFF`, "modules" the default.
+Debug builds with `-O0 -g0`, run offscreen in a fresh sandboxed `HOME` (no
+packages installed) on a loaded build box, interleaved A/B: "compiled in" is
+`-DFORKMESH_PACKAGE_MODULES=OFF`, "modules" the default.
 
 | | Compiled in | Modules | Change |
 | --- | --- | --- | --- |
@@ -225,16 +218,7 @@ A/B: "compiled in" is `-DFORKMESH_PACKAGE_MODULES=OFF`, "modules" the default.
 | Window shown (`[startup +Nms]`), median of 12 | 608 ms | 632 ms | within noise at this load |
 | Editing a module package's source | recompiles the file, relinks the app (2.7 s link) | recompiles the file, relinks only its module | no app relink |
 
-Adding or removing a plugin, measured 2026-10-23 by configuring the same
-checkout with the default plugin list and with `crm` left out, then comparing
-the compile commands of every object both builds share (a changed command is a
-recompile under Ninja):
-
-| | App objects recompiled | Plugin objects recompiled |
-| --- | --- | --- |
-| Modules on, before | 411 of 411 | 139 of 139 |
-| Modules on, after | 0 of 411 | 0 of 139 |
-| Modules off (macOS, Windows), before | 492 of 492 | (in the app) |
-| Modules off, after | 0 of 492 | (in the app) |
-
-An earlier list that also modularised the three packages installed by default
+Adding or removing a plugin (configuring with and without `crm` and comparing
+the compile commands both builds share) recompiles no app or plugin object,
+modules on or off; with every plugin folder on every command line it
+recompiled all of them.

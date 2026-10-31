@@ -4,7 +4,9 @@ A launch kit, not yet published: a 60-second video script, a post thread and a
 $5 mirror bounty. The goal is to get repositories mirrored on ForkMesh
 **before** a GitHub outage, so cloning and shipping continue during one.
 Recording, posting, opening the bounty and paying claims are human actions.
-Success is measured by valid bounty claims, not views or reposts.
+Success is measured by valid bounty claims, not views or reposts. What keeps
+working when a provider is down is described in [mirroring](../mirroring.md) and
+[censorship resilience](../censorship-resilience.md).
 
 ## Claim boundaries
 

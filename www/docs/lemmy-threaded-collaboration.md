@@ -3,6 +3,8 @@
 ForkMesh accepts public ActivityPub replies (Lemmy or Mastodon `Create` of a
 `Note`, `Page` or `Article`) to public federated issues, pull requests and
 discussions, including replies to other verified remote replies.
+See also [Verified fediverse feedback review](fediverse-mention-review.md) and
+[Fediverse daily digests](fediverse-digests.md).
 
 ## Trust boundary
 

@@ -146,8 +146,8 @@ per the [headless mirror runbook](operations/headless-mirror-refresh.md).
 Diagnostic journals (default layout):
 
 ```text
-~/projects/forkmesh/logs/diagnostics/actions.jsonl   action lifecycle journal
-~/projects/forkmesh/logs/diagnostics/stalls.log      UI freezes longer than 500 ms
+~/projects/forkmesh/data/core/logs/diagnostics/actions.jsonl   action lifecycle journal
+~/projects/forkmesh/data/core/logs/diagnostics/stalls.log      UI freezes longer than 500 ms
 ```
 
 Each `actions.jsonl` record names `source`, `function`, `routine`, `cwd`,

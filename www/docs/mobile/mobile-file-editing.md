@@ -2,7 +2,8 @@
 
 From the repository browser in the iOS or Android app, a person can edit one
 text file and propose it as a pull request with no clone, no fork and no push
-access. Related: [mobile node contract](mobile-node-contract.md).
+access. Related: [mobile node contract](mobile-node-contract.md),
+[signatures](../encryption.md).
 
 ## Why no fork is needed
 

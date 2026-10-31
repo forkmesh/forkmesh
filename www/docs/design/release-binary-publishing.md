@@ -1,7 +1,9 @@
 # Release binary publishing
 
-Release binaries are never committed to git. A release is two
-things kept apart on purpose:
+Release binaries are never committed to git. A release is two things kept
+apart on purpose (how releases reach users is the
+[mirroring and distribution](../mirroring.md) pillar; signatures are covered in
+[encryption](../encryption.md)):
 
 - **Metadata**: small, signed text committed to the repository and synced
   across the mesh like issues and pull requests.
@@ -60,7 +62,7 @@ GET /api/repo/<owner>/<repo>/releases/blob/sha256/<sha256>?filename=<asset name>
 ```
 
 The route is matched in `app/src/urls.py`. The response is immutable and can
-be cached forever at the edge; the App forwards it to a node holding the blob.
+be cached forever; the App forwards the request to a node holding the blob.
 `filename` only sets the download name and never changes which bytes are
 returned. Installers ask the repository recorded in the manifest (`repo`),
 because only that node is guaranteed to hold the blob.
@@ -82,3 +84,4 @@ Nothing downloaded is executed to decide whether it is trustworthy.
   manifest, `SHASUMS256.txt` generation, semver ordering for `latest`, and the
   re-upload decision for an asset name.
 - `app/tests/test_releases.py`
+- [Release flow](../../../docs/release/README.md)

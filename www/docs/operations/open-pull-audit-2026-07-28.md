@@ -19,6 +19,6 @@ Each record gets one disposition:
 | Hold | The head is gone but the patch still applies: recreate a signed branch and review it before any merge. |
 | Close | The patch conflicts, is empty, is already in `main`, or is superseded. |
 
-The audit never edits signed pull metadata by hand: merged pulls close through
+The audit never edits signed pull metadata by hand ([pull rules](pull-rules.md)): merged pulls close through
 normal pull synchronization, and other closures go through the authenticated
 pull-request workflow.

@@ -6,7 +6,8 @@ deployed from. Each push to the default branch deploys automatically. You can
 also deploy, watch the log, approve and roll back from your phone.
 
 Your Cloudflare token stays on your own ForkMesh desktop. It never goes to
-GitHub, the ForkMesh relay or a shared runner.
+GitHub, the ForkMesh relay or a shared runner. More guides are in the
+[docs index](README.md).
 
 ## How it fits together
 
@@ -183,10 +184,10 @@ the token, account ID, Node.js or network is wrong. See
 ## Deploy from your phone
 
 Install the ForkMesh app for iPhone or Android and sign in to the same account
-as your desktop. The app finds your desktop by itself, with no pairing code:
-on the same Wi-Fi it connects directly, and away from home it goes through the
-end-to-end encrypted relay. Open the app once on the same network as your
-desktop; if the connection away from home is refused, open it on that network
+as your desktop. The app finds your desktop with no pairing code: on the same
+Wi-Fi it connects directly, and away from home it goes through the end-to-end
+encrypted relay ([Encryption](encryption.md)). Open the app once on the same
+network as your desktop; if the connection away from home is refused, do that
 again. See [Mobile access](mobile/mobile-agent-access.md).
 
 Open the repository, then **Actions**:

@@ -1,9 +1,10 @@
 # Third-party dependencies: what we keep and why
 
-A review on 2026-10-29 of every manifest and vendored library, looking for
-packages we could drop or replace with our own code. The runtime was already
-lean: the Go mirror node (`server/`) and the Worker app (`app/pyproject.toml`)
-use only their standard libraries, the iOS packages resolve nothing remote, and
+Every manifest and vendored library was reviewed (2026-10-29) for packages we
+could drop or replace with our own code. The Go mirror node (`server/`) and the
+app source (`app/pyproject.toml`) use only their standard libraries; the
+third-party packages the cores need are pinned in `app/host/requirements.txt`
+([docs/host/README.md](../host/README.md)); the iOS packages resolve nothing remote, and
 the desktop links Qt, OpenSSL and (optionally) libnghttp3 from the system.
 `marketplace/packages/docs/data/dependencies.json` is the full inventory
 (`marketplace/tools/docs_dependencies.py`).
@@ -22,7 +23,7 @@ the desktop links Qt, OpenSSL and (optionally) libnghttp3 from the system.
 |---|---|
 | `cryptography` | Ed25519, X25519, P-256, RSA, AES-GCM and HKDF in 28 source files (60 with tests); we do not write our own cryptography. |
 | `httpx`, `httpcore`, `h2` | The host's outbound HTTP with the egress guard (`egress.py`); `h2` because APNs only speaks HTTP/2. |
-| `uvicorn`, `uvloop`, `httptools`, `websockets` | The ASGI server, its event loop, its HTTP parser and the WebSocket protocol the Durable Object rooms and the mesh listener use. |
+| `uvicorn`, `uvloop`, `httptools`, `websockets` | The ASGI server, its event loop, its HTTP parser and the WebSocket protocol the rooms of the cores' Durable Object emulation (`durable.py`) and the mesh listener use. |
 | `orjson` | The `JSON.stringify`/`JSON.parse` shim in `forkmesh_host/js.py` runs on every request; it falls back to `json` when missing, so it is a speed choice, not a hard need. |
 | `Pillow` | PNG/WebP decode and encode for avatars and pull-request cards. |
 | `PyYAML` | Tests and release tools read `codemagic.yaml` and workflow files. |

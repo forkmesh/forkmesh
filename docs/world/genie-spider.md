@@ -6,7 +6,6 @@ phone lives in the 3D World too. It follows you around town and, every 4.5 to
 11 seconds, plays one of 100 acts with whatever is near: you, other people,
 Forkbot, the fountain, the campfire, bikes, cars, drones, the swings,
 repository portals, landmarks, boards, or anything else you could click.
-Added 2026-10-25.
 
 ## Where the code is
 
@@ -110,6 +109,6 @@ an explicit World "on" wins over it.
   across each act, at least two acts for every kind of thing, climbing to the
   top, dangling, all eight legs in every mode, the bag drawing all 100, the
   on/off rule, scene registration and the three draw calls.
-- 2026-10-25, headless Chromium (SwiftShader) against the production backend:
-  the spider stood by the campfire with its legs, eyes and turban drawn and
-  its speech bubbles over it while acts played.
+- Headless Chromium (SwiftShader) against the production backend: the spider
+  stood by the campfire with legs, eyes and turban drawn and speech bubbles
+  over it while acts played.

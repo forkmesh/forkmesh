@@ -1,6 +1,6 @@
 # Tasks pings
 
-Every change to an organization task files a Ping of kind
+Part of [the App docs](README.md). Every change to an organization task files a Ping of kind
 `organization_task_update` (label **Tasks**, on by default): an inbox row that
 wakes web and desktop clients over the account socket and pushes to phones via
 APNs. The change is also emailed ([task-email.md](task-email.md)); a delete

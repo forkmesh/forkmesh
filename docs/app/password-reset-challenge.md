@@ -2,19 +2,11 @@
 
 `/forgot-password` sends `POST /api/accounts/forgot-password`, which needs a
 Turnstile token (`app/src/turnstile.py`, action `password-reset`) or a backup
-proof. Before 2026-10-18 the page had none of the recovery the signup page
-gained ([signup-failure-pings.md](signup-failure-pings.md)), and reset did not
-work on phones:
-
-- A tap on "Send reset link" before the managed widget had answered (it takes
-  a second or two on a phone, longer when it shows the checkbox) was refused
-  with "Complete the security check above first" instead of waiting.
-- Any widget error, retryable or not, showed "could not load, reload the
-  page". Errors no reload fixes (`200100`, the phone's clock is wrong) and a
-  blocked `api.js` (content blockers, private DNS, Lockdown Mode) left the
-  visitor stuck.
-- A token held while the tab sat in the background, or a page restored from
-  the back/forward cache, was spent stale.
+proof. The page has the same recovery as signup
+([signup-failure-pings.md](signup-failure-pings.md)) because on phones the
+widget answers slowly, some errors no reload fixes (`200100`, a wrong clock),
+`api.js` can be blocked (content blockers, private DNS, Lockdown Mode), and a
+token held in a background tab goes stale. Part of the [App docs](README.md).
 
 ## Browser side
 
@@ -22,7 +14,7 @@ work on phones:
 
 - The site key and a backup page value come from
   `GET /api/accounts/forgot-password/challenge` (`siteKey`, `enabled`,
-  `cdata`); `/api/turnstile` stays for pages loaded before this change.
+  `cdata`); `/api/turnstile` stays for pages loaded from an older build.
 - On submit with no callback token the page reads `turnstile.getResponse`,
   then waits up to `CHALLENGE_WAIT_MS` (30 s) for the widget ("Finishing the
   security check above…") instead of refusing.

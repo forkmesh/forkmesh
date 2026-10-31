@@ -6,6 +6,11 @@ and the chat view models. `import FMChat` (deps FMBase, FMCrypto, FMNet, FMAccou
 FMLocalAI). Every service is a `@MainActor @Observable final class`; `addListener`/`removeListener`
 (FMAccount `Listeners`) for code outside SwiftUI; each has a `revision` bumped on every change.
 
+Part of the native docs ([home](../../../docs/native/README.md)); the cross-client wire formats are
+[chat protocol v3](../../../docs/app/chat-protocol-v3.md) and
+[v4](../../../docs/app/chat-protocol-v4.md), and the encryption model is
+[www/docs/encryption.md](../../../www/docs/encryption.md).
+
 ## Wiring: `ChatFeature.register()` (ForkMesh/Features/Chat/ChatFeature.swift)
 
 Called by AppServices after Account and Api. Reads SettingsService, AuthService, ApiService,
@@ -42,8 +47,7 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
   held and opened when it does.
 - `RelayService.groups`: one person row per account. Members key on `owner` (`ownerUser`); a
   member without one (a signed-in web `/chat` tab sends `sender` and `accountKind: "user"` but no
-  `ownerUser`) joins the account row whose owner equals its name, so the Online sheet shows
-  "jett (you)" once instead of "jett (you)" plus "jett".
+  `ownerUser`) joins the account row whose owner equals its name, so one person shows once.
 - `ChatPersona`: the name the device speaks as: the Display name or account when signed in,
   else `guestChatName(nodeKey)` ("Guest ####"). `stamp(&frame)` adds `accountKind` and
   `ownerUser` to every frame and mesh beacon.
@@ -92,7 +96,7 @@ the answer; EHOSTUNREACH means Local Network access is off.
   a fresh install shows no Local Network prompt at launch: `start`, `resume` and `networkChanged`
   do nothing while it is set, and the first `roomOpened` clears it, calls `onFirstRoomOpen` and
   starts. The app sets it from `PermissionPacing.nearbyAllowed` and records the first open with
-  `PermissionPacing.markNearbyOpened` (`docs/native/PERMISSIONS.md`).
+  `PermissionPacing.markNearbyOpened` ([PERMISSIONS.md](../../../docs/native/PERMISSIONS.md)).
 - Constants: `meshConversation` ("#mesh"), `meshDiscoveryPort` (48732), `meshMulticastGroup`.
 - Chat protocol v3 links: each side sends a plaintext `fm-link-hello`, then a plaintext
   `fm-link-auth` (the dialer or Bluetooth central is the initiator); only after the peer's
@@ -195,9 +199,8 @@ snapshot (`historyParts()`); bounding (200 messages and 2 MB of text per channel
 filtering, encoding and the protected atomic write run on a serial utility queue
 (`ChatHistoryWriter`), which skips the write when the snapshot is unchanged. `#`, `@` and
 `direct:` rooms are written. Direct messages are saved because the relay deletes its copy as
-soon as the other person's device takes it; before 2026-10-15 only the replay of undelivered
-copies brought a DM back after a relaunch, so a sent message either vanished or came back at
-"Sent". `DirectMessageService.onChange` schedules the save; `restore(_:receipts:)` loads the
+soon as the other person's device takes it, so nothing else brings a DM back after a relaunch.
+`DirectMessageService.onChange` schedules the save; `restore(_:receipts:)` loads the
 messages when `hub.direct` is set (it is set after `attachHistory`). The file also keeps
 `receipts` (message id to `delivered` or `read`) for the kept messages, so a mark does not drop
 back to "Sent" after a relaunch. Signing out clears the service, and the next save drops the DMs.
@@ -258,16 +261,13 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   DM (`direct:<id>`) finds the person's roster group by the nodes of the devices the DM trusts,
   then by the account (`otherUser`, case-insensitive); a relay DM (`@<node>`) by that node's
   group. Any online node of theirs makes them Online (Away when their status says so). Typing, a
-  tap, shared phone direction or a mesh focus report in that DM also counts as Online. Until
-  2026-10-17 only relay DMs looked anyone up, so every server DM said "Offline" even with the
-  person chatting, and the list dot compared the owner to `otherUser` case-sensitively.
+  tap, shared phone direction or a mesh focus report in that DM also counts as Online.
 - **Shared look** (`Threads/ChatLook.swift`): background, group name and group photo travel as
   sealed `look` frames, last-writer-wins on `(ts, id)`; each change is shown as an event.
   Pictures are capped at 600 KB because a frame is base64-encoded three times and the room
   WebSocket refuses messages over 2 MiB.
 - **Share or override the background** (`MessagesBackgroundPicker`): a segmented choice,
-  "Share" or "Just for me". Sharing sends the `look`
-  frame as before and drops any own background, so the sender sees what they shared. "Just for
+  "Share" or "Just for me". Sharing sends the `look` frame and drops any own background, so the sender sees what they shared. "Just for
   me" sends nothing: `ChatHub.setOwnBackground` stores a preset, a picture or "None" in the
   conversation's `ChatLook` (`ownBackground`, saved in the history file as `ob`, `obp`, `obi`),
   and `conversationLook` returns `ChatLook.shown`, which puts it over the shared one. Shared
@@ -281,16 +281,14 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   retention and encryption summary; leave a relay private channel; delete history locally.
 - **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
   strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
-  in `docs/app/chat-private-rooms.md`). The phone samples motion at 100 Hz
-  (`DirectLiveMotionFeed.rate`, 60 Hz until 2026-10-18; a frame still holds under the
-  40-sample cap at the relay's pace) and, before the relay's `forkmesh-live` budget arrives or over
-  the mesh alone, paces at 120 ms (`DirectLiveFrames.fallbackIntervalMs`, under the relay's 150
-  frames per 10 s). The partner's phone icon redraws at 60 fps while they share. Until
-  2026-10-17 the fallback was 2.5 s and the feed 20 Hz, so the icon could move in jumps seconds
-  behind the real phone. While a direct conversation is visible, its motion feed
-  shares phone direction automatically and an impact sends a centred taptic tap. In a direct
-  conversation the header capsule shows the peer's phone (`MessagesLivePartnerPhone`) where the
-  round avatar used to be, 76 pt tall (twice the old avatar), hanging out of the capsule. It is
+  in [chat-private-rooms.md](../../../docs/app/chat-private-rooms.md)). The phone samples motion
+  at 100 Hz (`DirectLiveMotionFeed.rate`; a frame still holds under the 40-sample cap at the
+  relay's pace) and, before the relay's `forkmesh-live` budget arrives or over the mesh alone,
+  paces at 120 ms (`DirectLiveFrames.fallbackIntervalMs`, under the relay's 150 frames per 10 s),
+  so the partner's phone icon (redrawn at 60 fps) tracks the real phone without jumps. While a
+  direct conversation is visible, its motion feed shares phone direction automatically and an
+  impact sends a centred taptic tap. In a direct conversation the header capsule shows the
+  peer's phone (`MessagesLivePartnerPhone`), 76 pt tall, hanging out of the capsule. It is
   a 3D phone with their avatar on its screen, drawn from the full gravity pose
   (`DirectLivePhonePose` in FMChat): the outline is the projected silhouette of a phone with
   real thickness, and the screen is mapped onto its front with an affine transform, so a phone
@@ -299,13 +297,12 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   phone, and the strongest kick of the last 260 ms (`kickHoldMs`) is held and faded, so a
   one-sample bounce on a table still shows for several frames. The pink rim brightens with the
   kick; the phone is grey and upright while they are not sharing. The phone has no tap, long
-  press or menu, and it swallows touches so the capsule's glass does not bounce under it (the
-  Floating 3D Face menu and its idle bob were removed on 2026-10-18). When the peer is online
+  press or menu, and it swallows touches so the capsule's glass does not bounce under it. When the peer is online
   the line under the name drops the word "Online" for a blinking green light
   (`MessagesOnlineLight`, steady with Reduce Motion; `ChatHub.conversationStatusLine` and
   `conversationPeerOnline`); VoiceOver still reads "Online". A short tap anywhere on a direct conversation's transcript sends
   a tap at that spot (`transcriptTapped`); with the keyboard up the first tap only closes it. There
-  is no tap button any more, so VoiceOver gets a "Send a tap" action on the phone icon. The pencil
+  is no tap button, so VoiceOver gets a "Send a tap" action on the phone icon. The pencil
   in the header, beside the phone icon, opens the coloured drawing canvas, where a short tap also sends a tap and a drag
   draws; its toolbar sits at the top under the header, and the ink colour is a drop-down (the
   current swatch and a chevron open a 4 by 2 grid of colours, which closes on a pick or a touch on
@@ -353,7 +350,6 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 - **Channel list top** (`ChatChannelSidebar.recentSection`): "Recent" lists the five newest
   conversations of any kind (`ChatHub.recentConversations(limit:)`, by the last message or the
   DM's `updatedAt`) so one tap goes back to a chat. Its header carries a small "N online" pill.
-  The Channels, Unread and Online count tiles were removed on 2026-10-15.
 - **People**: the "N online" pill opens everyone online; a name opens the DM with that account, an
   avatar opens the person card (`ChatPersonSheet`: picture, presence, status, bio, local time,
   Message button, profile link). Local time uses the profile's time zone, else the time zone the
@@ -361,8 +357,8 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 
 ## Direct message delivery
 
-Rules shared by all clients are in `docs/app/chat-private-rooms.md` ("Server copies of direct
-messages"). On iOS they live in `DirectMessageService`:
+Rules shared by all clients are in [chat-private-rooms.md](../../../docs/app/chat-private-rooms.md)
+("Server copies of direct messages"). On iOS they live in `DirectMessageService`:
 
 - **Sockets** for the open DM and every DM with unread messages, at most
   `DirectMessageFrames.maxWatchedRooms` (16). Reconnect after 1 s doubling to 30 s with a fresh
@@ -371,7 +367,7 @@ messages"). On iOS they live in `DirectMessageService`:
   person's other devices.
 - **R2.** The first sealed frame with no wrap for this device triggers one persisted key
   advertisement.
-- **Ratchet (chat protocol v4).** DM frames are v4 (`docs/app/chat-protocol-v4.md`): a frame
+- **Ratchet (chat protocol v4).** DM frames are v4 ([chat-protocol-v4.md](../../../docs/app/chat-protocol-v4.md)): a frame
   has no entry for its sender, and a frame with no recipients is still sent (the outbox reseals
   it once a device is approved). Own frames coming back from the relay (`own`) are ignored: no
   ack, no advertisement, no outbox rebuild; this device's history already holds them (one that
@@ -412,11 +408,10 @@ messages"). On iOS they live in `DirectMessageService`:
 - **Unconfirmed sends.** A DM the server has not confirmed within a few seconds is sent again
   over a fresh connection, so it does not stay at "Sending".
 - **Delivered entries leave the outbox.** `forkmesh-delivered` removes those messages from the
-  outbox and `reseal` skips anything `delivered` or `read`. Before, a new device key (the
-  sender's own laptop, say) resent messages the other person already had, and each resend was a
-  new server copy that stayed until their phone opened the room again.
+  outbox and `reseal` skips anything `delivered` or `read`, so a new device key does not resend
+  messages the other person already has (each resend is a new server copy).
 - **Acks are retried.** `flushReceived` keeps its refs when the socket is gone and sends them
-  right after the next connect, instead of dropping them.
+  right after the next connect.
 - **Server copies label** is cleared when the socket drops or closes, so a stale count is never
   shown; the relay sends a fresh count on join.
 
@@ -490,8 +485,7 @@ Logic is in **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBas
   version misses and asks the relay). The pending fetch runs only when that fails, and is retried
   once after 1 s on a transport error, 429 or 5xx.
 - Photos, voice messages, videos and view-once messages with no text read "📷 Photo",
-  "🎤 Voice message", "🎬 Video" and "🎬 Video message" (`PushChatMedia`); before, a view-once
-  message had neither text nor a file name and stayed "New message".
+  "🎤 Voice message", "🎬 Video" and "🎬 Video message" (`PushChatMedia`).
 - `PushPreviewMode` ("Notification content" setting): name and message (default), name only, or
   neither.
 
@@ -501,13 +495,12 @@ the project prefix comes from the `deviceKeyName` in the shared push credential
 links only the `ForkMeshPushCore` product.
 
 **Tapping a chat push.** `ApplePushBridge.openFields` copies `conversation` and `channelId` into
-`PushOpen`. Office channel pushes now carry only `channelId` (the server stopped naming the
-room), so `HomeShellModel.routePush(..., channelId:)` asks the chat bridge
+`PushOpen`. Office channel pushes carry only `channelId` (the server does not name the room), so
+`HomeShellModel.routePush(..., channelId:)` asks the chat bridge
 (`ShellChatBridge.officeConversation(channelId:)`, `ChatHub` answers from
 `OfficeChannelService.rooms`) for the room and `pushChatNamed` passes it on as if the push had
 named it. A named conversation still wins, DMs ignore `channelId`, and an unknown id falls back
-to the first unread room as before. `ChatHub.switchConversation` and `revealRequests` are
-unchanged.
+to the first unread room.
 
 ## Voice and video calls
 
@@ -522,12 +515,10 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   only what WebKit names if it ever shows its own prompt, so it is a real ForkMesh domain rather
   than `.invalid`. Camera and microphone are granted only to that origin, after the one-time
   system permission prompt, by the `WKUIDelegate` method
-  `webView(_:decideMediaCapturePermissionsFor:initiatedBy:type:) async`. That is the Swift name
-  of the async form; the older spelling `requestMediaCapturePermissionFor:initiatedByFrame:`
-  without a `decisionHandler` matches nothing (the compiler only warns "nearly matches"), so
-  WebKit fell back to asking "Allow call.forkmesh.invalid to use your microphone?" on every
-  call. `app/tools/sync_native_call_faces.py` generates
-  the page for both apps;
+  `webView(_:decideMediaCapturePermissionsFor:initiatedBy:type:) async`. Use exactly that async
+  spelling: `requestMediaCapturePermissionFor:initiatedByFrame:` without a `decisionHandler`
+  matches nothing (the compiler only warns "nearly matches") and WebKit then asks on every call.
+  `app/tools/sync_native_call_faces.py` generates the page for both apps;
   `app/tests/test_chat_call_faces.py` fails when they drift.
 - **Faces, voices and backgrounds** live in `FaceChangerLook` (`FaceChanger/FaceChangerLook.swift`),
   which the Face Changer plug-in owns and saves under `chat.callFace`, `chat.callVoice` and
@@ -537,7 +528,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   The page host, Vision and TrueDepth code are in the app's `Features/FaceChanger/`. Face landmarks and person masks come from Apple Vision
   (`CallFaceLandmarks`: `VNDetectFaceLandmarksRequest`, `VNGeneratePersonSegmentationRequest`),
   returned to the page; the page falls back to its own tracker after three failures. Details:
-  `docs/app/chat-direct-calls.md`.
+  [chat-direct-calls.md](../../../docs/app/chat-direct-calls.md).
 - **TrueDepth camera.** On phones with a front TrueDepth camera, `CallDepthCamera` owns the
   camera (WebKit gets audio only). It pairs video and filtered depth, renders each frame upright
   (not mirrored, at most 480 px) and runs Vision on it. It adds per-point depth
@@ -548,7 +539,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   `window.fmCallCamera(id, { ok, error })` answers. Any failure (no device, denied, no frame within
   1.5 s, `fmCallCameraFailed`) falls back to `getUserMedia` video. The depth maths
   (`CallFaceDepth`, `CallDepthField`, `CallDepthOrientation`) is in `Direct/CallFaceDepth.swift`.
-  Protocol and rules: `docs/app/chat-direct-calls.md` ("iOS TrueDepth camera").
+  Protocol and rules: [docs/app/chat-direct-calls.md](../../../docs/app/chat-direct-calls.md) ("iOS TrueDepth camera").
 - **Preview and recording.** The pre-call preview shows the WebView immediately (WebKit holds
   capture until the view is visible), with a 30 s watchdog. "Record message" records the page's
   outgoing tracks (`record`, `recordStop`, `recordChunk` of up to 768 KiB, `recordDrop`), up to
@@ -580,12 +571,12 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   `App/ForkMeshApp.swift`, so calls show over every screen, not only Chat. One `fullScreenCover`
   shows, in order, the call (`engine.active` and not minimized), the incoming call
   (`engine.invite`) or the pre-call check, so the WebView moves between screens without a second
-  presentation. Its binding no longer hangs up when the cover goes away (before 2026-10-23 the
-  setter called `hangUp()`): a dismissed active call is minimized instead. `WebCallSurface`
+  presentation. Its binding never hangs up when the cover goes away: a dismissed active call is
+  minimized instead. `WebCallSurface`
   hosts the WebView in a holder view and only takes it back when it has no superview, so two
   surfaces never fight over it.
-- **Incoming call.** `DirectCallIncomingScreen` replaces the old top banner: caller, "Video call"
-  or "Voice call", and large red Decline and green Accept buttons.
+- **Incoming call.** `DirectCallIncomingScreen`: caller, "Video call" or "Voice call", and large
+  red Decline and green Accept buttons.
 - **Ringing** (`Calls/CallRinger.swift`). `CallRinger.shared` is attached to the engine in
   `installCalls` and watches `phase` and `invite` with `withObservationTracking`, so it works with
   no view on screen. While the caller's phase is `ringing` it loops a ringback (440 + 480 Hz, 2 s
@@ -603,14 +594,14 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   There are no Accept and Decline notification actions: the categories come from the shared
   `NotificationCategoryId` list in FMApi, and a call category there needs matching server and
   Android work.
-- **Call pushes** (since 2026-10-21; protocol in `docs/app/chat-direct-calls.md`).
+- **Call pushes** (protocol in [chat-direct-calls.md](../../../docs/app/chat-direct-calls.md)).
   `sendCallFrame` opens the DM's socket when it is not open and marks every `call-invite`
   envelope `ring: true`; the relay then sends the callee a `calls` account event and an APNs
   alert. The callee's app reacts in four places, each calling
   `DirectMessageService.openRinging(conversation)` (it reloads the conversation list when the
   conversation is not known yet, then `open`s it), so the next resent invite (every 3 s)
   arrives and `DirectCallIncomingScreen` shows:
-  - `AccountEventChannel.onEvent` (new: topic and whole frame, before `onTopic`) with topic
+  - `AccountEventChannel.onEvent` (topic and whole frame, before `onTopic`) with topic
     `DirectCallEngine.ringTopic` (`calls`), wired in `AppServices+Chat.swift`;
   - `ApplePushBridge` `willPresent` for a `calls` push in the foreground, which shows the banner
     with sound unless the engine is already in a call or showing that invite;
@@ -627,7 +618,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   phone can read it, and the local call notification uses it too. The notification extension
   delivers a `calls` push as it came (the relay also leaves `mutable-content` off), so it is never
   rewritten into an inbox row.
-- **CallKit and PushKit** (2026-10-21). Incoming calls show on the system call screen.
+- **CallKit and PushKit.** Incoming calls show on the system call screen.
   `DirectCallKit` (`Calls/DirectCallKit.swift`) owns one `CXProvider` (video supported, one call,
   generic handles "@name", kept out of the phone's Recents because those sync through iCloud) and
   a `PKPushRegistry` for `.voIP`. `AppDelegate` starts the registry in `didFinishLaunching`, so a
@@ -671,13 +662,13 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     while calls are on the CallKit screen ends them there (`DirectCallKitLedger.endAll`) but not
     in the app; a VoIP push that lands during the switch is reported and ended at once, as iOS
     requires.
-  - **Our call counts as a call.** `OtherAppCall` (`docs/native/OTHER_APP_CALLS.md`) sees our CallKit
-    call too, so interface sounds and chimes stay quiet during it. Since 2026-10-23 every call of our
-    own counts, CallKit or not (see "Audio session during a call" below).
-- **Native call engine** (2026-10-21, `Calls/Native/`, compiled only when `canImport(WebRTC)`,
+  - **Our call counts as a call.** `OtherAppCall` ([OTHER_APP_CALLS.md](../../../docs/native/OTHER_APP_CALLS.md))
+    counts every call of our own, CallKit or not, so interface sounds and chimes stay quiet
+    during it (see "Audio session during a call" below).
+- **Native call engine** (`Calls/Native/`, compiled only when `canImport(WebRTC)`,
   i.e. when `native/ios/WebRTCPackage/WebRTC.xcframework` exists and `tools/generate_project.rb`
   links it; without it the WebView path above is unchanged). The framework is our own build of
-  libwebrtc from `native/webrtc/` (`docs/server/rtc.md`, "Phone media engine").
+  libwebrtc from `native/webrtc/` ([docs/server/rtc.md](../../../docs/server/rtc.md), "Phone media engine").
   - `NativeCallMedia` owns the one `RTCPeerConnectionFactory`, built by our patch's
     `RTCFmFactory.factory(withCaptureProcessor:)` so microphone audio passes through
     `NativeVoicePipeline` (the ported `CallVoiceProcessor`, skipped when the voice is off) after
@@ -698,25 +689,24 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   - `NativeCallPeer` is the one-to-one `DirectCallPeer`: two `sendrecv` transceivers (audio,
     video) like `/chat`, the same `{type, sdp}` and candidate JSON, `CallMediaTuning.tune` on every
     local description (the web page's Opus parameters, checked against the JS output), sender caps,
-    the 4 s route check. Since 2026-10-23 it no longer closes itself on `failed` or after 8 s
-    `disconnected`: it reports `onConnection` and the engine restarts ICE (`connection.restartIce()`
-    and a fresh offer in `restartOffer()`); see "Resilience" below. The camera and microphone go on with
-    `addTrack` (`connection.add(_:streamIds:)`), not `addTransceiver(with:)` (fixed 2026-10-21):
-    when the iPhone answers, WebRTC matches the caller's offer only to transceivers made by
-    `addTrack` (JSEP); ones made by `addTransceiver` stay unused, the answer comes back
-    `recvonly`, and the person who placed the call got no picture or sound from the iPhone while
-    the iPhone still showed theirs. A voice call keeps a trackless video transceiver so its offer
+    the 4 s route check. It does not close itself on `failed` or `disconnected`: it reports
+    `onConnection` and the engine restarts ICE (`connection.restartIce()` and a fresh offer in
+    `restartOffer()`); see "Resilience" below. The camera and microphone go on with `addTrack`
+    (`connection.add(_:streamIds:)`), not `addTransceiver(with:)`: when the iPhone answers, WebRTC
+    matches the caller's offer only to transceivers made by `addTrack` (JSEP), so with
+    `addTransceiver` the answer comes back `recvonly` and the caller gets no picture or sound.
+    A voice call keeps a trackless video transceiver so its offer
     has the same two m-lines as `/chat`. `NativeCallPeerFactory` is the engine's
     `peerFactory`; `DirectCallScreen` draws `NativeCallSurface` (remote video plus a mirrored self
     view) and `NativePreCallScreen` replaces the WebView pre-call check.
-  - **Call screen layout** (2026-10-21). The self view is `DraggableCallPreview`: drag it
+  - **Call screen layout.** The self view is `DraggableCallPreview`: drag it
     anywhere and it springs to the nearest of four corners (clear of the name at the top and
     the buttons at the bottom), following the drag's predicted end so a flick works; the corner
     is kept in `@AppStorage("fm.call.previewCorner")`. The buttons (face, background, voice, mute,
     camera, hang up) use `ViewThatFits`: one row with 16 pt gaps, then 8 pt gaps, then two rows,
-    the look pickers above and mute, camera and hang up below. Before, six 56-64 pt buttons in
-    one row needed about 424 pt and ran off the edges of every iPhone narrower than a Pro Max.
-  - `NativeGroupCall` joins group calls in private channels (`docs/app/chat-group-calls.md`): it
+    the look pickers above and mute, camera and hang up below (six 56-64 pt buttons in one row
+    need about 424 pt, wider than any iPhone but a Pro Max).
+  - `NativeGroupCall` joins group calls in private channels ([chat-group-calls.md](../../../docs/app/chat-group-calls.md)): it
     asks `OfficeChannelService.callTicket` for a ticket, speaks the call-server protocol over a
     `URLSessionWebSocketTask`, attaches one `RTCFmFrameEncryptor` from our patch to both its senders
     (one frame counter for audio and video, kept for the whole call) and an
@@ -736,7 +726,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     `FMChat/CallFace`) as Metal compute kernels and the browser's guided-filter person matte on
     Vision's mask. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the
     look's photo. Passes, threading, fallbacks, cost and the differences from the browser are in
-    `docs/app/chat-direct-calls.md`, "Native face renderer (iOS)".
+    [docs/app/chat-direct-calls.md](../../../docs/app/chat-direct-calls.md), "Native face renderer (iOS)".
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
@@ -744,7 +734,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   no server in between" or "Relayed · through a TURN relay server (third party)". The live state
   line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
   screen shows the hint "Calls go directly between your devices when possible."
-- **Live quality widget** (2026-10-22). Mirrors `app/public/call-quality-meter.js` (thresholds,
+- **Live quality widget.** Mirrors `app/public/call-quality-meter.js` (thresholds,
   strings and chart shapes are the same on web, Android and iOS). `CallQualityWidget`
   (`Calls/CallQualityViews.swift`) is a small dark-material pill under the call's name and state
   line: four signal bars coloured by grade (success green, warning amber, danger red), a mirrored
@@ -768,9 +758,8 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     call and preview), which plays the ~10 levels of each event out at 10 Hz so the waveform moves
     smoothly, about a second behind.
   - **Native engine.** `NativeQualityProbe` (`Calls/Native/NativeCallQuality.swift`) reads
-    `RTCPeerConnection.statistics` every 200 ms once live (100 ms before 2026-10-23: each read is a
-    full libwebrtc stats collection hopping across its threads, so ten a second cost more than the
-    waveform is worth). Each read queues two levels, the midpoint and the new one, which
+    `RTCPeerConnection.statistics` every 200 ms once live (each read is a full libwebrtc stats
+    collection across its threads, so ten a second cost more than the waveform is worth). Each read queues two levels, the midpoint and the new one, which
     `CallQualityMonitor.queue(levels:)` plays out at 10 Hz like the WebView's, so the waveform still
     moves every 100 ms. While the call is minimized or the app is not in front
     (`NativeQualityProbe.levelsShown`) it skips the level reads and only takes the once-a-second
@@ -785,45 +774,35 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     `AVAudioRecorder` writing to `/dev/null` (`NativeMicMeter`), stopped before the call starts.
   - **Where.** `DirectCallScreen`, `DirectCallPreviewScreen`, `NativePreCallScreen`,
     `GroupCallPanel` ("Others ▼" instead of "Them ▼") and `FaceChangerScreen`.
-- **Resilience** (2026-10-23). Real calls showed a callee who could not pick up, a caller looking at
-  a black screen, and calls that went silent mid-way until someone hung up. `DirectCallEngine` now
-  follows the same rules as web `/chat` (`docs/app/chat-direct-calls.md`, "Resilience"), with no
-  new frame types, so older clients still work. All timers use the injected `sleep`; the Linux tests
-  are `DirectCallResilienceTests`.
-  - The callee resends `call-accept` every 2 s (`acceptResend`, at most `acceptResends` = 8) until
-    the caller's offer arrives. The caller answers a repeated accept from the device it picked with
-    its outstanding offer (same SDP), and resends an unanswered offer every 3 s (`offerResend`, at
-    most 5 per offer). Before, one lost accept or offer on the relay left both sides on
-    "Connecting…".
-  - The callee keeps the last offer it answered and its answer: the same SDP again gets the stored
-    answer back; a different SDP from the same device is a renegotiation (ICE restart), answered on
-    the existing peer with `answer(offer:)`. A duplicate offer that arrives while the first is still
-    being answered is dropped (before, it could make a second peer). The caller ignores an answer
-    when no offer is outstanding or it is the answer already applied, and a restart answer that
-    fails to apply never ends the call (only a failing first answer does, as before).
-  - A call that was accepted but is not live after 30 s (`connectTimeout`) ends with `call-bye` and
+- **Resilience.** `DirectCallEngine` follows the web `/chat` rules
+  ([chat-direct-calls.md](../../../docs/app/chat-direct-calls.md), "Resilience") with no new frame
+  types, so a lost frame, a black screen or a silent connection does not end a call and older
+  clients still work. All timers use the injected `sleep`; tests: `DirectCallResilienceTests`.
+  - Resends: the callee repeats `call-accept` every 2 s (`acceptResend`, at most `acceptResends`
+    = 8) until the offer arrives; the caller answers a repeated accept with its outstanding offer
+    (same SDP) and resends an unanswered offer every 3 s (`offerResend`, at most 5 per offer).
+  - The callee keeps the last offer and its answer: the same SDP gets the stored answer; a
+    different SDP from the same device is an ICE restart, answered on the existing peer with
+    `answer(offer:)`; a duplicate arriving mid-answer is dropped. The caller ignores an answer with
+    no offer outstanding or one already applied; only a failing first answer ends the call.
+  - Not live 30 s after accept (`connectTimeout`): `call-bye` and
     `engine.ending = DirectCallEngine.connectFailed` ("Could not connect" / "The call could not
-    connect. Try again."); `DirectCallLayer` posts the message as a chat notice and calls
-    `dismissEnding()`. This also fixes invites being declined as "busy" forever after a call got
-    stuck connecting.
-  - **Reconnect.** `DirectCallPeer` gained default-implemented hooks: `onConnection`
+    connect. Try again."); `DirectCallLayer` posts it as a chat notice and calls `dismissEnding()`,
+    so later invites are not declined as "busy".
+  - **Reconnect.** `DirectCallPeer` has default-implemented hooks `onConnection`
     (`DirectCallConnection`: `connected`, `disconnected`, `failed`, `stalled`), `restartOffer()`
-    (nil when the peer cannot restart) and `resumeMedia()`. A peer without them behaves as before
-    (it closes itself and the call ends). On `disconnected` for 2 s (`dropGrace`), or at once on
-    `failed` or `stalled`, the caller makes a restart offer and sends it with the resends above,
-    then again every 6 s (`restartEvery`) while still down; the callee waits for it. Both show
-    "Reconnecting…" (`engine.reconnecting`, the state line) while live, and end the call with
-    `call-bye` and `DirectCallEngine.dropped` ("Call lost") when it has not come back within 30 s
-    (`reconnectBudget`). `connected` (or `live` again) clears it.
-  - **Candidates during a restart.** While a restart offer is being made, and while the callee
-    answers one, the engine holds the peer's new ICE candidates and sends them after the offer or
-    answer; incoming candidates wait in the queue while a restart offer is unanswered or an offer is
-    being answered. Otherwise candidates for the new ICE credentials could reach the other side
-    first and be thrown away against the old description.
-  - Timer tasks clear their own handle before calling `end`, so `end` does not cancel the task that
-    is sending `call-bye` (a cancelled task could abort the socket send). The ring timeout does the
-    same.
-- **WebView engine and glue** (2026-10-23). `WebCallPeerFactory` passes
+    (nil when the peer cannot restart) and `resumeMedia()`; a peer without them closes itself and
+    the call ends. After 2 s `disconnected` (`dropGrace`), or at once on `failed`/`stalled`, the
+    caller sends a restart offer with the resends above, then every 6 s (`restartEvery`) while
+    down. Both show "Reconnecting…" (`engine.reconnecting`) and end with `call-bye` and
+    `DirectCallEngine.dropped` ("Call lost") after 30 s (`reconnectBudget`); `connected` or `live`
+    clears it.
+  - During a restart the engine holds outgoing ICE candidates until the offer or answer is sent,
+    and queues incoming ones while an offer is unanswered or being answered, so candidates for the
+    new credentials are never applied against the old description.
+  - Timer tasks (and the ring timeout) clear their own handle before calling `end`, so `end` does
+    not cancel the task sending `call-bye`.
+- **WebView engine and glue.** `WebCallPeerFactory` passes
   `{ resilient: true, staged: true }` as `setup`'s eighth argument (Android passes nothing and keeps
   the old page behaviour). The page then posts `connection` states instead of closing itself, a
   `stalled` state when inbound audio packets stop for 4 s while connected (the "went silent" case:
@@ -832,8 +811,8 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   `factory.remoteVideo`/`remoteVideoSeen` and `factory.micLost` (the call screen then says "Your
   microphone stopped and could not restart. Check that no other app is using it."). `restartOffer`
   runs the page's `restart` op, `resumeMedia` its `wake` op, and `setLayout(mini:)` its `layout` op.
-  Protocol and CSS: `docs/app/chat-direct-calls.md`, "Reconnects, media watchdog and the staged
-  view". The glue also gives audio senders `high` and video `medium` priority and prefers RED then
+  Protocol and CSS: [chat-direct-calls.md](../../../docs/app/chat-direct-calls.md), "Reconnects,
+  media watchdog and the staged view". The glue also gives audio senders `high` and video `medium` priority and prefers RED then
   Opus on the audio transceiver, on both phones.
 - **Native engine resilience.** `NativeCallPeer` reports `onConnection` from
   `RTCPeerConnectionState` (`.closed` still closes), runs the same 4 s inbound-audio watchdog on the
@@ -843,17 +822,17 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   (`high`, 4) and `videoPriority` (`medium`, 2) and runs on every `connected`. RED: the WebRTC
   Objective-C API for capabilities and `setCodecPreferences:error:` is called through selectors
   (`rtpReceiverCapabilitiesForKind:`, read with KVC), because its Swift spelling differs between
-  libwebrtc branches and the app cannot be compiled here; when the build lacks it, nothing changes.
-  The order comes from `CallMediaTuning.orderedAudioCodecs`. A renegotiation answer no longer turns
-  a camera the user switched off back on. `resumeMedia` re-activates `RTCAudioSession` (unless
+  libwebrtc branches; when the build lacks it, nothing changes. The order comes from
+  `CallMediaTuning.orderedAudioCodecs`. A renegotiation answer never turns a camera the user
+  switched off back on. `resumeMedia` re-activates `RTCAudioSession` (unless
   CallKit owns it) and toggles `isAudioEnabled` so the audio unit restarts.
-- **No blank screen** (2026-10-23). Until the first remote video frame, a video call shows your own
+- **No blank screen.** Until the first remote video frame, a video call shows your own
   camera full screen and mirrored, with the partner's avatar and name over it and the state line at
   the top: during ringing the previewing page already does (`body.preview`), after `setup` the page
   keeps it with `body.staged.waiting`, and `NativeCallSurface` shows `localVideo` full screen until
   `remoteVideoActive`. When the remote video stops (camera off, a stall) the remote view is hidden
   and the avatar returns over black, with your self view back in its corner.
-- **Back to chat and the mini window** (2026-10-23, `Calls/DirectCallMini.swift`). The chevron at the
+- **Back to chat and the mini window** (`Calls/DirectCallMini.swift`). The chevron at the
   top left of `DirectCallScreen` ("Back to chat") sets `DirectCallPresentation.shared.minimized`:
   the cover closes without hanging up and `DirectCallLayer` overlays `DirectCallMiniWindow` on the
   whole shell. It shows the remote video (avatar, name and the live duration, "Calling…",
@@ -868,18 +847,17 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   shows the tile first, and on the way back the tile goes only once the cover's surface has taken
   the WebView. The tile hosts the WebView only while minimized or returning
   (`hostsPage`: `expand()` sets `returning`, the cover's `onAppear` clears it). At the start of a
-  call the cover is not on screen yet either, and a tile that took the WebView then could keep it
-  after the cover's surface was made, leaving the full call screen black; there it shows only the
-  avatar. Ending the call clears `minimized`, so the next invite or pre-call check presents as
+  call it shows only the avatar, because a tile that took the WebView then could keep it from the
+  cover's surface and leave the call screen black. Ending the call clears `minimized`, so the next invite or pre-call check presents as
   before. The mini window is under any sheet `HomeShell` presents.
-- **Answering** (2026-10-23). `DirectCallActions.accept`, used by the incoming screen and CallKit's
+- **Answering.** `DirectCallActions.accept`, used by the incoming screen and CallKit's
   answer, calls `engine.holdInvite()` before the permission prompt, so the invite cannot go stale
-  (9 s without a resend) while the prompt is open, and `acceptInvite()` now returns whether it
+  (9 s without a resend) while the prompt is open, and `acceptInvite()` returns whether it
   accepted. When it fails the chat shows why: "The call ended before it could be answered." (the
   caller hung up, or the invite was gone), "Hang up the current call to answer this one.", or the
-  Settings hint for camera or microphone access (now per media). CallKit's answer for an invite
+  Settings hint for camera or microphone access (per media). CallKit's answer for an invite
   that is already gone posts the first message too.
-- **Diagnostics button** (2026-10-23). The web widget's red-dot diagnostics
+- **Diagnostics button.** The web widget's red-dot diagnostics
   (`app/public/call-quality-meter.js`: `diagnoseCall`, the fix catalogue, `rankFixes`, the memory
   of reports, fixes and lessons, `diagnosticsPrompt`) is ported to FMChat
   `Direct/CallDiagnostics.swift` with the same thresholds and text, including JavaScript's
@@ -898,53 +876,49 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   ends with it still there. The prompt's device line is "ForkMesh iOS <version> (<model>; iOS
   <version>; native call screen)" with the core count and memory. The WebView `quality` event has
   no face-filter timings, so the face-filter check only runs when a sample carries them.
-- **Audio session during a call** (2026-10-23). Our own calls are not reported to CallKit, so
-  `OtherAppCall.inProgress` was false during them and app chimes, speech, Genie sounds,
-  `PromptDictation` overhearing, `DesktopAlarm` and `GlassesWatcher` could switch the shared
-  `AVAudioSession` to `.playback` or deactivate it mid-call, which kills WebKit's or WebRTC's
-  microphone: the other person heard silence. `DirectCallAudio` (`Calls/DirectCallAudio.swift`,
-  attached in `installCalls`) now sets `OtherAppCall.shared.setOwnCall` whenever the engine has a
+- **Audio session during a call.** App chimes, speech, Genie sounds, `PromptDictation`
+  overhearing, `DesktopAlarm` and `GlassesWatcher` must not switch the shared `AVAudioSession` to
+  `.playback` or deactivate it mid-call: that kills WebKit's or WebRTC's microphone. Not every
+  call of ours goes through CallKit, so `DirectCallAudio` (`Calls/DirectCallAudio.swift`,
+  attached in `installCalls`) sets `OtherAppCall.shared.setOwnCall` whenever the engine has a
   phase or a native group call is active, which also runs the usual hush (overhearing stops, alarms
   hush) and keeps everything gated on `inProgress` quiet. `OtherAppCall.ownCall` and
   `OtherAppCall.deactivateSession()` (a no-op during our call) guard the places that change the
   session without checking `inProgress`: speech (`SpeechSynthesis`, the stretch coach),
   voice-message recording and playback (`MessagesMedia`), view-once voice capture, review and
   viewing, dictation (`PromptDictation` keeps the call's category and never deactivates), the DJ
-  studio, and the alarms' `hush`/`stop` (the hush that runs when a call starts used to deactivate
-  the session right as it began). `NativeMicMeter.stop(deactivate:)` is not asked to deactivate
+  studio, and the alarms' `hush`/`stop` (the hush that runs as a call starts must not deactivate
+  the session). `NativeMicMeter.stop(deactivate:)` is not asked to deactivate
   during a call. `DirectCallAudio` also observes `AVAudioSession.interruptionNotification`: when an
   interruption ends during a call it re-activates the session for the WebView engine and calls
   `engine.resumeMedia()` (both engines); the same runs when the app returns to the front.
   `CallClipAudioPlayer` and `CallRinger.prepareSession` already leave a `.playAndRecord` session
   alone.
-- **Native pre-call test** (2026-10-23). `NativePreCallScreen` shows the live camera first (a spinner
-  until it starts) and now has "Test microphone": it pauses the mic meter, records 10 s
+- **Native pre-call test.** `NativePreCallScreen` shows the live camera first (a spinner
+  until it starts) and has "Test microphone": it pauses the mic meter, records 10 s
   (`AVAudioRecorder`, AAC 48 kHz mono, to a temporary file from `MessagesViewOnceFiles.fresh`) while the camera preview
   stays live, feeds the waveform from the recorder's meter, then plays it back with
   `CallClipAudioPlayer` (on the speaker without headphones), with Again and Discard. The file is
   deleted on discard, again, call, cancel and when the screen goes away.
-- **Remote video, loudspeaker and the silent test clip** (2026-10-23, second pass). Real calls
-  showed each side only its own camera full screen: the other person's picture never replaced it.
-  `NativeCallPeer` no longer waits for the once-a-second `framesDecoded` sample to decide the
-  remote video is on. It takes the remote track straight from the video transceiver's receiver
+- **Remote video, loudspeaker and the silent test clip.** `NativeCallPeer` does not wait for the
+  once-a-second `framesDecoded` sample to decide the remote video is on. It takes the remote track straight from the video transceiver's receiver
   when the peer is made (Unified Plan gives every transceiver its receiver track up front, so the
   view no longer depends on `didAdd rtpReceiver` arriving), and attaches `NativeFrameCounter`, an
   `RTCVideoRenderer` that counts the frames WebRTC actually hands to renderers. The first frame
   turns `remoteVideoActive` on at once; the 2 s stall check uses the larger of the rendered count
   and `framesDecoded`. `receiverAdded` compares track ids, since the Objective-C wrapper is a new
   object on every `receiver.track` read.
-  - Video calls now run the audio session in `.videoChat` mode (`beginAudio(video:)` sets it as
+  - Video calls run the audio session in `.videoChat` mode (`beginAudio(video:)` sets it as
     WebRTC's default configuration too, because the audio unit re-applies that configuration when
     it starts), which plays through the loudspeaker like FaceTime; `.voiceChat` sent a video
     call's sound to the earpiece, too quiet to hear with the phone at arm's length. Voice calls
     keep `.voiceChat`. The pre-call mic meter and the test recording use the same mode, so the
     ringback of a video call is on the speaker as well. `.playAndRecord` already ignores the
     ring/silent switch.
-  - The test clip recorded silence: the button's click cue (`FmHaptics.tap` →
-    `FmSoundCues`) switched the shared session to `.playback` a moment after the recorder
-    started, because nothing counted as a call yet. `DirectCallAudio` now treats an open pre-call
-    check (`DirectCallPrecheck.shared.request`) as our own call, so app sounds, speech and
-    dictation leave the session alone there too. `NativeCallPeerFactory.endPreview` decides
+  - `DirectCallAudio` treats an open pre-call check (`DirectCallPrecheck.shared.request`) as our
+    own call, so app sounds, speech and dictation leave the session alone there too; otherwise
+    the button's click cue (`FmHaptics.tap` → `FmSoundCues`) switches the session to `.playback`
+    and the test clip records silence. `NativeCallPeerFactory.endPreview` decides
     whether to deactivate from `DirectCallAudio.callBusy` (a real call or group call) instead of
     `OtherAppCall.ownCall`, so cancelling the check still releases the session. Before playback
     the screen sets `.playAndRecord` with mode `.default` and `.defaultToSpeaker` (loud, on the
@@ -960,14 +934,14 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   (`com.apple.developer.usernotifications.time-sensitive`); it is not switched on yet. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
   showing a sheet or cover; the call then appears when that sheet closes, and the mini window sits
   under such a sheet. The ringback plays on whatever route WebKit's `.playAndRecord` session uses
-  (often the earpiece). The 2026-10-23 changes to the app target (mini window, diagnostics sheet,
-  audio session guards, interruption handling, native restart and RED) were written on Linux, where
-  only `swiftc -parse` checks the app files; they have not run on a device yet.
+  (often the earpiece). The mini window, diagnostics sheet, audio session guards, interruption
+  handling, native restart and RED were written on Linux (only `swiftc -parse` checks the app
+  files) and have not run on a device yet.
 
 ## View-once video and voice messages
 
-Wire format and server rules: `docs/app/chat-private-rooms.md` ("View-once video and voice
-messages"). Core (`Direct/ViewOnceMedia.swift`):
+Wire format and server rules: [chat-private-rooms.md](../../../docs/app/chat-private-rooms.md)
+("View-once video and voice messages"). Core (`Direct/ViewOnceMedia.swift`):
 
 - `ViewOnceFrames` parses and builds the sealed frame's `viewOnce` field (version 1, `video` or
   `voice`, 32-hex media id, 32-byte key and 12-byte IV, MIME type, duration and size limits,

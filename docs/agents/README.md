@@ -1,11 +1,19 @@
 # Agent runs
 
 ForkMesh runs coding agents (Claude Code and Codex CLIs, plus a few legacy
-script providers) against repositories in four places: locally in the
-desktop app, on a mirror node or runner, on another of the account's desktops
-(a job queued from the website or phone), and on the phone itself. This page
-follows a run through every layer. The desktop UI for agents is described in
-[../desktop/agents-ui.md](../desktop/agents-ui.md).
+script providers) in four places: the desktop app, a mirror node or runner
+([../RUNNERS.md](../RUNNERS.md)), another of the account's desktops (a job
+queued from the website or phone), and the phone. This page follows a run
+through every layer. The desktop UI is in
+[../desktop/agents-ui.md](../desktop/agents-ui.md); the developer docs index is
+[../README.md](../README.md).
+
+Pages here: [tools.md](tools.md) (every tool each agent can call),
+[access-rules.md](access-rules.md) (sandboxing and teammate permissions),
+[memory.md](memory.md) (memory and CPU limits),
+[agent-summary-preload.md](agent-summary-preload.md) (Claude Code summary side
+query) and [claude-desktop-sessions.md](claude-desktop-sessions.md) (agents in
+the Claude app).
 
 ## Code map
 
@@ -21,7 +29,7 @@ follows a run through every layer. The desktop UI for agents is described in
 | Claude Code agents in the Claude app | `desktop/src/ClaudeDesktopSessions.*`, `MainWindowClaudeDesktop.cpp` ([claude-desktop-sessions.md](claude-desktop-sessions.md)) |
 | Mirror node and runner | `server/agents.go`, `server/agent_errors.go`, `server/agent_attachments.go`, `server/agent_live.go`, `server/agentstream.go` |
 | Host CLI install and refresh | `desktop/src/ControlNode.{h,cpp}`, `MainWindowHostInstall.cpp`, `MainWindowHosts.cpp` |
-| Relay | `app/src/route_handlers.py` (org/owner agent routes, job results), `app/src/entry.py`, `app/src/urls.py`, `app/src/agent_streams.py`, `app/src/agent_live_relay.py`; tables in `app/migrations/0093_org_agent_bots.sql`, `0191_org_agent_attachments.sql`, `0232_agent_session_streams` |
+| Relay (the app on the core nodes) | `app/src/route_handlers.py` (org/owner agent routes, job results), `app/src/entry.py`, `app/src/urls.py`, `app/src/agent_streams.py`, `app/src/agent_live_relay.py`; tables in `app/migrations/0093_org_agent_bots.sql`, `0191_org_agent_attachments.sql`, `0232_agent_session_streams` |
 | Web UI | `app/public/dashboard/js/06-repo-content.js` (session detail), `app/public/dashboard-composer.js` ([../app/web-composer.md](../app/web-composer.md)) |
 | Phone | `native/ios/ForkMesh/Features/Agents/`, `AgentWatch/`; `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/agents/`, `agentwatch/` |
 
@@ -34,10 +42,9 @@ follows a run through every layer. The desktop UI for agents is described in
 - **Titles.** A run starts with `promptTitle()` (`AgentWorktree.h`, up to 8
   words); the branch and worktree slug (`titleSlug()`) is 4 words / 30
   characters.
-- **Claude Code and Codex name their own runs (2026-10-25).** Before a Claude
-  Code or Codex run with a worktree starts, its own CLI names it the way
-  Claude's desktop app names a Code session (`generate_title_and_branch` in
-  its bundle; read from the 2026-10-22 Linux build):
+- **Claude Code and Codex name their own runs.** Before a run with a worktree
+  starts, its own CLI names it the way Claude's desktop app names a Code
+  session (`generate_title_and_branch` in its bundle):
   - one tool-less call returns both names, `<title>…</title><branch>…</branch>`
     (`agentTitleRequest()`, `parseAgentTitle()` in `AgentWorktree.h`). The
     title is 2–5 words in sentence case, a noun phrase rather than "Fix …";
@@ -52,11 +59,9 @@ follows a run through every layer. The desktop UI for agents is described in
     the run's own model (`agentNamingModel()`) if that fails, as the desktop
     falls back from its `small_fast` model to the session model. Claude gets
     `--system-prompt`; Codex, which has none, gets it ahead of the request;
-  - each try is killed after 30 s. Three failed namings in a row turn the
-    namer off for that CLI for 5 minutes (the desktop does this for its
-    direct API path). At most 2 namings run at once;
-  - the desktop can also call the API directly, or have claude.ai's server
-    do it; ForkMesh holds neither credential, so it always spawns the CLI.
+  - each try is killed after 30 s; three failures in a row turn the namer off
+    for that CLI for 5 minutes; at most 2 namings run at once;
+  - ForkMesh holds no API or claude.ai credential, so it always spawns the CLI.
   The title names the run in the Agents list; `titledBy` is
   `promptNamerLabel()` with the model that answered, e.g.
   `Claude Code namer (haiku)`. With no title the run keeps its prompt title;
@@ -68,9 +73,8 @@ follows a run through every layer. The desktop UI for agents is described in
   (`agents/cloudflareNaming`, off by default) sends the prompt to the Workers
   AI model picked under "Branch/worktree names" instead, with the desktop's
   locally stored Cloudflare token; its requests go through
-  `WorkspaceNameGate` (2 in flight, `Retry-After` honoured up to 1 hour).
-  Before 2026-10-25 a picked model alone turned it on; that pick is kept but
-  does nothing until the box is ticked.
+  `WorkspaceNameGate` (2 in flight, `Retry-After` honoured up to 1 hour). A
+  picked model does nothing until the box is ticked.
 - **Claude Code sessions keep the name.** A Claude Code run named before
   launch passes that name as the session's `title` and sends it with
   `rename_session`, so the Claude session, the Agents list and the branch
@@ -99,11 +103,10 @@ follows a run through every layer. The desktop UI for agents is described in
 - **Deleting an agent deletes its area.** Every worktree removal also removes
   its scratch folder; deleting a session removes leftovers under the session
   id in `builds/` and `/tmp`. All deletes go through
-  `safedelete::removeTree`, which refuses a git checkout. This covers the
-  web merge's branch clean-up (`WebBranchOps.cpp`) and the task clean-up's
-  remove and back-up-and-remove (`TaskWorkItems.cpp`) too: until 2026-10-25
-  those three removed only the worktree, and 52 orphaned scratch folders
-  (82 GB) filled the disk to 99%.
+  `safedelete::removeTree`, which refuses a git checkout. The web merge's
+  branch clean-up (`WebBranchOps.cpp`) and the task clean-up
+  (`TaskWorkItems.cpp`) remove the scratch folder too; orphaned scratch
+  folders once filled the disk.
 - **Parity alert.** `MainWindowAgentParity.cpp` checks every local checkout
   1 minute after start and every 3 minutes (`git worktree list --porcelain`,
   `git for-each-ref refs/heads/`); `AgentParity.h` reports agents with no
@@ -111,9 +114,10 @@ follows a run through every layer. The desktop UI for agents is described in
   branches. An issue must show in two checks in a row before one local
   warning ping. Tests: `forkmesh-agent-parity-tests`.
 - **Runtimes.** Claude Code runs as a stream-json session that ForkMesh hosts
-  fully (an `initialize` handshake, `--permission-prompt-tool stdio`, permission,
-  plan, question, dialog and MCP-input prompts, sub-sessions with a stop
-  control; `ClaudeControlProtocol.*`); Codex through its app-server protocol. Both report provider-neutral events
+  fully (an `initialize` handshake, `--permission-prompt-tool stdio`,
+  permission, plan, question, dialog and MCP-input prompts, sub-sessions with
+  a stop control; `ClaudeControlProtocol.*`); Codex through its app-server
+  protocol. Both report provider-neutral events
   (`session.lifecycle`, `output.text.streaming`, `tool.lifecycle`, `usage`;
   `AgentRuntimeSession.h`) feeding the transcript, the tool efficiency ledger
   (`data/agents/tool-efficiency.json`) and the activity window.
@@ -183,9 +187,8 @@ script builds `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/com
 from them and stops with "Cloudflare endpoint or account ID is required" when
 neither an endpoint nor an account is set. The model picker reads
 `/ai/models/search` and the workspace namer calls the same chat endpoint. The
-older relay path, a per-run ticket in `FORKMESH_AI_AGENT_AUTH` signed as
-`forkmesh-ai-agent-v1` for the relay's `POST /api/ai/agent`, is no longer used
-by the desktop; the relay route stays for older clients.
+relay's `POST /api/ai/agent` (a per-run `FORKMESH_AI_AGENT_AUTH` ticket signed
+as `forkmesh-ai-agent-v1`) stays only for older clients.
 
 `app/tests/test_forkbot.py` runs the embedded script end to end
 (`_run_cloudflare_agent`): it extracts the Python from the header and drives it
@@ -194,12 +197,9 @@ repository with a fake `HOME`. Small Workers AI models loop on one command,
 stop before committing, or answer with an empty turn, so the repeat guard
 (adhoc #279, #1633), steering from stdin, retries of a 5xx (adhoc #1633),
 the uncommitted-work check and the empty-turn check are exercised rather than
-grepped. On 15 Oct 2026 these tests still assumed the relay ticket and failed;
-they now use the token path. The script now echoes a tool call in the
-OpenAI `tool_calls` shape, where the relay-era script wrote it as assistant
-text because Workers AI chat templates behind the relay dropped `tool_calls`
-(adhoc #1683); whether the chat-completions endpoint keeps them needs checking
-against a live model.
+grepped. The script echoes a tool call in the OpenAI `tool_calls` shape
+(adhoc #1683); whether the chat-completions endpoint keeps them is not yet
+checked against a live model.
 
 ## Website- and phone-queued jobs
 
@@ -287,7 +287,7 @@ Text arrives per assistant message, not per token.
 
 The cloud and desktop session pages (`06-repo-content.js`) and World's agent
 sessions (`world.js`) pin the last prompt above the transcript, like the
-phone and the desktop (asked for on 2026-10-22). It is one line, with edges
+phone and the desktop. It is one line, with edges
 peeking out below for earlier prompts and `2/5` with ‹ › buttons when there
 are several. Swipe or drag the card sideways, use a trackpad's sideways
 scroll, or press ← → while it has focus: right goes back to the previous
@@ -300,7 +300,7 @@ prompt, left goes forward to the next. Click the text to read all of it.
 - A live patch swaps the deck (`data-…-detail-deck`) only when its markup
   changed and nobody is dragging it, so a read-back is not interrupted.
 - The dashboard's markup uses only classes already in the committed
-  `tailwind.css` (see `docs/app/content-first-pings.md`). The drag and
+  `tailwind.css` (see [../app/content-first-pings.md](../app/content-first-pings.md)). The drag and
   `touch-action: pan-y`, which keeps vertical scrolling, are inline styles.
 
 ### Live stream to the phone
@@ -311,7 +311,8 @@ then `event: live` frames carrying the whole transcript (`{"at","text"}`)
 first and appends (`{"at","append"}`) after, `: keepalive` every 15 s, and
 `event: end` (`{"status"}`) when the run ends. A stream closes after 5
 minutes. The relay (`app/src/agent_live_relay.py`) lives in memory in the
-session creator's `ForkMeshNodes` object, reached by internal
+session creator's `ForkMeshNodes` object (the Durable Object emulation on the
+cores), reached by internal
 `/api/nodes/agent-live/publish|watch` paths clients cannot call; limits are
 64 watched sessions per owner object and 16 watchers per session (429). While
 watched, the runner reports every 250 ms but stored writes and rings stay at
@@ -348,8 +349,8 @@ magic-byte checks.
   for the branch. The desktop signs as its account; the relay accepts the
   node's key or the key of an account that owns the node or the linking
   organization.
-- **Send to another desktop** (2026-10-25, task 2596) is the same move aimed
-  at one of the account's other desktops instead of a mirror. It is a
+- **Send to another desktop** (task 2596) is the same move aimed at one of
+  the account's other desktops instead of a mirror. It is a
   submenu on the Agents list's right-click menu and on the agent pane's menu,
   offered whenever Continue in cloud is (same `agentCloudHandoff` gates,
   since the branch travels through the served mirror either way).
@@ -372,9 +373,6 @@ magic-byte checks.
   - The sending desktop stops its run and logs "Sent to the desktop X on
     branch". If the chosen desktop never comes back, the job stays queued; any
     of the account's desktops can still take it with **Continue here**.
-  - Before this a desktop could only hand a session to "the cloud": a mirror
-    if one served the repository, else whichever other desktop drained the
-    queue first.
 - **Continue here** on a queued owner row posts
   `.../agent-sessions/<id>/claim` and reports on
   `.../org-agent-jobs/<id>/result`, signed as the account. Organization-scope
@@ -465,9 +463,8 @@ running jobs keep their binary. The update's exit status is unchanged.
 
 ## Related docs
 
-- [tools.md](tools.md): every tool each kind of agent can call
-- [access-rules.md](access-rules.md), [memory.md](memory.md)
 - [../desktop/agents-ui.md](../desktop/agents-ui.md)
+- [../../www/docs/protocol/threat-model.md](../../www/docs/protocol/threat-model.md): what the agent sandbox is and is not trusted to stop
 - [../server/README.md](../server/README.md) and [../server/agent-jobs.md](../server/agent-jobs.md)
 - [www/docs/operations/organization-agent-offline-queue.md](../../www/docs/operations/organization-agent-offline-queue.md)
 - [www/docs/mobile/mobile-agent-access.md](../../www/docs/mobile/mobile-agent-access.md)

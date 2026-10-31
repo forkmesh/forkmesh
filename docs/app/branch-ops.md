@@ -96,8 +96,8 @@ A deletion is a server-side job that deletes one branch at a time.
   trailing `/` or `.`, a component starting with `.` or ending in `.lock`,
   `HEAD` and `@` are not, nor more than 255 bytes. The app
   (`git_branch_name`), the gateway (`_deletable_branch`) and the merge
-  executor (`validDeletableBranch`) apply the same rules for a delete. Before,
-  a narrow pattern refused real branches such as `feature/research+`.
+  executor (`validDeletableBranch`) apply the same rules for a delete, so real
+  branches such as `feature/research+` can be deleted.
 - **Refused per branch** (`status: "refused"`): an unusable name
   (`invalid_branch`), ForkMesh's own `forkmesh/` refs (`reserved_branch`), the
   default branch (`default_branch`), a protected branch (`branch_protected`,
@@ -112,12 +112,10 @@ A deletion is a server-side job that deletes one branch at a time.
 
 ### How the job runs
 
-On 2026-10-20 an owner deleted 44 branches of a large repository on a 1-CPU,
-1 GB instance. The page sent 20 per request; the app gave each branch three
-quick tries and moved on while the core was still working, so up to 20
-executor jobs ran at once, each followed by a gateway reload and a full cache
-warmup of every repository. The load reached 8.5, the request took 71 s,
-later requests failed and 21 branches were kept. The job design fixes that:
+Deleting many branches at once must not run parallel executor jobs: each is
+followed by a gateway reload and a cache warmup, and on a small (1-CPU, 1 GB)
+instance a 44-branch delete in parallel overloaded the core and left half the
+branches. So:
 
 - **One worker, one branch at a time.** The `POST` hands the job to a single
   background worker per app process (`HOST_BACKGROUND`, key
@@ -148,8 +146,7 @@ later requests failed and 21 branches were kept. The job design fixes that:
   `record_hosted_push_state` (moves `pushed_at` and wakes the cores, so a push
   mirror with prune drops the deleted branches on its next push), one
   `record_hosted_branch_count` (the catalog's `branchCount` for a hosted
-  repository, which only an import used to set, so the repository header kept
-  the old count), one `branches` wake, and for a node-owned repository a
+  repository, which the repository header shows), one `branches` wake, and for a node-owned repository a
   `source: "cores"` delete queued for its node. Each branch result is audited
   as `repository.branch_delete` when it is final.
 
@@ -171,14 +168,10 @@ Deleting sends one request for every selected branch, then polls the job every
 list as soon as the job reports it deleted. Opening the Branches page while a
 job runs picks it up again (`resumeRepoBranchDeleteJob`).
 
-The list cannot go stale any more. After the 44-branch deletion the page kept
-showing 45 branches while the API listed 22, because a deletion only updated
-the page from a re-read that could be answered by a direct mirror or the
-page's seeded reads, and the repository header's count came from the catalog
-`branchCount` (also stored in `localStorage`, `forkmesh.repositoryCatalog.v1`)
-that nothing updated. Now the page removes deleted branches from its
-in-memory list at once, re-reads the list from the app itself
+So the list does not go stale, the page removes deleted branches from its
+in-memory list at once and re-reads the list from the app itself
 (`fetchRepoJson(..., { canonical: true })`: no direct mirror, no seeded read,
-`cache: "no-store"`), and writes the new count into the repository object,
-the catalog list in memory and the stored catalog; the server updates the
-catalog record too.
+`cache: "no-store"`), since a mirror or seeded read can still list them. It
+writes the new count into the repository object, the in-memory catalog and the
+stored catalog (`localStorage` `forkmesh.repositoryCatalog.v1`); the server
+updates the catalog record too.

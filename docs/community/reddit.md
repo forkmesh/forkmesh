@@ -3,7 +3,9 @@
 The Reddit special agent (`.forkmesh/workflows/reddit-agent.json`) finds Reddit
 threads where ForkMesh can honestly help someone and hands the operator a
 short brief. The operator writes and posts every word. This page is the
-agent's charter: its rules, its tools and the research behind them.
+agent's charter: its rules, its tools and the research behind them. Marketing owns the
+channel plan ([marketing](../marketing/README.md)); index:
+[docs/README.md](../README.md).
 
 | Piece | Path |
 | --- | --- |

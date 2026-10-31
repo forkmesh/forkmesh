@@ -3,7 +3,8 @@
 `ForkMeshCore/Sources/FMCode/Local`: repositories on the phone: create, import, clone, browse,
 edit, commit, branch, publish, push/fetch/sync and pull requests. `import FMCode` (re-import
 `FMGit` for `GitErrorCode`, `FMApi` for `ApiService`/`InboxService`/`Repository`, `FMAccount` for
-`AuthSession`).
+`AuthSession`). Siblings: [Repos](FMCodeRepos.md), [Collab](FMCodeCollab.md). Mirrors and clone
+failover follow [www/docs/mirroring.md](../../../www/docs/mirroring.md). Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 Files: GitWorkspace.swift, GitWorkspaceOperations.swift, LocalGitTypes.swift,
 GitOperationRunner.swift, LocalRepoStore.swift, ForkMeshRemote.swift,

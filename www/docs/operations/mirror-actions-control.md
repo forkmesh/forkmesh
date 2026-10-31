@@ -2,7 +2,9 @@
 
 The website's repository **Actions** tab reads run state from, and sends
 control requests to, a mirror node running the Actions executor. This page is
-the wire contract between:
+the wire contract (the gateway side is in
+[direct-HTTPS mirror gateway](direct-https-mirror-gateway.md#operations), the
+daemon in [mirror node](mirror-node.md)) between:
 
 | Component | File |
 | --- | --- |

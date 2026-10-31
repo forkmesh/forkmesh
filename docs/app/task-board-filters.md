@@ -1,5 +1,6 @@
 # Tasks page: status tabs, member avatars and layout
 
+Part of [the App docs](README.md).
 The web Tasks page shows seven status tabs (Open, In progress, Mine, QA, Done,
 Trash, All) as a segmented control: icon, label and count. The labels hide
 when the toolbar is narrower than 46rem (a container query), leaving the
@@ -10,11 +11,8 @@ Everyone.
 
 ## Layout (Tracker)
 
-In October 2026 the page was redesigned from two candidate layouts the user
-compared in an interactive prototype ("A · Tracker" and "B · Focus sheet"); they
-picked Tracker, modelled on Linear and Plane issue views. Every earlier feature
-stays; only the arrangement changed. The reasons: the old detail pane showed
-all twelve actions at once with most of them disabled, boxed every section, and
+The layout, modelled on Linear and Plane issue views, replaced a detail pane
+that showed all twelve actions at once (most disabled), boxed every section and
 gave status, priority and progress no shape to scan by.
 
 - Header: "Tasks" title, one-line muted description, a muted stats line

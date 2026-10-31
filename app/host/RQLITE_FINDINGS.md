@@ -1,8 +1,11 @@
 # rqlite conformance findings
 
-The App's D1-compatible database is rqlite. This page records how rqlite
-behaves where it differs from plain SQLite, and the rules the host adapter
-(`app/host/forkmesh_host/d1_rqlite.py`) and the App follow because of it.
+The App's database is rqlite on the core nodes, reached through `env.DB` in
+the D1 shape the App was written for. This page records how rqlite behaves
+where it differs from plain SQLite, and the rules the host adapter
+(`app/host/forkmesh_host/d1_rqlite.py`) and the App follow because of it. Host
+overview: [docs/host/README.md](../../docs/host/README.md); read-only mode
+without a leader: [PLAN.md](../../docs/PLAN.md#read-only-mode).
 
 - **Version:** pinned in `app/host/RQLITE_VERSION`; the release tarball is
   verified against its published sha256 and installed under

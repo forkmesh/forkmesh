@@ -4,7 +4,9 @@
 (SFU) for group audio and video calls ([server/rtc.md](../server/rtc.md)). The
 fleet runs it on **every core** as `fmnext-calls.service`. `[calls]` in
 `deploy/fleet.toml` controls it, `deploy/core/render.py` renders it, and the
-`calls` step of `tools/next_fleet.py` installs it.
+`calls` step of `tools/next_fleet.py` installs it. Fleet map:
+[deploy/README.md](README.md); why no core is special:
+[architecture](../../www/docs/architecture.md).
 
 ## Redundant on every core
 
@@ -35,7 +37,7 @@ client joins again and lands on a surviving node.
 | Signalling | HTTP on `127.0.0.1:<http_port>` (default 7881), reached only through Caddy's `handle /calls/*` in the core's per-node block `nN.next.forkmesh.com`. The shared names `app.forkmesh.com` and `world.forkmesh.com` do not route `/calls/`. |
 | Media | UDP `<udp_port>` (default 3479) on all addresses. It is open in nftables on every core, in the AWS security group (`tools/next_aws.py ingress_rules`) and in the IDS listener list. |
 | Advertised addresses | `FORKMESH_CALLS_ADDRESSES`: the node's `public_ipv4` and, when set, `public_ipv6` (from `fleet-instances.json`) |
-| Allowed browser origins | `FORKMESH_CALLS_ORIGINS`: `https://<served app host>` (`app.forkmesh.com`), `https://app.next.forkmesh.com`, `https://<served world host>` (`world.forkmesh.com`), `https://world.next.forkmesh.com`, plus any `[calls] origins`. The World loads `dashboard-chat.js` and opens calls from its own origin; without it in the list every call socket from the World got a 403 and the camera never started |
+| Allowed browser origins | `FORKMESH_CALLS_ORIGINS`: `https://<served app host>` (`app.forkmesh.com`), `https://app.next.forkmesh.com`, `https://<served world host>` (`world.forkmesh.com`), `https://world.next.forkmesh.com`, plus any `[calls] origins`. The World opens calls from its own origin (`dashboard-chat.js`), so its hosts must be listed or every call socket gets a 403 |
 | Outbound | `IPAddressDeny=` blocks the private, CGNAT, link-local, documentation and reserved ranges, the same list as the TURN relay. Loopback stays open because Caddy proxies over it. |
 | IDS | service user `fmnext-calls` (unit `fmnext-calls.service`, exe the binary), TCP listener 7881, UDP listener 3479, and the unit in the lockdown stop list with its `50-fmnext-ids.conf` drop-in |
 | FM Media (off) | with `[calls] fmm = true`: QUIC and WebTransport on UDP `<fmm_port>` (default 4433), certificates in `/var/lib/fmnext-calls` ([FM Media](#fm-media)) |
@@ -119,20 +121,19 @@ app signs join tickets with it, and the SFU checks them
   the mirror daemon. A change under `server/rtc/` reaches the cores through the
   desktop's auto-deploy roll or `next_fleet.py roll`.
 
-## Go live
+## Setting up a new fleet
 
-1. Run `init-secrets` and `next_vault.py sync` from this branch before the
-   merge. The auto-deploy roll after the merge needs `FORKMESH_CALLS_SECRET`
-   in `secrets.env`. Without it the roll stops before draining any node.
+1. Generate and seal the secret first: the roll needs `FORKMESH_CALLS_SECRET`
+   in `secrets.env` and stops before draining any node without it.
 
    ```sh
    python3 tools/next_fleet.py init-secrets --execute
    python3 tools/next_vault.py sync --execute
    ```
 
-2. Merge to `main`. Auto-deploy builds the release and, because `server/` and
-   `deploy/core/` changed, runs `next_fleet.py roll --execute`. With
-   `manual-roll` set, run that yourself.
+2. Roll the cores: auto-deploy runs `next_fleet.py roll --execute` after a
+   `server/` or `deploy/core/` change ([auto-deploy.md](auto-deploy.md));
+   with `manual-roll` set, run it yourself.
 3. Check:
 
    ```sh

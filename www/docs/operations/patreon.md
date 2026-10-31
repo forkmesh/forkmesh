@@ -17,8 +17,11 @@ discarded right after identity lookup and are never stored or logged.
 
 ## Configuration
 
-Non-secret variable: `PATREON_OAUTH_REDIRECT_URI`. Secrets, published together
-by `./deploy.sh secrets` (checked by `./deploy.sh validate-secrets`):
+Non-secret variable: `PATREON_OAUTH_REDIRECT_URI`. Secrets, set together in the
+core fleet's `secrets.env` and secret list (`deploy/fleet.example.toml`,
+[NEXT_ADOPTION.md](../../../docs/NEXT_ADOPTION.md)); on a
+[Workers self-host](worker-split.md), `app/deploy.sh secrets` publishes them and
+`app/deploy.sh validate-secrets` checks them:
 
 ```text
 PATREON_CLIENT_ID
@@ -47,9 +50,8 @@ PATREON_CREATOR_ACCESS_TOKEN
 
 ## Secret rotation
 
-Generate the new secret in Patreon, update the deployment secrets, run
-`./deploy.sh secrets`, confirm OAuth start and a test webhook succeed, then
-revoke the old secret. Until a rotated creator token is published, webhook
+Generate the new secret in Patreon, update and deploy the secrets, confirm
+OAuth start and a test webhook succeed, then revoke the old secret. Until a rotated creator token is published, webhook
 reconciliation cannot fetch member snapshots.
 
 ## Failure recovery
@@ -68,10 +70,9 @@ reconciliation cannot fetch member snapshots.
 The two `*_not_configured` answers, like OAuth start's, carry
 `x-forkmesh-expected-degraded: 1`: a deployment without Patreon is a choice,
 not an API failure, so they never reach the error log or the `/status` API
-alert. A failed member fetch or membership write is still logged. The served
-stack (ForkMesh Next) has no `PATREON_*` secrets in `secrets.env`; the retired
-Cloudflare worker held them, while Patreon still posts to forkmesh.com
-(2026-10-14 alert).
+alert. A failed member fetch or membership write is still logged. The core fleet's
+`secrets.env` has no `PATREON_*` secrets yet, while Patreon still posts webhooks
+to forkmesh.com, so those deliveries get the `*_not_configured` answers.
 
 Git, collaboration, mobile, and self-hosted paths never depend on Patreon;
 only Connect, webhook sync, and membership-gated hosted features do.

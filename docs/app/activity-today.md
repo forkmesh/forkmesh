@@ -3,6 +3,7 @@
 **Today's activity** is a heat grid of a member's interactions in 288
 five-minute slots, shown on post-merge pages (desktop, iOS, Android, web). Each
 device shares its counts through the App so the chart covers every device.
+Part of [the App docs](README.md).
 
 ## Route
 

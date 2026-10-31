@@ -1,6 +1,7 @@
 # Issue views
 
-An issue page shows how many people have looked at it ("12 views") in the
+Part of [the App docs](README.md). An issue page shows how many people have
+looked at it ("12 views") in the
 header line next to the comment and participant counts, and the issue list
 shows the same count in each row's meta line. It follows the repository view
 count ([repo-views.md](repo-views.md)) and reuses its helpers.

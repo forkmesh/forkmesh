@@ -49,8 +49,7 @@ swaps one page out and the next one in, keeping the rows on screen where they
 were (`moveDiffWindowAtEdge()` in `desktop/src/MainWindowShared.cpp`).
 
 The scroll bar thumb is drawn for the whole diff, not for the two pages in the
-document. Before this, each page swap shrank the document under the scroll bar,
-so the thumb jumped back up every time the next page loaded.
+document, so it does not jump when a page swaps.
 
 - **Thumb geometry** (`diffGlobalScrollGeometry()`): the position is the height
   of the pages above the window plus the view's own scroll value. The range adds
@@ -75,9 +74,9 @@ Test: `checkDiffStreamResponsiveness()` in `desktop/tests/test_window_resize.cpp
 ## Reviewing a pull request in the Git view
 
 A pull request's "Changes in Git" tab opens its diff in this pane
-(`openPullDiffInGitView()`, PR mode: `m_branchDiffPullNumber`). The pull
-screen's own Files page is no longer reachable from that tab, so the pane
-carries the whole review, in both layout modes:
+(`openPullDiffInGitView()`, PR mode: `m_branchDiffPullNumber`). The pane
+carries the whole review, in both layout modes
+("Two layout modes" in [ui-redesign.md](ui-redesign.md)):
 
 - **Inline comments** work as on the pull screen: click or drag line numbers,
   then Comment now or Add to review. Drafts show inline as "Pending".

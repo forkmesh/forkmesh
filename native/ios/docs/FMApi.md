@@ -4,6 +4,7 @@ The App's REST client and the account-level services, in `ForkMeshCore/Sources/F
 (models: [FMApiModels](FMApiModels.md)). `import FMApi` (re-import `FMBase` for `JSONObject`,
 `FMAccount` for `AuthService`/`AccountDevice`, `FMNet` for `HTTPClient`). Everything is
 `@MainActor`; network waits happen off the main thread inside FMNet. Tests: `Tests/FMApiTests`.
+Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## ApiService (`@MainActor @Observable final class`)
 
@@ -210,14 +211,14 @@ The APNs side is a protocol the app implements (`PushPlatform`): permission stat
 environment, token, pending open, badge, and shared-keychain credentials for the extension.
 `registerForCalls` asks APNs for a token without asking permission: `start` uses it when the prompt
 is declined or notifications are off in Settings, so the phone still registers its device and VoIP
-tokens and calls ring through CallKit (`docs/app/chat-direct-calls.md`).
+tokens and calls ring through CallKit ([docs/app/chat-direct-calls.md](../../../docs/app/chat-direct-calls.md)).
 
 `start` (and so sign-in, resume and `rebind`) never shows the system prompt: while permission is
 `notDetermined` it registers for calls only. The prompt comes from `start(accountKey:ask: true)`,
-which `enable` (Settings' "Enable notifications", now offered while permission is not asked yet)
+which `enable` (Settings' "Enable notifications", offered while permission is not asked yet)
 and `askWhenUseful` call. The app calls `askWhenUseful` after the first chat message is sent; it
 does nothing unless push has started and permission is still `notDetermined`
-(`docs/native/PERMISSIONS.md`).
+([docs/native/PERMISSIONS.md](../../../docs/native/PERMISSIONS.md)).
 
 ```swift
 let push = PushNotificationService(api: api, platform: applePushBridge)   // platform nil = unsupported

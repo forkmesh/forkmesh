@@ -35,10 +35,9 @@ platforms.
 - Only a spot the user chose is saved: `GenieSpiderWidget::placed` fires when a
   drag or a throw from the desktop settles, and `genie/spot` (or
   `genie/desktopSpot`) is written then, skipped when unchanged. `moved` fires
-  on every arrival, wander and hop included, and only re-places the coach.
-  Saving on `moved` rewrote `ForkMesh.conf` every 11 s (16 of 36 rewrites in a
-  3-minute watch for report #10), each one two `fdatasync` calls that the next
-  `QSettings` on the GUI thread paid for.
+  on every arrival, wander and hop included, and only re-places the coach;
+  saving there would rewrite `ForkMesh.conf` (two `fdatasync` calls on the GUI
+  thread) every few seconds.
 - A plain click shows one 5–10 word line (`GenieCoaching::lines`) in a bubble
   for 5 s; a drag says nothing; a 0.55 s press opens the menu. The one line it
   says unasked announces a badge: when a fresh `badge` ping celebrates,
@@ -62,9 +61,9 @@ The frame timer runs at 60 fps in flight, 24 fps while walking, reacting or
 hovered, lower at rest and when the app is inactive, and stops while hidden or
 minimized. A tick that finds the window unexposed or minimized, or the
 application hidden or suspended, only re-arms itself at 2 Hz: every repaint of
-the window is a GPU buffer swap that the compositor can hold for seconds
-(2026-10-22 stall logs). Frames are painted to an image only when a tick changed them; the
-head, turban, joints and eye sockets are cached images.
+the window is a GPU buffer swap that the compositor can hold for seconds.
+Frames are painted to an image only when a tick changed them; the head, turban,
+joints and eye sockets are cached images.
 
 ## Playing with the window and keeping clear
 

@@ -1,5 +1,7 @@
 # Self-assignment: the Assign button and the one-issue rule
 
+Part of [the App docs](README.md).
+
 ## The Assign button
 
 An open issue's comment box has an **Assign** button beside **Comment** (and

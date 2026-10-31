@@ -5,6 +5,8 @@ The web Notes page (`app/public/dashboard/js/09-notes.js`, markup in
 `marketplace/packages/notes/content/web/view.html`) offers the same
 conversions as the iOS, Android and desktop apps, from the note's **⋯** menu.
 Anyone who can open the note sees them; the note itself is never changed.
+Part of the [App docs](README.md); sharing is in
+[notes-sharing.md](notes-sharing.md).
 
 ## Turn into a task
 
@@ -51,13 +53,12 @@ disabled while a conversion is running so a double click cannot file twice.
 
 ## Search covers the body
 
-The note listing (`GET /api/notes`) carries no Markdown, so the sidebar
-search used to match titles only. Typing in **Search notes** now also asks
-`GET /api/notes?query=<text>` (debounced 250 ms, stale answers dropped).
-The server already decrypts every listed note to read its title, so
-`app/src/notes.py` `_matches` checks the lowercase text against the title and
-the Markdown and returns only the matching notes (same shape as the plain
-listing, still without Markdown). A query over 200 characters is
+The note listing (`GET /api/notes`) carries no Markdown, so typing in
+**Search notes** also asks `GET /api/notes?query=<text>` (debounced 250 ms,
+stale answers dropped). The server already decrypts every listed note to read
+its title, so `app/src/notes.py` `_matches` checks the lowercase text against
+the title and the Markdown and returns the matching notes (same shape as the
+plain listing, without Markdown). A query over 200 characters is
 `invalid_query`. Until the answer arrives the list shows title matches, or
 "Searching notes…" when there are none. Native clients can use the same
 parameter.

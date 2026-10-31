@@ -85,8 +85,9 @@ is enrolled.
 
 ## 7. Publish and push
 
-The engine speaks smart HTTP to the app origin only; the relay is a masked
-proxy in front of the mirror gateway.
+The engine speaks smart HTTP to the app origin only; the relay (the core
+nodes, see [architecture](../architecture.md)) is a masked proxy in front of
+the [mirror gateway](../operations/direct-https-mirror-gateway.md).
 
 - `GET /{owner}/{repo}/info/refs?service=git-receive-pack`
 - `POST /{owner}/{repo}/git-receive-pack`

@@ -7,11 +7,11 @@ Part of [the desktop docs](README.md). Code: `desktop/src/CorePackageServices.*`
 `forkmesh-core-package-services-tests`, `forkmesh-web-engine-module-tests`,
 `forkmesh-app-paths-tests`.
 
-On 2026-10-28 the owner asked for ForkMesh to be completely modular: every
-feature a plugin, and the ability to run ForkMesh as an empty shell that takes
-almost no memory, starting with nothing and adding everything from the Market.
-This page is where that stands on the desktop, what the shell still does, and
-what is left.
+The goal is a completely modular ForkMesh: every feature a plugin, and an
+empty shell that takes almost no memory, with everything added from the
+Market. This page is where that stands on the desktop, what the shell still
+does, and what is left. Plugin packaging is in
+[package-modules.md](package-modules.md).
 
 ## Starting empty
 
@@ -29,9 +29,8 @@ or the project switcher).
 
 ## Core services follow their packages
 
-Removing a switch package used to hide its buttons and nothing else: the
-feature's timers, sockets and feeds kept running. `CorePackageServices` is a
-small registry of the core's background services. Each service names the
+Removing a switch package stops its timers, sockets and feeds, not just its
+buttons. `CorePackageServices` is a small registry of the core's background services. Each service names the
 packages that need it and has a start and a stop hook; it runs while at least
 one of those packages is shown on this desktop (`packageSurfaceShown`: installed,
 with its dependencies, and placed here). `syncPackageRuntime`, which runs on
@@ -55,8 +54,8 @@ package's back. Stopping it is the same silenced stop the window uses when it
 closes. A phone can still reach the desktop through the relay socket
 (`onNodeControlFrame`); only the LAN path needs Chat or Desktops.
 
-The World voice bridge is no longer built at start: it is created the first
-time someone asks for a pairing code (`createWorldSpeechPairing`).
+The World voice bridge is created the first time someone asks for a pairing
+code (`createWorldSpeechPairing`), not at start.
 
 ### Left running on purpose
 
@@ -77,31 +76,22 @@ resident memory in every process. See
 
 ## Measurements
 
-Release build, offscreen, a fresh sandboxed `HOME`, resident memory 10 s after
-start (after the deferred session start at 5 s), taken 2026-10-28 on the
-36-core build box while other agents were building:
+Release build, offscreen, a fresh sandboxed `HOME` and `XDG_*_HOME`
+(`env -i`), resident memory (`VmRSS`, `smaps_rollup`) 10 s after start, medians
+of three runs:
 
-| Profile | main | + core services follow packages | + Qt WebEngine as a module |
+| Profile | Services always on | Services follow packages | + Qt WebEngine as a module |
 | --- | --- | --- | --- |
 | Home project (legacy: every feature installed) | 207 MB (PSS 154) | 207 MB (PSS 154) | 179 MB (PSS 142) |
 | New project, Standard pack | | 185 MB (PSS 132) | 158 MB (PSS 121) |
 | New project, Empty pack | | 183 MB (PSS 130) | 155 MB (PSS 117) |
 
-Medians of three runs; on main a new project with only the default plugins
-(Analytics, Agent Watch, Docs, Sentry) was 194 MB. Gating the services saves
-work (no 1 s and 2 s agent timers, no mesh beacons, no log feeds or task
-reads) more than memory; the memory is in Qt WebEngine (28 MB in the app) and
-in what is still core below. The breakdown of the Empty project on main
-(`/proc/<pid>/smaps`): 66 MB heap and anonymous memory, 48 MB of the `forkmesh`
+Gating the services saves work (no 1 s and 2 s agent timers, no mesh beacons,
+no log feeds or task reads) more than memory. Before the WebEngine split the
+Empty project held 66 MB heap and anonymous memory, 48 MB of the `forkmesh`
 binary, 18 MB of `libQt6WebEngineCore` plus Qt Quick and QML, and the rest Qt,
-OpenSSL and system libraries. A Qt Widgets program that only shows a window
-is 24 MB, which is about the floor for a Qt shell.
-
-The script that took these (`env -i` with `HOME`, `XDG_*_HOME` and `TMPDIR`
-in a fresh `mktemp -d`, `QT_QPA_PLATFORM=offscreen`, `FORKMESH_PROJECT=shell`
-with a `project.json` created after the cut-off and the seeded settings the
-new-project dialog writes) reads `VmRSS` and `smaps_rollup` 10 s after
-launch.
+OpenSSL and system libraries. A Qt Widgets program that only shows a window is
+24 MB, about the floor for a Qt shell.
 
 ## What is still core
 

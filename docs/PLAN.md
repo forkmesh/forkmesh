@@ -1,11 +1,12 @@
 # The served stack
 
-forkmesh.com, app.forkmesh.com and world.forkmesh.com run on a small
-self-hosted fleet: three core nodes that hold data and secrets, and a runner
-tier that runs untrusted work. `deploy/fleet.toml` describes the fleet;
-[OPERATIONS.md](OPERATIONS.md) is the runbook, [CUTOVER.md](CUTOVER.md)
-records the move from the old Cloudflare Worker stack, and
-[NEXT_ADOPTION.md](NEXT_ADOPTION.md) covers operator files.
+app.forkmesh.com and world.forkmesh.com run on a small self-hosted fleet:
+three equal core nodes that hold data and secrets, reached directly by DNS round
+robin, and a runner tier that runs untrusted work. `deploy/fleet.toml`
+describes the fleet; [OPERATIONS.md](OPERATIONS.md) is the runbook and
+[NEXT_ADOPTION.md](NEXT_ADOPTION.md) covers operator files. The public summary
+is [www/docs/architecture.md](../www/docs/architecture.md); developer index
+[README.md](README.md).
 
 ## Who serves what
 
@@ -22,8 +23,8 @@ records the move from the old Cloudflare Worker stack, and
 ```
           browsers, desktops, phones, mirrors
                        │
-       forkmesh.com ── www Worker ──┐
-                                    ▼
+     DNS round robin, one A/AAAA per healthy core, TTL 60
+                       ▼
   ┌──────── core cell: 3 small VMs (trusted: data + secrets) ────────┐
   │ Caddy · Python app on CPython · rqlite (Raft) · Go daemon/gateway │
   │ WireGuard mesh between cores. No agents, no untrusted code.       │
@@ -38,26 +39,23 @@ records the move from the old Cloudflare Worker stack, and
   node holding `DATA_KEY`, password hashes or the database. A runner gets a
   short-lived, router-signed push capability for exactly
   `refs/heads/agent/<session>` of one repository ([RUNNERS.md](RUNNERS.md)).
-- **Host shim.** The app is the same Python code that ran as a Worker, on
-  CPython behind `app/host/forkmesh_host/`: `js.py`, `ffi.py`, `workers.py`,
-  `env.py`, `asgi.py` (uvicorn). `tools/js_surface_inventory.py` fails when
-  the app uses an attribute the shim does not implement. The test that uses
-  it requires a binding only for `DB`, `ASSETS`, `REPOSITORY_METADATA` and
-  names the app calls through (`env.X.idFromName()`). An `env.FORKMESH_*`
-  name read as a plain value, such as `FORKMESH_CALLS_NODES` or
-  `FORKMESH_CALLS_SECRET`, is an optional var. Before 2026-10-22 every
-  `FORKMESH_*` name counted as a binding, and that failed the node deploy of
-  03524dc4dd77. Any name `ctx` in app, World or marketplace worker code is
-  read as the Workers execution context, so a local of that name fails the
-  test: the Poker package's per-round `ctx` (`ctx.big`, `ctx.credits`)
-  blocked every node deploy from ab5642740e on 2026-10-28 until it was
-  renamed `context`.
+- **Host shim.** The app's Python code targets a Workers-style runtime (`js`,
+  `ffi`, `env` bindings); `app/host/forkmesh_host/` provides it on CPython
+  (`js.py`, `ffi.py`, `workers.py`, `env.py`, `asgi.py` under uvicorn).
+  `tools/js_surface_inventory.py` fails when the app uses an attribute the shim
+  does not implement. Its test requires a binding only for `DB`, `ASSETS`,
+  `REPOSITORY_METADATA` and names the app calls through
+  (`env.X.idFromName()`); an `env.FORKMESH_*` name read as a plain value (such
+  as `FORKMESH_CALLS_NODES`) is an optional var. Any name `ctx` in app, World
+  or marketplace worker code is read as the execution context, so a local of
+  that name fails the test and blocks the node deploy: call it `context`.
 - **Database.** rqlite. `d1_rqlite.py` gives it the D1 shape; plain reads are
   served by the node's own copy (`level=none` over HTTP, the fleet's
   `read_mode = "http"`, or read-only `sqlite3` on the local file with
   `read_mode = "local"`), reads after a write use `weak`, primary-first reads
   use `linearizable`. `tools/rqlite_migrate.py` applies migrations.
-- **Durable Objects.** `durable.py` emulates them on the cores: rendezvous
+- **Room objects.** `durable.py` implements the Durable Object API on the
+  cores: rendezvous
   hash of `ns:name` over live members, storage in rqlite, alarms in
   `do_alarms` delivered exactly once, HMAC-authenticated forwarding over
   WireGuard. A node without quorum reports not-ready and serves read-only

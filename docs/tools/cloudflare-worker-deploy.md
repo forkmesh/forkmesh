@@ -2,7 +2,8 @@
 
 `tools/cloudflare_worker_deploy.py` lets a user mirror an existing Worker
 repository on ForkMesh and deploy it with Wrangler from their own desktop.
-User guide: [www/docs/cloudflare-workers.md](../../www/docs/cloudflare-workers.md).
+This is a user feature; it has nothing to do with how ForkMesh itself is
+served. Tools index: [README.md](README.md). User guide: [www/docs/cloudflare-workers.md](../../www/docs/cloudflare-workers.md).
 Tests: `app/tests/test_cloudflare_worker_deploy.py`.
 
 ## Pieces

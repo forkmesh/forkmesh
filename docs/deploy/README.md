@@ -4,8 +4,12 @@
 fleet node needs. The operator tools in `tools/next_*.py` create instances,
 install nodes, push secrets and roll out releases. Node kinds: **core** nodes
 (trusted: Caddy, the app on CPython, rqlite, the Go daemon and Git gateway)
-and **runners** (untrusted, outbound-only agent compute). The runbook is
-[OPERATIONS.md](../OPERATIONS.md); this page is the map.
+and **runners** (untrusted, outbound-only agent compute,
+[RUNNERS.md](../RUNNERS.md)). The runbook is [OPERATIONS.md](../OPERATIONS.md);
+this page is the map. How the cores fit together and what happens when one
+fails: [architecture](../../www/docs/architecture.md); running your own:
+[self-hosting](../../www/docs/self-hosting.md). Developer index:
+[docs/README.md](../README.md).
 
 ## Code map
 
@@ -19,7 +23,7 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 | `deploy/core/certsync.py` | leaderless certificate sharing |
 | `deploy/core/ids.py` | host intrusion detection ([IDS.md](../IDS.md)) |
 | `deploy/core/self_deploy.py` | phone-approved merges deployed by the cores ([self-deploy.md](self-deploy.md)) |
-| `deploy/core/edge_client.md` | wire contract for `x-forkmesh-edge-client` |
+| `deploy/core/edge_client.md` | wire contract for `x-forkmesh-edge-client` ([edge_client.md](../../deploy/core/edge_client.md)) |
 | `deploy/core/templates/`, `deploy/runner/templates/` | unit files and configs |
 | `deploy/operator/` | operator-box user units: backup, unseal, DNS health |
 | `deploy/tests/` | renderer, Caddy, certsync, IDS and tool tests |
@@ -74,7 +78,7 @@ chosen at run time among live cores:
 | rollout order | rotates per release (`rollout_order`, sha256 of `rev:name`) |
 | self-deploy order | rendezvous per approval |
 | backups | the current Raft leader |
-| certificates, cron, Durable Objects, autoscaler | rendezvous or rotation over live `cluster_members` |
+| certificates, cron, Durable Object emulation ([host](../host/README.md)), autoscaler | rendezvous or rotation over live `cluster_members` |
 | WireGuard, firewall, mesh, certsync, IDS keys, Git upstreams | full mesh from `fleet.toml` |
 | runner-pool and hosted-git core lists | rendered into `app.env` from the fleet's cores |
 | group calls | every core runs `fmnext-calls`; the app places each room by rendezvous over the healthy cores in `FORKMESH_CALLS_NODES` ([calls.md](calls.md)) |
@@ -112,8 +116,7 @@ the plan. Steps:
   idempotent; a failure drains the node and keeps the VM for a retry.
 - **Node account before repos:** without its `fmnext-nN` node account the relay
   answers the new daemon with HTTP 401, so repositories it learns from the
-  catalog never sync. On 2026-10-23 n5 waited 20 minutes for `kaifdemo/demo`.
-  `repos` registers the account first (idempotent) and nudges a sync.
+  catalog never sync. `repos` registers the account first (idempotent) and nudges a sync.
 - **Snapshots:** only keyless builder images are accepted; cloning a live
   core would copy its keys and Raft state.
 - **Merge:** the commit step merges the branch into `main` itself (see
@@ -137,11 +140,8 @@ is in `config/fleet/remove-core/nN.json`; runs resume.
 
 Autodeploy, roll and backups read `deploy/fleet.toml` on `main`, and every
 deploy first asks each core listed there for `/api/version`. A fleet change
-left on its branch breaks every deploy: on 2026-10-23 n2 was removed and n5
-added, neither branch was merged, and each deploy from 03:21 on (run 7110 and
-the runs before it) failed with "n2 did not answer /api/version (HTTP 0)".
-
-So the commit step of `add-core` and `remove-core` lands the change itself
+left on its branch breaks every deploy ("n2 did not answer /api/version
+(HTTP 0)" for a removed core). So the commit step of `add-core` and `remove-core` lands the change itself
 (`land_on_main` in `tools/next_add_core.py`):
 
 1. `git merge-tree --write-tree main <commit>` first; a conflict is refused
@@ -203,8 +203,7 @@ renders an empty address. Tests and docs use documentation ranges
 
 ### Reaching nodes over IPv6
 
-On 2026-10-07 the operator box lost IPv4 while IPv6 kept working, and a deploy
-stopped mid-rollout. Node configs, firewall rules and DNS A records keep using
+The operator box can lose IPv4 while IPv6 still works. Node configs, firewall rules and DNS A records keep using
 `ip`; only the operator's own connections can switch address family. Those are
 `next_common.Ssh` (ssh, scp, tunnels) and the autodeploy `/api/version` probe,
 and both go through `next_common.route_address`. `FMNEXT_ROUTE_FAMILY` picks
@@ -305,7 +304,8 @@ create or destroy instances.
 - Cores mesh over WireGuard; rqlite Raft between voters; the app reads
   locally and writes through rqlite HTTP.
 - Unseal: `DATA_KEY` over SSH stdin to the app's unix socket.
-- The homepage Worker signs `x-forkmesh-edge-client`.
+- The forkmesh.com Worker (`forkmesh-www`) signs `x-forkmesh-edge-client`
+  ([edge_client.md](../../deploy/core/edge_client.md)).
 - Operator config in `~/projects/forkmesh/config/fleet/` (`FMNEXT_CONFIG_DIR`);
   `FMNEXT_DIST_DIR` for builds; the label prefix guard
   `instance_label_prefix = "fmnext-"` cannot be bypassed.
@@ -344,25 +344,22 @@ python3 tools/next_deploy.py all --execute
 - Cores fetch `main` from each other after each sync; a clean code-only
   divergence becomes a deterministic merge commit so cores converge
   (`server/gateway.go`, `convergePeerMains`).
-- Memory on a 1 GB core (2026-10-16 survey: 650-740 MiB used, 220-320 MiB
-  available). rqlite runs with `MemoryHigh=260M`, `MemoryMax=320M`,
-  `GOMEMLIMIT=150MiB` and no swap. At the old `MemoryMax=220M` every core's
-  rqlite sat at its limit (thousands of `memory.events` max hits; the page cache
-  of the 99 MB database counts against the unit), and on 2026-10-16 the leader
-  on n3 was OOM-killed under a burst of analytics reads. `MemoryHigh` makes the
-  kernel reclaim first instead of killing.
+- Memory on a 1 GB core (650-740 MiB used, 220-320 MiB available). rqlite
+  runs with `MemoryHigh=260M`, `MemoryMax=320M`, `GOMEMLIMIT=150MiB` and no
+  swap. The page cache of the ~100 MB database counts against the unit, so at
+  `MemoryMax=220M` rqlite sat at its limit and a leader was OOM-killed under a
+  burst of analytics reads; `MemoryHigh` makes the kernel reclaim first.
+  Details: [RQLITE_FINDINGS.md](../../app/host/RQLITE_FINDINGS.md).
 - `forkmesh-mirror-node` (`MemoryHigh=96M`, `MemoryMax=128M`) also holds its
-  `mirror_gateway.py` child. The gateway's in-memory caches were allowed 122 MiB
-  (responses 64, dashboard assets 48, catalog 8, sessions 2), more than the
-  whole unit, so after two days each core carried about 185 MiB of the gateway
-  in swap. The caps are now responses 24 MiB, assets 12 MiB; entries in those
+  `mirror_gateway.py` child, so the gateway's in-memory caches must stay well
+  under the unit (larger caps pushed ~185 MiB per core into swap). Caps:
+  responses 24 MiB, assets 12 MiB, catalog 8, sessions 2; entries in those
   two caches are counted with 1 KiB of overhead (`entry_overhead`) because
   the wrapper and headers are not in the body length; finished merge-job
   records are capped at 1,000.
 - The gateway hashes a release blob before serving it. A verified
   (path, size, mtime, inode) is remembered for an hour (512 entries), so the
   `/status` download checks and repeat downloads do not re-read 60 MB files.
-  The checks themselves send `HEAD` (`status_monitoring.py`): they need only
-  the status, and a `GET` whose body was cancelled made the serving core
-  stream part of each blob every minute (Caddy's "aborting with incomplete
-  response").
+  The checks send `HEAD` (`status_monitoring.py`): a cancelled `GET` made the
+  core stream part of each blob every minute (Caddy's "aborting with
+  incomplete response").

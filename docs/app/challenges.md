@@ -1,7 +1,7 @@
 # Code challenges
 
 A challenge is a race between users over a fixed number of days: whoever does
-the most code in the window wins. Code: `app/src/challenges.py` (rules),
+the most code in the window wins. Part of [the App docs](README.md). Code: `app/src/challenges.py` (rules),
 `app/src/challenges_runtime.py` (routes and storage), tables
 `code_challenges` and `code_challenge_members`, page `/dashboard/challenges`
 (`09-challenges.js`), tests `app/tests/test_challenges.py`. Invites are the

@@ -1,7 +1,9 @@
 # Marketing email: product updates and offers
 
 An opt-in email channel for product updates and promotions. What to send and
-when is in the [marketing plan](../marketing/plan.md).
+when is in the [marketing plan](../marketing/plan.md). Part of the
+[App docs](README.md); delivery and tracking are in
+[notification-email.md](notification-email.md).
 
 ## Code map
 
@@ -20,11 +22,10 @@ when is in the [marketing plan](../marketing/plan.md).
 ## Consent
 
 - The account record holds `marketing_email: {"at": <ms>, "source":
-  "signup"|"settings"}` only while subscribed; every account starts
-  unsubscribed. The record is the evidence of when and where consent was
-  given; opting out deletes it.
+  "signup"|"settings"}` only while subscribed, as evidence of when and where
+  consent was given. Every account starts unsubscribed; opting out deletes it.
 - The signup checkbox is unchecked by default and separate from the Terms.
-- Independent of ping email settings in both directions.
+- Independent of ping email settings both ways.
 - A campaign goes only to opted-in, active, `user`-kind accounts with a
   verified email.
 

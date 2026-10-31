@@ -62,18 +62,17 @@
       <div class="doc-body">
         <h2 id="where-it-runs">Where it runs</h2>
         <p>
-          Until September 2026 the hosted App ran as a Cloudflare Python Worker.
-          Since 24 September 2026, <code>app.forkmesh.com</code> and
-          <code>world.forkmesh.com</code> run the same Python application on
-          ForkMesh's own servers. The landing pages, docs, and blog at
-          <code>forkmesh.com</code> are a separate static site in
-          <code>www/</code>. This page keeps its old address so existing links
-          still work.
+          <code>app.forkmesh.com</code> and <code>world.forkmesh.com</code> are
+          served directly by three equal core nodes through DNS round robin, so
+          no single server has to stay up. With two cores down the survivor
+          keeps serving reads, clones and downloads. See
+          <a href="/docs/architecture/">Architecture and availability</a>. The
+          landing pages, docs and blog at <code>forkmesh.com</code> are a
+          separate static site in <code>www/</code>.
         </p>
         <p>
-          To run your own instance, follow
-          <a href="/docs/protocol#self-hosting-a-mainnode">Self-hosting a mainnode</a>
-          in the protocol spec.
+          To run your own node, mirror or instance, see
+          <a href="/docs/self-hosting/">Self-hosting</a>.
         </p>
 
         <h2 id="routes">Rooms and catalog</h2>
@@ -95,25 +94,23 @@
 
         <h2 id="room-encryption">Room encryption</h2>
         <p>
-          Every room frame leaves the client inside an AES-256-GCM outer
-          cipher whose passphrase the server can derive.
-          Public channels intentionally stop at that controller-readable layer
-          so ForkBot, MCP, and webhooks can participate. Private channels and
-          direct messages first encrypt each application frame under a fresh
-          content key and wrap that key to known X25519 device identities, so
-          the controller room key alone cannot read protected content. Device
-          discovery is automatic but not independently authenticated: an
-          active controller can inject a future recipient key. Frames marked
-          <code>persist: true</code> are kept for at most 7 days, with only the
-          newest 500 retained per room; other frames are broadcast without
-          history storage.
+          Every person's message is sealed and signed on their device: a fresh
+          AES-256-GCM key per message, wrapped to each approved device with a
+          hybrid X25519 and ML-KEM-768 exchange. Direct messages add a
+          per-message ratchet, hold new devices for approval and show safety
+          numbers. Public channels stay readable by anyone who joins, including
+          the server, so ForkBot and webhooks can take part. Retained frames are
+          kept for at most 7 days. See
+          <a href="/docs/encryption/">Encryption and signatures</a>.
         </p>
       </div>
 
       <nav class="doc-siblings" aria-label="Other developer docs">
         <h2>More developer docs</h2>
         <ul>
-          <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API, self-hosting a mainnode</li>
+          <li><a href="/docs/architecture/">Architecture and availability</a> — cores, DNS round robin, mirrors</li>
+          <li><a href="/docs/encryption/">Encryption and signatures</a> — what is signed and encrypted, and how</li>
+          <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API</li>
           <li><a href="/docs/qt-client">Desktop client</a> — the Qt 6 node</li>
           <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
           <li><a href="/changelog">Changelog</a> — release-by-release history</li>

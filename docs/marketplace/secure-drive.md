@@ -4,7 +4,8 @@ Package: `marketplace/packages/secure-drive/`. The user-facing description,
 threat table and limits are in the package
 [README](../../marketplace/packages/secure-drive/README.md). This page is the
 format specification every client implements byte for byte, and the reasons
-behind it.
+behind it. Part of [the marketplace docs](README.md); how ForkMesh uses
+encryption elsewhere is in [encryption and signatures](../../www/docs/encryption.md).
 
 | Client | Code |
 | --- | --- |

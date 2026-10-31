@@ -1,5 +1,6 @@
 # Push banner icons
 
+Part of [the native docs](README.md).
 Every push banner title starts with a small emoji for its kind (mention,
 release, issue, pull request, code push, chat message, direct message), so a
 glance at the lock screen tells the alerts apart. The phone draws the app logo

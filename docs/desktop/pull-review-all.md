@@ -67,9 +67,8 @@ from it, off the UI thread, with the same `PullStore` calls a person uses:
   agent log list them. The report file is removed once posted.
 
 The single-PR **Review with AI** (`reviewCurrentPullWithAi`, see
-[agents-ui.md](agents-ui.md)) still posts its result as "commented". Review
-all posts real verdicts because the operator asked for them on 2026-10-31.
-An approval is signed by this node like the operator's own, so it counts
+[agents-ui.md](agents-ui.md)) still posts its result as "commented"; Review
+all posts real verdicts, as the operator asked. An approval is signed by this node like the operator's own, so it counts
 wherever approvals do.
 
 The web dashboard shows the same threads and review. The two desktop link

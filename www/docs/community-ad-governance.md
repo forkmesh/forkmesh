@@ -20,4 +20,4 @@ country data, search terms, wallets, or behavioral history. Responses carry
 priority.
 
 Receipts use the `community_ad_revenue` ledger class. They are not user funds,
-rewards, or on-chain transfers; the Worker does not custody money.
+rewards, or on-chain transfers; the app does not custody money.

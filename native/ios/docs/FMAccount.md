@@ -5,7 +5,8 @@ status. `import FMAccount` (re-import `FMBase`/`FMNet`/`FMCrypto` for their type
 FMBase's synchronous `KeyValueStore` / `SecureStore`, and every call is synchronous.
 
 Also here: the Kotlin app's SecurityBootstrap. Owner crypto and room seal live in FMCrypto
-(docs/FMCryptoAdditions.md).
+([FMCryptoAdditions](FMCryptoAdditions.md)). Native docs home:
+[docs/native/README.md](../../../docs/native/README.md).
 
 ## Observation and listeners
 
@@ -88,7 +89,7 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
   `revokedBannerPending`, `signupUrl`.
 - Actions: `login(identifier:password:totp:) async throws -> AuthSession` (mobile-node bind),
   `logout() async`, `handleUnauthorized(code:)` (call from the API layer on a Bearer 401 with the
-  Worker's `error`), `checkNodeName(_) async -> AccountAvailability`, `refreshAvatar() async`,
+  relay's `error`), `checkNodeName(_) async -> AccountAvailability`, `refreshAvatar() async`,
   `authenticatePreview()`, `deleteAccount(password:) async throws`, `enterGuestMode()`,
   `exitGuestMode()`, `clearRevokedBanner()`, `adoptActiveRelay()` (after a relay switch),
   `forgetRelay(id)`.
@@ -120,15 +121,13 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
 - `FrameTiming.lateCallback(interval:period:)` turns two display-link timestamps into a frame
   timing: nothing unless the gap is over two periods, otherwise `buildDuration` = gap minus one
   period and `vsyncOverhead` = the period (logged as `vsyncMs`). The app's `DisplayLinkFrameSource`
-  ticks at 10 Hz, so it used to report the whole gap: one skipped tick after a 100-120 ms hold of
-  the main thread read as a "200 ms" stall and fed the "dropped-frame hitches" alert (the
-  1.4.1 (255) report from an iPhone 15 Pro Max was all `frame 200-221ms buildMs=100-121`). Only
-  the time past the expected tick counts now, so a stall means the main thread really missed
-  `stallThreshold`.
+  ticks at 10 Hz, so counting the whole gap would turn one skipped tick after a 100-120 ms hold
+  into a "200 ms" stall; only the time past the expected tick counts, so a stall means the main
+  thread really missed `stallThreshold`.
 - `track` keeps only the caller's return addresses (`Thread.callStackReturnAddresses`) while the
-  operation runs and symbolicates them (`dladdr`, Darwin) only when it turns out slow. It used to
-  call `Thread.callStackSymbols` on the main actor for every API request, fast or not, and a
-  resume fires a dozen or more at once.
+  operation runs and symbolicates them (`dladdr`, Darwin) only when it turns out slow, because
+  `Thread.callStackSymbols` on the main actor for every request is costly and a resume fires a
+  dozen or more at once.
 - `StallLogFile.forDevice(build:)` (existing) is the on-disk log. `tail(maxBytes:) async` returns the
   end of `stalls.log.1` followed by `stalls.log`, starting on a whole line, read on the log's own
   queue; it reads earlier launches too and never creates the file.
@@ -142,36 +141,31 @@ at startup, right after `SettingsService.create`, then build `AuthService` with 
 
 ## FreshInstallReset (`FreshInstallReset.swift`)
 
-Deleting the app from an iPhone removes its UserDefaults and files, but iOS
-keeps its Keychain items. So that a reinstall asks the user to sign in again,
-the first launch of a new install erases those leftovers.
+Deleting the app removes its UserDefaults and files but not its Keychain items, so the first
+launch of a new install erases those leftovers and the user signs in again.
 
-`FreshInstallReset(prefs:eraseKeychain:isKeychainLocked:).run()` is the first step
-of `AppServices.start`, before anything reads
-the Keychain (`StartupMaintenance.eraseLeftoversOfADeletedApp`, with
-`KeychainBackend.eraseAll`, which deletes every item of every class in all of
-the app's access groups: the session, identity, owner keys, vault copy, push
-credentials and share drop).
+`FreshInstallReset(prefs:eraseKeychain:isKeychainLocked:).run()` is the first step of
+`AppServices.start`, before anything reads the Keychain
+(`StartupMaintenance.eraseLeftoversOfADeletedApp`, with `KeychainBackend.eraseAll`: every item of
+every class in all of the app's access groups, i.e. the session, identity, owner keys, vault copy,
+push credentials and share drop).
 
 - `install/installed` set: `.alreadyInstalled`, nothing happens.
-- No marker and the Keychain locked (`KeychainBackend.isLockedUntilFirstUnlock`):
-  `.deferred`, with nothing written or erased. Before the first unlock after a
-  reboot, UserDefaults reads empty, so an installed app would look new and lose
-  its sign-ins. `AppBoot` already waits for the first unlock; this is the
+- No marker and the Keychain locked (`KeychainBackend.isLockedUntilFirstUnlock`): `.deferred`,
+  nothing written or erased. Before the first unlock after a reboot UserDefaults reads empty, so
+  an installed app would look new. `AppBoot` already waits for the first unlock; this is the
   backstop.
-- No marker, but the app's `fm.` preferences hold anything: an update, which
-  keeps its login. The marker is
-  set: `.upgraded`.
-- No marker and no preferences: a new install. `install/erasePending` is set,
-  the Keychain is erased, then the marker replaces it: `.erased`. If the erase
-  fails (the phone still locked after a reboot), it returns `.deferred`, and
-  the pending flag makes the next launch erase again, even though the
+- No marker, but the app's `fm.` preferences hold anything: an update, which keeps its login;
+  the marker is set: `.upgraded`.
+- No marker and no preferences: a new install. `install/erasePending` is set, the Keychain is
+  erased, then the marker replaces it: `.erased`. If the erase fails (still locked), it returns
+  `.deferred`, and the pending flag makes the next launch erase again even though the
   preferences are no longer empty.
 
 ## PermissionPacing (`PermissionPacing.swift`)
 
 Device-wide keys that keep a fresh install free of permission prompts
-(`docs/native/PERMISSIONS.md`). `settle(prefs, freshInstall:)` runs once at boot
+([PERMISSIONS.md](../../../docs/native/PERMISSIONS.md)). `settle(prefs, freshInstall:)` runs once at boot
 (`SettingsService.settlePermissionPacing`, fresh when the active project still
 needs its starter pack): a fresh install stores `permissions/intro` = `pending`;
 an update stores `seen` and `permissions/nearby-opened` = true, so nothing

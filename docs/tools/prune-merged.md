@@ -1,5 +1,8 @@
 # Pruning merged branches, worktrees and agents
 
+Part of [the tools docs](README.md); [branch-inventory.md](branch-inventory.md)
+reports what is left.
+
 `tools/prune_merged.py` removes what `main` already contains: local branches,
 their worktrees, the desktop agent sessions that produced them and, with
 `--remote`, the same branches on the core nodes. It is a dry run unless given
@@ -11,10 +14,10 @@ python3 tools/prune_merged.py --tasks tasks.json --execute     # local only
 python3 tools/prune_merged.py --tasks tasks.json --remote --execute
 ```
 
-The easiest route is to ask an agent in the desktop to "prune merged
-branches": it saves the open task list (`list_tasks` with `status: open`) to a
-file, runs the tool with `--tasks`, and completes the tasks whose branches the
-tool removed (`complete_task`). The tool cannot read the Tasks page itself.
+Easiest: ask a desktop agent to "prune merged branches". It saves the open
+task list (`list_tasks` with `status: open`) to a file, runs the tool with
+`--tasks`, and completes the tasks whose branches were removed
+(`complete_task`). The tool cannot read the Tasks page itself.
 
 ## What is pruned
 
@@ -62,7 +65,7 @@ per core over one SSH session, after one IDS expectation per core, and runs the
 cores in parallel. Each branch is deleted only while it is still at the listed
 commit and that commit is in `main`; a branch that moved is reported and kept.
 
-Trap: every core fetches its upstream, which the cores themselves serve, so a
-core that syncs while another still has a branch gets it back. `delete-refs`
+Every core fetches its upstream, which the cores themselves serve, so a core
+that syncs while another still has the branch gets it back. `delete-refs`
 therefore repeats the batch until a pass deletes nothing on any core (at most
 4 passes).

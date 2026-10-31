@@ -26,7 +26,8 @@ package type, version, price/licence model, entry points, permissions,
 screenshots, dependencies and provenance. Every listing supplies at least one
 image under `preview/` with alternative text. `SIGNATURE` signs the canonical
 manifest and the digest of every archived file, so mirrors can carry the bytes
-but cannot change the creator or content.
+but cannot change the creator or content
+([mirroring and software distribution](../www/docs/mirroring.md)).
 
 The source tree keeps one creation under `packages/<id>/`. A package with a
 `content/` folder is a plugin; a build adds only the plugins listed in

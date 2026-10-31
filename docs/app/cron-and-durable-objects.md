@@ -1,10 +1,17 @@
 # Cron and Durable Objects
 
+Part of [the App docs](README.md). "Durable Objects" here are the App's
+stateful room objects, emulated on the core nodes by the host
+(`app/host/forkmesh_host/durable.py`, `durable_cluster.py`); the code keeps
+the Durable Object API shape. How the cores share work and survive failures:
+[architecture](../../www/docs/architecture.md).
+
 ## Durable Object namespaces
 
-Bound in `app/wrangler.toml` (`[[durable_objects.bindings]]`). On the cores
-each object is placed on one live node by rendezvous hash; storage and alarms
-are kept in rqlite.
+Listed in `app/wrangler.toml` (`[[durable_objects.bindings]]`; the file is not
+deployed, the host's `env.py` reads its binding lists). Each object is placed
+on one live core by rendezvous hash; storage and alarms are kept in rqlite
+([d1.md](d1.md)).
 
 | Binding | Class | Source | Role |
 | --- | --- | --- | --- |
@@ -20,17 +27,20 @@ are kept in rqlite.
 
 ## The per-minute cron
 
-`Default.scheduled` (`app/src/app_runtime.py`) only rings
-`scheduled-runner-v1`; that object's alarm runs every phase due that minute.
+Each minute the host calls `Default.scheduled` (`app/src/app_runtime.py`),
+which only rings `scheduled-runner-v1`; that object (placed on one live core)
+runs every phase due that minute in its alarm, and `host_cron_runs` records
+which node ran which minute.
 
 - Phases are selected by minute residues (for example `webhook-outbox` at
   `minute % 5 == 4`). The status chain `CRON_STATUS_CHAIN` (`status-sample`,
   `status-alert-pings`, `status-alert-email`, `snapshot-status`) runs first,
   in order.
-- Each phase's measured subrequest high-water (`phase_cost_v5`) is reserved
-  before it runs under `CRON_BATCH_SUBREQUEST_CAP`; when the next one does not
-  fit, progress is saved in `tick_state_v5` and the alarm re-arms. A busy
-  minute is a short chain on one object, never a fan-out.
+- Each phase's measured subrequest high-water (`phase_cost_v5`, outbound
+  fetches and database calls) is reserved before it runs under
+  `CRON_BATCH_SUBREQUEST_CAP`; when the next one does not fit, progress is
+  saved in `tick_state_v5` and the alarm re-arms. A busy minute is a short
+  chain on one object, never a fan-out.
 - An exhausted phase budget (`_cron_budget_exhausted`) is recorded in
   `cron_tick`, not logged as an error; the next minute delivers what is due.
 - A phase interrupted mid-run is reported incomplete, not replayed, unless it

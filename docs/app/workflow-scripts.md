@@ -49,7 +49,8 @@ Left out on purpose: `class`, `async`/`await`, generators, `import`,
 `Symbol`, typed arrays. Those raise "... is not supported in scripts" or
 "... is not defined".
 
-Differences from a browser, chosen so the three engines agree:
+Differences from a browser, chosen so the three engines (server, iPhone,
+Android; [native/WORKFLOWS.md](../native/WORKFLOWS.md)) agree:
 
 - Strings count Unicode code points: `'😀'.length` is 1 and `charCodeAt`
   returns the code point.

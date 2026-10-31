@@ -1,5 +1,6 @@
 # Login and first-run onboarding
 
+Part of [the native docs](README.md).
 The phone apps' first screens share one look and one set of pieces. iOS keeps
 them in `ForkMesh/Kit/FmOnboardingKit.swift`, Android in
 `ui/kit/FmOnboardingKit.kt`. Both draw the same colours, sizes and timings, so
@@ -10,12 +11,13 @@ a change to one belongs in the other.
 1. **Welcome, Log in, Sign up** (`AuthFlowView`, `AuthFlow`). One background
    stays in place while the pages change.
 2. **Onboarding** (`OnboardingFlowView`, `OnboardingFlow`). On a fresh install,
-   after sign-in or guest: the permissions page, then the starter pack. The
+   after sign-in or guest: the permissions page
+   ([PERMISSIONS.md](PERMISSIONS.md)), then the starter pack. The
    steps come from what is still pending, so a phone that only owes one sees
    only that one. Back returns a step and keeps the chosen pack. Nothing is
    stored until the flow finishes, so leaving midway shows it again. Skip
    finishes with the default pack.
-3. **Tour** stays as it was, a sheet over Home.
+3. **Tour**: a sheet over Home ([NAVIGATION.md](NAVIGATION.md#2022-the-tour)).
 
 All of these screens are dark whatever the phone's appearance
 (`fmForcedDark`, `FmForcedDark`).

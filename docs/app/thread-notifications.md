@@ -1,9 +1,8 @@
 # Thread notifications
 
-An issue page's sidebar has a Notifications box: a Subscribe/Unsubscribe
-button and one sentence saying whether you will hear about the thread. The
-sentence used to be wrong for the repository owner, and the pings it described
-often said nothing about what happened.
+Part of [the App docs](README.md). An issue page's sidebar has a
+Notifications box: a Subscribe/Unsubscribe button and one sentence saying
+whether you will hear about the thread.
 
 ## Who hears about a thread
 
@@ -17,9 +16,9 @@ often said nothing about what happened.
 
 A mute (Unsubscribe) is a `thread_subscriptions` row with `muted` set. It is
 sticky: a later comment, assignment or mention does not re-subscribe you.
-`notify_subscribers` skips muted rows, and `notify_pending_inbox` now checks
+`notify_subscribers` skips muted rows, and `notify_pending_inbox` checks
 `_thread_muted` for the hosting node and its owning account, so an owner who
-unsubscribes really stops hearing about that thread. The ping for a brand-new
+unsubscribes stops hearing about that thread. The ping for a brand-new
 item is never muted: there is no thread to mute yet.
 
 ## What the sidebar says
@@ -34,18 +33,15 @@ item is never muted: there is no thread to mute yet.
 | `muted` | false | You're not receiving notifications from this thread. |
 | empty | false | You're not receiving notifications from this thread. |
 
-Before, the status only looked for a subscription row. The owner gets every
-inbox ping without one, so the page told them they were not receiving
-notifications from a thread that had just pinged them. `issueSubscriptionNote`
+The owner gets every inbox ping without a subscription row, so the status
+must report `owner` rather than look only for a row. `issueSubscriptionNote`
 in `06-repo-content.js` picks the sentence.
 
 ## What an inbox ping says
 
-An event without text (an approval with no note, closing a pull request,
-resolving a review thread, closing, assigning or relabelling an issue) used to
-reach the owner as "Pull request activity for owner/repo" or "Issue submitted
-for owner/repo" over "A signed item is waiting in your desktop inbox.", linked
-to the repository root. `pending_inbox_action` now names the event:
+For an event without text (an approval with no note, closing a pull request,
+resolving a review thread, closing, assigning or relabelling an issue),
+`pending_inbox_action` names the event instead of a generic "activity" title:
 
 - title: `Pull request approved in owner/repo`, `Pull request closed in …`,
   `Issue assigned in …`, `Issue closed in …`, and so on;
@@ -54,8 +50,7 @@ to the repository root. `pending_inbox_action` now names the event:
   person wrote;
 - link: the issue or pull request itself whenever its number is known.
 
-An event type it does not know still gets `There's new activity on issue #12.`
-instead of the desktop inbox sentence. The pull request title is looked up
+An unknown event type gets `There's new activity on issue #12.`. The pull request title is looked up
 only for events without text, so a plain comment costs no extra read.
 
 ## Opening the comment

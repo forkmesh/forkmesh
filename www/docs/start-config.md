@@ -4,6 +4,9 @@ The [Start your own instance](https://app.forkmesh.com/start) page can be
 filled from one zip holding a settings `.json` file and a logo. Examples:
 [start-config.example.zip](https://app.forkmesh.com/start-config.example.zip)
 and [start-config.example.json](https://app.forkmesh.com/start-config.example.json).
+The page and installer are described in
+[Start your own instance](start-your-own-instance.md); the overall picture is on
+[Self-hosting](self-hosting.md).
 
 ## The zip
 

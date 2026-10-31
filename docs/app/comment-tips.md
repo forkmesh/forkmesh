@@ -1,6 +1,6 @@
 # Tips on comments (Solana Pay)
 
-A comment, issue or pull request description, review or discussion post whose
+Part of [the App docs](README.md). A comment, issue or pull request description, review or discussion post whose
 author has a Solana address on their profile (the existing public `solana`
 payout field in Settings → Verification and payout, `SOLANA_RE`) shows a
 **Tip** button to signed-in readers other than the author. Tips go directly

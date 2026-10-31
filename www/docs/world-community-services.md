@@ -5,6 +5,7 @@ the database and serves them over HTTPS; the multiplayer socket carries only
 presence and movement. Empty or unavailable data is shown as such, never as
 demo content. All mutations and denied attempts write metadata-only entries to
 `sensitive_audit_log`.
+Other World pages are listed in the [docs index](README.md).
 
 ## UTC community events
 

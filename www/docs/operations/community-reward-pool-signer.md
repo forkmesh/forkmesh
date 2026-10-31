@@ -4,7 +4,8 @@ The desktop **Control node** page is the only component that can sign an
 outgoing community-pool transaction. The server schedules and stores public
 plans but never receives a seed, private key, passphrase, or signed transaction
 bytes. Signing is an explicitly approved local flow, not an unattended hot
-wallet.
+wallet. The pool's rules are in [community reward pool](community-reward-pool.md);
+the page itself is described in [desktop control node](desktop-control-node.md).
 
 ## Provisioning
 

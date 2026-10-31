@@ -1,5 +1,8 @@
 # Runners: trusted core and untrusted agent compute
 
+Untrusted agent work runs on a separate runner tier, never on the cores that
+hold the data ([architecture](../www/docs/architecture.md), [threat
+model](../www/docs/protocol/threat-model.md); index: [docs/README.md](README.md)).
 The Go daemon (`server/`) has three roles:
 
 | Role | Serves repositories | Gateway, catalog, merge executor | Agent jobs | Actions |
@@ -90,11 +93,9 @@ arbitrary code inside its sandbox. It cannot:
 
 ### Private runners
 
-Since 2026-10-14 a personal runner belongs to the account that added it and
-to nobody else. Someone else's runner showed its provider account (the
-Claude sign-in email and usage) to every admin on `/dashboard/runners`,
-and an organization member could steer a session that ran on a teammate's
-runner, spending the teammate's Claude plan.
+A personal runner belongs to the account that added it and to nobody else:
+otherwise admins see its provider account (sign-in email, usage) and
+teammates can steer sessions on it, spending its owner's plan.
 
 - **Seen only by its registrant.** `GET /api/runners`, `GET
   /api/runners/attention` and every `/api/runners/<name>/…` route answer
@@ -131,25 +132,20 @@ Residual risks:
   swept between jobs.
 - The provider login is readable by agent code. Use a dedicated provider
   account for a pool that serves other people.
-- **The persistent home is closed to jobs.** `systemd-run --scope --uid`
-  resets `HOME` from the job user's passwd entry, so the sandbox restores the
-  per-session `HOME` after the uid switch (`env -- HOME=<session home>`).
-  Between sign-in and terminal sessions the job user's persistent home is
-  owned by the daemon with mode 0700, so no job can read the stored
-  sign-ins or plant files there. A sign-in or terminal session first scrubs
-  it down to the credential files (`.claude/.credentials.json`,
-  `.codex/auth.json`), then hands it to the job user until the last session
-  ends. A job running at the same time as a sign-in can still reach it.
-  `.claude.json` is kept but cut down to `oauthAccount`, `userID` and the
-  onboarding flags: the runner reads `oauthAccount` to tell Claude accounts
-  apart, and dropping it would put every terminal back through first-run
-  setup; `mcpServers`, `projects` and hooks are what a job could plant, and
-  they go. An unparsable one is removed.
-  The daemon only locks and scrubs a job user whose passwd comment starts
-  with `ForkMesh runner jobs` (what `install-runner.sh` creates, and the only
-  existing account it accepts). A `runner.jobUser`/`jobUid` set by hand to
-  any other account, a person's own for example, has its home left as it
-  is and a warning in the log, since scrubbing would erase it.
+- **The persistent home (HOME gap).** `systemd-run --scope --uid` resets
+  `HOME` from passwd, so the sandbox restores the per-session `HOME` after
+  the uid switch (`env -- HOME=<session home>`). Between sessions the job
+  user's persistent home is daemon-owned 0700, so no job reads the stored
+  sign-ins or plants files there. A sign-in or terminal session scrubs it
+  down to `.claude/.credentials.json` and `.codex/auth.json`, then hands it
+  to the job user until the last session ends; a job running during a
+  sign-in can still reach it. `.claude.json` keeps only `oauthAccount` (to
+  tell Claude accounts apart), `userID` and the onboarding flags; plantable
+  `mcpServers`, `projects` and hooks go, and an unparsable file is removed.
+  Only a job user whose passwd comment starts with `ForkMesh runner jobs`
+  (what `install-runner.sh` creates) is locked and scrubbed; any other
+  account set by hand in `runner.jobUser`/`jobUid` is left alone with a log
+  warning, since scrubbing would erase a person's home.
 - The read grant exposes the whole repository; loopback is blocked for jobs,
   so agents cannot reach dev servers on `127.0.0.1`.
 - A non-root daemon runs jobs as its own user; a root daemon refuses to start
@@ -286,7 +282,7 @@ next to the others; installing one never stops or rewrites another.
 | Loopback ports | `listen`/`gatewayProbe` pair from 8795 upward, skipping pairs another instance's config names or that are taken; kept on re-install |
 
 - **Finding instances.** The installer reads `/etc/forkmesh-runner/runner.json`
-  (an install from before 2026-10-14) and every
+  (the older single-runner layout) and every
   `/etc/forkmesh-runner/accounts/*/runner.json`. Before registering it looks
   for the instance holding the runner name; a new name signs with a staged
   key (`/var/lib/forkmesh-runner/pending-<name>.pem`) and moves into the
@@ -310,8 +306,7 @@ next to the others; installing one never stops or rewrites another.
 
 ## macOS runners
 
-The installer printed `Runners need Linux with systemd.` on a Mac until
-2026-10-14. On Darwin it now differs from Linux in these ways:
+On Darwin the installer differs from Linux in these ways:
 
 | | Linux | macOS |
 |---|---|---|
@@ -347,12 +342,11 @@ What macOS lacks next to Linux:
 - HOME is set after the uid switch, so the per-session HOME does apply here
   (the Linux HOME gap above does not occur).
 
-Untested on a live Mac: the launch daemon, `dscl` user and pf anchor have
-not been loaded on a real machine as root. `pfctl -n` parses the generated
-`jobs.pf` and `plutil -lint` accepts both plists (office Mac, macOS 15).
-Claude Code on macOS normally stores its login in the Keychain, while the
-runner copies credential files; check that a web sign-in as the hidden job
-user writes `~/.claude/.credentials.json`.
+Untested as root on a live Mac: the launch daemon, `dscl` user and pf anchor.
+`pfctl -n` parses `jobs.pf` and `plutil -lint` accepts both plists (macOS
+15). Claude Code on macOS normally keeps its login in the Keychain, while the
+runner copies credential files; check that a web sign-in as the job user
+writes `~/.claude/.credentials.json`.
 
 The daemon builds for `darwin`: `pty_darwin.go` opens a pty with
 `TIOCPTYGRANT`/`TIOCPTYUNLK`/`TIOCPTYGNAME`, and `memory_darwin.go` reports
@@ -386,20 +380,17 @@ no memory figures (`/proc` and `sysinfo` are Linux only).
 
 ## The runners page
 
-`/dashboard/runners` (`partials/views/runners.html`, `js/09-runners.js`)
-follows GitHub's settings layout: a short header with the long sign-in
-explanation folded under "How sign-in works", then one bordered list. Each
-runner is a tinted header row (name, scope label, online status, last
-check-in) followed by flat provider rows and hairline-separated account rows,
-so nothing nests a box in a box. Colour follows the dashboard theme: links,
-focus and the active account use the accent blue; green is kept for the
-"Set up a runner" button, the online dot and the "Signed in" label; usage
-bars are blue, amber from 80 % and red from 95 %. A runner counts as online
-when it checked in within 10 minutes, the same window as `ONLINE_MS` in
-`runner_logins.py`. The sign-in panel is a single box: the authorize URL as a
-truncated field with Copy and Open, the terminal as one flat code block, then
-the code form. The settings page renders the same rows into its own list
-container ([app/settings-agents-and-runners.md](app/settings-agents-and-runners.md)).
+`/dashboard/runners` (`partials/views/runners.html`, `js/09-runners.js`): a
+short header (sign-in help folded under "How sign-in works"), then one list.
+Each runner is a header row (name, scope, online status, last check-in) with
+flat provider and account rows, no nested boxes. Accent blue marks links,
+focus and the active account; green only the "Set up a runner" button, the
+online dot and "Signed in"; usage bars turn amber at 80 % and red at 95 %.
+Online means a check-in within 10 minutes (`ONLINE_MS` in
+`runner_logins.py`). The sign-in panel shows the authorize URL (Copy, Open),
+the terminal as one code block, then the code form. The settings page
+renders the same rows
+([app/settings-agents-and-runners.md](app/settings-agents-and-runners.md)).
 
 The desktop and both phones manage the same runners through the `runners`
 Market package ([marketplace/runners.md](marketplace/runners.md)), which also
@@ -441,4 +432,5 @@ its branch only when it committed something.
 ## Node logs
 
 Burst runners must be discoverable and carry the log reader for their logs to
-reach the desktop ([NODE_LOGS.md](NODE_LOGS.md)).
+reach the desktop ([NODE_LOGS.md](NODE_LOGS.md)). A runner's own IDS reports
+to `/api/runners/security-incident` ([IDS.md](IDS.md)).

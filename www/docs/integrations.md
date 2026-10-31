@@ -7,7 +7,9 @@ analyze, or moderate repositories without scraping a UI: HTTP resources, a
 is the source of truth; if this page disagrees, the JSON wins. The client,
 contract runner, watcher, webhook sender, and offline fixture are one
 standard-library file,
-[`tools/forkmesh_integration.py`](../../tools/forkmesh_integration.py).
+[`tools/forkmesh_integration.py`](../../tools/forkmesh_integration.py). The
+[docs index](README.md) lists related guides; how the hosted service runs is on
+[Architecture and availability](architecture.md).
 
 ```sh
 python3 tools/forkmesh_integration.py discover --target hosted
@@ -25,7 +27,7 @@ codes, fields, headers, attempts, latency, service version; no credentials).
 | `hosted` | `https://app.forkmesh.com` | The hosted application API |
 | `self-hosted` | `http://127.0.0.1:8791` | The `forkmesh-mirror-node` loopback control API |
 
-Each resource names one scheme: `anonymous` (public, may be edge cached),
+Each resource names one scheme: `anonymous` (public, may be cached),
 `loopback-operator` (socket access is the authorization; never publish the
 port), `catalog-view-token` (owner-signed `forkmesh-catalog-view-v1` `viewer`,
 `ts`, `sig`; adds private repositories, `no-store` with a weak `ETag`),
@@ -140,7 +142,7 @@ requests retry only on `429`.
 ## Rate limits
 
 Throttled requests answer `429` with `Retry-After`. Hosted public reads are
-edge cached (catalog 30 s). `watch` polls no faster than 30 s hosted, 5 s
+cached (catalog 30 s). `watch` polls no faster than 30 s hosted, 5 s
 self-hosted.
 
 ## Errors

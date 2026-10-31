@@ -5,7 +5,10 @@ repositories while the controller is unreachable also needs authorization
 data, but copying account or session tables to every public host would make
 each mirror a credential database. Instead each node holds a narrow, signed
 authorization projection in SQLite, and browsers carry a controller-signed
-portable session grant.
+portable session grant. This is how a mirror keeps working when the core nodes
+are unreachable ([censorship resilience](../censorship-resilience.md),
+[architecture](../architecture.md)); the dashboard side is in
+[direct-HTTPS mirror gateway](direct-https-mirror-gateway.md#same-codebase-dashboard).
 
 ## Projection contents
 

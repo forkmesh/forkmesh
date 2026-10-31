@@ -3,6 +3,9 @@
 The `forkmesh-availability-proof-v1` report says whether a repository is
 preserved, how independently, and what is at risk. It is computed from the
 public mirrors payload, so anyone can recompute it.
+How copies are made and served is on [Mirroring](mirroring.md); what a block or
+takedown can and cannot stop is on
+[Censorship resilience](censorship-resilience.md).
 
 ## Evidence
 
@@ -19,8 +22,8 @@ Each copy gets the first matching class: `failing`, `verified`, `declared`,
 `stale`, `observed`. Reason codes: `integrity_rejected`, `abuse_blocked`,
 `probe_failed`, `offline`, `behind`, `evidence_expired`, `awaiting_receipt`,
 `never_observed`, `limited_replica`. A copy whose `replicaScope` is not `full`
-is `observed` with `limited_replica` (see [Offline and low-bandwidth
-sync](offline-sync.md)) and never counts toward quorum.
+is `observed` with `limited_replica` (see
+[Offline and low-bandwidth sync](offline-sync.md)) and never counts toward quorum.
 
 Proof is `quorum` when at least 2 distinct operators hold the same verified
 state, `partial` with any verified copy, otherwise `none`. When probe digests

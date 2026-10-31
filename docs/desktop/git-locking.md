@@ -70,10 +70,9 @@ when the lock is younger than 60 s or held.
 did that inside an agent's worktree could collide with the agent's own `git
 add`, and could even rename away a stale `index.lock` that the compare
 header's Clear lock button was about to show. Every read the desktop starts in
-the background runs with `GIT_OPTIONAL_LOCKS=0`: `runGitCaptureDirect` and,
-since 2026-10-16, `runGitDetached` (the Source Control badge, the Git page's
-dirty check, transcript and code map reads). Until then `runGitDetached` set
-nothing and only the Go engine's route set it.
+the background runs with `GIT_OPTIONAL_LOCKS=0`: `runGitCaptureDirect` and
+`runGitDetached` (the Source Control badge, the Git page's
+dirty check, transcript and code map reads).
 
 ## Tests
 

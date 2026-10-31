@@ -1,7 +1,7 @@
 # FMNet
 
 HTTP and WebSocket behind protocols, with public fakes for every module's
-tests. `import FMNet` (re-import `FMBase` yourself for JSON).
+tests. `import FMNet` (re-import `FMBase` yourself for JSON). Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## HTTP (`HTTPClient.swift`, `URLSessionHTTPClient.swift`, `FakeHTTPClient.swift`)
 

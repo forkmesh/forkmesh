@@ -1,7 +1,9 @@
 # Gateways: HTTPS and SSH
 
-The daemon never serves Git itself. It supervises the Python HTTPS gateway and
-leaves SSH writes to the SSH gateway and broker.
+The daemon ([README.md](README.md)) never serves Git itself. It supervises the
+Python HTTPS gateway and leaves SSH writes to the SSH gateway and broker. These
+gateways are what a mirror serves clones from
+([mirroring](../../www/docs/mirroring.md)).
 
 | Component | Code | Guide |
 | --- | --- | --- |
@@ -39,26 +41,21 @@ their own, and sent as UTF-8 JSON; folding, caching and limits are in
 
 The gateway listens first and warms its caches afterwards on the
 `gateway-prewarm` thread (`MirrorGatewayServer.start_prewarm`), the same path
-a SIGHUP reload uses. It used to run `prewarm_memory_caches()` before binding:
-per repository a commit-graph write, tree, history, branches, stats, sizes and
-two ref advertisements, plus the dashboard catalog and assets. Measured on a
-bare copy of the BLT repository (45k commits, 392 MB pack) pinned to one CPU
-with a warm page cache: one repository warmed in about 3 s and seven in
-16.5 s before the port answered; with the listener first the port answers in
-0.26 s (one repository) and 0.34 s (seven). A single-server instance serving
-seven repositories on a small VPS has a cold cache after a restart, which made
-the ~40 s outage seen after deploys. Requests during the warmup are served on
-demand; `_single_flight` keeps a request and the warmup from computing the
+a SIGHUP reload uses. Warming before binding (per repository a commit-graph
+write, tree, history, branches, stats, sizes, two ref advertisements, plus the
+dashboard catalog and assets) kept the port closed for about 3 s per repository
+on one CPU (16.5 s for seven, about 40 s on a small VPS with a cold cache);
+listening first answers in 0.26-0.34 s. Requests during the warmup are served
+on demand; `_single_flight` keeps a request and the warmup from computing the
 same answer twice.
 
 The daemon sends SIGHUP (reload a new config generation) and SIGUSR1 (reload
 the dashboard replica after `--sync-dashboard-replica`) to the live process.
 Both handlers are installed before `GatewayApplication` is built and only
-record the request; it is applied once the server exists. SIGUSR1 used to get
-its handler only after the warmup, and its default action terminates the
-process, so a replica refresh during the 40 s startup killed the gateway
-("gateway exited: signal: user defined signal 1; retrying in 5s") and the next
-start began from zero. The supervisor also restarts a child that died of a
+record the request; it is applied once the server exists. SIGUSR1's default
+action terminates the process, so a handler installed late lets a replica
+refresh kill a starting gateway ("gateway exited: signal: user defined signal
+1; retrying in 5s"). The supervisor also restarts a child that died of a
 SIGHUP or SIGUSR1 it sent without the 5 s crash backoff
 (`diedOfControlSignal`), which covers the few hundred milliseconds of
 interpreter start before `main()` installs the handlers.
@@ -76,18 +73,16 @@ interpreter start before `main()` installs the handlers.
   `comparison_too_large`), not an outage. `compare` and `cherry` turn
   `MAX_COMPARE_COMMITS`, `MAX_CHERRY_UPSTREAM_COMMITS` and the
   `MAX_COMPARE_BYTES` output limit (`_run_git` raises `GitOutputLimit`, a
-  `GitError`) into `ComparisonTooLarge`. It used to answer 503
-  `mirror_unavailable`: callers retried a request that can never succeed and
-  the compare page said the mirror was down. The dashboard already words a
-  413.
+  `GitError`) into `ComparisonTooLarge`, so callers do not retry a request
+  that can never succeed and the compare page does not call the mirror down.
+  The dashboard words a 413.
 - `tree` lists at most `MAX_TREE_ENTRIES` (500) entries of a code folder, with
   `truncated: true` past that. The collaboration folders
   (`COLLABORATION_TREE_ROOTS`: `.forkmesh/issues`, `pulls`, `discussions`,
   `releases`) list up to `MAX_COLLABORATION_TREE_ENTRIES` (50,000): they skip
   the per-entry history and analysis, so a long listing is cheap, and the
-  issue list reads `.forkmesh/issues/open` as one listing. With the 500 cap a
-  mirror of a forge with 547 open issues showed "Open 500" and never loaded
-  the rest.
+  issue list reads `.forkmesh/issues/open` as one listing (a 500 cap made a
+  forge with 547 open issues show "Open 500").
 - A code folder's `tree` carries a dependency and coverage analysis
   (`_analysis`), which takes seconds on a large repository. It reads only
   code: every path outside `.forkmesh/`, plus coverage artifacts
@@ -96,19 +91,17 @@ interpreter start before `main()` installs the handlers.
   branch tip many times a day without touching code, so the analysis is
   keyed on a digest of the `ls-tree` records it reads
   (`_analysis_content_key`), and a tip whose key matches reuses the previous
-  value with only its `commit` changed. A push no longer drops the value; it
-  only forgets the commit. Until 2026-10-30 every new tip rebuilt it (8
-  seconds on the first view after each metadata commit), and the build
-  counted `.forkmesh/` files toward `MAX_ANALYSIS_REPOSITORY_FILES`, so new
-  metadata could push code files out of a large repository's window.
+  value with only its `commit` changed; a push only forgets the commit.
+  Otherwise each metadata commit cost a rebuild (8 s on the next view), and
+  `.forkmesh/` files would count toward `MAX_ANALYSIS_REPOSITORY_FILES` and
+  push code files out of a large repository's window.
 - `sizes` folds each directory to its 40 largest entries plus a `summary`
   (`MAX_SIZES_CHILDREN`), except inside the collaboration folders, which list
-  every entry (up to `MAX_COLLABORATION_TREE_ENTRIES`). The code map turned a
-  summary into "more" tiles of lazy stubs that each needed their own `/tree`
-  read on zoom, so a 600-issue forum showed a grid of empty dashed folders;
-  with every issue folder and file sized up front they render at once.
+  every entry (up to `MAX_COLLABORATION_TREE_ENTRIES`), so the code map
+  renders every issue folder at once instead of "more" tiles that each need
+  their own `/tree` read on zoom.
 - The HTTPS gateway has no `receive-pack`. Pushes go through SSH or through the
-  Worker's hosted-push path ([hosted-repositories.md](../../www/docs/hosted-repositories.md)).
+  App's hosted-push path ([hosted-repositories.md](../../www/docs/hosted-repositories.md)).
 - A search for a common word is a repository answer too, not an outage.
   `search` streams `git grep` and stops at `MAX_SEARCH_RESULTS` matches, at
   2 MB of output or at the process timeout, returning what it has with

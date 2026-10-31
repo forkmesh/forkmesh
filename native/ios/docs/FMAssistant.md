@@ -3,7 +3,7 @@
 The on-device Gemma chat answers from the user's own ForkMesh data, manages
 their CRM, drafts emails, researches on the web and works with their agents.
 `import FMAssistant` (deps FMBase, FMNet, FMAccount, FMApi, FMChat, FMControl,
-FMPackages, FMPlanning, FMLocalAI).
+FMPackages, FMPlanning, FMLocalAI). The model side is [FMLocalAI](FMLocalAI.md). Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Shape
 

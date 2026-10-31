@@ -1,8 +1,9 @@
 # Git SSH public-key authentication
 
 ForkMesh serves standard `ssh://` clone and push URLs from an independently
-operated OpenSSH origin; the HTTP control plane never terminates SSH. There are
-two planes:
+operated OpenSSH origin; the HTTP control plane never terminates SSH. This is
+part of [self-hosting](../self-hosting.md) and [mirroring](../mirroring.md).
+There are two planes:
 
 1. **Control plane.** Stores each user's normalized public key in an encrypted
    envelope indexed by a keyed blind index, and enforces repository owner and
@@ -50,13 +51,13 @@ SSH_GATEWAY_ALLOWED_ADDRESSES=203.0.113.7,2001:db8:7::/64
 ```
 
 `/api/ssh/authorize` compares the bearer token in constant time against
-`SSH_GATEWAY_TOKEN` and, when set, `SSH_GATEWAY_TOKEN_NEXT`; either is
-accepted, so a token rotates without downtime: set the new one as `_NEXT`,
-move the gateway host to it, then make it `SSH_GATEWAY_TOKEN` and remove
-`_NEXT` (`install_ssh_relay.sh --rotate-token`, then `--finish-rotation`).
-`SSH_GATEWAY_ALLOWED_ADDRESSES` additionally pins the gateway host: authorize
-calls from any other address (as the edge sees it, `cf-connecting-ip`) get
-401 even with the right token. A malformed list admits nobody.
+`SSH_GATEWAY_TOKEN` and, when set, `SSH_GATEWAY_TOKEN_NEXT`, so a token rotates
+without downtime: set the new one as `_NEXT`, move the gateway to it, then make
+it `SSH_GATEWAY_TOKEN` and drop `_NEXT` (`install_ssh_relay.sh --rotate-token`,
+then `--finish-rotation`). `SSH_GATEWAY_ALLOWED_ADDRESSES` also pins the gateway
+host: calls from any other address (the `cf-connecting-ip` header, set by a CDN
+or the instance's own front end) get 401 even with the right token. A
+malformed list admits nobody.
 
 ## Node-side boundary
 
@@ -146,19 +147,14 @@ git push origin HEAD:pr/<account>/my-fix     # contributor branch, where allowed
 
 ## Keep the origin private
 
-An instance behind a CDN proxy hides its address: its HTTPS name resolves to
-the CDN, and its firewall admits only the CDN's ranges. SSH cannot go
-through an HTTP proxy, so the SSH name needs a DNS-only record, and that
-record is the address of whatever host runs the gateway. With the gateway
-on the instance itself, `dig ssh.example.org` publishes the origin.
-
-Run the gateway on a separate, disposable **front host** instead. In relay
-mode it needs no repository storage and no instance secrets: it reaches the
-control plane and the HTTPS Git routes only through the public HTTPS name,
-resolved through ordinary DNS (to the CDN) with ordinary TLS verification.
-Its configuration has no `connectAddress` and no `apiConnectAddress`, so the
-origin's address appears nowhere on it. It holds two secrets: the gateway
-token and its own SSH host key.
+An instance behind a CDN proxy hides its address, but SSH cannot cross an HTTP
+proxy: the SSH name needs a DNS-only record, which publishes the address of
+whatever host runs the gateway. Run the gateway on a separate, disposable
+**front host** instead. In relay mode it needs no repository storage and no
+instance secrets: it reaches the control plane and HTTPS Git routes through the
+public HTTPS name (via the CDN, with normal TLS checks), has no
+`connectAddress` or `apiConnectAddress`, and holds only the gateway token and
+its own SSH host key.
 
 1. **A small VPS** (1 vCPU, 512 MB-1 GB, any provider; Debian or Ubuntu
    with OpenSSH 8.5 or newer and Python 3), and a source checkout on it,
@@ -171,9 +167,8 @@ token and its own SSH host key.
    sudo bash tools/install_ssh_relay.sh --control-plane-only --host ssh.example.org
    ```
 
-3. **Copy the token to the front over SSH, straight into the installer**, so
-   it is never written anywhere else (not to a shell history, a clipboard or
-   a temporary file):
+3. **Pipe the token over SSH straight into the installer**, so it is never
+   written to a shell history, clipboard or temporary file:
 
    ```sh
    sudo cat /etc/forkmesh-ssh/ssh-gateway.token |
@@ -191,33 +186,28 @@ token and its own SSH host key.
    `SSH_GATEWAY_ALLOWED_ADDRESSES=<front address>` in `app.env`, then restart
    the app.
 
-**CDN limits.** Everything the front relays crosses the CDN like any HTTPS
-client's traffic:
+**CDN limits.** Everything the front relays crosses the CDN:
 
-- *Request size.* Cloudflare's Free and Pro plans accept request bodies up to
-  100 MB (Business 200 MB, Enterprise 500 MB by default). A push is one
-  request, so the front sets `maxRequestBytes` (`--max-request-mb`, default
-  100; 0 for none) and stops a larger push before uploading it, telling the
-  user to push fewer commits at a time. A 413 from the proxy itself gets the
-  same explanation; the repository quota's own 413 keeps its message. Fetches
-  are unaffected (responses are not capped).
-- *Time.* Cloudflare waits up to 100 seconds for the origin's response to
-  start. A push whose server-side checks take longer gets a 524; the user is
-  told the push may still have landed and to `git fetch` before retrying.
-  Large pushes are streamed chunked; the front's own socket timeout is 10
-  minutes.
-- *Bot protection.* Git clients are not browsers and cannot solve a
-  challenge. If the zone challenges the front (a response with
-  `cf-mitigated`), the user gets a message naming bot protection. Add a WAF
-  custom rule with action *Skip* (managed rules, rate limiting and, on paid
-  plans, Super Bot Fight Mode) matching
+- *Request size.* Cloudflare Free and Pro accept request bodies up to 100 MB
+  (Business 200 MB, Enterprise 500 MB). A push is one request, so the front
+  sets `maxRequestBytes` (`--max-request-mb`, default 100; 0 for none) and
+  stops a larger push before uploading, telling the user to push fewer commits.
+  A 413 from the proxy gets the same message; the repository quota's own 413
+  keeps its message. Fetch responses are not capped.
+- *Time.* Cloudflare waits up to 100 seconds for the response to start. A push
+  whose checks take longer gets a 524, and the user is told it may have landed
+  and to `git fetch` before retrying. Large pushes stream chunked; the front's
+  socket timeout is 10 minutes.
+- *Bot protection.* Git clients cannot solve a challenge. A response with
+  `cf-mitigated` gets a message naming bot protection. Add a WAF custom rule
+  with action *Skip* (managed rules, rate limiting and, on paid plans, Super
+  Bot Fight Mode) matching
   `ip.src eq <front address> and lower(http.user_agent) contains "forkmesh-ssh"`,
-  or turn off Bot Fight Mode, which a Free plan cannot skip. Match the
-  front's address, never the bearer token: a token in a rule is a secret
-  copied into the CDN's configuration.
+  or turn off Bot Fight Mode, which a Free plan cannot skip. Match the address,
+  never the bearer token: a token in a rule is a secret copied into the CDN.
 
-**Abuse controls on the front.** The front sees real client addresses (the
-origin sees only the CDN's). `--remote-front` adds:
+**Abuse controls on the front.** The front sees real client addresses.
+`--remote-front` adds:
 
 - `59-forkmesh-front-limits.conf`: `MaxStartups 10:30:60`,
   `PerSourceMaxStartups 4` and `LoginGraceTime 20` for unauthenticated
@@ -229,18 +219,17 @@ origin sees only the CDN's). `--remote-front` adds:
   10 failures in 10 minutes bans for an hour). It is written either way and
   runs once `fail2ban` is installed.
 
-**Trade-offs.** Every SSH operation takes an extra hop through the front and
-the CDN, and inherits the CDN's size and time limits. The front is a single
-point of failure for SSH (HTTPS is unaffected): run two fronts with the
-same token behind two DNS records, or keep a spare that a DNS change can
-promote. The front is disposable: rebuild it from a checkout and the token,
-and nothing else is lost (give it the same host key, or users see a host key
+**Trade-offs.** Every SSH operation takes an extra hop and inherits the CDN's
+limits. One front is a single point of failure for SSH (HTTPS is unaffected):
+run two with the same token behind two DNS records, or keep a spare. A front
+rebuilds from a checkout and the token (reuse its host key to avoid a host-key
 warning).
 
 ## Controller-free operation
 
 By default every lookup and authorization is an HTTPS call, so a control-plane
-outage stops SSH. An independent mirror can authorize locally by adding
+outage stops SSH. An independent mirror can authorize locally
+([censorship resilience](../censorship-resilience.md)) by adding
 `localAuthorization` to the broker config:
 
 ```json

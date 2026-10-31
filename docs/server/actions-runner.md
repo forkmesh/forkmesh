@@ -1,7 +1,7 @@
 # Mirror Actions runner
 
-Opt-in runner for a repository's `.forkmesh/*.yml` workflows on a mirror.
-Wire contract and operator steps:
+Opt-in runner for a repository's `.forkmesh/*.yml` workflows on a mirror
+(home: [README.md](README.md)). Wire contract and operator steps:
 [mirror-actions-control.md](../../www/docs/operations/mirror-actions-control.md).
 Code: `server/actions.go`, `server/actions_workflow.go`,
 `server/actions_control.go`; systemd drop-in
@@ -21,23 +21,21 @@ Code: `server/actions.go`, `server/actions_workflow.go`,
   otherwise; the node's own `forkmesh/*` ledger branches never trigger runs.
 - Contributor branches (`refs/heads/pr/<account>/...`, pushable by any
   verified account when contributor pushes are on) never trigger runs either:
-  their workflow comes from the pushed commit itself, and the sandbox has no
-  process, memory or disk cap, so one push could fork-bomb or fill the node.
-  The app's instance runner treats them as untrusted (`untrusted_branch`)
+  their workflow comes from the pushed commit, and the sandbox has no process,
+  memory or disk cap, so one push could fork-bomb or fill the node. The app's
+  instance runner treats them as untrusted (`untrusted_branch`)
   (`TestActionsContributorBranchPushRunsNothing`).
 - One run at a time; `needs:`, `runs-on:`, `on.push.paths`, supersede, and a
   restart cancels what was in flight.
 - A run's scratch tree (`<run>/work`) is removed before the run is marked
-  finished; only its log is kept. Marking it first let a reader see a
-  finished run whose tree was still there, which made
-  `TestActionsPushRunsTheWorkflowInTheExportedCommit` fail about three times
-  in four.
+  finished, so no reader sees a finished run whose tree is still there; only
+  its log is kept (`TestActionsPushRunsTheWorkflowInTheExportedCommit`).
 - Workflow YAML is read by a small subset parser (`actions_workflow.go`);
   `uses:` steps are dropped.
 
 ## Control requests
 
-The gateway only couriers the Worker's signed capability and the request body
+The gateway only couriers the App's signed capability and the request body
 into `<mirror-gateway>/actions-control/`. `actions_control.go` verifies the
 capability against the router public key, consumes each request once, and
 records it before applying it, so a crash cannot apply it twice.
@@ -45,8 +43,8 @@ records it before applying it, so a crash cannot apply it twice.
 ## Traps
 
 - The web Actions tab polls `actions/runs` while runs are live
-  (`app/public/dashboard/js/06-repo-actions.js`); that is by design, every read
-  is a relay-to-mirror round trip, so the cadence backs off when idle.
+  (`app/public/dashboard/js/06-repo-actions.js`). Every read is an
+  App-to-mirror round trip, so the cadence backs off when idle.
 - There is no desktop half of the executor; it lives in the daemon.
 - On `role: "runner"`, `enableActions` does not start this executor. It
   takes Actions jobs from the app instead, for pushes that land on the

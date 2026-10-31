@@ -89,5 +89,4 @@ status per device:
 Delivery is best effort and inline with the triggering request: at most eight
 devices per event within three seconds, twenty tokens per account, and tokens
 idle for 180 days are dropped. Android has no push transport; the native
-Android app reports push as unsupported. Local `workerd` cannot speak HTTP/2 to
-APNs, so delivery must be tested against a deployed server.
+Android app reports push as unsupported.

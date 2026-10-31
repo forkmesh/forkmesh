@@ -171,13 +171,13 @@
       "subject": "forkmesh-protocol",
       "dimension": "operations",
       "basis": "evidence",
-      "text": "You run the hosts. Of the eight network service roles, none is fully independent yet: six run partly without the hosted service, and search and organization administration are hosted-only. A self-hosted app Worker still needs a Cloudflare account.",
+      "text": "You run the hosts. A self-hosted instance runs the whole app on one Linux server behind Caddy and needs no Cloudflare account. Of the eight network service roles, none runs fully on the mirror node alone yet: six run partly, and search and organization administration need the app.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"},
         {"kind": "test", "ref": "app/tests/test_service_roles_contract.py::test_no_role_overclaims_independence"},
         {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "fm-protocol-privacy",
@@ -284,25 +284,25 @@
       "subject": "forkmesh-hosted",
       "dimension": "operations",
       "basis": "evidence",
-      "text": "ForkMesh operates the relay, website, and index on Cloudflare. The hosted edge never stores Git packfiles: repository bytes live on mirrors that someone has to run.",
+      "text": "ForkMesh runs the app, API, Git over HTTPS and chat on three self-hosted core nodes reached by DNS round robin; the forkmesh.com website is a Cloudflare Worker. Repositories can also live on mirrors and on users' own nodes.",
       "evidence": [
         {"kind": "product-evidence", "path": "README.md"},
         {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "summary"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "fm-hosted-privacy",
       "subject": "forkmesh-hosted",
       "dimension": "privacy",
       "basis": "evidence",
-      "text": "Every request to the hosted service passes through Cloudflare, which sees the client IP address, headers, and request path. Relay collaboration rows are encrypted under the instance data key; whoever controls the live Worker and that key is inside the trust boundary.",
+      "text": "Requests to app.forkmesh.com go straight to the core nodes, where Caddy terminates TLS; Cloudflare answers only their DNS lookups. Cloudflare sees the IP address, headers and path of forkmesh.com website visitors. Relay collaboration rows are encrypted under the instance data key; whoever controls a live core and that key is inside the trust boundary.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "summary"},
         {"kind": "specification", "path": "www/docs/security/private-repository-confidentiality.md", "anchor": "protected-data"},
         {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_privacy_notice_is_checked_against_the_same_manifest"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "fm-hosted-portability",
@@ -348,12 +348,12 @@
       "subject": "forkmesh-hosted",
       "dimension": "failure-modes",
       "basis": "evidence",
-      "text": "If Cloudflare or the ForkMesh Worker is down, the website, accounts, and relay stop. Git clone, fetch, and push directly to a mirror, signed collaboration records, and local desktop work continue.",
+      "text": "One core can fail without an outage. If Cloudflare DNS or every core is down, accounts, the dashboard and Git over HTTPS on app.forkmesh.com stop. Git clone, fetch, and push directly to a mirror, signed collaboration records, and local desktop work continue.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"},
         {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_mandatory_hosted_dependencies_name_a_self_host_path_and_a_drill"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "central-ownership",
@@ -728,13 +728,13 @@
     },
     {
       "id": "nfy-fully-independent",
-      "text": "You need search and organization administration with no hosted service and no Cloudflare account. Those roles are hosted-only today.",
+      "text": "You need search and organization administration without running the ForkMesh app. The mirror node alone does not provide those roles today.",
       "instead": ["self-hosted-forge"],
       "evidence": [
         {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"},
         {"kind": "test", "ref": "app/tests/test_service_roles_contract.py::test_no_role_overclaims_independence"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "nfy-backup-only",
@@ -858,18 +858,18 @@
   "hostedDependencies": [
     {
       "id": "dep-cloudflare",
-      "text": "The hosted service, and any self-hosted app Worker, needs Cloudflare Workers, D1, KV, Durable Objects, and Queues. The Go mirror node does not.",
+      "text": "The hosted service needs Cloudflare DNS for app.forkmesh.com and world.forkmesh.com. A self-hosted instance and the Go mirror node do not need Cloudflare.",
       "evidence": [
         {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"},
         {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_mandatory_hosted_dependencies_name_a_self_host_path_and_a_drill"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "dep-hosted-only-roles",
-      "text": "Repository search and organization administration run only on the hosted Worker.",
+      "text": "Repository search and organization administration run only in the ForkMesh app, on the hosted cores or a self-hosted instance, not on the mirror node.",
       "evidence": [{"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"}],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-31"
     },
     {
       "id": "dep-certificates",
@@ -911,5 +911,7 @@
       "evidence": [{"kind": "specification", "path": "www/docs/business-model.md", "anchor": "support-boundary"}]
     }
   ],
-  "corrections": []
+  "corrections": [
+    {"date": "2026-10-31", "summary": "The hosted service no longer runs on Cloudflare Workers, D1 or Durable Objects: the app runs on three self-hosted core nodes, Cloudflare provides DNS and the website, and a self-hosted instance needs no Cloudflare account.", "claims": ["fm-protocol-operations", "fm-hosted-operations", "fm-hosted-privacy", "fm-hosted-failure-modes", "nfy-fully-independent", "dep-cloudflare", "dep-hosted-only-roles"]}
+  ]
 }

@@ -3,7 +3,10 @@
 This guide prepares a community for losing its normal infrastructure: the
 origin host is wiped, the hosted service is down, names stop resolving, a
 signing key is lost, a region is cut off, or a backup is corrupt. It covers
-preparation, recovery, and proving recovery works.
+preparation, recovery, and proving recovery works. How the hosted service stays
+up day to day is in [architecture](../architecture.md); what a community keeps
+when the hosted service is blocked or gone is in
+[censorship resilience](../censorship-resilience.md).
 
 | File | What it is |
 | --- | --- |

@@ -5,7 +5,7 @@ The Linux release assets (`forkmesh-linux-x86_64`,
 `forkmesh-linux-x86_64.deb` for the [apt repository](apt.md)) are built inside a pinned
 Debian 12 (glibc 2.36) image so they run on Ubuntu 22.04+ and Debian 12+. The
 Go mirror daemon is fully static (`CGO_ENABLED=0`) and is built by the Actions
-job. Development builds are unaffected.
+job. Development builds are unaffected. Release flow: [README.md](README.md).
 
 ## Code map
 
@@ -75,11 +75,10 @@ candidate.
 
 The release build passes `-DFORKMESH_PACKAGE_MODULES=OFF`, so Market packages
 are compiled into the one `forkmesh-linux-x86_64` binary as they are on macOS
-and Windows. Modules are the Linux default since the empty-shell work, but a
-module is a shared object, and the static `libxcb-*.a` archives in the image
-are not built with `-fPIC`: v1.5.0's first build (2026-10-28) failed linking
-`packages/timers.so` with "relocation R_X86_64_PC32 against symbol
-`xcb_render_id` can not be used when making a shared object". The release
-asset is a single file, so loose module files would not have shipped anyway.
+and Windows. Modules are the Linux development default, but a module is a
+shared object, and the static `libxcb-*.a` archives in the image are not built
+with `-fPIC` (the link fails with "relocation R_X86_64_PC32 against symbol
+`xcb_render_id` can not be used when making a shared object"). The release
+asset is a single file anyway.
 The recipe comes from the release host's checkout, not the tag, so a fix here
 applies to the candidate being built.

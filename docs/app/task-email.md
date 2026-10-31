@@ -1,6 +1,6 @@
 # Task email
 
-Every task activity that files a [Tasks Ping](task-pings.md) is also emailed
+Part of [the App docs](README.md). Every task activity that files a [Tasks Ping](task-pings.md) is also emailed
 (mail kind `task`). Opens, clicks and views are written to the task timeline and
 the private [#email-log](../MAIL_LOG.md) channel.
 
@@ -20,17 +20,15 @@ descriptions are never copied.
 
 ## Deleted tasks
 
-A delete does not use the per-change activity email. `_delete` and
-`_delete_batch` collect the deleted tasks and call
+A delete skips the per-change email. `_delete` and `_delete_batch` call
 `notify_organization_task_deletions` (`world/src/world_office_routes.py`) once
-per request; it picks the creator and the person assignee of each task (members
-only, never the deleter), groups the tasks per recipient, and
-`send_deleted` (`world/src/world_task_email.py`) sends each recipient one email:
-`Task deleted: <title>` or `N tasks deleted`, a line per task naming who deleted
-it, the reason when given, a note that a deleted task counts as done and stays
+per request. It groups the deleted tasks per recipient (creator and person
+assignee, members only, never the deleter), and `send_deleted` sends each one
+email: `Task deleted: <title>` or `N tasks deleted`, a line per task with who
+deleted it and the reason, a note that a deleted task counts as done and stays
 restorable for 30 days, and a link to the Tasks list (no view token). The same
-opt-outs, verification check and hourly cap apply, and each task's timeline gets
-an `emailed` entry. Commenters and owners still get the delete Ping.
+opt-outs, verification check and hourly cap apply; each task's timeline gets an
+`emailed` entry. Commenters and owners still get the delete Ping.
 
 ## Tracking
 

@@ -1,6 +1,7 @@
 # Discussion answers
 
-A Q&A discussion can have one reply marked as its answer, as on GitHub. The
+Part of [the App docs](README.md). A Q&A discussion can have one reply marked
+as its answer, as on GitHub. The
 answer feeds the Oracle badge ([badges.md](badges.md#oracle)).
 
 ## Who may mark

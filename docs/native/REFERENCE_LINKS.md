@@ -1,7 +1,8 @@
 # Reference links in the native apps
 
-Every issue, task, pull request and commit mention in the mobile apps' messages
-is a link (parity row 4.34).
+Part of [the native docs](README.md). Every issue, task, pull request and
+commit mention in the mobile apps' messages is a link
+([PARITY.md](PARITY.md) row 4.34).
 
 ## What is a link
 

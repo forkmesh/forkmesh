@@ -4,7 +4,7 @@ The on-device coding agent, its providers (Claude, OpenAI, and Gemma 4 on this i
 session service with branch isolation, the node login terminal, quick launch from the composer,
 and the Agents screens' view models. `import FMAgents` (deps FMBase, FMCrypto, FMNet, FMAccount,
 FMApi, FMCode, FMGit, FMDiff, FMLocalAI). Everything is `@MainActor`. Views:
-ForkMesh/Features/Agents.
+ForkMesh/Features/Agents. Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Workspace seam (`AgentWorkspace.swift`, `GitAgentWorkspace.swift`)
 
@@ -77,9 +77,8 @@ code and sign-in link. `close()` waits 50 ms after the close frame because
     reads. A ring that arrives after them queues one more load, which runs once the current load
     has published its rows.
   - The account socket rings as it connects at launch, about when the Agents tab's first load
-    is waiting on the relay. Through 1.4.1 that ring discarded the first load and read every
-    repository again, so each repository's `agents/list` and queue read went out twice and the
-    list stayed on its skeleton until the second pass returned (17 s in one 1.4.1 report).
+    is waiting on the relay; discarding that load would read every repository twice and keep
+    the list on its skeleton until the second pass returns.
   - Repositories whose sealed-session or queue read answers 403/404 are not re-read for 10 minutes
     per account (`AgentReadRefusals.shared`, shared with the watch bridge).
   - Branched runs read `publishedPullHeads` (number, head and status only), refreshed when a
@@ -118,7 +117,7 @@ second form.
   the control channel (LAN, else relay), trying the public owner, then the node owner, on
   `no_checkout`. Text only (no photos). `QuickLaunchRunOptions` adds YOLO (remembered under
   `agent/desktop/yolo`) and No worktree, sent as `vibe` and `worktree`; see
-  `docs/native/DESKTOP_AGENTS.md`.
+  [docs/native/DESKTOP_AGENTS.md](../../../docs/native/DESKTOP_AGENTS.md).
 - **Models**: `AgentModelCatalog` lists the models a queued run can request, narrowed to the
   relay's `models` offer; `NodeModelPreference` keeps the chip's pick under
   `agent/node-model-alias`. On-device Gemma (`on-device-gemma`) is offered when the build and
@@ -146,7 +145,7 @@ second form.
   an agent, whatever the chip shows.
 
 `PromptPhotoRules` (2048 px, JPEG without metadata, size limits) and `PromptMarkupRules` (the
-PencilKit markup editor geometry; see `docs/native/CAPTURE_MARKUP.md`) back the composer's
+PencilKit markup editor geometry; see [docs/native/CAPTURE_MARKUP.md](../../../docs/native/CAPTURE_MARKUP.md)) back the composer's
 photos. `CaptureAreaRules` holds the long-press capture's maths: the dragged box clamped to the
 screen, the 16 pt minimum, the pixel crop and which accessibility elements count as content.
 

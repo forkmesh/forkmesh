@@ -2,7 +2,10 @@
 
 The Password Vault: suite "fmv1" (byte-compatible with the browser's vault-crypto.js, the
 desktop's VaultCrypto.cpp and the Android app), the /api/vault client, the app-level service,
-and the view models of the vault screens. `import FMVault` (re-import `FMBase` for JSON).
+and the view models of the vault screens. `import FMVault` (re-import `FMBase` for JSON). The
+package is [marketplace/packages/vault/README.md](../../../marketplace/packages/vault/README.md) and the
+cross-client encryption overview in [www/docs/encryption.md](../../../www/docs/encryption.md);
+native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Wiring (app target)
 
@@ -39,7 +42,7 @@ Session changes: account became "" -> `await vault.signedOut()`; another account
 - `VaultClipboard`: `copy(_ text, expiresAfter: TimeInterval?)`. With an expiry (30 s for
   passwords and usernames) use UIPasteboard `setItems(_, options: [.expirationDate: ...])`;
   `nil` (recovery code, export) never expires.
-- NFKC is not a platform call any more: `VaultCrypto.nfkc` (Foundation) is the default normalizer.
+- NFKC is not a platform call: `VaultCrypto.nfkc` (Foundation) is the default normalizer.
 
 ## VaultService (`@Observable @MainActor`)
 
@@ -162,8 +165,8 @@ login's own host but can be linked. `VaultAutofillServices` (iOS only) also buil
   cross-client fixtures and OpenSSL's Argon2id / ML-KEM-768 answers, and also open whatever
   `marketplace/packages/vault/tests/fixtures/interop-from-*.json` holds. `VAULT_WRITE_INTEROP=1
   swift test --filter VaultInteropTests` writes `interop-from-swift.json` there.
-- The flow tests drive the real Worker module through `vault_stdio_server.py`; they skip without
-  python3.
+- The flow tests drive the vault package's real server module through
+  `marketplace/packages/vault/tests/vault_stdio_server.py`; they skip without python3.
 - Blocking work (Argon2id, opening a listing) runs on detached tasks over a copy of the keys, so
   `lock()` may be called at any time; a load that finishes after a lock throws `vault_locked`.
 - Base64 with non-zero trailing bits is `invalid_encoding`;

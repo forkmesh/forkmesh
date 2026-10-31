@@ -1,14 +1,26 @@
 # ForkMesh developer documentation
 
-Index of the developer documentation. Source files hold code only
-(`AGENTS.md`); the reasons behind code live on the matching page here. Each
-subsystem has one home page; topic pages sit next to it and are linked from
-it. Public, user-facing documentation lives in `www/docs/` and is published to
-forkmesh.com/docs; code and tests refer to those files by path, so do not move
-or rename them.
+Source files hold code only (`AGENTS.md`); the reason behind code lives on the
+matching page here. Each subsystem has one home page, and its topic pages link
+back to it. Public documentation lives in `www/docs/` ([index](../www/docs/README.md))
+and is published to forkmesh.com/docs. Code and tests read these files by path:
+do not move or rename them.
 
 Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 [OPERATIONS.md](OPERATIONS.md) for the stack that serves forkmesh.com.
+
+## Core documentation
+
+The pillars, written for anyone and linked from every detailed page:
+
+| Pillar | Page | Developer detail |
+| --- | --- | --- |
+| Architecture and availability | [www/docs/architecture.md](../www/docs/architecture.md) | [architecture.md](architecture.md), [PLAN.md](PLAN.md) |
+| Encryption and signatures | [www/docs/encryption.md](../www/docs/encryption.md) | [security/README.md](security/README.md), [VAULT.md](VAULT.md), [REKEY.md](REKEY.md), [server/call-e2ee.md](server/call-e2ee.md) |
+| Mirroring and software distribution | [www/docs/mirroring.md](../www/docs/mirroring.md) | [server/README.md](server/README.md), [server/intake-and-attestation.md](server/intake-and-attestation.md), [release/README.md](release/README.md) |
+| Self-hosting | [www/docs/self-hosting.md](../www/docs/self-hosting.md) | [INSTANCES.md](INSTANCES.md), [OPERATIONS.md](OPERATIONS.md), [release/self-setup-node.md](release/self-setup-node.md) |
+| Censorship resilience | [www/docs/censorship-resilience.md](../www/docs/censorship-resilience.md) | [PLAN.md](PLAN.md#read-only-mode) |
+| Threat model | [www/docs/protocol/threat-model.md](../www/docs/protocol/threat-model.md) | [security/README.md](security/README.md) |
 
 ## Subsystems
 

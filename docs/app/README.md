@@ -2,21 +2,27 @@
 
 The App is the ForkMesh control plane: the web dashboard, every `/api/*`
 route, account sessions, Git Smart HTTP for hosted and proxied repositories,
-ActivityPub, the chat and World Durable Objects, the per-minute cron, and the
+ActivityPub, the chat and World room objects, the per-minute cron, and the
 database. It serves `app.forkmesh.com` and, with `world/`,
-`world.forkmesh.com`. The Python code (`app/src`, staged to `app/src_build`)
-runs on CPython on the core nodes under the host shim in
-`app/host/forkmesh_host/`: rqlite stands in for D1, Durable Objects run
-clustered across the cores, and Caddy serves static files. Agent jobs run on
-the runner tier. The host is documented in
+`world.forkmesh.com`. Both names resolve by DNS round robin straight to three
+self-hosted core nodes; each core runs Caddy, this Python code on CPython
+(`app/src`, staged to `app/src_build`, under the host in
+`app/host/forkmesh_host/`), rqlite and the Go daemon, and a DNS health loop
+(`tools/next_dns.py`) drops a failed core. With two cores down the survivor
+serves reads and refuses writes ([PLAN.md](../PLAN.md);
+[architecture](../../www/docs/architecture.md)). Agent jobs run on the runner
+tier ([RUNNERS.md](../RUNNERS.md)). The host is documented in
 [docs/host/README.md](../host/README.md); this page covers the App code.
 
-The code keeps a Cloudflare Worker shape: a Worker entrypoint, bindings named
-after D1, KV, Queues and Durable Objects, and `app/wrangler.toml`. The
-forkmesh.com site proxies its dynamic traffic here (see
+The code keeps the API shape it was written for on Cloudflare Workers: a
+Worker entrypoint, bindings named after D1, KV, Queues and Durable Objects,
+and `app/wrangler.toml`. On the cores the host provides all of them (rqlite
+for D1, clustered room objects for Durable Objects). The static forkmesh.com
+site (the `forkmesh-www` Worker) proxies its dynamic traffic here (see
 [docs/www](../www/README.md) and [docs/world](../world/README.md)). The
 desktop, the Go daemon, the runner, the mobile apps and browsers are the
-App's clients. Public, user-facing descriptions live in `www/docs/`.
+App's clients. Developer docs index: [../README.md](../README.md); public,
+user-facing descriptions live in `www/docs/` ([index](../../www/docs/README.md)).
 
 ## Code map
 
@@ -32,7 +38,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | `app/wrangler.toml` | Not deployed. Source of `[vars]`, binding lists, queue consumer settings and `run_worker_first`, read by `app/host/forkmesh_host/env.py` and `deploy/core/caddy_routes.py` |
 | `app/host/` | The CPython host: ASGI front, bindings, rqlite D1 adapter, clustered Durable Objects, vault, request guard, IDS records |
 | `app/public/` | Static pages (login, signup, dashboard shells, chat, notes, status) |
-| `app/public/dashboard/js/*.js` | Dashboard fragments, concatenated into `app/public/dashboard.js` by `app/tools/build_dashboard_assets.py`. Git merges fragments as plain text, so a merge can produce a bundle that does not parse; `test_composed_bundle_and_chunks_parse` runs `node --check` on the core bundle and every chunk, after a merge on 2026-10-22 kept both sides of two conflicts and broke the node deploy's esbuild step |
+| `app/public/dashboard/js/*.js` | Dashboard fragments, concatenated into `app/public/dashboard.js` by `app/tools/build_dashboard_assets.py`. Git merges fragments as plain text, so a merge can produce a bundle that does not parse; `test_composed_bundle_and_chunks_parse` runs `node --check` on the core bundle and every chunk |
 | `app/tools/build_worker_python.py` | Stages `app/src`, `world/src` and package modules into `app/src_build/` with comments stripped |
 | `world/tools/build_worker_footprint.py` | Source footprint report and static budgets |
 | `app/tests/`, `app/tests/host/`, `app/browser_tests/` | Python tests, host tests, Playwright specs |
@@ -42,14 +48,14 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Area | Pages |
 | --- | --- |
 | Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md), [dashboard-colors](dashboard-colors.md), [dashboard-components](dashboard-components.md), [seasonal-theme](seasonal-theme.md) |
-| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [pull-quick-replies](pull-quick-replies.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [ai-disclosure](ai-disclosure.md), [pull-review-prompt](pull-review-prompt.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [issue-scale-limits](issue-scale-limits.md), [public-pages](public-pages.md), [feeds-and-lite](feeds-and-lite.md), [mirror-quota](mirror-quota.md), [translations](translations.md), [forum-reach](forum-reach.md) |
+| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [pull-quick-replies](pull-quick-replies.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [ai-disclosure](ai-disclosure.md), [pull-review-prompt](pull-review-prompt.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [issue-scale-limits](issue-scale-limits.md), [public-pages](public-pages.md), [feeds-and-lite](feeds-and-lite.md), [mirror-quota](mirror-quota.md), [translations](translations.md), [forum-reach](forum-reach.md), [branch-protection](branch-protection.md), [diff-viewer](diff-viewer.md), [issue-views](issue-views.md), [issue-assignment-deadline](issue-assignment-deadline.md), [issue-assignment-limit](issue-assignment-limit.md), [comment-edits](comment-edits.md), [comment-reactions](comment-reactions.md), [comment-gifs](comment-gifs.md), [comment-tips](comment-tips.md), [bot-avatars](bot-avatars.md) |
 | Chat | [chat-protocol-v3](chat-protocol-v3.md), [chat-protocol-v4](chat-protocol-v4.md), [chat-relay-hardening](chat-relay-hardening.md), [chat-relay-server](chat-relay-server.md), [web-chat-relay-hardening](web-chat-relay-hardening.md), [chat-sealed-sender](chat-sealed-sender.md), [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-group-calls](chat-group-calls.md), [face-stream](face-stream.md), [fmm-browser](fmm-browser.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-genie-welcome](chat-genie-welcome.md), [chat-formatting](chat-formatting.md), [chat-stickers](chat-stickers.md), [web-chat-layout](web-chat-layout.md), [chat-member-stats](chat-member-stats.md), [web-composer](web-composer.md) |
 | Notifications | [notification-email](notification-email.md), [new-issue-pings](new-issue-pings.md), [content-first-pings](content-first-pings.md), [thread-notifications](thread-notifications.md) |
 | Notes | [notes-sharing](notes-sharing.md), [notes-convert](notes-convert.md), [notes-activity](notes-activity.md) |
 | Tasks | [task-progress](task-progress.md), [issue-to-task](issue-to-task.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |
 | Agents and desktop | [agents-page](agents-page.md), [desktop-agents-web](desktop-agents-web.md), [desktop-commands](desktop-commands.md), [settings-agents-and-runners](settings-agents-and-runners.md), [agent-notes](agent-notes.md), [activity-today](activity-today.md), [workflows](workflows.md), [workflow-steps](workflow-steps.md), [workflow-scripts](workflow-scripts.md) |
 | Accounts and organizations | [account-data](account-data.md), [member-roster](member-roster.md), [username-casing](username-casing.md), [organization-bot-scopes](organization-bot-scopes.md), [payments-and-plans](payments-and-plans.md), [badges](badges.md), [discussion-answers](discussion-answers.md), [web-discussions](web-discussions.md), [web-desktop-parity](web-desktop-parity.md), [web-releases](web-releases.md), [web-repo-access](web-repo-access.md), [web-projects](web-projects.md), [challenges](challenges.md), [feedback-bounties-links](feedback-bounties-links.md), [early-ios-testers](early-ios-testers.md), [accounts-and-moderation](accounts-and-moderation.md) |
-| Operations and growth | [server-update](server-update.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [password-reset-challenge](password-reset-challenge.md), [marketing-email](marketing-email.md), [onboarding-email](onboarding-email.md), [ecosystem](ecosystem.md), [ecosystem-client-work](ecosystem-client-work.md), [package-ai-failures](package-ai-failures.md), [privacy-mode](privacy-mode.md) |
+| Operations and growth | [server-update](server-update.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [password-reset-challenge](password-reset-challenge.md), [marketing-email](marketing-email.md), [onboarding-email](onboarding-email.md), [ecosystem](ecosystem.md), [ecosystem-client-work](ecosystem-client-work.md), [package-ai-failures](package-ai-failures.md), [privacy-mode](privacy-mode.md), [affiliates](affiliates.md), [instance-federation](instance-federation.md), [instance-legal-pages](instance-legal-pages.md) |
 
 ## Architecture
 
@@ -73,7 +79,7 @@ of sixteen `FORKMESH_CRON_RUNNER` ingress objects (`_app_ingress_shard`); if
 that object is unavailable the request gets a marked 503
 (`EXPECTED_DEGRADED_HEADERS`, `retry-after: 30`) instead of running inline.
 
-**Durable Objects.** `ForkMeshRoom` (chat rooms and relay sockets),
+**Durable Objects** (room objects emulated by the host). `ForkMeshRoom` (chat rooms and relay sockets),
 `ForkMeshNodes` (per-owner event sockets), `ForkMeshNoteRoom` (live notes),
 `ForkMeshWorld` and `ForkMeshOfficeRoom` (World presence and Office meetings),
 `ForkMeshCronRunner` (cron coordinator and ingress shards),
@@ -101,7 +107,9 @@ display data: changes reach them as frames on the node event socket
 (`ForkMeshNodes`) and as APNs pushes (`app/src/apns.py`).
 
 **Secrets.** Nodes start sealed; `DATA_KEY` and other vaulted secrets arrive
-over the unseal socket ([VAULT.md](../VAULT.md)).
+over the unseal socket ([VAULT.md](../VAULT.md)). How data is encrypted:
+[encryption](../../www/docs/encryption.md); threats considered:
+[threat model](../../www/docs/protocol/threat-model.md).
 
 ## Protocols and interfaces
 
@@ -118,7 +126,8 @@ over the unseal socket ([VAULT.md](../VAULT.md)).
   `app/src/repository_webhooks.py`): events `repository.push`,
   `branch.push`, `pull.merged`, `release.published`; queued and drained by the
   `webhook-outbox` cron phase with up to 6 attempts; private repositories emit
-  nothing. The versioned integration contract is `www/docs/integrations.md`.
+  nothing. The versioned integration contract is
+  [integrations](../../www/docs/integrations.md).
 - Public snapshots: anonymous GET routes served from validated
   `public_api_snapshots` rows (`app/src/public_snapshots.py`). The catalog
   schema is an exact allow-list: a new public field in `/api/repositories`
@@ -239,5 +248,11 @@ exhaust memory. Browser tests:
 - [docs/host/README.md](../host/README.md),
   [docs/deploy/README.md](../deploy/README.md), [PLAN.md](../PLAN.md),
   [OPERATIONS.md](../OPERATIONS.md), [VAULT.md](../VAULT.md)
-- `www/docs/operations/polling-elimination.md` (push-first client contract),
-  `www/docs/integrations.md`, `www/docs/design/activitypub-federation.md`
+- [polling elimination](../../www/docs/operations/polling-elimination.md)
+  (push-first client contract), [integrations](../../www/docs/integrations.md),
+  [ActivityPub federation](../../www/docs/design/activitypub-federation.md)
+- Pillars: [architecture](../../www/docs/architecture.md),
+  [encryption](../../www/docs/encryption.md),
+  [mirroring](../../www/docs/mirroring.md),
+  [self-hosting](../../www/docs/self-hosting.md),
+  [censorship resilience](../../www/docs/censorship-resilience.md)

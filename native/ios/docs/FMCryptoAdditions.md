@@ -2,7 +2,8 @@
 
 Two protocol files on top of the FMCrypto primitives. `import FMCrypto` (and `FMBase` for
 `JSONObject`). Both are synchronous and thread-safe; ML-KEM and Keychain I/O take milliseconds, so
-keep `loadOrCreate`/`seal`/`open` off the main thread on hot paths.
+keep `loadOrCreate`/`seal`/`open` off the main thread on hot paths. Primitives:
+[FMCrypto](FMCrypto.md); overview: [www/docs/encryption.md](../../../www/docs/encryption.md). Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## OwnerCrypto (`OwnerCrypto.swift`)
 

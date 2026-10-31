@@ -3,6 +3,7 @@
 ForkMesh keeps standard Git forge words and explains its network ideas in
 place. The contract is [`terminology.json`](terminology.json);
 `tools/terminology_lint.py` checks primary surfaces against it.
+Other pages are listed in the [docs index](README.md).
 
 ## Approved glossary
 

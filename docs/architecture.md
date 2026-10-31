@@ -1,22 +1,24 @@
 # Architecture overview
 
-ForkMesh keeps Git data on hosts people run themselves and uses a relay only
-for routing, accounts and collaboration metadata. The index of all developer
-docs is [README.md](README.md).
+How the code fits together. ForkMesh keeps Git data on hosts people run
+themselves; the app on the core nodes handles accounts, routing and
+collaboration metadata. The public overview, including what is still a single
+dependency, is [www/docs/architecture.md](../www/docs/architecture.md); the
+index of developer docs is [README.md](README.md).
 
 ```text
-           browsers                 phones (iOS, Android)
-              │                            │
- forkmesh.com ─► www Worker ─┐             │
-                             ▼             ▼
-        relay app on the core nodes (app.forkmesh.com, world.forkmesh.com):
-        API, Git over HTTPS, accounts, rqlite, Durable Objects, cron
-              ▲               ▲                    ▲
-  signed HTTP │               │ node events        │ signed HTTP
-  WebSockets  │               │ (WebSocket)        │
-        desktop node     mirror daemon        runners (agent jobs)
-        (Qt, desktop/)   (Go, server/)
-              └── both hold bare Git repositories and serve clones ──┘
+        browsers · phones (iOS, Android) · desktop nodes · mirrors
+                              │
+     DNS round robin (app.forkmesh.com, world.forkmesh.com), no proxy
+                              ▼
+   core nodes n3 · n4 · n5 (equal; WireGuard mesh between them):
+   Caddy · app (Python on CPython) · rqlite · Go daemon (Git gateway)
+         ▲                 ▲                        ▲
+ signed HTTP,       node events (WebSocket)    outbound job leases
+ WebSockets               │                         │
+   desktop node      mirror daemon             runners (agent jobs)
+   (Qt, desktop/)    (Go, server/)
+         └── both hold bare Git repositories and serve clones ──┘
 ```
 
 ## Parts
@@ -25,8 +27,8 @@ docs is [README.md](README.md).
 | --- | --- | --- |
 | Desktop node | `desktop/` (Qt 6, C++) | Linux, Windows, macOS |
 | Mirror daemon and gateway | `server/` (Go), `tools/mirror_gateway.py` | headless mirrors, core nodes, runners |
-| Relay app | `app/` (Python, run on CPython by `app/host/`) | the core nodes ([PLAN.md](PLAN.md)) |
-| Website | `www/` (Worker plus static assets) | forkmesh.com |
+| App | `app/` (Python, run on CPython by `app/host/`) | the core nodes ([PLAN.md](PLAN.md)) |
+| Website | `www/` (static site and docs) | forkmesh.com ([www/README.md](www/README.md)) |
 | World | `world/` (three.js client; backend in the app) | world.forkmesh.com |
 | Native apps | `native/ios/`, `native/android/` | phones |
 | Marketplace packages | `marketplace/` | inside the desktop, app, World and mobile hosts |
@@ -38,18 +40,22 @@ docs is [README.md](README.md).
 
 - **Identity.** Every node has an Ed25519 key and signs its requests; users
   have accounts with web sessions.
-- **Desktop ↔ relay.** HTTP API plus an account event WebSocket that pushes
-  topics instead of polling; chat rides WebSockets into room Durable Objects.
-- **Mirror ↔ relay.** The daemon publishes a catalog record and endpoint lease
+- **Desktop ↔ app.** HTTP API plus an account event WebSocket that pushes
+  topics instead of polling; chat rides WebSockets into room objects, which
+  `app/host/` places on one core by rendezvous hash
+  ([app/cron-and-durable-objects.md](app/cron-and-durable-objects.md)).
+- **Mirror ↔ app.** The daemon publishes a catalog record and endpoint lease
   per repository, holds a signed node-event WebSocket, materialises
   web-submitted issues and pulls into Git, and runs merges, agent jobs and
   Actions.
 - **Desktop ↔ mirror.** The desktop installs and updates mirror hosts over SSH
   and pushes to them with Git.
-- **Clones.** `git clone https://app.forkmesh.com/<owner>/<repo>` reaches the
-  relay, which redirects or proxies to a mirror whose signed health is fresh
-  and whose refs match an accepted revision. The relay stores no packfiles
-  except for repositories hosted on the cores ([HOSTED_REPOS.md](HOSTED_REPOS.md)).
+- **Clones.** `git clone https://app.forkmesh.com/<owner>/<repo>` reaches a
+  core, which redirects or proxies to a mirror whose signed health is fresh
+  and whose refs match the signed pin
+  ([www/docs/mirroring.md](../www/docs/mirroring.md)). The app stores no
+  packfiles except for repositories hosted on the cores
+  ([HOSTED_REPOS.md](HOSTED_REPOS.md)).
 - **Collaboration records.** Issues, pulls, discussions, reviews and releases
   are signed files under `.forkmesh/` in the repository, so they travel with
   every clone.
@@ -65,9 +71,13 @@ docs is [README.md](README.md).
 - Desktop: `~/projects/forkmesh/{data,config,cache,state,logs,ssh}` with the
   checkout in `src/`.
 - Mirror: the daemon's config, identity key and bare repositories.
-- Relay: rqlite on the cores (payloads encrypted under `DATA_KEY`, HMAC blind
-  indexes), node-local caches, and Durable Object storage in rqlite. Secrets
-  are sealed in the vault ([VAULT.md](VAULT.md)).
+- Cores: rqlite (payloads encrypted under `DATA_KEY`, HMAC blind indexes),
+  node-local caches, and room-object storage in rqlite. Secrets are sealed in
+  the vault ([VAULT.md](VAULT.md)); every layer is summarised in
+  [www/docs/encryption.md](../www/docs/encryption.md).
 
-Trust boundaries: [security/README.md](security/README.md). The normative
-protocol for independent implementations is published under `www/docs/protocol/`.
+Trust boundaries: [security/README.md](security/README.md) and the
+[threat model](../www/docs/protocol/threat-model.md). The normative protocol
+for independent implementations is the
+[protocol suite](../www/docs/protocol/README.md). Running your own:
+[www/docs/self-hosting.md](../www/docs/self-hosting.md).

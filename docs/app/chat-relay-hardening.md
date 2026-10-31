@@ -1,4 +1,4 @@
-# Chat relay hardening (2026-10-22)
+# Chat relay hardening
 
 Shared rooms such as `world-general` are joined by every device on an
 instance, guests included, and run the `open` trust policy, so a frame sealed
@@ -60,7 +60,7 @@ and edits. The LAN `#mesh` room keeps its own sealed per-device direct
 messages.
 
 Every frame addressed with `to` other than a `hello` reply is sealed to the
-recipient's keys only (already true since 2026-10-22).
+recipient's keys only.
 
 ## R3. Only authenticated frames act for a person
 

@@ -4,7 +4,10 @@
 synchronizes repositories, supervises the loopback Git gateway (and optionally a
 Cloudflare Tunnel), publishes the node's signed catalog record and endpoint
 lease, runs collaboration intake, and can execute owner-authorized merges and
-website agent jobs. No desktop app or GUI process is involved.
+website agent jobs. No desktop app or GUI process is involved. It is the
+running part of the [mirroring](../mirroring.md) and
+[self-hosting](../self-hosting.md) pillars; roles and profiles are in
+[service roles](service-roles.md).
 
 ## Architecture
 
@@ -21,7 +24,8 @@ website agent jobs. No desktop app or GUI process is involved.
   enabled) is never accepted in argv, JSON, an HTTP request or a catalog record.
 - **Event socket.** One WebSocket to the relay's per-owner node event channel
   (`wss://…/api/nodes/events`), authenticated with the node key. The relay
-  pushes payload-free `{"type":"event","topic","repo"}` frames.
+  pushes payload-free `{"type":"event","topic","repo"}` frames
+  ([polling elimination](polling-elimination.md)).
 
 ## Data flow
 
@@ -52,7 +56,7 @@ authenticates the account (an owner to merge; for `update-pull-branch`, anyone
 who may push the pull's head branch), signs the exact-OID request and hands it
 to one healthy mirror. The executor verifies the pinned pull record on the `forkmesh/pulls`
 ledger, the base and head tips, the peer-review gate (an owner may waive it with
-`overrideReview`) and any `.forkmesh/required-checks.json` policy, then moves the
+`overrideReview`) and any `.forkmesh/required-checks.json` policy ([required checks](required-checks.md)), then moves the
 base branch, the ledger and `forkmesh/pull/<n>` in one atomic `update-ref`.
 Patch-backed pulls are replayed onto the exact base in a temporary worktree,
 preserving authorship. The result carries a node-signed refs attestation that

@@ -10,17 +10,18 @@ A ping (a `notifications` row) is emailed by one of three senders:
 - the hourly digest in `send_notification_digests`, which bundles the rest.
 
 Each runs from the notification queue consumer and from the
-`notification-digest` cron phase, and on ForkMesh Next every core (n2, n3, n4)
-runs its own consumer against the one rqlite database.
+`notification-digest` cron phase. Every core node runs its own consumer
+against the one rqlite database, so two senders can race on the same ping
+(below). Part of the [App docs](README.md); marketing mail is in
+[marketing-email.md](marketing-email.md).
 
 ## Collaboration author display
 
 The issue, pull request, branch comment and discussion inbox handlers, and the
 microjob issue report, set an event's `authorName` on the server
 (`_bind_session_author` in `app/src/entry.py`); the value the client sent is
-never kept. The event signature covers the `author` key and the content, not
-`authorName`, so before this anyone could post a comment that named another
-account, and workflows such as `/assign` trusted it.
+never kept: the event signature covers the `author` key and the content, not
+`authorName`, and workflows such as `/assign` trust the name.
 
 - A browser signing key is generated per browser and belongs to no account. A
   desktop or mobile key is bound: the account's primary key (`nodes`) or an
@@ -34,8 +35,8 @@ account, and workflows such as `/assign` trusted it.
 - Otherwise the submission is anonymous: `authorName` is empty, never a
   username. The name the client sent, if it is a valid account name, is kept
   separately as `authorClaimedName`. A pull request sent from another
-  instance (`docs/app/remote-forks.md`) always lands here, because the browser
-  posts it without credentials, and showing only the key hid who sent it.
+  instance ([remote-forks.md](remote-forks.md)) always lands here, because the
+  browser posts it without credentials; the claim says who sent it.
   `server/intake.go` writes the claim into `pull.md` and the pull event files.
   The pull pages show it as `name (unverified)` with no profile link
   (`recordAuthorName` in `app/public/dashboard/js/02-helpers.js`,
@@ -58,14 +59,12 @@ Each sender reads the rows above a per-recipient watermark
 (`last_digest_ts`, `last_immediate_ts`) kept inside the encrypted account
 record, sends, and saves the record. The save overwrites the whole record
 with no compare-and-swap, so two cores that load the record before either
-saves both see the same ping above the watermark and both email it. Seen in
-production on 2026-10-14 as the same ping arriving twice.
+saves both see the same ping above the watermark and both email it.
 
-A second path re-mailed pings without any race: `enqueue_notification`
-re-files a ping under the same dedupe key with an upsert, and the upsert used
-to set `ts` to the time of the re-file. A ping that had already been mailed
-then sat above the watermark again and was mailed again, and it also jumped to
-the top of the inbox.
+A re-file can also lift a ping back above the watermark: `enqueue_notification`
+re-files under the same dedupe key with an upsert, and a new `ts` would
+re-mail the ping and move it to the top of the inbox (see "Re-filing keeps
+`ts`").
 
 ## The send claim (`notification_email_sends`, migration 0261)
 
@@ -91,8 +90,8 @@ address or ping text is in the table.
   than sending it twice.
 - The digest claims each item it would bundle and leaves out the items that
   are already claimed; when none are left it only advances the watermark.
-- A database error on the claim sends anyway, the behaviour from before the
-  table existed.
+- A database error on the claim sends anyway (a duplicate beats a lost
+  email).
 
 The `referrer-prune` cron phase (hourly, minute 17) deletes claims older than
 30 days (`NOTIFICATION_EMAIL_SEND_RETAIN_MS`). The races the claim guards
@@ -106,16 +105,14 @@ a month.
 without its `ts` and `readAt`. On a re-file, the upsert keeps the stored `ts`
 and `data` when `content_bi` is unchanged, and takes the new `ts` and `data`
 when the content changed. A re-file with the same content (a replayed
-webhook, a heartbeat that reports the same state again) therefore no longer
-re-mails the ping or moves it in the inbox. A re-file with different content
-(for example an error group whose count grew) still re-surfaces. Rows from
-before migration 0261 have an empty `content_bi`, so their first re-file
-after the deploy bumps `ts` one last time.
+webhook, a heartbeat reporting the same state) neither re-mails the ping nor
+moves it in the inbox; one with different content (an error group whose count
+grew) re-surfaces. A row with an empty `content_bi` (older than migration
+0261) bumps `ts` once on its next re-file.
 
 A caller that wants a recurring event to ring again must change the content
 or use a new dedupe key. `credits_refilled` keeps one row per window kind with
-the same text, so a repeat refill no longer re-mails a ping that is still
-unread; once the ping is read it was never re-mailed anyway.
+the same text, so a repeat refill does not re-mail an unread ping.
 
 ## Re-keying
 

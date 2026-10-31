@@ -1,13 +1,16 @@
 # World boot latency on the core nodes
 
-How the App keeps the World's first requests fast. Each core runs one App
-process on a single event loop, so every statement a boot request skips
-shortens the queue for all others. Code: `app/src/account_users.py`,
+Part of [the App docs](README.md); the World is in
+[docs/world](../world/README.md). How the App keeps the World's first
+requests fast. Each core ([architecture](../../www/docs/architecture.md))
+runs one App process on a single event loop, so every statement a boot
+request skips shortens the queue for all others. Code: `app/src/account_users.py`,
 `app/src/entry.py` (`edge_cache_delete`, `host_warm_caches`),
 `app/src/d1_read_guard.py` (`shared_read`), `app/host/forkmesh_host/`.
 
 - **Background refresh**: `env.HOST_BACKGROUND` runs one task per key and
-  shares in-flight loads; on Cloudflare reads run inline.
+  shares in-flight loads; without it (no host, as in unit tests) reads run
+  inline.
 - **Stale-while-revalidate copies**: world roster (fresh 30 s, kept 1 h, weak
   `ETag`), guest profiles (fresh 60 s), contributions (fresh 60 s,
   generation-keyed), wallet readings (last good value for 24 h).

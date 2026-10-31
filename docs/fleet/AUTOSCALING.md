@@ -10,7 +10,9 @@ The fleet grows and shrinks two pools without the operator box:
 Cores and the always-on runner are never scaled, listed, touched or destroyed
 by the autoscaler; rqlite voters stay at three. The desktop (Network, Hosts)
 is only the control plane: it signs settings and commands and reads status.
-Scaling keeps working while it is off.
+Scaling keeps working while it is off. Fleet map:
+[deploy/README.md](../deploy/README.md); availability overview:
+[architecture](../../www/docs/architecture.md).
 
 ## Where the scaler runs
 
@@ -24,7 +26,8 @@ leaderless:
 - Ticks are short; nodes move one step per tick through a state machine:
   `creating` → `booting` → `joining` → `serving`, and `draining` → `removing`
   → gone. A core that dies mid-action is replaced by the next tick's owner.
-- Replicas never host Durable Objects or own cron, so they never run it.
+- Replicas never host Durable Objects (the host's emulation,
+  [host/README.md](../host/README.md)) or own cron, so they never run it.
 
 ## Settings
 
@@ -77,7 +80,7 @@ The same row carries `cpuPct`, `memPct` and `diskPct` (CPU busy share between
 samples at least 5 s apart, memory in use, root file system in use). The
 autoscaler does not read them; `/api/status` shows them as each core's
 `resources` and the iPhone draws them as tiny bars on the core node lights
-(`docs/native/NAVIGATION.md`).
+([NAVIGATION.md](../native/NAVIGATION.md)).
 
 ## Cloud credential
 
@@ -146,11 +149,13 @@ command is recorded in `autoscale_audit`, and every real action also raises a
   so the same decision coming back is written again; so does a restart.
 - Rows are kept 30 days (`AUDIT_RETAIN_MS`), pruned on every audit write. The
   status view reads only the newest 30 rows.
-- Why: the 2026-10-16 table audit found `autoscale_audit` at 3.1 MiB and 27k
-  rows on 1 GB nodes, almost all one identical dry-run row per minute under a
-  90-day retention.
+- Why: one identical dry-run row per minute under a 90-day retention grew
+  the table to 3.1 MiB and 27k rows on 1 GB nodes.
 
 ## Threat model
+
+The fleet-wide model is [threat-model.md](../../www/docs/protocol/threat-model.md);
+the autoscaler adds:
 
 - **Compromised core app:** can use the provider key directly; cannot obtain
   the IDS master or the core certsync secret.

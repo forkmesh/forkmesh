@@ -3,7 +3,8 @@
 Every core, runner and autoscaled node runs sshd on `ssh_port` from
 `deploy/fleet.toml` (822), not 22. Bots sweep port 22 all day, filling the
 journal, fail2ban and the IDS feed with noise. Few of them try 822. The port is
-below 1024, so only root can listen on it, even while sshd is down.
+below 1024, so only root can listen on it, even while sshd is down. Fleet
+map: [deploy/README.md](README.md).
 
 ## What follows the port
 
@@ -55,7 +56,8 @@ change cannot load the new firewall in front of an sshd that is still on 22.
 ## Autoscaled nodes
 
 App replicas and burst runners boot from the autoscale snapshot. Rebuild it
-(`python3 tools/next_autoscale.py snapshot build --execute`) so new nodes
+(`python3 tools/next_autoscale.py snapshot build --execute`,
+[AUTOSCALING.md](../fleet/AUTOSCALING.md)) so new nodes
 start on 822; nodes made from an older snapshot keep sshd on 22 behind a
 firewall that now admits only 822, until they are replaced.
 

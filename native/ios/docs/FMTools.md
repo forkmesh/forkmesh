@@ -6,7 +6,8 @@ Glasses Alert, Eye Control's maths, the Speech Playground, the Docs library, bug
 overlay's text. `import FMTools` (re-import `FMBase` for `JSONObject`, `FMAccount` for
 `PerformanceMonitorService`). Every view model is `@MainActor @Observable`; the SwiftUI views are
 in `ForkMesh/Features/Tools`. The Password Vault's logic is FMVault's ([FMVault](FMVault.md)); only
-its views and clipboard live in the Tools feature.
+its views and clipboard live in the Tools feature. Native docs home:
+[docs/native/README.md](../../../docs/native/README.md).
 
 ## App wiring (`ForkMesh/Features/Tools/ToolsFeature.swift`)
 
@@ -64,16 +65,13 @@ Models take a `ToolsApiCall` closure (tests) or an `ApiService` (convenience ini
 - **Tasks**: `TasksListModel` (Mine/Open/Done with icons and counts, `loadMore`),
   `TaskDetailModel`, `TaskFormModel`, `TaskCheckinModel`. People filter: Everyone, each member
   (you first, then A to Z), Bot (agent assignees) and Unassigned, each with its open count; same
-  rules as the web board (`docs/app/task-board-filters.md`).
+  rules as the web board ([docs/app/task-board-filters.md](../../../docs/app/task-board-filters.md)).
 - **Bug reports**: `ReportBugModel(screen:build:signedIn:api:)` (`submit()`), `BugSeverity.all`.
   The admins' Reported tab is `BugReportInboxModel`. A cancelled list load is not an error:
   SwiftUI cancels the view's `.task` when the tab or sheet goes away, and a `.refreshable` when
-  the list redraws under it (the loading bar appearing is enough). `ApiService.bugReportInbox`
-  answers `BugReportInbox.cancelledLoad`, the model keeps its state and stays unloaded so the
-  next appearance loads again, and pull-to-refresh runs the load in its own `Task`. Before this
-  the cancelled request read "Could not reach ForkMesh. Check your connection and try again.",
-  was marked loaded, and never retried (2026-10-17: the relay had no inbox route yet, answered
-  404, and the phone then cancelled its next request). A 404 without `report_missing` or
+  the list redraws under it. `ApiService.bugReportInbox` answers `BugReportInbox.cancelledLoad`,
+  the model keeps its state and stays unloaded so the next appearance loads again, and
+  pull-to-refresh runs the load in its own `Task`. A 404 without `report_missing` or
   `attachment_missing` means the relay has no inbox route, and the sheet says to update it.
 
 ### Health and wellbeing
@@ -117,14 +115,12 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
     Activity (`WalkActivityAttributes`, `ForkMeshWidgets/WalkLiveActivity.swift`), catches up from
     Core Motion history when HealthKit wakes the app, and keeps a live pace (`WalkPace`) that
     drives the top bar's walking chip.
-  - Walk Live Activity start: Core Motion's classifier often lags the pedometer, so the top bar
-    could say "Walking" while the Dynamic Island stayed empty, and a walk confirmed after the app
-    left the screen was never shown until it reopened. The pace now counts as movement too
-    (`WalkDetector.paced`: 30 s of steps starts a walk, a lapse cancels a pending start, a walk in
-    progress is left to Core Motion), and when the app goes inactive while the user is stepping
-    and has been moving for 10 s (`leaveStartAfter`, `begin`) the walk starts there, so locking
-    the phone mid-walk keeps it in the Dynamic Island. ActivityKit accepts a request while the
-    app is inactive, so `showActivity` only skips the background.
+  - Walk Live Activity start: Core Motion's classifier often lags the pedometer, so the pace
+    counts as movement too (`WalkDetector.paced`: 30 s of steps starts a walk, a lapse cancels a
+    pending start, a walk in progress is left to Core Motion). When the app goes inactive while
+    the user is stepping and has been moving for 10 s (`leaveStartAfter`, `begin`) the walk
+    starts there, so locking the phone mid-walk keeps it in the Dynamic Island. ActivityKit
+    accepts a request while the app is inactive, so `showActivity` only skips the background.
   - Heart rate by tapping (`HeartTapModel`): at least 5 taps, a 2.5 s pause restarts, the last 12
     intervals kept, intervals more than 30% off the median dropped, 30–220 bpm accepted; saved to
     Health only (`HKMetadataKeyWasUserEntered`), never sent to the account.
@@ -136,8 +132,8 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
   `SleepHealthSync` posts both sources at most every 15 minutes. `SleepModels.collect` runs
   `healthNights` and `SleepDetector.detect(nights:...)` (sorts the rest samples once for every
   night) in a detached task, and `HealthKitBridge` takes Core Motion's activity history on its
-  own `OperationQueue`: up to seven days of activity rows used to be mapped and scanned per
-  night on the main thread at every resume.
+  own `OperationQueue`, so up to seven days of activity rows are never scanned on the main
+  thread at resume.
 - **Sugar Break** (`SugarBreakModel`, `/api/sugar-break`, reads pass `?day=<local today>`):
   start a break (1–365 days, default 30), +1 skips, slips, undo, end early; Health Dietary Sugar is
   read-only and suggests a slip. `SugarContract` builds the shareable no-sugar contract rendered
@@ -225,7 +221,7 @@ first, the phone's language first, then Personal > Premium > Enhanced > Standard
 `speech.voice` is installed; speak, pause, resume, preview, speed and pitch (0.5–2, stored as
 `speech.speed`/`speech.pitch`), word highlighting, and `renderAudio()` to an AAC `.m4a` for
 sharing. `AppleSpeechEngine` uses `AVSpeechSynthesizer` on a ducking `.spokenAudio` session.
-See `marketplace/packages/speech/README.md`.
+See [marketplace/packages/speech/README.md](../../../marketplace/packages/speech/README.md).
 
 ## Docs library (`Docs/DocsLibrary.swift`, `Docs/DocsMarkdown.swift`)
 

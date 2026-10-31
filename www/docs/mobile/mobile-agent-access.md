@@ -2,7 +2,9 @@
 
 Agent sessions are end-to-end encrypted to the owner's devices. The phone is an
 owner device with its own key, so it can read sessions, queue prompts for a
-mirror, and control a desktop live on the LAN or through the relay.
+mirror, and control a desktop live on the LAN or through the relay. The
+cryptography is summarised in [encryption](../encryption.md); the device
+model is the [mobile node contract](mobile-node-contract.md).
 
 ## The owner-device model
 

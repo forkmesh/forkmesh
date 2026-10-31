@@ -1,8 +1,9 @@
 # Headless mirror identity
 
 `tools/headless_mirror_identity.py` is the local cryptographic boundary for a
-non-GUI mirror host. It runs as the same dedicated, unprivileged account as
-`mirror_gateway.py` and:
+non-GUI mirror host ([mirroring](../mirroring.md),
+[self-hosting](../self-hosting.md)). It runs as the same dedicated, unprivileged
+account as the [mirror gateway](direct-https-mirror-gateway.md) and:
 
 - keeps one Ed25519 node identity and one age identity in an owner-only
   directory;
@@ -85,4 +86,5 @@ compromised service account; use an encrypted volume or hardware signer when
 that matters. To rotate the router key, update the server first, then run
 `configure` on each mirror. To rotate the node identity, provision a new state
 directory, reclaim the node, republish manifests and catalog state, verify
-health, and retire the old directory.
+health, and retire the old directory. Node-level backups and key moves are in
+[node backup and recovery](node-backup-and-recovery.md).

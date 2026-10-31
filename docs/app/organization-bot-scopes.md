@@ -6,7 +6,7 @@ in `app/src/entry.py`) by owners, admins and (task scopes only) members. The
 desktop's Genie credential mints the same kind of token with the task scopes.
 `_org_bot_token_context` authenticates the bearer, logs a metadata-only usage
 row and returns the token's scopes. A token dies with its creator's membership
-and acts with the creator's current role.
+and acts with the creator's current role. Part of the [App docs](README.md).
 
 ## Grantable scopes
 

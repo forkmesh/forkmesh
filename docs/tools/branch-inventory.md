@@ -1,5 +1,8 @@
 # Branch inventory
 
+Part of [the tools docs](README.md); its companion is
+[prune-merged.md](prune-merged.md).
+
 `tools/branch_inventory.py` puts every local branch, and every `origin` branch
 with no local copy, in exactly one bucket and saves the result to
 `~/projects/forkmesh/logs/branch-inventory/<date>.json`. The next run prints

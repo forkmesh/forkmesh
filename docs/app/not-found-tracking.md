@@ -2,7 +2,7 @@
 
 Every 404 on a ForkMesh site is counted in one grouped list in the admin
 console (Reliability → "404s", `?view=not-found`). When a group reaches 10
-hits, administrators get one Ping.
+hits, administrators get one Ping. Part of the [App docs](README.md).
 
 ## Code map
 
@@ -60,7 +60,8 @@ hours are deleted; read-only mode records nothing.
 
 ## Static-site relay
 
-When the static site's asset lookup answers 404 for GET or HEAD,
+The static forkmesh.com site is the `forkmesh-www` Worker. When its asset
+lookup answers 404 for GET or HEAD,
 `reportNotFound` posts `{path, referrer, userAgent, fetchSite}` to
 `POST /api/not-found` on `APP_ORIGIN` in the background. The endpoint is
 unauthenticated by design: it can only record a 404 for a site path. The

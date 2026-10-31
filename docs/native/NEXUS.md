@@ -1,8 +1,8 @@
 # NEXUS iOS network intelligence
 
-The desktop counterpart is the `nexus` Market package, written in Qt with the same safety policy and service table ([../marketplace/nexus.md](../marketplace/nexus.md)).
+Part of [the native docs](README.md). NEXUS is the Nmap-inspired network inspection package at `native/ios/Nexus`. The desktop counterpart is the `nexus` Market package, in Qt with the same safety policy and service table ([../marketplace/nexus.md](../marketplace/nexus.md)).
 
-NEXUS is the native, Nmap-inspired network inspection package at `native/ios/Nexus`. It uses supported iOS APIs only: `Network.framework` for TCP connections, UDP DNS queries and Bonjour browsing; `URLSession` for HTTP and TLS-validated web requests; and SwiftData for the optional local history. It does not use raw sockets, ARP tables, ICMP, a bundled Nmap executable, background scans or fabricated MAC/vendor data.
+It uses supported iOS APIs only: `Network.framework` for TCP connections, UDP DNS queries and Bonjour browsing; `URLSession` for HTTP and TLS-validated web requests; SwiftData for the optional local history. No raw sockets, ARP tables, ICMP, bundled Nmap, background scans or fabricated MAC/vendor data.
 
 ## Package layout
 
@@ -19,7 +19,7 @@ NEXUS is the native, Nmap-inspired network inspection package at `native/ios/Nex
 | `NexusStore` | SwiftData archive and JSON/CSV report encoding |
 | `NexusUI` | Embeddable SwiftUI overview, discovery, scan, inspection, history and settings interface |
 
-`NexusCore` deliberately labels port-table guesses as **inferred**. A protocol banner or HTTP response is labelled **confirmed**. Security observations only describe what NEXUS observed; they never claim an unverified vulnerability.
+Port-table guesses are labelled **inferred**; a protocol banner or HTTP response is **confirmed**. Security observations describe only what NEXUS saw and never claim an unverified vulnerability.
 
 ## Safety and authorization
 
@@ -27,7 +27,7 @@ The default policy permits loopback and local-network hosts only. Internet targe
 
 The Scan screen fills an empty target with the range of the network the phone is on. `LocalNetwork.current()` reads the interface addresses with `getifaddrs` and `LocalNetwork.suggested(from:)` picks one: Wi-Fi (`en0`) first, skipping cellular (`pdp_ip`), VPN tunnels (`utun`, `ipsec`), AirDrop links (`awdl`, `llw`), container bridges, loopback, link-local and internet addresses. The prefix comes from the netmask but is narrowed to at least /24, so a /16 home network suggests the /24 around the phone's own address and stays inside the 256-host limit. **Use this network** refills the target after it was edited. Reading interface addresses needs no Local Network permission.
 
-NEXUS uses TCP connect scans, so a closed port means the endpoint refused a connection. A timeout cannot distinguish filtering from an offline endpoint; the UI reports it as “No response.” Scans are foreground work and every stream is cancellation-aware.
+Scans are TCP connect scans, so a closed port means the endpoint refused a connection; a timeout cannot tell filtering from an offline endpoint and shows as “No response.” Scans are foreground work and every stream is cancellation-aware.
 
 ## Host integration
 
@@ -53,9 +53,9 @@ for try await update in updates {
 }
 ```
 
-`ForkMesh-Info.plist` declares the Local Network reason and the Bonjour service types NEXUS browses. The app must retain normal App Transport Security settings: the HTTP inspector does not bypass certificate validation. If the host app changes the default Bonjour types, its `NSBonjourServices` list must match.
+`ForkMesh-Info.plist` declares the Local Network reason and the Bonjour service types NEXUS browses; if the host changes the default types, `NSBonjourServices` must match. Keep normal App Transport Security: the HTTP inspector never bypasses certificate validation.
 
-Use `NexusStore` when retained local history is desired. Its reports are encoded in memory with `NexusReportExporter.json` and `NexusReportExporter.csv`, ready for a host-owned `ShareLink` or file exporter. No scan history or inventory is uploaded by the native package.
+`NexusStore` keeps optional local history; `NexusReportExporter.json` / `.csv` encode reports in memory for a host-owned `ShareLink` or file exporter. Nothing is uploaded.
 
 ## Remote-agent boundary
 
@@ -70,9 +70,9 @@ cd native/ios/Nexus
 swift test
 ```
 
-The Linux test suite covers target parsing, safety decisions, DNS packets, banner classification, inventory merging, report contracts and public defaults. Apple-only SwiftUI and SwiftData targets are parsed in repository checks and compile when the package is linked by the iOS target on macOS. Linux does not compile the `Network.framework` transport either, so build the package for iOS on the office Mac after changing it (`docs/native/MAC_BUILD.md`, "Swift rules the Mac archive enforces"). `NexusStore` and `NexusUI` have no test targets.
+The Linux suite covers target parsing, safety decisions, DNS packets, banner classification, inventory merging, report contracts and public defaults. Linux compiles neither the SwiftUI/SwiftData targets nor the `Network.framework` transport, so build the package for iOS on the office Mac after changing it ([MAC_BUILD.md](MAC_BUILD.md), "Swift rules the Mac archive enforces"). `NexusStore` and `NexusUI` have no test targets.
 
-`NetworkTransport.swift` shares one `startConnection` for TCP and UDP. Its state handler clears itself after the first `ready`, `failed` or `cancelled`, so a later failure or `close()` cannot resume the continuation twice. Each wait sits in `withTaskCancellationHandler`, which cancels the `NWConnection` when `withTimeout` gives up; without it a connection stuck in `waiting` kept the timeout from returning. A cancelled connection reports `ConnectionFailure.cancelled`.
+`NetworkTransport.swift` shares one `startConnection` for TCP and UDP. Its state handler clears itself after the first `ready`, `failed` or `cancelled`, so the continuation never resumes twice. Each wait sits in `withTaskCancellationHandler`, which cancels the `NWConnection` when `withTimeout` gives up, so a connection stuck in `waiting` cannot block the timeout. A cancelled connection reports `ConnectionFailure.cancelled`.
 
 `HTTPInspector` reads certificate validity dates with `SecCertificateCopyNotValidBeforeDate`/`AfterDate` on iOS 18 and macOS 15, and with `SecCertificateCopyValues` on older macOS. iOS 17 has no public API for them, so the summary there carries open-ended dates.
 

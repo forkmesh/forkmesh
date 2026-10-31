@@ -3,7 +3,9 @@
 Hearth (`.forkmesh/workflows/hearth.json`) keeps the ForkMesh Discord server
 warm and useful: it answers open loops, welcomes newcomers and sparks
 conversation when the server is quiet. This page is its charter, research and
-voice.
+voice. Marketing owns the
+channel plan ([marketing](../marketing/README.md)); index:
+[docs/README.md](../README.md).
 
 | Piece | Path |
 | --- | --- |

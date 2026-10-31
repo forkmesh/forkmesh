@@ -1,10 +1,10 @@
 # Repository features: issues, pull requests, discussions
 
-A repository administrator (the owner, or an organization owner or admin of a
-linked repository, [repo-settings-access.md](repo-settings-access.md)) can
-switch Issues, Pull requests and Discussions off in
-the repository's Settings tab (the Features group above the ActivityPub
-switches).
+Part of the [App](README.md). A repository administrator (the owner, or an
+organization owner or admin of a linked repository,
+[repo-settings-access.md](repo-settings-access.md)) can switch Issues, Pull
+requests and Discussions off in the repository's Settings tab (the Features
+group above the ActivityPub switches).
 
 - **Storage:** `repo_feature_settings` (migration 0270), one row per
   repository, `repo_bi = blind_index("repo-feature-settings:<owner>/<repo>")`
@@ -26,11 +26,14 @@ switches).
 
 ## Self-hosted instances
 
+See [INSTANCES.md](../INSTANCES.md) and
+[self-hosting](../../www/docs/self-hosting.md).
+
 `instance-bootstrap` writes all three switches off for the
 `<owner>/forkmesh` mirror the instance creates (`ensure_mirror_features`,
 stored under the node name `forkmesh/forkmesh`). It uses `INSERT OR IGNORE`,
 so running the bootstrap again never undoes an owner who turned a feature
-back on. Instances set up earlier keep their current switches.
+back on.
 
 Tests: `app/tests/test_repo_features.py`, `app/tests/test_ap_repo_settings.py`,
 `app/host/tests_unit/test_instance_bootstrap.py`.

@@ -1,7 +1,9 @@
 # MCP connector: agent windows
 
+Part of [the tools docs](README.md).
+
 Agents running as CLI processes can open small windows in the ForkMesh
-desktop, similar to MCP Apps in chat clients:
+desktop, like MCP Apps in chat clients:
 
 - eight tools on the ForkMesh MCP server (`tools/forkmesh_mcp_server.py`,
   `WINDOW_TOOLS`): `show_window`, `read_window`, `close_window`,
@@ -16,10 +18,9 @@ desktop, similar to MCP Apps in chat clients:
   use `QWebEngineView` when the build has WebEngine and the system browser
   otherwise.
 
-The MCP server is the surface the model sees, and the intake socket is the
+The MCP server is what the model sees; the intake socket is the
 authenticated per-agent path back to the desktop. Browser actions, scripted
-widgets and session suggestions, the ForkMesh side of Claude Code desktop's
-built-in browser, widgets and "Start a new session?" chip, are described in
+widgets and session suggestions are in
 [mcp-claude-code-desktop.md](mcp-claude-code-desktop.md).
 
 ## The tools

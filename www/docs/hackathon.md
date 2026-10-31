@@ -3,6 +3,7 @@
 How a ForkMesh hackathon campaign works. Anything worth money is gated on the
 referral ledger, every reward is a fixed threshold, there are no random draws,
 and sharing earns nothing.
+Other pages are listed in the [docs index](README.md).
 
 | Area | Where |
 | --- | --- |
@@ -69,5 +70,5 @@ anyone's behalf.
 ## Administration and privacy
 
 `/admin/hackathon` and `/api/admin/hackathon` require a live `is_admin`
-session. Public reads are edge-cached and bounded. No contacts are collected;
+session. Public reads are cached and bounded. No contacts are collected;
 public pages show only public usernames.

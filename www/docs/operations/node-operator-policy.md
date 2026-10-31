@@ -4,7 +4,10 @@ An operator decides, for their own node only, what it stores and serves, how
 much disk it may use, and how it answers abuse reports and legal requests. None
 of this is a network-wide rule: a repository this node refuses or quarantines is
 reported unavailable here and the router sends readers to another mirror. The
-policy is opt-in; a gateway without `operatorPolicy` is unaffected.
+policy is opt-in; a gateway without `operatorPolicy` is unaffected. It applies to
+the [mirror gateway](direct-https-mirror-gateway.md) and
+[SSH gateway](git-ssh-gateway.md); background is in [self-hosting](../self-hosting.md),
+[mirroring](../mirroring.md) and [censorship resilience](../censorship-resilience.md).
 
 ## Enabling it
 

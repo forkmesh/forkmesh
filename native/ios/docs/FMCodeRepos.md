@@ -7,7 +7,8 @@ agents, worktrees, mirror import and the code editor. Core in
 `ForkMeshCore/Sources/FMCode/Repos` (`import FMCode`), views in
 `ForkMesh/Features/Code` (everything but `Collab/`).
 
-Syntax highlighting renders FMDiff's `CodeHighlighter` tokens.
+Syntax highlighting renders FMDiff's `CodeHighlighter` tokens. Siblings:
+[Collab](FMCodeCollab.md), [Local](FMCodeLocal.md). Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Conventions
 
@@ -36,7 +37,7 @@ Syntax highlighting renders FMDiff's `CodeHighlighter` tokens.
 - `RepoDetailModel(repo:initialTab:initialTarget:)`: `tab`, `tabs`,
   `takeInitialDestination() -> RepoDetailDestination?` (`.issue(n)`, `.pull(n)`,
   `.discussion(n)`, `.commit(JSONObject)`), once.
-- `RepoOverviewModel(repo:client:)` (the repository screen, docs/native/NAVIGATION.md §3.4):
+- `RepoOverviewModel(repo:client:)` (the repository screen, [NAVIGATION.md](../../../docs/native/NAVIGATION.md) §3.4):
   `tiles(canEditSettings:) -> [RepoOverviewTile]` (section, title, SF Symbol, count) in
   `order`, `counts`, `load()` (open issues and pulls from the published ledgers, branches, releases, commits over
   `RepoOverviewClient`, which ApiService conforms to; a failed read leaves no count),
@@ -97,8 +98,8 @@ Syntax highlighting renders FMDiff's `CodeHighlighter` tokens.
   tab, which the repository screen maps to a `RepoSection` by raw value.
 - A worktree chip with a sha shorter than 7 shows it whole.
 - "Edit this file" on RepoFileScreen is not wired: QuickEditScreen has no seam yet.
-- RepoFileScreen's lines sit in a both-way ScrollView, and SwiftUI centres content smaller than
-  such a scroll view on both axes, so a file of a few lines floated mid-screen. The line column
-  is at least the viewport's height and top-aligned, so line 1 sits right under the path header.
+- RepoFileScreen's lines sit in a both-way ScrollView, which centres smaller content on both
+  axes; the line column is at least the viewport's height and top-aligned, so line 1 sits right
+  under the path header.
 - The inline commit diff has no "Open in diff viewer" button until a full-screen diff seam
   (PatchFilesScreen) exists.

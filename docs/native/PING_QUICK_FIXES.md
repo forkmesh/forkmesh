@@ -1,6 +1,7 @@
 # Ping quick fixes
 
-A ping that reports a problem leads with a one-tap fix. On the phone it is
+Part of [the native docs](README.md); see also
+[DESKTOP_PINGS.md](DESKTOP_PINGS.md). A ping that reports a problem leads with a one-tap fix. On the phone it is
 the first row under **Actions** on the ping's page; on the desktop it is the
 first entry in the right-click menu on the Pings page. For a run that failed
 because the build Mac was not on the network, that fix is **Turn off this
@@ -30,7 +31,7 @@ phone needs no update when the rules improve.
 ## The wire
 
 Two methods in the owner-only `pings.` family on local control (LAN or
-relay):
+relay, [../desktop/networking.md](../desktop/networking.md#phone-control-over-the-lan)):
 
 - `pings.fixes {pingId?, title, body, ts}` returns
   `{found, event, cause, signature, fixes: [{id, label, detail, icon, score, trusted, autoSafe, primary}]}`,
@@ -52,8 +53,7 @@ host-offline, network, timeout, missing-tool, auth, disk, test, build or
 unknown. The event comes from the ping: action failed, stopped, waiting for
 approval, turned off automatically, or an agent that failed. Disk covers
 the runner's own pre-checkout check ("Not enough free disk space on this
-node", Desktop client CI tests run #6604 on 2026-10-22) as well as ENOSPC
-from a step; that check used to land in unknown.
+node") as well as ENOSPC from a step.
 
 | Event | Fixes |
 | --- | --- |

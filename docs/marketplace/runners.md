@@ -7,11 +7,9 @@ active provider account, pause, resume and revoke. The web keeps the core
 `/dashboard/runners` page (adding and setting runners up), so the package has
 no `dashboard.page` contribution and its places are `mobile` and `desktop`.
 It is account-synced and off by default, like the other gated packages
-([core-plugins.md](core-plugins.md)).
-
-Why a package: before it, runners showed only as a block on the desktop's
-Hosts page and as sign-in banners on the phones' Agents screen. There was no
-runner list on a phone, and no client could pause or revoke a runner.
+([core-plugins.md](core-plugins.md)). Part of
+[the marketplace docs](README.md); the runner tier itself is described in
+[../RUNNERS.md](../RUNNERS.md).
 
 ## API used
 

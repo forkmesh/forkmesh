@@ -1,7 +1,7 @@
 # Unread channel and direct-message reminder emails
 
 Members of a private room who miss new messages get one reminder email per
-unread episode. Home page: [app/README.md](README.md). Related:
+unread episode. Home page: [README.md](README.md). Related:
 [chat-private-rooms.md](chat-private-rooms.md),
 [cron-and-durable-objects.md](cron-and-durable-objects.md).
 
@@ -23,9 +23,9 @@ five minutes: up to 4 rooms with a `notify` message aged 30 to 90 minutes
 (`REMINDER_WINDOW_MS`), grouped into one email per member (up to 4 per pass),
 sent as `email_kind="channel_unread"` with List-Unsubscribe. `reminded_at` is
 set whether or not the send succeeds. The email says only "You have unread
-messages on ForkMesh" and a total count: since 2026-10-22 it names no room,
-because a private room's name is itself private and the mail goes through
-third-party mailboxes.
+messages on ForkMesh" and a total count. It names no room, because a private
+room's name is itself private and the mail goes through third-party
+mailboxes.
 
 Read rows are deleted with the room or member; `tools/next_rekey.py`
 recomputes `account_bi`.
@@ -48,8 +48,8 @@ open chat, so the copies are received and deleted instead of waiting out the
 - Requires a verified address and the `direct_unread` kind ("Unread direct
   messages", on by default), sent as `email_kind="direct_unread"` with
   List-Unsubscribe. The email has the subject "You have unread messages on
-  ForkMesh" and a count; since 2026-10-22 it names no sender (who writes to
-  whom is private), and messages from an account the recipient blocked are
+  ForkMesh" and a count; it names no sender (who writes to whom is private),
+  and messages from an account the recipient blocked are
   not counted.
 
 Phase `direct-unread-email` (`direct_reminders.send_reminders`) runs every

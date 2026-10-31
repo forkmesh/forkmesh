@@ -2,7 +2,8 @@
 
 The wire models (repositories, chat, notifications, agents, orgs, user status,
 agent launch, deep links) in `ForkMeshCore/Sources/FMApi/Models`. `import FMApi` (and `FMBase` for
-`JSONObject`). Only FMBase is used; no ApiService here.
+`JSONObject`). Only FMBase is used; no ApiService here. Services: [FMApi](FMApi.md).
+Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Conventions
 

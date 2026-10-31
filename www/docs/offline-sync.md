@@ -5,6 +5,8 @@ unreliable, metered link. It **exports** refs (and with them the signed
 `.forkmesh/` collaboration records) to a directory signed with an Ed25519 key,
 **fetches** that directory in verified, resumable chunks, **imports** it in one
 ref transaction, and **rolls back** any import.
+See also [Censorship resilience](censorship-resilience.md) and
+[Mirroring](mirroring.md).
 
 Formats: manifest `forkmesh-offline-media-v1` inside the signed envelope
 `forkmesh-offline-media-signed-v1`; checkpoint

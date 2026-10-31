@@ -3,7 +3,8 @@
 The desktop's Log page follows every fleet node's systemd journal live (cores,
 runners, autoscaled replicas and burst runners), every Caddy request, and the
 operator box's own deploy output. Nothing is stored in the database: live
-logs stay on the desktop.
+logs stay on the desktop. Fleet runbook: [OPERATIONS.md](OPERATIONS.md);
+developer index: [README.md](README.md).
 
 ## Transport: the desktop pulls over SSH
 
@@ -51,28 +52,27 @@ config, and a fresh node starts its IDS after the line is written
 `[logs] access_log = true` adds JSON access logging to the journal: request and
 response headers dropped, client address and `user_agent` kept, Cloudflare and
 edge visitor fields (`cf_*`, `edge_*`) only when the TCP peer is in
-Cloudflare's published ranges, the `expected_degraded` response header,
+Cloudflare's published ranges (requests relayed by the `forkmesh-www` Worker,
+[deploy/core/edge_client.md](../deploy/core/edge_client.md)), the `expected_degraded` response header,
 credential query parameters redacted, `/readyz` and `/health` skipped. The app
 never sees the `Cf-*` headers.
 
 The redacted query keys are `ACCESS_LOG_QUERY_KEYS` in `deploy/core/render.py`.
-`ticket` (chat room, call and event-socket tickets on socket URLs) and `node`
-(the account a desktop's signed reads name) were added on 2026-10-22: both
-were written to the journal in full; a ticket is a short-lived socket
-credential and `node` ties each signed read to an account.
+They include `ticket` (chat room, call and event-socket tickets on socket
+URLs; a short-lived socket credential) and `node` (ties each signed read to
+an account).
 
-Bearer tokens no longer travel in a path. Chat invite tokens go in the
+Bearer tokens never travel in a path. Chat invite tokens go in the
 request body (`POST /api/chat/invites/preview|accept`) and webhook tokens in
 the `token` query key or the `x-forkmesh-webhook-token` header
 (`/api/chat/webhooks?token=<token>`); the old `/api/chat/invites/<token>` and
-`/api/chat/webhooks/<token>` paths answer `410` (2026-10-22,
-[app/chat-private-rooms.md](app/chat-private-rooms.md#invite-links)). Caddy
+`/api/chat/webhooks/<token>` paths answer `410`
+([app/chat-private-rooms.md](app/chat-private-rooms.md#invite-links)). Caddy
 applies one filter per log field and `request>uri` already uses the `query`
-filter, so redacting a path would mean replacing it with hand-written regular
-expressions over the whole URI, and there is no Caddy binary here to validate
-such a config before it ships; moving the tokens was the safer fix. A client
-that still calls an old path is logged once, gets the `410`, and the owner
-rotates the token. The app's own error and Sentry logs replace both old paths
+filter, so redacting a path would need hand-written regular expressions over
+the whole URI that nothing here can validate before it ships; moving the
+tokens is safer. A client on an old path is logged once, gets the `410`, and
+the owner rotates the token. The app's own error and Sentry logs replace both old paths
 with `[token]` (`_privacy_safe_log_path` in `app/src/entry.py`). Tests:
 `deploy/tests/test_render.py`, `app/tests/test_sentry_worker.py`,
 `app/tests/test_chat_relay_hardening.py`.

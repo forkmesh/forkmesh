@@ -7,7 +7,9 @@ built on top of it (`OwnerCrypto`, `RoomSeal`) are described in
 [FMCryptoAdditions.md](FMCryptoAdditions.md).
 
 Where one exists, each source file names the Kotlin code in `native/android/core`
-it follows.
+it follows. The cross-client encryption overview is
+[www/docs/encryption.md](../../../www/docs/encryption.md); native docs home:
+[docs/native/README.md](../../../docs/native/README.md).
 
 ## Primitives
 
@@ -30,9 +32,9 @@ it follows.
 | Type | File | What it is |
 | --- | --- | --- |
 | `DeviceIdentity`, `OwnerKeys` | `SecurityContracts.swift` | Protocols the rest of the app depends on, so auth, API, inbox, agents and chat test against fakes. `nodeId` is the base64url public key. |
-| `Identity` | `Identity.swift` | This install's Ed25519 identity, stored in the secure store under `identity/ed25519Seed`. Matches the desktop's `ForkMeshIdentity` and the Worker's `ed25519_verify`. `loadOrCreate`, `fromSeed`, `sign`, `rotate`, `clearStoredSeed`. |
+| `Identity` | `Identity.swift` | This install's Ed25519 identity, stored in the secure store under `identity/ed25519Seed`. Matches the desktop's `ForkMeshIdentity` and the relay's `ed25519_verify`. `loadOrCreate`, `fromSeed`, `sign`, `rotate`, `clearStoredSeed`. |
 | `DeployApproval` | `DeployApproval.swift` | The merge-as-deploy-approval signature (`app/src/deploy_approvals.py`). `message` builds the nine `\n`-joined lines (`forkmesh-deploy-approval-v1`, kind, owner lowercased, repo, target, base, head, requestId, ts in ms; no trailing newline); `sign` returns the `{publicKey, ts, signature}` body field, both base64url without padding, signed with the node's existing identity key. `DeployApprovalTests` pins the server's golden vectors (seed `00..1f`). |
-| `PortableIdentity` | `PortableIdentity.swift` | The encrypted identity export shared with the web (`app/public/portable-identity.js`) and the desktop; format in `www/docs/portable-identities.md`. |
+| `PortableIdentity` | `PortableIdentity.swift` | The encrypted identity export shared with the web (`app/public/portable-identity.js`) and the desktop; format in [www/docs/portable-identities.md](../../../www/docs/portable-identities.md). |
 | `RoomCrypto` | `RoomCrypto.swift` | The relay-derived room cipher, byte-compatible with the desktop's `RoomCrypto.cpp` and `app/public/chat-crypto.js`. |
 
 ## Rules

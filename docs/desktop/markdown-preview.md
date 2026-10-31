@@ -20,9 +20,8 @@ Users of the path:
 - the Files page Preview of a Markdown tab, whether the file came from the
   repository, the filesystem tree, a network share or a cove. Repository files
   get their renderer from `configureRepoMarkdownPreview`; every other Markdown
-  tab gets a default one in `wireFilesEditor`. Before October 2026 those other
-  tabs called a bare `setMarkdown`, so they showed Qt's raw import: no paragraph
-  spacing, grey 1 px table grid, the code font as body text;
+  tab gets a default one in `wireFilesEditor` (a bare `setMarkdown` shows Qt's
+  raw, unstyled import);
 - the Markdown preview dialog opened from a diff (`diffMarkdownPreviewBrowser`);
 - the Write/Preview editor (`MarkdownEditor`: issue, pull request and
   discussion composers, Notes). It styles only while the Preview tab is shown,
@@ -34,7 +33,7 @@ Users of the path:
 ## Source preparation
 
 `forPreview` normalises line endings, runs `withHtmlFlattened` (raw HTML
-rewritten as Markdown, see the comment block at the top of `MarkdownRender.h`)
+rewritten as Markdown)
 and then `withHardBreaksJoined`:
 
 - Qt's importer turns a hard line break (a trailing `\` or two trailing spaces)
@@ -111,10 +110,8 @@ filter, as do the issue completeness report dialog, Market package guide links
 and special agent home link widgets. The remaining `setOpenExternalLinks(true)`
 labels hold only links the desktop builds itself, and
 `tests/validate_body_link_schemes.py` keeps a count per file so a new one has
-to be listed there or use the filter. Until 2026-10-27 those paths handed any
-href to `QDesktopServices`.
-A link labelled as a forkmesh.com page could point at
-`file://attacker/share/x.exe` (on Windows that leaks the user's NTLM hash
-over SMB) or at any registered protocol handler. Guarded by
-`tests/validate_body_link_schemes.py` and the `externalLinkUrl` checks in
-`forkmesh-tests`.
+to be listed there or use the filter. The reason: a link labelled as a
+forkmesh.com page could otherwise point at `file://attacker/share/x.exe` (on
+Windows that leaks the user's NTLM hash over SMB) or at any registered protocol
+handler. Guarded by `tests/validate_body_link_schemes.py` and the
+`externalLinkUrl` checks in `forkmesh-tests`.

@@ -1,6 +1,8 @@
 # Desktop: networking
 
-Part of [the desktop docs](README.md).
+Part of [the desktop docs](README.md). How the relay, cores and mirrors fit
+together is in [architecture](../../www/docs/architecture.md); the encryption
+used on links and chat is in [encryption](../../www/docs/encryption.md).
 
 ## Relay transport
 
@@ -43,15 +45,12 @@ Part of [the desktop docs](README.md).
   `duplicate: true`.
 - Automatic offline mode (the OS reports no network, or three failed relay
   probes) drops the account event socket, so the phone cannot reach the
-  desktop over the internet until it ends, and only a successful
-  `probeRelayLatency()` ends it. That probe used to be skipped when a
-  WebSocket pong had been seen in the last 90 s, which is always true right
-  after a short outage, and its retries backed off to 5 minutes; the other
-  trigger, window activation, never fires without a window, so a windowless
-  desktop could stay offline for good. While automatic offline mode is on,
-  the probe now ignores the 90 s gate, retries at most every 30 s
-  (`kAutoOfflineProbeMaxDelayMs`), and the minute tick in `MainWindow.cpp`
-  probes as a backstop. Online, nothing new is polled.
+  desktop over the internet until a successful `probeRelayLatency()` ends it.
+  While it is on, the probe ignores its usual "pong in the last 90 s" skip,
+  retries at most every 30 s (`kAutoOfflineProbeMaxDelayMs`), and the minute
+  tick in `MainWindow.cpp` probes as a backstop, because a windowless desktop
+  never gets the window-activation trigger and could otherwise stay offline.
+  Online, nothing new is polled.
 - Chat frames are sealed with chat protocol v3 (`src/RoomSeal.*`,
   [chat.md](chat.md)). Trust records, seen counters and held frames are written
   to QSettings two seconds after a change (and at quit), because each settings
@@ -61,15 +60,16 @@ Part of [the desktop docs](README.md).
   limit. Frames the relay marks `historyReplay` before `forkmesh-history-end`
   skip only the already-seen counter check.
 
-## Cloudflare Worker log tail
+## Cloudflare log tail (legacy)
 
-`MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`) can run
-`npx wrangler tail` for the Worker named in `app/wrangler.toml` (setting
-`diagnostics/cloudLogMonitor`). The app and World run no Workers: when the tail
-reports the Worker missing (`cloudflareTailWorkerMissing()`), the monitor stops,
-records the name in `diagnostics/cloudLogMonitorMissingWorker`, and skips the
-tail on later launches until the box is ticked again. The Node.js probe runs on
-a worker thread once per session.
+`MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`, setting
+`diagnostics/cloudLogMonitor`) can run `npx wrangler tail` for the Worker named
+in `app/wrangler.toml`. The app and World run on the core nodes, not as
+Workers, so the tail normally reports the Worker missing
+(`cloudflareTailWorkerMissing()`): the monitor then stops, records the name in
+`diagnostics/cloudLogMonitorMissingWorker`, and skips the tail on later
+launches until the box is ticked again. The Node.js probe runs on a worker
+thread once per session. App logs come from the fleet feed below.
 
 ## HTTP/3 client
 
@@ -124,10 +124,9 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   Errors are journald err or worse, Caddy error/panic/fatal, Go panics,
   `ERROR`/`CRITICAL` lines and IDS alerts. Caddy's "setting HTTP/3 Alt-Svc
   header … no port can be announced" is a warning
-  (`corelogs::isCaddyReloadNoise`). quic-go reports it when a response goes
-  out while the HTTP/3 listener is closed for a config reload; that response
-  just lacks the HTTP/3 advert. In report #9 it came once per core during a
-  deploy. Python tracebacks fold into one entry;
+  (`corelogs::isCaddyReloadNoise`): quic-go logs it when a response goes out
+  during a config reload, and the response only lacks the HTTP/3 advert.
+  Python tracebacks fold into one entry;
   identical lines fold for 10 minutes. `corelogs::nodeLineHtml` colours the
   prefix and body and pads them into columns with non-breaking spaces (the log
   views are monospace): node 3, role 6, unit 12, severity 5. Web lines also pad
@@ -144,7 +143,8 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   memory for 24 hours.
 - **rqlite statements.** The app's statement lines (enabled by
   `FORKMESH_HOST_D1_LOG=1`, rendered from `fleet.toml` `[app] d1_log`) become DB
-  lines with source file and caller. Log → **D1** shows per-node statement
+  lines with source file and caller. Log → **D1** (the tab keeps the name of
+  the app's D1-shaped database layer, `d1_rqlite.py`) shows per-node statement
   rates and the most frequent statements.
 - **Visualizer.** Log → **Visualizer** (`src/FleetVisualizer.{h,cpp}`) draws
   statement flights to per-table bubbles, node vitals (memory, disk, file
@@ -165,8 +165,8 @@ The Nodes tab of the Network page (`src/MainWindowNodes.cpp`, `buildNodesSection
 is one table of every kind of node: every node the relay directory, roster and
 serving set know, one row per configured relay and per runner, every saved host,
 every fleet core, and every self-hosted instance in the public directory. There
-is no separate Hosts tab any more: one list answers "what is on the network",
-and the host controls sit beside it in the Hosts rail.
+is no separate Hosts tab: the host controls sit beside the list in the Hosts
+rail.
 
 - **Saved hosts** (`fillSavedHostNodeRow`): a saved host whose name no other row
   has gets its own row (role from `NodeRole.h`, normally Mirror; Scope `saved
@@ -336,7 +336,7 @@ the Allow banner is not shown again. `checkLocalMeshFirewall()` stays silent
 while the Chat package is hidden: the mesh still runs, but the banner and its
 log line (which the log classifier badges ERROR, so it raises an Alert) only
 appear once Chat is shown, and `syncPackageSurfaces()` re-runs the check when
-it is. A fresh install without Chat used to get an Alert about `#mesh`. Direct messages travel over the mesh
+it is. Direct messages travel over the mesh
 as `direct-sealed` frames to the other person's linked, approved devices
 ([chat.md](chat.md#direct-delivery)); iPhones that left the room are woken via
 push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).
@@ -438,10 +438,9 @@ moves files, without relaying content in clear.
   last check passed less than 24 hours ago (`admitsBeforeCheck`) is admitted on
   the LAN as soon as the handshake ends; the account is asked in the background
   (`recheckAccount`), and a `NotOwned` answer closes the channel with `revoked`
-  and forgets the phone. Before this every connect waited in `Checking` for the
-  account server (up to 8 s), so the phone's Agents list and every other
-  desktop page took seconds at home. Relayed channels and phones not confirmed
-  for a day still wait for the answer.
+  and forgets the phone. This avoids waiting up to 8 s for the account server
+  on every connect at home. Relayed channels and phones not confirmed for a
+  day still wait for the answer.
 - Any other phone gets a six-digit code shown on both screens; over the relay it
   is refused with `pair_on_lan`. The prompt (`showLocalControlPairingPrompt`)
   defaults to **Deny** (also the Escape button), opens without taking focus
@@ -449,8 +448,8 @@ moves files, without relaying content in clear.
   so a keystroke meant for another window cannot approve a phone. A pending
   pairing expires after two minutes (`kPairingTimeoutMs`, a timer per request
   plus `maintain()`): the phone gets `pairing-denied` with reason `expired`,
-  the prompt closes and the connection frees its slot. Unanswered prompts used
-  to hold one of the eight connection slots forever. Approved devices live in
+  the prompt closes and the connection frees one of the eight slots.
+  Approved devices live in
   `data/local_control/paired-devices.json` (**Settings → Phone**), written
   owner-only through `forkmesh::ownerfile::write`. Browsers are
   never stored and are checked on every connect.
@@ -474,8 +473,7 @@ moves files, without relaying content in clear.
 - Deleting an agent (`deleteStoredAgentSession`) and restoring one from the
   recycle bin call `scheduleAgentSessionsPush()`, which rings `agents.changed`
   and re-posts the relay snapshot, so the phone drops or re-adds the row
-  without a manual refresh. Before this, an idle agent deleted on the desktop
-  stayed in the phone's list until the user pulled to refresh.
+  without a manual refresh.
 - The Remote control switch at the bottom of a session's Environment card
   (`LocalControlServer::setRemoteOff`) refuses every paired request with
   `remote_off` and holds back events while it is off; see
@@ -520,8 +518,7 @@ Each Claude Code update installs a new binary path, so OpenSnitch prompts
 again. When nobody is at the screen (another user is switched in, or the
 screen is locked) the prompt times out into the UI's default action, often a
 deny rule, and every agent then fails its API calls with `EAI_AGAIN` after
-about 11 minutes of retries: on 2026-10-22 2.1.308 was denied at 16:32 and
-every agent run failed until about 18:20. `000-forkmesh-agent-clis` allows
+about 11 minutes of retries. `000-forkmesh-agent-clis` allows
 those paths for one user; run the install once per account that runs agents
 (`--user <name>`).
 

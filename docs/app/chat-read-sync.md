@@ -3,7 +3,7 @@
 Reading a chat on one device clears its unread count on the account's other
 clients (web `/chat`, Office, desktop, iOS, Android). The relay cannot know
 what a person has seen, so the displaying client reports it. Home page:
-[app/README.md](README.md). Related:
+[README.md](README.md). Related:
 [chat-unread-reminders.md](chat-unread-reminders.md).
 
 ## Storage and API

@@ -1,9 +1,11 @@
 # Desktop pings on the phone
 
-When a phone is linked to a desktop, every ping that desktop raises also
-reaches the phone as a push notification: an agent finishing, waiting or
-needing approval, a workflow run, a usage window resetting, a planned restart,
-and the rest of the desktop's Pings page.
+Part of the [phone apps docs](README.md). When a phone is linked to a desktop,
+every ping that desktop raises also reaches the phone as a push notification:
+an agent finishing, waiting or needing approval, a workflow run, a usage window
+resetting, a planned restart, and the rest of the desktop's Pings page. Push
+delivery itself is in [MESH_PUSH.md](MESH_PUSH.md) and
+[PUSH_ICONS.md](PUSH_ICONS.md).
 
 ## Code map
 
@@ -25,7 +27,7 @@ and the rest of the desktop's Pings page.
 
 A backgrounded phone app has closed its desktop-control socket, so a desktop
 ping becomes an account ping (as timer expiries do, `timer_pings.py`). The
-desktop POSTs it to the relay, `enqueue_notification` files a `desktop_ping`
+desktop POSTs it to the relay on the core nodes, `enqueue_notification` files a `desktop_ping`
 row in the account inbox, and the `pings` topic carries it to iOS over APNs and
 to Android over the account event socket its background service holds.
 
@@ -67,13 +69,12 @@ dedupe key is `desktop:<node>:<pingId>`, so a retried POST rewrites its row.
 
 ### Bursts become summaries
 
-When pings come in one after another, sending each one is too much. Since
-2026-10-31, `pingbatch::Batcher` batches them on three rails, each with its own
-burst count: the desktop's OS cards (`postNotification` and
+`pingbatch::Batcher` batches pings that arrive one after another on three
+rails, each with its own burst count: the desktop's OS cards (`postNotification` and
 `showPingTrayMessage`), the ping arrival sound, and the push to the phone.
 
 - A burst starts with the first ping after 30 quiet seconds (`kQuietMs`). Its
-  first three pings (`kSoloCards`) go out one by one as before.
+  first three pings (`kSoloCards`) go out one by one.
 - The rest are held. One summary goes out when the burst reaches 10 pings,
   again at 100, and after that at every further 100 (`nextThreshold`).
 - Pings still held go out when the burst has been quiet for 30 seconds, or 5
@@ -227,12 +228,10 @@ forkmesh-account-desktop-ping-v1
 <ts>
 ```
 
-The `runId` line is there only when the ping names a run, so a desktop that
-sends no run signs the same proof as before. Deploy the relay before the
-desktop: an older relay refuses `ci-failed` and does not sign over `runId`.
-
 signed by the account key (`signOrgTaskProof`), so a captured proof announces
-exactly one ping into the signer's own inbox.
+exactly one ping into the signer's own inbox. The `runId` line is present only
+when the ping names a run. Deploy the relay before the desktop: an older relay
+refuses `ci-failed` and does not sign over `runId`.
 
 `DELETE /api/notifications/desktop` takes `{"node": "<node>", "pingIds": [...]}`
 (1 to 50 ids) and is authorised by the session or a signature over
@@ -269,32 +268,25 @@ session is not in the relay's agent list).
   opens `AgentRouteScreen`, which resolves `desktop:<n>` for a number and
   `node:<id>` otherwise.
 
-#### The agent page a tap opens loads instead of going blank (iOS, 2026-10-28)
+#### Loading the agent page a tap opens (iOS)
 
-A tap often lands before the Agents list has loaded, most of all on a cold
-launch, when the phone still has to reach the desktop over the relay. The page
-(`AgentRouteLookup`, `Features/Agents/Remote/AgentRouteScreens.swift`) used to
-show a bare spinner, call `refresh()`, and give up on the first miss. That
-failed four ways:
+A tap often lands before the Agents list has loaded (a cold launch still has
+to reach the desktop). The page (`AgentRouteLookup`,
+`Features/Agents/Remote/AgentRouteScreens.swift`):
 
-- `AgentControlCenter.reload` returns at once while another refresh is in
-  flight (the Agents tab or the shell started one), so the page decided "not
-  found" before the list arrived. It now waits for `center.loading` to clear.
-- Relay runs were published only after the desktop answered, so a runner
-  alert waited out the desktop link and `agents.list` timeouts (20 s each)
-  when the desktop was asleep. `loadCloud` now publishes the relay rows as
-  soon as they land, next to the desktop rows already shown; the desktop's
-  answer then folds in any run it took over.
-- The id only matched one exact row. `AgentControlCenter.row(forRoute:)`
-  (over `UnifiedAgentRow.forRoute`) also finds a ping from another paired
+- waits for `center.loading` to clear, since `AgentControlCenter.reload`
+  returns at once while another refresh is in flight;
+- sees relay runs early: `loadCloud` publishes relay rows as soon as they land,
+  without waiting for the desktop link or `agents.list` timeouts (20 s each);
+  the desktop's answer then folds in any run it took over;
+- resolves the id with `AgentControlCenter.row(forRoute:)` (over
+  `UnifiedAgentRow.forRoute`), which also finds a ping from another paired
   desktop (`<key>:desktop:<n>`, when only one desktop has that number), a
   relay run by its `cloudSessionId`, and a relay run the active desktop took
-  over as its desktop row.
-- A later refresh where the desktop failed dropped the row and swapped the
-  open page for "Agent not found". The page now keeps the row it found; while
-  a load is still running it follows the row if its id changes (`.id(row.id)`
-  rebuilds the run screen), and after that it stays put, like a page opened
-  from the list.
+  over as its desktop row;
+- keeps the row it found when a later refresh fails; while a load is still
+  running it follows the row if its id changes (`.id(row.id)` rebuilds the run
+  screen).
 
 While it looks, the page shows a skeleton shaped like the agent page
 (`agent-route-loading`); when nothing matches it says why (the desktop's error
@@ -315,9 +307,9 @@ the Actions list. The web Actions tab opens the run named by
 
 `_push_alert_item` and the digest email keep the stored href's tail under the
 repository (`_notification_stored_tail`) for every kind, not only code pushes,
-rewriting just the `owner/repo` prefix to the public identity. Before this a
-ping with a repository and no record number (an agent, an Actions run, a
-branch) opened the repository's front page.
+rewriting just the `owner/repo` prefix to the public identity, so a ping for
+an agent, an Actions run or a branch opens that record, not the repository's
+front page.
 
 ## Traps
 

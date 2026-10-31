@@ -2,6 +2,7 @@
 
 An instance admin turns this on with the **Mirror goal** plugin (admin
 console, Plugins). It is off until then.
+How mirrors work is on [Mirroring](mirroring.md).
 
 A project that could be blocked or taken down survives if copies of it are
 kept in many places. A repository page can show how many copies are running

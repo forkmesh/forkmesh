@@ -1,16 +1,17 @@
 # Onboarding email: first repo, day 3, day 7
 
-Until now the only email a new account gets is the verification email
+The only email a new account gets today is the verification email
 (`_send_verification_email` in `app/src/entry.py`). Three getting-started
 emails are drafted as templates. **They are not wired to send yet**: nothing
-calls them, no cron phase runs them, and no account receives them.
+calls them, no cron phase runs them, and no account receives them. Part of the
+[App docs](README.md).
 
 ## Code map
 
 | Piece | Where |
 | --- | --- |
 | Templates (pure: subject, preheader, plain text, HTML fragments, footer) | `app/src/onboarding_email.py` |
-| Card that wraps the fragments (same card as the verification email) | `_forkmesh_email_card_html` in `app/src/entry.py`, which now takes an optional `preheader` |
+| Card that wraps the fragments (same card as the verification email) | `_forkmesh_email_card_html` in `app/src/entry.py`, with an optional `preheader` |
 | Tests | `app/tests/test_onboarding_email.py` |
 
 `onboarding_email.message(step, name, repo="", has_repo=True,

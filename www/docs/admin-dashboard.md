@@ -2,6 +2,7 @@
 
 An internal, read-only dashboard at `https://app.forkmesh.com/product-analysis`
 for account, signup-origin, mirror, and clone counts. It has no public version.
+Other pages are listed in the [docs index](README.md).
 
 ## Access
 

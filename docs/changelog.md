@@ -15,13 +15,9 @@ ForkMesh has one changelog, `changelog/changelog.json`. Two places show it:
   the changelog" and the release host's Android APK build export the file into
   the app ([native/MAC_BUILD.md](native/MAC_BUILD.md)).
 
-Until 2026-10-21 these were two changelogs: the website's hand-written
-releases in `changelog.html`, and the apps' notes generated at build time
-from `git log` between ad hoc builds plus `native/changelog/notes.json`. The
-website stopped in July 2026 and the apps' notes were never on the website.
-Both were merged into the file: the website's releases v0.1.0 to v0.7.0 as
-they were, and the apps' notes of builds 218 to 302 as two entries
-(2026-10-13 and 2026-10-21) rewritten in plain English.
+The file merges the two older changelogs: the website's releases v0.1.0 to
+v0.7.0 and the apps' notes of builds 218 to 302 (two entries, 2026-10-13 and
+2026-10-21). Developer index: [README.md](README.md).
 
 ## The file
 
@@ -64,14 +60,11 @@ branches that each add a note.
 
 ### Why one line per note
 
-Until 2026-10-25 (schema 2) notes were nested inside a day's entry and
-area section, so two branches that added notes on the same day edited the
-same lines, and resolving the conflict by keeping both sides dropped the
-commas and the `]`/`},` lines between sections. On 2026-10-25 a chain of such
-merges left `main` with invalid JSON; every `/changelog` page failed and the
-deploy stopped on `app/tests/host/test_instance_changelog_e2e.py`. The
-website was also a second copy: `www/public/changelog.html` had every entry
-rendered into it and had to be re-rendered, and conflicted, with each note.
+Nested notes (schema 2) made two branches that added notes on the same day
+edit the same lines; keeping both sides of the conflict broke the JSON, and
+then every `/changelog` page and the deploy gate
+(`app/tests/host/test_instance_changelog_e2e.py`) failed. A pre-rendered
+`changelog.html` was a second copy that conflicted too.
 
 Now every note is a whole line ending in a comma, and `add` puts new ones on
 the first line of `notes`, so the last line, the oldest note without a
@@ -87,11 +80,10 @@ tool that ignores `.gitattributes` (a forge's web merge button) still stops
 on a conflict; keeping both sides' lines is then the right resolution. Run
 `python3 tools/changelog.py check` after any merge that touched the file.
 
-The 2026-10-25 breakage came from the desktop merge editor's **Accept both**,
-which put one side's lines straight after the other's. The editor's commit
-(`commitResolvedMerge`) now refuses a conflicted `.json` file that parsed on
-our side but does not parse after the resolution, naming the file and line
-(`jsonBrokenByMergeResolution`).
+The desktop merge editor's **Accept both** puts one side's lines straight
+after the other's, so its commit (`commitResolvedMerge`) refuses a conflicted
+`.json` file that parsed on our side but does not parse after the
+resolution, naming the file and line (`jsonBrokenByMergeResolution`).
 
 ## Adding a note
 
@@ -109,14 +101,12 @@ and `pitch` by adding a line at the top of `releases`.
 ## In the apps
 
 `tools/changelog.py export --platform ios|android --out FILE` writes the
-apps' format (schema 1, which the apps read since 2026-10-13): each entry
+apps' format (schema 1): each entry
 keeps its version, date, title, pitch and sections; `**` is dropped, the
 iOS app leaves out the Android section and the Android app the iPhone one,
 and each entry is capped at 8 lines per area and 24 in all.
 
 The apps head an entry with its title, else "Version x", else its date, and
-show the version and date under a title. They no longer add an empty
-"Version x (build)" entry on top for the running build: the version row
-already shows it, and every build would otherwise open on "No notes were
-written for this build". That empty entry is only shown when the bundle has
-no entries (a local build with the placeholder file).
+show the version and date under a title. They add no empty "Version x
+(build)" entry for the running build (the version row shows it) unless the
+bundle has no entries (a local build with the placeholder file).

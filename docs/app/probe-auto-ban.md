@@ -2,8 +2,8 @@
 
 A visitor whose 404s are for files only a vulnerability scanner asks for
 (`.env`, `.git/config`, `wp-login.php`, `phpinfo`, `database.sql`, ...) is
-banned from every site the cores serve. See
-[not-found-tracking.md](not-found-tracking.md) for the 404 log that feeds it.
+banned from every site the cores serve. Part of [the App docs](README.md);
+the 404 log that feeds it is [not-found-tracking.md](not-found-tracking.md).
 
 ## Code map
 
@@ -15,17 +15,16 @@ banned from every site the cores serve. See
 | `app/src/entry.py` | `_probe_ban`, the per-process `_probe_ban_local` table, the `probe-bans` cron phase |
 | Tables | `probe_visitors`, `probe_bans` |
 | `app/host/forkmesh_host/request_policy.py`, `deploy/core/request_rules.py` | Fleet-wide enforcement: a ban is a `request_block_rules` row |
-| `app/tools/sync_request_block_rules.py` | Leaves `auto-probe-*` rows out of the edge WAF rule |
+| `app/tools/sync_request_block_rules.py` | Leaves `auto-probe-*` rows out of the Cloudflare zone WAF rule it publishes |
 
 ## Classification
 
 `probe_ban.classify(path)` percent-decodes the path (twice when it was
 double-encoded, as in `status%252ephp`), lower-cases it, checks the whole path
 against product signatures and then each segment; the path takes the heaviest
-class it earns. A path that spelled a dot as `%2e` (`/CHANGELOG%2emd`,
+class it earns. A path that spells a dot as `%2e` (`/CHANGELOG%2emd`,
 `/%2eeslintrc`) is a `script` probe whatever it names: no browser or link
-writes a dot that way, and in the October 2026 log every such path came from a
-scanner.
+writes a dot that way, and in the 404 log every such path came from a scanner.
 
 | Class | Weight | Examples |
 | --- | --- | --- |
@@ -52,31 +51,20 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
 
 ## Scoring and bans
 
-- The visitor is the address in `cf-connecting-ip` (the TCP peer, or the
-  verified edge visitor), IPv4 or the IPv6 `/64`, stored only as
+- The visitor is the address the host puts in `cf-connecting-ip` (the TCP
+  peer, or the verified visitor a trusted proxy names), IPv4 or the IPv6
+  `/64`, stored only as
   `blind_index("probe-visitor:" + address)`.
 - Each **distinct** probe path adds its weight within a one-day window;
   repeats add nothing.
 - At **3 points** the visitor is banned, so one direct secret or server-script
   probe (`/.env`, `/xmlrpc.php`, `/wp-json/`) bans on its own; a CMS or backup
   path needs one more probe path, a config or recon path two more.
-- Until 2026-10-22 the line was 4 points within an hour, scripts weighed 2,
-  and a ban lasted a day (a week for a repeat). The 404 log then held 4,109
-  paths: 1,226 matched no class, and 66 visitors had scored without a ban,
-  almost all with one direct `/.env`, `/xmlrpc.php`, `/wp-login.php`,
-  `/wp-json/...` or `.sql` probe. Only a scanner sends those (a page cannot,
-  see Safety rules), so the line moved to 3, scripts to 3, database dumps to
-  `secret`, the window to a day, and the `recon` class and the rest of the
-  table's new entries were added from those 1,226 paths. Replayed against the
-  stored visitors, 62 of the 66 are now banned.
-- The threshold was 6 until 2026-10-16. That week production had 39 bans but
-  32 visitors left below 6, most of them two-path WordPress scans
-  (`//xmlrpc.php` + `//wordpress/` = 4) and paired `.php` probes. A
-  visitor's own browser never scores (see Safety rules), so two direct probe
-  paths in an hour are not ordinary traffic. The same review found about 340
-  scanner paths (credential-variable names, cloud metadata, pprof, Consul,
-  Vault, Elasticsearch, Jenkins, double-encoded files) that matched no class;
-  the table above now covers them.
+- These weights come from replaying the stored 404 log: one direct `/.env`,
+  `/xmlrpc.php`, `/wp-login.php`, `/wp-json/...` or `.sql` probe is something
+  only a scanner sends (a page cannot, see Safety rules), and two-path
+  WordPress scans and paired `.php` probes are not ordinary traffic either.
+  Add new scanner paths to the table rather than lowering the line.
 - A ban lasts a week, or 30 days for a repeat within 90 days. It writes
   `probe_bans` and a `request_block_rules` row
   `auto-probe-<first 32 hex of the blind index>` (`ip` or `cidr`, priority 0),
@@ -93,22 +81,23 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   request `/.env`, so a 404 is scored only when `Sec-Fetch-Site` is absent or
   `none`. The static-site relay forwards it as `fetchSite`.
 - **Never banned:** non-routable addresses (loopback, private, link-local,
-  carrier NAT, documentation, the mesh range) and every edge-provider range
-  (a copy of `CLOUDFLARE_RANGES` in `deploy/core/render.py`, kept equal by a
-  test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
+  carrier NAT, documentation, the mesh range) and Cloudflare's ranges, which
+  the static forkmesh.com Worker relays from (`CLOUDFLARE_RANGES`, a copy of
+  the list in `deploy/core/render.py`, kept equal by a test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
   writes it into each core's `app.env` with every `[[runners]]` address from
   `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
   runner can reach the public App, and one probe from it would otherwise ban
   the runner's address, cutting off its own claims and every other owner's
-  jobs. Autoscaled pool runners and user-run mirrors are not in the fleet
-  file and are not covered.
-- Bans block the App, World and proxied site routes, not static files served
-  by the edge.
+  jobs ([../RUNNERS.md](../RUNNERS.md)). Autoscaled pool runners and
+  user-run mirrors are not in the fleet file and are not covered.
+- Bans block the App, World and proxied site routes, not the static
+  forkmesh.com files.
 
 ## Modes
 
-`FORKMESH_PROBE_BAN` (set under `[vars]` in `app/wrangler.toml` to persist
-across deploys):
+`FORKMESH_PROBE_BAN`, set for the cores under `[production.vars]` in
+`deploy/fleet.toml` (the name must also be a `[vars]` name in
+`app/wrangler.toml`, which `deploy/core/render.py` checks):
 
 | Value | Effect |
 | --- | --- |

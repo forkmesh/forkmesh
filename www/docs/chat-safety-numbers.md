@@ -5,6 +5,8 @@ the conversation. Every browser, phone and desktop you sign in on has its own
 chat key. A safety number lets you check that nobody else's key has slipped
 into the conversation, and new devices wait for your approval before they get
 anything.
+How chat keys and signatures fit together is on
+[Encryption and signatures](encryption.md#end-to-end-encrypted-chat-and-calls).
 
 Approvals and safety numbers are for direct messages. Channels accept every
 correctly signed device on their own; see

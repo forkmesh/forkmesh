@@ -9,10 +9,11 @@ the relay cannot delete them. "Until deleted" means no automatic limit;
 ## Where the relay runs
 
 The application code (`app/src/`) runs under `app/host/` on self-hosted core
-nodes (`deploy/fleet.toml`). `app/wrangler.toml` still declares the bindings;
-`app/host/forkmesh_host/env.py` maps each to a local implementation. The apex
-site is fronted by an edge proxy that forwards visitor IP and country in a
-signed header.
+nodes (`deploy/fleet.toml`); see [Architecture and availability](architecture.md).
+The binding names come from `app/wrangler.toml`, and
+`app/host/forkmesh_host/env.py` maps each to a local implementation on the
+cores. The forkmesh.com website forwards visitor IP and country to the app in
+a signed header.
 
 ## Live stores
 
@@ -65,11 +66,11 @@ conversations, then republishes the public catalog.
 | Core node journal (errors, request counts, statement text without values, mail delivery lines) | ≤ 64 MiB per node (`journald.conf`), rotated by size |
 | Reverse-proxy access log (masked client addresses, no headers) | In the journal |
 | Mail event spool | 3 days |
-| Edge proxy logs | Provider default |
+| forkmesh.com website Worker logs (5% sample) | Cloudflare plan default |
 
 ## Outside processors
 
-The hosting provider (all stores), DNS and edge provider, recipients' mail
+The hosting provider (all stores), the DNS and website provider, recipients' mail
 servers, optional error reporting (redacted), membership provider, AI providers
 used by runner jobs, webhook receivers, food-data lookups (no account id), push
 notification service (token and fixed alert only), chat bridge, ActivityPub

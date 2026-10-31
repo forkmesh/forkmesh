@@ -2,10 +2,25 @@
 
 Security is the first priority. This page maps the trust boundaries of the
 served stack, says where each key lives (by name and path, never by value),
-and points to the page that owns each mechanism. The product-level model
-(identities, signed records, sealed chat, private repositories) is published
-under `www/docs/security/`; report vulnerabilities as described in
-`SECURITY.md`.
+and points to the page that owns each mechanism. Report vulnerabilities as
+[SECURITY.md](../../SECURITY.md) describes. Index: [docs/README.md](../README.md).
+
+The public pillars explain the design; this page does not repeat them:
+
+- [Threat model](../../www/docs/protocol/threat-model.md): who can attack
+  what, and what holds
+- [Encryption and signatures](../../www/docs/encryption.md): identities,
+  signed records, chat and repository encryption
+- [Architecture and availability](../../www/docs/architecture.md): cores, DNS
+  round robin, runners, read-only mode
+- [Mirroring and software distribution](../../www/docs/mirroring.md): signed
+  mirror health and release verification
+- [Self-hosting](../../www/docs/self-hosting.md): running your own instance
+- [Censorship resilience](../../www/docs/censorship-resilience.md): what still
+  depends on a provider
+
+Product-level details (sealed chat, private repositories, organization roles,
+secret scanning) are in [www/docs/security/](../../www/docs/security/).
 
 ## Code map
 
@@ -13,10 +28,10 @@ under `www/docs/security/`; report vulnerabilities as described in
 | --- | --- | --- |
 | Node identity | `desktop/src/ForkMeshIdentity.{h,cpp}`, `server/identity.go` | Ed25519 key in `<data>/identity/ed25519.pem` |
 | Signed events | `app/src/events.py`, `app/src/releases.py` | canonical strings verified with Ed25519 |
-| Encryption at rest | `app/src/entry.py` (row sealing, blind indexes) | |
+| Encryption at rest | `app/src/entry.py` (row sealing, blind indexes) | [encryption.md](../../www/docs/encryption.md) |
 | Secrets vault | `app/host/forkmesh_host/vault.py`, `vault_crypto.py`, `tools/next_vault.py` | [VAULT.md](../VAULT.md) |
 | Key rotation | `tools/next_rekey.py` | [REKEY.md](../REKEY.md) |
-| Organization roles | `app/src/organization_rbac.py` | |
+| Organization roles | `app/src/organization_rbac.py` | [organization-roles.md](../../www/docs/security/organization-roles.md) |
 | Node ownership changes | `_account_link_grant` | [NODE_LINK_GRANT.md](NODE_LINK_GRANT.md) |
 | Signup bot check | `app/src/turnstile.py` | [OPERATIONS.md](../OPERATIONS.md) |
 | Front-door checks | `app/host/forkmesh_host/request_guard.py`, `request_policy.py` | [host/README.md](../host/README.md) |
@@ -25,8 +40,8 @@ under `www/docs/security/`; report vulnerabilities as described in
 | Host intrusion detection | `deploy/core/ids.py`, `tools/next_ids.py` | [IDS.md](../IDS.md) |
 | Node hardening | `deploy/core/render.py`, `deploy/core/certsync.py`, `tools/next_fleet.py` | [OPERATIONS.md](../OPERATIONS.md) |
 | Runner isolation | `server/runner.go`, `sandbox.go`, `jobhome.go`, `runnergrant.go` | [RUNNERS.md](../RUNNERS.md) |
-| Encrypted backups | `tools/next_backup.py` (age) | |
-| Secret scanning | `tools/secret_gate.py`, `conformance/secrets/v1` | |
+| Encrypted backups | `tools/next_backup.py` (age) | [disaster recovery](../../www/docs/disaster-recovery/README.md) |
+| Secret scanning | `tools/secret_gate.py`, `conformance/secrets/v1` | [secret-scanning.md](../../www/docs/security/secret-scanning.md) |
 | Desktop outbound firewall | `desktop/src/BackoffNetworkAccessManager.{h,cpp}` | every external destination needs an Allow or Deny |
 | Agent filesystem guard | `tools/forkmesh_agent_guard.py` | fail-closed allowlist |
 | Agent host boundaries | `desktop/tests/test_agent_host_boundaries.cpp`, `conformance/agent-adversarial/` | [agent-host-boundaries.md](agent-host-boundaries.md) |
@@ -34,13 +49,14 @@ under `www/docs/security/`; report vulnerabilities as described in
 | Releases | `www/public/install.sh`, release tooling | [release/README.md](../release/README.md) |
 | Destructive actions | guarded delete helpers | [engineering/destructive-actions.md](../engineering/destructive-actions.md) |
 | Vulnerability reports | `security_report_handler` in `app/src/entry.py` | [sentinel.md](sentinel.md#reports-from-the-security-webhook) |
-| Protocol threat model | `conformance/protocol/v1/threats.json` | |
+| Protocol threat model | `conformance/protocol/v1/threats.json` | [threat-model.md](../../www/docs/protocol/threat-model.md) |
 
 ## Trust boundaries
 
 1. **The device** holds the node identity key, repository decryption keys,
    SSH keys, agent-provider logins and wallet keys; none leave it.
-2. **The core nodes (relay)** run the app with rqlite. They store routing,
+2. **The core nodes (relay)** run the app with rqlite and are reached by DNS
+   round robin ([architecture](../../www/docs/architecture.md)). They store routing,
    authorization and collaboration metadata encrypted at rest under
    `DATA_KEY` with HMAC blind indexes. This protects a stolen database copy,
    not data from the operator. Cores run no agent or untrusted code.
@@ -51,9 +67,10 @@ under `www/docs/security/`; report vulnerabilities as described in
 4. **Runners** run agent jobs, hold no core secret, are not mesh peers, keep
    no repositories, and push only `refs/heads/agent/<session>` with a per-job
    grant.
-5. **Third parties** are listed with what they observe in
-   `www/docs/external-dependency-map.md`. The DNS zone and the homepage Worker
-   remain on a CDN provider.
+5. **Third parties** are listed with what they observe in the
+   [external dependency map](../../www/docs/external-dependency-map.md).
+   Cloudflare hosts the DNS zone and the forkmesh.com homepage Worker
+   (`www/worker.js`); it does not proxy app or world traffic.
 
 Keys: `DATA_KEY` exists on the operator box and, while a node is unsealed,
 only in its app's memory. Bootstrap credentials are host-encrypted systemd
@@ -65,21 +82,22 @@ added to the desktop's saved hosts.
 - Unseal: unix socket on each core; `DATA_KEY` arrives on SSH stdin, never as
   an argument, environment variable or file. Peers unseal each other over the
   mesh.
-- IDS: signed expected-change manifests and signed quarantine records.
+- IDS: signed expected-change manifests and signed quarantine records
+  ([IDS.md](../IDS.md)).
 - `x-forkmesh-edge-client`: an HMAC-signed visitor address from the homepage
   Worker, verified before the app sees the request; direct requests have
-  client-address headers replaced by the TCP peer.
+  client-address headers replaced by the TCP peer
+  ([deploy/core/edge_client.md](../../deploy/core/edge_client.md)).
 - ActivityPub inbox (`ap_inbox_handler`): after the HTTP signature verifies,
   the key's actor (the document fetched from `keyId` without its fragment)
   must be the activity's `actor`, or a path under it (GoToSocial publishes
   `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`. A `keyId`
   path with `.`/`..` segments or any percent-encoding is refused
-  (`key_actor_mismatch`): the fetch would normalise `victim/../attacker` to
-  another account's key while the prefix check still saw the victim.
-  A key from the same server is not enough: on a shared instance one account
-  could otherwise send Undo(Follow) or a self-Delete naming another account
-  and erase that account's follows. Lemmy moderators sign their own Remove,
-  so Remove needs no exception.
+  (`key_actor_mismatch`), because the fetch would normalise
+  `victim/../attacker` while the prefix check still saw the victim. A key from
+  the same server is not enough: on a shared instance one account could send
+  Undo(Follow) or a self-Delete naming another and erase its follows. Lemmy
+  moderators sign their own Remove, so Remove needs no exception.
 - **Repository-bound event signatures.** The v1 strings
   `forkmesh-issue-event-v1`, `forkmesh-discussion-event-v1`,
   `forkmesh-pull-event-v1` and `forkmesh-pull-comment-v1` bind no
@@ -127,7 +145,8 @@ python3 tools/secret_gate.py --help
   is missing.
 - Roll node-file security changes before the app release that relies on them.
 - Ongoing review: [sentinel.md](sentinel.md); fixed findings and open items:
-  [findings.md](findings.md).
+  [findings.md](findings.md); input guard: [hidden-unicode.md](hidden-unicode.md);
+  agent sandbox: [agent-host-boundaries.md](agent-host-boundaries.md).
 
 ## Security audit log
 
@@ -135,9 +154,9 @@ python3 tools/secret_gate.py --help
 the `sensitive-cleanup` cron). An agent run's status report
 (`organization.task_agent_status`, `world/src/world_office_tasks.py`) writes an
 audit row only when the run's status changes from the stored one; a repeated
-report of the same status still updates the task but adds no row. Why: the
-2026-10-16 table audit found the log at 19 MiB and 74.8k rows on 1 GB nodes,
-mostly one identical row per desktop status heartbeat.
+report of the same status still updates the task but adds no row, because
+one identical row per desktop status heartbeat once grew the log to 19 MiB on
+1 GB nodes.
 
 ## Traps
 
@@ -161,18 +180,15 @@ mostly one identical row per desktop status heartbeat.
   `/api/integrations/discord/callback`, ten minutes), and the callback
   finishes only when a cookie holds exactly the returned state
   (`_oauth_callback_browser_bound` in `app/src/organization_discord.py`).
-  The one-time state, PKCE and the starter's stored session alone did not stop
-  an organization owner from sending the authorize link to another server's
-  admin and binding that server to their organization. The callback cannot
-  check the session instead: the account cookie is SameSite=Strict, so the
-  browser never sends it on the redirect back from discord.com. Two tabs or a
-  second Connect click both finish, because each flow keeps its own cookie. A
-  browser that dropped the cookie, or a different browser, gets
-  `invalid_context`, and the World Discord panel says nothing was connected
-  and to press Connect Discord server again.
+  Without it an owner could send the authorize link to another server's admin
+  and bind that server to their organization; state and PKCE alone do not
+  stop that. The session cookie cannot be checked instead: it is
+  SameSite=Strict and is not sent on the redirect back from discord.com. Two
+  tabs or two Connect clicks both finish (one cookie each). A missing cookie
+  or a different browser gets `invalid_context`, and the World Discord panel
+  says nothing was connected.
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
-  such branches on `main`. Since 2026-10-19 it also bans the owner's personal
-  Reddit handle (words joined by `_` count as one word, so the 16-character
-  handle matches as a whole). Docs and tests use the desk's accounts or the
-  `ada_lovelace` placeholder.
+  such branches on `main`. It also bans the owner's personal Reddit handle
+  (words joined by `_` count as one word, so the handle matches as a whole).
+  Docs and tests use the desk's accounts or the `ada_lovelace` placeholder.

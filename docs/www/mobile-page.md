@@ -57,8 +57,9 @@ card.
 
 `/mobile` is a static asset served from `mobile.html`. It is listed in
 `run_worker_first` in `www/wrangler.toml`, `www/wrangler.production.toml`,
-`app/wrangler.toml`, `world/wrangler.toml` and the route list in
-`tools/cloudflare_bootstrap.py`, so attribution observes it. On the core
+`app/wrangler.toml`, `world/wrangler.toml` (the optional Workers self-host)
+and the route list in `tools/cloudflare_bootstrap.py`, so attribution observes
+it. On the core
 nodes, `app/src/static_routes.py` sends `/mobile` to the marketing site
 (`WWW_SITE_ROUTES`), reserves the prefix (`RESERVED_ROUTE_PREFIXES`) and
 hides `/mobile.html` (`BLOCKED_STATIC_HTML_PATHS`). The site footer links it,

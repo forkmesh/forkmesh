@@ -4,7 +4,8 @@ Third-party apps install into ForkMesh the way chat-platform apps do. A
 developer registers the app; a user or organization installs it through
 OAuth 2.1 with a consent screen; the app then acts only through short-lived
 tokens bound to the granted scopes. A bot user posts as **"&lt;App&gt; (app)"**,
-never as a person.
+never as a person. App docs home: [app/README.md](app/README.md); developer
+index: [README.md](README.md).
 
 | Piece | Where |
 |---|---|
@@ -213,18 +214,15 @@ never hold a client secret).
 
 The page is split into tabs (Plugins, Installed apps, Directory, and Review
 queue for reviewers only); `#installed`, `#directory` and `#review` open a tab
-directly. It used to stack everything on one scroll, with each account plugin
-drawn as a bordered card inside the bordered panel and dependents nested as
-cards inside cards. With 76 account plugins that read as a wall of boxes.
-
-Plugins now follow the store pattern of Raycast, VS Code's extension view and
-Linear's integrations: a category rail on the left (a select under 900px),
+directly. Nested bordered cards for 76 account plugins read as a wall of
+boxes, so plugins follow the store pattern of Raycast, VS Code's extension
+view and Linear's integrations: a category rail on the left (a select under 900px),
 search across name, summary and category, an All / Installed / Available
 filter, and one hairline-divided list with a row per plugin. A row holds a
 neutral letter tile, the name, a one-line summary, the Phone / Desktop / Web
 places as pill toggles, and a blue switch for install and remove. Removing
 still asks for confirmation, since it deletes the plugin's account data.
-Dependents are no longer nested: the row carries a "Needs <parent>" label, and
+Dependents are not nested: the row carries a "Needs <parent>" label, and
 the parent shows how many add-ons depend on it. Searching clears the category
 so it always looks through every plugin.
 

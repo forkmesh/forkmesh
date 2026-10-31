@@ -1,7 +1,10 @@
 # Dependency security audit (snapshot)
 
 A one-time audit of every third-party component the repository resolves. The
-maintained summary is `www/docs/security/dependency-security-audit.md`.
+maintained summary is
+[www/docs/security/dependency-security-audit.md](../www/docs/security/dependency-security-audit.md);
+the ongoing policy is
+[engineering/third-party-dependencies.md](engineering/third-party-dependencies.md).
 
 ## Scope
 

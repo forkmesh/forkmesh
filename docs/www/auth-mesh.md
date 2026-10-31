@@ -4,7 +4,7 @@ The login, signup, forgot-password, reset-password and verify-pending pages
 mount `<div data-forkmesh-auth-mesh>`, which `www/public/auth-mesh.js`
 replaces with a dotted world map carrying the mesh's nodes. The backdrop is
 decorative: it is `aria-hidden`, takes no pointer events, and a page without
-JavaScript shows its plain background.
+JavaScript shows its plain background. Part of [the website docs](README.md).
 
 ## Code map
 

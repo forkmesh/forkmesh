@@ -5,6 +5,7 @@ Every organization request is decided by one deny-by-default table,
 names it; unknown roles, empty roles and unlisted capabilities are refused for
 everyone, owners included. The tables below are generated from that module and
 checked against it by `app/tests/test_organization_rbac.py`.
+Other security pages are listed in the [docs index](../README.md).
 
 ## Roles
 

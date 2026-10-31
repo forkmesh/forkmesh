@@ -3,7 +3,7 @@
 The runner executor now also serves instance Actions (every event, real
 clones, secrets, push back, full logs); [instance-actions.md](instance-actions.md)
 is the contract for that and overrides the runner details below where they
-differ.
+differ. Home: [README.md](README.md).
 
 A repository's `.forkmesh/*.yml` push workflows normally run on the owner's
 desktop. When the default branch of a repository on the core nodes moves and

@@ -1,7 +1,9 @@
 # ActivityPub federation (fediverse interop)
 
 The relay joins the ActivityPub network (Mastodon-compatible) with followable
-actors on its own domain.
+actors on its own domain. Digest and mention handling are in
+[fediverse digests](../fediverse-digests.md) and
+[fediverse mention review](../fediverse-mention-review.md).
 
 | Actor | Handle | Actor URL | Type |
 |---|---|---|---|

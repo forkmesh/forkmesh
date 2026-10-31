@@ -1,6 +1,7 @@
 # Synchronization status
 
 All clients describe synchronization with one model, `forkmesh-sync-status-v1`.
+Copies are made by mirrors; see [Mirroring](mirroring.md).
 
 | State | Current | Meaning |
 | --- | --- | --- |

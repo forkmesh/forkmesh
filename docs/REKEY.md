@@ -6,7 +6,9 @@ re-creating it under the new one, offline, with the apps stopped. The tool is
 `tools/next_rekey.py`; its tests are `app/tests/host/test_next_rekey.py`. It
 runs only on the operator box, against a local SQLite file, never on a node.
 Users keep their passwords: password hashes are salted PBKDF2 inside the
-encrypted account record and do not depend on `DATA_KEY`.
+encrypted account record and do not depend on `DATA_KEY`. See
+[VAULT.md](VAULT.md), [OPERATIONS.md](OPERATIONS.md) and the
+[encryption overview](../www/docs/encryption.md).
 
 ## What depends on `DATA_KEY`
 

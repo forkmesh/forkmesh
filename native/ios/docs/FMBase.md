@@ -1,7 +1,7 @@
 # FMBase
 
 Foundations with no dependencies: ordered JSON, encodings, formatting, config,
-storage protocols, clock, log, service registry. `import FMBase`.
+storage protocols, clock, log, service registry. `import FMBase`. Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## JSON (`JSONValue.swift`, `JSON.swift`, `JSONAccess.swift`)
 

@@ -3,6 +3,8 @@
 Every public repository's issues can be followed without an account, without
 JavaScript and without loading anything from another site: as Atom feeds, by
 email through a feed-to-mail tool, or on the plain "lite" pages.
+Reading without an account is covered in
+[Reading and cloning without an account](accountless-reading.md).
 
 ## Feeds
 

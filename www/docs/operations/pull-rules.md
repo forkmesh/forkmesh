@@ -3,7 +3,8 @@
 Repositories and organizations can set rules every pull request must meet:
 tests, documentation, size, commit message format, secrets, protected paths,
 and a required AI model. The pull request page lists each rule, whether it
-passes, and how to fix it. Each rule either **blocks** the merge (no waiver
+passes, and how to fix it. Signed status checks are a separate gate:
+[required checks](required-checks.md). Each rule either **blocks** the merge (no waiver
 reaches it) or only **flags** the pull request (`warn`).
 
 | Scope | Where the rules live | Who changes them |

@@ -5,7 +5,8 @@ mirror node. Each result is an Ed25519-signed attestation from a runner the
 repository trusts, so the gate does not depend on any runner service or
 storage location. Forged, stale, replayed, and unauthorized results cannot
 satisfy it. The Go mirror node (`forkmesh-mirror-node`) enforces it for web
-merges (`merge-pull`).
+merges (`merge-pull`, see [mirror node](mirror-node.md#owner-authorized-web-merges));
+blocking rules beside it are [pull rules](pull-rules.md).
 
 ## Policy
 

@@ -9,7 +9,10 @@ and verify every signature, and fold collaboration state from these documents
 and their vectors without reading ForkMesh source. The hosted
 [protocol reference](https://forkmesh.com/docs/protocol/) remains the
 narrative guide to HTTP routes and deployment; where the two disagree, this
-suite wins and the disagreement is a bug.
+suite wins and the disagreement is a bug. Plain-language overviews are on
+[Encryption and signatures](../encryption.md) and
+[Architecture and availability](../architecture.md); the
+[docs index](../README.md) lists every page.
 
 | Document | Covers |
 | --- | --- |

@@ -1,8 +1,9 @@
 # Web chat: relay hardening
 
 How the browser clients follow [chat-relay-hardening.md](chat-relay-hardening.md)
-(R1 to R7). Home page: [README.md](README.md). Protocol:
-[chat-protocol-v3.md](chat-protocol-v3.md).
+(R1 to R7). Part of [the App docs](README.md). Protocol:
+[chat-protocol-v3.md](chat-protocol-v3.md); signatures and sealing in general:
+[encryption](../../www/docs/encryption.md).
 
 The clients are the `/chat` page (`app/public/chat.js`), the dashboard chat
 and the World's CHAT terminal (`app/public/dashboard-chat.js`, mounted by
@@ -25,10 +26,10 @@ of them read who wrote a frame from `app/public/chat-frame-auth.js`.
   (`forkmesh-chat-e2ee`) where the browser has one.
 - `senderId` is the node public key (`store.ready()`); the old random
   `forkmesh.chat.selfId` is deleted on load. A guest's `acct` is its node id.
-- A profiled store deletes the keys a browser kept before profiles (anything
-  under `forkmesh.chat/e2ee/` outside `p/`): their bundles named the old
-  random id, which every client now refuses, so they could never be used
-  again, and their prekey private halves would otherwise never be wiped.
+- A profiled store deletes pre-profile keys (anything under
+  `forkmesh.chat/e2ee/` outside `p/`): their bundles name a random id every
+  client refuses, and their prekey private halves would otherwise never be
+  wiped.
 - Every bundle carries `nsig`. A store opened without a `node` option uses its
   node key; tests that pass a fixed `node` get bundles without `nsig`, which
   only strict (direct-message) rooms accept.
@@ -39,12 +40,11 @@ of them read who wrote a frame from `app/public/chat-frame-auth.js`.
 
 ## Nothing private on a relay room (R2)
 
-The web never sent relay `dm`, `@peer`, `private`, `invite` or cove frames:
-direct messages and private channels already use the server's rooms. The
-transport now refuses to send such a frame on any room that is not a direct
-message room, and drops one it receives (`isPrivateRelayFrame`), sealed or
-not, including inside a `history` frame. The web keeps no saved history of its
-own, so there is nothing to clean up on first start.
+The web sends no relay `dm`, `@peer`, `private`, `invite` or cove frames:
+direct messages and private channels use the server's rooms. The transport
+refuses to send such a frame on any room that is not a direct message room,
+and drops one it receives (`isPrivateRelayFrame`), sealed or not, including
+inside a `history` frame. The web keeps no saved history of its own.
 
 ## Only authenticated frames act (R3)
 
@@ -101,11 +101,9 @@ own, so there is nothing to clean up on first start.
   failed lookup is retried after a minute and shows the sender as a guest
   meanwhile.
 - An answer that names no account is kept for only that minute too, and is
-  never saved to `localStorage`: a device that posts before its
-  `node-bind` lands (a new phone or browser) would otherwise stay
-  `Guest ####` for an hour (a signed-in person's #general announcement showed
-  as a guest this way on 2026-10-23, while `node-owner` already named their
-  account for that node).
+  never saved to `localStorage`: a device that posts before its `node-bind`
+  lands (a new phone or browser) would otherwise stay `Guest ####` for an
+  hour.
 - `createGuestRelabeler()` remembers the ids of lines shown as a guest whose
   seal claims an account (`unconfirmedClaim`), history entries included,
   rechecks that node a minute later (at most ten times), and when the server
@@ -122,7 +120,7 @@ own, so there is nothing to clean up on first start.
   avatar only when the line is the browser's own or from a confirmed account,
   and over ForkBot, Claude or Codex only for an integration frame or this
   browser's own answer from the ForkBot endpoint, never for a via line.
-  Guests no longer get remote speech bubbles, because a guest name cannot be
+  Guests get no remote speech bubbles, because a guest name cannot be
   checked.
 - After sign-in each client calls `POST /api/chat/node-bind` with
   `store.nodeBindProof(account)` (`sig` over
@@ -136,13 +134,13 @@ new device in a direct message), so it does not call `/api/chat/blocks`.
 
 ## Less about you (R7)
 
-Web frames never carried `timeZone`, a Solana address, a host name or `dg`.
+Web frames carry no `timeZone`, Solana address, host name or `dg`.
 Hello and presence frames carry the display name, `accountKind` and, when
 signed in, the user's own away/custom status; receivers ignore the name and
 kind and use the attributed ones.
 
 ## Served files
 
-`/chat-frame-auth.js` is one of the App files the World origin proxies
-(`world/worker.js`, `world/wrangler.toml`, `deploy/core/caddy_routes.py`,
-`tools/cloudflare_bootstrap.py`).
+`/chat-frame-auth.js` is one of the App files the World origin proxies. The
+cores route it in `deploy/core/caddy_routes.py`; the same path list is kept in
+`world/worker.js`, `world/wrangler.toml` and `tools/cloudflare_bootstrap.py`.

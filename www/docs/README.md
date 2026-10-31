@@ -1,13 +1,27 @@
 # ForkMesh documentation
 
-ForkMesh is a decentralized Git hosting network: signed repositories replicate
-across independent mirror nodes, and the desktop, web and mobile clients read
-and write them through a shared protocol. Every Markdown file and JSON schema in
-this directory is rendered at [forkmesh.com/docs/library](https://forkmesh.com/docs/library/)
-by `app/tools/docs_site.py`, which also builds the page history at
-[forkmesh.com/docs/history](https://forkmesh.com/docs/history/) and the
-document index at [forkmesh.com/docs/documents](https://forkmesh.com/docs/documents/).
-Developer documentation per subsystem is in the [developer docs index](../../docs/README.md).
+ForkMesh keeps the source code and releases of a project reachable and
+verifiable when a hosting provider, domain or network fails it. Git stays the
+source of truth; signed repositories replicate to independent mirrors, and the
+desktop, web and phone apps work on them through one protocol. Every Markdown
+file and JSON schema here is rendered at
+[forkmesh.com/docs/library](https://forkmesh.com/docs/library/) by
+`app/tools/docs_site.py`, with [page history](https://forkmesh.com/docs/history/)
+and a [document index](https://forkmesh.com/docs/documents/). Developer docs per
+subsystem: [developer docs index](../../docs/README.md).
+
+## Core documentation
+
+Start here. Each page is short and links to the full specifications.
+
+| Pillar | Page |
+| --- | --- |
+| How the network is built, and why no single server has to stay up | [Architecture and availability](architecture.md) |
+| What is signed and encrypted, with which algorithms, and the known gaps | [Encryption and signatures](encryption.md) |
+| How copies stay in step, how clones are verified, how releases are distributed | [Mirroring and software distribution](mirroring.md) |
+| Run a node, a mirror, an instance or a fleet yourself | [Self-hosting](self-hosting.md) |
+| What happens when a host, domain, account or network is blocked | [Censorship resilience](censorship-resilience.md) |
+| What the protocol defends against, and what is still open | [Threat model](protocol/threat-model.md) |
 
 ## Getting started
 
@@ -71,6 +85,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | A goal of healthy mirrors and the copies people run | [Mirror goals](mirror-quota.md) |
 | Removable-media exports and resumable low-bandwidth fetches | [Offline and low-bandwidth sync](offline-sync.md) |
 | Clearnet, Tor, I2P, overlay and LAN transports | [Transports and anonymity postures](transports.md) |
+| Mirrors, verified clones and signed releases | [Mirroring and software distribution](mirroring.md) |
 | Recovery from origin, DNS, key, region and backup loss | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |
 | Sync with GitHub | [Connecting to GitHub](github-sync.md) |
 | Mirror a GitHub repository and deploy its Cloudflare Worker, from desktop or phone | [Mirror and deploy a Cloudflare Worker](cloudflare-workers.md) |
@@ -90,6 +105,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 
 | Topic | Page |
 | --- | --- |
+| Overview of every encryption and signature layer | [Encryption and signatures](encryption.md) |
 | Chat encryption | [Chat encryption and integrations](security/sealed-chat.md) |
 | Private repositories, backups and key recovery | [Private repository confidentiality](security/private-repository-confidentiality.md) |
 | Organization roles | [Organization roles and the authorization matrix](security/organization-roles.md) |
@@ -106,6 +122,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | What "done" requires | [Definition of done](engineering/definition-of-done.md) |
 | Responsive interface budgets | [Daily interface validation](engineering/daily-interface-validation.md) |
 | Normative protocol suite | [Protocol suite](protocol/README.md) |
+| Protocol threat register | [Threat model](protocol/threat-model.md) |
 | Coding agent on Workers AI | [Workers AI coding agent](cloudflare-workers-ai-coding-agent.md) |
 | World community services | [Community services](world-community-services.md), [soundtrack licence](world-soundtrack-license.md), [community ad governance](community-ad-governance.md) |
 

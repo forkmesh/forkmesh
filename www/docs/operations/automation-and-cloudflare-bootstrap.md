@@ -1,15 +1,20 @@
 # ForkMesh deployment and scheduled automation
 
-Isolated deployment and automation tools. None of them writes wallet keys, API
-tokens or GitHub tokens to the repository.
+Deployment and automation tools. None of them writes wallet keys, API tokens or
+GitHub tokens to the repository.
 
-## Cloudflare Worker, D1, DNS, and relay bootstrap
+## Workers self-host bootstrap
 
-`tools/cloudflare_bootstrap.py` creates or reuses D1 and KV storage, applies all
+The hosted service runs on self-hosted core nodes, not Workers
+([architecture](../architecture.md)); the usual self-host is a VPS
+([self-hosting](../self-hosting.md)). `tools/cloudflare_bootstrap.py` sets up the
+optional [Workers self-host](worker-split.md) on your own Cloudflare account. It
+creates or reuses D1 and KV storage, applies all
 migrations, deploys one complete App Worker, creates proxied DNS, attaches
 one broad `hostname/*` App route, and verifies health, release identity, public
 snapshots and an authenticated database/encryption probe. Repository bytes stay
-on independently operated mirrors; Cloudflare provides discovery and routing.
+on independently operated mirrors ([mirroring](../mirroring.md)); the Worker
+provides discovery and routing.
 `--main-relay-url https://app.forkmesh.com` joins the instance to an existing
 relay mesh once that relay approves it.
 
@@ -60,7 +65,8 @@ deploys the optional World Worker on its own hostname.
 ### Direct-HTTPS mirror discovery contract
 
 Trusted mirrors publish `https://<mirror-host>/forkmesh-mirror.json`
-(schema: `www/docs/mirror-endpoint.schema.json`), signed with the node's
+(schema: [`mirror-endpoint.schema.json`](../mirror-endpoint.schema.json),
+gateway: [direct-HTTPS mirror gateway](direct-https-mirror-gateway.md)), signed with the node's
 Ed25519 key over sorted compact JSON (`forkmesh-json-sort-v1`). It names the
 node key, health URL, repository URL template, `transport: direct-https`,
 `mainProxyMode: masked` and `repositoryBytesInD1: false`. The node key comes
@@ -101,4 +107,5 @@ authorization. Reports are not a guarantee of security.
 a frozen snapshot using public entropy, and never generates or accepts a private
 key. An external signer receives the intent on stdin and returns a signed
 transaction; responses containing key material are rejected. Pending rewards
-are 24-hour reservations; funds move only after the signer approves a claim.
+are 24-hour reservations; funds move only after the signer approves a claim
+([community reward pool signer](community-reward-pool-signer.md)).

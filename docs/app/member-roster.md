@@ -2,7 +2,7 @@
 
 `GET /api/accounts/users` is the public member roster: active `user` accounts
 that are not `profile_private`, oldest first. Chat, desktop, native apps,
-dashboard and World read it. Code: `app/src/account_users.py`
+dashboard and World read it. Part of the [App docs](README.md). Code: `app/src/account_users.py`
 (`_account_users_directory`, `_account_users_world_directory`,
 `_account_avatar`), routes in `accounts_handler`. Tests:
 `app/tests/test_account_avatar_world_roster.py`.
@@ -28,14 +28,14 @@ dashboard and World read it. Code: `app/src/account_users.py`
   (`app/tests/test_security_controls.py::test_private_profiles_and_repo_pages_revoke_cached_public_metadata`).
 - Account search (`_WorldCommunityRuntime.search_accounts`, behind
   `GET /api/chat/direct-messages/users?query=` and the notes share picker)
-  uses the same `_is_public_roster_member` test. Before 2026-10-22 it checked
-  only active `user`, so a prefix search listed private profiles the roster
-  hides. Tests: `app/tests/test_account_search_private_profiles.py`.
+  uses the same `_is_public_roster_member` test, so a prefix search never
+  lists a private profile. Tests:
+  `app/tests/test_account_search_private_profiles.py`.
 - The follow state in `GET /api/accounts/<name>?viewer=<name>` comes only
   from the caller's own session (`_account_lookup_viewer`): a `viewer` that is
-  not the signed-in account gets `isFollowing: false`. A bare query value used
-  to answer the real `profile_follows` row for any pair, which let anyone
-  rebuild the follow graph. Tests: `app/tests/test_boot_endpoint_caches.py`.
+  not the signed-in account gets `isFollowing: false`, so nobody can rebuild
+  the follow graph from query values. Tests:
+  `app/tests/test_boot_endpoint_caches.py`.
 - Referral surfaces use the same `_is_public_roster_member` test: the
   `referredUsers` names on a profile and on the referral leaderboard, the
   leaderboard rows themselves, and the directory's `referredBy` leave out
@@ -51,5 +51,6 @@ dashboard and World read it. Code: `app/src/account_users.py`
   contributor" (`app/tests/test_leaderboards_hub.py`).
 - Thumbnails (`_avatar_render_thumbnail`, Pillow) refuse sources over
   4096×4096 and are cached in a 512-entry LRU keyed by content hash.
-- The host cache is per process; cross-core lag is bounded by the cache TTLs.
-  Builds re-decrypt only changed rows ([world-boot-latency.md](world-boot-latency.md)).
+- The host cache is per process; lag between the core nodes is bounded by the
+  cache TTLs. Builds re-decrypt only changed rows
+  ([world-boot-latency.md](world-boot-latency.md)).

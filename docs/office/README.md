@@ -4,7 +4,9 @@ A 2D pixel-art office for each ForkMesh organization: walk around a tile
 map, talk to people near you over WebRTC, sit at meeting tables, share a
 screen, draw on whiteboards, chat, claim desks, see teammates' agent runs,
 and play. The client is a static bundle; the server half runs in Python on
-the core nodes' app host, like the World.
+the core nodes' app host, like the [World](../world/README.md). Index:
+[docs/README.md](../README.md); how the cores fit together:
+[architecture](../../www/docs/architecture.md).
 
 ## Code map
 
@@ -19,7 +21,7 @@ the core nodes' app host, like the World.
 | `office/public/notes.js` | Inline status lines: `setNote` (in a panel) and `noteLine` (keyed lines above the dock) |
 | `office/public/features/<name>.js` | Client half of each feature, registered in `features/index.js` |
 | `app/src/org_office.py` | Python port of the shared rules: map, zones, team gates, status validation, desks, tables, whiteboard ops, pong physics, attendance |
-| `app/src/org_office_room.py` | `OfficeCore` (socket logic) and the `ForkMeshOrgOffice` Durable Object adapter; `SqlOfficeStore` |
+| `app/src/org_office_room.py` | `OfficeCore` (socket logic) and the `ForkMeshOrgOffice` Durable Object adapter (run by the cores' emulation); `SqlOfficeStore` |
 | `app/src/org_office_routes.py` | `/api/office/session`, `/api/office/entry`, `/api/office/ws`, tickets, ICE servers |
 | `app/src/org_office_chat.py` | Creates and syncs each org's office channels in the site chat |
 | `app/migrations/0226_org_office.sql`, `0227_org_office_site_chat.sql` | `org_office_visits`, `org_office_channels` |
@@ -166,7 +168,8 @@ current scene.
   redacted on the desktop and again on the relay: private key blocks, common
   token prefixes, JWTs, `password=`/`token:` pairs and long hex/base64 runs
   become `[redacted]`. Only this scrubbed snippet is shared with org members;
-  transcripts stay end-to-end encrypted.
+  transcripts stay end-to-end encrypted
+  ([encryption](../../www/docs/encryption.md)).
 - The office never starts, stops or controls an agent.
 
 ## Rides and play
@@ -190,12 +193,12 @@ Counter package through same-origin `api.calories`.
 - Private rooms: everyone inside at full volume, nobody outside.
 - Meeting tables connect exactly the people seated, wherever they are.
 - Focus status blocking calls is a client courtesy, not access control.
-- Live quality widget (2026-10-22): while you talk with someone nearby, or
+- Live quality widget: while you talk with someone nearby, or
   with your microphone on, a pill under the room name shows signal bars, a
   voice waveform (you up, nearby people down) and the round-trip time; click
   it for a minute of network and video charts. It is the call widget from
-  `app/public/call-quality-meter.js` (see `docs/app/chat-direct-calls.md`,
-  "Live quality widget"), bundled like the chat modules, reading every mesh
+  `app/public/call-quality-meter.js` (see
+  [chat-direct-calls.md](../app/chat-direct-calls.md), "Live quality widget"), bundled like the chat modules, reading every mesh
   peer connection. A round button next to the pill turns red when the call has a
   problem; pressing it explains the problem, the fixes and an AI prompt that
   learns from earlier calls on this device ("Diagnostics" in the same page).
@@ -347,12 +350,10 @@ certsync export (reloaded by `fmnext-turn-cert.path`).
 | `OFFICE_TURN_SECRET` | unset | coturn `static-auth-secret`; vault secret, never sent to clients |
 | `OFFICE_MARKETING_ORG` | `INSTANCE_OWNER`, else `forkmesh` | The org whose office shows the task board and agents |
 
-A self-hosted instance's office is its own organization. Without
-`OFFICE_MARKETING_ORG` the board used to default to `forkmesh`, an
-organization that exists only on ForkMesh's cores, so `GET /api/tasks`
-answered 503 `office_organization_unavailable` to every signed-in visitor on
-an instance. The default is now the instance's `INSTANCE_OWNER`, then
-`forkmesh`.
+A self-hosted instance's office is its own organization, so the default is
+`INSTANCE_OWNER` rather than `forkmesh` (which exists only on ForkMesh's
+cores; pointing at a missing org makes `GET /api/tasks` answer 503
+`office_organization_unavailable`).
 
 `[turn]` in `deploy/fleet.toml`: `enabled`, `host`, `realm`, `port`,
 `tls_port`, `relay_min_port`/`relay_max_port` (at most 4096 ports inside
@@ -385,25 +386,18 @@ Budgets in `office/perf-budget.json`. Rendering is Canvas 2D (one pre-rendered
 map, cached sprites, viewport culling); movement is batched to 20 Hz and the
 proximity mesh recomputed every 250 ms.
 
-The script budget is 140 KB gzip since chat protocol v3 (2026-10-16): the
-Office chat bundles `app/public/chat-seal.js` and the ML-KEM-768 port
-`app/public/chat-mlkem.js`, about 8 KB gzip more than the v2 seal, which took
-the bundle from just under 130 KB to about 137 KB. Chat protocol v4
-(2026-10-16, the per-message ratchet for DMs, its Web Lock and the opened-frame
-cache) adds about 3 KB gzip, so the budget is 144 KB. The chat relay hardening
-(2026-10-22, [../app/chat-relay-hardening.md](../app/chat-relay-hardening.md))
-adds `app/public/chat-frame-auth.js` (frame authentication, node-owner checks,
-bot "via" labels and the guest-name hash), about 1 KB gzip, so the budget is
-148 KB. The live quality widget (2026-10-22, `app/public/call-quality-meter.js`)
-adds about 5.5 KB gzip, taking the bundle to about 150 KB, so the budget is
-152 KB. Its diagnostics button, panel and self-improving prompt (2026-10-22)
-add about 5 KB gzip, taking the bundle to about 155 KB, so the budget is
-156 KB.
+The script budget is 156 KB gzip (about 155 KB used). The Office bundles
+the site chat's crypto (`chat-seal.js`, the ML-KEM-768 port `chat-mlkem.js`,
+the DM ratchet of chat protocol v4, `chat-frame-auth.js` from the
+[relay hardening](../app/chat-relay-hardening.md)) and the call quality widget
+with its diagnostics (`call-quality-meter.js`, about 10 KB). Raise the budget
+only by the measured size of what a change adds.
 
 ## Operations
 
 - Deploy with the normal app deploy (migrations, the `FORKMESH_ORG_OFFICE`
-  binding from `app/wrangler.toml`, rebuilt `app/dist` and Caddy routes).
+  binding, which the host reads from `app/wrangler.toml`, rebuilt `app/dist`
+  and Caddy routes).
 - No account or organization may be named `office`.
 - TURN rollout: `tools/next_fleet.py init-secrets --execute`,
   `tools/next_vault.py sync --execute`, then a core roll

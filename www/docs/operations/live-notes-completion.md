@@ -14,4 +14,4 @@ Requirements that remain in force, and where they are documented:
 | SSH Git | Only `git-upload-pack` and `git-receive-pack` are accepted through a restrictive `AuthorizedKeysCommand`; SSH URLs stay hidden unless the gateway is fully configured. | [Git SSH gateway](git-ssh-gateway.md) |
 | History | Commit-message rewrites follow the guarded procedure and are never published by a blind `push --mirror`. | [Commit-history rewrite](commit-history-rewrite.md) |
 
-The capability inventory is `www/docs/capability-matrix.md`.
+The capability inventory is the [capability matrix](../capability-matrix.md).

@@ -3,7 +3,8 @@
 `tools/rewrite_commit_messages.py` rewrites local branch and tag history to one
 short, deterministically generated, name-redacted sentence per commit while
 preserving trees, graph topology, identity headers, and timestamps. It never
-pushes.
+pushes. Destructive Git operations in general follow
+[destructive actions](../../../docs/engineering/destructive-actions.md).
 
 ## Safety boundary
 

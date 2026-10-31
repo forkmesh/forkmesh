@@ -1,6 +1,6 @@
 # Opus for the phone call engine
 
-FM Media ([`docs/server/fm-media.md`](../server/fm-media.md)) replaces
+Part of the [phone apps docs](README.md). FM Media ([`docs/server/fm-media.md`](../server/fm-media.md)) replaces
 libwebrtc, and with it the copy of Opus libwebrtc carried. The phones keep
 Opus as the voice codec, and the engine has to survive a third of its audio
 packets lost ("Beyond FaceTime", idea 2), so we build Opus ourselves from a
@@ -28,13 +28,11 @@ reproducible build script and the SHA-256 of every output. Everything lives in
 | `IOS_DEPLOYMENT_TARGET` | `17.0`, as `native/ios/WebRTCPackage` |
 | `ANDROID_NDK_VERSION`, `ANDROID_API`, `ANDROID_ABIS` | `28.2.13676358`, `26` (the app's `minSdk`), `arm64-v8a armeabi-v7a x86_64` |
 
-The tag and commit hashes were read from the repository itself
-(`git ls-remote --tags`, then `git rev-parse v1.6.1` and `v1.6.1^{commit}` in
-a fetched copy). The build fetches only that tag (`--depth 1`, retried up to
-five times because gitlab.xiph.org answered 502 and 504 during these builds,
-and skipped when the tag is already present) and stops unless the tag object
-and the commit both match, the checkout has no changes other than the model
-files, and `HEAD` is the pinned commit.
+The build fetches only that tag (`--depth 1`, retried up to five times because
+gitlab.xiph.org answers 502 and 504 at times, skipped when the tag is already
+present) and stops unless the tag object and the commit both match, the
+checkout has no changes other than the model files, and `HEAD` is the pinned
+commit.
 
 ### The model weights
 
@@ -45,20 +43,18 @@ file once into `$OPUS_WORK`, stops unless its SHA-256 is `OPUS_MODEL_SHA256`,
 stops unless the pinned commit's `autogen.sh` names that same hash, and
 unpacks the generated C sources (`dnn/*_data.{c,h}`,
 `dnn/dred_rdovae_constants.h`) into the checkout. The tarball's PyTorch
-checkpoints (`dnn/models/*.pth`, about 110 MB) are not unpacked; they are what
-Xiph trained, and we cannot regenerate them (we cannot rebuild the weights
-from source, only check they are the ones the release names).
+checkpoints (`dnn/models/*.pth`, about 110 MB) are not unpacked. We cannot
+rebuild the weights from source, only check they are the ones the release
+names.
 
 The release tarball (`OPUS_SOURCE=tarball`, checked against
-`OPUS_TARBALL_SHA256`) ships the same weights already unpacked. Comparing the
-two on 2026-10-21: every weight array in the tarball is byte-identical to the
-model download; the tarball only leaves out the `*_weights_float` debug copies
-that sit under `#ifndef DISABLE_DEBUG_FLOAT`, which the CMake build defines
-anyway (it does unless `OPUS_DNN_FLOAT_DEBUG`); no other compiled source
-differs. A host build from the tarball passes the same smoke tests but its
-libraries are not byte-identical to the git build's, so the hashes on this
-page are for the default git path, which stays the default because the commit
-hash is the stronger pin.
+`OPUS_TARBALL_SHA256`) ships the same weights already unpacked: every weight
+array is byte-identical to the model download, and it only leaves out the
+`*_weights_float` debug copies under `#ifndef DISABLE_DEBUG_FLOAT`, which the
+CMake build defines unless `OPUS_DNN_FLOAT_DEBUG`. A tarball build passes the
+same smoke tests but is not byte-identical to the git build, so the hashes on
+this page are for the git path, the default because the commit hash is the
+stronger pin.
 
 To move the pin: take the newest `vX.Y.Z` tag from
 `git ls-remote --tags https://gitlab.xiph.org/xiph/opus.git` (the `^{}` line is
@@ -84,13 +80,11 @@ committed. `OPUS_BUILD_FEATURES` overrides `OPUS_FEATURES` (`none`, or any of
 | `ios` | macOS with Xcode | `xcodebuild`, `zip`, `/usr/bin/python3` |
 
 The script uses `cmake` from `PATH`, or `$OPUS_CMAKE`. With neither (the office
-Mac has no CMake, Homebrew or MacPorts, and Xcode does not ship one), it fetches
-the pinned CMake tag, checks it the same way, and bootstraps it into
-`$OPUS_WORK/cmake-4.4.4-install` once (40 minutes on the 4-core Intel Mac while
-other builds ran). The generator is always Unix Makefiles, so no Ninja is
-needed. With the models on, a host build took 2.5 minutes on the agent box and
-the three iOS slices 3.5 minutes on the Mac; the 20 MB weight sources dominate
-compile time.
+Mac has no CMake, Homebrew or MacPorts, and Xcode ships none), it fetches the
+pinned CMake tag, checks it the same way, and bootstraps it into
+`$OPUS_WORK/cmake-4.4.4-install` once (about 40 minutes on the Intel Mac). The
+generator is always Unix Makefiles, so no Ninja is needed. The 20 MB weight
+sources dominate compile time (a few minutes per target).
 
 Every build directory is recreated through `fm_safe_rm_tree` with `$OPUS_WORK`
 or `$OPUS_OUT` as the expected parent. Builds are reproducible: `LC_ALL=C`,
@@ -253,7 +247,7 @@ either moves.
   against the static and the shared library, runs it, and checks the
   `SHA256SUMS` match the files. When the Android build and the NDK are there,
   it links the same program against each ABI's `libopus.a` and `libopus.so`
-  (link only; that check would have caught the armv7 hole above). Without the
+  (link only; this catches link holes like the armv7 one above). Without the
   builds those tests skip.
 - `opus_smoke.c`, part one: one second of a 440 Hz sine at 48 kHz mono in
   20 ms frames at 32 kbps (VOIP, voice signal, in-band FEC on, 20% expected
@@ -277,7 +271,7 @@ either moves.
   covers a 5-frame burst, every lost frame is rebuilt from DRED, DRED's LSD
   is at least 1 dB better than classic PLC's, and `OPUS_SET_OSCE_BWE` works.
 
-  Measured on the host build (2026-10-21):
+  Measured on the host build:
 
   | Receiver | SNR on lost frames | LSD on lost frames |
   | --- | --- | --- |
@@ -300,9 +294,8 @@ either moves.
   frame from DRED, conceals one, and prints the version. It is built with
   `xcodebuild` for the iOS simulator and run there with `xcrun simctl spawn`.
 
-What ran on 2026-10-21 on the office Mac, in `~/opus-build` (a copy of
-`native/opus/` and `tools/forkmesh-safe-rm.sh`, outside `~/src` and
-`~/webrtc`):
+On the office Mac, in a copy of `native/opus/` and `tools/forkmesh-safe-rm.sh`
+outside `~/src` and `~/webrtc`:
 
 ```
 bash native/opus/build.sh ios
@@ -313,12 +306,11 @@ xcrun simctl create opus-smoke com.apple.CoreSimulator.SimDeviceType.iPhone-17 c
 xcrun simctl boot <id>; xcrun simctl spawn <id> ~/opus-build/spm-dd2/Build/Products/Debug-iphonesimulator/OpusSmoke
 ```
 
-Both package builds succeeded and the simulator printed
-`libopus 1.6.1 fec=1 lbrr=49 bytes=7029 decoded=48000 plc=960 dred_packets=49 dred_samples=19920 dred_recovered=960`;
-the same source built with plain `swiftc -target x86_64-apple-ios17.0-simulator`
-printed the same on an iOS 17.0 simulator. `swiftc` also linked the device
-(`arm64-apple-ios17.0`) and arm64 simulator slices; the office Mac is an
-Intel machine, so the arm64 simulator slice is linked but not run there.
+Expected output:
+`libopus 1.6.1 fec=1 lbrr=49 bytes=7029 decoded=48000 plc=960 dred_packets=49 dred_samples=19920 dred_recovered=960`
+(also on an iOS 17.0 simulator with plain
+`swiftc -target x86_64-apple-ios17.0-simulator`). The office Mac is Intel, so
+the arm64 simulator slice is linked but not run there.
 
 ## How the phone engines link it
 

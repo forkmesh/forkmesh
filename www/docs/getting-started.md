@@ -63,12 +63,13 @@ relay queues the signed pull request while the owner is offline.
 ## Where data lives
 
 ```text
-~/projects/forkmesh/   src/ data/ config/ ssh/ logs/ state/ cache/
-~/projects/<project>/  data/ config/ ssh/ logs/ state/ cache/
+~/projects/forkmesh/   src/ data/ cache/
+~/projects/<project>/  data/ cache/
 ```
 
-`data/` holds the node's private identity key: export it from **Settings →
-Data** before moving machines. `FORKMESH_HOME` or `FORKMESH_PROJECTS_DIR`
+`data/core/` holds the node's private identity key, settings (`config/`),
+`ssh/`, `state/` and `logs/`; each plugin keeps its data in `data/<plugin>/`.
+Export the identity from **Settings → Data** before moving machines. `FORKMESH_HOME` or `FORKMESH_PROJECTS_DIR`
 moves the layout. Uninstalling removes only the program unless `--purge` is
 given.
 
@@ -82,7 +83,8 @@ account; see [ForkMesh apps](apps.md).
 
 To run ForkMesh under your own name on your own server, open
 [forkmesh.com/start](https://forkmesh.com/start), or hand the job to a coding
-agent. See [Start your own instance](start-your-own-instance.md) and
-[Working with coding agents](coding-agents.md).
+agent. See [Start your own instance](start-your-own-instance.md),
+[Self-hosting](self-hosting.md) and [Working with coding agents](coding-agents.md).
+How the hosted service runs is on [Architecture and availability](architecture.md).
 
 Next: [the desktop app](qt-client.md) or the [documentation index](README.md).

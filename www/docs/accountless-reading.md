@@ -3,6 +3,8 @@
 Public projects are readable without an account. The website never redirects
 to sign-up or log-in to read; it asks you to sign in only when you change
 something.
+Clones also work from any mirror when the hosted service is unreachable; see
+[Mirroring](mirroring.md).
 
 ## What works without an account
 

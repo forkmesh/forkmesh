@@ -109,8 +109,8 @@ Below the themes it has two more entries:
 
 **Two layout modes: Control Tower and Focus.** In the new interface the
 view menu's **Layout** section (and the Agents page's ⋯ → **Layout**) picks
-one mode for the whole app; it replaced the separate "Agents layout" and "Git
-layout" choices on 2026-10-27. Code: `src/LayoutMode.h` (`layoutMode()`,
+one mode for the whole app (it replaced separate "Agents layout" and "Git
+layout" choices). Code: `src/LayoutMode.h` (`layoutMode()`,
 `setLayoutMode()`, setting `app/layoutMode` = `controlTower` or `focus`),
 switched live by `NextAccess::applyLayoutMode`, which re-syncs the Agents
 workspace and re-applies the Git page.
@@ -118,7 +118,7 @@ workspace and re-applies the Git page.
 The iPhone app has the same two names under Settings > Appearance > Layout
 (`appearance/layoutMode`, a phone setting, not synced with the desktop's).
 The CRM uses it first: see "iPhone layout" in
-`marketplace/packages/crm/README.md`.
+[marketplace/packages/crm/README.md](../../marketplace/packages/crm/README.md).
 
 | Page | Control Tower | Focus |
 | --- | --- | --- |
@@ -159,29 +159,23 @@ only in compact density, `96-edge-indicators.qss` only when edge indicators are
 on. `desktop/CMakeLists.txt` generates `theme.qrc` from a glob, so a new sheet
 needs no registration.
 
-**One colour per role, and plain widgets paint nothing** (2026-10-28). The
-user found boxes in a slightly different colour behind the top bar's dots, the
-sidebar's arrows and many sections, each fitting the element's outline. There
-were two causes:
+**One colour per role, and plain widgets paint nothing.** Otherwise plain
+widgets show up as slightly different boxes behind dots, arrows and sections:
 
 - *Classic's base rule.* Classic opens with `QWidget { background-color: … }`,
-  which paints every plain container, label and tool button the page colour.
-  Inside the sidebar or top bar (`bgSubtle`), a card (`surface`) or a dialog,
-  that showed up as a lighter or darker box. More than 900
-  `background: transparent` rules patched it one widget at a time.
-  `nextStyleSheet` now removes the background from that first rule
-  (`dropBaseWidgetBackground`), so a plain widget shows its parent.
+  which paints every plain container, label and tool button the page colour,
+  a visible box inside the sidebar or top bar (`bgSubtle`), a card
+  (`surface`) or a dialog. `nextStyleSheet` removes the background from that
+  first rule (`dropBaseWidgetBackground`), so a plain widget shows its parent.
   `paletteForDesign` sets `Window` and `Base` to `bg`, so windows, dialogs and
   item views still have an opaque page colour. The window's page stack
-  (`#appWindowFrame > QStackedWidget` in `10-shell.qss`) paints `bgSubtle`.
-  Without it, the 1 px `border`-coloured window frame showed through the
-  splitter handle's transparent sides beside the content card. Classic keeps
-  the rule.
-- *Too many greys.* The remap tables sent Classic's neutrals to about ten
-  near-duplicates of each role, for example `#08080a` next to `bgSubtle`
-  `#0c0c0e`, and light `#ffffff` against `bg` `#fdfdfd`. Each entry now maps
-  to exactly one role value from `kRoles`. Light `#ffffff` goes to `bg`, and
-  instance themes, which override by role value, now reach those rules too.
+  (`#appWindowFrame > QStackedWidget` in `10-shell.qss`) paints `bgSubtle`, so
+  the 1 px window frame does not show through the splitter handle's
+  transparent sides. Classic keeps the rule.
+- *One grey per role.* Each entry of the remap tables maps a Classic neutral
+  to exactly one role value from `kRoles` (light `#ffffff` goes to `bg`), so
+  there are no near-duplicate greys and instance themes, which override by
+  role value, reach every rule.
 
 A new container needs no transparent rule in Next. Give it a background only
 when it really is a surface, and use a role for it.
@@ -210,12 +204,11 @@ application event filter applied in Next and undone in Classic):
   `ChildAdded`). Property `floatingSurface` tells the sheet whether corners can
   be rounded. Qt sets `WA_NoSystemBackground` along with
   `WA_TranslucentBackground`, which skips the sheet's background on a
-  top-level widget. Menus paint their own panel, but the app's popups
+  top-level widget. Menus paint their own panel; for the app's popups
   (`#agentMetaPopup`, `#reactionPicker`, `#slashActionsPopup`, `#mentionPopup`,
-  `#globalSearchPopup`, all `QFrame` or `QListWidget`) painted nothing, so their
-  text sat on the page behind them. The filter now paints their `PE_Widget`
-  background on `Paint` (`paintFloatingBackground`), which keeps the rounded,
-  see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
+  `#globalSearchPopup`, all `QFrame` or `QListWidget`) the filter paints their
+  `PE_Widget` background on `Paint` (`paintFloatingBackground`), which keeps
+  the rounded, see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
   and dark for an opaque inside and a transparent corner.
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
@@ -229,12 +222,9 @@ application event filter applied in Next and undone in Classic):
   (`#issueTable` keeps `surfaceActive`, `40-issues.qss`); `91-tables.qss`
   only adds the slim item-view scrollbars and corner, so a rule lives in one
   place instead of being overridden by a later file. The column-menu header
-  (`KebabHeaderView`) painted its chevron over the caption: the caption's
-  rectangle never left room for it, so a section narrower than its caption
-  (dragged, capped, or measured before the sheet applied) ran under the
-  glyph. In Next it now elides the caption before the menu button and sort
-  arrow, draws its own sort arrow, and shows the menu chevron only on the
-  hovered column.
+  (`KebabHeaderView`) in Next elides the caption before the menu button and
+  sort arrow, draws its own sort arrow, and shows the menu chevron only on the
+  hovered column, so a narrow section's caption never runs under the glyph.
 
 **Hooks instead of header edits.** `MainWindow.h` and `MainWindowInternal.h` are
 in the precompiled header. `MainWindow` declares
@@ -255,9 +245,7 @@ and drop and context menus are unchanged.
 `KeyHint`, `InlineNotice`, `EmptyState`, `SegmentedControl`, `Spinner`, and
 helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
 The special agents roster's empty state (`#teammateEmpty`) is an `EmptyState`
-in Next: its own labels painted the page colour as dark boxes on the card, and
-the centred layout sized the wrapped body to its one-line hint, cutting its
-descenders.
+in Next.
 
 ## Shell features
 
@@ -316,15 +304,14 @@ descenders.
   resizes of the overlay host and the Agents detail pane, but prompt drag and
   grip moves go through `schedulePositionGlobalFooterOverlays`, one queued
   pass per event-loop turn; the button release runs a still-queued pass first
-  so the stored size is the dragged one. The pass no longer shows the footer dock
-  before deciding whether it is visible (showing a hidden dock re-ran its whole
-  height-for-width layout on every drag move while the prompt floated) and
-  invalidates the dock row only when its spacer or prompt alignment changed.
+  so the stored size is the dragged one. The pass decides whether the footer
+  dock is visible before showing it (showing a hidden dock re-runs its whole
+  height-for-width layout) and invalidates the dock row only when its spacer
+  or prompt alignment changed.
 - **Stacks sized to the current page** (`src/CurrentPageStack.h`): hidden
-  pages get an Ignored size policy. The stack used to re-apply every page's
-  policy, with a dynamic-property read per page, on each `LayoutRequest`; it
-  now remembers the pages and policies it set and re-applies only when the
-  current page, the page list or a page's policy has moved.
+  pages get an Ignored size policy. The stack remembers the pages and
+  policies it set and re-applies only when the current page, the page list or
+  a page's policy has moved, not on every `LayoutRequest`.
 - **Density** (`ui/density`: `auto`, `comfortable`, `compact`;
   `FORKMESH_DENSITY`): compact appends `95-compact.qss` and drops font sizes by
   one; auto is compact under 1,500 px available width. Next only.
@@ -387,12 +374,12 @@ Enter triggers (`enterTarget`) is the accent primary, the other is a raised
 secondary, and "chat" (sends to the current channel) is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
 
-### Mockup shell (October 2026)
+### Mockup shell
 
 The Next shell follows the desktop mockup (`forkmesh2/desktop-electron`,
 `src/index.css` and `src/components/shell/`). Its translucent "glass" tokens
 are flattened onto the window colour to give opaque roles, so the role table
-above now carries those values.
+above carries those values.
 
 - **One chrome colour, one content card.** The top bar, sidebar and side rail
   share `bgSubtle` with no hairlines between them. The section stack sits in
@@ -402,7 +389,8 @@ above now carries those values.
 - **Sidebar header and footer** (`NextAccess::buildSidebarHeader`,
   `buildSidebarFooter`, refreshed every 2 s by `refreshSidebarChrome`).
   - The header has the workspace button (logo, instance name, this machine's
-    node name and the online node count), which opens the account menu, and
+    node name and the online node count), which opens the workspace switcher
+    (below), and
     New session (`startNewSessionInSessionsPage`, also Ctrl/⌘+N in Next).
   - The footer has the account button: initials avatar with an online dot,
     the handle, then email or Offline. It opens the same account menu above
@@ -427,8 +415,7 @@ above now carries those values.
   - On macOS, close, minimise and zoom move to the left as traffic lights
     (`trafficLight` property).
   - Every existing chrome control stays.
-- **Side rail.** The team rail of special agent chips was replaced on
-  2026-10-24 by the generic side rail (terminal, browser, and dragged-in
+- **Side rail.** The generic side rail (terminal, browser, and dragged-in
   workflows, pages and links), in both designs; see
   [side-rail-and-terminals.md](side-rail-and-terminals.md).
 - **Home's prompt replaces the footer prompt on Home.**
@@ -614,13 +601,13 @@ unchanged.
 
 - **Sidebar rows** (`paintRailButtonHook`, `paintTabButtonHook`).
   - Expanded rows are 32 px tall (`kNextRowHeight` in `MainWindowNextShell.cpp`;
-    `kRailRowHeight` in `NextShellHooks.h` is no longer read).
+    `kRailRowHeight` in `NextShellHooks.h` is unused).
   - The hover and active fill is inset 10 px on each side, so it lines up
     with the header and footer buttons. The 16 px icon sits at 18 px and the
     13 px regular label at 44 px.
   - Counts on rail buttons and on rail tab rows (Code, Git and so on) are
-    right-aligned 11 px `fgSubtle` numbers with thousands separators. Tab rows
-    used to draw them as a grey pill. Urgent counts keep the red pill, and
+    right-aligned 11 px `fgSubtle` numbers with thousands separators. Urgent
+    counts keep the red pill, and
     pending-sync counts keep the amber pill.
 - **Group headings** (`RailGroupHeadingStyle`, an event filter that
   `refreshRailGroupSeparators` installs on every `railGroupSeparator`).
@@ -642,9 +629,8 @@ unchanged.
     collapsed rail a folded group's hairline breaks around a small chevron.
 - **Sidebar header** (`buildSidebarHeader`).
   - The workspace button is 40 px with a 13 px semibold title and an up/down
-    chevron (`chevronsUpDownPixmap`). It now opens the workspace switcher
-    instead of the account menu. The account menu still opens from the
-    footer and keeps every entry.
+    chevron (`chevronsUpDownPixmap`). It opens the workspace switcher; the
+    account menu opens from the footer and keeps every entry.
   - New session's key hints are 18 px `surface` keycaps (`sidebarKbd`).
 - **Workspace switcher** (`QMenu#workspaceMenu`, rows `workspaceMenuRow`).
   - **Relay** heading (`workspaceMenuHeading`), then one two-line row per
@@ -681,18 +667,16 @@ unchanged.
   - **"N agents"** (`topAgentsButton`, accent dot): the number of agent
     sessions that are running and not merged. Clicking it opens Agents. It
     is hidden when none are running.
-  - **"N nodes"** now says "N nodes online · open Network" in its tooltip.
+  - **"N nodes"** says "N nodes online · open Network" in its tooltip.
   - Both status buttons share the `topStatusButton` style.
-- **Side rail.** It replaced the team rail; the chip spacing and dashed
-  create tile described here before no longer exist
-  ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+- **Side rail.** See [side-rail-and-terminals.md](side-rail-and-terminals.md).
 
 **Left out on purpose.**
 
-- *MORE fold chevron* was left out until 2026-10-31: folding by `hide()`
-  would have made `refreshRailGroupSeparators` drop the heading and fought
-  every feature that toggles rail buttons. Groups now fold by parking their
-  buttons instead (README, "Folding a rail group").
+- *MORE fold chevron by `hide()`*: hiding would make
+  `refreshRailGroupSeparators` drop the heading and fight every feature that
+  toggles rail buttons, so groups fold by parking their buttons instead
+  (README, "Folding a rail group").
 - *WORKSPACE / BUSINESS / SYSTEM group names.* The headings show the app's
   own groups (Work, People, Network, Insights, Packages, Tools, Shortcuts,
   More, and custom groups). They appear only when grouping is on in the
@@ -1337,16 +1321,15 @@ design tokens.
   moved to the right of the same row, and the hairline between sections at
   the top of each section instead of under its title (hidden on the first
   visible one). 28 px above and below an open section.
-- **Lit heading.** In October 2026 the user asked for the heading on the page
-  to light up with the entry lit in the list, so the eye can find where a
-  jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
+- **Lit heading.** The heading on the page lights up with the entry lit in
+  the list, so the eye can find where a jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
   list row or sub-row changes and sets `settingsLit` on exactly the label the
   list lights: the sub-section's `sectionLabel` when a sub-row is lit, the
   section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
   uses the list's selection blue. Titles and sub-headings carry the same
   padding lit or not, so lighting one never moves the page.
-- **Pinned heading.** In October 2026 the user asked for the section heading
-  and the sub-heading being read to stay in view. `#settingsStickyHeader`, a
+- **Pinned heading.** The section heading and the sub-heading being read
+  stay in view. `#settingsStickyHeader`, a
   child of the scroll area's viewport (so it does not scroll), shows the
   current section's icon and title once the real title has gone above the top
   edge, and under it the lit sub-heading once that one has gone under the
@@ -2015,7 +1998,7 @@ A window that starts in Classic is never touched.
   "Changes (N)" uses the count the Changes header already shows
   (`m_scmCountLabel`). Changes shows the file pane (`m_gitFilesSlot`) and
   History the commit list (`m_gitHistorySlot`) in the left column of
-  `gitWorkspaceSplit`, which used to stack them. The tab follows the detail
+  `gitWorkspaceSplit` (Control Tower stacks them). The tab follows the detail
   stack: opening a commit selects History, the changes or branch-range page
   selects Changes. Clicking Changes leaves an open commit for the changes
   page and runs `refreshSourceControl()`; clicking History runs
@@ -2253,8 +2236,7 @@ Classic is unchanged. The Conversions and Experiments pages
   "12 visitors".
 - **Campaigns, Recordings, setup.** Campaigns is a full-width card with a
   plain hairline table (`analyticsRole="grid"`, 36 px rows). Below it, the
-  Recordings panel (`#analyticsRecordingsPanel`, no longer a fixed 380 px
-  side column) and an "Add this project to a site" card
+  Recordings panel (`#analyticsRecordingsPanel`, not a fixed side column) and an "Add this project to a site" card
   (`#analyticsSetupCard`: Copy snippet with a copy icon, the write key line in
   a monospace box, plain text) share a row. The recordings table shows only
   when there are recordings; the note and Turn on recordings stay.
@@ -2354,8 +2336,7 @@ branch is behind `Theme::isNext()` and the sheet is a Next overlay.
 - **Left out on purpose.** The "Extensions" pill (the Market has no such
   category filter; the four existing categories and All are shown), the
   illustrated placeholder thumbnails (each card shows the package's own
-  preview). The details used to expand inside the card so every control
-  stayed a descendant of it; the window tests run Classic, and the search
+  preview). The window tests run Classic, and the search
   filter walks only the list layouts, so the pane does not affect them.
 - **Live switch.** The header, tabs and grid are built once, so a live design
   switch shows them after the page is rebuilt; cards rebuilt in the other

@@ -2,8 +2,10 @@
 
 A user with no desktop node and no external forge account can create a
 repository on the website and use it with plain `git` over HTTPS. Every core
-keeps a full replica. Later the user can move the repository to their own
-node.
+keeps a full replica, so the repository survives the loss of any one core
+([architecture](../www/docs/architecture.md)); later the user can move it to
+their own node. User guide: [www/docs/hosted-repositories.md](../www/docs/hosted-repositories.md);
+index: [docs/README.md](README.md).
 
 Code: `app/src/hosted_git.py` (create, push routing, quotas, private reads),
 `app/src/hosted_repos.py` (replica exchange, templates), migration
@@ -28,7 +30,8 @@ days, never stored, revoked with the session, renewable with
 `POST /api/hosted-repositories/push-credential`. It also clones private
 repositories. There are no personal access tokens and no SSH access.
 
-**Quotas** (`app/wrangler.toml [vars]`): `HOSTED_REPO_MAX_PER_ACCOUNT`
+**Quotas** (`app/wrangler.toml [vars]`, which the host on the cores reads as
+its settings): `HOSTED_REPO_MAX_PER_ACCOUNT`
 (default 10) and `HOSTED_REPO_MAX_BYTES` (default 200 MiB, compared with the
 largest copy any core reports; over it a push answers
 `413 repository_quota_exceeded`). A core reports `git count-objects -v`
@@ -89,63 +92,42 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
 - **Routing pin:** public reads go only to cores whose signed proof matches
   the pinned `stateHash`, recorded after each push or web merge
   (`record_hosted_push_state`).
-- **Catalog head:** the record's `branch` and `commit` (what the logo,
-  banner, About and README lookups read) move with the pin. Whenever
+- **Catalog head:** the record's `branch` and `commit` (read by the logo,
+  banner, About and README lookups) move with the pin. Whenever
   `record_hosted_push_state` pins a new `stateHash`, it reads the default
   branch tip from the hosting core with a router-signed `branches` request
-  (`_hosted_head`). If that read fails, the pin is still written and the old
-  commit stays until the next push. `_admit_core_push_state` calls it too,
-  with the state it just verified and no notifications. That covers pushes
-  that never pass through the push proxy, such as an Actions commit-back from
-  the runner route (`runner_actions.report` → `admit_push_state`). Before this,
-  only the push proxy wrote `stateHash` and only an instance import wrote
-  `commit`. A self-hosted instance whose workflows commit every few minutes
-  kept a commit hours old, so its logo and About lookups read stale files.
-  Tests: `test_a_new_pin_moves_the_catalog_head_to_the_default_branch_tip` and
-  the tests after it in `app/tests/test_hosted_repositories.py`,
-  `test_an_admitted_core_push_moves_the_hosted_catalog_head`.
-- **Online badge:** the catalog's `liveHost` is normally "the record owner's
-  node has a fresh, verified HTTPS endpoint". A hosted record is owned by a
-  user account (`alice/project`), never by a node, so a hosted repository always
-  read *offline* on the dashboard and repository pages, even while the core
-  beside it served it and the instance's own mirror read *online*. The
-  catalog (`catalog_routes.catalog_handler`) now also marks a `hosted-web`
-  record live when a core that reported a non-empty copy in
-  `hosted_repo_copies` has a fresh verified endpoint. Tests:
-  `test_hosted_repository_is_online_while_a_live_core_serves_its_copy` and
-  the two after it in `app/tests/test_catalog_signed_endpoint_liveness.py`.
-
-- **Commit count and activity:** a node-published record carries
-  `commitCount`, `mergeCount` and the 52-week activity series from
-  `server/catalog.go`; a hosted record is written by the app, so it had none
-  (a web-created repository) or a count capped at 10,000 by `instance-repo`.
-  Each core now adds the stats of its copy to the replica report
-  (`hostedCopyState`: `commit`, `commitCount`, `mergeCount`,
-  `activityWeeks`, `mergeActivityWeeks`). The full `git rev-list --count` and
-  the 52-week walk run once per default-branch tip per UTC day
-  (`hostedReplicator.historyStats`) and are reused on every other exchange.
-  The app (`hosted_repos.clean_stats`, `hosted_git.record_hosted_stats`)
-  writes them into the catalog record when the reporting copy's routing digest
-  is the pinned `stateHash` and its tip is the record's `commit`, so a copy
-  that is behind never overwrites the counts. Writes happen only when a value
-  changed, at most once per copy refresh (`COPY_REFRESH_MS`). This is a
-  `server/` change: a node only reports stats after its binary is rebuilt.
-  Until then, rerunning `instance-repo` refreshes an imported repository.
-  Tests: `test_a_current_copy_reports_the_true_commit_count_and_activity` and
-  the two after it in `app/tests/test_hosted_core.py`,
-  `test_hosted_stats_update_only_the_record_whose_pin_they_describe` in
-  `app/tests/test_hosted_repositories.py`,
+  (`_hosted_head`); if that read fails the pin is still written and the old
+  commit stays until the next push. `_admit_core_push_state` calls it too
+  (no notifications), which covers pushes that bypass the push proxy, such
+  as an Actions commit-back on the runner route (`runner_actions.report` →
+  `admit_push_state`); otherwise a busy instance's About and logo read stale
+  files. Tests in `app/tests/test_hosted_repositories.py`.
+- **Online badge:** `liveHost` normally means "the record owner's node has a
+  fresh, verified HTTPS endpoint", but a hosted record is owned by a user
+  account, never a node. So the catalog (`catalog_routes.catalog_handler`)
+  also marks a `hosted-web` record live when a core that reported a non-empty
+  copy in `hosted_repo_copies` has a fresh verified endpoint
+  (`app/tests/test_catalog_signed_endpoint_liveness.py`).
+- **Commit count and activity:** the app writes hosted records, so each core
+  adds its copy's stats to the replica report (`hostedCopyState`: `commit`,
+  `commitCount`, `mergeCount`, `activityWeeks`, `mergeActivityWeeks`). The
+  full `git rev-list --count` and the 52-week walk run once per
+  default-branch tip per UTC day (`hostedReplicator.historyStats`). The app
+  (`hosted_repos.clean_stats`, `hosted_git.record_hosted_stats`) writes them
+  only when the reporting copy's routing digest is the pinned `stateHash` and
+  its tip is the record's `commit`, so a copy that is behind never overwrites
+  them, and only when a value changed, at most once per `COPY_REFRESH_MS`.
+  A node reports stats only once its binary has this code; until then
+  rerunning `instance-repo` refreshes an imported repository (it caps the
+  count at 10,000). Tests in `app/tests/test_hosted_core.py`,
+  `app/tests/test_hosted_repositories.py` and
   `TestHostedCopyStateReportsTheWholeHistoryCachedPerTip`.
-- **Attested state after intake and merges:** the router checks clones
-  against the routing digest (default branch plus tags,
-  `routingRefsSHA256`), and pushes already pinned that. The collaboration
+- **Attested state:** the router checks clones against the routing digest
+  (default branch plus tags, `routingRefsSHA256`). Pushes, the collaboration
   intake acknowledgement (`server/intake.go`) and merge results
-  (`server/merge.go`) recorded the all-branches digest instead, so on a
-  repository with more than one branch they added a pin no node could match.
-  Both now attest the routing digest; the gateway's own generation pin still
-  uses the full digest. Test: the merge executor test in
-  `server/merge_test.go` compares the attested state with the live routing
-  digest.
+  (`server/merge.go`) all attest that digest; an all-branches digest would
+  add a pin no node can match. The gateway's own generation pin still uses
+  the full digest (`server/merge_test.go`).
 
 ### Private repositories
 
@@ -154,7 +136,8 @@ router capability or runner grant; public routes, dashboards and counts never
 see it. The app serves Git and `/api/repo/...` reads through
 `hosted_private_read` to the owner or organization readers; others get `401`
 (Git) or `404` (web). This is access control, not end-to-end encryption: the
-cores hold plaintext. Owner-sealed repositories need the owner's own node.
+cores hold plaintext. Owner-sealed repositories need the owner's own node
+([encryption](../www/docs/encryption.md)).
 
 ### Organizations
 
@@ -163,14 +146,11 @@ so `/<org>/<name>` works, and pushes use organization roles (write or better;
 private reads need read or better).
 
 `org_repos.repo` is always the lowercase name: every reader (the git and API
-alias rewrite, org read and push permissions) looks it up lowercased, and the
-organization link endpoint stores it that way. Hosted creation used to store
-the name as typed, so a mixed-case repository such as `Bolt` had a link no
-lookup could find: `/<org>/Bolt.git` and the short `/Bolt.git` answered
-`not_found` and organization members other than the creator could not push.
-`link_organization` now stores the lowercase name and renames an existing
-mixed-case link of the same repository, and re-running `instance-repo` on an
-existing repository relinks it, which repairs a link written before the fix.
+alias rewrite, org read and push permissions) looks it up lowercased. A
+mixed-case link is unreachable (`/<org>/Bolt.git` answers `not_found` and
+other members cannot push), so `link_organization` stores the lowercase name
+and renames an existing mixed-case link; re-running `instance-repo` relinks
+an older repository.
 
 ### Imports
 
@@ -182,9 +162,8 @@ imports issues, pulls and releases only.
 
 ### Contributor pushes
 
-Without a node of their own, a signed-in contributor has no fork to push to,
-so a pull request against a hosted repository was out of reach. An operator
-can open named public repositories to contributor pushes
+So that a contributor without a node of their own can open a pull request,
+an operator can open named public repositories to contributor pushes
 (`HOSTED_GIT_CONTRIBUTOR_PUSH`, user guide in
 `www/docs/hosted-repositories.md`): any active, email-verified user account
 may then push branches under `refs/heads/pr/<account>/` of the repository
@@ -202,7 +181,7 @@ same session-bound credential an owner uses.
   contributor gets one limited to its namespace, and the push answer names
   that one ref namespace (an owner or writer gets no prefix). Signing out
   revokes it.
-- **Enforcement.** The app's relay router (`app/src/edge_routing.py`) signs
+- **Enforcement.** The app's router (`app/src/edge_routing.py`) signs
   `pushPrefix` into the receive-pack capability, so a contributor cannot widen it, and the gateway
   (`tools/mirror_gateway.py`) refuses any command outside it, with at most
   `MAX_CONTRIBUTOR_BRANCHES` (32) branches there. A refusal is answered as a
@@ -295,12 +274,9 @@ path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
     under its organization name, so the exchange sends the organization in
     `forkUpstream.owner` when the node's repository is linked into one
     (`org_repos` joined to `orgs`, the name checked against the link's blind
-    index; `_ReplicaRuntime.fork_parent_alias`). Before 2026-10-27 it sent the
-    node name, no core found its local copy of `forkmesh/forkmesh`, and the
-    primary's fallback fetch of `https://app.forkmesh.com/forkmesh/forkmesh`
-    failed on the app's 307 to a core (redirects are refused), so every fork
-    of it stayed empty and could not be cloned or used for a pull request.
-    Forks created before the fix fill on the next exchange: a core retries an
+    index; `_ReplicaRuntime.fork_parent_alias`). With the node name no core
+    finds its local copy, and the fallback fetch fails on the app's 307 to a
+    core (redirects are refused), leaving the fork empty. A core retries an
     empty fork each cycle
     (`test_cores_are_told_the_organization_name_they_serve_the_parent_under`).
   - On each core (`forkFromUpstream`), the local copy is the gateway
@@ -427,10 +403,9 @@ results (`revision`, `digest`, `ok`, `at`, `error`, `bytes`).
 Every accepted push (web, `git push` through the app, Actions commit-back
 pushes on the runner route `/v1/runner/<owner>/<repo>.git`) is received by
 `tools/mirror_gateway.py` with `receive.unpackLimit=0`, so each one adds a
-pack, and replica fetches add more. Nothing compacted hosted repositories
-before 2026-10-17: git's own `gc --auto` waits for 50 packs, and on the Bolt
-instance the size check tripped on duplicate packs first. The git node now
-maintains them (`server/hosted_maintenance.go`):
+pack, and replica fetches add more. Git's own `gc --auto` waits for 50 packs,
+long after duplicate packs trip the size check, so the node maintains hosted
+repositories itself (`server/hosted_maintenance.go`):
 
 - **Trigger.** After a push that moved refs the gateway touches
   `<id>.git/forkmesh-maintenance-due` (only in a repository that has the

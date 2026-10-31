@@ -5,7 +5,9 @@ question becomes a payload-free push over a WebSocket, answered by the one
 signed HTTPS read the client would have made anyway. The transport is the
 per-owner `ForkMeshNodes` object behind `GET /api/nodes/events` (desktops,
 headless nodes and, via tickets, browsers) plus the chat, world, office and note
-room sockets.
+room sockets. These objects run on the core nodes
+([architecture](../architecture.md)); the mobile wake-up path is
+[mobile push notifications](mobile-push-notifications.md).
 
 ## Rules
 
@@ -24,6 +26,13 @@ room sockets.
   revalidate with ETags.
 - **Server phases read one indexed row to learn nothing changed**, never the
   table itself (for example the `catalog_rev` counter before a catalog scan).
+- **Clients go direct.** The desktop reads saved hosts' signed `/health` and
+  `/v1/public/repositories/...` itself and pulls over the host's SSH remote; the
+  relay is the last fallback ([mirroring](../mirroring.md)).
+- **Bounded failover.** At most four mirror candidates, tried in turn with
+  bounded timeouts; errors become bounded 404/503 responses.
+- **Measure before tightening.** Add rate-limit rules only after sampled logs
+  name the abusive paths, and exclude Git clients and crawlers.
 
 ## Account event channel
 
@@ -64,7 +73,7 @@ The chat header badge advances locally from the room socket
 - Chat pages: the visible-tab `USERS_DIRECTORY_REFRESH_MS` directory tick (a new
   account has no frame to announce itself) and the room presence proof.
 - Server: the App minute cron, which runs every due phase on one coordinator
-  object and continues in a fresh alarm when its subrequest budget runs out.
+  object (`/api/accounts/admin-cron-report` shows the cost per tick).
 
 ## Remaining plan
 

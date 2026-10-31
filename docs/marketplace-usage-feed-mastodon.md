@@ -1,5 +1,7 @@
 # Usage, Network Feed, and Mastodon packages
 
+Market docs: [marketplace/README.md](marketplace/README.md).
+
 The Usage package reads only the current, already-authenticated provider usage snapshots from desktops linked to the signed-in ForkMesh account. It does not receive provider credentials or agent transcripts. Its Refresh button (and pull-to-refresh on the phones) asks each desktop to re-read its Claude Code accounts from Anthropic first (`agentops.usage {refresh: true}`); the desktop makes those requests with its own stored tokens, coalesces overlapping refreshes and answers from its stored readings within 30 seconds of the last one ([desktop/agents-ui.md](desktop/agents-ui.md)).
 
 Feed has a desktop native registration that opens its authenticated dashboard route; Mastodon is a native client on the desktop ([marketplace/mastodon.md](marketplace/mastodon.md)). On the desktop, Usage is an in-app page (`UsageFeature.cpp` embeds the window's own Usage page through `NativePackageHost::agentUsagePage`) with this desktop's accounts, usage bars, terminals and account controls; the usage icons open the same page ([desktop/agents-ui.md](desktop/agents-ui.md)). On iOS and Android, Usage opens a native Usage screen (below); Feed and Mastodon on both discover the same dashboard contribution as a web surface and open that route from the installed package. This keeps one complete responsive implementation across desktop, mobile, and web for the web surfaces. On the web and the phones, Mastodon authentication remains scoped to that device browser session.

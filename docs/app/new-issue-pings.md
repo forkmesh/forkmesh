@@ -3,7 +3,8 @@
 Every new issue should raise an `issue_opened` ping ("New issue in owner/repo").
 `issue_opened` is in `NOTIFICATION_IMMEDIATE_KINDS`, so it is also emailed
 straight away, not held for the hourly digest (see
-[notification-email](notification-email.md)). Email is on by default.
+[notification-email](notification-email.md)). Email is on by default. Part
+of the [App docs](README.md).
 
 ## Two ways an issue appears
 
@@ -12,14 +13,13 @@ straight away, not held for the hourly digest (see
    microjobs all write to `issue_inbox` and call
    `notify_pending_inbox(..., opened=True)`. That pings the hosting account and
    the owners, admins and maintainers of an organization that fronts the repo
-   (issue #714). Each of these paths takes its number from the relay's
-   `issue_seq` counter (`_forkbot_next_issue_number`).
+   (issue #714). Each takes its number from the relay's `issue_seq` counter
+   (`_forkbot_next_issue_number`).
 2. **Directly on a node.** Some issues never touch the inbox: one created in
    the hosting desktop's Issues tab, one filed by an agent or crash-repair
    dispatch on that desktop, or one taken by a mirror's direct intake
-   (`tools/mirror_gateway.py` → `server/intake.go`). Until 2026-10-20 these
-   pinged nobody, so organization teammates never heard about issues the
-   hosting node made itself.
+   (`tools/mirror_gateway.py` → `server/intake.go`). Without the catalog path
+   below, organization teammates would never hear about these.
 
 ## Catching the second kind: `notify_catalog_issues_opened`
 
@@ -38,10 +38,10 @@ carries `issueMaxNumber`. When an accepted update raises it,
   pings no one either: on that path the only person is the node's owner, who
   made the issue.
 - The actor is the publishing node. The catalog doesn't say who wrote the
-  issue, and an inline gateway fetch to find out would hold up the
-  publication, so the body reads only `Issue #N` and links to the issue.
+  issue, and fetching it inline would hold up the publication, so the body
+  reads only `Issue #N` and links to the issue.
 - At most `PING_CATALOG_ISSUES_MAX` (5) of the newest numbers are pinged per
-  publication. A big import or a renumbering can't flood anyone's phone.
+  publication, so a big import or renumbering can't flood anyone's phone.
 - The dedupe key is `issue-opened:<owner>/<repo>:<N>`. A republish at the same
   maximum sends nothing, because the maximum didn't rise.
 - The first publication of a repo, or a previous record with no
@@ -59,6 +59,5 @@ Tests: `app/tests/test_catalog_issue_pings.py`.
 is about: one issue or pull request (`/issues/<n>`, `/pull/<n>`) when its
 number is known, otherwise a repository section such as `/releases` or
 `/commits`, otherwise the repository. Older pings stored only the repository
-root although they were about one issue, pull request, release or push; the
-home feed (`homeFeedHref` in `05-repo-list-explorer.js`) sends those cards to
-that record instead of the repository.
+root; the home feed (`homeFeedHref` in `05-repo-list-explorer.js`) still sends
+those cards to the record they were about.

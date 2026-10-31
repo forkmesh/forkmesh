@@ -4,7 +4,9 @@ For a project that could disappear soon. A plan
 (`forkmesh-crisis-preservation-plan-v1`) orders the work to fit the time and
 access left; an assessment (`forkmesh-crisis-preservation-assessment-v1`) and a
 drill (`forkmesh-crisis-preservation-drill-v1`) report what is actually safe.
-One pure reference implementation backs the API, CLI, and fixture.
+One pure reference implementation backs the API, CLI, and fixture. How copies
+spread is on [Mirroring](mirroring.md); what survives a block is on
+[Censorship resilience](censorship-resilience.md).
 
 ## Start here
 

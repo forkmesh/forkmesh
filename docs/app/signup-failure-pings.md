@@ -1,9 +1,9 @@
 # Signup failure pings
 
-Every failed attempt on `/signup` sends a Ping to each platform administrator
-(kind `operational_alert`, title `Signup failed: <reason>`). The Ping names
-the username when the visitor typed a valid one and never includes the email
-address.
+Part of [the App docs](README.md). Every failed attempt on `/signup` sends a
+Ping to each platform administrator (kind `operational_alert`, title
+`Signup failed: <reason>`). The Ping names the username when the visitor typed
+a valid one and never includes the email address.
 
 ## Browser side
 
@@ -29,11 +29,9 @@ address.
 
 ## Backup check
 
-A visitor whose browser cannot produce a Turnstile token used to be stuck.
-The Ping of 2026-10-17 was `challenge_error [200100:1]`: Turnstile's "the
-visitor's clock is incorrect" code, which no retry or reload fixes. Blocked
-`api.js` (ad blockers, corporate filters), iframe load errors and a
-Cloudflare outage stopped visitors the same way.
+It exists because some browsers can never produce a Turnstile token: a wrong
+clock (`challenge_error [200100:1]`, which no retry fixes), a blocked `api.js`
+(ad blockers, corporate filters), iframe load errors or a Turnstile outage.
 
 - The page switches to the backup check when the widget reports a
   non-retryable error or exhausts its retries, `render` throws, `api.js` has
@@ -70,10 +68,9 @@ Cloudflare outage stopped visitors the same way.
 ## Claim renewal
 
 The signup claim (`forkmesh_signup_intent` cookie and its
-`account_signup_intents` row) lives 15 minutes. Visitors who left the page
-open longer, reloaded it in another tab, or retried after a claim was used
-got `signup_page_required` or `turnstile_stale_page` and had to reload,
-losing what they had typed (Ping of 2026-10-14).
+`account_signup_intents` row) lives 15 minutes. Renewal keeps a visitor who
+left the page open, reloaded it in another tab or retried after a used claim
+from having to reload and lose what they typed.
 
 - `POST /api/accounts/signup/intent` mints a new claim exactly as a
   `GET /signup` does: it replaces the cookie and answers the new email field

@@ -82,7 +82,7 @@ The outage deleted or exposed no data.
 | T2 | No probe script or probe host outside the fleet |
 | T3 | No public status history or incident record |
 | T4 | No rate limit for anonymous Git or public API reads |
-| T5 | No maintenance or read-only mode |
+| T5 | No maintenance or read-only mode (the cores now go read-only when two of three are down, see [architecture](../architecture.md)) |
 | T6 | No change freeze on `main` during a launch window, although each refs change reloads every mirror gateway |
 | T7 | Changing a limit needs a release; counters cannot be reset |
 

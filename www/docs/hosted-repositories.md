@@ -10,6 +10,8 @@ repository, session and a seven-day expiry; it is not stored, dies with the
 session, and every push re-checks permissions. After each push ForkMesh records
 the attestation (the signed list of branch and tag commits) that reads route
 against.
+Where hosted repositories live is on
+[Architecture and availability](architecture.md).
 
 Packs are bounded by the gateway's `limits.receiveMaxInputBytes` (git's
 `receive.maxInputSize`). Where core nodes host

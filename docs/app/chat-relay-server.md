@@ -39,7 +39,7 @@ copies, read and delivered notices) are not chat messages and carry no mark.
   accounts claiming one key, a revoked row, a disabled account or a non-user
   account all answer `""`. Bad input is `400 invalid_node`. The answer is
   `Cache-Control: private, max-age=600`.
-- Rate limit: 120 lookups a minute per client address per isolate
+- Rate limit: 120 lookups a minute per client address per app process
   (`CHAT_NODE_OWNER_MAX_PER_WINDOW`), then `429` with `retry-after`. Clients
   cache answers for an hour, so a busy room costs one lookup per new device.
 - `POST /api/chat/node-bind` (`chat_node_bind_handler`) takes
@@ -94,26 +94,26 @@ copies, read and delivered notices) are not chat messages and carry no mark.
   dashboard's public spaces (`CHAT_RELAY_SPACES`: sky-campus, space-station,
   code-planet, organization-region, planet-atlas, neighborhood, broadcast),
   plus channel and direct-message rooms. Every other `/api/repo/.../rooms/...`
-  path is `404` before any Durable Object is touched, and the room object
-  itself refuses a socket for a path it does not know. No client used another
-  repository's room, and an open name space let anyone create unbounded
-  rooms with retained history.
-- The legacy `/api/room/<name>/ws` route is gone (`ROOM_RE` removed from
-  `urls.py`, the router, the WebSocket handoff and status bucketing; the
-  `compatWebsocket` field left `/api/mainnode`). No client called it.
-- Socket caps: the Worker hands the room a keyed address token
-  (`_chat_socket_address`: HMAC of the `cf-connecting-ip` the host sets, cut to
+  path is `404` before any room object
+  ([cron-and-durable-objects.md](cron-and-durable-objects.md)) is touched, and
+  the room object itself refuses a socket for a path it does not know: an
+  open name space would let anyone create unbounded rooms with retained
+  history.
+- There is no legacy `/api/room/<name>/ws` route (no `ROOM_RE` in `urls.py`,
+  no `compatWebsocket` field in `/api/mainnode`).
+- Socket caps: the App hands the room a keyed address token
+  (`_chat_socket_address`: HMAC of the `cf-connecting-ip` header the host sets, cut to
   the /64 for IPv6, never the raw address) as `addr`. One address may hold 8
   sockets in one room (`ROOM_SOCKETS_PER_ADDRESS`) and 32 across the rooms of
   one process (`CHAT_SOCKETS_PER_ADDRESS`); more is `429 too_many_sockets`.
-  The room limit of 128 (`MAX_CONNECTIONS`) otherwise let one address fill a
-  room. The numbers leave room for a household or office behind one NAT.
-- The Worker rebuilds the socket URL for the room object
-  (`_chat_socket_target`): only `account` (resolved by the Worker) and `addr`
+  Without them one address could fill a room's 128 (`MAX_CONNECTIONS`); the
+  numbers leave room for a household or office behind one NAT.
+- The App rebuilds the socket URL for the room object
+  (`_chat_socket_target`): only `account` (resolved by the App) and `addr`
   survive, so a client cannot claim an account or an address in its query.
   The WebSocket handoff validator accepts only those two keys
   (`_chat_socket_query_ok`).
-- For `general` and the `world-*` rooms the Worker binds the socket to an
+- For `general` and the `world-*` rooms the App binds the socket to an
   account when the upgrade carries a session (bearer or cookie) or a desktop's
   `forkmesh-room-key-v2` signature (`node`, `ts`, `sig`, redacted from the
   access log). History outside `world-general` is retained only for frames
@@ -121,21 +121,21 @@ copies, read and delivered notices) are not chat messages and carry no mark.
   but not kept, so a guest cannot fill a room's 16 MiB history.
 - A frame that is not a JSON object of kind `cipher`, `forkmesh-received` or
   `forkmesh-superseded` is dropped before the rate limiter, so it neither
-  counts nor refreshes the socket's last-seen time: junk frames used to keep a
-  ghost socket alive and counted in the roster.
+  counts nor refreshes the socket's last-seen time, so junk frames cannot keep
+  a ghost socket alive in the roster.
 - Room keys: `GET /api/chat/room-key` serves only the admitted rooms (others
   `404`), and every `mainnode/forkmesh` room except `world-general` has its own
   key, `SHA-256(DATA_KEY + ":room-chat-passphrase-v2:mainnode/forkmesh:room:"
   + room)`; the response carries `"version": 2` (`world-general` keeps its
-  public key and `"version": 1`). Before, `general` and every other room
-  shared one key, so a key fetched for one room read all of them. Clients
+  public key and `"version": 1`), so a key fetched for one room reads no
+  other. Clients
   fetch the key from the server; none derives it locally (the baked-in
   `forkmesh-shared-room-key-v1` in the phone and desktop `RoomCrypto` is only
   the LAN `#mesh` room).
 
 ## Push and email
 
-- Call pushes no longer name the caller: the alert body is "Incoming call"
+- Call pushes do not name the caller: the alert body is "Incoming call"
   and neither the alert nor the VoIP payload has a `caller` field
   ([chat-direct-calls.md](chat-direct-calls.md)).
 - Unread reminder emails name no private room and no sender

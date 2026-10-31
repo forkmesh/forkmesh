@@ -2,6 +2,8 @@
 
 Keys, the recovery kit and authenticators stay with the user; ForkMesh stores
 only public authority state. Never send keys or kits to support.
+Key types and signatures are explained on
+[Encryption and signatures](encryption.md).
 
 ## Enroll and revoke authenticators
 

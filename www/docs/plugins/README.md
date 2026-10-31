@@ -4,6 +4,7 @@ Features that may move out of the ForkMesh core into optional Marketplace
 packages. Nothing on this page is shipped; each family gets its own issue once
 scheduled. The package format and lifecycle are in
 [`marketplace/README.md`](../../../marketplace/README.md).
+Other pages are listed in the [docs index](../README.md).
 
 A **plugin** here is a `.fmpkg` package with a manifest: it declares its
 entrypoints and permissions, owns its state, removes everything on uninstall,

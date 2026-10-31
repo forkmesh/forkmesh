@@ -4,8 +4,10 @@
 operated ForkMesh mirror. It listens on loopback HTTP only; an
 operator-controlled HTTPS reverse proxy terminates public TLS. Git clients use
 the mirror's standard `/<owner>/<repository>.git` Smart-HTTP URL directly. The
-main routing service keeps the stable clone URL and redirects there only after
-a fresh signed mirror proof.
+routing service on the core nodes keeps the stable clone URL and redirects there
+only after a fresh signed mirror proof. This page is the detail under the
+[mirroring](../mirroring.md) and [self-hosting](../self-hosting.md) pillars; the
+daemon that drives it is the [mirror node](mirror-node.md).
 
 Repository bytes always travel over HTTPS. The node event WebSocket only
 announces changes (and renews the endpoint lease); the node daemon then fetches
@@ -42,8 +44,10 @@ the [stock Git compatibility matrix](../git-compatibility.md) lists the split.
 - Logs hold only time, request ID, operation, status, duration and byte count.
 - The configuration accepts no key, token, password or credential field.
 
-Schemas: configuration `www/docs/mirror-gateway-config.schema.json`; endpoint
-manifest `www/docs/mirror-gateway-manifest.schema.json` (non-proxied public
+Schemas: configuration
+[`mirror-gateway-config.schema.json`](../mirror-gateway-config.schema.json);
+endpoint manifest
+[`mirror-gateway-manifest.schema.json`](../mirror-gateway-manifest.schema.json) (non-proxied public
 A/AAAA origin, `mainProxyMode: direct`, `/{owner}/{repository}.git` template).
 A node must prove its direct HTTPS endpoint before it is published.
 
@@ -160,8 +164,10 @@ publication still goes through the owner's signed path.
 
 ### Push-created repositories
 
-Set in the refresh configuration (`www/docs/headless-mirror-refresh.schema.json`),
-never by hand in the generated gateway file:
+Set in the refresh configuration
+([`headless-mirror-refresh.schema.json`](../headless-mirror-refresh.schema.json),
+[headless refresh](headless-mirror-refresh.md)), never by hand in the generated
+gateway file:
 
 | Key | Rule |
 | --- | --- |
@@ -186,15 +192,15 @@ their generation is re-proved on every signed health check.
 Private repositories are never materialized by the gateway. They are stored
 as opaque `.fm-private` files (`desktop/src/PrivateMirrorStore.cpp`): a random
 id, an AES-256-GCM archive, hybrid X25519 + ML-KEM-768 key wraps per recipient
-and a key epoch, with no names or paths. Rotation re-seals to the exact
+and a key epoch, with no names or paths ([encryption](../encryption.md)). Rotation re-seals to the exact
 recipient set. The gateway streams `/v1/private-replicas/<opaque-id>` only
 under a routing capability and cannot decrypt it.
 
 ## Routing service contract
 
-The routing service owns authorization, mirror selection and bounded failover.
-Its database stores discovery and health metadata only. Generate its capability
-key pair for `app/.env.production`:
+The routing service (the App on the core nodes) owns authorization, mirror
+selection and bounded failover. Its database stores discovery and health
+metadata only. Generate its capability key pair:
 
 ```bash
 python3 -c 'import base64;from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K;from cryptography.hazmat.primitives import serialization as s
@@ -203,8 +209,11 @@ print("MIRROR_ROUTER_PUBLIC_KEY="+e(k.public_key().public_bytes(s.Encoding.Raw,s
 print("MIRROR_ROUTER_SIGNING_SEED="+e(k.private_bytes(s.Encoding.Raw,s.PrivateFormat.Raw,s.NoEncryption())))'
 ```
 
-Keep the seed in the operator's secret store only; mirrors get the public key.
-`deploy.sh secrets` preserves it; `deploy.sh rotate-mirror-router` changes it.
+Keep the seed in the operator's secret store only (on the cores,
+`MIRROR_ROUTER_SIGNING_SEED` in the fleet vault, `deploy/fleet.example.toml`);
+mirrors get the public key. On a [Workers self-host](worker-split.md),
+`app/deploy.sh secrets` preserves it and `app/deploy.sh rotate-mirror-router`
+changes it.
 
 1. **Registration.** `POST /api/mirrors/https` (`node`, `baseUrl`,
    `mirrorUrl`, `publicKey`, `issuedAt`, `signature` over
@@ -251,7 +260,8 @@ clones.
 
 ## Cloudflare Tunnel fallback
 
-For nodes without a reachable origin, `tools/cloudflare_tunnel_bootstrap.py`
+For a node without a reachable origin (an operator option, not a ForkMesh
+dependency), `tools/cloudflare_tunnel_bootstrap.py`
 provisions a Tunnel to `http://127.0.0.1:<port>` and a signed manifest with
 `mainProxyMode: masked`. It reads the API token from `CLOUDFLARE_API_TOKEN` or
 stdin, supports `--dry-run`, and needs `--replace-dns` to overwrite DNS.

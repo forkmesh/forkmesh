@@ -5,6 +5,9 @@ posted one by one. Each becomes a small record (category, title, public link
 without query string, UTC time, scope) in an encrypted, bounded queue. Private
 repositories are never queued, and a queue is dropped when its repository turns
 private or federation off.
+Inbound replies are covered in
+[Lemmy-compatible threaded collaboration](lemmy-threaded-collaboration.md) and
+[Verified fediverse feedback review](fediverse-mention-review.md).
 
 ## Cadence
 

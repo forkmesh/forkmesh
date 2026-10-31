@@ -1,13 +1,13 @@
 # Who may open a repository's Settings tab
 
-A repository linked to an organization (`org_repos`) is stored under the
-account that created or publishes it, for example `alice/site`, and shown at
-the organization address `/acme/site` (or `/site` on a single-organization
-instance, [../INSTANCES.md](../INSTANCES.md)). Until 2026-10-18 the dashboard
-showed the Settings tab only when the signed-in account was the repository's
-`owner` field (`sessionOwnsRepo`). On an organization address that field is the
-organization, so nobody matched, the creator included, and the organization's
-owners could not change the repository's settings from the web.
+Part of the [App](README.md). A repository linked to an organization
+(`org_repos`) is stored under the account that created or publishes it, for
+example `alice/site`, and shown at the organization address `/acme/site` (or
+`/site` on a single-organization instance, [INSTANCES.md](../INSTANCES.md)).
+On an organization address the repository's `owner` field is the
+organization, so matching the session against it (`sessionOwnsRepo`) alone
+would hide Settings from everyone, the creator and the organization's owners
+included.
 
 ## The rule
 
@@ -57,7 +57,7 @@ holds.
 The client cannot work out organization roles from the catalog, so it asks:
 `GET /api/repo/<o>/<r>/viewer-permission` answers
 `{"viewer", "permission", "viewerCanAdmin"}` for the signed-in session
-(`private, no-store`, never edge cached). `permission` is `admin` for the node
+(`private, no-store`). `permission` is `admin` for the node
 owner, else the best organization permission (`maintain`, `write`, `read` or
 empty). The answer is per page load and per account
 (`loadRepoViewerPermission`); a failed request grants nothing and is retried

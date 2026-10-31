@@ -1,5 +1,6 @@
 # No banner for what is already on screen
 
+Part of [the native docs](README.md).
 A push about something the user is looking at says nothing new: the Agents
 list flips the row to done, the open conversation shows the message, the inbox
 list shows the row. Each client that knows what is on screen drops the banner
@@ -25,9 +26,9 @@ rings), and one of these holds:
 | Task ping (`/dashboard/tasks/?task=<id>`) | that task's page |
 | Direct message (iOS) | the Chat tab at its root with that conversation open (`direct:<id>`) |
 
-Room chat on iOS was already hidden while the app is open
-(`ApplePushBridge.willPresent`), and `#mesh` alerts already skip while the
-room is on screen ([MESH_PUSH.md](MESH_PUSH.md)).
+Room chat on iOS is hidden while the app is open
+(`ApplePushBridge.willPresent`), and `#mesh` alerts skip while the room is on
+screen ([MESH_PUSH.md](MESH_PUSH.md)).
 
 A ping that is seen is still recorded: iOS still inserts it into the inbox and
 refreshes direct messages, and Android's alert ledger still marks it, so it
@@ -45,11 +46,11 @@ does not ring later when the user leaves the screen.
   to `PushScreens`; a pushed screen without a route counts as covered.
   `PingAlerts.deliver` drops the seen rows before `PingNotifier.post`. Rule:
   `pingOnScreen` (`core/push/PushOnScreen.kt`), tests `PushOnScreenTest`.
-  Direct messages and local agent events were already skipped whenever the app
-  is in the foreground.
+  Direct messages and local agent events are skipped whenever the app is in
+  the foreground.
 - **Desktop.** `forwardPingToPhones` does not send a ping to the phone while
   the window is active and either the agent list is visible (for an agent
   ping) or the Pings page is open (`pingforward::seenOnScreen`, test
   `checkOnScreen` in `test_desktop_ping_forward.cpp`). In chat, a message in
-  the conversation on screen no longer raises the mention notification and
-  its Pings row is filed quietly (no flash or sound).
+  the conversation on screen raises no mention notification and its Pings row
+  is filed quietly (no flash or sound).

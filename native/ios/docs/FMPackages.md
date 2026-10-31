@@ -2,7 +2,8 @@
 
 The organization packages (CRM, Marketing, Analytics, Competitors) and the Market. `import
 FMPackages` (re-import `FMBase` for `JSONObject`). The SwiftUI views are in
-`ForkMesh/Features/Packages`; tests are in `ForkMeshCore/Tests/FMPackagesTests`.
+`ForkMesh/Features/Packages`; tests are in `ForkMeshCore/Tests/FMPackagesTests`. Native docs
+home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Marketing Reddit desk
 
@@ -18,8 +19,8 @@ FMPackages` (re-import `FMBase` for `JSONObject`). The SwiftUI views are in
   the post; "your comment: N views, N points" when a comment is watched (`monitorCommentUrl`);
   "views show only to u/…" (`commentAuthor`, else `author`) when the thread was read but Reddit
   hid every view count; and "read 2h ago" from `checkedAt`, followed by "as u/…" (`readAs`, the
-  account the browser extension was signed in as), or "not read yet". Points and comments moved from the
-  row's facts to this caption so they are not shown twice. Same rules as Android
+  account the browser extension was signed in as), or "not read yet". Points and comments appear
+  only in this caption, not in the row's facts. Same rules as Android
   ([docs/native/ANDROID.md](../../../docs/native/ANDROID.md), Marketing Reddit desk).
 
 ## Secure Drive

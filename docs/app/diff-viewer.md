@@ -1,6 +1,6 @@
 # Web diff viewer
 
-A pull request's Files changed tab, a branch comparison
+Part of [the App docs](README.md). A pull request's Files changed tab, a branch comparison
 (`/owner/repo/compare/base...head`) and a commit page all draw one pane,
 `renderRepoPullFilesSection` in `app/public/dashboard/js/06-repo-content.js`.
 It follows the phone app's diff review (`native/ios/.../DiffReviewStream.swift`):

@@ -4,6 +4,7 @@ The mobile apps carry their own Git engine: Swift in
 `native/ios/ForkMeshCore/Sources/FMGit` and Kotlin in
 `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/git`. It treats all
 repository and network data as attacker-controlled and is a security boundary.
+How the phone uses it is in the [mobile node contract](mobile-node-contract.md).
 
 ## Dependency boundary
 
@@ -127,6 +128,8 @@ rename; if preconditions cannot be proven, the repository opens read-only with
 `operationInterrupted`. A partial clone never produces a valid-looking `HEAD`.
 
 ## Threat model
+
+The protocol-wide model is in [threat model](../protocol/threat-model.md).
 
 | Threat | Mitigation |
 | --- | --- |

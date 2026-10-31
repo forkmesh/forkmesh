@@ -1,8 +1,10 @@
 # Adopting the self-hosted stack
 
-The self-hosted stack described in [PLAN.md](PLAN.md) was built in its own
-repository and is now production. This page covers how its code lives in this
-repository, where its operator files are, and how the fleet grows.
+The self-hosted stack ([PLAN.md](PLAN.md); public overview:
+[architecture](../www/docs/architecture.md), [self-hosting](../www/docs/self-hosting.md))
+was built in its own repository and is now production. This page covers
+where its code and operator files live and how the fleet grows. Runbook:
+[OPERATIONS.md](OPERATIONS.md); developer index: [README.md](README.md).
 
 ## Code
 
@@ -14,7 +16,10 @@ tested by `deploy/tests/test_next_import.py`.
 
 ## Operator files
 
-Operator state lives under the never-erase project folders:
+Operator state lives under the never-erase project folders (`AGENTS.md`).
+The real folders are `~/projects/forkmesh/data/core/{config,ssh,logs}/fleet`
+and `data/core/fleet`; the `~/projects/forkmesh/<root>` links below reach
+them ([tools/projects-layout.md](tools/projects-layout.md)):
 
 | Folder | Holds |
 |---|---|
@@ -61,7 +66,7 @@ new `[[nodes]]` block on a `fleet/add-core-nN` branch and merge it into
 `main` (`remove-core` does the same on `fleet/remove-core-nN`), so autodeploy
 deploys to the new set of cores. Run state is in
 `config/fleet/add-core/nN.json`, so a re-run resumes at the failed step.
-Details are in [deploy/README.md](deploy/README.md).
+Details: [deploy/README.md](deploy/README.md).
 
 To replace a core in one run, use `add-core --replace nOLD --execute` (the
 desktop's **Replace…** on a core row). It adds the new core, then removes

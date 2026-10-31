@@ -2,7 +2,8 @@
 
 Every email the platform sends leaves a note in a private chat channel,
 **#email-log**, visible only to the account named in `MAIL_LOG_OWNER`. The
-operator sees all outgoing mail and its outcome in one place.
+operator sees all outgoing mail and its outcome in one place. Fleet runbook:
+[OPERATIONS.md](OPERATIONS.md); developer index: [README.md](README.md).
 
 ## Code map
 
@@ -37,8 +38,8 @@ channel it is stricter:
 A bot app was rejected for this: app posting is limited to public channels.
 The server writes the notes itself through the channel delivery path, which
 marks each envelope `srv` (server-injected) so clients accept these unsealed
-frames in this private room; since 2026-10-22 ordinary private channels can
-take webhooks the same way ([app/chat-private-rooms.md](app/chat-private-rooms.md)).
+frames in this private room; ordinary private channels take webhooks the
+same way ([app/chat-private-rooms.md](app/chat-private-rooms.md)).
 
 ## The note
 
@@ -167,15 +168,13 @@ normal path, at most once a minute.
   not stuck.
 - Postfix's own non-delivery notices are DKIM-signed too
   (`internal_mail_filter_classes = bounce`, OpenDKIM `SubDomains yes`, so
-  `MAILER-DAEMON@nN.next.forkmesh.com` signs as `forkmesh.com`). Unsigned, they
-  failed DMARC: on 2026-10-20 Zoho refused n4's notice to our own sender with
-  `554 5.7.7 Email policy violation`. Rolling this out needs
-  `next_mail.py install nN --execute` on each core.
+  `MAILER-DAEMON@nN.next.forkmesh.com` signs as `forkmesh.com`); unsigned
+  ones fail DMARC (`554 5.7.7 Email policy violation`). Rolling this out
+  needs `next_mail.py install nN --execute` on each core.
 - A bounce whose reply says the address does not exist sets
   `mail_sends.cause = 'recipient'` (`mail_tracking.bounce_cause`, migration
-  `0278_mail_sends_cause`), whatever DSN the server used: Tutanota answers
-  `550 5.7.1 Recipient address rejected: Recipient not available`, which raised
-  a false "security or policy" alert the same day. A reply that also mentions
+  `0278_mail_sends_cause`), whatever DSN the server used (Tutanota answers
+  `550 5.7.1 Recipient address rejected: Recipient not available`). A reply that also mentions
   spam, blocking, reputation, policy, SPF, DKIM, DMARC or authentication stays
   a policy refusal and keeps `/status` red. Either way the address goes into
   `mail_suppressions`, so it is never mailed again.
@@ -184,18 +183,13 @@ normal path, at most once a minute.
   (no passing DKIM, SPF failed, reverse DNS failed, unauthenticated) and
   Microsoft's `5.7.515` set `mail_sends.cause = 'sender'` and keep `/status`
   red, but leave `mail_suppressions` alone, so the address gets mail again
-  once the setup is fixed. On 2026-10-28 n3 and n5 had lost their IPv4 PTRs
-  (Vultr's generic `*.constant.com` names; IPv6 was still right), and Yahoo
-  refused a signup verification from n5 with `550 5.7.25 Forward-confirmed
-  reverse DNS failed`. The address was suppressed, so the user's later
-  password reset never left the server, and the admin ping called it
-  "rejected by the mail provider". `next_mail.py rdns --execute` set the PTRs
-  in Vultr's API, but they never published: 66.135.17.0/24 and
-  66.135.22.0/24 are legacy Constant blocks whose public reverse zone keeps
-  answering `*.constant.com` (Vultr's own default reads back as
-  `*.vultrusercontent.com`, and `reversedns.vultr.com` has the right name with
-  no delegation pointing at it). That needs a Vultr support ticket.
-- Until it is fixed, n3 and n5 relay through n4 (`mail_relay = "n4"` on
+  once the setup is fixed (a suppressed address would otherwise silently
+  lose its later password-reset mail).
+- n3 and n5 sit in legacy Vultr blocks (66.135.17.0/24, 66.135.22.0/24)
+  whose public reverse zone keeps answering `*.constant.com`, so the PTRs
+  `next_mail.py rdns --execute` sets never publish (`550 5.7.25
+  Forward-confirmed reverse DNS failed` at Yahoo); fixing it needs a Vultr
+  support ticket. Until then n3 and n5 relay through n4 (`mail_relay = "n4"` on
   their `[[nodes]]` blocks in `deploy/fleet.toml`; `render.load_fleet`
   refuses a relay that is not another core sending mail itself):
   their Postfix has `relayhost = [10.77.0.4]:25` and still DKIM-signs, and n4
@@ -211,8 +205,7 @@ normal path, at most once a minute.
   remove the `mail_relay` lines, let autodeploy roll, and run
   `install nN --execute` on every core.
 - Every core falls back to Mailtrap so mail does not depend on one server
-  (user, 2026-10-28: "send email from any of the servers in case one or two
-  of them go down"). Postfix has `smtp_fallback_relay =
+  (the operator's requirement). Postfix has `smtp_fallback_relay =
   [live.smtp.mailtrap.io]:587`, used whenever the normal route fails with a
   temporary error: n4 unreachable from n3/n5, or a provider deferring n4.
   It logs in as `api` with `MAILTRAP_API_TOKEN` (already a server
@@ -228,7 +221,7 @@ normal path, at most once a minute.
   recipient never falls back. Without the token in `secrets.env`, install
   leaves the fallback off and says so. A hand-off to Mailtrap is recorded as
   delivery: its own webhook carries the later lifecycle.
-- Adding a core checks this so it cannot happen silently again. On Vultr
+- Adding a core checks reverse DNS. On Vultr
   with core mail on, the `vm` step of `next_add_core.py` sets the new
   address's PTR and waits up to 10 minutes for it to publish; if it does
   not, it deletes the empty VM (nothing is on it yet) and creates another,
@@ -250,10 +243,9 @@ normal path, at most once a minute.
 
 ## The sender
 
-Since 2026-10-25 every email the servers send comes from one verified
-mailbox, `founders@forkmesh.com`, so a recipient who replies reaches a person
-(the user's choice; before, most mail came from `no-reply@forkmesh.com`,
-which nobody reads).
+Every email the servers send comes from one verified mailbox,
+`founders@forkmesh.com`, so a recipient who replies reaches a person (the
+operator's choice over the unread `no-reply@forkmesh.com`).
 
 - `smtp_mail.SENDER` is the app's default when `MAIL_SENDER` and
   `MAILTRAP_SENDER` are unset; package mail always uses it. The IDS direct
@@ -287,15 +279,13 @@ must sign with DKIM before it sends.
 
 ### Layout
 
-In October 2026 the card was redrawn after the user compared three templates
-("Notification", "Card", "Letter") and picked the Letter: a quiet, centred
-480px column on `#fafafa` with no bordered card, the logo on its own, a 22px
-heading, a grey intro, the body, a near-black (`#171717`) button, the action
-URL written out under it ("Or open this link"), and a hairline footer with
-"Email settings". The logo is `assets/logo-96.png` at 32px wide with
-`height:auto`; the user asked for the black tile to go and for the logo not
-to be squeezed into a fixed box. `logo-96.png` is the dark cube, so it reads
-on the light page without a backing tile. The palette stays light-only so a
+The "Letter" layout (the operator's pick of three): a centred 480px column
+on `#fafafa` with no bordered card, the logo on its own, a 22px heading, a
+grey intro, the body, a near-black (`#171717`) button, the action URL written
+out under it ("Or open this link"), and a hairline footer with "Email
+settings". The logo is `assets/logo-96.png` (the dark cube, readable without
+a backing tile) at 32px wide with `height:auto`, never squeezed into a fixed
+box. The palette stays light-only so a
 client that half-applies dark mode cannot make it unreadable. The wrapper
 keeps its two `div`s, so code that inserts before
 `</div></div></body></html>` (status logs, the manage link, the instance

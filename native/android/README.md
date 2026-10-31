@@ -4,7 +4,8 @@ The ForkMesh Android app, written in **Kotlin + Jetpack Compose**. Development
 builds use the application id `com.forkmesh.nativeapp`; release builds ship as
 `com.forkmesh.forkmesh`, the store/APK id.
 
-The developer home page for both native apps (this one and `native/ios`) is
+The developer home page for both native apps (this one and
+[`native/ios`](../ios/README.md)) is
 [`docs/native/README.md`](../../docs/native/README.md); the reasons behind
 Android-specific decisions are in
 [`docs/native/ANDROID.md`](../../docs/native/ANDROID.md).
@@ -104,7 +105,7 @@ app/    Android + Compose.
   formats match the other ForkMesh clients (the iOS app, the desktop and the
   web client); the relay and the desktop app cannot tell the clients apart.
 - **Code only.** No comments or KDoc in the source. The reasons behind
-  non-obvious decisions go in `docs/native/ANDROID.md`.
+  non-obvious decisions go in [docs/native/ANDROID.md](../../docs/native/ANDROID.md).
 - **Feature seams.** The shell only calls the `*Feature` objects. A feature
   area owns its package and its `*Feature.kt`; it registers services in
   `install(app)` with `Services.put(...)` and exposes screens through
@@ -173,6 +174,7 @@ signing key stay the same: a reinstall under another id or key starts empty.
    checks (`app/src/status_monitoring.py`) and the release manifests
    (`.forkmesh/releases/*/release.json`, `SHASUMS256.txt`) use it. Publish the
    APK into the candidate with `tools/forkmesh-release-publish.sh` and promote
-   it as usual (`.forkmesh/releases/README.md`).
+   it as usual (`.forkmesh/releases/README.md`; how releases reach users and
+   mirrors: [www/docs/mirroring.md](../../www/docs/mirroring.md)).
 4. Device support: the native app's `minSdk` is 26; phones on Android 7.x
    cannot install it.

@@ -1,9 +1,10 @@
 # D1 database cleanup plan
 
-This page records the rules that came out of auditing the App's SQL database
-(schema in `app/src/schema.py`, migrations in `app/migrations/`). It applies to
-the Cloudflare D1 deployment and to any SQLite-compatible store that replays the
-same migrations.
+Rules for the App's SQL database (schema in `app/src/schema.py`, migrations in
+`app/migrations/`). Production runs it on rqlite on the core nodes
+([architecture](../architecture.md)); the code keeps the D1 interface name
+([d1.md](../../../docs/app/d1.md)). The rules apply to any SQLite-compatible store
+that replays the same migrations.
 
 ## Goals
 
@@ -12,6 +13,8 @@ same migrations.
 - No table remains without a reader or writer unless a keep decision is
   recorded.
 - Hot paths read shared snapshots instead of scanning tables per request.
+- Read paths write nothing: mirror selection uses stateless rotation with a
+  short clone pin, not a stored cursor.
 - Retention prunes run from cron at most once an hour, never per request.
 - No plaintext secret column remains, and sealed rows name the key that sealed
   them.
@@ -66,8 +69,7 @@ through `encrypt_row`/`decrypt_row` so the format applies everywhere.
 
 ## Exports and measurement
 
-Production runs on rqlite on the core nodes. Before any destructive
-migration:
+Before any destructive migration:
 
 1. Take a fresh backup: `python3 tools/next_backup.py run --execute` keeps it
    only after `PRAGMA integrity_check` and table counts pass.
@@ -82,12 +84,10 @@ migration:
 Measure reads with `FORKMESH_HOST_D1_LOG=1`: each statement is followed by a
 `D1-done <ms> ms, <rows> rows` line ([d1.md](../../../docs/app/d1.md)).
 
-On a Cloudflare Workers deployment only, export with
-`wrangler d1 export <db> --remote --output <file>` and measure with
-`wrangler d1 insights <db> --time-period 7d --sort-by reads`; table-browser
-`COUNT(*)` queries come from the dashboard, not App code.
+On a [Workers self-host](worker-split.md), export with
+`wrangler d1 export <db> --remote --output <file>`.
 
 ## Related
 
-- `docs/app/d1.md`
-- [Cloudflare free-tier audit](cloudflare-free-tier-audit.md)
+- [d1.md](../../../docs/app/d1.md)
+- [Node backup and recovery](node-backup-and-recovery.md)

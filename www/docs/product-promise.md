@@ -4,7 +4,9 @@
 
 ## Four-step proof
 
-Use a disposable public repository; never delete the source.
+Use a disposable public repository; never delete the source. How mirrors serve
+clones is on [Mirroring](mirroring.md); what still depends on the hosted service
+is on [Architecture and availability](architecture.md).
 
 ### 1. Collaborate
 

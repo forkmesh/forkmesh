@@ -2,7 +2,8 @@
 
 Targets: repository, pull request, issue and discussion pages usable in under
 200 ms on a warm load and under 800 ms cold, with immutable-content API reads
-under 30 ms at the node.
+under 30 ms at the node. Served stack: [PLAN.md](PLAN.md); developer index:
+[README.md](README.md).
 
 ## Techniques in place
 
@@ -30,15 +31,10 @@ under 30 ms at the node.
 
 ## The first paint is the final layout
 
-Pages used to paint one thing and then replace it: the repository page's
-server-rendered first view was a narrow, differently styled table (blue
-`name/` links, no tabs, no About rail) that dashboard.js swapped for the full
-interface 300-800 ms later (several seconds on a slow device); the header was
-drawn with signed-in controls and blank icon boxes that became "Sign Up / Log
-In" and icons after the session check; the instance name beside the logo and
-the hiding of switched-off plugin links came from `instance-brand.js` after
-the first paint. Layout-shift scores missed most of it because a replaced
-block is not a shift. What each page now paints first:
+A first view that dashboard.js later swaps for a different layout (or a
+header that flips from signed-in to guest after the session check) looks
+broken, and layout-shift scores miss it because a replaced block is not a
+shift. So each page paints its final layout first:
 
 | Piece | Now |
 |---|---|
@@ -49,7 +45,7 @@ block is not a shift. What each page now paints first:
 | Header | A head script marks `html[data-guest]` when there is neither a `forkmesh_session` cookie nor a stored session, and CSS shows the guest header from the start; the dashboard clears it when a session turns up. The always-visible header icons are inline SVG. `:where(i[data-lucide])` is `inline-block`, so every other icon placeholder already has its size. |
 | Profile | The contribution period buttons (Last year and the five years before) are in the page with year-wide placeholders filled by an inline script; the summary keeps two lines; the About panel's edit button no longer sets the panel's height (guests do not see it). |
 
-### Header and About rail in the first HTML (2026-10-21)
+### Header and About rail in the first HTML
 
 The dashboard fills the About rail from four reads after it boots (stats, the
 `.forkmesh` listing, the contributor roster and the size map), so a first view
@@ -90,7 +86,7 @@ has by default are drawn so the strip does not grow later.
 
 The micro-cache (`micro_cache_key`) answers only anonymous reads that carry
 no `Cookie`, `Authorization` or `Origin` header. Cross-origin reads go to the
-Worker, which sets the CORS headers for that caller. Stored answers drop every
+app, which sets the CORS headers for that caller. Stored answers drop every
 `access-control-*` and `timing-allow-origin` header and always carry
 `Vary: Origin`, because one visitor's CORS answer replayed to another broke
 cross-origin readers. A refresh that answers 404 or 410 drops the entry and
@@ -103,7 +99,7 @@ window. Tests: `app/tests/host/test_repo_ssr.py`
 Below a short repository address (`/<name>/<folder>`, `/<name>/issues`) the
 page gets the root's header and tab strip with that tab selected
 (`short_sub_target`); `/<name>/issues/<n>` also gets the issue itself, its
-reads started alongside the Worker's from the owner the name had last time.
+reads started alongside the app's from the owner the name had last time.
 
 Fonts were not the cause: DejaVu Sans Mono is a Latin subset with
 `font-display: swap` used only for counts and hashes, and the theme is set by

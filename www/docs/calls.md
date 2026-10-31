@@ -4,6 +4,8 @@ You can call anyone you have a direct message with, or everyone in a private
 channel at once. Calls work on the web at `/chat`, on iPhone and on Android.
 The desktop app has no call engine of its own: its call buttons open the call
 in your browser and ask before anything rings.
+How calls are encrypted is on
+[Encryption and signatures](encryption.md#end-to-end-encrypted-chat-and-calls).
 
 ## Start a call
 

@@ -1,7 +1,8 @@
 # Notes in the phone apps
 
-The web Notes page is the reference (`docs/app/notes-sharing.md`). Each phone
-app has its own section below.
+Part of the [phone apps docs](README.md). The web Notes page is the reference
+([notes-sharing.md](../app/notes-sharing.md)); each phone app has its own
+section below.
 
 ## Android
 
@@ -17,7 +18,7 @@ module holds the list, the editor and its sheets.
   Public is `visibility == public`.
 - Search matches the title and the body through the server:
   `GET /api/notes?query=<text>` (`NotesApi.search`, see
-  `docs/app/notes-convert.md`), asked 250 ms after the last keystroke
+  [notes-convert.md](../app/notes-convert.md)), asked 250 ms after the last keystroke
   (`NotesLogic.SEARCH_MS`). The request runs in a `LaunchedEffect` keyed on the
   query, so a newer keystroke cancels it, and an answer is used only while the
   box still holds the query it was for (`NoteSearch`). Until it answers the

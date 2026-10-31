@@ -3,7 +3,8 @@
 What a signed-in person can do in the browser, with nothing installed, and
 what still depends on the desktop app (or another node the person runs). Links
 to download the apps are not dependencies and are not listed. This page is the
-inventory; each row says why the dependency exists and how it could go.
+inventory; each row says why the dependency exists and how it could go. Part of
+[the App docs](README.md).
 
 ## Done on the web
 

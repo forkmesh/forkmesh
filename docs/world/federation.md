@@ -6,7 +6,9 @@ stands there. Every World runs the same World code; each hexagon has one
 owner, and everything on it is read from, and acted on at, the owner.
 
 This page is the protocol other instances implement to join. Parts marked
-*(planned)* are not built yet.
+*(planned)* are not built yet. Home: [World](README.md#world-mesh); instance
+federation in general: [instance-federation.md](../app/instance-federation.md);
+running an instance: [Self-hosting](../../www/docs/self-hosting.md).
 
 ## Who owns a hexagon
 

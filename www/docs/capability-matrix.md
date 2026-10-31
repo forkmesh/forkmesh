@@ -3,9 +3,10 @@
 A capability is present on a surface when the surface implements it or offers a
 safe deep link to its canonical interface. The contract is
 [`capability-matrix.json`](capability-matrix.json): every row names a canonical
-path and a non-missing mode for the app server (`worker` column), dashboard/Web, World,
-and Qt, and CI validates it. The phone and watch apps are tracked in
+path and a non-missing mode for the app server (the `worker` column),
+dashboard/Web, World and Qt, and CI validates it. The phone and watch apps are tracked in
 [PARITY.md](../../docs/native/PARITY.md).
+How the surfaces connect is on [Architecture and availability](architecture.md).
 
 Owner-device secrets never leave the device: Cloudflare tokens, repository
 decryption keys, mirror process control, wallet signing keys, SSH private keys,

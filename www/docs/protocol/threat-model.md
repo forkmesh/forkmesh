@@ -4,11 +4,13 @@ Suite version: `1.0.0-rc.1` · Register: `conformance/protocol/v1/threats.json`
 · Part of the [ForkMesh protocol suite](README.md)
 
 This model covers the wire protocol in this suite. Endpoint compromise,
-Cloudflare platform compromise, and supply-chain attacks against clients
-belong to [SECURITY.md](../../../SECURITY.md) and the [dependency
-audit](../security/dependency-security-audit.md). The register file is
-authoritative. The table below MUST match its severity and status, and the
-suite verifier fails if they differ.
+hosting-provider compromise and supply-chain attacks against clients belong to
+[SECURITY.md](../../../SECURITY.md) and the [dependency
+audit](../security/dependency-security-audit.md); blocking and takedowns are
+covered in [censorship resilience](../censorship-resilience.md), and the
+cryptography in [encryption and signatures](../encryption.md). The register
+file is authoritative. The table below MUST match its severity and status, and
+the suite verifier fails if they differ.
 
 ## Assets
 
@@ -24,10 +26,10 @@ suite verifier fails if they differ.
 | ID | Boundary |
 | --- | --- |
 | B1 | Client device and its key store |
-| B2 | Client ↔ relay (Worker HTTPS and WebSocket) |
+| B2 | Client ↔ relay (HTTPS and WebSocket to the core nodes) |
 | B3 | Relay ↔ mirror origin |
 | B4 | Mirror ↔ source-of-truth node |
-| B5 | Relay storage (D1, Durable Objects, KV) |
+| B5 | Relay storage (rqlite on the core nodes, node-local caches) |
 | B6 | External provider ↔ migration importer |
 | B7 | Portable session ↔ independent mirror dashboard |
 
@@ -41,7 +43,7 @@ suite verifier fails if they differ.
 | A4 | Malicious registered user | Sign any content with its own keys; equivocate; craft malformed input | Sign with another user's key |
 | A5 | Holder of a stolen device key | Everything that key authorizes until rotation or revocation | Use the account password or TOTP |
 | A6 | Malicious migration provider | Return inconsistent, oversized, or hostile API data | Access ForkMesh keys |
-| A7 | Resource-exhaustion attacker | Send many or large requests within platform limits | Exceed Cloudflare edge limits |
+| A7 | Resource-exhaustion attacker | Send many or large requests within the per-node limits | Exceed the request rules and rate limits on every core at once |
 
 ## Register
 

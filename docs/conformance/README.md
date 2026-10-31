@@ -4,33 +4,36 @@
 vectors, fixtures, ledgers and retained evidence. Each suite is shared by the
 implementations it binds (the Python app, the Go daemon, the desktop, mobile)
 and backs one public page under `www/docs/`. A version directory is frozen
-once published; a breaking change adds `v2` beside it.
+once published; a breaking change adds `v2` beside it. Home:
+[docs/README.md](../README.md); public index:
+[www/docs/README.md](../../www/docs/README.md); the threat model these suites
+test is [threat-model.md](../../www/docs/protocol/threat-model.md).
 
 ## Code map
 
 | Suite | Contents | Checked or produced by | Public page |
 | --- | --- | --- | --- |
-| `availability-contract` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/availability_contract.py`, `tools/forkmesh_availability_contract.py`; `app/tests/test_availability_contract.py` | `www/docs/availability-contract.md` |
-| `availability-proof` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/availability_proof.py`, `tools/forkmesh_availability_proof.py`; `app/tests/test_availability_proof.py` | `www/docs/availability-proof.md` |
-| `category-comparisons` | `ledger.json` | `tools/category_comparisons.py`; `app/tests/test_category_comparisons.py` | `www/docs/category-comparisons.md` (generated) |
-| `certification` | `program.json`, `implementations.json`, `results.json`, `adapters/`, `evidence/` | `tools/protocol_certification.py`; `app/tests/test_protocol_certification.py` | `www/docs/protocol/certification.md`, `www/docs/protocol/certification-registry.md` (generated) |
-| `crisis-preservation` | `model.json`, `fixture-input.json`, `fixture.json`, `generate_fixture.py` | `app/src/crisis_preservation.py`, `tools/forkmesh_crisis_preservation.py`; `app/tests/test_crisis_preservation.py` | `www/docs/crisis-preservation.md` |
-| `dependencies` | `contract.json` | `tools/dependency_conformance.py`; `app/tests/test_dependency_workflows.py` | `www/docs/dependency-workflows.md` |
-| `disaster-recovery` | `runbook.json`, `exercises/`, `evidence/` | `tools/forkmesh_disaster_recovery.py`; `app/tests/test_disaster_recovery.py` | `www/docs/disaster-recovery/` |
-| `external-dependencies` | `manifest.json` | `tools/external_dependency_inventory.py`; `app/tests/test_external_dependency_map.py` | `www/docs/external-dependency-map.md` |
-| `funding` | `program.json`, `rounds/` | `tools/public_interest_funding.py`; `app/tests/test_public_interest_funding.py` | `www/docs/funding/` |
-| `git` | `matrix.json`, `results.json`, `evidence/` | `tools/git_conformance.py` (`validate`, `render`, `run`, ...); `app/tests/test_git_workflow_conformance.py` | `www/docs/git-compatibility.md` (generated), `www/docs/operations/git-conformance.md` |
-| `governance` | `charter.json`, `participants.json`, `records/` | `tools/protocol_governance.py`; `app/tests/test_protocol_governance.py` | `www/docs/governance/` |
-| `hidden-unicode` | `vectors.json`, `generate_vectors.py` | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicode.cpp`, `native/ios/ForkMeshCore/Sources/FMBase/HiddenUnicode.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/security/HiddenUnicode.kt`; `app/tests/test_hidden_unicode.py`, `desktop/tests/test_hidden_unicode.cpp` | `docs/security/hidden-unicode.md` |
-| `incentives` | `requirements.json` | `app/tests/test_incentive_independence.py` | `www/docs/incentive-independence.md` |
-| `integrations` | `contract.json`, `examples/` | `tools/forkmesh_integration.py`; `app/tests/test_integration_contract.py` | `www/docs/integrations.md` |
-| `protocol` | `manifest.json`, `threats.json`, `vectors/`, `generate_vectors.py`, `verify_suite.py` | `app/tests/test_protocol_suite.py`; clean-room `verify_suite.py` | `www/docs/protocol/` |
-| `secrets` | `corpus.json`, `build_corpus.py` | `tools/secret_gate.py`; `app/tests/test_secret_gate.py` | `www/docs/security/secret-scanning.md` |
-| `service-roles` | `manifest.json` | `tools/forkmesh_service_roles.py`; `app/tests/test_service_roles_contract.py` | `www/docs/operations/service-roles.md` |
-| `social-signals` | `vectors.json` | `tools/social_signals.py`; `app/tests/test_social_signals.py` | `www/docs/social-signals.md` |
-| `sync-status` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/sync_status.py`, `server/syncstatus.go`, `native/ios/ForkMeshCore/Sources/FMAccount/SyncStatus.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/api/SyncStatus.kt`, `tools/forkmesh_sync_status.py`; `app/tests/test_sync_status.py` | `www/docs/sync-status.md` |
-| `transports` | `cases.json` | `tools/forkmesh_transports.py`; `app/tests/test_transports.py` | `www/docs/transports.md` |
-| `trust-lists` | `vectors.json`, `generate_vectors.py` | `app/src/trust_lists.py`, `app/public/trust-lists.js`, `desktop/tests/test_trust_lists.cpp`, `native/ios/ForkMeshCore/Sources/FMAccount/TrustLists.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/security/TrustLists.kt`, `tools/forkmesh_trust_lists.py`; `app/tests/test_trust_lists.py` | `www/docs/trust-lists.md`, `www/docs/design/scoped-trust-lists.md` |
+| `availability-contract` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/availability_contract.py`, `tools/forkmesh_availability_contract.py`; `app/tests/test_availability_contract.py` | [`www/docs/availability-contract.md`](../../www/docs/availability-contract.md) |
+| `availability-proof` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/availability_proof.py`, `tools/forkmesh_availability_proof.py`; `app/tests/test_availability_proof.py` | [`www/docs/availability-proof.md`](../../www/docs/availability-proof.md) |
+| `category-comparisons` | `ledger.json` | `tools/category_comparisons.py`; `app/tests/test_category_comparisons.py` | [`www/docs/category-comparisons.md`](../../www/docs/category-comparisons.md) (generated) |
+| `certification` | `program.json`, `implementations.json`, `results.json`, `adapters/`, `evidence/` | `tools/protocol_certification.py`; `app/tests/test_protocol_certification.py` | [`www/docs/protocol/certification.md`](../../www/docs/protocol/certification.md), [`www/docs/protocol/certification-registry.md`](../../www/docs/protocol/certification-registry.md) (generated) |
+| `crisis-preservation` | `model.json`, `fixture-input.json`, `fixture.json`, `generate_fixture.py` | `app/src/crisis_preservation.py`, `tools/forkmesh_crisis_preservation.py`; `app/tests/test_crisis_preservation.py` | [`www/docs/crisis-preservation.md`](../../www/docs/crisis-preservation.md) |
+| `dependencies` | `contract.json` | `tools/dependency_conformance.py`; `app/tests/test_dependency_workflows.py` | [`www/docs/dependency-workflows.md`](../../www/docs/dependency-workflows.md) |
+| `disaster-recovery` | `runbook.json`, `exercises/`, `evidence/` | `tools/forkmesh_disaster_recovery.py`; `app/tests/test_disaster_recovery.py` | [`www/docs/disaster-recovery/`](../../www/docs/disaster-recovery/) |
+| `external-dependencies` | `manifest.json` | `tools/external_dependency_inventory.py`; `app/tests/test_external_dependency_map.py` | [`www/docs/external-dependency-map.md`](../../www/docs/external-dependency-map.md) |
+| `funding` | `program.json`, `rounds/` | `tools/public_interest_funding.py`; `app/tests/test_public_interest_funding.py` | [`www/docs/funding/`](../../www/docs/funding/) |
+| `git` | `matrix.json`, `results.json`, `evidence/` | `tools/git_conformance.py` (`validate`, `render`, `run`, ...); `app/tests/test_git_workflow_conformance.py` | [`www/docs/git-compatibility.md`](../../www/docs/git-compatibility.md) (generated), [`www/docs/operations/git-conformance.md`](../../www/docs/operations/git-conformance.md) |
+| `governance` | `charter.json`, `participants.json`, `records/` | `tools/protocol_governance.py`; `app/tests/test_protocol_governance.py` | [`www/docs/governance/`](../../www/docs/governance/) |
+| `hidden-unicode` | `vectors.json`, `generate_vectors.py` | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicode.cpp`, `native/ios/ForkMeshCore/Sources/FMBase/HiddenUnicode.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/security/HiddenUnicode.kt`; `app/tests/test_hidden_unicode.py`, `desktop/tests/test_hidden_unicode.cpp` | [`docs/security/hidden-unicode.md`](../security/hidden-unicode.md) |
+| `incentives` | `requirements.json` | `app/tests/test_incentive_independence.py` | [`www/docs/incentive-independence.md`](../../www/docs/incentive-independence.md) |
+| `integrations` | `contract.json`, `examples/` | `tools/forkmesh_integration.py`; `app/tests/test_integration_contract.py` | [`www/docs/integrations.md`](../../www/docs/integrations.md) |
+| `protocol` | `manifest.json`, `threats.json`, `vectors/`, `generate_vectors.py`, `verify_suite.py` | `app/tests/test_protocol_suite.py`; clean-room `verify_suite.py` | [`www/docs/protocol/`](../../www/docs/protocol/) |
+| `secrets` | `corpus.json`, `build_corpus.py` | `tools/secret_gate.py`; `app/tests/test_secret_gate.py` | [`www/docs/security/secret-scanning.md`](../../www/docs/security/secret-scanning.md) |
+| `service-roles` | `manifest.json` | `tools/forkmesh_service_roles.py`; `app/tests/test_service_roles_contract.py` | [`www/docs/operations/service-roles.md`](../../www/docs/operations/service-roles.md) |
+| `social-signals` | `vectors.json` | `tools/social_signals.py`; `app/tests/test_social_signals.py` | [`www/docs/social-signals.md`](../../www/docs/social-signals.md) |
+| `sync-status` | `model.json`, `fixture.json`, `generate_fixture.py` | `app/src/sync_status.py`, `server/syncstatus.go`, `native/ios/ForkMeshCore/Sources/FMAccount/SyncStatus.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/api/SyncStatus.kt`, `tools/forkmesh_sync_status.py`; `app/tests/test_sync_status.py` | [`www/docs/sync-status.md`](../../www/docs/sync-status.md) |
+| `transports` | `cases.json` | `tools/forkmesh_transports.py`; `app/tests/test_transports.py` | [`www/docs/transports.md`](../../www/docs/transports.md) |
+| `trust-lists` | `vectors.json`, `generate_vectors.py` | `app/src/trust_lists.py`, `app/public/trust-lists.js`, `desktop/tests/test_trust_lists.cpp`, `native/ios/ForkMeshCore/Sources/FMAccount/TrustLists.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/security/TrustLists.kt`, `tools/forkmesh_trust_lists.py`; `app/tests/test_trust_lists.py` | [`www/docs/trust-lists.md`](../../www/docs/trust-lists.md), [`www/docs/design/scoped-trust-lists.md`](../../www/docs/design/scoped-trust-lists.md) |
 
 ## Architecture
 
@@ -70,10 +73,8 @@ generated page matches; the matching test fails otherwise. CI runs
   rewrite them (`FROZEN_FILES`), and a hand edit breaks verification.
 - Public keys are URL-safe base64, so about one in 64 starts with `-`, and
   argparse reads `--trusted-key -Ab…` as a missing value (exit 2). The drills
-  generate fresh keys each run and pass them as `--trusted-key=KEY`; passing
-  them as two arguments made the Disaster recovery workflow fail on a random
-  OS about one run in three (fixed 2026-10-22,
-  `test_offline_bootstrap_passes_keys_that_start_with_a_dash`).
+  generate fresh keys each run and must pass them as `--trusted-key=KEY`
+  (`test_offline_bootstrap_passes_keys_that_start_with_a_dash`).
 - Suites that talk to themselves over loopback TCP (stock Git, integration
   contract) run in CI under `unshare -rn` with `lo` up, because a host
   application firewall can drop loopback connections and stall a run.

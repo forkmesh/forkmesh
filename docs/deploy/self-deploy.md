@@ -6,7 +6,9 @@
 merge to `main` that an enrolled phone signed, so a merge ships while the
 operator box is offline. Approvals are recorded in `deploy_approvals`
 (`app/src/deploy_approvals.py`); the phone side is described in
-[../native/RUNNER_AGENTS.md](../native/RUNNER_AGENTS.md).
+[../native/RUNNER_AGENTS.md](../native/RUNNER_AGENTS.md). Fleet map:
+[deploy/README.md](README.md); the operator-box path:
+[auto-deploy.md](auto-deploy.md).
 
 Each core polls rqlite every 15 s and checks the approval's Ed25519 signature
 against `approver_keys`, its age (two hours), that the merged commit is the

@@ -5,7 +5,7 @@
     "native": "The surface provides its own usable interface.",
     "read-only": "The surface presents authorized state and hands mutations to a canonical surface.",
     "deep-link": "The surface exposes a safe entry point to the canonical interface.",
-    "api": "The Worker provides policy-enforcing transport or storage, not an end-user screen.",
+    "api": "The app server provides policy-enforcing transport or storage, not an end-user screen.",
     "device-local": "The capability intentionally stays on the owner device.",
     "not-applicable": "The capability would violate the surface boundary or has no meaningful UI there."
   },
@@ -52,7 +52,7 @@
       "web": "native",
       "world": "deep-link",
       "qt": "device-local",
-      "exception": "SSH private keys remain on the user's device. Raw SSH terminates at an independently operated node-side forced-command gateway, not the Cloudflare HTTP Worker."
+      "exception": "SSH private keys remain on the user's device. Raw SSH terminates at an independently operated node-side forced-command gateway, not the HTTP app server."
     },
     {
       "id": "organizations",

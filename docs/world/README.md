@@ -5,8 +5,11 @@ repositories, mirrors and agents appear as places and avatars, with global
 chat, the Office (encrypted meeting rooms) and community boards. The browser
 code is static. It is served by the core nodes: Caddy serves the built files
 from `world/dist` in the current app release, and the App on the same node
-answers `/api/world/*`, the World Durable Objects and `/health/mobile`. The
-desktop embeds the same page.
+answers `/api/world/*`, the World Durable Object emulation and
+`/health/mobile`. world.forkmesh.com resolves by DNS round robin to the cores,
+like app.forkmesh.com ([architecture](../../www/docs/architecture.md)). The
+desktop embeds the same page. Index: [docs/README.md](../README.md); entry
+point in the tree: [world/README.md](../../world/README.md).
 
 ## Code map
 
@@ -70,8 +73,8 @@ desktop embeds the same page.
   else goes to the App. Python never serves World's static bytes.
 - **Backend.** `/api/world/*` is served by the App from `world/src`.
   Presence and chat run in the `ForkMeshWorld` object over `/api/world/ws`;
-  Office meetings in `ForkMeshOfficeRoom`. The Durable Objects run clustered
-  across the core nodes. World chat is global: one `#general` for everyone.
+  Office meetings in `ForkMeshOfficeRoom`. These Durable Object classes run
+  on the cores' emulation (`durable.py`), clustered across the core nodes. World chat is global: one `#general` for everyone.
 - **Session.** World is a separate origin. It restores the App login from the
   `forkmesh_account` cookie within `WORLD_SESSION_RESTORE_BUDGET_MS` (250 ms)
   and otherwise starts as a guest, adopting the login when it arrives
@@ -102,15 +105,14 @@ desktop embeds the same page.
 
 `WORLD_ORIGIN` is `https://world.forkmesh.com`: in `deploy/fleet.toml`
 `[production.vars]` (rendered as `FORKMESH_VAR_WORLD_ORIGIN` by
-`deploy/core/render.py`), and with the same value in `app/wrangler.toml` and
-`www/wrangler.toml`. The served host is `world_host` in `deploy/fleet.toml`
+`deploy/core/render.py`), in `www/wrangler.toml` for the website Worker, and
+in `app/wrangler.toml` for the optional Workers self-host. The served host is `world_host` in `deploy/fleet.toml`
 `[production]`. `WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
 where an instance reads the World mesh directory; an App without
 `INSTANCE_NAME` is the hub itself. `WORLD_NEIGHBOUR_SCENE` (optional, on an
 instance) is the scene its single hexagon shows in the hub's World (see
-Neighbour scenes below). `world/wrangler.toml` still carries legacy Worker settings;
-the served stack reads only its `run_worker_first` list and `[build]`
-command. It holds no secrets.
+Neighbour scenes below). The served stack reads only the `run_worker_first`
+list and `[build]` command of `world/wrangler.toml`; it holds no secrets.
 
 ## Build, run, test
 
@@ -123,34 +125,27 @@ python3 tools/world_bench.py --gate              # performance gate (see below)
 ```
 
 `world/tests/test_world_dev_server.py` drives `WorldDevHandler` over a
-`socketpair`, whose buffer on macOS is 8 KB. The handler writes all of
-`index.html` (about 22 KB) before it returns. If the test called the handler
-on its own thread before reading, `sendall` blocked with nobody reading and
-`pytest world/tests` hung at that test (15 Oct 2026). So the test runs the
-handler on a thread while the client reads, and both sockets have a 10 s
-timeout. The server itself is not affected, because `ThreadingHTTPServer`
-gives each connection its own thread.
+`socketpair`, whose buffer on macOS is 8 KB, smaller than `index.html`
+(about 22 KB). The test runs the handler on a thread while the client reads,
+with a 10 s timeout on both sockets; calling it inline blocks `sendall`
+forever. The server is unaffected (`ThreadingHTTPServer` gives each
+connection a thread).
 
 The `@critical` suite has a 55 s global budget (`playwright.config.js`,
 pinned by `app/tests/test_offline_ci_workflow.py`). The GitHub workflow runs it
-with `npm test -- --global-timeout=0`, bounded by the job's `timeout-minutes`,
-as `test:device-tiers` already is: `ubuntu-latest` has 4 vCPUs and no GPU, so
+with `npm test -- --global-timeout=0`, bounded by the job's `timeout-minutes`
+(as `test:device-tiers` is): `ubuntu-latest` has 4 vCPUs and no GPU, so
 Chromium draws with SwiftShader at 120–250 ms a frame and the six tests take
-two to three minutes. The 55 s cap failed every run of
-`.github/workflows/world-browser-e2e.yml` before a test could report
-(22 Oct 2026).
+two to three minutes, well past 55 s.
 
 On a software renderer the browser specs gate on frames, not milliseconds:
 
 - The input-response test keeps its 100 ms budget on hardware; under
   SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
   doubled for SwiftShader's frame-to-frame jitter) and drops its first two
-  camera drags, one in each direction. Each carries about 500–700 ms of
-  one-time work for the part of the town it brings into view (816 ms against
-  ~130 ms for the next four on the mobile viewport). Dropping only the first
-  drag failed the GitHub runs of 25 Oct 2026: the first drag the other way
-  measured 615–1123 ms against a twelve-frame budget of 600–1000 ms, and the
-  three after it stayed under five frames.
+  camera drags, one in each direction, because each carries about 500–700 ms
+  of one-time work for the part of the town it brings into view (later drags
+  stay under five frames).
 - `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
   a hardware run; under SwiftShader it asks that the world keeps presenting
   (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
@@ -215,8 +210,8 @@ writes `world_deploy_status` for the "ForkMesh is deploying now" notice
 - Elements get only `THREE`, validated params and an allowlisted
   same-origin `net()`; they have no other I/O.
 - Chat content is encrypted by the chat client; the Office uses the same
-  channel authorization as `/chat` (`www/docs/security/sealed-chat.md`).
-- The local speech bridge: `www/docs/security/world-local-speech-bridge.md`.
+  channel authorization as `/chat` ([sealed chat](../../www/docs/security/sealed-chat.md)).
+- The local speech bridge: [world-local-speech-bridge.md](../../www/docs/security/world-local-speech-bridge.md).
 - Optional elements that read data (for example the status board, which
   reads `/api/status/world`) declare the endpoint in their manifest and
   disclose it before purchase.
@@ -326,9 +321,8 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   district the camera turns to is drawn in its first on-screen frame.
   When a territory visit moves the Office and the beach next door,
   `moveCompactDistrictsWithin()` moves their residency centres with them and
-  re-measures their bounds. Until 2026-10-22 they were judged where they used
-  to stand, so on phone tiers (and any desktop the ladder put there) the moved
-  Office and beach blanked out while in view and stayed resident out of view.
+  re-measures their bounds; otherwise the moved Office and beach would blank
+  out while in view.
 - **Office aquarium on demand.** The lobby reef is built in idle slices when
   the camera comes within the Office detail distance, warmed off-scene, then
   attached; it is released after `OFFICE_AQUARIUM_RELEASE_MS` (15 s) beyond
@@ -390,10 +384,10 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   runs per frame after load.
 - **Crash guard and scene stats.** The crash-guard beat runs for every
   visitor and re-reads the diagnostics at most every 4 s, including the scene
-  stats, whose walk runs in idle slices. The heaviest three World
-  elements (once a minute) are counted inside the same sliced walk; they used
-  to come from one synchronous `listWorldElements()` call that blocked an
-  idle callback for up to half a second on slower machines.
+  stats, whose walk runs in idle slices. The heaviest three World elements
+  (once a minute) are counted inside the same sliced walk, not by a
+  synchronous `listWorldElements()` call, which blocked for up to half a
+  second on slow machines.
 - **Visibility.** Shown to admin tickets and to anyone with Settings → Debug
   → "Show debug panel"; otherwise recorded but hidden. The panel is
   draggable, can collapse to a pill, and "Copy log" copies the summary,
@@ -405,9 +399,7 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   copy paths (the drawer's Copy button and the boot log's report provider)
   go through `perfCopyReport()`, which samples a fresh profile window and
   re-runs the audit on it, so the findings and the Frame budget table
-  describe the same frames. The button used to print the newest window
-  beside findings from the last periodic audit, so one report could show
-  two different `renderer.render` costs.
+  describe the same frames.
 - **Render stall monitor** (`scene/render-stalls.js`): splits frames over
   50 ms into program compiles, texture uploads, shadow and reflection draws,
   and scene update parts (matrix walk, animation, labels, camera). Long
@@ -417,8 +409,8 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
 ## Traps
 
 - Editing `world/worker.js` changes nothing live; change `caddy_routes.py` or
-  `world_health.py` too. `world/deploy.sh` runs a legacy wrangler deploy and
-  does not deploy World to the core nodes.
+  `world_health.py` too. `world/deploy.sh` is a legacy Workers deploy and does
+  not deploy World to the core nodes; World ships with the app release.
 - World migrations are numbered in `app/migrations/` and stay there; they run
   on rqlite.
 - `vertexColors: true` needs a `color` attribute, or the mesh draws black.
@@ -458,11 +450,9 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   `transform` or `backdrop-filter` on an ancestor of the phone HUD's fixed
   avatar badge. An element given `display` in the component layer needs a
   `[hidden] { display: none; }` rule. Avoid `backdrop-filter` over the live
-  canvas. Rules for retired UI go with it: the chat terminal and quick
-  channel strip (now the HUD island's native chat), the avatar action menu
-  (the island toolbar), the `.world-loading-curtain` (inlined in
-  `index.html`) and the HTML aquarium controls (the 3D reef panel) were
-  removed from `world.css` on 2026-10-24; tests check they stay gone.
+  canvas. Rules for retired UI leave with it; tests check that the chat
+  terminal, quick channel strip, avatar action menu, `.world-loading-curtain`
+  and HTML aquarium controls stay out of `world.css`.
 
 ## User interface
 
@@ -524,10 +514,9 @@ above the software keyboard (`--world-chat-covered-bottom`).
   open downwards. At 600px and below the island is full width, so the grip is
   hidden and the saved offset is ignored.
 - **Feed fit:** the island's feed rules carry `.world-hud-island` so they beat
-  the roomier `.world-native-chat` message rules (32px avatars, 8px padding)
-  that used to clip a single message out of the two-line collapsed view. Each
-  row is 24px (20px avatar, 20px line), so the 48px collapsed feed shows
-  exactly the last two messages.
+  the roomier `.world-native-chat` rules (32px avatars), which would clip the
+  two-line view. Each row is 24px (20px avatar, 20px line), so the 48px
+  collapsed feed shows exactly the last two messages.
 
 ### HUD rails
 
@@ -667,9 +656,8 @@ flat side facing the town path.
 
 Leaderboard Island's boards stand on one ring
 (`scene/districts/billboard-circles.js`, sized by `BILLBOARD_RING` in
-`scene/layout.js`). It replaced three separate circles (hub, social,
-leaderboards), which read as three plazas and fetched everything on a circle
-as soon as you walked onto it.
+`scene/layout.js`), so the boards read as one plaza and each fetches only
+when approached.
 
 - **Layout.** Boards are grouped by section (`sections`: hub, social,
   leaderboards; a placement's `circle` option names the section, so existing
@@ -766,10 +754,10 @@ them without changing page.
   the World position (`neighbourHexLandAt`, and nothing is saved while the
   page stands in a hexagon), and a position saved there before is replaced
   by the fresh arrival at the campfire (`leaveRestoredNeighbourHex`), so
-  opening the World lands in it, at the last spot walked in it. The page used to
-  load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
-  the whole World on every crossing; `worldMeshCrossingURL()` still builds
-  that URL for a neighbour's own page. Arriving from such a page,
+  opening the World lands in it, at the last spot walked in it. Crossing never
+  reloads the page; `worldMeshCrossingURL()` still builds
+  `<world>/world/?from=forkmesh&slot=n&pos=x,z` for a neighbour's own page.
+  Arriving from such a page,
   `?from=<host>&slot=n&pos=x,z` from a listed hexagon places the walker just
   outside the edge they crossed, facing away from the petal with the
   third-person camera behind them, and the parameters are removed.
@@ -800,9 +788,8 @@ them without changing page.
   and it casts no shadow. Each bug keeps a hidden `Sprite` with
   `raycastProxy`, which carries the `neighbour-bug` pick. Unpicked meshes
   (glass panes, frames, windows, lamps, trees) are then merged by material
-  (`mergeMeshesByMaterial` with `skip` for anything interactive). Before this a
-  32-bug scene cost 64 draws, 43 of them transparent; now it costs 19, 5
-  transparent. The hex layer is the `instance-hexes` World element
+  (`mergeMeshesByMaterial` with `skip` for anything interactive), so a 32-bug
+  scene costs 19 draws (5 transparent) instead of 64. The hex layer is the `instance-hexes` World element
   ("Neighbour hexagons"), so the profiler names its draws.
 - **Bug icons through home.** An instance's raw-file route sends no CORS
   header, so a cross-origin icon cannot be drawn into a WebGL texture and
@@ -843,8 +830,8 @@ them without changing page.
   single hexagon, every neighbour is drawn as a single hexagon too
   (`updateInstanceHexes`): from an instance on hub slot 0 (petal 1) the hub
   is one hexagon on the instance's petal 4, mirroring how the hub draws the
-  instance. Drawing the hub as a whole flower there laid its sand petals over
-  the instance's own town.
+  instance (a whole flower there would lay its sand petals over the
+  instance's own town).
 - **Ownership.** `worldMeshOwnerAt()` decides whose ground the player stands
   on. The home hexes win the shared road strip; past it, the neighbour's
   flower owns the point. The page decides with a margin of 8
@@ -876,17 +863,11 @@ them without changing page.
   keep going to the home socket converted back to home's frame
   (`homeFrameMovement()`), while the visit link keeps the latest move to send
   on open. The watch link's residents stay drawn until the visit's own
-  welcome replaces them. Before 2026-10-22 the switch happened as soon as the
-  walker crossed, so for the seconds a visa and socket took (or for good, if
-  the neighbour refused the socket) the walker was drawn in neither World.
-- **Standing in an instance's hexagon.** Until 2026-10-21 stepping onto
-  OWASP BLT only drew its published scene, a stand-in with a plaza, a sign,
-  a house and a terrarium, and the rest of BLT's World (its members,
-  repositories, padlocks and shield, benches, trees, its residents as
-  residents) was not there. That evening the page briefly switched into BLT
-  as if it were a flower, and a walker stood in ForkMesh's town filled with
-  BLT's members. Now the page enters an instance's World as that World draws
-  itself (`docs/INSTANCES.md`, An instance World is its own hexagon):
+  welcome replaces them, so the walker is never drawn in neither World while
+  a visa and socket are pending or refused.
+- **Standing in an instance's hexagon.** The page enters an instance's World
+  as that World draws itself, not as a flower and not as its published scene
+  alone ([INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)):
   - As soon as the hexagon is placed, the page reads the instance's
     `/api/instance` (`neighbourInstance()`: CORS, no credentials, no
     redirects, 6 seconds; the federation client's path list stays as it is)
@@ -923,16 +904,13 @@ them without changing page.
     loaded, an idle callback calls `prepareTerritoryVisit()`, which builds it
     and adds it to the World hidden (`userData.groundStandby`), so the GPU
     warm-up compiles its materials and uploads its plates in idle time and the
-    crossing frame only shows it. Building, compiling and uploading it on the
-    crossing frame cost a half-second stall. A standby hexagon is skipped by
+    crossing frame only shows it (building it then cost a half-second stall).
+    A standby hexagon is skipped by
     the ground-height walk, has no clicks, and its terrarium bugs only move
     while it is shown in the scene.
 - **Standing in another World.** A flower neighbour runs the same town, so
   its real town is this page's town with that World's data. Single-hexagon
-  neighbours are entered as their own hexagon (see above). Before,
-  stepping onto a neighbour kept the page in the home World, and the
-  neighbour stayed a placeholder: a meadow with a logo, or its published
-  scene, with nobody but passers-by from the watch socket. Now
+  neighbours are entered as their own hexagon (see above).
   `enterMeshWorld()` (`world.js`) moves the page into the flower whose ground
   the walker steps onto:
   - The scene recentres on it. `shiftPlayer(dx, dz)` (`scene/runtime/camera.js`)
@@ -982,8 +960,8 @@ them without changing page.
   face image, no wallet and no admin rights.
 - **Limits.** The page shows at most 32 peers per neighbouring world. Flight
   and rides keep `WORLD_RADIUS`, so travel is on foot. Peer coordinates on the
-  home socket are clamped to ±1900 (they were ±512, which also clamped people
-  walking the desert ring). Federated relay portals in the fediverse district
+  home socket are clamped to ±1900, so people walking the desert ring are not
+  clamped. Federated relay portals in the fediverse district
   are a separate list and still open a tab.
 
 ## Activities
@@ -1049,5 +1027,8 @@ them without changing page.
   [docs/deploy/auto-deploy.md](../deploy/auto-deploy.md),
   [docs/PLAN.md](../PLAN.md), [docs/OPERATIONS.md](../OPERATIONS.md)
 - [world/README.md](../../world/README.md),
-  `world/public/world/elements/README.md`
-- `www/docs/world-community-services.md`
+  [elements/README.md](../../world/public/world/elements/README.md)
+- [World community services](../../www/docs/world-community-services.md)
+- Security: [sealed chat](../../www/docs/security/sealed-chat.md),
+  [local speech bridge](../../www/docs/security/world-local-speech-bridge.md),
+  [threat model](../../www/docs/protocol/threat-model.md)

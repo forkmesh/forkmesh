@@ -4,6 +4,8 @@ A periodic review of every third-party component the repository resolves, in
 every ecosystem: publisher, maintenance history, known advisories and a score.
 The filterable report is at
 **[the dependency audit report](/docs/dependency-audit/)**.
+Signed releases are covered on
+[Encryption and signatures](../encryption.md#software-distribution).
 
 ## Method
 

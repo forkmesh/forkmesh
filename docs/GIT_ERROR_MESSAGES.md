@@ -1,8 +1,9 @@
 # Git error messages
 
 What someone running stock `git` over HTTPS, or the desktop app, sees when a
-clone, pull or push fails. The public page is `www/docs/git-errors.md`
-(`https://forkmesh.com/docs/git-errors/`).
+clone, pull or push fails. The public page is
+[www/docs/git-errors.md](../www/docs/git-errors.md)
+(`https://forkmesh.com/docs/git-errors/`). Developer index: [README.md](README.md).
 
 ## Why plain text
 

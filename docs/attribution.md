@@ -3,7 +3,7 @@
 How UTM parameters are captured, how later actions are attributed to the
 channel that brought a visitor, and how it is reported. Correctness matters
 more than breadth: an undercounted metric is recoverable, a silently wrong one
-is not.
+is not. Developer index: [README.md](README.md).
 
 Code: `app/src/attribution.py` (capture, storage, bot rules, reporting),
 `www/worker.js` (`captureAttribution`, the marketing-origin relay),

@@ -1,6 +1,6 @@
 # GIFs and stickers in comments
 
-Every record composer on a repository page (issue, pull request and
+Part of [the App docs](README.md). Every record composer on a repository page (issue, pull request and
 discussion comments and replies, reviews, edits: any textarea marked
 `data-mention-input="record"`) has a **Sticker** button and, when the instance
 has a GIPHY key, a **GIF** button. Both open one picker (a popover, a bottom
@@ -9,7 +9,7 @@ sheet under 640 px) that inserts Markdown at the caret:
 - a GIF as `![title](https://media.giphy.com/media/<id>/200.gif)`;
 - a sticker as `![label](<same-origin image>#w=96)`: the built-in Thank you
   sticker and the custom reactions usable on the repository
-  (`docs/app/comment-reactions.md`).
+  ([comment-reactions.md](comment-reactions.md)).
 
 The reaction picker also has **Reply with a GIF**: picking one posts a reply
 to the record (mentioning the comment's author) in one click. A draft already
@@ -31,7 +31,7 @@ GIFs), stored in `instance_settings` under `giphy` and sealed with
 Results keep only each GIF's id, title and preview size; every address is
 rebuilt from the id on `media.giphy.com`, so a picked GIF can only point at
 GIPHY's media host whatever the upstream answer says. Answers are remembered
-per isolate (trending 5 minutes, searches 10) and a search costs the account
+per app process (trending 5 minutes, searches 10) and a search costs the account
 one of 30 a minute (`comment_extras_rate`). With no key, `enabled` is false,
 the GIF buttons stay hidden and searches answer 404. The picker shows
 "Powered by GIPHY", as GIPHY's terms ask.

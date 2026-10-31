@@ -1,7 +1,9 @@
 # Plan trials and self-serve usage meters
 
 Users can start a trial, see usage, pay, change plan, and cancel without
-support intervention.
+support intervention. The pricing contract is the
+[business model](../business-model.md); the rollout runbook is
+[business-model rollout](business-model-rollout.md).
 
 ## Endpoints
 

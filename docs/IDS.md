@@ -10,7 +10,10 @@ them, and re-hashes everything every 6 hours.
 On an intrusion it **locks the node down**: the vault key leaves memory, the
 node is quarantined in rqlite, the firewall closes and services stop. It also
 pages the admins, and mails them itself (see *Direct mail*). Only the
-operator can end a lockdown (`tools/next_ids.py release`).
+operator can end a lockdown (`tools/next_ids.py release`). Fleet runbook:
+[OPERATIONS.md](OPERATIONS.md); public threat model:
+[threat-model](../www/docs/protocol/threat-model.md); developer index:
+[README.md](README.md).
 
 ## Threat model
 
@@ -72,8 +75,8 @@ checks; a live process with no unit still alerts.
 starts a service: between dropping to the service user and `execve`, the
 process runs `/usr/lib/systemd/systemd-executor` under the unit's cgroup with
 a name like `(caddy)`. Only that path, a parenthesised name and the user's own
-unit are skipped (n3, 2026-10-16, a Caddy restart); the executor anywhere
-else, or under another name, still alerts.
+unit are skipped (a Caddy restart tripped it); the executor anywhere else, or
+under another name, still alerts.
 
 ### Process context and verdict
 
@@ -117,12 +120,9 @@ environment, then the farthest parents) so the stored detail stays valid JSON
 under the 4000-character column cap. The Ping and email show the verdict
 under the summary and list each parent, child and connection on its own line.
 
-Why: the n5 alert of 2026-10-27 16:36:22 UTC (`elOxTOhzoyw9CziQ`, dash under
-`forkmesh-mirror-node.service`) recorded only pid, exe, name, unit and user.
-The process was gone before anyone looked, so its origin could not be
-established. The two pushes in that window landed at 16:36:45 and 16:37:01,
-after the alert, so the `post-receive` hook did not start it. A deploy of
-`b15f7e1c3b3e` was restarting `forkmesh-app` on n5 at the time.
+Why: an alert that records only pid, exe, name, unit and user cannot be
+explained once the process has exited, which happened with a dash under
+`forkmesh-mirror-node.service` on n5.
 
 ## Lockdown on a core
 
@@ -180,7 +180,7 @@ verification, password and account mail. Set the limit to the provider's real
 daily limit.
 
 From the IDS process itself, so an alert gets out when every app is sealed
-or down: direct mail (`[ids] direct_mail`, on since 2026-10-28) and an
+or down: direct mail (`[ids] direct_mail`, on in the ForkMesh fleet, off in `fleet.example.toml`) and an
 optional signed webhook (`[ids] webhook_url`, header
 `x-fmnext-ids-signature: v1:<ms>:<hex>`).
 
@@ -190,15 +190,13 @@ Lockdown and `test` incidents, and any incident the IDS could not record
 (rqlite down), are mailed by the IDS to `[ids] mail_to`
 (`security@forkmesh.com`) from `mail_from` (empty: `founders@forkmesh.com`,
 `smtp_mail.SENDER`), envelope sender `no-reply@forkmesh.com`, as the app's
-mail. Before 2026-10-28 it was off: it needed a Mailtrap token and a
-recipient as two extra secrets that were never set, so a lockdown that
-sealed every app (or all apps down) left only the journal and the
-`security_incidents` row, and nobody was told.
+mail. Without it, a lockdown that sealed every app leaves only the journal
+and the `security_incidents` row, and nobody is told.
 
 - **Normally** it submits over SMTP to the node's own Postfix on
   `127.0.0.1:25`, so the same route as every other server mail applies:
   OpenDKIM signing, the n4 relay for n3 and n5, and the Mailtrap fallback
-  relay when that route fails (docs/MAIL_LOG.md, "Sending from the cores").
+  relay when that route fails ([MAIL_LOG.md](MAIL_LOG.md#sending-from-the-cores)).
   Only a loopback address is accepted.
 - **In a lockdown** the IDS firewall lets only root send off the node, so
   Postfix (user `postfix`) could queue the alert but not deliver it, and the
@@ -235,10 +233,9 @@ Each run deletes at most 2000 rows, oldest first, so one cron tick stays
 cheap; a backlog clears over several ticks. A failure is logged and does not
 stop the rest of the cleanup.
 
-Why: the 2026-10-16 table audit found `security_incidents` at 6.5 MiB and 21k
-rows with no retention at all on 1 GB nodes. Ids are random, so `INSERT OR
-IGNORE` never dedupes, and the IDS dedupe (`DEDUPE_SECONDS`) is per process
-only.
+Why: without retention the table grew to 6.5 MiB and 21k rows on 1 GB
+nodes. Ids are random, so `INSERT OR IGNORE` never dedupes, and the IDS
+dedupe (`DEDUPE_SECONDS`) is per process only.
 
 ## Admin console
 

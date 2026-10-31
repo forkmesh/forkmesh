@@ -1,6 +1,8 @@
 # Node backup, recovery, and key moves
 
-`forkmesh-mirror-node` backs up, restores, and checks the node it runs:
+[`forkmesh-mirror-node`](mirror-node.md) backs up, restores, and checks the node
+it runs ([self-hosting](../self-hosting.md); community-wide recovery is the
+[disaster recovery guide](../disaster-recovery/README.md)):
 
 | Command | What it does |
 | --- | --- |

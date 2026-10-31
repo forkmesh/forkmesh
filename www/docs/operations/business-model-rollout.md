@@ -1,7 +1,8 @@
 # Business-model rollout and recovery
 
-This runbook publishes the free-protocol / paid-services boundary without
-giving the hosted operator control over protocol participation.
+This runbook publishes the free-protocol / paid-services boundary of the
+[business model](../business-model.md) without giving the hosted operator
+control over protocol participation.
 
 ## Owners and release gate
 

@@ -2,7 +2,9 @@
 
 Organization owners can queue Claude Code and Codex work for the desktop linked
 to an organization repository while that desktop is offline. The queue is
-durable and has no admission-count limit; list responses are bounded.
+durable and has no admission-count limit; list responses are bounded. Online
+nodes take website jobs as described in
+[mirror node](mirror-node.md#running-website-agent-jobs).
 
 ## Admission
 

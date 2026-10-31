@@ -3,8 +3,8 @@
 This page compares the ForkMesh desktop's Agents workspace with the Claude
 desktop app's **Code** tab ("Claude Code desktop"). It lists what Claude Code
 desktop has, what ForkMesh already does, and what is still missing. Source:
-the Claude Code desktop documentation (code.claude.com/docs/en/desktop), read
-on 2026-10-25, and a survey of `desktop/src` and `docs/` the same day.
+the Claude Code desktop documentation (code.claude.com/docs/en/desktop) as of
+2026-10-25. Part of [the desktop docs](README.md).
 
 ForkMesh runs the real Claude Code CLI (and Codex) in per-session Git
 worktrees, so most of the agent itself is shared. The gaps are in the
@@ -12,38 +12,38 @@ workspace around it. Claude Code agents also show up in the Claude app itself
 ([../agents/claude-desktop-sessions.md](../agents/claude-desktop-sessions.md)).
 
 Status: **Yes** = ForkMesh has it, **Partly** = something similar or part of
-it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
+it, **No** = missing.
 
 ## Sessions and layout
 
 | Claude Code desktop | ForkMesh | Status |
 | --- | --- | --- |
 | Session sidebar, new session (Ctrl+N), search, group and sort | Workspace session list with cards, search, Sort, folders, group by repository ([agents-ui.md](agents-ui.md#workspace-layout-in-the-new-interface)) | Yes |
-| Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+Shift+] / [ to move between sessions | The same keys move the selection in the session list *(2026-10-25)* | Yes |
+| Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+Shift+] / [ to move between sessions | The same keys move the selection in the session list | Yes |
 | Rename by clicking the title | Rename from the context menu | Partly |
 | Archive, Archived tab, unarchive, auto-archive after a PR merges | Delete with a recycle bin, "Delete merged" | Partly |
 | Split view of two sessions, open a session in a new window | Only the composer can be torn off into its own window | No |
-| Panes that can be dragged, popped out and docked back | One side panel with Diff, Terminal, Browser and Details tabs; the Details cards can be dragged into any order *(2026-10-27)* | Partly |
+| Panes that can be dragged, popped out and docked back | One side panel with Diff, Terminal, Browser and Details tabs; the Details cards can be dragged into any order | Partly |
 | OS notification when a session finishes in the background | `notifyAgentDone` through `notifyIfInactive` | Yes |
 | Side chat (`/btw`, Ctrl+;): a question with the session's context that is kept out of the thread | | No |
 | Background tasks pane (subagents, background shells, Stop) | A strip for subagents and background shells with Stop | Partly |
-| Plan pane and tasks pane | The plan arrives as an approval card; the Progress card in the side panels lists the to-do steps *(2026-10-27)* | Partly |
+| Plan pane and tasks pane | The plan arrives as an approval card; the Progress card in the side panels lists the to-do steps | Partly |
 | View modes Normal / Thinking / Verbose (Ctrl+O) | Transcript and Raw views; thinking is a model switch | Partly |
 | Context usage card, `/compact` | Context bar in the Sessions details panel; `/compact` passes through to the CLI | Partly |
-| Keyboard shortcut sheet (Ctrl+/) | Ctrl+/ and "Keyboard shortcuts…" in the session list menu *(2026-10-25)* | Yes |
+| Keyboard shortcut sheet (Ctrl+/) | Ctrl+/ and "Keyboard shortcuts…" in the session list menu | Yes |
 
 ## Composer
 
 | Claude Code desktop | ForkMesh | Status |
 | --- | --- | --- |
 | Permission modes Manual / Accept edits / Plan / Auto / Bypass | Ask / Edit / Plan / Auto (Auto = bypass); a live run switches mode at once | Yes |
-| Shift+Tab cycles the permission mode | Shift+Tab in the prompt picks the next mode *(2026-10-25)* | Yes |
+| Shift+Tab cycles the permission mode | Shift+Tab in the prompt picks the next mode | Yes |
 | Mode remembered per folder | One global mode (`agents/cliPermissionMode`) | Partly |
-| Ctrl+Shift+M / I / E open the mode, model and effort menus | The same keys open the composer's pickers *(2026-10-25)* | Yes |
+| Ctrl+Shift+M / I / E open the mode, model and effort menus | The same keys open the composer's pickers | Yes |
 | Model and effort pickers, changeable mid-session | Model and Speed pickers; a change applies from the next turn | Yes |
-| Typing `/` lists commands and skills | The "/" menu also opens when `/` is the first key in an empty prompt *(2026-10-25)* | Yes |
+| Typing `/` lists commands and skills | The "/" menu also opens when `/` is the first key in an empty prompt | Yes |
 | `@` file completion while typing | "Mention file from this project…" opens a file dialog; `@` completes people | Partly |
-| Attach files, drag and drop into the prompt | Paperclip, paste an image; dropping files attaches images and videos and mentions anything else *(2026-10-25)* | Yes |
+| Attach files, drag and drop into the prompt | Paperclip, paste an image; dropping files attaches images and videos and mentions anything else | Yes |
 | Typing while the agent runs queues the message; Esc stops | Follow-ups steer the live run; Stop button | Partly |
 | Prompt suggestions as ghost text (Tab accepts) | Suggestion chips on Home only | No |
 
@@ -51,7 +51,7 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 
 | Claude Code desktop | ForkMesh | Status |
 | --- | --- | --- |
-| Changes card with `+N −M`, diff pane (Ctrl+Shift+D) | Changed-files card, Diff tab; Ctrl+Shift+D toggles it *(2026-10-25)* | Yes |
+| Changes card with `+N −M`, diff pane (Ctrl+Shift+D) | Changed-files card, Diff tab; Ctrl+Shift+D toggles it | Yes |
 | Click a diff line to comment, send all comments to the agent | Line comments exist on pull request diffs, not in the session's Diff tab | Partly |
 | `/code-review` card: walk through findings, Fix this one, Apply fixes | "AI review" on a pull request: findings as threads, "Apply fix & commit", "Fix all" | Partly |
 | PR status and CI checks in the Changes card, Auto-fix, Merge when ready | Create PR, Merge & clean up, Vibe auto-merge; fixing a failed run is a manual send | Partly |
@@ -60,13 +60,13 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 
 | Claude Code desktop | ForkMesh | Status |
 | --- | --- | --- |
-| Terminal pane in the session's folder (Ctrl+\`), several tabs | Terminal tab in the worktree; Ctrl+\` toggles it *(2026-10-25)*; the side rail has up to 12 terminal tabs | Yes |
-| Close the focused pane (Ctrl+\\) | Ctrl+\\ closes the side panel *(2026-10-25)* | Yes |
-| Browser pane (Ctrl+Shift+B) the agent can drive | Browser tab; Ctrl+Shift+B toggles it *(2026-10-25)*; agents drive their own browser windows | Yes |
+| Terminal pane in the session's folder (Ctrl+\`), several tabs | Terminal tab in the worktree; Ctrl+\` toggles it; the side rail has up to 12 terminal tabs | Yes |
+| Close the focused pane (Ctrl+\\) | Ctrl+\\ closes the side panel | Yes |
+| Browser pane (Ctrl+Shift+B) the agent can drive | Browser tab; Ctrl+Shift+B toggles it; agents drive their own browser windows | Yes |
 | `.claude/launch.json` dev servers, Dev servers menu, auto-verify | | No |
 | File pane: edit, autosave, conflict handling | Files page editor (Ctrl+S) | Partly |
 | Right-click a path: attach, open in editor, show in file manager, copy path | | No |
-| Open the session in VS Code / Cursor / Zed or the file manager | Session menu > **Open in**: editors found on PATH and the file manager; **Copy folder path**, **Copy branch name** *(2026-10-25)* | Yes |
+| Open the session in VS Code / Cursor / Zed or the file manager | Session menu > **Open in**: editors found on PATH and the file manager; **Copy folder path**, **Copy branch name** | Yes |
 
 ## Worktrees and environments
 
@@ -74,7 +74,7 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 | --- | --- | --- |
 | Worktree per session, toggle in the composer | Branch toggle, worktree under `<repo>/.worktrees/` | Yes |
 | Worktree location and branch prefix settings | Fixed location and `<id>-<slug>` names | Partly |
-| `.worktreeinclude` copies gitignored files (such as `.env`) into new worktrees | Same file and rule *(2026-10-25)*, see below | Yes |
+| `.worktreeinclude` copies gitignored files (such as `.env`) into new worktrees | Same file and rule, see below | Yes |
 | Local / Cloud / SSH / WSL environments, saved environments, env vars | Local or Cloud (account agent nodes, mirrors, runners); no SSH sessions | Partly |
 | Continue a local session in the cloud | Cloud runs move to the desktop, not the other way | Partly |
 | Remote Control from the phone | iOS and Android list, start, steer and stop desktop agents | Yes |
@@ -83,7 +83,7 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 | Connectors, skills and plugins manager | ForkMesh MCP config per run, skills on special agents | Partly |
 | Computer use | Agents drive their own browser windows only | No |
 
-## What was added on 2026-10-25
+## How the parity features work
 
 **Workspace shortcuts.** `src/WorkspaceShortcuts.h` holds the table; the
 workspace (`NextAccess::installWorkspace`) makes a window-wide `QShortcut` for
@@ -117,11 +117,10 @@ files (`src/PromptDrop.h`). Images (`png jpg jpeg gif webp bmp`) and videos
 are queued as attachments (`queueQuickAddImage`); any other file or folder is
 inserted at the drop point as an `@` mention, relative to the first of the
 selected session's worktree, the workspace's repository and the Issues
-repository that holds it (absolute otherwise), folders with a trailing `/`, quoted when the path has a
-space. Drops of text or web links keep the editor's default behaviour.
-`MainWindow::eventFilter` returns early for event types it does not list,
-so `DragEnter`, `DragMove` and `Drop` were added to that list; without them
-the prompt's handler never saw a drop.
+repository that holds it (absolute otherwise), folders with a trailing `/`,
+quoted when the path has a space. Drops of text or web links keep the editor's default behaviour.
+`MainWindow::eventFilter` returns early for event types it does not list, so
+`DragEnter`, `DragMove` and `Drop` must stay in that list.
 
 **Open in.** The session **…** menu has **Open in** with VS Code, VSCodium,
 Cursor, Zed and Windsurf when their command (`code`, `codium`/`vscodium`,

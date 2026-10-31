@@ -1,6 +1,6 @@
 # #general, #random and #welcome are server channels
 
-Part of the [app docs](../README.md). Code: `app/src/chat_channels_api.py`
+Home page: [README.md](README.md). Code: `app/src/chat_channels_api.py`
 (`EVERYONE_*`, `ensure_everyone_channels`, `post_welcome`), `app/src/entry.py`
 (`_ChatChannelsRuntime.ensure_schema`, `everyone_members`,
 `everyone_member_count`, the signup hook). Tests:
@@ -31,5 +31,6 @@ Every member belongs to three fixed public channels. The shared relay room
 - **Genie spider welcomes.** The web chat's Welcome button in `#welcome`
   posts an animated genie spider: [chat-genie-welcome.md](chat-genie-welcome.md).
 
-Clients: [chat-private-rooms.md](chat-private-rooms.md) (web),
-`native/ios/docs/FMChat.md` (iPhone), [docs/desktop/README.md](../desktop/README.md).
+Clients: [chat-private-rooms.md](chat-private-rooms.md#everyone-channels-on-web-chat)
+(web), `native/ios/docs/FMChat.md` (iPhone),
+[../desktop/README.md](../desktop/README.md).

@@ -1,13 +1,15 @@
 # Repository access on the web
 
-Settings > **Access** (owner only, `renderRepoAccessSettings`) covers who can
-read a repository without the desktop app.
+Part of [the App docs](README.md). Settings > **Access** (owner only,
+`renderRepoAccessSettings`) covers who can read a repository without the
+desktop app. How private repositories are sealed is in
+[encryption](../../www/docs/encryption.md).
 
 ## Collaborators (private repositories)
 
 `/api/repo/<owner>/<repo>/shares` (`shares_handler`) lists, adds and removes
 collaborators. Besides the owner node's signature (`forkmesh-share-v1`, used
-by the desktop), it now accepts the owner's own account session: the account
+by the desktop), it accepts the owner's own account session: the account
 that is, or owns, the repository's node (`_shares_session_owner`). A
 collaborator reads the repository and takes part in its issues, pull requests
 and discussions ([web-discussions.md](web-discussions.md#who-may-do-what)).

@@ -6,8 +6,9 @@ the same workflow. New to ForkMesh? Start with
 [Getting started](www/docs/getting-started.md); desktop dependencies, logs and
 troubleshooting are in the [Qt client guide](www/docs/qt-client.md). The
 developer documentation for each subsystem starts at
-[docs/README.md](docs/README.md); the served stack is described in
-[docs/PLAN.md](docs/PLAN.md).
+[docs/README.md](docs/README.md); how the pieces fit is in
+[Architecture and availability](www/docs/architecture.md), and the served stack
+in [docs/PLAN.md](docs/PLAN.md).
 
 ## Ways to contribute
 
@@ -21,24 +22,8 @@ developer documentation for each subsystem starts at
 
 ## Repository layout
 
-```text
-desktop/      Qt 6 desktop node
-app/          Product UI, Python API, Git and realtime room code; app/host/ runs it on CPython
-www/          Marketing, docs and blog site
-world/        World code and media
-server/       Go daemon: mirror, core and runner roles
-deploy/       Fleet file, node renderer, certsync, IDS, systemd units
-native/       Native iOS and watchOS (Swift) and Android (Kotlin) apps
-marketplace/  Package catalog and packages
-conformance/  Versioned contracts, vectors and shared fixtures
-tools/        Release, fleet, ledger and agent helpers
-office/       Office (2D) code and media
-changelog/    The one changelog: forkmesh.com/changelog and the apps' What's new
-examples/     Example third-party apps (see docs/APPS.md)
-docs/         Developer documentation, one home page per subsystem
-.github/      Forge compatibility: PR template and the GitHub mirror's CI
-.forkmesh/    Signed in-repo data: issues, discussions, releases, workflows
-```
+The top-level folders are listed in the [README](README.md#repository-layout);
+each subsystem's developer page is in [docs/README.md](docs/README.md).
 
 ## Prepare a working copy
 
@@ -57,9 +42,8 @@ The workflow is fork, branch, commit, signed pull request:
    ```
 
 Use a prefix such as `fix/`, `feat/`, `docs/` or `test/`. Never develop on
-`main`, and keep unrelated cleanup out of the branch. Branches can also be
-created in **Code → Branches → New branch**; Git and the desktop UI share the
-same working copy.
+`main`, and keep unrelated cleanup out of the branch. **Code → Branches → New
+branch** in the desktop does the same on the same working copy.
 
 ## Building and testing
 
@@ -144,9 +128,7 @@ In the desktop client, open your fork, choose **Pulls → New pull request**, se
 **Target node** to `forkmesh`, **Base** to `main` and **Head** to your branch,
 then submit. The signed patch series is queued in the owner's inbox even while
 that node is offline. Base and head must differ and the branch must contain a
-committed diff. See the
-[Qt client PR guide](www/docs/qt-client.md#create-a-pull-request) for other
-cases. MCP-capable agents can use `open_pr_from_branch`, which creates the same
+committed diff ([Qt client PR guide](www/docs/qt-client.md#create-a-pull-request)). MCP-capable agents can use `open_pr_from_branch`, which creates the same
 signed record and grants no review bypass.
 
 A pull request is a signed record that carries the patch and the commits, not

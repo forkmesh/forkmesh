@@ -3,6 +3,7 @@
 This register is the evidence gate for the managed-services plan in
 `www/public/business-model.json`. It contains no customer research as of
 2026-08-20.
+The plans themselves are on the [business model](../business-model.md) page.
 
 ## Current decision
 

@@ -2,7 +2,9 @@
 
 ForkMesh's network services are split into eight roles. This page lists which
 roles an independent operator can run, how to start them, what replaces each
-optional dependency, and how to check a running deployment. It matches the
+optional dependency, and how to check a running deployment. The overview is
+[self-hosting](../self-hosting.md); what stays a dependency is in
+[censorship resilience](../censorship-resilience.md). It matches the
 machine-readable manifest
 [`conformance/service-roles/v1/manifest.json`](../../../conformance/service-roles/v1/manifest.json);
 `tools/forkmesh_service_roles.py validate` fails if either names a path, flag,

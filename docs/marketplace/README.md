@@ -2,12 +2,32 @@
 
 The Marketplace is how optional features ship in ForkMesh. Every package lives
 in `marketplace/packages/<id>/` and is listed in `marketplace/catalog.json`.
-The same package can contribute a native page to the desktop app, a page and a
-Worker API to the web app (`app/`), a module to World (`world/`), and a screen
-to the mobile app. Hosts only know generic sockets; no core file names a
+The same package can contribute a native page to the desktop app, a page and
+a server module (the manifest's `worker` block, Python run by the App on the
+core nodes) to the web app (`app/`), a module to World (`world/`), and a screen
+to the phone apps. Hosts only know generic sockets; no core file names a
 package. The user-facing contract (package layout, lifecycle, publishing) is in
 [`marketplace/README.md`](../../marketplace/README.md); this page is the
-developer home for how the pieces fit.
+developer home for how the pieces fit. Developer index:
+[docs/README.md](../README.md).
+
+## Pages in this folder
+
+| Page | Covers |
+| --- | --- |
+| [plugins.md](plugins.md) | Which plugins a build adds to the core (`marketplace/plugins.json`) |
+| [core-plugins.md](core-plugins.md) | Built-in features as account-synced switches |
+| [codebase-analysis.md](codebase-analysis.md) | Shared code-analysis engine; [strata.md](strata.md), [ember.md](ember.md), [synapse.md](synapse.md) |
+| [status-page.md](status-page.md), [app-store-status.md](app-store-status.md) | Status page and its checks; App Store review status |
+| [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md) | Disk cleanup and device security checks |
+| [runners.md](runners.md) | Your agent runners on desktop and phones |
+| [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [secure-drive.md](secure-drive.md) | Router, file explorer and SMB shares, network inspection, encrypted shared drive |
+| [invoices.md](invoices.md), [rss-reader.md](rss-reader.md) | Invoicing; local-only feed reader |
+| [instance-feed.md](instance-feed.md), [mastodon.md](mastodon.md) | Instance Feed; native Mastodon client |
+| [poker.md](poker.md) | Texas Hold'em for virtual chips |
+| [video-mix-dj-studio.md](video-mix-dj-studio.md), [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md) | DJ studio; its iOS performance checks |
+| [face-changer-desktop.md](face-changer-desktop.md) | Face Changer's desktop virtual camera |
+| [eye-control.md](eye-control.md), [tour.md](tour.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md) | Desktop and phone extras |
 
 ## Code map
 
@@ -22,11 +42,11 @@ developer home for how the pieces fit.
 | `marketplace/plugins.json` | The plugins a build adds to the core; see [plugins.md](plugins.md). |
 | `marketplace/tools/generate_desktop_packages.py` | Desktop: turns the listed plugins' `content/desktop/build.json` descriptors into `marketplace.qrc`, one `plugins/<id>.qrc` per module plugin, `packages.cmake` and the build's own `catalog.json`, `packs.json` and `guides.json` under the build dir. Run by `desktop/CMakeLists.txt` at configure time with `FORKMESH_PLUGINS`. |
 | `marketplace/tools/generate_world_packages.py` | World: writes `world/public/world/world-marketplace-packages.js`. |
-| `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their Worker modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
+| `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their server modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
 | `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog, and stages one page per package at `/market/<id>` at build time ([Share links and package pages](#share-links-and-package-pages)). |
 | `www/templates/layouts/market-package.html`, `www/public/market-package.{css,js}` | The package page layout, its styles, and its rating, usage and share script. |
 | `app/src/plugin_data.py`, `app/src/plugin_registry.py` | Organization install/uninstall engine, account install state for `install.sync: "account"` packages (`/api/plugins/@account`, dependencies, declared settings), reminder and account-purge hooks. |
-| `app/src/entry.py` (`_PluginApiRuntime`) | The least-privilege runtime handed to a package's Worker module. |
+| `app/src/entry.py` (`_PluginApiRuntime`) | The least-privilege runtime handed to a package's server module. |
 | `app/src/marketplace_runtime.py`, `app/src/marketplace_governance.py` | `/market` publication review and the public catalog route. |
 | `desktop/src/NativePackageExtension.h` | The desktop socket: `NativePackageHost`, `NativePackageWidget`, `NativePackageRegistration`. |
 | `desktop/src/ForkMeshPackageRegistry.{h,cpp}`, `desktop/src/MainWindowMarket.cpp` | Desktop install state, Market page, rail buttons, package data export/import. |
@@ -143,18 +163,15 @@ and closing the window docks it back (`dockNativePackageWindow`). Geometry is
 kept under `market/windows/<id>/geometry`.
 
 **Plugin page menu.** Every installed plugin page has a ⋯ button at the top
-right on the web, the desktop and both phones. Its menu always holds the same
-three actions, so a user never has to go back to the Market or Apps page to
-manage the plugin they are looking at:
+right on the web, the desktop and both phones, with the same three actions so
+a user can manage a plugin without going back to the Market or Apps page:
 
 - **Rate** opens the package's reviews (`docs/MARKETPLACE_RATINGS.md`).
 - **Send feedback or report a bug** posts to `/api/bug-reports` with
   `package: <id>`. The private report and any attachments are visible only to
-  platform administrators in the Support inbox and in the Bug sheet's
-  Reported tab on the phones (`GET /api/bug-reports/inbox`), and are
-  labelled `plugin`.
-  It does not depend on the `bug-reports` package being
-  installed.
+  platform administrators in the Support inbox and the phones' Bug sheet
+  Reported tab (`GET /api/bug-reports/inbox`), labelled `plugin`. It works
+  without the `bug-reports` package.
 - **Uninstall** uses the surface's normal removal flow, including its
   confirmation and dependents.
 
@@ -172,27 +189,24 @@ user is signed out.
 On the desktop the ⋯ (`packageActionsButton`) sits in the window's top bar,
 just left of the view switcher, and shows only while a native package page
 (or the placeholder of one open in its own window) is the current section
-(`MainWindow::updatePackageActionsButton`). Package pages draw their own
-headers with their own buttons at the right, so a button floated over the page
-would cover them, and wrapping every page in a host header would change what
-the section stack holds. A page in its own window has no top bar, so
-`openNativePackageWindow` adds a slim `nativePackageWindowHeader` row above
-the page for the same button. The menu comes from `buildPackageActionsMenu`:
+(`MainWindow::updatePackageActionsButton`): package pages draw their own
+headers with buttons at the right, which a floating button would cover. A page
+in its own window has no top bar, so `openNativePackageWindow` adds a slim
+`nativePackageWindowHeader` row for the button. The menu comes from `buildPackageActionsMenu`:
 Rate opens `/market-reviews?market=<marketplaceId>&package=<id>` on the
-active host in the browser, because the desktop usually has no account session
-to post a review with. Feedback opens `PackageFeedbackDialog`
+active host in the browser (the desktop usually has no session to post a
+review with). Feedback opens `PackageFeedbackDialog`
 (`desktop/src/PackageFeedback.{h,cpp}`), which posts anonymously, or with the
 session bearer when there is one, with `source: "desktop"`; the payload and
 the reply wording are pure helpers tested in `forkmesh-native-package-tests`.
 Uninstall is `requestPackageRemoval(id, true)`, so it always asks first, and
 it is disabled for `managedExternally` packages as on the rail. The rail's
 right-click menu offers the same Rate and feedback items
-(`addPackageFeedbackActions`), which also covers built-in packages that have
-no native page. The rail menu, the ⋯ menu and a plugin's icon on Home all add
-the same **Uninstall <name>…** item (`addPackageUninstallAction`), so the
-wording and the confirmation match wherever it is removed from.
+(`addPackageFeedbackActions`), covering built-in packages with no native
+page. The rail menu, the ⋯ menu and a plugin's icon on Home share one
+**Uninstall <name>…** item (`addPackageUninstallAction`).
 
-**Worker runtime.** A package module receives `_PluginApiRuntime`
+**Server module runtime.** A package module receives `_PluginApiRuntime`
 (`app/src/entry.py`): `session`, `json_body`, `organization`,
 `plugin_installed`, `notify`, `new_secret`, `seal_with` / `open_with`,
 `outbound_text` / `outbound_json` (limited to `outboundOrigins`; returns the
@@ -209,8 +223,8 @@ package that checks `if not role` fails closed. `organization_member_emails`
 answers insiders only. The CRM, Marketing, Analytics and Competitor packages
 also refuse guests themselves and answer auditors' writes with 403
 `read_only_role` (Analytics still lets them run read-only `query` requests).
-Why: guests are outside collaborators added for a few repositories and must
-not read an organization's customer, marketing or analytics records.
+Guests are outside collaborators added for a few repositories and must not
+read an organization's customer, marketing or analytics records.
 
 **Data lifecycle.** `dataLifecycle.scope` is `organization` (installs go
 through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,
@@ -267,7 +281,7 @@ affiliate program).
 
 Every catalog package has one public link, `https://forkmesh.com/market/<id>`
 (only the official `forkmesh` market has public pages), and that link is the
-package's own page (since 2026-10-22). `build_market_catalog.stage_package_pages`
+package's own page. `build_market_catalog.stage_package_pages`
 writes `market/<id>.html` into the staged site at build time (`stage_www` and
 `stage_cutover` in `app/tools/build_site_assets.py`), from the manifest, the
 package README and `www/templates/layouts/market-package.html`; nothing is
@@ -286,7 +300,7 @@ required and requiring packages, the packs it is in, and up to six others in
 its category. Every card on `/market` has the anchor `#package-<id>` and links
 to its page.
 
-The www Worker (`MARKET_PACKAGE` in `www/worker.js`) serves the page asset for
+On forkmesh.com the static-site Worker (`MARKET_PACKAGE` in `www/worker.js`) serves the page asset for
 that path, and the `/market` document when no page exists (an id that is not in
 the catalog). The App (`static_routes.is_market_package_path`,
 `site_document_asset_path`) does the same on a self-hosted instance. The
@@ -463,14 +477,15 @@ catalog fails the configure with "Marketplace package discovery failed".
   in `catalog.json`, then run `app/tools/build_market_catalog.py`. A manifest
   bumped without its catalog row passes pytest but fails every desktop
   configure.
-- Package Worker modules deploy with the App (`app/deploy.sh`); package web
-  pages with the App's static assets.
+- Package server modules deploy with the App to the core nodes
+  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)); package web pages
+  with the App's static assets.
 
 ## Security
 
 - Desktop package network calls must use `NativePackageHost::network` so the
   firewall sees them.
-- Worker modules get only `_PluginApiRuntime`; outbound fetches are limited to
+- Server modules get only `_PluginApiRuntime`; outbound fetches are limited to
   the manifest's `outboundOrigins`. The fetch uses `redirect: "manual"`; a GET
   follows up to 3 redirects (301/302/303/307/308) itself, and only while every
   `Location` stays `https` on an allowed origin. A redirect anywhere else, a
@@ -511,15 +526,14 @@ catalog fails the configure with "Marketplace package discovery failed".
   previews that landed in the last 50 ms, in one walk of the window. A
   card's details pane is built the first time the card opens
   ([diagnostics.md](../desktop/diagnostics.md), report #18) and copies the
-  card's preview then. Diagnostic report #15 (2026-10-24) caught the
-  first Market open decoding every preview inline, ~4 s under memory pressure,
-  in `QImageReader::read`. WebP needs Qt's optional qtimageformats plugin,
-  which many Linux installs lack, so when Qt cannot read a preview whose bytes
-  are WebP, the worker decodes it with the libwebp the app already links
-  (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at most 16 MB. Seven
-  packages (App Store Status, RSS Reader, Code Map, Size Map, Strata, Ember,
-  Synapse) ship only `.webp` previews and showed "Preview unavailable" on such
-  machines until 2026-10-25. PNG and SVG previews still need no plugin.
+  card's preview then (decoding inline cost ~4 s on the first Market open
+  under memory pressure, report #15). WebP needs Qt's optional
+  qtimageformats plugin, which many Linux installs lack, so when Qt cannot
+  read a preview whose bytes are WebP the worker decodes it with the libwebp
+  the app already links (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at
+  most 16 MB; seven packages (App Store Status, RSS Reader, Code Map, Size
+  Map, Strata, Ember, Synapse) ship only `.webp` previews. PNG and SVG need no
+  plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a
@@ -532,5 +546,4 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

@@ -29,6 +29,11 @@ constexpr int kTopAuthors = 3;
 
 const QStringList kGuideOrder = {
     QStringLiteral("README.md"),
+    QStringLiteral("architecture.md"),
+    QStringLiteral("encryption.md"),
+    QStringLiteral("mirroring.md"),
+    QStringLiteral("self-hosting.md"),
+    QStringLiteral("censorship-resilience.md"),
     QStringLiteral("getting-started.md"),
     QStringLiteral("product-promise.md"),
     QStringLiteral("category-comparisons.md"),

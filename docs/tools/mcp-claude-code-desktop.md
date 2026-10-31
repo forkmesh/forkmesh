@@ -1,14 +1,15 @@
 # MCP connector: Claude Code desktop features in ForkMesh
 
-The Claude Code desktop app gives a session a few things beyond the CLI: it
-offers to start a new session for side work, lists the other sessions and
-environments it can reach and messages them, sends push notifications, drives
-a built-in browser, and opens small panels and widgets next to the chat.
-ForkMesh runs `claude` itself (stream-json, [../agents/tools.md](../agents/tools.md)),
-so those desktop-only tools do not exist in its runs. The ForkMesh MCP server
-(`tools/forkmesh_mcp_server.py`) provides the same abilities, backed by the
-ForkMesh desktop over the agent-intake socket, so a ForkMesh agent (Claude
-Code or any MCP client the desktop launched) gets them inside ForkMesh.
+Part of [the tools docs](README.md).
+
+The Claude Code desktop app gives a session more than the CLI: it suggests new
+sessions for side work, lists and messages other sessions and environments,
+sends push notifications, drives a built-in browser and opens panels and
+widgets beside the chat. ForkMesh runs `claude` itself (stream-json,
+[../agents/tools.md](../agents/tools.md)), so those desktop-only tools do not
+exist in its runs. The ForkMesh MCP server (`tools/forkmesh_mcp_server.py`)
+provides the same abilities over the agent-intake socket to any agent (Claude
+Code or another MCP client) the desktop launched.
 
 | Claude Code desktop | ForkMesh MCP tool | Intake method | Desktop code |
 | --- | --- | --- | --- |

@@ -3,7 +3,8 @@
 On-device models: Gemma 4 on the phone's GPU through MLX, which the app target runs
 (`ForkMesh/Features/LocalAI/MLXGemmaEngine.swift`). This module is everything else and contains no
 MLX: the catalog, device fit, the Hugging Face download, the engine protocol, the view models and
-the mesh-node request handler. `import FMLocalAI` (deps FMBase, FMNet).
+the mesh-node request handler. `import FMLocalAI` (deps FMBase, FMNet). Native docs home:
+[docs/native/README.md](../../../docs/native/README.md).
 
 ## Catalog and device fit (`LocalAIModel.swift`)
 
@@ -146,39 +147,15 @@ for paired desktops"), gated on an explicit user switch.
 
 ## Writing GemmaAgentProvider (FMAgents)
 
-`AgentProvider` keeps provider-shaped history. For Gemma keep it OpenAI-shaped, like
-`OpenAiProvider`, so the loop and transcripts do not change:
-
-```swift
-final class GemmaAgentProvider: AgentProvider {
-    let manager: LocalModelManager            // Services.require(LocalModelManager.self)
-    var id: String { "on-device" }
-    var model: String { manager.selectedModel.id }
-
-    func send(systemPrompt: String, history: [JSONValue], tools: [AgentTool]) async throws -> AgentTurn {
-        try await manager.ensureReady()        // throws when off / not downloaded: an AgentProviderException, not retryable
-        var messages: [LocalChatMessage] = [.system(systemPrompt)]
-        for item in history { messages.append(try LocalChatMessage(openAI: item.objectOrEmpty)) }
-        let specs = tools.map { LocalToolSpec(name: $0.name, description: $0.description, parameters: $0.schema) }
-        let turn = try await manager.engine.complete(messages: messages, tools: specs, parameters: .agent)
-        return AgentTurn(
-            text: turn.text,
-            toolCalls: turn.toolCalls.map { AgentToolCall(id: $0.id, name: $0.name, arguments: $0.arguments) },
-            raw: .object(turn.message.openAIJSON),
-            inputTokens: turn.inputTokens, outputTokens: turn.outputTokens, refusal: nil)
-    }
-    func appendAssistant(_ history: inout [JSONValue], _ turn: AgentTurn) { history.append(turn.raw) }
-    func appendToolResults(_ history: inout [JSONValue], _ results: [AgentToolResult]) {
-        for r in results { history.append(.object(LocalChatMessage.tool(r.output, callId: r.callId, name: r.name).openAIJSON)) }
-    }
-    func appendUser(_ history: inout [JSONValue], _ text: String) { history.append(.object(LocalChatMessage.user(text).openAIJSON)) }
-}
-```
-
-Map `LocalEngineError`/`LocalModelError` to `AgentProviderException` with no status code and not
-retryable (a missing model will not appear on retry). A small on-device model has a small
-effective context: keep history short (16–24 messages) and tool output truncated. Tests use
-`FakeLocalChatEngine` and a manager over a temp `LocalModelStore` with a hand-written manifest
+`FMAgents/GemmaAgentProvider.swift` keeps the agent history OpenAI-shaped, like
+`OpenAiProvider`, so the loop and transcripts do not change. `send` calls
+`manager.ensureReady()`, converts the history with `LocalChatMessage(openAI:)`, maps tools to
+`LocalToolSpec` and runs `manager.engine.complete(..., parameters: .agent)`; the raw turn is the
+assistant message's `openAIJSON`. Every `LocalEngineError`/`LocalModelError` becomes an
+`AgentProviderException` with no status code and not retryable (a missing model will not appear on
+retry). A small on-device model has a small effective context, so the provider keeps
+`maxHistoryMessages` 20 and `maxToolOutputChars` 8000. Tests use `FakeLocalChatEngine` and a
+manager over a temp `LocalModelStore` with a hand-written manifest
 (`OnDeviceChatModelTests.readyManager`).
 
 ## App target (ForkMesh/Features/LocalAI)

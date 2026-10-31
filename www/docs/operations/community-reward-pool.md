@@ -2,7 +2,8 @@
 
 The reward system is non-custodial. The server coordinates public Solana state
 and unsigned transfer intents; it never creates, accepts, stores, or uses a
-wallet private key.
+wallet private key. The signing side is the
+[local signer](community-reward-pool-signer.md).
 
 ## Custody boundaries
 

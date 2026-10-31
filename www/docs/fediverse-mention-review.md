@@ -5,6 +5,9 @@ when it addresses a published public repository actor and the ActivityStreams
 Public collection. Private or missing repositories are rejected before a
 record is written; instance blocks and the repository's `federate` and
 `acceptComments` controls apply.
+Outbound posts are covered in [Fediverse daily digests](fediverse-digests.md);
+threaded replies in
+[Lemmy-compatible threaded collaboration](lemmy-threaded-collaboration.md).
 
 Mentions never create issues automatically. States: `review` (available for
 owner review), `pending` (owner confirmed a draft and the encrypted owner inbox

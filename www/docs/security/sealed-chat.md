@@ -4,6 +4,9 @@ All chat traffic uses an outer AES-256-GCM room cipher whose passphrase is
 derived from the controller's `DATA_KEY`. It protects the wire and retained
 storage from third parties, not from the controller operator. On top of it each
 conversation has one policy:
+The overview is on
+[Encryption and signatures](../encryption.md#end-to-end-encrypted-chat-and-calls);
+the attackers considered are in the [threat model](../protocol/threat-model.md).
 
 | Conversation | Content policy | Who can read it |
 | --- | --- | --- |

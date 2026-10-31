@@ -1,5 +1,6 @@
 # Phone themes
 
+Part of [the native docs](README.md).
 The iOS and Android apps let the user pick and edit a colour theme, the way
 the start page's theme picker does for a new instance
 ([../INSTANCES.md](../INSTANCES.md)). The choice is the phone's own: it is
@@ -33,7 +34,7 @@ on read. The 13 tokens, in their editor groups:
 | Status | `success`, `danger`, `warning` |
 
 Unedited, `textSecondary` and `textTertiary` are `textPrimary` at 72% and 60%
-(light) or 70% and 50% (dark), and `textDisabled` at 25% or 30%, as before.
+(light) or 70% and 50% (dark), and `textDisabled` at 25% or 30%.
 An edited one is opaque. Choosing a surface family drops the surface and text
 edits; choosing an accent drops the accent edits; Shuffle and Reset drop all
 of them.
@@ -55,11 +56,9 @@ follow the start page's families; Pure is true black for OLED screens.
 
 ## Accents and contrast
 
-Until October 2026 the default blue was `#007AFF` in light mode, which is
-3.5:1 on `bgOverlay` and 3.8:1 on `bgBase`, under WCAG AA (4.5:1) for the
-small accent text the apps use (links, "Change image", counts). Teal, red,
-pink and purple were also under 4.5:1 on a light surface, and dark purple
-`#6C63FF` was 3.8:1 on the dark overlay. The presets are now:
+The apps use the accent for small text (links, "Change image", counts), so
+every preset must reach WCAG AA (4.5:1). The old light blue `#007AFF` reached
+only 3.5:1 on `bgOverlay`, hence `#0066cc`. The presets:
 
 | Accent | Light | Dark |
 |---|---|---|

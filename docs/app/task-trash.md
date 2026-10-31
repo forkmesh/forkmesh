@@ -1,6 +1,6 @@
 # Task trash: soft delete, restore and purge
 
-Deleting an organization task moves it to a trash for 30 days, so a mistaken
+Part of [the App docs](README.md). Deleting an organization task moves it to a trash for 30 days, so a mistaken
 delete (including one made by an agent over MCP) can be undone. Code:
 `world/src/world_office_tasks.py` (`_delete`, `_delete_batch`, `_restore`,
 `purge_trash`), `app/src/entry.py`, migration `0222_organization_task_trash.sql`.

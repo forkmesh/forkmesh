@@ -78,16 +78,14 @@ background waits instead of foreground sleeps, test output piped through
 network gate. It refuses a Read with no `offset`, `limit` or `pages` of a text
 file over 32 KB (`kReadGuardBytes`, about 8K tokens) and tells the agent the
 file's line count, to Grep first and read a range, and that `offset 1` with a
-`limit` reads it all. Whole-file Reads were the largest Claude Code cost in
-the improvement log (about 1M tokens a week, mostly 4-13K token Swift, Kotlin
-and docs files) although the prompt already asked for ranges. Images, PDFs,
+`limit` reads it all. Whole-file Reads were the largest Claude Code token
+cost even with the prompt asking for ranges. Images, PDFs,
 notebooks, binary files and missing paths pass. The improvement log files the
 refusal as "whole-file read refused".
 
-Codex has no hook here, and its oversized shell results (about 2.3M tokens a
-week) were mostly chained `sed -n` reads of several files and `git diff` /
-`git log --stat` over whole branches. The prompt now says a chain or loop
-shares one output budget (`{ ...; } | head -n 300`) and how to read history
+Codex has no hook here; its oversized shell results are mostly chained
+`sed -n` reads and whole-branch `git diff` / `git log --stat`. The prompt says
+a chain or loop shares one output budget (`{ ...; } | head -n 300`) and how to read history
 (`--oneline`, `--stat` first, one path, default context), and the improvement
 log files those results as "chained reads" and "git history" with matching
 suggestions.
@@ -108,10 +106,10 @@ Every run gets `--mcp-config <data>/core/agent-mcp/session-<id>.json`
 (mode 0600, rewritten on each launch by `MainWindow::addAgentRunMcpConfig`):
 the `forkmesh` server (`forkmesh::mcp::configJson`, the same file the
 terminal tabs get) with the run's `FORKMESH_AGENT_INTAKE` and
-`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. Without it a run had no ForkMesh
-tools at all: a non-interactive `claude` skips a checked-in `.mcp.json` until
-the user approves it in an interactive session (`enabledMcpjsonServers`), and
-other repositories have no `.mcp.json`. So the terminal, window, browser and
+`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. This is needed because a
+non-interactive `claude` skips a checked-in `.mcp.json` until the user
+approves it in an interactive session (`enabledMcpjsonServers`), and other
+repositories have no `.mcp.json`. So the terminal, window, browser and
 hub tools ([../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md))
 reach every run, as Claude Code's desktop app gives its sessions their panes.
 The flag adds to the user's own servers (no `--strict-mcp-config`), and a run
@@ -195,11 +193,10 @@ The issue, milestone, project and pull stores (`.forkmesh/issues`,
 tree, so every path goes through `checked_store_path`. It refuses a path
 with a symlink at any component below the repository root, the same rule
 `notes_root` applies to notes. Listings (`search_issues`,
-`existing_pr_for_head`) skip such entries. Without this check a repository
-author could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
-`/proc/self/environ` or the identity key, and `get_pr_diff` returned the
-target's bytes. A symlinked `milestones.json` or issue record was also
-written through to wherever it pointed.
+`existing_pr_for_head`) skip such entries. Otherwise a repository author
+could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
+`/proc/self/environ` or the identity key for `get_pr_diff` to return, or make
+a write land wherever a symlinked record points.
 
 | Group | Tools | Notes |
 | --- | --- | --- |
@@ -244,7 +241,7 @@ Skills live in `.forkmesh/skills/`.
 
 ## Server-side AI
 
-No relay code gives an LLM tools to run on the server: ForkBot chat uses
+No app code on the core nodes gives an LLM tools to run on the server: ForkBot chat uses
 JSON-schema intent classification, other AI calls are tool-less, and
 marketplace package workers and ForkMesh Apps ([../APPS.md](../APPS.md))
 expose fixed APIs, not LLM tools.

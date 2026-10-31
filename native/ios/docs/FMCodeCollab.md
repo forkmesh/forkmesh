@@ -5,7 +5,8 @@ in `ForkMeshCore/Sources/FMCode/Collab` (logic, view models) and
 `ForkMesh/Features/Code/Collab` (SwiftUI). `import FMCode` (plus `FMApi` for
 the models, `FMDiff` for `DiffFile`). The collaboration half of the repository
 screen, the new-issue screen, the branch diff and the diff viewer; after
-native/android `collab/*.kt`.
+native/android `collab/*.kt`. Siblings: [Repos](FMCodeRepos.md), [Local](FMCodeLocal.md).
+Native docs home: [docs/native/README.md](../../../docs/native/README.md).
 
 ## Views (app target, the seams)
 
@@ -16,7 +17,7 @@ native/android `collab/*.kt`.
 - `IssueDetailScreen(repo:number:)`, `PullDetailScreen(repo:number:)`,
   `DiscussionDetailScreen(repo:number:)`: read the published list and find the record; a
   number that is not there shows "Issue #N has not been published yet." (an issue number that
-  is a pull request shows that pull request instead, `docs/native/REFERENCE_LINKS.md`; a failed read shows
+  is a pull request shows that pull request instead, [docs/native/REFERENCE_LINKS.md](../../../docs/native/REFERENCE_LINKS.md); a failed read shows
   the error), never a crash. Extra inits `(repo:issue:)`, `(repo:pull:)`, `(repo:discussion:)`
   for callers already holding the record (no loading state); `(repo:pull:)` still reads the full
   record behind it, because the list rows carry no `changes.patch` or `commits.mbox`.
@@ -43,8 +44,8 @@ native/android `collab/*.kt`.
 - `NewPullSheet(repo:head:)` is the GitHub compare form: Base and Compare branch menus (from
   `branches`), a live comparison on the mirror (`compare`: commit count and the changed files
   card), Title (filled from the branch name when empty) and Description. "Paste a patch
-  instead" keeps the old pasted-diff form for this repository. When the repository has saved
-  forks on other instances (`remote-forks`, `docs/app/remote-forks.md`), a **Send to** menu
+  instead" keeps the pasted-diff form for this repository. When the repository has saved
+  forks on other instances (`remote-forks`, [docs/app/remote-forks.md](../../../docs/app/remote-forks.md)), a **Send to** menu
   lists them: the pull is then signed for the target's owner and name, its head is
   `<this host>/<owner>/<repo>:<branch>`, and it is posted straight to the target's
   `/api/repo/<owner>/<repo>/pulls` with no session (`InboxService.openRemotePull`), the same
@@ -62,7 +63,7 @@ native/android `collab/*.kt`.
 - `BranchDiffScreen(repo:base:head:title: = "")`: base "" = the repo's default branch (else "main").
 - `DiffViewer(diff: String, title: String = "Diff")` (also `DiffViewer(diff: [DiffFile], title:)`):
   the inline diff preview (coloured lines, max 420pt) plus "Open in diff viewer". Must be
-  inside a NavigationStack (it pushes). The seams.md `DiffViewer(diff: UnifiedDiff)` cannot exist:
+  inside a NavigationStack (it pushes). There is no `DiffViewer(diff: UnifiedDiff)`:
   `UnifiedDiff` is a namespace.
 - `PatchFilesScreen(title:patch:)`: any unified diff in the full viewer (file list, viewed
   progress, pager). Also `DiffFilePagerScreen(files:initialIndex:viewed:subtitle:)`,
@@ -115,7 +116,7 @@ native/android `collab/*.kt`.
   `diffAge`, `collabBadgeTone`.
 - `IssueTaskMove`: `taskBody` and `move` (create the task, send the signed issue delete, trash the
   task again if the delete fails), behind **Move to task** in `IssueToolsMenu`; see
-  `docs/app/issue-to-task.md`.
+  [docs/app/issue-to-task.md](../../../docs/app/issue-to-task.md).
 - `DiffFileLayout(file)`: prepared file, `unifiedRows`/`splitRows`, `hunkLabel` ("⋯ 9 unchanged
   lines"), `notices`, `runs(line, syntax:)` (highlighted pieces with intra-line marks, cached).
 

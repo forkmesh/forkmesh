@@ -1,6 +1,6 @@
 # Organization task text is Markdown
 
-Task `details`, QA `howToTest`, completion notes (`completionNote`,
+Part of [the App docs](README.md). Task `details`, QA `howToTest`, completion notes (`completionNote`,
 `completionHistory[].note`) and reply bodies are Markdown. They keep line breaks
 end to end and are rendered on the web Tasks page and the desktop Tasks view.
 Titles and other routing values stay single-line.

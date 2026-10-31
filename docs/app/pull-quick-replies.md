@@ -1,7 +1,7 @@
 # Quick review replies and conflict pings
 
-Two things that tell a pull request's author what to do next without anyone
-writing it out each time:
+Part of the [App](README.md). Two things tell a pull request's author what
+to do next without anyone writing it out:
 
 - **Quick replies**: one-tap review buttons in the merge box for reviewers and
   maintainers ("Please add tests for this change.", "Merge conflict with main
@@ -31,8 +31,8 @@ browser's signing key), on an open pull request, when it is one of:
   (`/viewer-permission`);
 - someone who already reviewed this pull request.
 
-Visitors and the author see nothing. The relay still accepts a review from
-anyone signed in, as it always has; this only decides where the buttons show.
+Visitors and the author see nothing. The relay accepts a review from anyone
+signed in; this only decides where the buttons show.
 
 ### The set
 
@@ -55,15 +55,15 @@ Missing `.forkmesh/review-replies.json` means the defaults:
 `git fetch origin && git switch <head> && git merge origin/<base>`, fix,
 commit and `git push`; for a patch-backed pull from someone else's copy, fetch
 the base from this repository's clone URL, `git rebase FETCH_HEAD`, and submit
-again (nobody here can push to their copy, `docs/app/pull-merge-box.md`).
+again (nobody here can push to their copy, see
+[pull-merge-box.md](pull-merge-box.md#update-branch)).
 The branch, base and clone values are shell-quoted when a command is copied.
 
 `ai_missing` reads `repoCollabSettings.requireAiDisclosure` and the pull's
 stated model through `pullAiModel`: the `aiModel` field or an "AI model:" line
-in the description, as the disclosure chip does. Reading only the field
-offered the reply on pulls that stated their model in the description. On a
-build without AI disclosure the setting is never present, so the reply never
-shows.
+in the description, as the disclosure chip does (reading only the field
+offered the reply on pulls that stated their model in the description). On a
+build without AI disclosure the setting is absent, so the reply never shows.
 
 ### `.forkmesh/review-replies.json`
 
@@ -115,11 +115,9 @@ the relay is what prevents repeats and pings the author. The request carries
 `quickReply: {id, head}` beside the signed event (not inside it; it is not
 part of the signature and is not stored in the ledger).
 
-On a build with comment reactions (`docs/app/comment-reactions.md`), an
-approving quick reply also adds the Thank you sticker to the pull request's
-description (`sayCommentThanks`, once per viewer), and `ai_missing` reads the
-stated model the way the AI disclosure chip does (`pullAiModel`: the `aiModel`
-field or an "AI model:" line in the description).
+On a build with comment reactions ([comment-reactions.md](comment-reactions.md)),
+an approving quick reply also adds the Thank you sticker to the pull request's
+description (`sayCommentThanks`, once per viewer).
 
 ### One per commit
 
@@ -138,7 +136,7 @@ head, so every reply is available again.
 ## Pinging the author
 
 Every review sent through the relay's pull inbox (`pulls_handler`), quick or
-typed, now pings the pull request's author with kind `pull_attention`:
+typed, pings the pull request's author with kind `pull_attention`:
 "carol requested changes on your pull request #7" / "approved" / "commented
 on", the review text as the body, linking to the pull request. The author is
 left out of the follower fan-out (`notify_subscribers(..., skip=...)`) so
@@ -150,8 +148,9 @@ pull is closed. The author is the account bound to the pull's signing key
 
 ### Where a conflict is noticed
 
-The merge trial is the mirror's `merge-preview` (`docs/server/merge-executor.md`),
-which the pull page already runs. The relay keeps one row per open pull
+The merge trial is the mirror's `merge-preview`
+([merge-executor.md](../server/merge-executor.md)), which the pull page already
+runs. The relay keeps one row per open pull
 request it has seen in `pull_merge_watch` and re-runs the trial when
 something moved:
 
@@ -172,9 +171,8 @@ something moved:
 - every watched pull is re-checked at least every twelve hours.
 
 The `pull-attention` cron phase (even minutes) checks at most two due pulls per
-run, oldest first, and stops as soon as the phase's subrequest budget is
-spent (`_cron_budget_exhausted`; every read is charged like any other cron
-fetch). One check reads the pull record (`pull.md`, at most three refs), the
+run, oldest first, and stops when the cron run's fetch budget is spent
+(`_cron_budget_exhausted`; every read is charged like any other cron fetch). One check reads the pull record (`pull.md`, at most three refs), the
 branch list, and, only when the base or head commit changed since the last
 check, `merge-preview`. A record that cannot be read backs off 10 minutes,
 30 minutes, 2 hours, 6 hours, then waits for the next push, report or
@@ -230,6 +228,6 @@ ahead, conflicting paths). `base_bi`/`head_bi` are blind indexes of
 `pull-watch-branch:<repo_bi>:<branch>`, `trial_bi` and `notified_bi` of the
 commit pair. Repository deletion removes both tables' rows
 (`_REPO_SCOPED_TABLES`). A `DATA_KEY` rotation empties both
-(`tools/next_rekey.py`, `docs/REKEY.md`): watch rows come back with the next
+(`tools/next_rekey.py`, [REKEY.md](../REKEY.md)): watch rows come back with the next
 push, submission or page view, and a quick reply already sent on a head can
 be sent once more.

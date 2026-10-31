@@ -1,5 +1,6 @@
 # RSS Reader on iPhone
 
+Part of [the native docs](README.md).
 The iPhone client of the [RSS Reader package](../marketplace/rss-reader.md)
 (`rss-reader`, route `.rssReader`). It is local only: feeds are fetched,
 parsed and stored on the phone, and nothing goes to a ForkMesh server. The
@@ -93,10 +94,8 @@ with the article.
 
 Next to the back button the article screen shows how many articles are still
 unread in the timeline it was opened from (or the one **Next Unread** moved
-to), as NetNewsWire does, so you can see how much is left without going back.
-The count drops as each article is opened and marked read. On iOS 26 the item
-hides the shared glass background so it reads as plain text beside the back
-button.
+to), as NetNewsWire does. The count drops as each article is read. On iOS 26
+the item hides the shared glass background so it reads as plain text.
 
 ## Choices worth knowing
 

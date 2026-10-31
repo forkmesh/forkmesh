@@ -4,6 +4,7 @@ This guide is for keeping a private, safe copy of a repository that lives on
 GitHub, for example a website you share with a friend, without changing
 anything on GitHub. You need two commands in a terminal; everything else
 happens in the ForkMesh desktop app.
+How ForkMesh copies and serves repositories is on [Mirroring](mirroring.md).
 
 ## What you need first
 

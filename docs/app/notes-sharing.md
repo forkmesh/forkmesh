@@ -3,12 +3,13 @@
 The web Notes page (`app/public/dashboard/js/09-notes.js`, markup in
 `app/public/dashboard/partials/views/notes.html`, mirrored byte for byte in
 `marketplace/packages/notes/content/web/view.html`) lets the owner share a note
-with a user or an organization from the **Share** panel.
+with a user or an organization from the **Share** panel. Part of the
+[App docs](README.md); the activity log is in
+[notes-activity.md](notes-activity.md).
 
 ## Picking who to share with
 
-The name field suggests matches as you type, so nobody has to know the exact
-account name:
+The name field suggests matches as you type:
 
 - **Users** come from `GET /api/chat/direct-messages/users?query=…`, the same
   bounded search of active accounts the organization member picker uses. An
@@ -41,7 +42,8 @@ answers no suggestions without searching; a query over 63 characters is
 
 It lives under `/api/notes` because the desktop without a password session
 signs each request with the account key, and that signature is scoped to
-`/api/notes` (`docs/desktop/notes.md`); the chat user search would refuse it.
+`/api/notes` ([desktop notes](../desktop/notes.md)); the chat user search
+would refuse it.
 Filtering on the server also means every client leaves out the same people.
 
 ## Who an organization share reaches
@@ -85,9 +87,10 @@ already-shared principals left out, the access link row and copy, and opening
 
 ## The same features on every platform
 
-The web page, the desktop (`docs/desktop/notes.md`), iOS and Android
-(`docs/native/notes.md`) offer the same Notes features: filters with counts
-and title-and-body search (`GET /api/notes?query=`, `docs/app/notes-convert.md`),
+The web page, the desktop ([desktop notes](../desktop/notes.md)), iOS and
+Android ([native notes](../native/notes.md)) offer the same Notes features:
+filters with counts and title-and-body search (`GET /api/notes?query=`,
+[notes-convert.md](notes-convert.md)),
 autosave, write and preview with a format bar, Keep mine / Take theirs on a
 save conflict, the share panel with suggestions and role changes, the link for
 people with access, opening `/dashboard/notes?note=<id>`, publishing with a

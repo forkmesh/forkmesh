@@ -12,7 +12,7 @@ Code: `server/agents.go`, `agent_errors.go`, `agent_attachments.go`,
 1. **Advertise.** `CatalogPublisher.agentProviders()` lists `claude`/`codex`
    when found on `PATH`, plus `local-llama` (Gemma) when `codex` and `ollama`
    are, unless `disableAgentJobs` is set.
-2. **Wake.** The relay pushes an `org-agents` event on the node socket; a
+2. **Wake.** The App pushes an `org-agents` event on the node socket; a
    5-minute safety read (`agentJobSafetyCheck`) covers a lost push.
 3. **Claim.** Up to 8 jobs per repository per read (`agentJobClaimsPerRepo`)
    over the node-signed `org-agent-jobs` lease.
@@ -127,4 +127,5 @@ fresh folder per job instead. Tests: `server/agent_workspace_test.go`.
 
 ## Related
 
-- [Agent runs](../agents/README.md), [server/README.md](README.md)
+- [Agent runs](../agents/README.md), [server/README.md](README.md),
+  [runner-actions.md](runner-actions.md)

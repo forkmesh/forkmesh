@@ -53,7 +53,7 @@ as `{{ $json.text }}`) and write the result to the item under **Save as**
 | | Adjust date | `core.dateAdjust` | Add or subtract seconds to years, or go to the start or end of a unit |
 | | Time between dates | `core.dateDiff` | Whole seconds to years between two dates |
 
-If and Filter also gained **matches** and **does not match** a regular
+If and Filter also have **matches** and **does not match** a regular
 expression.
 
 ## Rules that keep the three engines identical

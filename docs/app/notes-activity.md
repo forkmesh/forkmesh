@@ -1,8 +1,10 @@
 # Notes: views, history and actions
 
-Since 2026-10-17 every note keeps a log of who opened it, how it changed and
-what was done to it. The web Notes page shows the log in an **Activity**
-column on the right, and the counts on every row of the note list on the left.
+Every note keeps a log of who opened it, how it changed and what was done to
+it. The web Notes page shows the log in an **Activity** column on the right
+and the counts on every row of the note list. Part of the
+[App docs](README.md); see also [notes-sharing.md](notes-sharing.md) and
+[notes-convert.md](notes-convert.md).
 
 ## What is recorded
 
@@ -10,7 +12,7 @@ column on the right, and the counts on every row of the note list on the left.
 row per event: the note, the kind, the actor's account index (`actor_bi`, never
 a name), when it happened and a small JSON `detail`. Rows go when the note is
 deleted (`ON DELETE CASCADE`), and each note keeps its latest 500
-(`MAX_EVENTS`), so a busy note never grows without limit.
+(`MAX_EVENTS`).
 
 | Kind | Recorded by | Detail |
 | --- | --- | --- |
@@ -30,10 +32,10 @@ already stored in plain text next to the note (sharing and link metadata);
 titles and text stay encrypted and are never copied into the log.
 
 Views by the same account within 30 minutes (`VIEW_WINDOW_MS`) fold into one
-row whose `hits` goes up, so switching between notes, or reloading, does not
-flood the log. Anonymous reads of a published page are still counted
-separately in `note_views` (`docs/desktop/notes.md`); a signed-in `GET` is
-never counted, so the desktop's freshness poll does not add views.
+row whose `hits` goes up, so switching notes or reloading does not flood the
+log. Anonymous reads of a published page are counted separately in
+`note_views` ([desktop notes](../desktop/notes.md)); a signed-in `GET` is
+never counted, so the desktop's freshness poll adds no views.
 
 Logging never fails the action it records: an error writing the event is
 ignored. Each new or folded event sends `note-activity` to the note's room
@@ -90,7 +92,7 @@ shares), so the list needs no request per row.
   messages from collaborators.
 
 The desktop, iOS and Android apps read the same listing, so their view
-counts now include members' views, but they have no Activity column yet.
+counts include members' views, but they have no Activity column yet.
 
 ## Tests
 

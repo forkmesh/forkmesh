@@ -83,6 +83,11 @@ DIRECTORY_AREAS = {
 # Curated order for the top-level guides; everything else sorts by title.
 GUIDE_ORDER = (
     "README.md",
+    "architecture.md",
+    "encryption.md",
+    "mirroring.md",
+    "self-hosting.md",
+    "censorship-resilience.md",
     "getting-started.md",
     "product-promise.md",
     "category-comparisons.md",
@@ -111,7 +116,7 @@ PRODUCT_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/docs/contributions/", "Contribution counting", "How ForkMesh counts commits, issues, pull requests, reviews and repositories."),
     ("/docs/protocol/", "Protocol spec", "Signed collaboration objects, routing and the wire format."),
     ("/docs/git-compatibility/", "Git compatibility", "Generated stock-Git support matrix."),
-    ("/docs/cloudflare-worker/", "Relay & website", "The Cloudflare Worker that coordinates discovery and routing."),
+    ("/docs/cloudflare-worker/", "App & relay", "The app on the core nodes: rooms, the repository catalog and room encryption."),
     ("/docs/qt-client/", "Desktop client", "The Qt desktop application."),
 )
 

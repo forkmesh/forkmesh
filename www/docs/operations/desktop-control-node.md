@@ -4,7 +4,8 @@ The desktop client's **Control** page is the operator surface for the current
 device. It never makes ForkMesh a custodian. Its tabs are Site deployment,
 Export, Import, Mirror client, Repository permissions, Keys and wallet, Reward
 pool, Cloudflare relay, and API token (`desktop/src/MainWindowControlNode.cpp`).
-Host management lives under **Network → Hosts**.
+Host management lives under **Network → Hosts**. Other ways to run an instance
+are in [self-hosting](../self-hosting.md).
 
 ## Mirror client and permissions
 
@@ -39,7 +40,10 @@ the user's own wallet.
   before showing values, then applies it and hands off to the durable host
   provisioner.
 
-Deployment runs the bundled `tools/cloudflare_bootstrap.py`. With a token
+Deployment runs the bundled
+[`tools/cloudflare_bootstrap.py`](automation-and-cloudflare-bootstrap.md), which
+sets up the user's own [Workers self-host](worker-split.md) (the hosted service
+itself runs on core nodes, see [architecture](../architecture.md)). With a token
 scoped to one account and zone it discovers the topology; with several it
 requires explicit selection rather than guessing. **Validate** is a read-only
 dry run; **Deploy** creates or reuses the database, deploys the server,

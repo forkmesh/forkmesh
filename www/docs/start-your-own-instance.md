@@ -5,6 +5,8 @@ name: repositories, pull requests, issues, chat, Actions and agents, with
 your logo, colours and domain. Start one at
 [forkmesh.com/start](https://forkmesh.com/start). No ForkMesh account is
 needed, and it takes about fifteen minutes.
+For every way to run ForkMesh yourself, including a mirror node only, see
+[Self-hosting](self-hosting.md).
 
 ## What you need
 

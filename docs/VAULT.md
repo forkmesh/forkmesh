@@ -3,7 +3,9 @@
 The app's variables (`ADMIN_PASS`, the router seed, integration tokens and so
 on) are stored in the database encrypted under `DATA_KEY`. `DATA_KEY` is kept
 only on the operator box; on a node it exists only in the app's memory while
-that node is unsealed.
+that node is unsealed. Fleet runbook: [OPERATIONS.md](OPERATIONS.md);
+encryption overview: [encryption](../www/docs/encryption.md); developer
+index: [README.md](README.md).
 
 Switches in `deploy/fleet.toml` `[app]`: `vault = true` turns the vault on
 (the example config defaults to plain systemd credentials);
@@ -43,7 +45,7 @@ nodes only decrypt.
    and `DATA_KEY` is dropped from every source. Requests answer
    `503 {"error":"sealed"}`, `/readyz` is not ready (so the node leaves DNS and
    deploy gates wait), cron and queues stop, and the membership row is
-   `sealed`, so the node hosts no Durable Objects.
+   `sealed`, so the node hosts no Durable Object emulation (`durable.py`).
 2. **Unseal** from a peer (at start and every 15 s while sealed) or from the
    operator (`next_vault.py unseal` pipes the key over SSH stdin into
    `fmnext-unseal`, which writes it to the 0600 unix socket

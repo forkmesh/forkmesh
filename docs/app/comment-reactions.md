@@ -1,6 +1,7 @@
 # Comment reactions
 
-Every comment-like thing on a repository page can take emoji reactions:
+Part of [the App docs](README.md). Every comment-like thing on a repository
+page can take emoji reactions:
 
 - an issue's description and each issue comment;
 - a pull request's description, its conversation comments, review summaries
@@ -11,7 +12,7 @@ Every comment-like thing on a repository page can take emoji reactions:
 
 Commit pages have no comments on the web, so they have no reactions. Security
 advisory comments have no stable comment id and are not covered. Chat already
-has its own reactions (sealed, sent over the relay, `docs/app/chat-stickers.md`);
+has its own reactions (sealed, sent over the relay, [chat-stickers.md](chat-stickers.md));
 comment reactions reuse its vocabulary instead of adding a second one.
 
 ## Vocabulary
@@ -116,8 +117,8 @@ comment_reaction_rate (account_bi PRIMARY KEY, window_start, count)
 - `idx_comment_reactions_account (account_bi, created_at)` serves the daily
   cap and account deletion.
 - Deleting the repository (`_REPO_SCOPED_TABLES`) or the account
-  (`_delete_account_namespace`) deletes its rows. `docs/REKEY.md` lists both
-  tables (the rate counter is emptied on a re-key).
+  (`_delete_account_namespace`) deletes its rows. [REKEY.md](../REKEY.md) lists
+  both tables (the rate counter is emptied on a re-key).
 
 The `comment_reactions` migration (`app/migrations/*_comment_reactions.sql`)
 creates both tables and stamps the schema fingerprint.
@@ -139,7 +140,7 @@ returns every comment's tallies for one record in one indexed read:
  "tips": {"body": 2}}
 ```
 
-`tips` counts confirmed tips per comment (`docs/app/comment-tips.md`).
+`tips` counts confirmed tips per comment ([comment-tips.md](comment-tips.md)).
 Tallies are ordered by their first reaction; `people` holds the first ten
 reactors (only those rows are decrypted). Anonymous reads of a public
 repository are `public, max-age=5, stale-while-revalidate=30`; a signed-in
@@ -216,7 +217,7 @@ the dashboard's render of the same data is byte-identical
 (`app/tests/host/test_repo_ssr_issue.py` runs both). Pull request and
 discussion first views (`repo_views`) draw the same bars under each comment.
 
-`repo_ssr.fetch` starts the record's reaction read beside the Worker's page
+`repo_ssr.fetch` starts the record's reaction read beside the App's page
 request: an anonymous in-process `GET …/reactions` (no cookie, no
 authorization), remembered per record for 5 seconds and served stale for up
 to 5 minutes while a refresh runs. `finish` waits at most 150 ms for it. A
@@ -249,7 +250,7 @@ summary (at most 8 variants a bundle).
   none of this runs (checked in script, and hidden in CSS).
 - Signed out, chips and the picker show "Sign in to react" with a link back
   to the page.
-- Selection uses the accent colour, never green (`docs/app/dashboard-colors.md`).
+- Selection uses the accent colour, never green ([dashboard-colors.md](dashboard-colors.md)).
 
 Code: `app/src/comment_reactions.py` (API), `app/src/custom_reactions.py`
 (custom reactions), `app/public/dashboard/js/09-reaction-settings.js`

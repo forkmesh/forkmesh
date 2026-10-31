@@ -2,7 +2,8 @@
 
 Each core and runner has a node account that belongs to an operator account.
 `tools/next_node_owner.py` inspects, provisions and transfers ownership
-(dry-run by default).
+(dry-run by default). Fleet runbook: [OPERATIONS.md](OPERATIONS.md);
+developer index: [README.md](README.md).
 
 ## Where ownership lives
 

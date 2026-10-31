@@ -7,7 +7,10 @@ a core node's account. Owners push with plain `git push` over HTTPS:
 git push https://app.forkmesh.com/<owner>/<repo>.git <branch>
 ```
 
-The per-core names serve the same app and take the same pushes.
+The per-core names serve the same app and take the same pushes. Hosted
+repositories follow the same rules ([HOSTED_REPOS.md](HOSTED_REPOS.md));
+how the cores fit together is in [architecture](../www/docs/architecture.md);
+index: [docs/README.md](README.md).
 
 Code: `app/src/entry.py` (`_https_mirror_push_proxy`, `_core_push_permitted`,
 `_admit_core_push_state`, `_ref_updates_from`), `app/src/core_push.py` (tag
@@ -32,15 +35,12 @@ edits, renames and deletes (`/file-edit`), release notes, assets and tags
 (`/release-edit`), project boards and security advisory ledgers all push
 through `repository_file_edits._push`, which calls `_core_push_permitted`
 for a core-held repository and answers `403 push_forbidden` otherwise.
-Before this, those routes needed only write permission (an organization
-admin, maintainer or write-team member). That let a non-owner commit to the
-flagship's `main` or create a release tag there, and the operator's source
-checkout takes the cores' `main` and deploys it
-(`test_core_held_save_needs_an_organization_owner`,
-`test_core_held_commit_paths_needs_an_organization_owner`,
-`test_a_maintainer_cannot_tag_a_core_held_repository`). Write-permission
-holders still propose changes as pull requests. On a repository that is not
-core-held nothing changed.
+Write permission alone is not enough because the operator's source checkout
+deploys the cores' `main`, so a maintainer's commit or release tag there
+would ship (`test_core_held_save_needs_an_organization_owner`,
+`test_a_maintainer_cannot_tag_a_core_held_repository`). Writers propose
+changes as pull requests. Repositories that are not core-held use ordinary
+write permission.
 
 ## Who serves the flagship
 
@@ -55,14 +55,13 @@ to, found by `_flagship_core_nodes` in `app/src/entry.py`.
   `_https_mirror_accepted_forkmesh_refs`) counts only core endpoints.
 - The catalog peer-quorum recovery is skipped for the flagship.
 
-Mirrors run by anyone else may still publish a catalog record in the
-flagship's group and appear in `groupNodes`, but they never serve it and
-their agreement never admits a state. Before this, any two accounts could
-register endpoints in the group, sign a digest, and be routed flagship clones
-and fetches. A mirror's proof is its own signature over the digest it
-claims, and the App never sees the bytes behind a 307. Without
-`HOSTED_GIT_CORE_NODES` (development, self-hosted instances) the old
-group-based routing applies (`test_flagship_serving_nodes_are_the_fleet_cores_only`,
+Mirrors run by anyone else may publish a catalog record in the flagship's
+group and appear in `groupNodes`, but never serve it and their agreement
+never admits a state: a mirror's proof is only its own signature over the
+digest it claims, and the app never sees the bytes behind a 307, so any two
+accounts could otherwise be routed flagship clones. Without
+`HOSTED_GIT_CORE_NODES` (development, self-hosted instances) group-based
+routing applies (`test_flagship_serving_nodes_are_the_fleet_cores_only`,
 `test_flagship_context_and_quorum_never_count_outside_mirrors`).
 
 Credentials:
@@ -78,12 +77,9 @@ Admins may also commit one edited `docs/**/*.md` file through the developer
 docs page, under the same ref rules. There are no SSH pushes and no personal
 access tokens.
 
-**Account password over git** (`hosted_git._password_git_account`). People
-typed their sign-in email and password into `git push` and got
-`Authentication failed`: only the account name and an `fmp1` credential were
-accepted, and the credential had to be minted on the website first and
-lasts seven days.
-The password path checks exactly what the website login checks
+**Account password over git** (`hosted_git._password_git_account`). The
+username may be the account name or sign-in email, and the password the
+account password. The password path checks exactly what the website login checks
 (`_account_password_record`: active user account, PBKDF2 password) and spends
 the same `login_attempts` budgets (`_login_attempt_keys`, `_login_record_fail`,
 `_login_clear`), so git cannot be used to guess passwords faster than the
@@ -103,8 +99,7 @@ tests after it in `app/tests/test_hosted_repositories.py`.
 retired core's account stay core-held while pushes go only to live cores.
 
 **"Open a pull request" after a push to a fork** (`_fork_push_notice`,
-`git_http.with_sideband_message`). A contributor who pushed a branch to their
-fork had to find the compare page themselves. After an accepted receive-pack
+`git_http.with_sideband_message`). After an accepted receive-pack
 (`POST`, 200) whose `X-ForkMesh-Ref-Updates` name a new or moved branch other
 than the default, on a repository whose catalog record has `forkedFrom` (or
 a contributor's `pr/<account>/` branch on the repository itself, see
@@ -194,10 +189,8 @@ is refused before anything moves, so a forced update never lands without its
 backup. After the push, a backup whose branch did not move, or moved forward
 (`merge-base --is-ancestor old new`), is removed again (that commit is still
 reachable from the branch); a forced one is reported as `kept`. History refs
-are never pruned: until 2026-10-21 the first version kept only the newest 20
-per branch, which let anyone allowed to force-push evict older tips by
-pushing 21 times, and stored the backup only after the branch had already
-moved. Replicas keep their own copy the same way before adopting a forced
+are never pruned, since a cap would let anyone allowed to force-push evict
+older tips by pushing repeatedly. Replicas keep their own copy the same way before adopting a forced
 tip (`keepSupersededTip`, also never pruned). `refs/forkmesh/` is hidden from upload-pack and
 receive-pack, so old commits stay resolvable for reviews and comments without
 being advertised. To restore, an operator runs
@@ -294,11 +287,11 @@ It reads the hosted repository as `forkmesh-node`, lists every open pull with
 an action (`sync` or `skip` and why) and, without `--dry-run`, queues the same
 `synchronize` events as a push (author `--actor`, default `--owner`), then
 asks the local node to drain its inboxes now (`POST /v1/control/sync` on the
-loopback `listen` address from `--node-config`). That wake is needed because
-`notify_repo_host` reaches the node through the Durable Object host of the
-process that calls it: on a self-hosted instance that host lives inside the
-serving app, so a doorbell rung from a CLI process reaches no socket and the
-row would wait for the node's next catch-up (a reconnect or a push). A pull is
+loopback `listen` address from `--node-config`). The wake is needed because
+`notify_repo_host` reaches the node through the Durable Object emulation
+(`durable.py`) of the calling process, which lives inside the serving app; a
+doorbell rung from a CLI process reaches no socket, and the row would wait
+for the node's next reconnect or push. A pull is
 moved only when its head branch exists, contains the pull's base, and holds a
 commit whose subject matches one in the signed `commits.mbox`; `--number`
 names a pull explicitly and skips the subject match. The node applies the
@@ -341,9 +334,10 @@ and relies on the operator-policy hook, as before.
 3. Other cores fetch from the pushed core and converge fast-forward only
    (a recorded force push excepted, see [force pushes](#force-pushes)); a
    moved tag is adopted only when it yields exactly the admitted digest.
-4. The source publisher pushes the source checkout the same way and absorbs
-   commits owners pushed directly (fast-forward, or a clean merge; conflicts
-   are logged and left alone).
+4. The source publisher ([tools/source-publisher.md](tools/source-publisher.md))
+   pushes the source checkout the same way and absorbs commits owners pushed
+   directly (fast-forward, or a clean merge; conflicts are logged and left
+   alone).
 
 Robustness: before every fetch the daemon drops broken or dangling loose refs
 and stale lock files (`dropBrokenRefs`); failed fetches retry while avoiding
@@ -371,9 +365,8 @@ first saves the tip under `refs/forkmesh/trash/branch/<b>/<token>` (or
   the caller re-posts them until it settles, and a re-post can answer 503
   `merge_status_pending` or `merge_node_unavailable` (`retryable: true`).
   Those 503s, and the `cores_unavailable` 503 from both routes, carry
-  `x-forkmesh-expected-degraded`, so they are not logged as API errors: a
-  publisher poll turned red the API row on /status on 2026-10-18. A core
-  that is really down shows on its own /status row.
+  `x-forkmesh-expected-degraded`, so a publisher's polling does not turn the
+  API row on /status red; a core that is really down shows on its own row.
 - Operator: `python3 tools/next_fleet.py delete-ref nN --repo <owner>/<repo> --ref refs/heads/<b> --expect <sha> --execute`
   (only branches merged into `main`, trash first, run on every core) and
   `delete-refs --from FILE` for many at once.
