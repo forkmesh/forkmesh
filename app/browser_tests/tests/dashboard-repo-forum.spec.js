@@ -113,7 +113,38 @@ function fixture() {
   };
 }
 
-async function stageForum(page, { files = fixture(), features = { forum: true }, start = "/alice/proj/forum" } = {}) {
+function applyPosted(files, event, account) {
+  const result = { ok: true, commit: "c".repeat(40), event: event.id };
+  if (event.type === "post") {
+    const path = `topics/${event.topic}/local.json`;
+    const local = files[path] || { posts: [], next: 1 };
+    const key = `l${local.next}`;
+    local.posts.push({ key, username: account, author: event.author, created_at: new Date().toISOString(), format: "markdown", raw: event.content.body, origin: "forkmesh", reply_to: event.content.replyTo || "" });
+    local.next += 1;
+    files[path] = local;
+    Object.assign(result, { topic: event.topic, post: key });
+  } else if (event.type === "like" || event.type === "unlike") {
+    const path = `topics/${event.topic}/likes.json`;
+    const likes = files[path] || {};
+    likes[event.post] = event.type === "like" ? [account] : [];
+    files[path] = likes;
+    Object.assign(result, { topic: event.topic, post: event.post });
+  } else if (event.type === "close") {
+    files[`topics/${event.topic}/state.json`] = { ...(files[`topics/${event.topic}/state.json`] || {}), closed: true };
+  } else if (event.type === "topic") {
+    files["topics/n1/topic.json"] = { id: "n1", title: event.content.title, slug: "new", category_id: event.content.category, tags: event.content.tags, posts: [], chunks: 1, uploads: {}, origin: "forkmesh" };
+    files["topics/n1/local.json"] = { posts: [{ key: "l1", username: account, author: event.author, created_at: new Date().toISOString(), format: "markdown", raw: event.content.body, origin: "forkmesh" }], next: 2 };
+    Object.assign(result, { topic: "n1", post: "l1" });
+  }
+  return result;
+}
+
+async function stageForum(page, { files = fixture(), features = { forum: true }, start = "/alice/proj/forum", viewer = null, posted = [] } = {}) {
+  if (viewer) {
+    await page.addInitScript((account) => {
+      localStorage.setItem("forkmesh.session", JSON.stringify({ nodeName: account, sessionToken: "test-session", status: "active" }));
+    }, viewer.account);
+  }
   const outside = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -148,6 +179,14 @@ async function stageForum(page, { files = fixture(), features = { forum: true },
         blobs[name] = name.startsWith(".forkmesh/forum/") && key in files ? { content: JSON.stringify(files[key]) } : null;
       });
       return route.fulfill({ json: { ok: true, blobs } });
+    }
+    if (url.pathname === "/api/repo/alice/proj/forum") {
+      if (route.request().method() === "GET") {
+        return route.fulfill({ json: { ok: true, account: viewer?.account || "", moderator: Boolean(viewer?.moderator) } });
+      }
+      const body = JSON.parse(route.request().postData() || "{}");
+      posted.push(body);
+      return route.fulfill({ json: applyPosted(files, body.event, viewer?.account || "") });
     }
     if (url.pathname === "/api/repo/alice/proj/raw") {
       if (url.searchParams.get("path") === `.forkmesh/forum/uploads/${UPLOAD}`) {
@@ -219,7 +258,7 @@ test("the Forum tab shows Discourse-style categories, lists and topics read from
   await expect(first.locator("aside.quote blockquote")).toContainText("Quoted words");
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
   await expect(forum.locator(".fm-forum-stats")).toContainText("3.0k");
-  await expect(forum.locator("[data-forum-reply]")).toHaveAttribute("href", `${ORIGIN}/t/blocks-related-to-the-protests/11`);
+  await expect(forum.locator("[data-forum-original]")).toHaveAttribute("href", `${ORIGIN}/t/blocks-related-to-the-protests/11`);
   await expect(forum.locator("[data-forum-topics]")).toContainText("Looking for VPN measurements");
   await forum.locator("[data-forum-more-posts]").click();
   await expect(posts.locator("[data-forum-post]")).toHaveCount(3);
@@ -229,7 +268,7 @@ test("the Forum tab shows Discourse-style categories, lists and topics read from
   await forum.locator("a[data-forum-link]", { hasText: "the rules" }).click();
   await expect(page).toHaveURL(/\/alice\/proj\/forum\/t\/read-this-first\/10\/2$/);
   await expect(forum.locator("h1")).toContainText("Read this first");
-  await expect(forum.locator("[data-forum-reply]")).toHaveCount(0);
+  await expect(forum.locator("[data-forum-reply-box]")).toHaveCount(0);
   await expect(forum).toContainText("This topic is closed for new replies.");
 
   await page.goBack();
@@ -268,4 +307,69 @@ test("the Forum tab stays hidden until the owner turns the forum on", async ({ p
   await stageForum(page, { features: { forum: false } });
   await expect(page.locator("[data-forum-off]")).toContainText("turned off");
   await expect(page.locator('[data-dashboard-repo-tab="forum"]')).toBeHidden();
+});
+
+test("a signed-in reader replies, likes, and an operator closes the topic", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const posted = [];
+  await stageForum(page, { start: "/alice/proj/forum/t/blocks-related-to-the-protests/11", viewer: { account: "ada", moderator: true }, posted });
+  const forum = page.locator("[data-repo-forum]");
+  await expect(forum.locator("[data-forum-post]")).toHaveCount(2);
+  await expect(forum.locator("[data-forum-operator]")).toBeVisible();
+  await forum.locator('[data-forum-post="2"] [data-forum-reply-to]').click();
+  await expect(forum.locator("[data-forum-replying]")).toContainText("Replying to post 2");
+  await forum.locator("[data-forum-reply-box] textarea").fill("Thanks, **bob**. <script>window.__pwned=9</script>");
+  await forum.locator("[data-forum-reply-box] button[type=submit]").click();
+  await expect(forum.locator('[data-forum-post="l1"]')).toContainText("Thanks, bob.");
+  await expect(forum.locator('[data-forum-post="l1"] strong', { hasText: "bob" })).toHaveCount(1);
+  await expect(forum.locator('[data-forum-post="l1"] script')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  const reply = posted[0];
+  expect(reply.branch).toBe("main");
+  expect(reply.event).toMatchObject({ type: "post", topic: "11", post: "", content: { body: "Thanks, **bob**. <script>window.__pwned=9</script>", replyTo: "2" }, authorName: "ada" });
+  expect(reply.event.author).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(reply.event.sig).toMatch(/^[A-Za-z0-9_-]{86}$/);
+  expect(reply.event.id).toMatch(/^post-[0-9a-z]+-[0-9a-z]+$/);
+  await expect(forum.locator('[data-forum-post="l1"] [data-forum-edit]')).toBeVisible();
+  await forum.locator('[data-forum-post="1"] [data-forum-like]').click();
+  await expect(forum.locator('[data-forum-post="1"] [data-forum-like]')).toHaveAttribute("aria-pressed", "true");
+  expect(posted[1].event).toMatchObject({ type: "like", topic: "11", post: "1" });
+  await shot(page, "topic-interactive");
+  await forum.locator("[data-forum-operator] summary").click();
+  await forum.locator('[data-forum-op="close"]').click();
+  await expect(forum).toContainText("This topic is closed for new replies.");
+  expect(posted[2].event).toMatchObject({ type: "close", topic: "11", post: "" });
+});
+
+test("a signed-in reader starts a topic and an operator opens the settings", async ({ page }) => {
+  const posted = [];
+  await stageForum(page, { start: "/alice/proj/forum/latest", viewer: { account: "ada", moderator: true }, posted });
+  const forum = page.locator("[data-repo-forum]");
+  await expect(forum.locator("[data-forum-admin-link]")).toBeVisible();
+  await forum.locator("[data-forum-new]").click();
+  await expect(page).toHaveURL(/\/alice\/proj\/forum\/new$/);
+  await forum.locator("[data-forum-title]").fill("A new question");
+  await forum.locator("[data-forum-category]").selectOption("2");
+  await forum.locator("[data-forum-tags]").fill("DPI, vpn");
+  await forum.locator("[data-forum-body-input]").fill("How do I check?");
+  await forum.locator("[data-forum-composer] button[type=submit]").click();
+  await expect(page).toHaveURL(/\/alice\/proj\/forum\/t\/[^/]+\/n1$/);
+  await expect(forum.locator('[data-forum-post="l1"]')).toContainText("How do I check?");
+  expect(posted[0].event).toMatchObject({ type: "topic", topic: "", content: { title: "A new question", category: 2, tags: ["dpi", "vpn"], body: "How do I check?" } });
+  await page.goto("/alice/proj/forum/admin");
+  await expect(forum.locator("[data-forum-site-form] [data-forum-site-title]")).toHaveValue("Example Forum");
+  await expect(forum.locator("[data-forum-admin-categories] tr")).toHaveCount(3);
+  await forum.locator('[data-forum-category-edit="2"]').click();
+  await expect(forum.locator("[data-forum-category-form] [data-forum-category-name]")).toHaveValue("Other countries");
+  await shot(page, "admin");
+});
+
+test("a reader who is not signed in sees no composer", async ({ page }) => {
+  await stageForum(page, { start: "/alice/proj/forum/t/blocks-related-to-the-protests/11" });
+  const forum = page.locator("[data-repo-forum]");
+  await expect(forum.locator("[data-forum-post]")).toHaveCount(2);
+  await expect(forum.locator("[data-forum-reply-box]")).toHaveCount(0);
+  await expect(forum.locator("[data-forum-like]")).toHaveCount(0);
+  await expect(forum.locator("[data-forum-operator]")).toHaveCount(0);
+  await expect(forum).toContainText("Sign in to reply");
 });

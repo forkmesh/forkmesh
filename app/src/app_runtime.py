@@ -3922,6 +3922,16 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_webhooks_handler(self.env, request, owner, repo)
 
+        forum_match = REPO_FORUM_RE.match(url.path)
+        if forum_match:
+            owner = safe_segment(forum_match.group(1))
+            repo = safe_segment(forum_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import forum_records
+            forum_records._bind_runtime(globals())
+            return await forum_records.forum_handler(self.env, request, owner, repo)
+
         provider_mirror_match = REPO_PROVIDER_MIRROR_RE.match(url.path)
         if provider_mirror_match:
             owner = safe_segment(provider_mirror_match.group(1))

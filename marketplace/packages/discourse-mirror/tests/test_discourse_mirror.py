@@ -390,6 +390,43 @@ def test_a_run_stops_at_its_time_limit_and_keeps_what_it_copied(forum, tmp_path)
     assert result["error"] is None and result["commit"]
 
 
+def test_the_fold_keeps_forkmesh_topics_operator_state_and_overrides(forum, tmp_path, capsys):
+    seed(forum)
+    checkout = forum_checkout(forum, tmp_path)
+    sync(forum, layout="forum", repository=str(checkout))
+    root = checkout / ".forkmesh" / "forum"
+    native_category = dm.NATIVE_CATEGORY_BASE + 1
+    (root / "local.json").write_text(json.dumps({"title": "Our copy", "categories": {
+        str(native_category): {"name": "ForkMesh talk", "slug": "forkmesh-talk", "color": "E45735",
+                               "description": "", "parent_category_id": None, "position": 9},
+        "2": {"name": "Help desk"}}}))
+    (root / "native.json").write_text(json.dumps({"next": 2, "topics": {"n1": {
+        "id": "n1", "title": "Made here", "slug": "made-here", "category_id": native_category, "tags": [],
+        "created_at": "2026-01-10T00:00:00.000Z", "bumped_at": "2026-01-10T00:00:00.000Z", "posts_count": 3,
+        "reply_count": 2, "views": 0, "like_count": 0, "pinned": False, "pinned_globally": False, "closed": False,
+        "archived": False, "visible": True, "posters": [{"username": "ada"}], "last_poster_username": "ada"}}}))
+    (root / "topics" / "12" / "state.json").write_text(json.dumps({
+        "pinned": True, "local_posts": 2, "bumped_at": "2026-01-11T00:00:00.000Z", "last_poster_username": "bob",
+        "posters": [{"username": "bob"}]}))
+    assert dm.main(["fold", "--workspace", str(checkout)]) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["commit"]
+    forum_json = json.loads((root / "forum.json").read_text())
+    assert forum_json["title"] == "Our copy" and forum_json["source"]["type"] == "discourse"
+    assert forum_json["counts"]["topics"] == 4
+    latest = [row["id"] for row in json.loads((root / "latest" / "1.json").read_text())["rows"]]
+    assert latest == [10, 12, "n1", 11]
+    row12 = json.loads((root / "latest" / "1.json").read_text())["rows"][1]
+    assert row12["posts_count"] == 3 and row12["last_poster_username"] == "bob" and row12["pinned"] is True
+    categories = {item["id"]: item for item in json.loads((root / "categories.json").read_text())}
+    assert categories[native_category]["name"] == "ForkMesh talk" and categories[native_category]["topic_count"] == 1
+    assert categories[2]["name"] == "Help desk"
+    assert json.loads((root / "c" / str(native_category) / "1.json").read_text())["rows"][0]["origin"] == "forkmesh"
+    assert git_log(checkout)[0] == "Forum: rebuild the lists"
+    sync(forum, layout="forum", repository=str(checkout))
+    assert json.loads((root / "forum.json").read_text())["title"] == "Our copy"
+    assert "n1" in [row["id"] for row in json.loads((root / "latest" / "1.json").read_text())["rows"]]
+
+
 def test_robots_txt_is_honoured_unless_the_operator_has_permission(forum):
     seed(forum)
     forum.robots = "User-agent: *\nDisallow: /\n"

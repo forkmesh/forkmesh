@@ -56,6 +56,7 @@ DEFAULTS = {
     "layout": "site",
 }
 FORUM_PATH = ".forkmesh/forum"
+NATIVE_CATEGORY_BASE = 1_000_000
 CI_SETTINGS = FORUM_PATH + "/source/settings.json"
 CI_KEYS = ("uploads", "uploadHosts", "maxUploadBytes", "maxUploadBytesPerRun", "revisitPerRun", "delaySeconds",
            "commitName", "commitEmail")
@@ -484,7 +485,31 @@ def _epoch(value: str) -> float:
 
 
 def list_row(row: dict) -> dict:
-    return {**{key: row.get(key) for key in LIST_FIELDS}, "origin": "discourse"}
+    return {**{key: row.get(key) for key in LIST_FIELDS}, "origin": row.get("origin") or "discourse"}
+
+
+STATE_KEYS = ("pinned", "pinned_globally", "closed", "archived", "visible", "category_id", "title")
+
+
+def merge_local_state(row: dict, state: dict) -> dict:
+    merged = dict(row)
+    for key in STATE_KEYS:
+        if key in state:
+            merged[key] = state[key]
+    local = _int(state.get("local_posts"))
+    if local:
+        merged["posts_count"] = _int(merged.get("posts_count")) + local
+        merged["reply_count"] = _int(merged.get("reply_count")) + local
+    if str(state.get("bumped_at") or "") > str(merged.get("bumped_at") or ""):
+        merged["bumped_at"] = state["bumped_at"]
+        merged["last_posted_at"] = state["bumped_at"]
+        merged["last_poster_username"] = state.get("last_poster_username") or merged.get("last_poster_username", "")
+    posters = list(merged.get("posters") or [])
+    for poster in state.get("posters") or []:
+        if isinstance(poster, dict) and all(item.get("username") != poster.get("username") for item in posters):
+            posters.append(poster)
+    merged["posters"] = posters[:5]
+    return merged
 
 
 def latest_row(row: dict) -> dict:
@@ -584,28 +609,41 @@ class ForumViews:
     def __init__(self, store: ForumStore):
         self.store = store
         self.root = store.root
-        self.rows = [row for row in store.index.values() if row.get("fetched_at")]
+        self.local = read_json(self.root / "local.json", {})
+        self.local = self.local if isinstance(self.local, dict) else {}
+        imported = []
+        for row in store.index.values():
+            if not row.get("fetched_at"):
+                continue
+            state = read_json(self.root / "topics" / str(row["id"]) / "state.json", {})
+            imported.append(merge_local_state(row, state) if isinstance(state, dict) and state else row)
+        native = read_json(self.root / "native.json", {})
+        native_rows = [dict(row, origin="forkmesh") for row in ((native or {}).get("topics") or {}).values()
+                       if isinstance(row, dict) and row.get("id") and not row.get("deleted")]
+        self.rows = imported + native_rows
+        self.native_posts = sum(_int(row.get("posts_count")) for row in native_rows)
         self.listed = [row for row in self.rows if row.get("visible", True)]
 
     def write(self) -> None:
         categories = self.categories()
         write_json(self.root / "categories.json", categories)
         meta = self.store.meta
+        origin = str(meta.get("source") or self.store.origin or "")
         write_json(self.root / "forum.json", {
             "format": FORMAT,
             "kind": "forkmesh-forum",
             "generator": f"ForkMesh {PLUGIN_ID}",
-            "title": str(meta.get("title") or ""),
-            "description": str(meta.get("description") or ""),
+            "title": str(self.local.get("title") or meta.get("title") or ""),
+            "description": str(self.local.get("description") if "description" in self.local else meta.get("description") or ""),
             "source": {
-                "type": "discourse",
-                "origin": str(meta.get("source") or self.store.origin),
+                "type": "discourse" if origin else "forkmesh",
+                "origin": origin,
                 "lastSync": str(meta.get("lastSync") or ""),
                 "pending": _int(meta.get("pending")),
             },
             "counts": {
                 "topics": len(self.rows),
-                "posts": sum(_int(row.get("mirrored_posts")) for row in self.rows),
+                "posts": sum(_int(row.get("mirrored_posts")) for row in self.rows) + self.native_posts,
                 "categories": len(categories),
             },
             "pageSize": FORUM_PAGE_SIZE,
@@ -643,6 +681,18 @@ class ForumViews:
 
     def categories(self) -> list[dict]:
         items = [dict(item) for item in self.store.categories if isinstance(item, dict) and item.get("id")]
+        by_id = {item["id"]: item for item in items}
+        for key, override in (self.local.get("categories") or {}).items():
+            if not isinstance(override, dict) or not str(key).isdigit():
+                continue
+            category_id = int(key)
+            if category_id not in by_id:
+                if category_id < NATIVE_CATEGORY_BASE:
+                    continue
+                by_id[category_id] = {"id": category_id, "text_color": "FFFFFF", "origin": "forkmesh"}
+                items.append(by_id[category_id])
+            by_id[category_id].update({field: override[field] for field in (
+                "name", "slug", "color", "description", "parent_category_id", "position") if field in override})
         known = {item["id"] for item in items}
         for item in items:
             if item.get("parent_category_id") not in known:
@@ -1416,6 +1466,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "ci", help=f"copy into the repository this runs in, using {CI_SETTINGS} (for a scheduled workflow)")
     ci.add_argument("--workspace", help="repository checkout (default: $GITHUB_WORKSPACE or the current folder)")
     ci.add_argument("--max-minutes", type=float, default=45, help="stop fetching after this long and commit")
+    fold = commands.add_parser("fold", help="rebuild a repository forum's list files without copying anything")
+    fold.add_argument("--workspace", help="repository checkout (default: $GITHUB_WORKSPACE or the current folder)")
     return parser.parse_args(argv)
 
 
@@ -1423,6 +1475,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "ci":
         return run_ci(args)
+    if args.command == "fold":
+        return run_fold(args)
     try:
         data_dir = Path(args.data_dir).expanduser() if args.data_dir else default_data_dir()
         if args.command == "check":
@@ -1503,6 +1557,27 @@ def ci_forum(workspace: Path) -> dict:
                  layout="forum", maxTopicsPerRun=int(settings.get("maxTopicsPerRun") or 400))
     forum["delaySeconds"] = max(1.0, float(forum.get("delaySeconds") or 1.0))
     return {**DEFAULTS, **forum}
+
+
+def run_fold(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace or os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
+    root = workspace / FORUM_PATH
+    forum = read_json(root / "forum.json", None)
+    if not isinstance(forum, dict):
+        print(f"discourse_mirror: {root / 'forum.json'} is missing", file=sys.stderr)
+        return 1
+    source = forum.get("source") if isinstance(forum.get("source"), dict) else {}
+    store = ForumStore(root, str(source.get("origin") or ""))
+    store.meta.update(lastSync=source.get("lastSync", ""), pending=source.get("pending", 0))
+    store.save()
+    entry = {**DEFAULTS, "repository": str(workspace), "layout": "forum"}
+    try:
+        commit = commit_repository(entry, "Forum: rebuild the lists")
+    except MirrorError as error:
+        print(f"discourse_mirror: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"commit": commit}))
+    return 0
 
 
 def run_ci(args: argparse.Namespace) -> int:

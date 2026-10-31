@@ -107,6 +107,117 @@ hex characters of its SHA-256.
 **Top** ranks topics by `likes × 15 + posts × 5 + views × 0.05`, counting
 topics created within the period.
 
+## Posting and operator tools
+
+Signed-in readers post, reply, like, edit and delete. Operators also pin,
+close, archive, unlist, move, hide, silence, and edit categories and the
+forum's title. Operators are the repository's owners, its organization's
+owners and admins, and the moderators they appoint
+(`moderation.can_moderate_repo`), plus instance admins.
+
+**Code**
+- Server: `app/src/forum_records.py`, routed at
+  `POST /api/repo/<owner>/<repo>/forum`. `GET` on the same path tells the page
+  who is signed in and whether they are an operator.
+- Page: the composer, buttons and admin page are in `09-repo-forum.js`.
+
+### Signed records
+
+Every action is an event the browser signs with the key that Issues and
+Discussions use (`getWebIssueKey`, Ed25519):
+
+```text
+forkmesh-forum-event-v1
+<owner/repo, lowercased>
+<type>
+<topic id, or empty>
+<post key, or empty>
+<author public key>
+<ts, milliseconds>
+<sha256 hex of the content as JSON: keys sorted, no spaces, UTF-8 not escaped>
+```
+
+The content string is `JSON.stringify` over sorted keys in the browser and
+`json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)` on the
+server. The content is a flat object of strings, numbers, booleans and string
+lists, so the two agree byte for byte. A test signs in Node's WebCrypto and
+verifies in Python with Cyrillic, emoji and control characters in the text.
+
+| Type | Who | Content |
+| --- | --- | --- |
+| `topic` | any signed-in account | `title`, `body` (Markdown), `category`, `tags` (5 at most) |
+| `post` | any, unless the topic is closed or archived | `body`, `replyTo` |
+| `edit` | the author, or an operator; ForkMesh posts only | `body`, and `title` on a ForkMesh topic's first post |
+| `delete` | the author, or an operator; operators can also hide copied posts | none |
+| `like`, `unlike` | anyone except the post's author | none |
+| `pin` (`globally`), `unpin`, `close`, `open`, `archive`, `unarchive`, `list`, `unlist`, `move` (`category`) | operators | as listed |
+| `hide`, `unhide` | operators | none (post level) |
+| `category` (`id` 0 creates one), `category-delete` (empty ForkMesh categories only) | operators | `name`, `color`, `description`, `parent`, `position` |
+| `site` | operators | `title`, `description`; on a repository with no forum yet, this starts one |
+| `silence` (`account`, `days`), `unsilence` | operators | as listed |
+
+**What the server checks, in order**
+1. The repository's `forum` switch is on.
+2. The event's shape and limits (`clean_event`), and that `ts` is within 15
+   minutes of the server's clock.
+3. The session binds the author (`_bind_session_author`); a signed-out author
+   is refused.
+4. The signature (`ed25519_verify`).
+5. Operator rights for operator types.
+6. For `topic` and `post` by non-operators, `moderation.submission_gate`:
+   blocked accounts are refused, and so are accounts whose first posts need
+   approval, because the forum has no review queue yet.
+7. A silenced account cannot use the author actions.
+8. Replaying an event already saved (same file name) is refused.
+
+**How it is written**
+- The record and the files it changes are committed in one commit to the
+  default branch, under `.forkmesh/forum/` only. The commit is authored as the
+  account, with the message `Forum: Reply in 11 by @ada`.
+- The commit goes through `_https_mirror_push_send` with credential
+  `forum-record`, fast-forward only, and branch protection is respected. This
+  is the App committing on the forum's behalf, which the owner allowed by
+  turning the forum on. The reader cannot push anywhere else: the App builds
+  the commit itself.
+- A commit that loses a race is rebuilt from the new tip, up to three times.
+- Operator actions are written to the audit log (`forum.<type>`).
+- After a write, the page reads at the returned commit, so the author sees
+  their change straight away.
+
+**Files written alongside format v1** (the importer never writes them):
+
+```text
+events/<YYYY-MM>/<ts>-<id>.json   every signed event, with authorName and receivedAt
+native.json                        {next, topics: {n<k>: list row}}  topics made on ForkMesh
+local.json                         title, description and category overrides
+moderation.json                    {silenced: {account: {until, by}}}
+topics/<id>/local.json             {posts: [{key: "l<k>", username, author, raw, format: "markdown", reply_to, deleted?}], next}
+topics/<id>/likes.json             {<post key>: [accounts]}
+topics/<id>/state.json             operator overrides (pinned, closed, archived, visible, category_id, title,
+                                   hidden, deleted) and activity (local_posts, bumped_at, last_poster_username, posters)
+```
+
+**Keys**
+- Topics made on ForkMesh are `n<k>`; their posts, and ForkMesh replies in
+  copied topics, are `l<k>`. So they never collide with the numbers the
+  Discourse copy keeps adding.
+- The page puts copied and ForkMesh posts in one thread, by time.
+- It hides deleted posts, shows hidden ones as "An operator hid this post"
+  (operators see them, marked), and counts likes as the copied count plus
+  `likes.json`.
+- ForkMesh posts are Markdown, drawn by the dashboard's `renderMarkdown`,
+  which escapes first.
+
+**Lists**
+- **A forum made on ForkMesh** (`forum.json` `source.type` is `forkmesh`): every
+  write rebuilds every list page, the category counts and the tags from
+  `native.json`.
+- **A copied forum:** a write moves the topic on page 1 of Latest and of its
+  category (and its parent). The importer's next run, or `discourse_mirror.py
+  fold`, rebuilds every page. That fold merges `native.json`, each topic's
+  `state.json` and the `local.json` overrides, so operator changes outlive
+  every copy.
+
 ## Rendering imported posts safely
 
 Imported posts are Discourse's cooked HTML, written by somebody else and
@@ -239,29 +350,15 @@ The page is registered like `/start`:
 - **Setup from the web (done, 2026-10-31).** `/start-discourse-mirror`, the
   link from `/start`, the extension's Mirror this forum, and the scheduled
   in-repository workflow.
-- **Phase 2: native signed records.** A new collaboration kind, `forum`. It is
-  not an extension of discussions: their one-file-per-comment layout and fixed
-  categories would break every existing reader of `discussion.md`.
-  - Event schema `forkmesh-forum-event-v1`. Authors can create topics and
-    posts, edit and delete them, and like or unlike a post.
-  - Operators (`moderation.can_moderate_repo`) can:
-    - pin and unpin, globally or in a category, with an end date;
-    - close and open, archive, list and unlist, and move topics;
-    - hide and unhide posts, and delete them as staff;
-    - create, update, delete and reorder categories;
-    - manage tags and change site settings.
-  - Flags and silencing or suspending people stay in the moderation tables in
-    the database: who flagged is private, and silencing controls access.
-  - Each event is an immutable file, `events/<topic>/<ts>-<sha8>.json`, so a
-    merge is a union. Writers fold the events into the format v1 views.
-  - Touches:
-    - `app/src/events.py`, a `forum_handler` and a `forum_inbox` table
-      (migration, schema fingerprint, rekey, `_REPO_SCOPED_TABLES`);
-    - `tools/mirror_gateway.py`, `server/intake.go` and a new `server/forum.go`;
-    - the catalog topic count;
-    - the composer and operator menus in `09-repo-forum.js`;
-    - no-JS pages on nodes (`read_surfaces.py`);
-    - the desktop drain.
+- **Phase 2: posting and operator tools (done, 2026-10-31).** See
+  [Posting and operator tools](#posting-and-operator-tools). The owner chose
+  signed records committed by the App, over a new collaboration kind through
+  the inbox and mirrors, and chose to let any signed-in account post.
+  Still open:
+  - flags and the review queue for held first posts;
+  - counting forum posts toward the new-account limits;
+  - pins with an end date;
+  - tag editing.
 - **Phase 3: Discourse as a provider mirror.**
   - Add `discourse` to `PROVIDERS` in `repository_provider_mirror.py`. Its
     origin is any https address, guarded by `repository_webhooks.clean_url`.
