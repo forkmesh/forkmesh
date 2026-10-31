@@ -375,7 +375,7 @@ public:
     bool addThreadComment(int number, const QString &path, const QString &side,
                           int lineStart, int lineEnd, const QString &body,
                           const QString &suggestionPatch, const PullAnchor &anchor,
-                          QString *error = nullptr);
+                          QString *error = nullptr, QString *threadId = nullptr);
     bool addThreadReply(int number, const QString &threadId,
                         const QString &parentId, const QString &body,
                         QString *error = nullptr);
