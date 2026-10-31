@@ -599,6 +599,157 @@ private:
     }
 };
 
+class PullRowDiffDelegate final : public SelectionBorderRowDelegate
+{
+public:
+    PullRowDiffDelegate(QAbstractItemView *view,
+                        std::function<void(int)> onOpenDiff)
+        : SelectionBorderRowDelegate(view), m_itemView(view),
+          m_onOpenDiff(std::move(onOpenDiff))
+    {
+        m_hoverRepaint = true;
+    }
+
+    void setOnOpenDiff(std::function<void(int)> handler)
+    {
+        m_onOpenDiff = std::move(handler);
+    }
+
+    std::function<void(int)> onOpenDiff() const { return m_onOpenDiff; }
+
+    static QRect diffButtonRect(const QRect &cell)
+    {
+        return QRect(cell.right() - kButtonMargin - kButtonSize + 1,
+                     cell.center().y() - kButtonSize / 2, kButtonSize,
+                     kButtonSize);
+    }
+
+    bool showsDiffButton(const QRect &cell, const QModelIndex &index) const
+    {
+        return index.isValid() && index.row() == hoveredRow() &&
+               pullNumberOf(index) > 0 &&
+               diffButtonRect(cell).left() - kButtonMargin - kWashFadePx >
+                   cell.left();
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        SelectionBorderRowDelegate::paint(painter, option, index);
+        if (!showsDiffButton(option.rect, index))
+            return;
+        const bool dark = currentThemeIsDark();
+        const QRect button = diffButtonRect(option.rect);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const int washFrom = button.left() - kButtonMargin;
+        const QColor base =
+            Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff"));
+        QColor clear = base;
+        clear.setAlpha(0);
+        QLinearGradient wash(washFrom - kWashFadePx, 0, washFrom, 0);
+        wash.setColorAt(0.0, clear);
+        wash.setColorAt(1.0, base);
+        painter->fillRect(QRect(washFrom - kWashFadePx, option.rect.top(),
+                                kWashFadePx, option.rect.height()),
+                          wash);
+        painter->fillRect(QRect(washFrom, option.rect.top(),
+                                option.rect.right() - washFrom + 1,
+                                option.rect.height()),
+                          base);
+        const QColor accent = Theme::nextOr(
+            Theme::Role::AccentFg, QColor(dark ? "#58a6ff" : "#0969da"));
+        const bool pressed = m_pressedRow == index.row();
+        QColor fill = accent;
+        fill.setAlpha(pressed ? (dark ? 104 : 88) : (dark ? 46 : 40));
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(fill);
+        painter->drawEllipse(QRectF(button));
+        themedOcticon(QStringLiteral("file-diff"), accent, kGlyphPx)
+            .paint(painter, QRect(button.center().x() - kGlyphPx / 2 + 1,
+                                  button.center().y() - kGlyphPx / 2 + 1,
+                                  kGlyphPx, kGlyphPx));
+        painter->restore();
+        paintRowSelectionBorder(painter, option, index);
+    }
+
+    bool editorEvent(QEvent *event, QAbstractItemModel *model,
+                     const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override
+    {
+        const QEvent::Type type = event->type();
+        if (type == QEvent::MouseButtonPress ||
+            type == QEvent::MouseButtonRelease ||
+            type == QEvent::MouseButtonDblClick) {
+            auto *me = static_cast<QMouseEvent *>(event);
+            const bool onButton =
+                me->button() == Qt::LeftButton &&
+                showsDiffButton(option.rect, index) &&
+                diffButtonRect(option.rect).contains(me->pos());
+            if (onButton && type == QEvent::MouseButtonPress) {
+                setPressedRow(index.row());
+                return true;
+            }
+            if (onButton && type == QEvent::MouseButtonDblClick)
+                return true;
+            if (type == QEvent::MouseButtonRelease) {
+                const bool fire = onButton && m_pressedRow == index.row();
+                setPressedRow(-1);
+                if (fire) {
+                    const int number = pullNumberOf(index);
+                    if (m_onOpenDiff)
+                        QTimer::singleShot(0, this,
+                                           [fn = m_onOpenDiff, number] {
+                                               fn(number);
+                                           });
+                    return true;
+                }
+            }
+        }
+        return SelectionBorderRowDelegate::editorEvent(event, model, option,
+                                                       index);
+    }
+
+    bool helpEvent(QHelpEvent *event, QAbstractItemView *view,
+                   const QStyleOptionViewItem &option,
+                   const QModelIndex &index) override
+    {
+        if (event && event->type() == QEvent::ToolTip &&
+            showsDiffButton(option.rect, index) &&
+            diffButtonRect(option.rect).contains(event->pos())) {
+            QToolTip::showText(event->globalPos(),
+                               QStringLiteral("Open the changes in Git"), view,
+                               diffButtonRect(option.rect));
+            return true;
+        }
+        return SelectionBorderRowDelegate::helpEvent(event, view, option, index);
+    }
+
+private:
+    static constexpr int kButtonSize = 20;
+    static constexpr int kButtonMargin = 7;
+    static constexpr int kGlyphPx = 12;
+    static constexpr int kWashFadePx = 22;
+
+    static int pullNumberOf(const QModelIndex &index)
+    {
+        return index.sibling(index.row(), 0).data(Qt::UserRole).toInt();
+    }
+
+    void setPressedRow(int row)
+    {
+        if (m_pressedRow == row)
+            return;
+        m_pressedRow = row;
+        if (m_itemView)
+            m_itemView->viewport()->update();
+    }
+
+    QPointer<QAbstractItemView> m_itemView;
+    std::function<void(int)> m_onOpenDiff;
+    int m_pressedRow = -1;
+};
+
 VerticalIconButton *pullActionButton(const QString &caption, const char *icon,
                                      const QString &tooltip = QString())
 {
@@ -1043,6 +1194,10 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
     ph->setSectionResizeMode(1, QHeaderView::Stretch);
     m_pullTable->setItemDelegateForColumn(0,
                                           new PullCompactMetaDelegate(m_pullTable));
+    m_pullTable->setItemDelegateForColumn(
+        1, new PullRowDiffDelegate(m_pullTable, [this](int number) {
+            openPullDiffInGitView(number);
+        }));
     m_pullTable->verticalHeader()->setDefaultSectionSize(
         qMax(m_pullTable->verticalHeader()->defaultSectionSize(), 28));
 
@@ -12584,6 +12739,67 @@ QString MainWindow::testPullListRowTooltip(int number) const
             return item->toolTip();
     }
     return QString();
+}
+
+int MainWindow::testClickPullRowDiffButton(const QList<PullRequest> &pulls,
+                                           int number)
+{
+    if (!m_pullTable)
+        return -1;
+    auto *diff =
+        dynamic_cast<PullRowDiffDelegate *>(m_pullTable->itemDelegateForColumn(1));
+    if (!diff)
+        return -1;
+    const QList<PullRequest> savedPulls = m_currentPulls;
+    const int savedNumber = m_currentPullNumber;
+    m_currentPulls = pulls;
+    m_currentPullNumber = -1;
+    refreshPullList();
+    const std::function<void(int)> handler = diff->onOpenDiff();
+    int opened = -1;
+    diff->setOnOpenDiff([&opened](int n) { opened = n; });
+    QWidget *viewport = m_pullTable->viewport();
+    for (int row = 0; row < m_pullTable->rowCount(); ++row) {
+        QTableWidgetItem *lead = m_pullTable->item(row, 0);
+        QTableWidgetItem *title = m_pullTable->item(row, 1);
+        if (!lead || !title || lead->data(Qt::UserRole).toInt() != number)
+            continue;
+        m_pullTable->scrollToItem(lead, QAbstractItemView::PositionAtCenter);
+        const QList<int> selectedBefore = [this] {
+            QList<int> rows;
+            for (const QModelIndex &index :
+                 m_pullTable->selectionModel()->selectedRows())
+                rows.append(index.row());
+            return rows;
+        }();
+        const QPointF over(m_pullTable->visualItemRect(lead).center());
+        QMouseEvent move(QEvent::MouseMove, over, viewport->mapToGlobal(over),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(viewport, &move);
+        viewport->repaint();
+        const QPointF at(
+            PullRowDiffDelegate::diffButtonRect(m_pullTable->visualItemRect(title))
+                .center());
+        QMouseEvent press(QEvent::MouseButtonPress, at, viewport->mapToGlobal(at),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(viewport, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, at,
+                            viewport->mapToGlobal(at), Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(viewport, &release);
+        QApplication::processEvents();
+        QList<int> selectedAfter;
+        for (const QModelIndex &index : m_pullTable->selectionModel()->selectedRows())
+            selectedAfter.append(index.row());
+        if (selectedAfter != selectedBefore)
+            opened = -2;
+        break;
+    }
+    diff->setOnOpenDiff(handler);
+    m_currentPulls = savedPulls;
+    m_currentPullNumber = savedNumber;
+    refreshPullList();
+    return opened;
 }
 
 QString MainWindow::testQuickAddPlaceholderForPull(const PullRequest &pull)

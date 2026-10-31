@@ -29667,6 +29667,12 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   {ledgerPull(13, QStringLiteral("open"))}),
               QStringLiteral("the pull list shows a loading row while the first "
                              "load runs and drops it once the rows arrive"));
+        check(window.testClickPullRowDiffButton(
+                  {ledgerPull(21, QStringLiteral("open")),
+                   ledgerPull(22, QStringLiteral("open"))},
+                  22) == 22,
+              QStringLiteral("hovering a pull row shows a button that opens that "
+                             "pull's changes in Git without selecting the row"));
     }
     bool prFixButtonFound = false;
     bool prHeaderStyleUniform = true;

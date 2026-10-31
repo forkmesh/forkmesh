@@ -2870,6 +2870,7 @@ public:
     // "conflict ahead behind dirty worktree". Empty when no row shows it.
     QString testPullListBranchMeta(int number) const;
     QString testPullListRowTooltip(int number) const;
+    int testClickPullRowDiffButton(const QList<PullRequest> &pulls, int number);
     QString testPullConflictNoticeBody(const PullRequest &pull,
                                        const QStringList &conflictFiles) const
     {

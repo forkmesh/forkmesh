@@ -71,3 +71,17 @@ so the thumb jumped back up every time the next page loaded.
 
 Test: `checkDiffStreamResponsiveness()` in `desktop/tests/test_window_resize.cpp`
 (`forkmesh-window-tests --diff-stream-only`).
+
+## Opening a pull's changes from the list
+
+Hovering a row on the Pull requests list shows a round diff button at the end of
+the title (`PullRowDiffDelegate` in `desktop/src/MainWindowPulls.cpp`). A click
+opens that pull in the Git range view (`openPullDiffInGitView()`), the same
+place the pull's "Changes in Git" tab leads, without first opening the pull's
+conversation. The button is painted by the title column's delegate rather than
+held as a widget per row, so a long list costs nothing until the pointer is on
+a row; the delegate swallows the press, so the click does not also select the
+row. While the button is up, the row's background fades in beneath it to clear
+the end of the title. It is not drawn when the column is too narrow to fit it.
+
+Test: `testClickPullRowDiffButton()` in `desktop/tests/test_window_resize.cpp`.
