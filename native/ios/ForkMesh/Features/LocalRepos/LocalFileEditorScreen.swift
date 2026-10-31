@@ -40,7 +40,7 @@ struct LocalFileEditorScreen: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 FmIconButton(icon: "delete_outline", label: "Delete file", onPressed: model.busy ? nil : { startDelete() })
                 FmToneButton(
-                    label: "Save", icon: "save_outlined", tone: .accent, filled: true, height: 32,
+                    label: "Save", icon: "save_outlined", tone: .accent, filled: true, height: 32, busy: model.busy,
                     onPressed: model.canSave ? { startSave() } : nil)
             }
         }

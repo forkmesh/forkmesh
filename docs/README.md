@@ -104,7 +104,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [security/NODE_LINK_GRANT.md](security/NODE_LINK_GRANT.md), [security/agent-host-boundaries.md](security/agent-host-boundaries.md), [security/sentinel.md](security/sentinel.md), [security/findings.md](security/findings.md).
 - [dependency-security-audit-2026-09-13.md](dependency-security-audit-2026-09-13.md): dependency audit snapshot.
 - [engineering/third-party-dependencies.md](engineering/third-party-dependencies.md): which third-party packages we removed or replaced with our own code, which we keep and why, and the next candidate.
-- [release/linux-baseline.md](release/linux-baseline.md), [release/self-setup-node.md](release/self-setup-node.md).
+- [release/linux-baseline.md](release/linux-baseline.md), [release/apt.md](release/apt.md), [release/self-setup-node.md](release/self-setup-node.md).
 
 ## Special agents
 

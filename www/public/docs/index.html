@@ -1627,7 +1627,7 @@ sha256hex(title + NUL + base + NUL + head + NUL + patch + NUL + commits)</code><
           id="installers-updates"
           class="mt-16 scroll-mt-44"
           data-search-title="Installers and updates"
-          data-search-body="signed installers auto update release.json appcast sha256 AppImage Windows macOS Sparkle WinSparkle release verification"
+          data-search-body="signed installers auto update release.json appcast sha256 AppImage apt deb Debian Ubuntu Windows macOS Sparkle WinSparkle release verification"
         >
           <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
             Installers and updates
@@ -1652,6 +1652,17 @@ sha256hex(title + NUL + base + NUL + head + NUL + patch + NUL + commits)</code><
             </div>
             <div class="route-row">
               <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >Debian / Ubuntu</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >apt</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Signed apt repository; after adding it once, sudo apt upgrade keeps ForkMesh current (Ubuntu 22.04+, Debian 12+, x86_64)</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
                 >Windows</strong
               >
               <code class="break-words text-sm text-[var(--docs-fg)]"
@@ -1672,6 +1683,18 @@ sha256hex(title + NUL + base + NUL + head + NUL + patch + NUL + commits)</code><
                 >Ad-hoc signed and not notarized yet, so macOS asks for confirmation on first open; update by installing the newer dmg, as the app has no built-in updater on macOS</span
               >
             </div>
+          </div>
+          <div class="doc-card mt-4 p-6">
+            <p class="text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              <strong class="text-[var(--docs-fg)]">Install with apt.</strong>
+              Add the ForkMesh apt source and its signing key once, then
+              install. Later releases arrive with
+              <code class="rounded-md bg-[var(--docs-code)] px-2 py-1">sudo apt update &amp;&amp; sudo apt upgrade</code>.
+            </p>
+            <pre class="mt-4 overflow-x-auto rounded-md bg-[var(--docs-code)] p-4 text-sm text-[var(--docs-fg)]"><code>sudo curl -fsSLo /usr/share/keyrings/forkmesh-archive-keyring.asc https://forkmesh.com/apt/forkmesh-archive-keyring.asc
+sudo curl -fsSLo /etc/apt/sources.list.d/forkmesh.sources https://forkmesh.com/apt/forkmesh.sources
+sudo apt update
+sudo apt install forkmesh</code></pre>
           </div>
           <div class="doc-card mt-4 p-6">
             <ul

@@ -374,10 +374,13 @@ fun FmToneButton(
     filled: Boolean = false,
     tooltip: String? = null,
     height: Dp = 34.dp,
+    busy: Boolean? = null,
 ) {
     val colors = Fm.colors
     val haptics = FmHaptics.current
     val enabled = onPressed != null
+    val tap = rememberFmBusyTap(enabled)
+    val working = tap.busy(busy)
     val color = when (tone) {
         FmTone.Accent -> colors.accent
         FmTone.Success -> colors.success
@@ -400,19 +403,21 @@ fun FmToneButton(
         Row(
             modifier
                 .height(height)
+                .fmBusyRing(working && icon == null, shape)
                 .clip(shape)
                 .clickable(enabled = enabled, role = Role.Button) {
+                    tap.tapped()
                     haptics.tap(SoundCue.forLabel(label, SoundCue.CLICK))
                     onPressed?.invoke()
                 }
                 .clearAndSetSemantics { contentDescription = tooltip ?: label }
-                .alpha(if (enabled) 1f else .45f)
+                .alpha(if (enabled || working) 1f else .45f)
                 .background(background)
                 .padding(horizontal = if (icon == null) 12.dp else 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
-                FmIcon(icon, size = 16.dp, tint = foreground)
+                FmIcon(icon, size = 16.dp, tint = foreground, modifier = Modifier.fmBusyRing(working, inset = (-5).dp))
                 Spacer(Modifier.width(6.dp))
             }
             Text(

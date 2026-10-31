@@ -27,6 +27,7 @@ import com.forkmesh.nativeapp.feature.agents.rememberOpsTick
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuBadge
 import com.forkmesh.nativeapp.feature.teammates.TeammatesFeature
 import com.forkmesh.nativeapp.navigation.Route
+import com.forkmesh.nativeapp.ui.kit.FmBusyRing
 import com.forkmesh.nativeapp.ui.theme.Fm
 import kotlinx.coroutines.delay
 import kotlin.math.PI
@@ -60,9 +61,9 @@ internal fun rememberShellHubActivity(hubBadges: Map<Route.Kind, ShellMenuBadge>
 }
 
 internal object ShellActivityHalo {
-    const val TURN_MS = 1600
+    const val TURN_MS = FmBusyRing.TURN_MS
     const val BREATH_MS = 2400
-    const val ARC = 0.7f
+    const val ARC = FmBusyRing.ARC
     const val SWEEP = 0.28f
 }
 

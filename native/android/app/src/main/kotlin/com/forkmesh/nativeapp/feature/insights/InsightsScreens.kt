@@ -238,8 +238,8 @@ internal class StatsScreen : Screen() {
                 if (editing) {
                     Row {
                         val index = model.layout.indexOfFirst { it.id == id }
-                        FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ model.move(id, index - 1); changed() }) else null)
-                        FmIconButton("arrow_downward", "Move down", onPressed = if (index >= 0 && index < model.layout.size - 1) ({ model.move(id, index + 1); changed() }) else null)
+                        FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ model.move(id, index - 1); changed() }) else null, busy = false)
+                        FmIconButton("arrow_downward", "Move down", onPressed = if (index >= 0 && index < model.layout.size - 1) ({ model.move(id, index + 1); changed() }) else null, busy = false)
                         FmIconButton("width_wide", "Wide", onPressed = { model.toggleWide(id); changed() })
                         FmIconButton("delete_outline", "Remove", onPressed = { model.remove(id); changed() })
                     }
@@ -710,7 +710,7 @@ internal class ExitReportsScreen : Screen() {
         }
         LaunchedEffect(Unit) { reload() }
         DetailScaffold(title, navigator, actions = {
-            FmIconButton("delete_sweep", "Clear", onPressed = if (reports.isEmpty()) null else ({ scope.launch { io { store.clear() }; reload() } }), color = c.textPrimary)
+            FmIconButton("delete_sweep", "Clear", onPressed = if (reports.isEmpty()) null else ({ scope.launch { io { store.clear() }; reload() } }), color = c.textPrimary, busy = false)
         }) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 if (loaded && reports.isEmpty()) {

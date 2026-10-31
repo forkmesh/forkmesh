@@ -55,7 +55,7 @@ struct ChooseInstanceView: View {
                             onPressed: model.checking ? nil : { Task { await connect() } })
                     } else {
                         FmFilledButton(
-                            model.checkLabel, fillWidth: true,
+                            model.checkLabel, fillWidth: true, busy: model.checking,
                             onPressed: model.checking || !model.hasHost ? nil : { Task { await model.check() } })
                     }
                     FmOutlinedButton("Not now", fillWidth: true, onPressed: onClose)

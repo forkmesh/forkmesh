@@ -665,7 +665,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
             FmNavBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", onBack = { navigator.handleBack() }) {
                 if (!loading && error.isEmpty()) {
                     val label = if (canEdit) NotesLogic.saveStateLabel(saveState, saveDetail) else NotesLogic.saveStateLabel(NoteSaveState.ReadOnly)
-                    FmTextButton(onClick = { saveSoon() }, enabled = canEdit && dirty && !saving && conflict == null) {
+                    FmTextButton(onClick = { saveSoon() }, enabled = canEdit && dirty && !saving && conflict == null, busy = saving) {
                         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
                     }
                 }
@@ -1498,7 +1498,7 @@ internal fun NoteShareSheet(
                     FmTextButton(enabled = !busy && NotesLogic.shareName(name).isNotEmpty(), onClick = {
                         val chosen = NotesLogic.shareName(name)
                         send({ target.add(type, chosen, role, includeNotes) }, NotesLogic.sharedNotice(chosen), true)
-                    }) { Text("Share") }
+                    }, busy = busy) { Text("Share") }
                 }
                 if (suggestions.isNotEmpty()) {
                     Column(
@@ -1625,7 +1625,7 @@ private fun NoteLinksSheet(
                             } else {
                                 send({ api.addLink(noteId, link) }, "Linked ${link.label}", true)
                             }
-                        }) { Text("Link") }
+                        }, busy = busy) { Text("Link") }
                     }
                 }
             }

@@ -197,7 +197,7 @@ private fun ChatSheet(model: PokerModel, table: PokerTable) {
                 keyboardActions = KeyboardActions(onSend = { send() }),
             )
             Spacer(Modifier.width(FmSpace.x2))
-            FmToneButton("Send", onPressed = if (text.isNotBlank() && !model.busy) send else null, tone = FmTone.Accent, filled = true, height = 44.dp)
+            FmToneButton("Send", onPressed = if (text.isNotBlank() && !model.busy) send else null, tone = FmTone.Accent, filled = true, height = 44.dp, busy = model.busy)
         }
     }
 }
@@ -418,7 +418,7 @@ private fun InviteSheet(model: PokerModel, table: PokerTable) {
         Text("Or share the code ${table.code}.", style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             FmTextButton(onClick = { model.sheet = null }) { Text("Cancel") }
-            FmToneButton("Invite", onPressed = if (PokerApi.normalizeNames(names).isNotEmpty() && !model.busy) ({ model.invite(names) }) else null, tone = FmTone.Accent, filled = true, height = 40.dp)
+            FmToneButton("Invite", onPressed = if (PokerApi.normalizeNames(names).isNotEmpty() && !model.busy) ({ model.invite(names) }) else null, tone = FmTone.Accent, filled = true, height = 40.dp, busy = model.busy)
         }
     }
 }

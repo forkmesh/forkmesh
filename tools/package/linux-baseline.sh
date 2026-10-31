@@ -35,10 +35,11 @@ usage: tools/package/linux-baseline.sh <command> [options]
 
   engine                          print the container engine that would be used
   prepare                         build (or reuse) the cached Debian 12 builder image
-  build --source DIR --out DIR --version X.Y.Z --commit SHA [--channel NAME]
-                                  build forkmesh-linux-x86_64 and its AppImage (+ .zsync)
+  build --source DIR --out DIR --version X.Y.Z --commit SHA [--channel NAME] [--build N]
+                                  build forkmesh-linux-x86_64, its AppImage (+ .zsync) and .deb
   check FILE...                   fail when a binary needs a newer glibc than the baseline
-  smoke --out DIR --version X.Y.Z launch both assets in Ubuntu 22.04, Ubuntu 24.04 and Debian 12
+  smoke --out DIR --version X.Y.Z launch both assets and check the .deb in Ubuntu 22.04,
+                                  Ubuntu 24.04 and Debian 12
 
 Environment: FORKMESH_LINUX_BASELINE_ENGINE (podman|docker|bwrap),
 FORKMESH_LINUX_BASELINE_CACHE, FORKMESH_BASELINE_JOBS.
@@ -188,7 +189,7 @@ cmd_prepare() {
 }
 
 cmd_build() {
-  local source="" out="" version="" commit="" channel="latest" engine work jobs
+  local source="" out="" version="" commit="" channel="latest" build=0 engine work jobs
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --source) source="$2"; shift 2 ;;
@@ -196,6 +197,7 @@ cmd_build() {
       --version) version="$2"; shift 2 ;;
       --commit) commit="$2"; shift 2 ;;
       --channel) channel="$2"; shift 2 ;;
+      --build) build="$2"; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -210,7 +212,8 @@ cmd_build() {
   jobs="${FORKMESH_BASELINE_APP_JOBS:-$(default_jobs 2)}"
   [ "$jobs" -gt 6 ] && jobs=6
   local envs=(FORKMESH_BASELINE_VERSION="$version" FORKMESH_BASELINE_COMMIT="$commit"
-              FORKMESH_BASELINE_CHANNEL="$channel" FORKMESH_BASELINE_JOBS="$jobs")
+              FORKMESH_BASELINE_CHANNEL="$channel" FORKMESH_BASELINE_JOBS="$jobs"
+              FORKMESH_BASELINE_BUILD="$build")
   log "building ForkMesh $version ($commit) with $engine, -j$jobs"
   local started=$SECONDS
   case "$engine" in
@@ -234,6 +237,7 @@ cmd_build() {
   esac
   log "built in $((SECONDS - started)) s"
   cmd_check "$out/forkmesh-linux-x86_64" "$out/forkmesh-linux-x86_64.AppImage"
+  [ -s "$out/forkmesh-linux-x86_64.deb" ] || die "the build produced no forkmesh-linux-x86_64.deb"
 }
 
 cmd_check() {

@@ -386,6 +386,12 @@ button fired; now every route adds to the session already working on stalls.
 - A background (`--headless`) or offscreen instance never routes stalls to
   an agent, whatever the setting says: its stalls are mirror work, and
   agent builds there would make the next stall worse.
+- A `ui-stalls` run starts in Auto (2026-10-31): nobody is watching it, so
+  `startTeammateSession` ignores the composer's mode dropdown and passes an
+  empty mode to `agentrules::teammateRunMode`, which gives Auto when the
+  agent holds `run-unattended` and Edit otherwise. The repository's Quality
+  workflow (`.forkmesh/workflows/quality.json`) grants `run-unattended` for
+  this; the built-in Quality template still does not.
 
 ### Page switch timing
 

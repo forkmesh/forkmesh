@@ -495,7 +495,7 @@ struct NoteEditorScreen: View {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             if model.showsSave {
-                FmTextButton(model.saveLabel, onPressed: model.saveEnabled ? {
+                FmTextButton(model.saveLabel, busy: model.saving, onPressed: model.saveEnabled ? {
                     Task { apply(await model.save()) }
                 } : nil)
                 .accessibilityIdentifier("note-save")

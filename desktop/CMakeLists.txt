@@ -779,6 +779,8 @@ set(FORKMESH_APP_SOURCES
     src/OverflowActionRow.cpp
     src/UiKit.h
     src/UiKit.cpp
+    src/BusyRing.h
+    src/BusyRing.cpp
     src/MessageBoxClicks.h
     src/NextShellHooks.h
     src/MainWindowNextAccess.h
@@ -809,6 +811,8 @@ set(FORKMESH_APP_SOURCES
     src/PowerSourceReader.cpp
     src/PingFixes.h
     src/PingFixes.cpp
+    src/PingBatch.h
+    src/PingBatch.cpp
     src/AgentUsageResetClock.h
     src/AgentUsageResetClock.cpp
     src/MainnodeRoom.h
@@ -1062,6 +1066,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentCloudSessions.cpp
     src/ClaudeDesktopSessions.h
     src/ClaudeDesktopSessions.cpp
+    src/ClaudeDesktopSidebar.h
+    src/ClaudeDesktopSidebar.cpp
     src/AgentCloudStream.h
     src/AgentCloudStream.cpp
     src/RunnerLogin.h
@@ -1796,6 +1802,19 @@ if(FORKMESH_BUILD_TESTS)
     target_include_directories(forkmesh-ui-kit-tests PRIVATE src)
     if(APPLE)
         set_target_properties(forkmesh-ui-kit-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-busy-ring-tests
+        tests/test_busy_ring.cpp
+        src/Theme.h
+        src/BusyRing.h
+        src/BusyRing.cpp
+    )
+    target_link_libraries(forkmesh-busy-ring-tests PRIVATE Qt6::Widgets Qt6::Test)
+    target_include_directories(forkmesh-busy-ring-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-busy-ring-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3033,6 +3052,8 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_claude_desktop_sessions.cpp
         src/ClaudeDesktopSessions.h
         src/ClaudeDesktopSessions.cpp
+        src/ClaudeDesktopSidebar.h
+        src/ClaudeDesktopSidebar.cpp
     )
     target_include_directories(forkmesh-claude-desktop-sessions-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -4379,6 +4400,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-stats-dashboard-tests)
     add_test(NAME forkmesh-ui-kit-tests
              COMMAND forkmesh-ui-kit-tests)
+    add_test(NAME forkmesh-busy-ring-tests
+             COMMAND forkmesh-busy-ring-tests)
+    set_tests_properties(forkmesh-busy-ring-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     set_tests_properties(forkmesh-ui-kit-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-font-sizing-tests
@@ -5074,6 +5099,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-ping-fixes-tests
         COMMAND forkmesh-ping-fixes-tests)
+
+    qt_add_executable(forkmesh-ping-batch-tests
+        tests/test_ping_batch.cpp
+        src/PingBatch.h
+        src/PingBatch.cpp
+    )
+    target_include_directories(forkmesh-ping-batch-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-ping-batch-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-ping-batch-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-ping-batch-tests
+        COMMAND forkmesh-ping-batch-tests)
 
     qt_add_executable(forkmesh-agent-usage-reset-clock-tests
         tests/test_agent_usage_reset_clock.cpp
