@@ -134,6 +134,9 @@ GovernorDecision decide(const GovernorPolicy &policy,
                         GovernorState &state);
 CpuDecision decideCpu(const GovernorPolicy &policy, const Budget &budget,
                       const CpuInput &input, qint64 nowMs, GovernorState &state);
+int retargetCpuQuota(const Budget &budget, const GovernorState &state);
+QStringList agentScopes(const QList<UnitSample> &units);
+void applyBudget();
 
 class Governor : public QObject {
 public:
@@ -141,6 +144,7 @@ public:
     ~Governor() override;
 
     void start();
+    void applyBudget();
     GovernorSnapshot snapshot() const;
 
 private:

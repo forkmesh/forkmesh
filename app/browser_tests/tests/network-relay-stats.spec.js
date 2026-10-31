@@ -36,7 +36,7 @@ test("public relay stats explain an empty healthy network", async ({ page }) => 
 
   await expect(page.locator("[data-network-hosts]")).toHaveText("0");
   await expect(page.locator("[data-network-hosts-description]")).toHaveText(
-    "No desktop hosts are reachable right now.",
+    "No managed mirror hosts are reachable right now.",
   );
   await expect(page.locator("[data-network-repos]")).toHaveText("0");
   await expect(page.locator("[data-network-repos-description]")).toHaveText(

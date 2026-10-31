@@ -8,6 +8,7 @@
 #include "AgentJail.h"
 #include "AgentResources.h"
 #include "VirtualMachineRuntime.h"
+#include "TranscriptCoverage.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -1008,6 +1009,61 @@ void CodexAppServerSession::handleNotification(const QString &method,
         flushQueuedUserText();
         return;
     }
+    if (method == QStringLiteral("remoteControl/status/changed")) {
+        const QString server = params.value(QStringLiteral("serverName")).toString();
+        const QString status = params.value(QStringLiteral("status")).toString();
+        emitLocalNotice(QStringLiteral("info"),
+                        QStringLiteral("Remote control%1: %2")
+                            .arg(server.isEmpty() ? QString()
+                                                  : QStringLiteral(" (%1)").arg(server),
+                                 status.isEmpty() ? QStringLiteral("unknown") : status));
+        return;
+    }
+    if (method == QStringLiteral("mcpServer/startupStatus/updated")) {
+        const QString name = params.value(QStringLiteral("name")).toString();
+        const QString status = params.value(QStringLiteral("status")).toString();
+        QString text = QStringLiteral("MCP server%1: %2")
+                           .arg(name.isEmpty() ? QString()
+                                              : QStringLiteral(" %1").arg(name),
+                                status.isEmpty() ? QStringLiteral("unknown") : status);
+        QStringList details;
+        for (const QString &key : {QStringLiteral("error"), QStringLiteral("failureReason")}) {
+            const QJsonValue value = params.value(key);
+            if (value.isNull() || value.isUndefined())
+                continue;
+            const QString detail = messageText(value).trimmed();
+            if (!detail.isEmpty() && !details.contains(detail))
+                details.append(detail);
+        }
+        if (!details.isEmpty())
+            text += QStringLiteral(" — ") + details.join(QStringLiteral("; "));
+        emitLocalNotice(status == QStringLiteral("failed") || !details.isEmpty()
+                            ? QStringLiteral("error") : QStringLiteral("info"),
+                        text);
+        return;
+    }
+    if (method == QStringLiteral("thread/settings/updated")) {
+        const QJsonObject settings = params.value(QStringLiteral("threadSettings")).toObject();
+        QStringList details;
+        const auto append = [&](const QString &label, const QJsonValue &setting) {
+            const QString value = setting.toString();
+            if (!value.isEmpty())
+                details.append(QStringLiteral("%1: %2").arg(label, value));
+        };
+        append(QStringLiteral("model"), settings.value(QStringLiteral("model")));
+        append(QStringLiteral("effort"), settings.value(QStringLiteral("effort")));
+        append(QStringLiteral("approvals"), settings.value(QStringLiteral("approvalPolicy")));
+        append(QStringLiteral("directory"), settings.value(QStringLiteral("cwd")));
+        append(QStringLiteral("sandbox"), settings.value(QStringLiteral("sandboxPolicy"))
+                                              .toObject().value(QStringLiteral("type")));
+        append(QStringLiteral("mode"), settings.value(QStringLiteral("collaborationMode"))
+                                           .toObject().value(QStringLiteral("mode")));
+        emitLocalNotice(QStringLiteral("info"),
+                        details.isEmpty() ? QStringLiteral("Thread settings updated.")
+                                          : QStringLiteral("Thread settings updated — %1")
+                                                .arg(details.join(QStringLiteral(", "))));
+        return;
+    }
     if (method == QStringLiteral("turn/completed")) {
         const bool replayQueuedText = !m_queuedUserTexts.isEmpty();
         finishSyntheticTools(params.value(QStringLiteral("turn"))
@@ -1027,12 +1083,16 @@ void CodexAppServerSession::handleNotification(const QString &method,
         flushQueuedUserText();
         return;
     }
-    if (method == QStringLiteral("item/started")) {
-        emitItemStarted(params.value(QStringLiteral("item")).toObject());
-        return;
-    }
-    if (method == QStringLiteral("item/completed")) {
-        emitItemCompleted(params.value(QStringLiteral("item")).toObject());
+    if (method == QStringLiteral("item/started") ||
+        method == QStringLiteral("item/completed")) {
+        const QJsonObject item = params.value(QStringLiteral("item")).toObject();
+        if (!forkmesh::transcriptcoverage::isDrawnCodexItem(
+                item.value(QStringLiteral("type")).toString()))
+            noteUnshownMessage(method, params);
+        if (method == QStringLiteral("item/started"))
+            emitItemStarted(item);
+        else
+            emitItemCompleted(item);
         return;
     }
     if (method == QStringLiteral("item/agentMessage/delta")) {
@@ -1129,6 +1189,20 @@ void CodexAppServerSession::handleNotification(const QString &method,
     if (method.startsWith(QStringLiteral("item/")) ||
         method == QStringLiteral("turn/diff/updated"))
         emitToolDelta(method, params);
+    else
+        noteUnshownMessage(method, params);
+}
+
+void CodexAppServerSession::noteUnshownMessage(const QString &method,
+                                               const QJsonObject &params)
+{
+    const QString line = QString::fromUtf8(
+        QJsonDocument(QJsonObject{{QStringLiteral("method"), method},
+                                  {QStringLiteral("params"), params}})
+            .toJson(QJsonDocument::Compact));
+    if (!forkmesh::transcriptcoverage::rawLineGaps(line).isEmpty())
+        emit event(forkmesh::transcriptcoverage::droppedLineEvent(
+            QStringLiteral("codex"), line));
 }
 
 void CodexAppServerSession::handleServerRequest(const QJsonValue &id,
@@ -1146,6 +1220,7 @@ void CodexAppServerSession::handleServerRequest(const QJsonValue &id,
         method == QStringLiteral("item/permissions/requestApproval");
     if (!commandApproval && !fileApproval && !userInput && !elicitation &&
         !permissions) {
+        noteUnshownMessage(method, params);
         sendObject(QJsonObject{
             {QStringLiteral("id"), id},
             {QStringLiteral("error"),
@@ -1591,14 +1666,7 @@ void CodexAppServerSession::emitUsage(const QJsonObject &params)
 
 bool CodexAppServerSession::isToolItem(const QString &type)
 {
-    static const QSet<QString> types{
-        QStringLiteral("commandExecution"), QStringLiteral("fileChange"),
-        QStringLiteral("mcpToolCall"), QStringLiteral("dynamicToolCall"),
-        QStringLiteral("collabAgentToolCall"), QStringLiteral("webSearch"),
-        QStringLiteral("imageView"), QStringLiteral("imageGeneration"),
-        QStringLiteral("plan"), QStringLiteral("subAgentActivity"),
-        QStringLiteral("sleep")};
-    return types.contains(type);
+    return forkmesh::transcriptcoverage::isCodexToolItem(type);
 }
 
 QString CodexAppServerSession::toolName(const QJsonObject &item)

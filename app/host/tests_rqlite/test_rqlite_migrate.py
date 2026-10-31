@@ -96,7 +96,7 @@ def test_list_mode_reports_pending_without_applying():
 
 def test_app_schema_replay_creates_tables_no_migration_creates():
     """The fingerprint stamp makes the app skip its own DDL, so the migrator
-    must replay it: schema.py creates tables (system_status_minute, ...)
+    must replay it: schema.py creates tables (issue_bounty, ...)
     that no migration does, and /api/status 503s without them."""
     groups = rqlite_migrate.app_schema_groups()
     assert [tolerant for _statements, tolerant in groups] == [
@@ -107,7 +107,7 @@ def test_app_schema_replay_creates_tables_no_migration_creates():
         assert report["app_schema"]["applied"] > 0
         body = leader.query([[
             "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name='system_status_minute'"]])
+            "AND name='issue_bounty'"]])
         assert body["results"][0].get("rows")
         # Nothing pending: the replay is skipped unless asked for.
         again = rqlite_migrate.migrate(leader.http, log=lambda *_: None)

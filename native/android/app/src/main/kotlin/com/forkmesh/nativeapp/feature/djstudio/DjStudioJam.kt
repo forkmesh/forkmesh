@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
+import com.forkmesh.nativeapp.djstudio.DjAutomix
 
 val DjStudioModel.shownQueue: List<DjQueueItem>
     get() = jam?.takeIf { it.joined }?.queue ?: queue
@@ -60,6 +61,7 @@ internal suspend fun DjStudioModel.jamCall(block: (DjJamApi) -> JsonMap): JsonMa
 }
 
 fun DjStudioModel.enqueue(id: String, title: String, author: String) {
+    if (playNow(id, title, author)) return
     val current = jam
     if (current != null && current.joined) {
         show(if (title.isEmpty()) "Added to the jam queue." else "Queued for the jam: $title")
@@ -70,8 +72,13 @@ fun DjStudioModel.enqueue(id: String, title: String, author: String) {
 }
 
 fun DjStudioModel.enqueueAll(songs: List<DjTrack>) {
-    if (songs.isEmpty()) {
+    val first = songs.firstOrNull()
+    if (first == null) {
         show("There are no songs to queue.")
+        return
+    }
+    if (playNow(first.id, first.title, first.author)) {
+        if (songs.size > 1) enqueueAll(songs.drop(1))
         return
     }
     val current = jam
@@ -88,7 +95,8 @@ fun DjStudioModel.enqueueAll(songs: List<DjTrack>) {
         return
     }
     val room = max(0, DjStudio.QUEUE_LIMIT - queue.size)
-    val added = songs.take(room).map { DjQueueItem.of(java.util.UUID.randomUUID().toString(), it.id, it.title, it.author) }
+    val now = System.currentTimeMillis()
+    val added = songs.take(room).map { DjQueueItem.of(java.util.UUID.randomUUID().toString(), it.id, it.title, it.author, addedAt = now) }
     queue = queue + added
     show(
         when {
@@ -99,6 +107,14 @@ fun DjStudioModel.enqueueAll(songs: List<DjTrack>) {
         },
     )
     save()
+}
+
+private fun DjStudioModel.playNow(id: String, title: String, author: String): Boolean {
+    if (automixing || a.scratching || b.scratching || a.keepsPlaying || b.keepsPlaying) return false
+    val side = DjAutomix.playNow(snapshot(a), snapshot(b), crossfader) ?: return false
+    load(side, id, title, author)
+    play(deck(side))
+    return true
 }
 
 fun DjStudioModel.playFromQueue(item: DjQueueItem, side: DjDeckSide) {

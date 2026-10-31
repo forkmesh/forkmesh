@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, desktopBrand, escapeHtml, formatCount, formatTimeAgo, issuePersonNameHtml, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
+  const { $, desktopBrand, escapeHtml, formatCount, formatTimeAgo, issuePersonNameHtml, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, setNavWorking, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -283,6 +283,7 @@
     const rows = agentsRows();
     const visible = agentsFilteredRows(rows);
     if (count) count.textContent = agentsCountText(rows);
+    setNavWorking("agents", rows.some((row) => row.live));
     renderAgentsFilterOptions(rows);
     const problems = [agentsPageView.cloudError, agentsPageView.desktopError].filter(Boolean);
     const notes = [];

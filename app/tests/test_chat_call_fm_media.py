@@ -142,7 +142,7 @@ class CallRuntime(channels.FakeRuntime):
         super().__init__()
         self.fm_calls = []
 
-    async def call_ticket(self, channel_id, account_bi):
+    async def call_ticket(self, channel_id, account_bi, key_version=1):
         return {"ticket": "webrtc-ticket", "room": "r" * 64, "peer": "p" * 32,
                 "url": NODES[0]}
 

@@ -240,7 +240,7 @@ def test_admin_node_delete_is_idempotent_after_every_primary_row_is_gone():
     assert audits[-1][4] == "success"
 
 
-def test_admin_delete_erases_the_nodes_status_page_history():
+def test_admin_delete_skips_the_retired_status_tables():
     handler, writes, _audits, _saved, _deleted = runtime()
     result = asyncio.run(handler(None, Request({
         "nodeName": "mirror6",
@@ -252,8 +252,8 @@ def test_admin_delete_erases_the_nodes_status_page_history():
         "system_status_hourly",
         "system_status_minute",
     ):
-        assert ("DELETE FROM " + table + " WHERE system=?",
-                ("mirror:mirror6",)) in writes
+        assert not any(
+            "FROM " + table + " " in sql for sql, _args in writes)
 
 
 def test_key_signed_desktop_admin_can_delete_without_a_session_token():

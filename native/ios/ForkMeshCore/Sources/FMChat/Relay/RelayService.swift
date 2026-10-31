@@ -834,21 +834,47 @@ public final class RelayService: OwnStatusAnnouncer {
     public var historySnapshot: [String: [ChatMessage]] { history }
 
     public func restoreHistory(_ messages: [ChatMessage]) {
-        var changed = false
+        var added: [String: [ChatMessage]] = [:]
+        var order: [String] = []
         for message in messages where !message.id.isEmpty && !seenIds.contains(message.id) {
             if isExpired?(message.conversation, message.timestamp) == true { continue }
             seenIds.insert(message.id)
-            var list = history[message.conversation] ?? []
-            var at = list.count
-            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
-            list.insert(message, at: at)
-            history[message.conversation] = list
-            if message.conversation.hasPrefix("#") && !channels.contains(message.conversation) {
-                channels.append(message.conversation)
-            }
-            changed = true
+            if added[message.conversation] == nil { order.append(message.conversation) }
+            added[message.conversation, default: []].append(message)
         }
-        if changed { notifyListeners() }
+        if order.isEmpty { return }
+        var next = history
+        var shown = channels
+        for conversation in order {
+            next[conversation] = RelayService.merging(next[conversation] ?? [], added[conversation] ?? [])
+            if conversation.hasPrefix("#") && !shown.contains(conversation) { shown.append(conversation) }
+        }
+        history = next
+        if shown != channels { channels = shown }
+        notifyListeners()
+    }
+
+    nonisolated static func merging(_ list: [ChatMessage], _ added: [ChatMessage]) -> [ChatMessage] {
+        let incoming: [ChatMessage] = added.enumerated().sorted { a, b in
+            let order = compareMessages(a.element, b.element)
+            return order != 0 ? order < 0 : a.offset < b.offset
+        }.map(\.element)
+        var out: [ChatMessage] = []
+        out.reserveCapacity(list.count + incoming.count)
+        var i = 0
+        var j = 0
+        while i < list.count && j < incoming.count {
+            if compareMessages(list[i], incoming[j]) <= 0 {
+                out.append(list[i])
+                i += 1
+            } else {
+                out.append(incoming[j])
+                j += 1
+            }
+        }
+        out.append(contentsOf: list[i...])
+        out.append(contentsOf: incoming[j...])
+        return out
     }
 
     public func addChannel(_ channel: String) {

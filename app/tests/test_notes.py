@@ -24,7 +24,8 @@ class FakeRuntime:
         self.db.executescript(
             (ROOT / "migrations" / "0271_note_events.sql").read_text())
         self.db.execute(
-            "CREATE TABLE org_members(org_bi TEXT,member_bi TEXT,name TEXT)")
+            "CREATE TABLE org_members(org_bi TEXT,member_bi TEXT,name TEXT,"
+            "role TEXT DEFAULT 'member')")
         self.users = {"alice": "user-alice", "bob": "user-bob"}
         self.orgs = {"acme": "org-acme"}
         self.method_value = "GET"
@@ -252,6 +253,40 @@ def test_private_note_is_hidden_and_organization_share_grants_read():
         "baseVersion": 1, "markdown": "nope",
     }), f"/api/notes/{note_id}")
     assert denied["status"] == 404
+
+
+def test_organization_share_admits_insiders_only_and_auditors_read_only():
+    runtime = FakeRuntime()
+    runtime.users.update({"gwen": "user-gwen", "otto": "user-otto"})
+    note_id = call(runtime.use("POST", "alice", {
+        "title": "Plan", "markdown": "secret",
+    }), "/api/notes")["data"]["note"]["id"]
+    call(runtime.use("POST", "alice", {
+        "type": "organization", "name": "acme", "role": "editor",
+    }), f"/api/notes/{note_id}/shares")
+    for member_bi, name, role in (("user-bob", "bob", "member"),
+                                  ("user-gwen", "gwen", "guest"),
+                                  ("user-otto", "otto", "auditor")):
+        runtime.db.execute(
+            "INSERT INTO org_members(org_bi,member_bi,name,role) "
+            "VALUES(?,?,?,?)", ("org-acme", member_bi, name, role))
+    runtime.db.commit()
+    member = call(runtime.use("GET", "bob"), f"/api/notes/{note_id}")
+    assert member["data"]["note"]["role"] == "editor"
+    assert call(runtime.use("GET", "gwen"),
+                f"/api/notes/{note_id}")["status"] == 404
+    assert call(runtime.use("GET", "gwen"),
+                "/api/notes")["data"]["notes"] == []
+    assert call(runtime.use("PATCH", "gwen", {
+        "baseVersion": 1, "markdown": "guest edit",
+    }), f"/api/notes/{note_id}")["status"] == 404
+    auditor = call(runtime.use("GET", "otto"), f"/api/notes/{note_id}")
+    assert auditor["data"]["note"]["role"] == "viewer"
+    assert [note["id"] for note in call(
+        runtime.use("GET", "otto"), "/api/notes")["data"]["notes"]] == [note_id]
+    assert call(runtime.use("PATCH", "otto", {
+        "baseVersion": 1, "markdown": "auditor edit",
+    }), f"/api/notes/{note_id}")["status"] == 404
 
 
 def test_share_suggestions_leave_out_owner_and_existing_shares():

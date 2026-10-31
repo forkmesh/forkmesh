@@ -31,24 +31,32 @@ def scope(label=""):
 
 
 @contextlib.contextmanager
-def request_scope(request):
+def request_scope(request, private=False):
     holder = _CALLER.get()
     if holder is None:
-        with scope(request_label(request)):
+        with scope(request_label(request, private)):
+            _CALLER.get()["private"] = bool(private)
             yield
         return
-    if not holder["label"]:
-        holder["label"] = _clean(request_label(request), LABEL_MAX_CHARS)
+    if private:
+        holder["private"] = True
+        holder["user"] = holder["session"] = ""
+    if not holder["label"] or private:
+        holder["label"] = _clean(request_label(request, private),
+                                 LABEL_MAX_CHARS)
     yield
 
 
-def request_label(request):
+def request_label(request, private=False):
     try:
         method = str(request.method or "GET").upper()
         path = urllib.parse.urlsplit(str(request.url)).path or "/"
         address = str(request.headers.get("cf-connecting-ip") or "")
     except Exception:
         return ""
+    if private:
+        from . import privacy
+        return "%s %s" % (method, privacy.masked_path(path))
     fields = ["%s %s" % (method, path[:PATH_MAX_CHARS])]
     if address:
         fields.append("IP " + address)
@@ -57,7 +65,7 @@ def request_label(request):
 
 def note_session(name, session_id):
     holder = _CALLER.get()
-    if holder is None:
+    if holder is None or holder.get("private"):
         return
     holder["user"] = _clean(name, 64)
     holder["session"] = _clean(session_id, 64)[:SESSION_PREFIX_CHARS]

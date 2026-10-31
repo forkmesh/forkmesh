@@ -54,7 +54,7 @@ enum AgentVoiceSource {
 
     static func candidate(_ row: UnifiedAgentRow) -> AgentVoiceCandidate {
         AgentVoiceCandidate(
-            id: row.id, number: row.isDesktop && !row.outside ? row.localId : 0, title: row.title,
+            id: row.id, number: row.isDesktop && !row.outside && !row.elsewhere ? row.localId : 0, title: row.title,
             repo: row.repoLabel, statusLabel: row.statusLabel, isActive: row.isActive,
             updatedAtMs: Int64(row.updatedAtMs))
     }
@@ -441,7 +441,9 @@ struct DeleteAgentIntent: AppIntent {
         let center = try await AgentVoiceSource.center()
         let client = try await AgentVoiceSource.ops()
         await center.refresh()
-        let rows = center.rows.filter { $0.isDesktop && !$0.outside && $0.outsideUser.isEmpty && $0.localId > 0 }
+        let rows = center.rows.filter {
+            $0.isDesktop && !$0.outside && !$0.elsewhere && $0.outsideUser.isEmpty && $0.localId > 0
+        }
         let unmerged = rows.filter { !$0.merged && !$0.branchName.isEmpty }.count
         let question = AgentVoice.deleteAllQuestion(
             count: rows.count, running: rows.filter(\.isActive).count, unmerged: unmerged)

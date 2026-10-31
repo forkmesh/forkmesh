@@ -162,8 +162,24 @@ class _OrganizationDiscordRuntime:
             "prompt": "consent",
         })
 
-    def oauth_transaction_cookie(self):
-        return _cookie_value(self.request, DISCORD_OAUTH_TRANSACTION_COOKIE)
+    def oauth_transaction_cookie(self, state=""):
+        state = str(state or "").lower()
+        values = []
+        header = self.request.headers.get("cookie") or ""
+        for part in header.split(";"):
+            key, sep, value = part.strip().partition("=")
+            value = value.strip().lower()
+            if (
+                sep
+                and (key == DISCORD_OAUTH_TRANSACTION_COOKIE
+                     or key.startswith(DISCORD_OAUTH_TRANSACTION_COOKIE + "_"))
+                and _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(value)
+                and value not in values
+            ):
+                values.append(value)
+        if _DISCORD_OAUTH_TRANSACTION_RE.fullmatch(state):
+            return state if state in values else ""
+        return values[0] if len(values) == 1 else ""
 
     def oauth_start_response(self, data, transaction):
         cookie = _discord_oauth_transaction_cookie(transaction)
@@ -197,7 +213,8 @@ class _OrganizationDiscordRuntime:
             "cache-control": "no-store, max-age=0, must-revalidate",
             "referrer-policy": "no-referrer",
             "x-content-type-options": "nosniff",
-            "set-cookie": _clear_discord_oauth_transaction_cookie(),
+            "set-cookie": _clear_discord_oauth_transaction_cookie(
+                self.query("state")),
         })
 
     async def discord_guild(self, guild_id):

@@ -106,6 +106,10 @@ CRON_PHASE_CATALOG = (
      "Purge catalog entries for blocked repositories."),
     ("central-fund", 15, (14,), "rewards",
      "Distribute the central reward fund."),
+    ("mirror-quota", 5, (3,), "integrations",
+     "Check a few registered repository mirrors with a bounded git ref "
+     "listing and record whether each matches the repository's recent "
+     "heads."),
     ("instance-health", 15, (11,), "nodes",
      "Ask listed instances for /readyz; hide offline ones and ping about "
      "deleting those offline for a day."),

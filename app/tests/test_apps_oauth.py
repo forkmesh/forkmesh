@@ -322,6 +322,47 @@ def test_org_install_needs_admin_approval():
         "canRevoke"] is False
 
 
+def test_revoking_an_org_install_withdraws_the_approval_and_guests_cannot_install():
+    world = World()
+    world.org("acme", carol="owner", bob="member", gwen="guest",
+              otto="auditor")
+    created = create_app(world)
+    world.db.execute("UPDATE apps SET listing='listed'")
+    scope = "repos:read issues:read"
+    pending = authorize(world, created, user="bob", target="org:acme",
+                        scope=scope)
+    [request] = call(world, "GET", "/api/apps/orgs/acme/requests",
+                     user="carol")["data"]["requests"]
+    call(world, "POST", "/api/apps/orgs/acme/requests/" + request["id"],
+         {"action": "approve"}, user="carol")
+    for user in ("gwen", "otto"):
+        refused = authorize(world, created, user=user, target="org:acme",
+                            scope=scope)
+        assert refused["status"] == 403
+        assert refused["data"]["error"] == "not_org_member"
+    done = authorize(world, created, user="bob", target="org:acme",
+                     scope=scope)
+    exchange(world, created, code_from(done))
+    [org] = call(world, "GET", "/api/apps/installed",
+                 user="carol")["data"]["organizations"]
+    install_id = org["installs"][0]["installId"]
+    assert call(world, "DELETE", "/api/apps/installs/" + install_id,
+                user="carol")["status"] == 200
+    again = authorize(world, created, user="bob", target="org:acme",
+                      scope=scope)
+    assert pending["data"]["pending"] is True
+    assert again["data"].get("pending") is True
+    assert "code=" not in again["data"]["redirect"]
+
+
+def test_org_guests_cannot_see_the_organization_private_apps():
+    world = World()
+    world.org("acme", alice="owner", gwen="guest")
+    created = create_app(world, organization="acme")
+    refused = authorize(world, created, user="gwen")
+    assert refused["data"]["error"] == "app_not_available"
+
+
 def test_org_policy_restricts_member_requests():
     world = World()
     world.org("acme", carol="owner", bob="member")

@@ -246,6 +246,7 @@ internal class PluginMenu(val packageId: String, private val navigator: Navigato
                                 onPressed = if (busy || viewer?.canRate != true) null else ({ edit(feedback.copy(stars = star)) }),
                                 color = c.warning,
                                 iconSize = 28.dp,
+                                busy = busy,
                             )
                         }
                         if (loading) FmCircularProgressIndicator(Modifier.padding(start = FmSpace.x2).size(18.dp))
@@ -286,6 +287,7 @@ internal class PluginMenu(val packageId: String, private val navigator: Navigato
                         icon = "auto_awesome",
                         tone = FmTone.Accent,
                         height = 48.dp,
+                        busy = busy,
                     )
                     AccountFilledButton(
                         if (busy) PluginFeedback.SENDING else PluginFeedback.SEND,

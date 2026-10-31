@@ -184,9 +184,13 @@ versions the caller supplies.
 
 `native/fixtures/insight/` is shared by the desktop and both phones:
 
-- `repo/`: 57 files in about 25 languages, with vendored, generated,
+- `repo/`: 56 files in about 25 languages, with vendored, generated,
   minified, binary and empty files that must be skipped, two import cycles,
-  duplicated code, a brain method and a large file.
+  duplicated code, a brain method and a large file. Every fixture file must
+  be committed: the golden writer analyses the folder on disk, so a file git
+  ignores (`node_modules/`, `build/`, `__pycache__/`, `.venv/`) ends up in
+  `expected.json` but not in other checkouts. The vendored sample is
+  `vendor/left-pad/index.js` for that reason.
 - `history.log`: fifteen commits in the desktop's `git log --numstat`
   format, with five authors (one former), fix commits, a binary file and a
   path that no longer exists.

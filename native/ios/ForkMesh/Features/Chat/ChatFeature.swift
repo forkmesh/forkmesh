@@ -67,6 +67,8 @@ enum ChatFeature {
             historyFile: { defaultMeshHistoryFile(project: meshProject()) })
         mesh.accountProvider = { auth.session?.nodeName ?? "" }
         mesh.projectScope = meshProject
+        mesh.waitsForRoom = !PermissionPacing.nearbyAllowed(prefs)
+        mesh.onFirstRoomOpen = { PermissionPacing.markNearbyOpened(prefs) }
         let control = LocalControlService(
             mesh: mesh, identity: identity, prefs: prefs, userName: { auth.session?.nodeName ?? "" })
         control.inferenceProvider = { Services.get(LocalInferenceService.self) }

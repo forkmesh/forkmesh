@@ -350,6 +350,7 @@ export function createWorldOfficeMeeting({
     );
     onActivity("visiting-office");
     renderRoomBoard();
+    void fetchRooms();
     return true;
   }
 
@@ -752,6 +753,7 @@ export function createWorldOfficeMeeting({
   }
 
   async function joinRoom(roomId) {
+    if (!rooms.some((candidate) => candidate.id === String(roomId || ""))) await fetchRooms();
     const room = rooms.find((candidate) => candidate.id === String(roomId || ""));
     if (!room || socket) return false;
     activeRoom = room;

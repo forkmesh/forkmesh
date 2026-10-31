@@ -101,3 +101,9 @@ def test_discord_messages_append_in_paint_separated_slices():
     slice_helper = _region("function nextChatSlice()", "function pinFullLogToNewest()")
     assert "afterNextPaint(finish);" in slice_helper
     assert "setTimeout(finish, 100);" in slice_helper
+
+
+def test_discord_refresh_declares_its_partial_failure_flag():
+    source = (Path(__file__).resolve().parents[1] / "public" / "dashboard-chat.js").read_text(encoding="utf-8")
+    assert "let refreshFailed = false;" in source
+    assert source.index("let refreshFailed = false;") < source.index("if (!refreshFailed)")

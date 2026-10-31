@@ -301,7 +301,7 @@
 
   function buildNumber(asset) {
     const build = Number(asset.build);
-    return Number.isSafeInteger(build) && build > 1 ? build : 0;
+    return Number.isSafeInteger(build) && build > 0 ? build : 0;
   }
 
   function downloadLink(asset, label, tag) {

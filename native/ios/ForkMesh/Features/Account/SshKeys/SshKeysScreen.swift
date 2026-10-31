@@ -143,7 +143,7 @@ struct SshKeysScreen: View {
                 FmOutlinedButton("Paste", icon: "content_paste", onPressed: {
                     if let text = UIPasteboard.general.string { model.draftKey = String(text.prefix(SshKeys.maxLineBytes)) }
                 })
-                FmFilledButton(model.busy ? "Adding…" : "Add key", icon: "add", onPressed: model.canAdd ? {
+                FmFilledButton(model.busy ? "Adding…" : "Add key", icon: "add", busy: model.busy, onPressed: model.canAdd ? {
                     Task { @MainActor in
                         if await model.add() { addNotice = FmNotice("Key added") }
                     }

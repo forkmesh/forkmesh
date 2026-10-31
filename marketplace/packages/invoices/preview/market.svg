@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Invoicing dashboard</title>
+  <desc id="desc">A dark dashboard with outstanding, overdue and paid totals, an open rate, and invoice rows with opened and viewed counts.</desc>
+  <rect width="1200" height="675" rx="28" fill="#0b1020"/>
+  <rect x="36" y="36" width="1128" height="603" rx="22" fill="#11182b" stroke="#2b3654"/>
+  <text x="76" y="98" fill="#f0f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="700">Invoices</text>
+  <text x="76" y="132" fill="#8b949e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18">Bill CRM contacts, email invoices, see when they are opened, viewed and paid.</text>
+  <rect x="980" y="70" width="148" height="44" rx="8" fill="#238636"/>
+  <text x="1054" y="99" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17" font-weight="600" text-anchor="middle">New invoice</text>
+  <rect x="76" y="166" width="1052" height="112" rx="14" fill="#0d1117" stroke="#2b3654"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="104" y="204" fill="#8b949e" font-size="15">Outstanding</text>
+    <text x="104" y="246" fill="#f0f6fc" font-size="30" font-weight="700">$18,450</text>
+    <text x="320" y="204" fill="#8b949e" font-size="15">Overdue</text>
+    <text x="320" y="246" fill="#ff7b72" font-size="30" font-weight="700">$2,300</text>
+    <text x="536" y="204" fill="#8b949e" font-size="15">Paid, last 30 days</text>
+    <text x="536" y="246" fill="#f0f6fc" font-size="30" font-weight="700">$31,920</text>
+    <text x="752" y="204" fill="#8b949e" font-size="15">Opened</text>
+    <text x="752" y="246" fill="#f0f6fc" font-size="30" font-weight="700">86%</text>
+    <text x="940" y="204" fill="#8b949e" font-size="15">Average time to pay</text>
+    <text x="940" y="246" fill="#f0f6fc" font-size="30" font-weight="700">9.4 days</text>
+  </g>
+  <line x1="300" y1="186" x2="300" y2="258" stroke="#2b3654"/>
+  <line x1="516" y1="186" x2="516" y2="258" stroke="#2b3654"/>
+  <line x1="732" y1="186" x2="732" y2="258" stroke="#2b3654"/>
+  <line x1="920" y1="186" x2="920" y2="258" stroke="#2b3654"/>
+  <rect x="76" y="302" width="1052" height="306" rx="14" fill="#0d1117" stroke="#2b3654"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" fill="#8b949e">
+    <text x="104" y="338">Invoice</text><text x="420" y="338">Status</text><text x="640" y="338">Amount</text><text x="800" y="338">Due</text><text x="940" y="338">Engagement</text>
+  </g>
+  <line x1="76" y1="354" x2="1128" y2="354" stroke="#2b3654"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="104" y="392" fill="#f0f6fc" font-size="18" font-weight="600">INV-0042</text>
+    <text x="104" y="414" fill="#8b949e" font-size="14">Northwind Labs · CRM</text>
+    <rect x="420" y="376" width="74" height="26" rx="13" fill="none" stroke="#3fb950"/><text x="457" y="394" fill="#3fb950" font-size="14" text-anchor="middle">Paid</text>
+    <text x="640" y="398" fill="#f0f6fc" font-size="18">$4,800.00</text><text x="800" y="398" fill="#8b949e" font-size="15">2 Nov 2026</text>
+    <text x="940" y="398" fill="#8b949e" font-size="15">✉ 3   👁 2   💳 1</text>
+    <line x1="76" y1="436" x2="1128" y2="436" stroke="#2b3654"/>
+    <text x="104" y="474" fill="#f0f6fc" font-size="18" font-weight="600">INV-0043</text>
+    <text x="104" y="496" fill="#8b949e" font-size="14">Juniper &amp; Co · CRM</text>
+    <rect x="420" y="458" width="74" height="26" rx="13" fill="none" stroke="#4493f8"/><text x="457" y="476" fill="#4493f8" font-size="14" text-anchor="middle">Sent</text>
+    <text x="640" y="480" fill="#f0f6fc" font-size="18">$12,150.00</text><text x="800" y="480" fill="#8b949e" font-size="15">20 Nov 2026</text>
+    <text x="940" y="480" fill="#8b949e" font-size="15">✉ 1   👁 1   💳 0</text>
+    <line x1="76" y1="518" x2="1128" y2="518" stroke="#2b3654"/>
+    <text x="104" y="556" fill="#f0f6fc" font-size="18" font-weight="600">INV-0039</text>
+    <text x="104" y="578" fill="#8b949e" font-size="14">Harbor Studio</text>
+    <rect x="420" y="540" width="86" height="26" rx="13" fill="none" stroke="#ff7b72"/><text x="463" y="558" fill="#ff7b72" font-size="14" text-anchor="middle">Overdue</text>
+    <text x="640" y="562" fill="#f0f6fc" font-size="18">$2,300.00</text><text x="800" y="562" fill="#8b949e" font-size="15">14 Oct 2026</text>
+    <text x="940" y="562" fill="#8b949e" font-size="15">✉ 0   👁 0   💳 0</text>
+  </g>
+</svg>

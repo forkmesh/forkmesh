@@ -147,6 +147,7 @@ class BackgroundLinkService : Service() {
     }
 
     private fun deliver(link: Link) {
+        if (plan.callsOnly) return
         val account = link.account
         val many = links.size > 1 || BackgroundLink.accounts().size > 1
         if (PingAlerts.fetchAndDeliver(this, account.id, account.label, many, link.api, account.node)) {
@@ -155,6 +156,7 @@ class BackgroundLinkService : Service() {
     }
 
     private fun deliverDirectMessage(link: Link, event: DirectMessageEvent?) {
+        if (plan.callsOnly) return
         val account = link.account
         val many = links.size > 1 || BackgroundLink.accounts().size > 1
         val secrets = runCatching { account.project.scope.secrets(SecureStore(this)) }.getOrNull()

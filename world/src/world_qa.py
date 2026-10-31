@@ -16,7 +16,7 @@ def _bind_runtime(runtime):
             namespace[name] = value
 
 
-WORLD_QA_DECK_REVISION = "2026-08-06-debug-live-telemetry-strip-31"
+WORLD_QA_DECK_REVISION = "2026-10-24-world-voice-camera-channels-32"
 # The physical desk paints only five cards per page, but its catalog must
 # include every bounded source: built-ins, dynamically routed QA items, and
 # the organization's encrypted QA-ready tasks. Organization tasks are capped
@@ -24,6 +24,18 @@ WORLD_QA_DECK_REVISION = "2026-08-06-debug-live-telemetry-strip-31"
 # response ceiling rather than an arbitrary visible-card truncation.
 WORLD_QA_MAX_CARDS = 4096
 WORLD_QA_CARDS = (
+    ("world-voice-camera-channels",
+     "Voice, camera avatars, bubbles and the channel list",
+     "Sign in on two browsers and stand near each other. Turn the microphone "
+     "on in one and confirm both join #general voice, hear each other, and see "
+     "a word badge on the speaker's right shoulder that counts up and blinks "
+     "green while talking. Turn the camera on and confirm the avatar's head, "
+     "face and raised hand follow you, and a thumbs up sends a reaction to the "
+     "speaker. Select the other avatar, start a privacy bubble, join it on the "
+     "other browser, and confirm the bubble shows and nobody outside hears it. "
+     "Open the # list and confirm World channels, voice rooms, Office rooms, "
+     "channels and messages open in the World. Click the performance badge and "
+     "send a diagnostic report."),
     ("world-debug-live-telemetry-strip",
      "DEBUG live telemetry strip",
      "Open the World and hover DEBUG. Confirm the strip charts the nine health "

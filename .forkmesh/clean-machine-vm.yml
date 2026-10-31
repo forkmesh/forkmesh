@@ -120,17 +120,17 @@ jobs:
           fi
           # What the observer actually read on the VM's screen, step by step.
           python3 - "$dest/summary.json" <<'PY'
-import json, sys
-summary = json.load(open(sys.argv[1]))
-counts = summary.get("observer", {})
-release = summary.get("release_under_test") or {}
-print("Release under test: %s (checksums_sha256 %s)"
-      % (release.get("tag", "unknown"), release.get("checksums_sha256", "unknown")))
-print("Screen checks: %d observed, %d not observed, %d unchecked"
-      % (counts.get("observed", 0), counts.get("not_observed", 0), counts.get("unchecked", 0)))
-for observation in summary.get("observations", []):
-    print("  %-13s %s: %s" % (observation["verdict"], observation["step"], observation["detail"]))
-PY
+          import json, sys
+          summary = json.load(open(sys.argv[1]))
+          counts = summary.get("observer", {})
+          release = summary.get("release_under_test") or {}
+          print("Release under test: %s (checksums_sha256 %s)"
+                % (release.get("tag", "unknown"), release.get("checksums_sha256", "unknown")))
+          print("Screen checks: %d observed, %d not observed, %d unchecked"
+                % (counts.get("observed", 0), counts.get("not_observed", 0), counts.get("unchecked", 0)))
+          for observation in summary.get("observations", []):
+              print("  %-13s %s: %s" % (observation["verdict"], observation["step"], observation["detail"]))
+          PY
 
           if [ "$rc" -eq 0 ]; then
             verdict="PASSED: clean_machine_transcript.sh $mode exited 0 (see release_under_test in summary.json)"

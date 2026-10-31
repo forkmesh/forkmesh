@@ -195,6 +195,7 @@ void TerminalWidget::runCommand(const QString &commandLine, const QString &cwd,
                 scanForSignInUrl(chunk);
                 m_viewOffset = 0;
                 update();
+                emit outputArrived();
             });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this, [this, process](int exitCode) {
@@ -383,6 +384,7 @@ void TerminalWidget::onReadyRead()
     }
     m_viewOffset = 0;
     update();
+    emit outputArrived();
 
     if (gotEof) {
         if (m_notifier) {
@@ -424,6 +426,34 @@ void TerminalWidget::writeToPty(const QByteArray &bytes)
             break;
     }
 #endif
+}
+
+void TerminalWidget::sendInput(const QByteArray &bytes)
+{
+    writeToPty(bytes);
+}
+
+QString TerminalWidget::plainText() const
+{
+    QStringList lines;
+    const int count = streamRowCount();
+    lines.reserve(count);
+    for (int r = 0; r < count; ++r) {
+        const Row *row = rowAt(r);
+        if (!row)
+            continue;
+        QString line;
+        for (const Cell &cell : *row) {
+            const char32_t ch = cell.ch;
+            line += ch == 0 ? QString(QLatin1Char(' ')) : QString::fromUcs4(&ch, 1);
+        }
+        while (line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        lines << line;
+    }
+    while (!lines.isEmpty() && lines.constLast().isEmpty())
+        lines.removeLast();
+    return lines.join(QLatin1Char('\n'));
 }
 
 void TerminalWidget::scanForSignInUrl(const QByteArray &chunk)

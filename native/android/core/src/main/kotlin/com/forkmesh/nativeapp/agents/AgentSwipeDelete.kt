@@ -4,9 +4,9 @@ import com.forkmesh.nativeapp.control.UnifiedAgentRow
 import com.forkmesh.nativeapp.control.liveDesktopRow
 
 sealed class AgentDeleteTarget {
-    data class Desktop(val sessionId: Int, val repoName: String) : AgentDeleteTarget()
+    data class Desktop(val sessionId: Int, val repoName: String, val desktopKey: String = "") : AgentDeleteTarget()
 
-    data class Outside(val agentId: Int, val repoName: String) : AgentDeleteTarget()
+    data class Outside(val agentId: Int, val repoName: String, val desktopKey: String = "") : AgentDeleteTarget()
 
     data class Run(val row: UnifiedAgentRow) : AgentDeleteTarget()
 
@@ -20,6 +20,13 @@ sealed class AgentDeleteTarget {
         }
 
     val needsConfirmation: Boolean get() = this is Outside
+
+    val onDesktopKey: String
+        get() = when (this) {
+            is Desktop -> desktopKey
+            is Outside -> desktopKey
+            is Run -> ""
+        }
 }
 
 object AgentSwipeDelete {
@@ -28,8 +35,8 @@ object AgentSwipeDelete {
     const val OUTSIDE_CONFIRM_TEXT = "It was started outside ForkMesh. Deleting it ends that process on the desktop."
 
     fun forRow(row: UnifiedAgentRow): AgentDeleteTarget? = when {
-        row.outside -> if (row.localId != 0) AgentDeleteTarget.Outside(row.localId, row.repoName) else null
-        row.isDesktop -> if (row.localId > 0) AgentDeleteTarget.Desktop(row.localId, row.repoName) else null
+        row.outside -> if (row.localId != 0) AgentDeleteTarget.Outside(row.localId, row.repoName, if (row.elsewhere) row.desktopKey else "") else null
+        row.isDesktop -> if (row.localId > 0) AgentDeleteTarget.Desktop(row.localId, row.repoName, if (row.elsewhere) row.desktopKey else "") else null
         row.cloudSessionId.isNotEmpty() -> AgentDeleteTarget.Run(row)
         else -> null
     }
@@ -46,7 +53,7 @@ object AgentSwipeDelete {
     fun forget(groups: List<AgentRepoGroup>, target: AgentDeleteTarget): List<AgentRepoGroup> = groups.map { group ->
         when (target) {
             is AgentDeleteTarget.Desktop ->
-                if (!group.repo.name.equals(target.repoName, ignoreCase = true)) group
+                if (target.desktopKey.isNotEmpty() || !group.repo.name.equals(target.repoName, ignoreCase = true)) group
                 else group.copy(sessions = group.sessions.filter { it.id != target.sessionId })
             is AgentDeleteTarget.Outside -> group
             is AgentDeleteTarget.Run ->

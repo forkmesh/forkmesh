@@ -703,7 +703,8 @@ LaunchCommand restrictedCommand(
                                   QStringLiteral("TMPDIR"),
                                   QStringLiteral("TMP"),
                                   QStringLiteral("TEMP"),
-                                  QStringLiteral("XDG_CACHE_HOME")};
+                                  QStringLiteral("XDG_CACHE_HOME"),
+                                  QStringLiteral("CCACHE_DIR")};
     for (const QString &key : scratchKeys)
         appendExisting(readWrite, environment.value(key));
     for (const QString &device : {QStringLiteral("/dev/null"),

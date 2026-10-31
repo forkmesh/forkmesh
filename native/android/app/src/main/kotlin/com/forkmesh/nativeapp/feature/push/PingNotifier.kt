@@ -30,6 +30,7 @@ import android.util.Base64
 import com.forkmesh.nativeapp.MainActivity
 import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.model.ForkNotification
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.push.PushTarget
 import com.forkmesh.nativeapp.push.pingAlarm
 import com.forkmesh.nativeapp.push.pingIcon
@@ -268,6 +269,7 @@ object PingNotifier {
                 putExtra(PushTarget.EXTRA_HREF, target.href)
                 putExtra(PushTarget.EXTRA_AGENT, target.agent)
                 target.rowExtra()?.let { putExtra(PushTarget.EXTRA_ROW, it) }
+                IntentTokens.stamp(context, this)
             }
         }
         val code = target?.notificationId() ?: 0

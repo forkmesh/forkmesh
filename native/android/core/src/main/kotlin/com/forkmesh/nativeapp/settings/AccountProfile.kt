@@ -18,6 +18,10 @@ data class AccountProfile(
     val followers: Int,
     val following: Int,
     val mirrorCount: Int,
+    val avatar: String = "",
+    val links: List<ProfileLink> = emptyList(),
+    val mastodon: String = "",
+    val mastodonUrl: String = "",
 ) {
     val isNode: Boolean get() = kind == "node"
 
@@ -43,7 +47,9 @@ data class AccountProfile(
 
     val identityQrText: String get() = if (pubkey.isEmpty()) "" else "forkmesh:identity/${name.lowercase()}/$pubkey"
 
-    val walletQrText: String get() = if (solana.isEmpty()) "" else "solana:$solana"
+    val tipAddress: String get() = if (SolanaAddress.isValid(solana)) solana else ""
+
+    val walletQrText: String get() = SolanaAddress.qrText(solana)
 
     companion object {
         fun parse(map: Map<String, Any?>, requested: String): AccountProfile = AccountProfile(
@@ -64,7 +70,23 @@ data class AccountProfile(
             followers = maxOf(0, map.int("followers")),
             following = maxOf(0, map.int("following")),
             mirrorCount = maxOf(0, map.int("mirrorCount")),
+            avatar = map.text("avatarPng"),
+            links = ProfileLink.parseAll(map.maps("profileLinks")),
+            mastodon = map.text("mastodon").take(120),
+            mastodonUrl = map.text("mastodonUrl").takeIf { ProfileLink.isWebUrl(it) }.orEmpty(),
         )
+    }
+}
+
+data class ProfileLink(val label: String, val url: String, val verified: Boolean) {
+    companion object {
+        fun isWebUrl(url: String): Boolean = url.length <= 500 && (url.startsWith("https://") || url.startsWith("http://"))
+
+        fun parseAll(items: List<Map<String, Any?>>): List<ProfileLink> = items.mapNotNull { item ->
+            val url = item.text("url").trim()
+            if (!isWebUrl(url)) return@mapNotNull null
+            ProfileLink(item.text("label").trim().take(60).ifEmpty { item.text("domain").ifEmpty { url } }, url, item.flag("verified"))
+        }.take(10)
     }
 }
 
@@ -72,6 +94,8 @@ object SolanaAddress {
     private const val ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
     fun isValid(address: String): Boolean = address.length in 32..44 && address.all { it in ALPHABET }
+
+    fun qrText(address: String): String = if (isValid(address)) "solana:$address" else ""
 
     fun short(address: String): String = if (address.length <= 12) address else "${address.take(6)}…${address.takeLast(4)}"
 }

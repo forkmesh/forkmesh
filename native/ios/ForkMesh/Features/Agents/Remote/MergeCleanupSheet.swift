@@ -106,7 +106,9 @@ extension MergeCleanupSheet {
     static func desktopFix(sessionId: Int, base: String = "") -> (() async throws -> Void)? {
         guard let center = HostsFeature.agents else { return nil }
         return {
-            let known = center.rows.first { $0.isDesktop && !$0.outside && $0.localId == sessionId }?.baseBranch ?? ""
+            let known = center.rows.first {
+                $0.isDesktop && !$0.outside && !$0.elsewhere && $0.localId == sessionId
+            }?.baseBranch ?? ""
             try await center.promptDesktop(sessionId, ConflictResolution.sessionPrompt(base: base.isEmpty ? known : base))
         }
     }
@@ -383,7 +385,7 @@ struct MergeFailureNote: View {
             if let onFix {
                 HStack(spacing: FmSpace.x2) {
                     FmToneButton(
-                        label: "Fix with agent", icon: "auto_awesome_outlined", tone: .accent, height: 32,
+                        label: "Fix with agent", icon: "auto_awesome_outlined", tone: .accent, height: 32, busy: fix.sending,
                         onPressed: fix.sending || fix.sent ? nil : { Task { await onFix() } })
                         .accessibilityIdentifier("merge-fix-conflicts")
                     if fix.sending {

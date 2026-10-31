@@ -420,6 +420,11 @@ def proposal_branch(actor, path, commit_oid):
 async def _push(env, request, owner, repo, actor, branch, body, alias_owner,
                 ref=None):
     core_held = owner.lower() in _core_push_nodes(env)
+    if core_held and not await _core_push_permitted(env, owner, repo, actor):
+        raise FileEditError(
+            "push_forbidden",
+            "Only an owner of the repository's organization may change it.",
+            403)
     upstream, _endpoint = await _https_mirror_push_send(
         env, request, owner, repo, actor, "POST", body, None,
         hashlib.sha256(body).hexdigest(), alias_owner=alias_owner,

@@ -1,0 +1,352 @@
+          <section data-view="poker" class="view active h-full overflow-hidden poker-page">
+            <style>
+              .poker-page { --pk-gold: #d4af37; --pk-felt: #0d5c3a; --pk-felt-edge: #083d27; --pk-red: #c62828; --pk-ink: #1a1a1a; --pk-back: #1e3a8a; --u: 8px; }
+              .poker-page .pk-lobby { height: 100%; overflow-y: auto; }
+              .poker-page .pk-hero { position: relative; overflow: hidden; border-radius: 14px; padding: 22px; color: #f5f1e6; background: radial-gradient(120% 140% at 15% 0%, #13734a 0%, #0b4a30 45%, #062a1b 100%); box-shadow: inset 0 0 0 1px rgba(212,175,55,.35), 0 10px 30px rgba(0,0,0,.25); }
+              .poker-page .pk-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .10 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+              .poker-page .pk-hero h1 { font-family: Georgia, "Times New Roman", serif; font-size: 28px; letter-spacing: .02em; }
+              .poker-page .pk-hero-cards { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); display: flex; pointer-events: none; }
+              .poker-page .pk-hero-cards .pk-card { --u: 17px; margin-left: -46px; box-shadow: 0 8px 18px rgba(0,0,0,.45); }
+              .poker-page .pk-hero-cards .pk-card:nth-child(1) { transform: rotate(-14deg) translateY(6px); }
+              .poker-page .pk-hero-cards .pk-card:nth-child(2) { transform: rotate(-4deg); }
+              .poker-page .pk-hero-cards .pk-card:nth-child(3) { transform: rotate(7deg) translateY(4px); }
+              .poker-page .pk-wallet { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: rgba(0,0,0,.35); box-shadow: inset 0 0 0 1px rgba(212,175,55,.45); font-weight: 700; font-size: 18px; color: #fff3c4; }
+              .poker-page .pk-wallet .pk-chip-icon { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle, #f9a825 0 38%, #fff 39% 45%, #f9a825 46%); box-shadow: 0 0 0 2px #fff inset, 0 2px 4px rgba(0,0,0,.4); }
+              .poker-page .pk-claim { border-radius: 999px; padding: 7px 14px; font-weight: 600; color: #1a1306; background: linear-gradient(180deg, #ffe08a, #d4af37); box-shadow: 0 2px 0 #8a6d16, 0 4px 10px rgba(0,0,0,.3); }
+              .poker-page .pk-claim:disabled { filter: grayscale(.6) brightness(.85); cursor: default; }
+              .poker-page .pk-claim:focus-visible { outline: 2px solid rgb(var(--dashboard-primary-rgb)); outline-offset: 2px; }
+              .poker-page .pk-stat { border-radius: 10px; padding: 10px 12px; background: rgba(0,0,0,.25); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+              .poker-page .pk-stat b { display: block; font-size: 18px; color: #fff; }
+              .poker-page .pk-stat span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: rgba(255,255,255,.65); }
+              .poker-page .pk-table-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 12px 14px; }
+              .poker-page .pk-mini-felt { width: 54px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 50% 45%, #13734a, #083d27); box-shadow: 0 0 0 3px #5a3418, 0 0 0 4px #2a170a, 0 3px 6px rgba(0,0,0,.35); display: grid; place-items: center; color: #fff3c4; font-size: 11px; font-weight: 700; }
+              .poker-page .pk-pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .poker-page .pk-pill.mine { background: rgb(var(--dashboard-primary-rgb) / .15); color: rgb(var(--dashboard-primary-rgb)); }
+
+              .poker-page .pk-room { position: relative; height: 100%; display: flex; flex-direction: column; color: #f1ede2; background: radial-gradient(ellipse at 50% 35%, #1b2a22 0%, #0d1511 55%, #050807 100%); }
+              .poker-page .pk-topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.25)); border-bottom: 1px solid rgba(212,175,55,.18); z-index: 5; }
+              .poker-page .pk-topbar h2 { font-family: Georgia, "Times New Roman", serif; font-size: 17px; color: #fff3c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .poker-page .pk-tb { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; min-width: 32px; padding: 0 10px; border-radius: 8px; color: #efe9d8; background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); font-size: 13px; white-space: nowrap; }
+              .poker-page .pk-tb:hover { background: rgba(255,255,255,.12); }
+              .poker-page .pk-tb:focus-visible, .poker-page .pk-act:focus-visible { outline: 2px solid rgb(var(--dashboard-primary-rgb)); outline-offset: 2px; }
+              .poker-page .pk-tb[aria-pressed="true"] { background: rgb(var(--dashboard-primary-rgb) / .3); }
+              .poker-page .pk-tb svg, .poker-page .pk-tb i { width: 16px; height: 16px; }
+              .poker-page .pk-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; color: #fff3c4; }
+              .poker-page .pk-menu { position: absolute; right: 10px; top: 46px; z-index: 30; min-width: 200px; padding: 6px; border-radius: 10px; background: #141c18; box-shadow: 0 12px 30px rgba(0,0,0,.6), inset 0 0 0 1px rgba(212,175,55,.25); }
+              .poker-page .pk-menu button { display: flex; width: 100%; align-items: center; gap: 8px; height: var(--dashboard-menu-row-height, 32px); padding: 0 10px; border-radius: 6px; color: #efe9d8; font-size: 13px; text-align: left; }
+              .poker-page .pk-menu button:hover, .poker-page .pk-menu button:focus-visible { background: rgba(255,255,255,.08); outline: none; }
+              .poker-page .pk-menu button.danger { color: #ff8a80; }
+              .poker-page .pk-body { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 300px; }
+              .poker-page .pk-body.no-side { grid-template-columns: minmax(0,1fr); }
+              .poker-page .pk-stage { position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+              .poker-page .pk-table { position: relative; width: calc(var(--u) * 100); height: calc(var(--u) * 54); border-radius: 50% / 50%; padding: calc(var(--u) * 2.1); background: linear-gradient(160deg, #8a5229 0%, #5a3418 28%, #3b200d 55%, #6b3d1d 78%, #2a170a 100%); box-shadow: 0 calc(var(--u)*3) calc(var(--u)*6) rgba(0,0,0,.7), inset 0 calc(var(--u)*.25) calc(var(--u)*.35) rgba(255,220,180,.35), inset 0 calc(var(--u)*-.5) calc(var(--u)*.9) rgba(0,0,0,.6); }
+              .poker-page .pk-table.portrait { width: calc(var(--u) * 62); height: calc(var(--u) * 100); }
+              .poker-page .pk-pad { position: absolute; inset: calc(var(--u) * 1.6); border-radius: 50% / 50%; background: radial-gradient(ellipse at 50% 30%, #2b2b2b, #0e0e0e 70%); box-shadow: inset 0 calc(var(--u)*.3) calc(var(--u)*.5) rgba(255,255,255,.18), inset 0 calc(var(--u)*-.4) calc(var(--u)*.8) rgba(0,0,0,.8); }
+              .poker-page .pk-pad::after { content: ""; position: absolute; inset: calc(var(--u) * .55); border-radius: 50% / 50%; border: 1px dashed rgba(255,255,255,.16); }
+              .poker-page .pk-felt { position: absolute; inset: calc(var(--u) * 3.6); border-radius: 50% / 50%; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, #138052 0%, var(--pk-felt) 42%, var(--pk-felt-edge) 100%); box-shadow: inset 0 0 calc(var(--u)*4) rgba(0,0,0,.65), inset 0 calc(var(--u)*.4) calc(var(--u)*.8) rgba(0,0,0,.6); }
+              .poker-page .pk-felt::before { content: ""; position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .13 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); opacity: .9; }
+              .poker-page .pk-felt::after { content: ""; position: absolute; inset: 7%; border-radius: 50% / 50%; border: 1.5px solid rgba(212,175,55,.5); box-shadow: 0 0 0 1px rgba(0,0,0,.15), inset 0 0 0 1px rgba(0,0,0,.15); }
+              .poker-page .pk-mark { position: absolute; left: 50%; top: 64%; transform: translate(-50%,-50%); text-align: center; color: rgba(255,255,255,.075); font-family: Georgia, "Times New Roman", serif; font-size: calc(var(--u) * 3.2); letter-spacing: .32em; white-space: nowrap; pointer-events: none; text-transform: uppercase; }
+              .poker-page .pk-table.portrait .pk-mark { top: 66%; font-size: calc(var(--u) * 2.8); }
+              .poker-page .pk-mark small { display: block; font-size: .42em; letter-spacing: .5em; margin-top: .3em; }
+              .poker-page .pk-layer { position: absolute; inset: 0; pointer-events: none; }
+              .poker-page .pk-layer > * { pointer-events: auto; }
+
+              .poker-page .pk-dealer { position: absolute; left: 50%; top: calc(var(--u) * -6.4); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 3; }
+              .poker-page .pk-dealer svg { width: calc(var(--u) * 9); height: calc(var(--u) * 8); filter: drop-shadow(0 calc(var(--u)*.5) calc(var(--u)*.6) rgba(0,0,0,.6)); }
+              .poker-page .pk-dealer-tag { margin-top: calc(var(--u) * -.6); padding: 1px calc(var(--u)*1.2); border-radius: 999px; font-size: calc(var(--u)*1.25); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #1a1306; background: linear-gradient(180deg, #ffe08a, #d4af37); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+              .poker-page .pk-speech { position: absolute; left: 50%; top: 15%; transform: translateX(-50%); max-width: 60%; padding: calc(var(--u)*.6) calc(var(--u)*1.6); border-radius: calc(var(--u)*1.2); background: rgba(0,0,0,.42); color: #fff7dc; font-size: calc(var(--u)*1.6); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 0 0 0 1px rgba(212,175,55,.35); z-index: 2; }
+              .poker-page .pk-speech.fresh { animation: pk-pop .45s cubic-bezier(.2,1.4,.4,1); }
+              .poker-page .pk-table.portrait .pk-speech { top: 13%; max-width: 80%; font-size: calc(var(--u)*2.1); }
+
+              .poker-page .pk-board { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); display: flex; gap: calc(var(--u)*.8); z-index: 2; }
+              .poker-page .pk-slot { width: calc(var(--u)*6); height: calc(var(--u)*8.4); border-radius: calc(var(--u)*.7); border: 1px dashed rgba(255,255,255,.16); }
+              .poker-page .pk-board .pk-card { --cw: 6; }
+              .poker-page .pk-table.portrait .pk-board { gap: calc(var(--u)*.7); }
+              .poker-page .pk-table.portrait .pk-board .pk-card, .poker-page .pk-table.portrait .pk-slot { --cw: 8.2; width: calc(var(--u)*8.2); height: calc(var(--u)*11.5); }
+              .poker-page .pk-pot { position: absolute; left: 50%; top: 31%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; z-index: 2; }
+              .poker-page .pk-table.portrait .pk-pot { top: 37%; }
+              .poker-page .pk-pot-label { padding: 1px calc(var(--u)*1.1); border-radius: 999px; background: rgba(0,0,0,.45); font-size: calc(var(--u)*1.45); font-weight: 700; color: #fff3c4; white-space: nowrap; }
+              .poker-page .pk-table.portrait .pk-pot-label { font-size: calc(var(--u)*2.2); }
+              .poker-page .pk-sidepots { font-size: calc(var(--u)*1.15); color: rgba(255,243,196,.8); white-space: nowrap; }
+              .poker-page .pk-banner { position: absolute; left: 50%; top: 31%; transform: translate(-50%,-50%); padding: calc(var(--u)*.7) calc(var(--u)*2); border-radius: calc(var(--u)*1); background: linear-gradient(180deg, rgba(255,224,138,.95), rgba(212,175,55,.95)); color: #1a1306; font-weight: 800; font-size: calc(var(--u)*1.8); white-space: nowrap; box-shadow: 0 calc(var(--u)*.6) calc(var(--u)*1.6) rgba(0,0,0,.5); z-index: 6; }
+              .poker-page .pk-banner.new { animation: pk-pop .5s cubic-bezier(.2,1.4,.4,1); }
+              .poker-page .pk-table.portrait .pk-banner { top: 36%; font-size: calc(var(--u)*2.4); white-space: normal; text-align: center; width: 82%; }
+
+              .poker-page .pk-card { --cw: 5.2; position: relative; flex: none; width: calc(var(--u) * var(--cw)); height: calc(var(--u) * var(--cw) * 1.4); border-radius: calc(var(--u) * var(--cw) * .11); background: linear-gradient(155deg, #ffffff 0%, #f6f3ea 70%, #e9e4d6 100%); color: var(--pk-ink); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 calc(var(--u)*.25) calc(var(--u)*.6) rgba(0,0,0,.45); font-family: Georgia, "Times New Roman", serif; user-select: none; }
+              .poker-page .pk-card.red { color: var(--pk-red); }
+              .poker-page .pk-card .ix { position: absolute; left: 7%; top: 4%; display: flex; flex-direction: column; align-items: center; line-height: .92; font-weight: 700; font-size: calc(var(--u) * var(--cw) * .3); }
+              .poker-page .pk-card .ix i { font-style: normal; font-size: .82em; }
+              .poker-page .pk-card .ix.b { left: auto; top: auto; right: 7%; bottom: 4%; transform: rotate(180deg); }
+              .poker-page .pk-card .pip { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--u) * var(--cw) * .62); }
+              .poker-page .pk-card .pip.face { font-size: calc(var(--u) * var(--cw) * .5); font-weight: 700; }
+              .poker-page .pk-card .pip.face span { display: grid; place-items: center; width: 58%; height: 62%; border-radius: 8%; box-shadow: inset 0 0 0 1px currentColor; background: linear-gradient(180deg, rgba(212,175,55,.18), rgba(212,175,55,.04)); }
+              .poker-page .pk-card.back { background-color: var(--pk-back); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.16) 0 1px, transparent 1px calc(var(--u)*.7)), repeating-linear-gradient(-45deg, rgba(255,255,255,.16) 0 1px, transparent 1px calc(var(--u)*.7)), radial-gradient(ellipse at 50% 50%, #3355c4, #172e6e); box-shadow: inset 0 0 0 calc(var(--u) * var(--cw) * .06) #fff, inset 0 0 0 calc(var(--u) * var(--cw) * .075) rgba(0,0,0,.25), 0 calc(var(--u)*.25) calc(var(--u)*.6) rgba(0,0,0,.45); }
+              .poker-page .pk-card.back::after { content: ""; position: absolute; inset: 30%; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); }
+              .poker-page .pk-card.best { transform: translateY(calc(var(--u) * -1.2)); box-shadow: 0 0 0 calc(var(--u)*.25) var(--pk-gold), 0 0 calc(var(--u)*2) rgba(255,215,64,.75); }
+              .poker-page .pk-card.dim { filter: brightness(.55) saturate(.6); }
+              .poker-page .pk-card.deal { animation: pk-deal .5s cubic-bezier(.2,.8,.25,1) both; animation-delay: var(--delay, 0ms); }
+              .poker-page .pk-card.flip { animation: pk-flip .55s cubic-bezier(.2,.8,.25,1) both; animation-delay: var(--delay, 0ms); }
+              .poker-page .pk-card { transition: transform .25s ease, box-shadow .25s ease; }
+
+              .poker-page .pk-seat { position: absolute; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; z-index: 4; }
+              .poker-page .pk-avatar { position: relative; width: calc(var(--u)*7.2); height: calc(var(--u)*7.2); border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, hsl(var(--hue) 55% 62%), hsl(var(--hue) 50% 32%)); color: #fff; font-weight: 800; font-size: calc(var(--u)*2.9); text-shadow: 0 1px 2px rgba(0,0,0,.45); box-shadow: 0 0 0 calc(var(--u)*.35) #12100c, 0 0 0 calc(var(--u)*.55) rgba(212,175,55,.6), 0 calc(var(--u)*.6) calc(var(--u)*1.4) rgba(0,0,0,.6); }
+              .poker-page .pk-ring { position: absolute; inset: calc(var(--u)*-1); width: calc(100% + var(--u)*2); height: calc(100% + var(--u)*2); transform: rotate(-90deg); pointer-events: none; }
+              .poker-page .pk-ring circle { fill: none; stroke-width: 6; stroke-linecap: round; transition: stroke .3s; }
+              .poker-page .pk-badge { position: absolute; top: calc(var(--u)*-.4); right: calc(var(--u)*-1.1); padding: 0 calc(var(--u)*.6); border-radius: 999px; font-size: calc(var(--u)*1.05); font-weight: 800; letter-spacing: .05em; background: #263238; color: #cfd8dc; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+              .poker-page .pk-plate { position: relative; z-index: 1; margin-top: calc(var(--u)*.5); min-width: calc(var(--u)*11); max-width: calc(var(--u)*15); padding: calc(var(--u)*.35) calc(var(--u)*1); border-radius: calc(var(--u)*.9); background: linear-gradient(180deg, rgba(20,20,20,.95), rgba(6,6,6,.95)); box-shadow: inset 0 0 0 1px rgba(212,175,55,.45), 0 calc(var(--u)*.4) calc(var(--u)*1) rgba(0,0,0,.6); text-align: center; line-height: 1.15; }
+              .poker-page .pk-name { font-size: calc(var(--u)*1.35); color: #e8e2cf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .poker-page .pk-stack { font-size: calc(var(--u)*1.6); font-weight: 800; color: #ffe08a; }
+              .poker-page .pk-table.portrait .pk-avatar { width: calc(var(--u)*11); height: calc(var(--u)*11); font-size: calc(var(--u)*4.4); }
+              .poker-page .pk-table.portrait .pk-plate { min-width: calc(var(--u)*16); max-width: calc(var(--u)*21); }
+              .poker-page .pk-table.portrait .pk-name { font-size: calc(var(--u)*2.1); }
+              .poker-page .pk-table.portrait .pk-stack { font-size: calc(var(--u)*2.4); }
+              .poker-page .pk-tag { position: absolute; top: calc(var(--u)*-2.4); left: 50%; transform: translateX(-50%); padding: 0 calc(var(--u)*.9); border-radius: 999px; font-size: calc(var(--u)*1.2); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; background: #eceff1; color: #263238; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
+              .poker-page .pk-table.portrait .pk-tag { font-size: calc(var(--u)*1.8); top: calc(var(--u)*-3.2); }
+              .poker-page .pk-seat.me .pk-tag { top: 50%; left: auto; right: calc(100% + var(--u)*1.2); transform: translateY(-50%); }
+              .poker-page .pk-tag.fold { background: #546e7a; color: #eceff1; }
+              .poker-page .pk-tag.raise, .poker-page .pk-tag.bet { background: #ffb300; color: #1a1306; }
+              .poker-page .pk-tag.allin { background: #d32f2f; color: #fff; }
+              .poker-page .pk-tag.call { background: #1e88e5; color: #fff; }
+              .poker-page .pk-seat.folded .pk-avatar, .poker-page .pk-seat.out .pk-avatar { filter: grayscale(.85) brightness(.6); }
+              .poker-page .pk-seat.away .pk-plate::after { content: "Sitting out"; display: block; font-size: calc(var(--u)*1.05); color: #b0bec5; }
+              .poker-page .pk-seat.turn .pk-avatar { box-shadow: 0 0 0 calc(var(--u)*.35) #12100c, 0 0 0 calc(var(--u)*.6) #ffe08a, 0 0 calc(var(--u)*3) rgba(255,224,138,.65); }
+              .poker-page .pk-seat.winner .pk-avatar { animation: pk-glow 1.2s ease-in-out infinite alternate; }
+              .poker-page .pk-seat.winner .pk-plate { box-shadow: inset 0 0 0 2px var(--pk-gold), 0 0 calc(var(--u)*2.4) rgba(255,215,64,.7); }
+              .poker-page .pk-won { position: absolute; bottom: calc(var(--u)*-2.6); left: 50%; transform: translateX(-50%); font-weight: 800; color: #ffe08a; font-size: calc(var(--u)*1.7); white-space: nowrap; text-shadow: 0 2px 4px #000; }
+              .poker-page .pk-won.new { animation: pk-rise 1.4s ease-out both; }
+              .poker-page .pk-empty { width: calc(var(--u)*7.2); height: calc(var(--u)*7.2); border-radius: 50%; display: grid; place-items: center; border: 2px dashed rgba(255,255,255,.28); color: rgba(255,255,255,.7); font-size: calc(var(--u)*1.3); font-weight: 700; background: rgba(0,0,0,.25); text-align: center; line-height: 1.1; }
+              .poker-page button.pk-empty:hover { border-color: #ffe08a; color: #ffe08a; background: rgba(0,0,0,.4); }
+              .poker-page .pk-table.portrait .pk-empty { width: calc(var(--u)*11); height: calc(var(--u)*11); font-size: calc(var(--u)*2); }
+              .poker-page .pk-hole { position: absolute; transform: translate(-50%,-50%); display: flex; z-index: 3; }
+              .poker-page .pk-hole .pk-card { --cw: 4.4; }
+              .poker-page .pk-hole .pk-card + .pk-card { margin-left: calc(var(--u) * -1.6); transform: rotate(7deg) translateY(calc(var(--u)*.2)); }
+              .poker-page .pk-hole .pk-card:first-child { transform: rotate(-6deg); }
+              .poker-page .pk-hole.me .pk-card { --cw: 6.6; }
+              .poker-page .pk-hole.me .pk-card + .pk-card { margin-left: calc(var(--u) * -1.2); }
+              .poker-page .pk-table.portrait .pk-hole .pk-card { --cw: 5.2; } .poker-page .pk-table.portrait .pk-hole:not(.me) { z-index: 5; }
+              .poker-page .pk-table.portrait .pk-hole.me .pk-card { --cw: 9.6; }
+              .poker-page .pk-hole .pk-card.best { transform: translateY(calc(var(--u) * -1.2)); }
+
+              .poker-page .pk-bet { position: absolute; transform: translate(-50%,-50%); display: flex; align-items: flex-end; gap: calc(var(--u)*.5); z-index: 3; }
+              .poker-page .pk-bet.new { animation: pk-pop .3s ease-out; }
+              .poker-page .pk-bet-amount { padding: 0 calc(var(--u)*.7); border-radius: 999px; background: rgba(0,0,0,.55); font-size: calc(var(--u)*1.3); font-weight: 700; color: #fff; white-space: nowrap; }
+              .poker-page .pk-table.portrait .pk-bet-amount { font-size: calc(var(--u)*2); }
+              .poker-page .pk-chips { display: flex; align-items: flex-end; gap: calc(var(--u)*.15); }
+              .poker-page .pk-col { position: relative; width: calc(var(--u)*3.3); }
+              .poker-page .pk-chip { position: absolute; left: 0; width: calc(var(--u)*3.3); height: calc(var(--u)*1.5); border-radius: 50%; background: var(--c); box-shadow: inset 0 calc(var(--u)*-.32) 0 rgba(0,0,0,.38), inset 0 calc(var(--u)*.1) 0 rgba(255,255,255,.25), 0 calc(var(--u)*.12) calc(var(--u)*.2) rgba(0,0,0,.6); }
+              .poker-page .pk-chip::before { content: ""; position: absolute; inset: 0 0 calc(var(--u)*.32) 0; border-radius: 50%; background: repeating-conic-gradient(from 0deg, #fff 0 12deg, transparent 12deg 45deg); -webkit-mask: radial-gradient(ellipse at 50% 50%, transparent 58%, #000 60%); mask: radial-gradient(ellipse at 50% 50%, transparent 58%, #000 60%); opacity: .9; }
+              .poker-page .pk-chip.top::after { content: ""; position: absolute; left: 22%; right: 22%; top: 16%; height: 46%; border-radius: 50%; border: 1px dashed rgba(255,255,255,.75); }
+              .poker-page .pk-table.portrait .pk-col, .poker-page .pk-table.portrait .pk-chip { width: calc(var(--u)*4.6); } .poker-page .pk-table.portrait .pk-chip { height: calc(var(--u)*2.1); }
+              .poker-page .pk-button-puck { position: absolute; width: calc(var(--u)*3.8); height: calc(var(--u)*3.8); transform: translate(-50%,-50%); border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 40% 35%, #ffffff, #d9d9d9); color: #111; font-size: calc(var(--u)*.95); box-shadow: inset 0 0 0 calc(var(--u)*.25) #fff, inset 0 0 0 calc(var(--u)*.35) #b71c1c; font-weight: 900; letter-spacing: .04em; box-shadow: 0 calc(var(--u)*.25) 0 #9e9e9e, 0 calc(var(--u)*.5) calc(var(--u)*.8) rgba(0,0,0,.55); transition: left .7s cubic-bezier(.3,.8,.3,1), top .7s cubic-bezier(.3,.8,.3,1); z-index: 3; }
+              .poker-page .pk-table.portrait .pk-button-puck { width: calc(var(--u)*4.6); height: calc(var(--u)*4.6); font-size: calc(var(--u)*1.15); }
+              .poker-page .pk-fly { position: absolute; z-index: 20; pointer-events: none; }
+
+              .poker-page .pk-actions { position: relative; z-index: 6; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(0deg, rgba(0,0,0,.75), rgba(0,0,0,.45)); border-top: 1px solid rgba(212,175,55,.2); }
+              .poker-page .pk-actions-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+              .poker-page .pk-act { flex: 1 1 110px; min-height: 46px; border-radius: 10px; font-weight: 800; font-size: 15px; letter-spacing: .02em; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 3px 0 rgba(0,0,0,.45), 0 6px 14px rgba(0,0,0,.35); transition: transform .08s, filter .15s; }
+              .poker-page .pk-act:active { transform: translateY(2px); }
+              .poker-page .pk-act:disabled { filter: grayscale(.8) brightness(.6); cursor: not-allowed; }
+              .poker-page .pk-act.fold { background: linear-gradient(180deg, #78909c, #455a64); }
+              .poker-page .pk-act.call { background: linear-gradient(180deg, #42a5f5, #1565c0); }
+              .poker-page .pk-act.raise { background: linear-gradient(180deg, #ffca28, #e09400); color: #1a1306; text-shadow: none; }
+              .poker-page .pk-act.allin { background: linear-gradient(180deg, #ef5350, #b71c1c); }
+              .poker-page .pk-act small { display: block; font-size: 11px; font-weight: 600; opacity: .85; }
+              .poker-page .pk-raise { display: flex; flex: 2 1 320px; align-items: center; gap: 8px; }
+              .poker-page .pk-raise input[type=range] { flex: 1; accent-color: #ffca28; }
+              .poker-page .pk-raise input[type=number] { width: 96px; height: 36px; border-radius: 8px; padding: 0 8px; background: rgba(255,255,255,.08); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+              .poker-page .pk-preset { height: 30px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 700; color: #efe9d8; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+              .poker-page .pk-preset:hover { background: rgba(255,255,255,.16); }
+              .poker-page .pk-pre { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px; font-size: 13px; color: #efe9d8; background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+              .poker-page .pk-pre[aria-pressed="true"] { background: rgb(var(--dashboard-primary-rgb) / .35); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+              .poker-page .pk-myhand { font-family: Georgia, "Times New Roman", serif; color: #ffe08a; font-size: 15px; white-space: nowrap; }
+              .poker-page .pk-note { color: rgba(239,233,216,.75); font-size: 13px; }
+
+              .poker-page .pk-side { min-height: 0; display: flex; flex-direction: column; background: rgba(0,0,0,.35); border-left: 1px solid rgba(212,175,55,.16); }
+              .poker-page .pk-tabs { display: flex; gap: 2px; padding: 6px; }
+              .poker-page .pk-tabs button { flex: 1; height: 30px; border-radius: 7px; font-size: 13px; color: rgba(239,233,216,.75); }
+              .poker-page .pk-tabs button[aria-selected="true"] { background: rgb(var(--dashboard-primary-rgb) / .3); color: #fff; }
+              .poker-page .pk-feed { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 10px; font-size: 13px; line-height: 1.4; }
+              .poker-page .pk-feed .line { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+              .poker-page .pk-feed .who { font-weight: 700; color: #ffe08a; }
+              .poker-page .pk-feed .dealer { color: #a5d6a7; font-style: italic; }
+              .poker-page .pk-feed time { float: right; font-size: 11px; color: rgba(255,255,255,.35); }
+              .poker-page .pk-chatbox { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.08); }
+              .poker-page .pk-chatbox input { flex: 1; min-width: 0; height: 34px; border-radius: 8px; padding: 0 10px; background: rgba(255,255,255,.07); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+              .poker-page .pk-chatbox input:focus { outline: 2px solid rgb(var(--dashboard-primary-rgb)); }
+              .poker-page .pk-mini-cards { display: inline-flex; gap: 3px; vertical-align: middle; }
+              .poker-page .pk-mini-cards .pk-card { --u: 4px; --cw: 5.4; }
+              .poker-page .pk-hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; color: rgba(239,233,216,.7); }
+              .poker-page .pk-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ff7043; margin-left: 4px; }
+              .poker-page .pk-primary { background: rgb(var(--dashboard-primary-rgb)); color: rgb(var(--dashboard-primary-foreground-rgb)); border-color: transparent; }
+              .poker-page .pk-primary:hover { filter: brightness(1.08); }
+              .poker-page .pk-code-input { width: 7.5rem; height: var(--dashboard-control-height, 32px); border-radius: 6px; padding: 0 8px; text-transform: uppercase; letter-spacing: .15em; color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-background-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-border-rgb)); }
+              .poker-page .pk-code-input:focus { outline: 2px solid rgb(var(--dashboard-primary-rgb)); }
+              .poker-page dialog.pk-dialog { width: min(460px, calc(100vw - 24px)); border-radius: 14px; padding: 0; color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-card-rgb)); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+              .poker-page dialog.pk-dialog::backdrop { background: rgba(0,0,0,.55); }
+              .poker-page .pk-dialog form { display: grid; gap: 12px; padding: 18px; }
+              .poker-page .pk-dialog label { display: grid; gap: 4px; font-size: 13px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .poker-page .pk-dialog input:not([type=checkbox]):not([type=range]), .poker-page .pk-dialog select { height: var(--dashboard-control-height, 32px); border-radius: 6px; padding: 0 8px; color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-background-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-border-rgb)); }
+              .poker-page .pk-dialog input[type=range] { accent-color: rgb(var(--dashboard-primary-rgb)); }
+              .poker-page .pk-buyin { font-size: 22px; font-weight: 800; color: rgb(var(--dashboard-foreground-rgb)); text-align: center; }
+
+              @keyframes pk-deal { from { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -200px)) rotate(-160deg) scale(.6); } 60% { opacity: 1; } to { opacity: 1; } }
+              @keyframes pk-flip { 0% { opacity: 0; transform: translateY(calc(var(--u)*-8)) rotateY(90deg) scale(.8); } 55% { opacity: 1; transform: translateY(0) rotateY(90deg); } 100% { opacity: 1; transform: rotateY(0); } }
+              @keyframes pk-pop { from { transform: translate(-50%,-50%) scale(.6); opacity: 0; } to { opacity: 1; } }
+              @keyframes pk-glow { from { box-shadow: 0 0 0 calc(var(--u)*.35) #12100c, 0 0 0 calc(var(--u)*.6) var(--pk-gold), 0 0 calc(var(--u)*1.5) rgba(255,215,64,.4); } to { box-shadow: 0 0 0 calc(var(--u)*.35) #12100c, 0 0 0 calc(var(--u)*.7) #ffe08a, 0 0 calc(var(--u)*4.5) rgba(255,215,64,.95); } }
+              @keyframes pk-rise { from { opacity: 0; transform: translate(-50%, calc(var(--u)*1.5)); } 20% { opacity: 1; } to { opacity: 1; transform: translate(-50%, 0); } }
+              .poker-page .pk-tag.new { animation: pk-tag .35s cubic-bezier(.2,1.4,.4,1); }
+              .poker-page .pk-seat.me .pk-tag.new { animation-name: pk-tag-side; }
+              @keyframes pk-tag-side { from { opacity: 0; transform: translate(30%, -50%) scale(.7); } to { opacity: 1; transform: translate(0, -50%); } }
+              @keyframes pk-tag { from { opacity: 0; transform: translate(-50%, calc(var(--u)*.8)) scale(.7); } to { opacity: 1; transform: translate(-50%, 0); } }
+              @media (prefers-reduced-motion: reduce) { .poker-page *, .poker-page *::before { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+              @media (max-width: 900px) { .poker-page .pk-body { grid-template-columns: minmax(0,1fr); } .poker-page .pk-side { position: absolute; right: 0; top: 0; bottom: 0; width: min(340px, 92vw); z-index: 25; background: rgba(8,12,10,.97); box-shadow: -10px 0 30px rgba(0,0,0,.6); } .poker-page .pk-side.closed { display: none; } }
+              @media (min-width: 901px) { .poker-page [data-poker-side-toggle] { display: none; } }
+              @media (max-width: 640px) { .poker-page .pk-hide-sm { display: none; } .poker-page .pk-act { flex-basis: 30%; min-height: 50px; } .poker-page .pk-raise { flex-basis: 100%; order: -1; } .poker-page .pk-hero-cards { display: none; } }
+            </style>
+
+            <div data-poker-lobby class="pk-lobby">
+              <div class="w-full p-3 sm:p-6 grid gap-4">
+                <div data-poker-error role="alert" class="fm-flash fm-flash-danger hidden"><i data-lucide="circle-alert"></i><p data-poker-message-text class="fm-flash-body"></p></div>
+                <div data-poker-notice role="status" class="fm-flash hidden"><i data-lucide="info"></i><p data-poker-message-text class="fm-flash-body"></p></div>
+                <section class="pk-hero">
+                  <div class="pk-hero-cards" aria-hidden="true" data-poker-hero-cards></div>
+                  <div class="relative grid gap-3" style="z-index:1">
+                    <div>
+                      <h1>Poker</h1>
+                      <p class="mt-1 text-sm" style="color:rgba(255,255,255,.78);max-width:36rem">No-limit Texas Hold'em with other ForkMesh users. Play money only: chips have no cash value and cannot be bought or sold.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                      <span class="pk-wallet" aria-label="Your chips"><span class="pk-chip-icon" aria-hidden="true"></span><span data-poker-chips>…</span></span>
+                      <button type="button" data-poker-claim class="pk-claim">Collect free chips</button>
+                      <span data-poker-claim-note class="text-xs" style="color:rgba(255,255,255,.7)"></span>
+                    </div>
+                    <div data-poker-stats class="grid grid-cols-2 gap-2 sm:grid-cols-5"></div>
+                  </div>
+                </section>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 class="text-base font-semibold text-foreground">Tables</h2>
+                    <p class="text-sm text-muted-foreground">Open public tables, the ones you sit at, and private tables you were invited to.</p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <form data-poker-code-form class="flex items-center gap-2">
+                      <input data-poker-code-input aria-label="Table code" placeholder="CODE" maxlength="6" autocomplete="off" class="pk-code-input" />
+                      <button type="submit" class="fm-btn fm-btn-sm">Join</button>
+                    </form>
+                    <button type="button" data-poker-quick class="fm-btn fm-btn-sm"><i data-lucide="bot"></i>Play with bots</button>
+                    <button type="button" data-poker-new class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="plus"></i>New table</button>
+                  </div>
+                </div>
+                <div data-poker-tables class="grid gap-2"></div>
+              </div>
+            </div>
+
+            <div data-poker-room class="pk-room hidden">
+              <div class="pk-topbar">
+                <button type="button" data-poker-back class="pk-tb" aria-label="Back to the lobby"><i data-lucide="arrow-left"></i><span class="pk-hide-sm">Lobby</span></button>
+                <div class="min-w-0 flex-1">
+                  <h2 data-poker-title></h2>
+                  <div class="text-xs" style="color:rgba(239,233,216,.65)"><span data-poker-blinds></span> · code <span data-poker-code class="pk-code"></span></div>
+                </div>
+                <button type="button" data-poker-invite class="pk-tb"><i data-lucide="user-plus"></i><span class="pk-hide-sm">Invite</span></button>
+                <button type="button" data-poker-sound class="pk-tb" aria-pressed="true" aria-label="Sound"><i data-lucide="volume-2"></i></button>
+                <button type="button" data-poker-side-toggle class="pk-tb" aria-label="Chat and hand log"><i data-lucide="message-circle"></i><span data-poker-unread></span></button>
+                <button type="button" data-poker-menu-button class="pk-tb" aria-haspopup="menu" aria-expanded="false" aria-label="Table menu"><i data-lucide="more-horizontal"></i></button>
+                <div data-poker-menu class="pk-menu hidden" role="menu"></div>
+              </div>
+              <div data-poker-body class="pk-body">
+                <div data-poker-stage class="pk-stage">
+                  <div data-poker-table class="pk-table">
+                    <div class="pk-pad"></div>
+                    <div class="pk-felt"><div class="pk-mark">ForkMesh<small>Texas Hold'em</small></div></div>
+                    <div data-poker-dealer class="pk-dealer" aria-hidden="true">
+                      <svg viewBox="0 0 90 80"><defs><radialGradient id="pk-skin" cx=".45" cy=".4" r=".7"><stop offset="0" stop-color="#f3c9a4"/><stop offset="1" stop-color="#c98f66"/></radialGradient><linearGradient id="pk-vest" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2b2b2b"/><stop offset="1" stop-color="#0c0c0c"/></linearGradient></defs><path d="M10 80 C12 58 28 50 45 50 C62 50 78 58 80 80 Z" fill="#f7f7f2"/><path d="M10 80 C12 60 24 52 34 51 L45 74 L56 51 C66 52 78 60 80 80 Z" fill="url(#pk-vest)"/><path d="M45 56 L38 52 L38 60 Z M45 56 L52 52 L52 60 Z" fill="#c62828"/><circle cx="45" cy="56" r="2.4" fill="#8e1b1b"/><circle cx="45" cy="30" r="17" fill="url(#pk-skin)"/><path d="M28 28 C28 14 38 10 46 10 C56 10 63 16 62 28 C58 20 50 18 45 18 C38 18 32 21 28 28 Z" fill="#3b2a1f"/><circle cx="39" cy="31" r="1.8" fill="#2b1d14"/><circle cx="51" cy="31" r="1.8" fill="#2b1d14"/><path d="M39 38 Q45 42 51 38" stroke="#7a4a33" stroke-width="1.8" fill="none" stroke-linecap="round"/><rect x="31" y="62" width="28" height="14" rx="2" fill="#1b5e20" stroke="#d4af37" stroke-width="1.2"/><rect x="34" y="65" width="7" height="9" rx="1" fill="#fff"/><rect x="43" y="65" width="7" height="9" rx="1" fill="#1e3a8a"/></svg>
+                      <span class="pk-dealer-tag">Dealer</span>
+                    </div>
+                    <div data-poker-speech class="pk-speech"></div>
+                    <div data-poker-layer class="pk-layer"></div>
+                    <div data-poker-puck class="pk-button-puck hidden">DEALER</div>
+                  </div>
+                </div>
+                <aside data-poker-side class="pk-side closed">
+                  <div class="pk-tabs" role="tablist">
+                    <button type="button" role="tab" data-poker-tab="chat" aria-selected="true">Chat</button>
+                    <button type="button" role="tab" data-poker-tab="log" aria-selected="false">Hand log</button>
+                    <button type="button" role="tab" data-poker-tab="hand" aria-selected="false">Last hand</button>
+                  </div>
+                  <div data-poker-feed class="pk-feed" aria-live="polite"></div>
+                  <form data-poker-chat-form class="pk-chatbox">
+                    <input data-poker-chat-input maxlength="200" placeholder="Say something nice" aria-label="Chat message" autocomplete="off" />
+                    <button type="submit" class="pk-tb">Send</button>
+                  </form>
+                </aside>
+              </div>
+              <div data-poker-actions class="pk-actions"></div>
+            </div>
+
+            <dialog data-poker-dialog="create" class="pk-dialog" aria-labelledby="pk-create-title">
+              <form method="dialog" data-poker-create-form>
+                <h3 id="pk-create-title" class="text-base font-semibold">New table</h3>
+                <div data-poker-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><p class="fm-flash-body"></p></div>
+                <label>Name<input name="name" maxlength="40" placeholder="Friday night" /></label>
+                <label>Stakes<select name="stakes" data-poker-stakes-select></select></label>
+                <div class="grid grid-cols-3 gap-3">
+                  <label>Seats<select name="seats"><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option><option>7</option><option>8</option><option>9</option></select></label>
+                  <label>Turn clock<select name="turnSeconds"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
+                  <label>Bots<select name="bots"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+                </div>
+                <label>Your buy-in <span data-poker-create-buyin class="pk-buyin"></span><input type="range" name="buyIn" step="10" /></label>
+                <label class="flex items-center gap-2" style="display:flex"><input type="checkbox" name="private" /> Private table: only people with the link, the code or an invite can find it</label>
+                <div class="flex justify-end gap-2">
+                  <button type="button" value="cancel" data-poker-dialog-close class="fm-btn fm-btn-sm">Cancel</button>
+                  <button type="submit" value="ok" class="fm-btn fm-btn-sm pk-primary">Create and sit down</button>
+                </div>
+              </form>
+            </dialog>
+
+            <dialog data-poker-dialog="sit" class="pk-dialog" aria-labelledby="pk-sit-title">
+              <form method="dialog" data-poker-sit-form>
+                <h3 id="pk-sit-title" class="text-base font-semibold">Take a seat</h3>
+                <div data-poker-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><p class="fm-flash-body"></p></div>
+                <p data-poker-sit-range class="text-sm text-muted-foreground"></p>
+                <div data-poker-sit-buyin class="pk-buyin"></div>
+                <input type="range" name="buyIn" step="10" aria-label="Buy-in" />
+                <input type="hidden" name="seat" />
+                <div class="flex justify-end gap-2">
+                  <button type="button" value="cancel" data-poker-dialog-close class="fm-btn fm-btn-sm">Cancel</button>
+                  <button type="submit" value="ok" class="fm-btn fm-btn-sm pk-primary">Sit down</button>
+                </div>
+              </form>
+            </dialog>
+
+            <dialog data-poker-dialog="rebuy" class="pk-dialog" aria-labelledby="pk-rebuy-title">
+              <form method="dialog" data-poker-rebuy-form>
+                <h3 id="pk-rebuy-title" class="text-base font-semibold">Add chips</h3>
+                <div data-poker-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><p class="fm-flash-body"></p></div>
+                <p data-poker-rebuy-range class="text-sm text-muted-foreground"></p>
+                <div data-poker-rebuy-amount class="pk-buyin"></div>
+                <input type="range" name="amount" step="10" aria-label="Chips to add" />
+                <div class="flex justify-end gap-2">
+                  <button type="button" value="cancel" data-poker-dialog-close class="fm-btn fm-btn-sm">Cancel</button>
+                  <button type="submit" value="ok" class="fm-btn fm-btn-sm pk-primary">Add chips</button>
+                </div>
+              </form>
+            </dialog>
+
+            <dialog data-poker-dialog="invite" class="pk-dialog" aria-labelledby="pk-invite-title">
+              <form method="dialog" data-poker-invite-form>
+                <h3 id="pk-invite-title" class="text-base font-semibold">Invite players</h3>
+                <div data-poker-dialog-error role="alert" class="fm-flash fm-flash-danger hidden"><p class="fm-flash-body"></p></div>
+                <div data-poker-dialog-notice role="status" class="fm-flash hidden"><p class="fm-flash-body"></p></div>
+                <label>ForkMesh usernames, separated by commas<input name="names" placeholder="alice, bob" autocomplete="off" /></label>
+                <p class="text-sm text-muted-foreground">Or share the code <b data-poker-invite-code class="pk-code" style="color:inherit"></b> or the link.</p>
+                <div class="flex flex-wrap justify-end gap-2">
+                  <button type="button" data-poker-copy-link class="fm-btn fm-btn-sm"><i data-lucide="link"></i>Copy link</button>
+                  <button type="button" value="cancel" data-poker-dialog-close class="fm-btn fm-btn-sm">Close</button>
+                  <button type="submit" value="ok" class="fm-btn fm-btn-sm pk-primary">Send invites</button>
+                </div>
+              </form>
+            </dialog>
+          </section>

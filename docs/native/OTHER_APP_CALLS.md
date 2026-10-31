@@ -19,6 +19,19 @@ the mesh stay quiet during our own call as well, which is what a call needs. `Ot
 call list each time, and listeners registered with `onChange` hear the start
 and end.
 
+Since 2026-10-23 every ForkMesh call counts, not only the CallKit ones: our
+outgoing calls (and calls in the China region, where CallKit is off) never
+appear in `CXCallObserver`, so during them sounds and dictation could switch
+or deactivate the shared session and the other person heard silence.
+`DirectCallAudio` calls `OtherAppCall.shared.setOwnCall` while the call engine
+has a phase or a group call runs; `inProgress` and `onChange` include it.
+Because it is our own session the call needs, code that changes the session
+without checking `inProgress` (speech, voice messages, view-once voice,
+dictation, the DJ studio, the alarms' stop) skips its category change during
+our call and deactivates only through `OtherAppCall.deactivateSession()`,
+which does nothing then (`OtherAppCall.ownCall`). Details in
+`native/ios/docs/FMChat.md`, "Audio session during a call".
+
 While a call is up:
 
 - **Interface sounds** (`FmCuePlayer.activateSession`, `sessionReady`), Genie
@@ -56,8 +69,10 @@ changes.
 `platform/OtherAppCall.kt` reads `AudioManager.mode` (a mode above normal
 means a call, cellular or VoIP), listening with `addOnModeChangedListener`
 on Android 12+ and polling every 2 s while the app is in the foreground
-below that; every check also reads the mode fresh. ForkMesh's own direct call
-(`DirectCallFeature.engine.phase`) does not count. While a call is up
+below that; every check also reads the mode fresh. Since 2026-10-28
+ForkMesh's own direct or group call (`DirectCallFeature.engine.phase`,
+`GroupCallFeature.active`) counts too, as on iOS, and dictation does not
+start during it ([ANDROID.md](ANDROID.md#calls-ledger-s125-to-s133)). While a call is up
 (wired in `App.onCreate`): interface sounds are quietened
 (`FmSoundCues.quieten`), Agent Watch plays nothing, and Glasses Alert still
 notifies and vibrates but plays no ring; a ring already sounding stops and

@@ -7,6 +7,7 @@ import apps
 import apps_api
 import apps_core as core
 import apps_events as events
+from organization_rbac import ORG_INSIDER_ROLES
 
 
 RESPOND_RE = re.compile(r"^/api/apps/respond/(fmru_[0-9a-f]{48,64})/?$")
@@ -34,7 +35,9 @@ async def viewer_installs(runtime, name):
         "SELECT * FROM app_installs WHERE target_bi=? AND target_kind='user' "
         "AND status='active' ORDER BY created_at LIMIT 100",
         await runtime.blind("app-target:user:" + name)) or [])
-    for org_name, _role in await runtime.orgs_for(name):
+    for org_name, role in await runtime.orgs_for(name):
+        if role not in ORG_INSIDER_ROLES:
+            continue
         org_bi = await runtime.org_lookup(org_name)
         if org_bi:
             rows += await runtime.d1_all(

@@ -385,6 +385,8 @@ SOCIAL_METRICS = ("following", "posts", "replies", "reposts", "likes",
                   "mentions", "media", "reviews")
 STATUSES = ("draft", "review", "queued", "scheduled", "published", "archived")
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HTTPS_RE = re.compile(r"^https://[^\s]{1,990}$", re.IGNORECASE)
@@ -6684,6 +6686,36 @@ async def _create_metric(runtime, org_bi, org_name, account_bi, actor, data):
     return _response(runtime, {"ok": True, "metric": await _metric_project(runtime, row)}, 201)
 
 
+async def _update_metric(runtime, org_bi, actor, metric_id, data):
+    select = ("SELECT metric_id,channel,observed_at,recorded_by_name,data FROM "
+              "marketing_metrics WHERE org_bi=? AND metric_id=?")
+    row = await runtime.d1_first(select, org_bi, metric_id)
+    if not row:
+        return _response(runtime, {"error": "metric_not_found"}, 404)
+    changes = {}
+    for key in METRIC_KEYS + SOCIAL_METRICS + CHANNEL_METRICS:
+        if key not in data:
+            continue
+        value = data.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= CAPTURE_LIMIT:
+            return _response(runtime, {"error": "invalid_metric_value", "field": key}, 400)
+        changes[key] = value
+    if "note" in data:
+        changes["note"] = data.get("note")
+    if not changes:
+        return _response(runtime, {"error": "no_metric_changes"}, 400)
+    stored = await runtime.open(row.get("data"))
+    stored = stored if isinstance(stored, dict) else {}
+    envelope = _metric_data({**stored, **changes})
+    envelope["_channel"] = stored.get("_channel") or row.get("channel")
+    await runtime.d1_run(
+        "UPDATE marketing_metrics SET data=? WHERE org_bi=? AND metric_id=?",
+        await runtime.seal(envelope), org_bi, metric_id)
+    await runtime.audit(actor, "marketing.metric.update", "marketing_metric", metric_id)
+    row = await runtime.d1_first(select, org_bi, metric_id)
+    return _response(runtime, {"ok": True, "metric": await _metric_project(runtime, row)})
+
+
 async def _save_settings(runtime, org_bi, account_bi, actor, data):
     if "channels" in data and not isinstance(data.get("channels"), list):
         return _response(runtime, {"error": "invalid_channels"}, 400)
@@ -8078,6 +8110,7 @@ ACTIVITY_PINGS = {
     ("content", "id", "PATCH"): ("Marketing content updated", "team", True),
     ("content", "id", "DELETE"): ("Marketing content deleted", "team", False),
     ("metrics", "", "POST"): ("Channel numbers logged", "team", True),
+    ("metrics", "id", "PATCH"): ("Channel numbers corrected", "team", True),
     ("app-store", "", "PUT"): ("App Store numbers updated", "team", True),
     ("settings", "", "PUT"): ("Marketing settings changed", "team", True),
     ("channels", "id", "DELETE"): ("Marketing channel removed", "team", False),
@@ -8263,6 +8296,8 @@ async def handle(runtime, path):
                               "keywords", "posts")
             and ID_RE.fullmatch(item)):
         allowed = ("GET", "PATCH", "DELETE")
+    elif item and resource == "metrics" and ID_RE.fullmatch(item):
+        allowed = ("PATCH",)
     elif item and (resource == "channels"
                    or resource == "funnel" and ID_RE.fullmatch(item)):
         allowed = ("DELETE",)
@@ -8288,8 +8323,10 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {"error": "plugin_not_installed",
             "organization": org_name, "canInstall": role in MANAGER_ROLES}, 409)
@@ -8416,6 +8453,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
     if resource == "metrics":
         if method == "GET":
             return _response(runtime, {"ok": True, "metrics": await _metrics(runtime, org_bi)})
+        if item:
+            return await _update_metric(runtime, org_bi, actor, item, data)
         return await _create_metric(runtime, org_bi, org_name, account_bi, actor, data)
     if not item:
         if method == "GET":

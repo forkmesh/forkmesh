@@ -190,8 +190,14 @@ def test_signup_no_longer_links_the_unverified_account_to_the_dashboard():
     assert 'href="/dashboard" id="verify-continue"' not in signup_html
     assert "Continue to dashboard" not in signup_html
     assert 'href="/verify-pending" id="verify-continue"' in signup_html
-    # Even the missing-markup fallback lands on the pending screen.
-    assert '"/dashboard"' not in signup_js
+    # Even the missing-markup fallback lands on the pending screen. Only an
+    # account created without an address (nothing to confirm) continues to
+    # the dashboard, through one function.
+    free = signup_js[signup_js.index("function openEmailFreeAccount()"):]
+    free = free[:free.index("\n  }\n") + 4]
+    assert signup_js.count('"/dashboard"') == free.count('"/dashboard"') == 1
+    verify = signup_js[signup_js.index("function showVerifyView("):]
+    assert "openEmailFreeAccount" not in verify[:verify.index("\n  }\n")]
     assert 'location.href = "/verify-pending"' in signup_js
 
 

@@ -9,9 +9,16 @@ final class FakeCallPeer: DirectCallPeer {
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
+    var onConnection: (@MainActor (DirectCallConnection) -> Void)?
     var offered = false
     var answeredOffer: JSONObject?
+    var answeredOffers: [JSONObject] = []
     var acceptedAnswer: JSONObject?
+    var acceptedAnswers: [JSONObject] = []
+    var answerFails = false
+    var restartable = true
+    var restarts = 0
+    var resumed = 0
     var added: [JSONObject] = []
     var muted: [Bool] = []
     var cameraOff: [Bool] = []
@@ -28,10 +35,26 @@ final class FakeCallPeer: DirectCallPeer {
 
     func answer(offer: JSONObject) async throws -> JSONObject {
         answeredOffer = offer
-        return ["type": "answer", "sdp": "callee-sdp"]
+        answeredOffers.append(offer)
+        let round = answeredOffers.count
+        if round > 1 { onIceCandidate?(["candidate": .string("answer-candidate-\(round)")]) }
+        return ["type": "answer", "sdp": .string(round == 1 ? "callee-sdp" : "callee-sdp-\(round)")]
     }
 
-    func acceptAnswer(_ answer: JSONObject) async throws { acceptedAnswer = answer }
+    func acceptAnswer(_ answer: JSONObject) async throws {
+        acceptedAnswers.append(answer)
+        if answerFails { throw CancellationError() }
+        acceptedAnswer = answer
+    }
+
+    func restartOffer() async throws -> JSONObject? {
+        guard restartable else { return nil }
+        restarts += 1
+        onIceCandidate?(["candidate": .string("restart-candidate-\(restarts)")])
+        return ["type": "offer", "sdp": .string("restart-sdp-\(restarts)")]
+    }
+
+    func resumeMedia() { resumed += 1 }
 
     func add(candidate: JSONObject) async { added.append(candidate) }
 

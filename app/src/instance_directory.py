@@ -131,6 +131,26 @@ async def publish(runtime, launch_id, domain, entry):
     return slot
 
 
+async def publish_new(runtime, launch_id, domain, entry):
+    await ensure(runtime)
+    if not entry or not (entry.get("world") or entry.get("listed")):
+        return None
+    if await runtime.d1_first(
+            "SELECT 1 AS found FROM instance_directory WHERE domain=?", domain):
+        return None
+    slot = await free_slot(runtime) if entry.get("world") else -1
+    now = runtime.now()
+    await runtime.d1_run(
+        "INSERT INTO instance_directory (domain,id,name,url,logo,world,listed,"
+        "slot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(domain) DO NOTHING",
+        domain, launch_id, entry.get("name") or domain,
+        "https://%s/" % domain, entry.get("logo") or "",
+        1 if entry.get("world") else 0, 1 if entry.get("listed") else 0,
+        slot, now, now)
+    return slot
+
+
 def world_url(row, world):
     value = str(row.get("world_url") or "")
     url = str(row.get("url") or "")

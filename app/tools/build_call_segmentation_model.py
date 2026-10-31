@@ -13,12 +13,12 @@ MAGIC = b"FMNN"
 VERSION = 1
 
 BUILTIN = {
-    0: "ADD", 1: "AVERAGE_POOL_2D", 2: "CONCATENATION", 3: "CONV_2D", 4: "DEPTHWISE_CONV_2D", 6: "DEQUANTIZE", 14: "LOGISTIC",
-    17: "MAX_POOL_2D", 18: "MUL", 19: "RELU", 22: "RESHAPE", 23: "RESIZE_BILINEAR", 32: "CUSTOM", 34: "PAD", 40: "MEAN",
+    0: "ADD", 1: "AVERAGE_POOL_2D", 2: "CONCATENATION", 3: "CONV_2D", 4: "DEPTHWISE_CONV_2D", 6: "DEQUANTIZE", 9: "FULLY_CONNECTED",
+    14: "LOGISTIC", 17: "MAX_POOL_2D", 18: "MUL", 19: "RELU", 21: "RELU6", 22: "RESHAPE", 23: "RESIZE_BILINEAR", 32: "CUSTOM", 34: "PAD", 40: "MEAN",
     54: "PRELU", 117: "HARD_SWISH",
 }
-ACTIVATIONS = {"RELU": "relu", "HARD_SWISH": "hswish", "LOGISTIC": "sigmoid"}
-FUSED = {0: "none", 1: "relu"}
+ACTIVATIONS = {"RELU": "relu", "RELU6": "relu6", "HARD_SWISH": "hswish", "LOGISTIC": "sigmoid"}
+FUSED = {0: "none", 1: "relu", 3: "relu6"}
 FLOAT32 = 0
 FLOAT16 = 1
 INT32 = 2
@@ -272,6 +272,24 @@ def convert(path: Path, size=None) -> bytes:
                 "b": store(ins[2]),
                 "cin": shape[3],
                 "cout": weights[3] if depthwise else weights[0],
+            }
+        elif name == "FULLY_CONNECTED":
+            weights = tensors[ins[1]]["shape"]
+            if len(weights) != 2 or any(tensors[i]["shape"][1:-1] != [1] * (len(tensors[i]["shape"]) - 2) for i in (ins[0], out)):
+                raise ValueError("FULLY_CONNECTED must read a 1x1 tensor")
+            node = {
+                "op": "conv",
+                "in": [ins[0]],
+                "out": out,
+                "kernel": [1, 1],
+                "stride": [1, 1],
+                "pad": [0, 0],
+                "dilation": [1, 1],
+                "act": FUSED[op["options"].scalar(0, "b") if op["options"] else 0],
+                "w": store(ins[1]),
+                "b": store(ins[2]),
+                "cin": weights[1],
+                "cout": weights[0],
             }
         elif name in ("ADD", "MUL"):
             if any(tensors[i]["data"] for i in ins):

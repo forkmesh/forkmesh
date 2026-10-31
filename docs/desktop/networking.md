@@ -65,7 +65,7 @@ Part of [the desktop docs](README.md).
 
 `MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`) can run
 `npx wrangler tail` for the Worker named in `app/wrangler.toml` (setting
-`diagnostics/cloudLogMonitor`). The served stack has no Workers: when the tail
+`diagnostics/cloudLogMonitor`). The app and World run no Workers: when the tail
 reports the Worker missing (`cloudflareTailWorkerMissing()`), the monitor stops,
 records the name in `diagnostics/cloudLogMonitorMissingWorker`, and skips the
 tail on later launches until the box is ticked again. The Node.js probe runs on
@@ -84,7 +84,7 @@ every 10 s. Probe: `forkmesh-http3-probe <url> [Header: value]...`.
 
 ## Host logs
 
-**Network → Hosts** live view (`src/MainWindowHosts.cpp`, `src/HostLogSources.h`)
+The Hosts rail's **Live view** (`src/MainWindowHosts.cpp`, `src/HostLogSources.h`)
 reads the gateway's `/v1/node/logs` server-sent events over HTTP/3 when it can.
 Only Ed25519 keys the desktop's host installer wrote to the gateway's allow file
 may open the feed. Otherwise it falls back to one SSH connection multiplexing
@@ -122,7 +122,12 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   and are badged by group (`corelogs::nodeLineBadge`): App, Cron, DB, Web,
   Daemon, IDS, Cert, Ops, Job, Mail, System; live errors go under Error.
   Errors are journald err or worse, Caddy error/panic/fatal, Go panics,
-  `ERROR`/`CRITICAL` lines and IDS alerts. Python tracebacks fold into one entry;
+  `ERROR`/`CRITICAL` lines and IDS alerts. Caddy's "setting HTTP/3 Alt-Svc
+  header … no port can be announced" is a warning
+  (`corelogs::isCaddyReloadNoise`). quic-go reports it when a response goes
+  out while the HTTP/3 listener is closed for a config reload; that response
+  just lacks the HTTP/3 advert. In report #9 it came once per core during a
+  deploy. Python tracebacks fold into one entry;
   identical lines fold for 10 minutes. `corelogs::nodeLineHtml` colours the
   prefix and body and pads them into columns with non-breaking spaces (the log
   views are monospace): node 3, role 6, unit 12, severity 5. Web lines also pad
@@ -147,13 +152,61 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   inspector (`src/QueryInspector.{h,cpp}`; callers, code sites, latency
   histogram, top statements; bounded memory) and **This desktop**
   (`src/DesktopProcessView.{h,cpp}`, sampling `/proc` every 2 s; Linux only).
-  Everything runs only while the tab is visible.
+  Everything runs only while the tab is visible. Clicking a table bubble opens
+  that table in Log → **Database** (`DatabaseManagerWidget::showTable`): the
+  tab's filter and view are reset so the table is listed, the name is matched
+  case-insensitively (statement shapes lowercase it), and if the inventory has
+  not loaded yet the table is selected once it arrives. The `(no table)` and
+  `+N more` bubbles are not links.
 
 ## Network & nodes
 
 The Nodes tab of the Network page (`src/MainWindowNodes.cpp`, `buildNodesSection`)
-is one table: every node the relay directory, roster and serving set know, plus
-one row per configured relay and per runner.
+is one table of every kind of node: every node the relay directory, roster and
+serving set know, one row per configured relay and per runner, every saved host,
+every fleet core, and every self-hosted instance in the public directory. There
+is no separate Hosts tab any more: one list answers "what is on the network",
+and the host controls sit beside it in the Hosts rail.
+
+- **Saved hosts** (`fillSavedHostNodeRow`): a saved host whose name no other row
+  has gets its own row (role from `NodeRole.h`, normally Mirror; Scope `saved
+  host`; status from the last SSH probe; Endpoint is its address; **Logs** opens
+  the SSH log tail). A node row whose name matches a saved host is marked
+  instead (`markSavedHostNodeRows`, a **Host** badge). Clicking either picks
+  that host in the rail (`selectSavedHostInRail`).
+- **Fleet cores** (`fillFleetCoreNodeRow`): non-runner nodes from
+  `fleet-instances.json`, `autoscaled-instances.json` and the cloud listing that
+  no node row already covers (`n7`, `fmnext-n7` or the label). Status is the
+  `readyz` answer the rail's fleet table fetches (`m_fleetNodeReadiness`).
+- **Instances** (`fillInstanceNodeRow`, role Instance): `GET /api/start/instances`
+  on the default server ([../app/instance-federation.md](../app/instance-federation.md)),
+  fetched at most every 10 minutes while the page is visible (every minute on
+  Refresh), `https` entries only, skipped when the host is a configured relay.
+  Only listed, visible entries come back, so an instance shows up here once it
+  is in the directory (OWASP BLT, for example). **Website** opens it. Not
+  fetched under `FORKMESH_WINDOW_TESTS`.
+- **Two-line rows** (`NodeCellDelegate`, 48 px rows, both designs): the Node
+  cell shows a role icon with a status dot, the name and badges, and a second
+  line with role, platform or region, endpoint and version. Every other cell
+  shows its column's icon (`kNodeHeaderIconRole` on the header item) and value,
+  with the column caption underneath; CPU, RAM and Disk draw a meter. The
+  logical columns are unchanged; the header moves Status, CPU, RAM, Disk,
+  Latency and Health right after Node, so the health of each node reads first.
+- **Hosts rail** (`buildHostsSection`, `networkHostsRail`): a right column
+  (`networkRightColumn`, a quarter of the page, 240 to 320 px) holds the node
+  details panel (Next design) above the rail. The rail keeps every former Hosts
+  control in compact form: icon-only buttons for live view, check all and the
+  all-host install, reinstall and source update; the saved-host list with two
+  lines per host and its ten per-host actions as a 2 by 5 grid of icon buttons;
+  then collapsible sections for Add a host, Create a Vultr mirror, Runners,
+  ForkMesh fleet (cores table, Add core node, Fleet autoscaling) and Live
+  output. Each section's open state is `network/hostsRail/<key>`; a section
+  opens itself when one of its fields is filled from elsewhere (the World
+  launch handoff, a double-clicked host) or output arrives. The Hosts plugin
+  switch hides the rail. **Live view** swaps the node list for the side-by-side
+  host panes (`m_hostsViewStack`). `kNetworkHostsTab` is now an alias of the
+  Nodes tab, so every "open Hosts" path lands here. Saved hosts are probed only
+  while the page is on screen (`hostsRailOnScreen`).
 
 - **Repository copies** (`src/MainWindowReleases.cpp`, `loadMirrorNodesPanel`)
   for a chosen repository are built into a hidden per-repository model and merged
@@ -164,7 +217,7 @@ one row per configured relay and per runner.
 - **Roles** (`src/NodeRole.h`, filter `network/nodesRoleFilter`): a catalog
   `role` field first, then fleet naming and fleet files (core, runner), this
   machine (desktop node), saved Hosts (mirror), catalog `runtimeMode`, and a
-  name prefix.
+  name prefix. Directory instances are always Instance.
 - **Relay rows**: each configured relay with Status, Latency, Version, Endpoint
   and Scope (`active`/`standby`); `refreshRelayNodes()` probes `/api/version`
   and patches rows in place.
@@ -189,11 +242,11 @@ Passwords are only a fallback and travel via environment or stdin, never argv.
 
 ### Runners
 
-Network → Hosts lists the app's cloud agent runners (`hostsRunnersTable`,
+The Hosts rail's Runners section lists the app's cloud agent runners (`hostsRunnersTable`,
 `refreshRunners()`, `src/RunnerListView.*`) from `GET /api/runners`, with
 status, scope, last check-in and per-provider sign-in state, and buttons that
 open the runner sign-in dialog ([../RUNNERS.md](../RUNNERS.md#provider-credentials)).
-Runners are never added to the saved hosts.
+Runners are never added to the saved hosts; they show in the node list as runners.
 
 ### Add core node
 
@@ -258,7 +311,7 @@ delete it later with **Remove…** and the instance box. Test:
 
 ### Fleet autoscaling panel
 
-Network → Hosts carries **Fleet autoscaling** (`src/FleetAutoscalePanel.{h,cpp}`,
+The Hosts rail's ForkMesh fleet section carries **Fleet autoscaling** (`src/FleetAutoscalePanel.{h,cpp}`,
 `src/FleetAutoscaleModel.h`), a control plane for `tools/next_autoscale.py`
 (`FORKMESH_NEXT_AUTOSCALE`, `FORKMESH_FLEET_PYTHON`). The scaler itself runs
 leaderless on the cores ([../fleet/AUTOSCALING.md](../fleet/AUTOSCALING.md)).
@@ -423,6 +476,10 @@ moves files, without relaying content in clear.
   and re-posts the relay snapshot, so the phone drops or re-adds the row
   without a manual refresh. Before this, an idle agent deleted on the desktop
   stayed in the phone's list until the user pulled to refresh.
+- The Remote control switch at the bottom of a session's Environment card
+  (`LocalControlServer::setRemoteOff`) refuses every paired request with
+  `remote_off` and holds back events while it is off; see
+  [agents-ui.md](agents-ui.md), "Side panels".
 - Test vectors are pinned in `desktop/tests/test_local_control.cpp` and
   `native/ios/ForkMeshCore/Tests/FMChatTests/LocalControlTests.swift`; change
   both together. Tests: `forkmesh-local-control-tests`.
@@ -435,6 +492,12 @@ moves files, without relaying content in clear.
   closes a relayed connection; look the connection up by id again after either.
 - `LocalControlServer` and `Http3Get` have no `Q_OBJECT`; register the header
   for moc before adding signals.
+- A catalog record's `cloneUrl` is whatever the publishing node sent, and it
+  is passed to `git clone --bare` (`MainWindowRepoFetch.cpp`) and
+  `git fetch` (`fetchServedBranch`). Both put `--` before the source, so a URL
+  that starts with `-` cannot become a git option. Sources are not limited to
+  https, because local paths and LAN, ssh and http mirrors are real sources;
+  git's own `protocol.allow` defaults still refuse `ext::`.
 
 ## Application firewall rules
 

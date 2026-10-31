@@ -1,0 +1,216 @@
+QWidget[reposNextPage="true"] QLabel#sectionTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+QLabel#mutedLabel[reposRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+QLabel#mutedLabel[reposRole="status"] {
+    color: @fgSubtle; font-size: 12px; background: transparent;
+}
+
+QWidget[reposNextPage="true"] QPushButton#ghostButton[reposRole="ghost"] {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgSecondary; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 13px; font-weight: 500;
+}
+QWidget[reposNextPage="true"] QPushButton#ghostButton[reposRole="ghost"]:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QWidget[reposNextPage="true"] QPushButton#ghostButton[reposRole="ghost"]:pressed {
+    background-color: @surfaceActive;
+}
+QWidget[reposNextPage="true"] QPushButton#ghostButton[reposRole="ghost"]:checked {
+    background-color: @surfaceActive; color: @fg;
+}
+QWidget[reposNextPage="true"] QPushButton#ghostButton[reposRole="ghost"]:disabled {
+    background: transparent; color: @fgSubtle;
+}
+QWidget[reposNextPage="true"] QPushButton#primaryButton[reposRole="inverse"] {
+    background-color: @fg; color: @bg; border: none; border-radius: 8px;
+    padding: 0px 12px 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 13px; font-weight: 500;
+}
+QWidget[reposNextPage="true"] QPushButton#primaryButton[reposRole="inverse"]:hover {
+    background-color: @fgSecondary;
+}
+QWidget[reposNextPage="true"] QPushButton#primaryButton[reposRole="inverse"]:pressed {
+    background-color: @fgMuted;
+}
+
+QTabWidget[reposNext="true"]::pane { border: none; border-top: 1px solid @border; top: -1px; }
+QTabWidget[reposNext="true"] > QTabBar::tab {
+    background: transparent; color: @fgMuted; border: none;
+    border-bottom: 2px solid transparent; border-radius: 0px;
+    padding: 0px 10px; margin: 0px 2px 0px 0px; min-height: 34px;
+    font-size: 13px; font-weight: 500;
+}
+QTabWidget[reposNext="true"] > QTabBar::tab:hover { background: transparent; color: @fg; }
+QTabWidget[reposNext="true"] > QTabBar::tab:selected {
+    background: transparent; color: @fg; border-bottom: 2px solid @accentFg;
+}
+
+QLineEdit#reposNextFilter, QLineEdit#reposNextLocalFilter {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 30px; max-height: 30px; padding: 0px 8px 0px 2px;
+    font-size: 13px; color: @fg;
+}
+QLineEdit#reposNextFilter:hover, QLineEdit#reposNextLocalFilter:hover { border-color: @borderStrong; }
+QLineEdit#reposNextFilter:focus, QLineEdit#reposNextLocalFilter:focus { border-color: @accent; }
+
+QTableWidget#issueTable[reposNext="true"] {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+}
+QTableWidget#issueTable[reposNext="true"] QHeaderView::section {
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 8px 12px;
+    font-size: 12px; font-weight: 500;
+}
+
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="outline"],
+QWidget#repoRowActions[reposNext="true"] QPushButton#primaryButton[reposRole="outline"] {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 6px;
+    color: @fg; padding: 0px 8px; min-height: 26px; max-height: 26px;
+    font-size: 12px; font-weight: 500;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="outline"]:hover,
+QWidget#repoRowActions[reposNext="true"] QPushButton#primaryButton[reposRole="outline"]:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="outline"]:pressed,
+QWidget#repoRowActions[reposNext="true"] QPushButton#primaryButton[reposRole="outline"]:pressed {
+    background-color: @surfaceActive;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="outline"]:disabled,
+QWidget#repoRowActions[reposNext="true"] QPushButton#primaryButton[reposRole="outline"]:disabled {
+    background-color: transparent; border-color: @border; color: @fgSubtle;
+}
+
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="ghost"],
+QWidget#repoRowActions[reposNext="true"] QPushButton#ghostButton[reposRole="ghost"] {
+    background-color: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: @fgSecondary; padding: 0px 8px; min-height: 26px; max-height: 26px;
+    font-size: 12px; font-weight: 500;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="ghost"]:hover,
+QWidget#repoRowActions[reposNext="true"] QPushButton#ghostButton[reposRole="ghost"]:hover {
+    background-color: @surfaceActive; border-color: transparent; color: @fg;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="ghost"]:pressed,
+QWidget#repoRowActions[reposNext="true"] QPushButton#ghostButton[reposRole="ghost"]:pressed {
+    background-color: @surfaceActive;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="ghost"]:disabled,
+QWidget#repoRowActions[reposNext="true"] QPushButton#ghostButton[reposRole="ghost"]:disabled {
+    background-color: transparent; border-color: transparent; color: @fgSubtle;
+}
+
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="danger"],
+QWidget#repoRowActions[reposNext="true"] QPushButton#dangerButton[reposRole="danger"] {
+    background-color: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: @danger; padding: 0px 8px; min-height: 26px; max-height: 26px;
+    font-size: 12px; font-weight: 500;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="danger"]:hover,
+QWidget#repoRowActions[reposNext="true"] QPushButton#dangerButton[reposRole="danger"]:hover {
+    background-color: @dangerSubtle; border-color: transparent; color: @danger;
+}
+QWidget#repoRowActions[reposNext="true"] QPushButton[reposRole="danger"]:disabled,
+QWidget#repoRowActions[reposNext="true"] QPushButton#dangerButton[reposRole="danger"]:disabled {
+    background-color: transparent; border-color: transparent; color: @fgSubtle;
+}
+
+QFrame#reposNextViewToggle {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+QPushButton#reposNextViewButton {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-height: 28px; max-height: 28px; min-width: 28px; max-width: 28px;
+}
+QPushButton#reposNextViewButton:hover { background-color: @surfaceRaised; }
+QPushButton#reposNextViewButton:checked { background-color: @surfaceActive; }
+
+QLabel#reposNextTabCount {
+    background-color: @surfaceActive; color: @fgMuted; border: none; border-radius: 4px;
+    padding: 0px 5px; min-height: 16px; max-height: 16px; font-size: 11px; font-weight: 500;
+}
+
+QScrollArea#reposNextCards, QScrollArea#reposNextCardsLocal { background: transparent; border: none; }
+QScrollArea#reposNextCards > QWidget#qt_scrollarea_viewport,
+QScrollArea#reposNextCardsLocal > QWidget#qt_scrollarea_viewport,
+QWidget#reposNextCardList { background: transparent; }
+QLabel#reposNextCardEmpty {
+    color: @fgMuted; font-size: 13px; background: transparent; padding: 32px 0px;
+}
+
+QFrame#reposNextCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#reposNextCard:hover { border-color: @borderStrong; }
+QFrame#reposNextCard QWidget#reposNextCardTop { background: transparent; border: none; }
+QFrame#reposNextCard QLabel { background: transparent; border: none; }
+QFrame#reposNextCard QLabel#reposNextCardTile {
+    background-color: @surfaceRaised; border: 1px solid @border; border-radius: 8px;
+}
+QFrame#reposNextCard QLabel#reposNextCardName { color: @fg; font-size: 15px; font-weight: 600; }
+QFrame#reposNextCard QLabel#reposNextCardDesc { color: @fgMuted; font-size: 13px; }
+QFrame#reposNextCard QLabel#reposNextCardPath { color: @fgSubtle; font-size: 12px; }
+QFrame#reposNextCard QLabel#reposNextCardCommit { color: @fgMuted; font-size: 12px; }
+QFrame#reposNextCard QLabel#reposNextCardAge { color: @fgSubtle; font-size: 12px; }
+QFrame#reposNextCard QLabel#reposNextCardKey { color: @fgMuted; font-size: 13px; }
+QFrame#reposNextCard QLabel#reposNextCardValue { color: @fg; font-size: 13px; }
+QFrame#reposNextCard QLabel#reposNextCardHostName { color: @fg; font-size: 13px; }
+QFrame#reposNextCard QLabel#reposNextCardMirrors,
+QFrame#reposNextCard QLabel#reposNextCardMeta { color: @fgSubtle; font-size: 12px; }
+
+QFrame#reposNextCard QLabel#reposNextPill,
+QFrame#reposNextCard QLabel#reposNextCardDirty {
+    border-radius: 6px; padding: 0px 6px; min-height: 18px; max-height: 18px;
+    font-size: 11px; font-weight: 500;
+}
+QFrame#reposNextCard QLabel#reposNextPill[tone="outline"] {
+    border: 1px solid @border; color: @fgMuted; border-radius: 9px;
+}
+QFrame#reposNextCard QLabel#reposNextPill[tone="accent"] {
+    background-color: @accentSubtle; color: @accentFg;
+}
+QFrame#reposNextCard QLabel#reposNextPill[tone="neutral"],
+QFrame#reposNextCard QLabel#reposNextCardDirty[tone="neutral"] {
+    background-color: @surfaceActive; color: @fgMuted;
+}
+QFrame#reposNextCard QLabel#reposNextPill[tone="danger"] {
+    background-color: @dangerSubtle; color: @danger;
+}
+QFrame#reposNextCard QLabel#reposNextCardDirty[tone="warning"] {
+    background-color: @warningSubtle; color: @warning;
+}
+
+QFrame#reposNextCardBand {
+    background: transparent; border: none; border-top: 1px solid @border;
+}
+QFrame#reposNextCardCell { background: transparent; border: none; }
+QFrame#reposNextCardCell[reposCellFirst="false"] { border-left: 1px solid @border; }
+
+QPushButton#reposNextCardAction {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgSecondary; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton#reposNextCardAction:hover { background-color: @surfaceRaised; color: @fg; }
+QPushButton#reposNextCardAction:pressed { background-color: @surfaceActive; }
+QPushButton#reposNextCardAction:disabled { background: transparent; color: @fgSubtle; }
+QPushButton#reposNextCardAction[reposRole="inverse"] {
+    background-color: @fg; color: @bg; border: 1px solid @fg;
+}
+QPushButton#reposNextCardAction[reposRole="inverse"]:hover {
+    background-color: @fgSecondary; border-color: @fgSecondary;
+}
+QPushButton#reposNextCardAction[reposRole="inverse"]:disabled {
+    background-color: @surfaceActive; border-color: @surfaceActive; color: @fgSubtle;
+}
+QPushButton#reposNextCardAction[reposRole="outline"] {
+    background-color: @surface; border: 1px solid @borderStrong; color: @fg;
+}
+QPushButton#reposNextCardAction[reposRole="outline"]:hover { background-color: @surfaceRaised; }
+QPushButton#reposNextCardAction[reposRole="more"] {
+    padding: 0px; min-width: 28px; max-width: 28px;
+}

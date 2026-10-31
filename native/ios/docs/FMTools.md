@@ -154,11 +154,16 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
 
 ### Glasses Alert (`GlassesWatchModels.swift`, package `glasses-alert`)
 
-Detects Meta smart glasses from Bluetooth advertisements; no API.
+Detects smart glasses and cameras from Bluetooth advertisements; no API.
 
-- `GlassesSignatures.match` keeps adverts whose manufacturer data starts with company ID
-  `0x01AB`/`0x058E` (Meta) or `0x0D53` (Luxottica), or whose name has a glasses keyword, and whose
-  RSSI clears the `GlassesRange` floor (near -65, room -75, wide -90 dBm). `GlassesTracker` alarms
+- `GlassesSignatures.match` keeps adverts whose manufacturer data starts with the company ID of a
+  `GlassesMaker` (Meta, Luxottica, Vuzix and camera makers such as GoPro, Insta360, DJI, Canon,
+  Nikon), that list a maker's 16-bit service UUID (GoPro, Insta360, Snap, Axon, 70mai), or whose name
+  has a glasses or camera keyword, and whose RSSI clears the `GlassesRange` floor (near -65, room -75,
+  wide -90 dBm). Each sighting carries a `SightingKind` (glasses or camera) for the alarm title and
+  icon; a camera match whose name is a printer's (`PIXMA`, `SELPHY`, `instax Link`) is dropped. The
+  package README lists every ID and why makers with mixed product lines (Sony, Panasonic) are matched
+  by name only. `GlassesTracker` alarms
   once per new identifier with a 30 s cooldown and forgets devices after 120 s.
 - `GlassesWatcher` (app) scans with `CBCentralManager` (foreground only; the screen keeps the
   device awake while watching). The alarm loops a sound in the `.playback` category with haptics,

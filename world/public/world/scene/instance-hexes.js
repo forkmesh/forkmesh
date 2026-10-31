@@ -1,3 +1,4 @@
+import { mergeMeshesByMaterial } from "./batching.js";
 import { makeLabelSprite } from "./labels.js";
 import {
   CONTINUOUS_CITY_CORNER_RADIUS,
@@ -32,6 +33,10 @@ const LANDMARK_INSET = CONTINUOUS_CITY_RADIUS * 0.55;
 const MESH_ROAD_DROP = 0.02;
 const CIRCUIT_TEXTURE_SIZE = 256;
 const CIRCUIT_REPEAT = 5;
+const BUG_ICON_CELL = 96;
+const BUG_ICON_COLUMNS = 8;
+const BUG_ICON_SIZE = 2.2;
+const BUG_ICON_FLUSH_MS = 120;
 
 export function instanceHexArrival(slot) {
   const tile = instanceHexSlot(slot);
@@ -431,47 +436,108 @@ export function neighbourGroundMaterial(THREE, ground) {
   }, "MeshStandardMaterial");
 }
 
-function iconTexture(THREE, label, url, ring) {
-  const size = 96;
+function paintBugIcon(context, x, y, label, image, ring) {
+  const size = BUG_ICON_CELL;
+  context.clearRect(x, y, size, size);
+  context.fillStyle = image ? "#ffffff" : "#33415c";
+  context.strokeStyle = ring;
+  context.lineWidth = 6;
+  context.beginPath();
+  if (context.roundRect) context.roundRect(x + 6, y + 6, size - 12, size - 12, 18);
+  else context.rect(x + 6, y + 6, size - 12, size - 12);
+  context.fill();
+  context.stroke();
+  if (image) {
+    context.drawImage(image, x + 22, y + 22, size - 44, size - 44);
+  } else {
+    context.fillStyle = "#ffffff";
+    context.font = `800 ${size * 0.45}px system-ui, sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(String(label || "?").charAt(0).toUpperCase(), x + size / 2, y + size / 2 + 3);
+  }
+}
+
+function bugIconAtlas(THREE, entries, icon, ring) {
+  const rows = Math.max(1, Math.ceil(entries.length / BUG_ICON_COLUMNS));
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = BUG_ICON_CELL * BUG_ICON_COLUMNS;
+  canvas.height = BUG_ICON_CELL * rows;
   const context = canvas.getContext("2d");
-  const paint = (image) => {
-    context.clearRect(0, 0, size, size);
-    context.fillStyle = image ? "#ffffff" : "#33415c";
-    context.strokeStyle = ring;
-    context.lineWidth = 6;
-    context.beginPath();
-    if (context.roundRect) context.roundRect(6, 6, size - 12, size - 12, 18);
-    else context.rect(6, 6, size - 12, size - 12);
-    context.fill();
-    context.stroke();
-    if (image) {
-      context.drawImage(image, 22, 22, size - 44, size - 44);
-    } else {
-      context.fillStyle = "#ffffff";
-      context.font = `800 ${size * 0.45}px system-ui, sans-serif`;
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.fillText(String(label || "?").charAt(0).toUpperCase(), size / 2, size / 2 + 3);
-    }
-  };
-  paint(null);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  if (url) {
-    const image = new Image();
-    image.decoding = "async";
-    image.crossOrigin = "anonymous";
-    image.referrerPolicy = "no-referrer";
-    image.onload = () => {
-      paint(image);
-      texture.needsUpdate = true;
+  let flush = 0;
+  const cells = entries.map((entry, index) => {
+    const column = index % BUG_ICON_COLUMNS;
+    const row = Math.floor(index / BUG_ICON_COLUMNS);
+    const x = column * BUG_ICON_CELL;
+    const y = row * BUG_ICON_CELL;
+    paintBugIcon(context, x, y, entry.label, null, ring);
+    const url = entry.icon ? icon(entry.icon) : "";
+    if (url) {
+      const image = new Image();
+      image.decoding = "async";
+      image.crossOrigin = "anonymous";
+      image.referrerPolicy = "no-referrer";
+      image.onload = () => {
+        paintBugIcon(context, x, y, entry.label, image, ring);
+        if (flush) return;
+        flush = setTimeout(() => {
+          flush = 0;
+          texture.needsUpdate = true;
+        }, BUG_ICON_FLUSH_MS);
+      };
+      image.src = url;
+    }
+    return {
+      u0: column / BUG_ICON_COLUMNS,
+      u1: (column + 1) / BUG_ICON_COLUMNS,
+      v0: 1 - (row + 1) / rows,
+      v1: 1 - row / rows,
     };
-    image.src = url;
-  }
-  return texture;
+  });
+  return { texture, cells };
+}
+
+function bugBoardMaterial(THREE, map) {
+  const material = resources.uniqueMaterial(THREE, { map, alphaTest: 0.5 }, "MeshBasicMaterial");
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec2 bugCorner;")
+      .replace(
+        "#include <project_vertex>",
+        "vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );\nmvPosition.xy += bugCorner;\ngl_Position = projectionMatrix * mvPosition;",
+      );
+  };
+  material.customProgramCacheKey = () => "forkmesh-neighbour-bug-board";
+  return material;
+}
+
+function bugBoard(THREE, centers, atlas) {
+  const half = BUG_ICON_SIZE / 2;
+  const positions = [];
+  const corners = [];
+  const uvs = [];
+  const indices = [];
+  centers.forEach((center, index) => {
+    const { u0, u1, v0, v1 } = atlas.cells[index];
+    for (let corner = 0; corner < 4; corner += 1) positions.push(center.x, center.y, center.z);
+    corners.push(-half, -half, half, -half, half, half, -half, half);
+    uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
+    const base = index * 4;
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("bugCorner", new THREE.Float32BufferAttribute(corners, 2));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  geometry.boundingSphere.radius += half * Math.SQRT2;
+  const board = new THREE.Mesh(geometry, bugBoardMaterial(THREE, atlas.texture));
+  board.name = "forkmesh-instance-hex-bug-board";
+  board.userData.neighbourBugBoard = true;
+  return board;
 }
 
 function sceneHouse(THREE, item, pick) {
@@ -551,20 +617,24 @@ function sceneTerrarium(THREE, item, accent, icon, bug) {
   const lintel = new THREE.Mesh(resources.primitive(THREE, "BoxGeometry", doorWidth + 0.8, 0.4, 0.45), frame);
   lintel.position.set(0, doorHeight, depth / 2);
   tank.add(lintel);
-  item.bugs.forEach((entry, index) => {
+  const centers = item.bugs.map((entry, index) => {
     const column = index % 8;
     const row = Math.floor(index / 8);
-    const sprite = new THREE.Sprite(resources.uniqueMaterial(THREE, {
-      map: iconTexture(THREE, entry.label, entry.icon ? icon(entry.icon) : "", accent),
-      transparent: true,
-      depthWrite: false,
-    }, "SpriteMaterial"));
-    sprite.scale.set(2.2, 2.2, 1);
-    sprite.position.set(-width / 2 + 2.5 + column * 3, 1.6 + (index % 3) * 0.5, -depth / 2 + 2.5 + row * 3.2);
-    sprite.renderOrder = 6;
-    bug(sprite, entry);
-    tank.add(sprite);
+    return new THREE.Vector3(-width / 2 + 2.5 + column * 3, 1.6 + (index % 3) * 0.5, -depth / 2 + 2.5 + row * 3.2);
   });
+  if (centers.length) {
+    tank.add(bugBoard(THREE, centers, bugIconAtlas(THREE, item.bugs, icon, accent)));
+    const proxy = resources.material(THREE, {}, "SpriteMaterial");
+    item.bugs.forEach((entry, index) => {
+      const sprite = new THREE.Sprite(proxy);
+      sprite.scale.set(BUG_ICON_SIZE, BUG_ICON_SIZE, 1);
+      sprite.position.copy(centers[index]);
+      sprite.visible = false;
+      sprite.userData.raycastProxy = true;
+      bug(sprite, entry);
+      tank.add(sprite);
+    });
+  }
   if (item.label) {
     const label = makeLabelSprite(THREE, item.label.slice(0, 22), `${item.bugs.length} bugs`, accent);
     label.scale.set(15, 5, 1);
@@ -645,5 +715,9 @@ export function buildNeighbourScene(THREE, scene, { icon = () => "", pick = () =
     group.add(holder);
   });
   setShadows(group, true, false);
+  group.traverse((child) => {
+    if (child.userData.neighbourBugBoard) child.castShadow = false;
+  });
+  mergeMeshesByMaterial(THREE, group, { skip: (object) => Boolean(object.userData.interactive) });
   return group;
 }

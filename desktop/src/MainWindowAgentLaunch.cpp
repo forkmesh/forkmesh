@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "MessageBoxClicks.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowInternal.h"
 #include "UiSounds.h"
 #include "LocalControlAgentOps.h"
@@ -73,12 +74,45 @@ constexpr int kAgentTaskDeleteMaxRetries = 5;
 QHash<QString, int> g_agentTaskDeleteRetries;
 
 constexpr int kMaxAgentTitlesInFlight = 2;
-constexpr int kAgentTitleTimeoutMs = 45000;
+constexpr int kAgentTitleTimeoutMs = 30000;
+constexpr int kAgentTitleLatchFailures = 3;
+constexpr qint64 kAgentTitleLatchMs = 5 * 60 * 1000;
+const QString kClaudeTitleModel = QStringLiteral("haiku");
+const QString kCodexTitleModel = QStringLiteral("gpt-5.4-mini");
 
 int &agentTitlesInFlight()
 {
     static int inFlight = 0;
     return inFlight;
+}
+
+struct AgentTitleLatch {
+    int failures = 0;
+    qint64 until = 0;
+};
+
+QHash<QString, AgentTitleLatch> &agentTitleLatches()
+{
+    static QHash<QString, AgentTitleLatch> latches;
+    return latches;
+}
+
+static QString agentNamingModel(const QString &provider, const QString &model)
+{
+    const bool codex = agentIsCodexProvider(provider);
+    QString selected = model.trimmed();
+    if (selected.isEmpty())
+        selected = QSettings()
+                       .value(codex ? kCodexModelSetting : kClaudeCodeModelSetting)
+                       .toString()
+                       .trimmed();
+    if (codex)
+        selected = codexChatGptModelId(selected);
+    if (selected == kClaudeAutoModelId ||
+        !agentModelMatchesProvider(codex ? kCodexProvider : QStringLiteral("claude-code"),
+                                   selected))
+        return QString();
+    return selected;
 }
 
 static QString agentBranchSlug(const QString &title, const QString &fallback)
@@ -688,34 +722,73 @@ void MainWindow::requestCloudflareWorkspaceName(
             });
 }
 
-void MainWindow::requestAgentTitle(const QString &provider,
-                                   const QString &prompt,
-                                   std::function<void(QString)> completion)
+void MainWindow::requestAgentTitle(
+    const QString &provider, const QString &prompt, const QString &model,
+    std::function<void(forkmesh::agentwt::AgentTitle)> completion)
 {
     const bool codex = agentIsCodexProvider(provider);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    AgentTitleLatch &latch = agentTitleLatches()[codex ? kCodexProvider : provider];
     if ((!codex && provider != QLatin1String("claude-code")) ||
-        prompt.trimmed().isEmpty() ||
+        prompt.trimmed().isEmpty() || now < latch.until ||
         agentTitlesInFlight() >= kMaxAgentTitlesInFlight) {
-        completion(QString());
+        completion({});
         return;
     }
+    QStringList models{codex ? kCodexTitleModel : kClaudeTitleModel};
+    if (!model.trimmed().isEmpty() && model.trimmed() != models.first())
+        models << model.trimmed();
+    ++agentTitlesInFlight();
+    const QString latchKey = codex ? kCodexProvider : provider;
+    runAgentTitleCli(
+        provider, prompt, models,
+        [latchKey, completion = std::move(completion)](
+            const forkmesh::agentwt::AgentTitle &result) {
+            agentTitlesInFlight() = qMax(0, agentTitlesInFlight() - 1);
+            AgentTitleLatch &latch = agentTitleLatches()[latchKey];
+            if (!result.title.isEmpty()) {
+                latch.failures = 0;
+            } else if (++latch.failures >= kAgentTitleLatchFailures) {
+                latch.failures = 0;
+                latch.until = QDateTime::currentMSecsSinceEpoch() + kAgentTitleLatchMs;
+            }
+            completion(result);
+        });
+}
+
+void MainWindow::runAgentTitleCli(
+    const QString &provider, const QString &prompt, QStringList models,
+    std::function<void(forkmesh::agentwt::AgentTitle)> completion)
+{
+    if (models.isEmpty()) {
+        completion({});
+        return;
+    }
+    const QString model = models.takeFirst();
+    const bool codex = agentIsCodexProvider(provider);
     const QString workdir = forkmesh::vm::active()
                                 ? forkmesh::vm::workspaceRoot()
                                 : QDir::tempPath();
+    const QString quotedModel = forkmesh::agentwt::shellQuote(model);
     const QString command =
         codex ? QStringLiteral(
                     "exec codex exec --skip-git-repo-check --ephemeral "
                     "--sandbox read-only --color never "
-                    "-c 'model_reasoning_effort=\"low\"' -")
+                    "-c 'model_reasoning_effort=\"low\"' -m %1 -")
+                    .arg(quotedModel)
               : QStringLiteral(
-                    "exec claude -p --model haiku --max-turns 1 --tools '' "
+                    "exec claude -p --model %1 --max-turns 1 --tools '' "
                     "--strict-mcp-config --setting-sources '' "
-                    "--no-session-persistence --disable-slash-commands");
+                    "--no-session-persistence --disable-slash-commands "
+                    "--system-prompt %2")
+                    .arg(quotedModel,
+                         forkmesh::agentwt::shellQuote(
+                             forkmesh::agentwt::agentTitleSystemPrompt()));
     const forkmesh::vm::LaunchCommand launch = forkmesh::vm::isolateCommand(
         QStringLiteral("bash"), {QStringLiteral("-lc"), command}, workdir,
         false);
     if (!launch.error.isEmpty()) {
-        completion(QString());
+        completion({});
         return;
     }
 
@@ -738,16 +811,22 @@ void MainWindow::requestAgentTitle(const QString &provider,
     auto *proc = new QProcess(this);
     proc->setWorkingDirectory(workdir);
     proc->setProcessEnvironment(env);
-    ++agentTitlesInFlight();
-    auto finish = std::make_shared<std::function<void(QString)>>(
+    auto finish = std::make_shared<std::function<void(forkmesh::agentwt::AgentTitle)>>(
         std::move(completion));
-    const auto done = [proc, finish](const QString &title) {
+    const QPointer<MainWindow> self(this);
+    const auto done = [self, proc, finish, provider, prompt, models,
+                       model](forkmesh::agentwt::AgentTitle result) {
         if (!*finish)
             return;
-        agentTitlesInFlight() = qMax(0, agentTitlesInFlight() - 1);
-        const auto callback = std::exchange(*finish, nullptr);
+        auto callback = std::exchange(*finish, nullptr);
         proc->deleteLater();
-        callback(title);
+        if (result.title.isEmpty() && !models.isEmpty() && self) {
+            self->runAgentTitleCli(provider, prompt, models, std::move(callback));
+            return;
+        }
+        if (!result.title.isEmpty())
+            result.model = model;
+        callback(result);
     };
     QTimer::singleShot(kAgentTitleTimeoutMs, proc, [proc] { proc->kill(); });
     connect(proc, &QProcess::finished, this,
@@ -755,27 +834,29 @@ void MainWindow::requestAgentTitle(const QString &provider,
                 done(exitCode == 0 && status == QProcess::NormalExit
                          ? forkmesh::agentwt::parseAgentTitle(
                                proc->readAllStandardOutput())
-                         : QString());
+                         : forkmesh::agentwt::AgentTitle{});
             });
     connect(proc, &QProcess::errorOccurred, this,
             [done](QProcess::ProcessError error) {
                 if (error == QProcess::FailedToStart)
-                    done(QString());
+                    done({});
             });
     proc->start(launch.program, launch.arguments);
-    proc->write(forkmesh::agentwt::agentTitleRequest(prompt).toUtf8());
+    const QString request = forkmesh::agentwt::agentTitleRequest(prompt);
+    proc->write((codex ? forkmesh::agentwt::agentTitleSystemPrompt() +
+                             QStringLiteral("\n\n") + request
+                       : request)
+                    .toUtf8());
     proc->closeWriteChannel();
 }
 
 void MainWindow::applyAgentTitle(int sessionId, const QString &provider,
-                                 const QString &title)
+                                 const QString &model, const QString &title)
 {
     if (title.isEmpty() || !m_agentStore)
         return;
     const QString titledBy =
-        provider == QLatin1String("claude-code")
-            ? QStringLiteral("%1 (Haiku)").arg(agentProviderName(provider))
-            : agentProviderName(provider);
+        forkmesh::agentwt::promptNamerLabel(agentProviderName(provider), model);
     {
         AgentSession *session = findAgentSession(sessionId);
         if (!session || session->issueNumber > 0 ||
@@ -987,50 +1068,51 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     if (switchToTab)
         switchToAgentsTab(sessionId);
 
-    if (titleFromPrompt && provider != QLatin1String("claude-code") &&
-        QSettings().value(kAgentTitleFromAgentSetting, true).toBool())
-        requestAgentTitle(provider, task,
-                          [this, sessionId, provider](const QString &agentTitle) {
-                              applyAgentTitle(sessionId, provider, agentTitle);
+    const QString namingModel =
+        !direct && QSettings().value(kAgentCloudflareNamingSetting, false).toBool()
+            ? QSettings().value(kAgentWorkspaceNameModelSetting).toString().trimmed()
+            : QString();
+    const bool agentTitles =
+        titleFromPrompt && QSettings().value(kAgentTitleFromAgentSetting, true).toBool();
+    const QString agentModel = agentNamingModel(provider, session.model);
+    const bool agentNamesWorkspace =
+        agentTitles && cliProvider && !direct && namingModel.isEmpty();
+    if (agentTitles && !agentNamesWorkspace && provider != QLatin1String("claude-code"))
+        requestAgentTitle(provider, task, agentModel,
+                          [this, sessionId, provider](const forkmesh::agentwt::AgentTitle &named) {
+                              applyAgentTitle(sessionId, provider, named.model, named.title);
                           });
 
     const QString localTitle = session.issueTitle;
     auto launchPrepared =
         [this, repo, task, switchToTab, titleFromPrompt, localTitle](
-            int id, const QString &description) {
+            int id, const QString &title, const QString &sharedName,
+            const QString &namer) {
             AgentSession *stored = findAgentSession(id);
             if (!stored || stored->status != AgentStatus::Queued)
                 return; // deleted/stopped while Workers AI was answering
 
-            const QString slug = agentBranchSlug(description, QString());
-            if (!slug.isEmpty()) {
-                const QString sharedName =
-                    forkmesh::agentwt::adHocName(id, description);
+            const QString aiTitle = title.simplified();
+            if (titleFromPrompt && !aiTitle.isEmpty() &&
+                stored->issueTitle == localTitle) {
+                stored->issueTitle = aiTitle.at(0).toUpper() + aiTitle.mid(1);
+                stored->titledBy = namer;
+                m_agentStore->saveSession(*stored);
+            }
+            if (!sharedName.isEmpty()) {
                 stored->branchName = sharedName;
                 stored->worktreeName = sharedName;
-                // The model read the whole prompt, so its few words are a
-                // better list title than one cut from the first sentence.
-                if (titleFromPrompt && stored->issueTitle == localTitle) {
-                    QString aiTitle = description.simplified();
-                    aiTitle[0] = aiTitle.at(0).toUpper();
-                    stored->issueTitle = aiTitle;
-                    stored->titledBy = QStringLiteral("Cloudflare AI");
-                }
                 m_agentStore->saveSession(*stored);
                 m_agentStore->appendLog(
                     *stored,
-                    QStringLiteral("==> Cloudflare AI named this workspace %1.\n")
-                        .arg(sharedName));
-            } else if (!stored->directCheckout &&
-                       !QSettings()
-                            .value(kAgentWorkspaceNameModelSetting)
-                            .toString()
-                            .trimmed()
-                            .isEmpty()) {
+                    QStringLiteral("==> %1 named this workspace %2.\n")
+                        .arg(namer, sharedName));
+            } else if (!stored->directCheckout && !namer.isEmpty()) {
                 m_agentStore->appendLog(
                     *stored,
-                    QStringLiteral("==> Cloudflare naming unavailable; using "
-                                   "the local workspace name.\n"));
+                    QStringLiteral("==> %1 gave no branch name; using "
+                                   "the local workspace name.\n")
+                        .arg(namer));
             }
             AgentSession prepared = *stored;
 
@@ -1051,8 +1133,6 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
 
             if (prepared.provider == QLatin1String("claude-code") ||
                 agentIsCodexProvider(prepared.provider)) {
-                // The typed prompt remains verbatim; Cloudflare only supplied
-                // the workspace label above.
                 startCliTranscript(prepared, Issue(), repo.localPath, task,
                                    switchToTab, &repo);
                 return;
@@ -1073,15 +1153,30 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
             reloadAgents();
         };
 
-    // A direct run has no workspace to name.
-    const QString namingModel =
-        direct ? QString()
-               : QSettings()
-                     .value(kAgentWorkspaceNameModelSetting)
-                     .toString()
-                     .trimmed();
-    if (namingModel.isEmpty()) {
-        launchPrepared(sessionId, QString());
+    if (agentNamesWorkspace) {
+        const QString namer =
+            forkmesh::agentwt::promptNamerLabel(agentProviderName(provider), QString());
+        if (AgentSession *stored = findAgentSession(sessionId))
+            m_agentStore->appendLog(
+                *stored,
+                QString::fromUtf8("==> Asking %1 for a title and branch name\xE2\x80\xA6\n")
+                    .arg(agentProviderName(provider)));
+        requestAgentTitle(
+            provider, task, agentModel,
+            [this, launchPrepared, sessionId, provider,
+             namer](const forkmesh::agentwt::AgentTitle &named) mutable {
+                launchPrepared(
+                    sessionId, named.title,
+                    named.branch.isEmpty()
+                        ? QString()
+                        : forkmesh::agentwt::adHocBranchName(sessionId, named.branch),
+                    named.title.isEmpty()
+                        ? namer
+                        : forkmesh::agentwt::promptNamerLabel(agentProviderName(provider),
+                                                              named.model));
+            });
+    } else if (namingModel.isEmpty()) {
+        launchPrepared(sessionId, QString(), QString(), QString());
     } else {
         if (AgentSession *stored = findAgentSession(sessionId))
             m_agentStore->appendLog(
@@ -1090,7 +1185,11 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
         requestCloudflareWorkspaceName(
             task, namingModel,
             [launchPrepared, sessionId](const QString &description) mutable {
-                launchPrepared(sessionId, description);
+                launchPrepared(sessionId, description,
+                               agentBranchSlug(description, QString()).isEmpty()
+                                   ? QString()
+                                   : forkmesh::agentwt::adHocName(sessionId, description),
+                               QStringLiteral("Cloudflare AI"));
             });
     }
     return sessionId;
@@ -1627,7 +1726,7 @@ void MainWindow::deleteAgentSessionOrgTask(
                           .arg(force ? QStringLiteral(" (forced past its busy "
                                                       "guard)")
                                      : QString()));
-            if (m_organizationTasksLoaded)
+            if (m_organizationTaskStore && m_organizationTaskStore->loaded())
                 refreshOrganizationTasks();
             if (trace)
                 trace->taskStatus = taskAlreadyAbsent ? QStringLiteral("absent")
@@ -2036,7 +2135,7 @@ void MainWindow::purgeSessionState(int sessionId)
         m_streamRaw.erase(raw);
     }
     m_streamFiles.remove(sessionId);
-    m_streamWorktree.remove(sessionId);
+    retireStreamCwd(m_streamWorktree.take(sessionId));
     m_streamPending.remove(sessionId);
     m_streamSessionInfo.remove(sessionId);
     m_streamAccountId.remove(sessionId);
@@ -2060,7 +2159,10 @@ void MainWindow::purgeSessionState(int sessionId)
     m_lastRelayedTeammateText.remove(sessionId);
     m_sessionTokens.remove(sessionId);
     m_sessionOutputTokens.remove(sessionId);
+    m_sessionTokenMeter.remove(sessionId);
+    m_sessionTokenFlow.remove(sessionId);
     m_lastAssistantText.remove(sessionId);
+    m_agentTaskTrackers.remove(sessionId);
     m_agentDoneNotified.remove(sessionId);
     m_scannerStates.remove(sessionId);
     m_agentSpinStates.remove(sessionId);
@@ -2142,6 +2244,11 @@ void MainWindow::switchToAgentsTab(int sessionId)
     const AgentSession *session = findAgentSession(sessionId);
     if (!session)
         return;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("agents session"), [this]() -> QWidget * {
+            return m_repoDetailStack ? m_repoDetailStack->widget(kRepoAgentsTab)
+                                     : nullptr;
+        });
     const AgentSession target = *session;
     clearTeammateDoneUnseen(sessionId);
     showSection(0);
@@ -2181,7 +2288,12 @@ void MainWindow::switchToAgentsTab(int sessionId)
 
 void MainWindow::openAgentsOverview()
 {
-    if (m_selectedAgentSessionId > 0 && findAgentSession(m_selectedAgentSessionId)) {
+    const bool repoOpen = m_repoDetailIndex >= 0 && m_repoDetailStack;
+    const auto reachable = [&](const AgentSession &s) {
+        return repoOpen || repoIndexFor(s.owner, s.name) >= 0;
+    };
+    if (const AgentSession *selected = findAgentSession(m_selectedAgentSessionId);
+        m_selectedAgentSessionId > 0 && selected && reachable(*selected)) {
         switchToAgentsTab(m_selectedAgentSessionId);
         return;
     }
@@ -2191,6 +2303,8 @@ void MainWindow::openAgentsOverview()
     for (const AgentSession &s : std::as_const(m_agentSessions)) {
         if (hideTeammates && s.hasTeammateAttribution())
             continue;
+        if (!reachable(s))
+            continue;
         if (!newest || s.createdAtMs > newest->createdAtMs)
             newest = &s;
     }
@@ -2198,14 +2312,18 @@ void MainWindow::openAgentsOverview()
         switchToAgentsTab(newest->id);
         return;
     }
-    if (m_repoDetailIndex >= 0 && m_repoDetailStack) {
-        showSection(0);
-        ensureRepoDetailTabBuilt(3);
-        m_repoDetailStack->setCurrentIndex(3);
-        if (m_agentsNavButton)
-            m_agentsNavButton->setChecked(true);
-        reloadAgents(AgentReloadScan::FromCache);
-    }
+    if (!repoOpen && !m_repositories.isEmpty())
+        openRepoDetail(0, kRepoAgentsTab);
+    if (m_repoDetailIndex < 0 || !m_repoDetailStack)
+        return;
+    showSection(0);
+    ensureRepoDetailTabBuilt(kRepoAgentsTab);
+    if (m_repoDetailTabs && m_repoDetailTabs->button(kRepoAgentsTab))
+        m_repoDetailTabs->button(kRepoAgentsTab)->setChecked(true);
+    m_repoDetailStack->setCurrentIndex(kRepoAgentsTab);
+    if (m_agentsNavButton)
+        m_agentsNavButton->setChecked(true);
+    reloadAgents(AgentReloadScan::FromCache);
 }
 
 void MainWindow::openRepoAgentsList()
@@ -3041,7 +3159,8 @@ void MainWindow::startClaudeCodeTerminal(AgentSession &session, const Issue &iss
         env << agentIntakeEnv(session.id);
     }
     claudeSettings = forkmesh::agentrules::claudeSettingsWithAllowRules(
-        claudeSettings, agentRunRules(session.id).allowedToolRules);
+        forkmesh::agentrules::claudeSettingsWithReadGuard(claudeSettings),
+        agentRunRules(session.id).allowedToolRules);
     if (!claudeSettings.isEmpty())
         claudeArguments << QStringLiteral("--settings '%1'").arg(claudeSettings);
     cmd = forkmesh::agentnet::withClaudeArguments(cmd, claudeArguments.join(QLatin1Char(' ')));

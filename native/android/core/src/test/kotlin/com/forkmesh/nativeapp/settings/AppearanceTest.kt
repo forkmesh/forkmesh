@@ -18,6 +18,17 @@ class AppearanceTest {
         assertEq(AccentChoice.blue, AccentChoice.fromName("chartreuse"))
     }
 
+    fun testLayoutModeDefaultsToControlTowerAndReadsByName() {
+        assertEq(LayoutModeChoice.controlTower, Appearance.read { null }.layoutMode)
+        assertEq(LayoutModeChoice.focus, Appearance.read { if (it == "appearance/layoutMode") "focus" else null }.layoutMode)
+        assertEq(LayoutModeChoice.controlTower, LayoutModeChoice.fromName("cockpit"))
+        assertEq("appearance/layoutMode", AppearanceKeys.LAYOUT_MODE)
+        assertEq(listOf("controlTower", "focus"), LayoutModeChoice.entries.map { it.name })
+        assertEq(true, LayoutModeChoice.controlTower.dense)
+        assertEq(false, LayoutModeChoice.focus.dense)
+        assertEq("Control Tower", LayoutModeChoice.controlTower.label)
+    }
+
     fun testThemeModeResolvesAgainstTheSystem() {
         assertEq(true, ThemeModeChoice.system.isDark(true))
         assertEq(false, ThemeModeChoice.system.isDark(false))

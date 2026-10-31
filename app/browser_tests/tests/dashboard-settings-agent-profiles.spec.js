@@ -179,17 +179,18 @@ test("adding an account opens its sign-in, and terminals open and end", async ({
   const modal = page.locator("[data-agent-login-modal]");
   await expect(modal.locator("[data-agent-login-title]")).toContainText("Log in to Codex (Side project) on studio");
   expect((await desktopCalls(page, "agentops.accounts.add")).at(-1).params).toEqual({ provider: "codex", label: "Side project" });
-  expect((await desktopCalls(page, "terminal.start")).at(-1).params)
+  await expect.poll(async () => (await desktopCalls(page, "terminal.start")).at(-1)?.params)
     .toMatchObject({ provider: "codex", mode: "login", account: "fresh" });
   await modal.locator("[data-agent-login-close]").click();
 
   await page.locator('[data-agent-profile-provider="claude-code"]').getByRole("button", { name: "New terminal" }).click();
   await expect(modal.locator("[data-agent-login-title]")).toContainText("Claude Code in alpha/engine on studio");
   await expect(modal.locator("[data-agent-login-footer]")).toContainText("full permissions");
-  expect((await desktopCalls(page, "terminal.start")).at(-1).params)
+  await expect.poll(async () => (await desktopCalls(page, "terminal.start")).at(-1)?.params)
     .toMatchObject({ provider: "claude-code", mode: "agent", owner: "alpha", name: "engine" });
   await modal.locator("[data-agent-login-close]").click();
-  expect((await desktopCalls(page, "terminal.detach")).at(-1).params).toEqual({ terminal: "t-agent" });
+  await expect.poll(async () => (await desktopCalls(page, "terminal.detach")).at(-1)?.params)
+    .toEqual({ terminal: "t-agent" });
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator('[data-agent-profile-terminal="run1"]').getByRole("button", { name: "End" }).click();

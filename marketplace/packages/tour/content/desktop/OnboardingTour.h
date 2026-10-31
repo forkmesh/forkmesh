@@ -16,6 +16,12 @@ class QPropertyAnimation;
 
 namespace forkmesh::ui {
 
+enum class OnboardingTrack {
+    Essentials,
+    Advanced,
+    Everything,
+};
+
 // One stop in the desktop tour. reveal() may select the page that gives the
 // target context, but must not change user data; target is then spotlighted by
 // the overlay. A null/hidden target deliberately produces a centred card, which
@@ -28,6 +34,7 @@ struct OnboardingStep {
     QStringList details;
     QPointer<QWidget> target;
     std::function<void()> reveal;
+    OnboardingTrack track = OnboardingTrack::Essentials;
 };
 
 // A child overlay rather than a modal dialog: the app remains visible beneath
@@ -40,17 +47,20 @@ public:
     enum class View {
         Hidden,
         Welcome,
+        Choose,
         Tour,
     };
 
     explicit OnboardingTour(QWidget *parent = nullptr);
     ~OnboardingTour() override;
 
-    std::function<void()> startTourRequested;
+    std::function<void(OnboardingTrack track)> startTourRequested;
     std::function<void()> welcomeDismissed;
     std::function<void(bool completed)> tourClosed;
 
     void showWelcome(const QString &nodeName);
+    void showChooser();
+    void setTrackSizes(const QVector<OnboardingStep> &steps);
     void startTour(QVector<OnboardingStep> steps);
     void nextStep();
     void previousStep();
@@ -63,6 +73,12 @@ public:
     QString currentStepId() const;
     QString currentTitle() const;
     QRect spotlightRect() const;
+    QStringList trackChoices() const;
+    void chooseTrack(OnboardingTrack track);
+
+    static QVector<OnboardingStep> stepsForTrack(const QVector<OnboardingStep> &steps,
+                                                 OnboardingTrack track);
+    static QString trackTitle(OnboardingTrack track);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -73,6 +89,7 @@ protected:
 
 private:
     void buildCard();
+    void showTrackChoices(bool shown);
     void setView(View view);
     void renderStep();
     void renderDetails(const QStringList &details);
@@ -94,6 +111,9 @@ private:
     QLabel *m_title = nullptr;
     QLabel *m_body = nullptr;
     QWidget *m_welcomeFeatures = nullptr;
+    QWidget *m_trackRow = nullptr;
+    QVector<QPushButton *> m_trackButtons;
+    QVector<int> m_trackSizes;
     QLabel *m_details = nullptr;
     QLabel *m_hint = nullptr;
     QLabel *m_progressLabel = nullptr;

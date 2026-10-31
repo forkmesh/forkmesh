@@ -134,6 +134,128 @@ def test_every_platform_send_spends_the_shared_budget():
     assert "mail_budget.is_account_kind(email_kind)" in spend_fn
 
 
+PACKAGE_METHODS = ("_package_mail_reserve", "_package_smtp_reserve",
+                   "_package_mail_account", "_shared_sender_payload",
+                   "send_mailtrap", "_send_package_smtp")
+
+
+def _package_mailer(db, orgs, sent, session_account=""):
+    import ast
+    import re
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    import smtp_mail as real_smtp
+
+    tree = ast.parse(ENTRY)
+    runtime = next(node for node in tree.body
+                   if isinstance(node, ast.ClassDef) and node.name == "_PluginApiRuntime")
+    methods = [node for node in runtime.body
+               if isinstance(node, ast.AsyncFunctionDef) and node.name in PACKAGE_METHODS]
+    helpers = [node for node in tree.body
+               if isinstance(node, ast.FunctionDef) and node.name == "_package_shared_sender_name"]
+    constants = [node for node in tree.body if isinstance(node, ast.Assign)
+                 and any(getattr(target, "id", "").startswith("PACKAGE_S")
+                         for target in node.targets)]
+
+    async def send(_env, message):
+        sent.append(message)
+        return "<m%d@forkmesh.com>" % len(sent)
+
+    async def execute(_env, sql, *args):
+        return await db.execute(sql, *args)
+
+    async def d1_first(_env, sql, *args):
+        return {"name": orgs[args[0]]} if args and args[0] in orgs else None
+
+    async def none(*_args, **_kwargs):
+        return None
+
+    async def tracked(_env, _send_id, html, footer=True):
+        return html, ""
+
+    namespace = {
+        "re": re, "mail_budget": mb, "_mail_budget_execute": execute,
+        "d1_first": d1_first, "d1_run": none, "blind_index": none,
+        "_mail_tracked_html": tracked, "_ap_uuid": lambda: "send",
+        "clean_string": lambda value, limit: str(value or "")[:limit],
+        "valid_account_email": lambda value: bool(re.fullmatch(
+            r"[^@\s<>\"]+@[a-z0-9.-]+\.[a-z]+", str(value or ""))),
+        "mail_activity": types.SimpleNamespace(text_html=lambda text: str(text)),
+        "smtp_mail": types.SimpleNamespace(
+            enabled=lambda _env: True, node=lambda: "n1", send=send,
+            build=real_smtp.build, SENDER=real_smtp.SENDER,
+            SENDER_NAME=real_smtp.SENDER_NAME),
+        "Date": types.SimpleNamespace(now=lambda: T0),
+    }
+    exec(compile(ast.Module(body=constants + helpers + methods, type_ignores=[]),
+                 "entry.py", "exec"), namespace)
+
+    class Mailer:
+        env = types.SimpleNamespace()
+        _plugin = "crm"
+        request = object()
+
+        async def session(self, _data=None):
+            return session_account, None
+
+        async def _mail_log(self, *_args, **_kwargs):
+            return None
+
+    for name in PACKAGE_METHODS:
+        setattr(Mailer, name, namespace[name])
+    return Mailer(), namespace
+
+
+def _package_mail(mailer, organization="", account="", **extra):
+    payload = {"from": {"email": "boss@acme.example", "name": "Your Bank"},
+               "to": [{"email": "victim@customer-mail.io"}], "subject": "Hi",
+               "text": "Hello", "organization": organization, "account": account}
+    payload.update(extra)
+    return asyncio.run(mailer.send_mailtrap("", payload))
+
+
+def test_shared_package_mail_names_the_organization_and_replies_to_its_sender():
+    sent = []
+    org = "1" * 64
+    mailer, namespace = _package_mailer(Db(), {org: 'acme"<x@evil>\r\nBcc: a'}, sent,
+                                        session_account="a" * 64)
+    assert _package_mail(mailer, org)["accepted"] is True
+    message = sent[-1]
+    assert message["From"] == "acme x evil Bcc a via ForkMesh <founders@forkmesh.com>"
+    assert message["Reply-To"] == "boss@acme.example"
+    assert "Your Bank" not in str(message)
+    assert _package_mail(mailer, org, **{"from": {"email": "not an address"}})["accepted"]
+    assert sent[-1]["Reply-To"] is None
+    assert _package_mail(mailer, "2" * 64)["accepted"]
+    assert sent[-1]["From"] == "ForkMesh <founders@forkmesh.com>"
+    long_name = namespace["_package_shared_sender_name"]("a" * 500)
+    assert long_name == "a" * namespace["PACKAGE_SHARED_SENDER_NAME_MAX"] + " via ForkMesh"
+
+
+def test_package_smtp_mail_is_capped_per_account_and_per_organization():
+    db = Db()
+    limit = int(ENTRY.split("PACKAGE_SMTP_ACCOUNT_DAILY_LIMIT = ", 1)[1].split("\n", 1)[0])
+    org_limit = int(ENTRY.split("PACKAGE_SMTP_ORG_DAILY_LIMIT = ", 1)[1].split("\n", 1)[0])
+    sent = []
+    attacker = "a" * 64
+    mailer, _ = _package_mailer(db, {}, sent, session_account=attacker)
+    orgs = ["%064x" % index for index in range(10)]
+    results = [_package_mail(mailer, orgs[index % 10], account="b" * 64)
+               for index in range(limit + 5)]
+    assert sum(1 for result in results if result["accepted"]) == limit
+    assert results[-1] == {"accepted": False, "error": "mail_budget_spent"}
+    assert db.used("mail-package-smtp-account:%s:%s" % (attacker, mb.day_key(T0))) == limit
+    assert db.used("mail-package-smtp-account:%s:%s" % ("b" * 64, mb.day_key(T0))) == 0
+
+    other_db = Db()
+    other_sent = []
+    member, _ = _package_mailer(other_db, {}, other_sent, session_account="c" * 64)
+    member.request = None
+    capped = [_package_mail(member, orgs[0], account="c" * 64)["accepted"]
+              for _ in range(org_limit + 1)]
+    assert capped.count(True) == min(org_limit, limit) and capped[-1] is False
+
+
 def test_admin_alert_recipients_skip_service_and_undeliverable_accounts():
     admins = _between("async def _repository_monitor_admin_emails",
                       "def _sanitize_attention_log_text")

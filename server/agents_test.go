@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -447,5 +449,60 @@ func TestAgentStopJobCancelsTheSessionsRunWithoutStartingAnything(t *testing.T) 
 	reports = relay.snapshot()
 	if len(reports) != 2 || reports[1]["status"] != "failed" {
 		t.Fatalf("idle stop reports = %#v", reports)
+	}
+}
+
+func TestCodexLastMessageReadRefusesJobPlantedLinksAndFifos(t *testing.T) {
+	root := t.TempDir()
+	workdir := filepath.Join(root, "work")
+	if err := os.Mkdir(workdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(t.TempDir(), "node.key")
+	if err := os.WriteFile(secret, []byte("root-only secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plant := func(kind string) agentCommandRunner {
+		return func(_ context.Context, _, _ string, _ io.Writer, _ string, args ...string) ([]byte, error) {
+			path := ""
+			for i := range args {
+				if args[i] == "-o" && i+1 < len(args) {
+					path = args[i+1]
+				}
+			}
+			if path == "" {
+				t.Fatalf("no -o path in %v", args)
+			}
+			switch kind {
+			case "plain":
+				return nil, os.WriteFile(path, []byte("  done  "), 0o600)
+			case "symlink":
+				return nil, os.Symlink(secret, path)
+			default:
+				return nil, syscall.Mkfifo(path, 0o600)
+			}
+		}
+	}
+	session := &agentSession{Provider: "codex"}
+	outcome, err := runCodexAgent(context.Background(), plant("plain"), "mirror9", session, workdir, "hi")
+	if err != nil || outcome.text != "done" {
+		t.Fatalf("plain last message = %q, %v", outcome.text, err)
+	}
+	outcome, _ = runCodexAgent(context.Background(), plant("symlink"), "mirror9", session, workdir, "hi")
+	if outcome.text != "" {
+		t.Fatalf("symlinked last message was followed: %q", outcome.text)
+	}
+	done := make(chan string, 1)
+	go func() {
+		outcome, _ := runCodexAgent(context.Background(), plant("fifo"), "mirror9", session, workdir, "hi")
+		done <- outcome.text
+	}()
+	select {
+	case text := <-done:
+		if text != "" {
+			t.Fatalf("fifo last message = %q", text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reading a job-planted fifo blocked the runner")
 	}
 }

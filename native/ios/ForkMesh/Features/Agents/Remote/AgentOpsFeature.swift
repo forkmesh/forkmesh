@@ -24,6 +24,21 @@ enum AgentOpsFeature {
         return Services.get(AgentOpsClient.self)
     }
 
+    private static var desktopClients: [String: AgentOpsClient] = [:]
+
+    static func client(desktopKey: String) -> AgentOpsClient? {
+        guard let shared = client, let hub = HostsFeature.hub else { return nil }
+        if desktopKey.isEmpty || desktopKey == hub.activeKey { return shared }
+        if let made = desktopClients[desktopKey] { return made }
+        let made = AgentOpsClient(channel: hub.channel(for: desktopKey))
+        desktopClients[desktopKey] = made
+        return made
+    }
+
+    static func client(for row: UnifiedAgentRow) -> AgentOpsClient? {
+        client(desktopKey: row.desktopKey)
+    }
+
     static var approvals: ApprovalsQueue? {
         register()
         return Services.get(ApprovalsQueue.self)

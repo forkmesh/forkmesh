@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import instance_features
+from organization_rbac import ORG_INSIDER_ROLE_SQL, ORG_INSIDER_ROLES
 from plugin_registry import PLUGINS as REGISTRY
 
 
@@ -713,7 +714,8 @@ async def _handle_account(runtime, path):
 async def _visible(runtime, account_bi, account_name="", created_at=None):
     rows = await runtime.d1_all(
         "SELECT DISTINCT i.plugin AS plugin FROM org_plugin_installs i "
-        "JOIN org_members m ON m.org_bi=i.org_bi WHERE m.member_bi=?",
+        "JOIN org_members m ON m.org_bi=i.org_bi WHERE m.member_bi=? "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL,
         account_bi,
     )
     org_installed = {str(row.get("plugin") or "") for row in rows or []}
@@ -735,7 +737,8 @@ async def _visible(runtime, account_bi, account_name="", created_at=None):
                 if member is None:
                     member = bool(await runtime.d1_first(
                         "SELECT 1 AS present FROM org_members "
-                        "WHERE member_bi=? LIMIT 1", account_bi))
+                        "WHERE member_bi=? AND role IN " + ORG_INSIDER_ROLE_SQL
+                        + " LIMIT 1", account_bi))
                 visible = member
             if not visible:
                 visible = await _shared_access(
@@ -904,7 +907,7 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, str(account_bi))
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
     if not plugin:
         return await _state(runtime, org_bi, org_name, role)

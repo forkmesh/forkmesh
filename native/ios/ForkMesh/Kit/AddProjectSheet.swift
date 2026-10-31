@@ -76,7 +76,7 @@ private struct AddProjectForm: View {
                         })
                     }
                     FmFilledButton(
-                        model.createLabel, fillWidth: true,
+                        model.createLabel, fillWidth: true, busy: saving,
                         onPressed: model.canCreate && !saving ? { Task { await create() } } : nil)
                 }
                 .padding(.top, FmSpace.x4)

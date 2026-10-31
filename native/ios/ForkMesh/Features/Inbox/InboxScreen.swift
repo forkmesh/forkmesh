@@ -43,7 +43,7 @@ struct InboxScreen: View {
                         model: model, onNotice: { (next: FmNotice) in notice = next },
                         onOpenSettings: { showingSettings = true },
                         onDeleteAll: { deleteAll(model) }))
-                    .navigationDestination(item: $opened) { (item: InboxItem) in
+                    .shellDetail(item: $opened) { (item: InboxItem) in
                         InboxItemScreen(model: model, item: item)
                             .shellPageClearance()
                     }
@@ -67,7 +67,7 @@ struct InboxScreen: View {
         .background(fm.canvas)
         .navigationTitle("Inbox")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $showingSettings) {
+        .shellDetail(isPresented: $showingSettings) {
             RouteDestinationView(route: .pingSettings)
                 .shellPageClearance()
         }
@@ -397,14 +397,9 @@ struct InboxRowLink: View {
                 Rectangle().fill(fm.border).frame(height: 0.5)
             }
             .contentShape(Rectangle())
-            .background {
-                NavigationLink {
-                    InboxItemScreen(model: model, item: item)
-                        .shellPageClearance()
-                } label: {
-                    EmptyView()
-                }
-                .opacity(0)
+            .shellPaneRowLink(id: AnyHashable("inbox-\(item.id)")) {
+                InboxItemScreen(model: model, item: item)
+                    .shellPageClearance()
             }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)

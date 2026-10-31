@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.schema import SCHEMA_STATEMENTS
+from schema import SCHEMA_STATEMENTS
 
 
 ROOT = Path(__file__).resolve().parents[1]

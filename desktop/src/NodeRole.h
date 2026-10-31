@@ -11,7 +11,7 @@
 
 namespace forkmesh::noderole {
 
-enum class Role { Core, Runner, Mirror, Desktop, Relay };
+enum class Role { Core, Runner, Mirror, Desktop, Instance, Relay };
 
 struct Facts {
     QString name;
@@ -28,7 +28,8 @@ struct FleetNames {
 
 inline QList<Role> allRoles()
 {
-    return {Role::Core, Role::Runner, Role::Mirror, Role::Desktop, Role::Relay};
+    return {Role::Core, Role::Runner, Role::Mirror, Role::Desktop, Role::Instance,
+            Role::Relay};
 }
 
 inline QString key(Role role)
@@ -40,6 +41,8 @@ inline QString key(Role role)
         return QStringLiteral("runner");
     case Role::Mirror:
         return QStringLiteral("mirror");
+    case Role::Instance:
+        return QStringLiteral("instance");
     case Role::Relay:
         return QStringLiteral("relay");
     case Role::Desktop:
@@ -57,6 +60,8 @@ inline QString label(Role role)
         return QStringLiteral("Runner");
     case Role::Mirror:
         return QStringLiteral("Mirror");
+    case Role::Instance:
+        return QStringLiteral("Instance");
     case Role::Relay:
         return QStringLiteral("Relay");
     case Role::Desktop:
@@ -80,6 +85,10 @@ inline QString description(Role role)
         return QStringLiteral(
             "Mirror server: a headless node that keeps and serves copies of "
             "repositories");
+    case Role::Instance:
+        return QStringLiteral(
+            "Instance: a self-hosted ForkMesh server listed in the public "
+            "instance directory, such as OWASP BLT");
     case Role::Relay:
         return QStringLiteral(
             "Relay: a ForkMesh instance this app talks to for accounts, "

@@ -91,7 +91,9 @@ for packages declaring `desktop.workflows.run`, `repositoryWorkflows()` and
 `repositoryWorkflowAction(repo, id, action, payload, done)`: the workflows in
 the desktop's repositories (special agents among them), run, edited and
 pinned to a rail on this desktop
-([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents));
+the repository key `@account/workflows` pins the account's own workflows
+(`pin`, `unpin`, `sync`).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
@@ -112,6 +114,13 @@ takes over the footer prompt box while visible), `userDirectoryChanged()`,
 `repositoryChanged()` (the user opened another repository) and
 `repositoryWorkflowsChanged()` (a desktop workflow was saved, ran or was
 pinned).
+
+**Reading another package's API.** `request` only reaches the package's own
+`apiPrefix`. A page that needs one more API lists its prefix in
+`accountPaths` and its request proof in `resourceProofs`, then signs that
+request itself, as Calendar does and as the CRM contact card does for
+[Invoicing](invoices.md#crm-links). There is no host call for one package to
+open another package's desktop page; link to the web page instead.
 
 **Login store.** A package can hand a password it was given to the user's
 password manager and ask for it back, without the host knowing which package
@@ -192,6 +201,16 @@ mail sending. Desktop callers sign with a per-package `REQUEST_PROOF` string.
 `notify(recipient, "plugin_activity", title, body, href, dedupe, meta, push)`
 files a ping; `push=False` updates the inbox row without a phone banner, which
 the CRM and Marketing activity pings use to fold a burst into one ring.
+
+**Organization roles.** `organization(name, account_bi)` returns the
+caller's role only for organization insiders (owner, admin, maintainer,
+member, auditor); a guest gets the same empty role as an outsider, so every
+package that checks `if not role` fails closed. `organization_member_emails`
+answers insiders only. The CRM, Marketing, Analytics and Competitor packages
+also refuse guests themselves and answer auditors' writes with 403
+`read_only_role` (Analytics still lets them run read-only `query` requests).
+Why: guests are outside collaborators added for a few repositories and must
+not read an organization's customer, marketing or analytics records.
 
 **Data lifecycle.** `dataLifecycle.scope` is `organization` (installs go
 through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,
@@ -298,7 +317,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Core features as plugins** (account-synced on/off switches for built-in
   features): see [core-plugins.md](core-plugins.md).
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
-  `competitor`, `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
+  `competitor`, `invoices` (CRM-linked invoices emailed with open, view and
+  payment tracking, [invoices.md](invoices.md)), `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
   `secure-drive` (an end-to-end encrypted shared drive kept as one file on a
   router's USB drive or any network share, suite `fmsd1`, on the desktop,
   iPhone and Android; [secure-drive.md](secure-drive.md)),
@@ -337,24 +357,31 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
-  `tour`, `people` ([people.md](people.md)), `aquarium`
+  `tour` (three depths on both apps; [tour.md](tour.md)), `people`
+  ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).
-- **Face and voice:** `face-changer` (web page, a desktop rail link, and a
+- **Face and voice:** `face-changer` (web page, a native desktop page that
+  feeds a "ForkMesh Camera" other apps pick on Linux
+  ([face-changer-desktop.md](face-changer-desktop.md)), and a
   native Face Changer screen in the phone apps whose face, background and voice
   choices video calls use) and
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
-  loop, tempo and crossfader controls on responsive web, mobile and desktop
-  surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
+  loop, tempo and crossfader controls on responsive web and mobile surfaces,
+  and a native four-deck desktop studio with EQ, effects and hot cues; [details](video-mix-dj-studio.md), iOS performance checks in
   [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
+- **Games:** `poker` (no-limit Texas Hold'em between ForkMesh users for
+  virtual chips, with a dealer, bots, side pots, turn clocks and synthesized
+  sounds, on the web, the desktop, iPhone and Android; [poker.md](poker.md)).
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
   `feed`, shown as Network Feed, and `mastodon`
-  ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+  ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md);
+  the native desktop client: [mastodon.md](mastodon.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 
@@ -477,9 +504,22 @@ catalog fails the configure with "Marketplace package discovery failed".
 - **Desktop.** `MainWindow::marketPreviewPixmap` reads each preview once with
   `QImageReader::setScaledSize` at the 240×135 card size and caches it in
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
-  Market never re-renders SVGs on the GUI thread. A package whose manifest
-  lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
-  qtimageformats plugin.
+  Market never re-renders SVGs on the GUI thread. The first read runs on a
+  worker (`QtConcurrent`): the card shows an empty frame, and
+  `applyMarketPreview` caches the image and queues it; `flushMarketPreviews`
+  fills every card and details pane whose `previewKey` matches, for all the
+  previews that landed in the last 50 ms, in one walk of the window. A
+  card's details pane is built the first time the card opens
+  ([diagnostics.md](../desktop/diagnostics.md), report #18) and copies the
+  card's preview then. Diagnostic report #15 (2026-10-24) caught the
+  first Market open decoding every preview inline, ~4 s under memory pressure,
+  in `QImageReader::read`. WebP needs Qt's optional qtimageformats plugin,
+  which many Linux installs lack, so when Qt cannot read a preview whose bytes
+  are WebP, the worker decodes it with the libwebp the app already links
+  (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at most 16 MB. Seven
+  packages (App Store Status, RSS Reader, Code Map, Size Map, Strata, Ember,
+  Synapse) ship only `.webp` previews and showed "Preview unavailable" on such
+  machines until 2026-10-25. PNG and SVG previews still need no plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a
@@ -492,5 +532,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

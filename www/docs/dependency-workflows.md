@@ -107,5 +107,6 @@ python3 tools/dependency_conformance.py run --output report.json [--clients git,
 ```
 
 `run` exits 0 on success, 1 on an unexpected result or missing required client,
-2 when it cannot run. HTTPS routes are read-only (push over SSH); only public
-repositories and direct Git installs are covered.
+2 when it cannot run. It only reads: pushes (over SSH, or over HTTPS with an
+account credential) are out of scope, and only public repositories and direct
+Git installs are covered.

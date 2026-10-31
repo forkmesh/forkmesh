@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.control.AgentControlCenter
+import com.forkmesh.nativeapp.control.AgentQuestion
 import com.forkmesh.nativeapp.control.AgentTranscriptDelta
 import com.forkmesh.nativeapp.control.DesktopTranscriptStream
 import com.forkmesh.nativeapp.control.RunnerDesktopHandoff
@@ -81,6 +82,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.control.PromptDeck
 
 internal val agentsNotice = FmStatus()
@@ -175,6 +178,7 @@ internal class AllAgentsScreen : Screen() {
 
 internal class AgentRouteScreen(private val rowId: String) : Screen() {
     private var looked by mutableStateOf(false)
+    private var retrying by mutableStateOf(false)
 
     override val title: String get() = "Agent"
 
@@ -182,25 +186,76 @@ internal class AgentRouteScreen(private val rowId: String) : Screen() {
     override fun Content(navigator: Navigator) {
         val center = AgentsFeature.control
         val tick = rememberCenterTick(center)
+        val scope = rememberCoroutineScope()
         LaunchedEffect(tick, looked) {
-            center.rows.firstOrNull { it.id == rowId }?.let { navigator.replace(UnifiedAgentScreen(it)) }
+            center.row(rowId)?.let { navigator.replace(UnifiedAgentScreen(it)) }
         }
         LaunchedEffect(Unit) {
-            if (center.rows.none { it.id == rowId }) withContext(Dispatchers.IO) { center.refresh() }
+            if (center.row(rowId) == null) withContext(Dispatchers.IO) { center.refresh() }
             looked = true
         }
         DetailScaffold(title, navigator) {
             tick.let { }
-            if (!looked || center.loading) {
-                FmLinearProgressIndicator(Modifier.fillMaxWidth())
+            if (!looked || retrying || center.loading || center.othersLoading) {
+                AgentRouteLoading()
             } else {
-                FmEmptyState(
-                    icon = "smart_toy_outlined",
-                    title = "Agent not found",
-                    message = center.desktopNote.ifEmpty { "The desktop or the relay no longer lists this run." },
-                )
+                AgentRouteMissing(center.desktopNote, retrying) {
+                    if (!retrying) {
+                        retrying = true
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { center.refresh() }
+                            } finally {
+                                retrying = false
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private val routeLoadingLines = listOf(0.92f, 0.78f, 0.86f, 0.6f, 0.9f, 0.7f)
+
+@Composable
+private fun AgentRouteLoading() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp)
+            .padding(top = 4.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "Opening agent" },
+        verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+    ) {
+        com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 220.dp, height = 18.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 54.dp, height = 16.dp, radius = com.forkmesh.nativeapp.ui.theme.FmRadius.md)
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 120.dp, height = 10.dp)
+            Spacer(Modifier.weight(1f))
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(width = 56.dp, height = 10.dp)
+        }
+        Spacer(Modifier.height(FmSpace.x3))
+        for (share in routeLoadingLines) {
+            com.forkmesh.nativeapp.ui.kit.FmSkeleton(Modifier.fillMaxWidth(share), height = 11.dp)
+        }
+    }
+}
+
+@Composable
+private fun AgentRouteMissing(note: String, retrying: Boolean, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        FmEmptyState(
+            icon = "smart_toy_outlined",
+            title = "Agent not found",
+            message = if (note.isEmpty()) "The desktop or the relay no longer lists this run." else "Your desktop did not answer: $note",
+        )
+        FmToneButton(
+            "Try again",
+            onPressed = { if (!retrying) onRetry() },
+            icon = "refresh",
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = FmSpace.x6),
+        )
     }
 }
 
@@ -214,6 +269,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
     private var message by mutableStateOf("")
     private var photos by mutableStateOf<List<PromptAttachment>>(emptyList())
     private var attachments by mutableStateOf<List<AgentAttachmentRef>>(emptyList())
+    private var questions by mutableStateOf<List<AgentQuestion>>(emptyList())
     private var busy by mutableStateOf(false)
     private var showMerge by mutableStateOf(false)
     private var showDelete by mutableStateOf(false)
@@ -278,6 +334,9 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 stream?.let { opened -> withContext(NonCancellable + Dispatchers.IO) { opened.stop() } }
             }
         }
+        LaunchedEffect(row.id, text.length) {
+            questions = withContext(Dispatchers.IO) { runCatching { center.questions(row) }.getOrDefault(emptyList()) }
+        }
         fun act(done: String, target: FmStatus = status, onFailure: () -> Unit = {}, notice: () -> String = { "" }, block: () -> Unit) {
             busy = true
             status.clear()
@@ -294,6 +353,14 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 } finally {
                     busy = false
                 }
+            }
+        }
+        fun answerQuestion(question: AgentQuestion, answer: String, onFailure: () -> Unit = {}) {
+            act("Answer sent.", sendStatus, onFailure = onFailure) {
+                center.answer(row, question, answer)
+                questions = runCatching { center.questions(row) }.getOrDefault(emptyList())
+                val live = liveStream
+                if (live != null) live.refollow() else scope.launch { pulls++ }
             }
         }
         fun moveToDesktop() {
@@ -341,7 +408,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     )
                     if (!confirmed) return@launch
                 }
-                navigator.push(DesktopTerminalScreen(session = row.localId, owner = row.repoOwner, name = row.repoName, provider = row.provider))
+                navigator.push(DesktopTerminalScreen(session = row.localId, owner = row.repoOwner, name = row.repoName, provider = row.provider, desktopKey = row.desktopKey))
             }
         }
         fun requestDelete() {
@@ -423,7 +490,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                                 FmIconButton("desktop_windows_outlined", "Continue on desktop", onPressed = { if (!busy) moveToDesktop() }, color = c.accent)
                             }
                             if (row.isPhoneTerminal) {
-                                FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal)) }, icon = "terminal")
+                                FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal, desktopKey = row.desktopKey)) }, icon = "terminal")
                             } else if (row.offersTerminal) {
                                 FmOutlinedButton("Terminal", onClick = if (busy) null else ({ openTerminal() }), icon = "terminal")
                             }
@@ -432,7 +499,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                         }
                     }
                 }
-                if (row.isDesktop && !row.outside && row.localId > 0) {
+                if (row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0) {
                     QueuedRunNote(row, Modifier.padding(horizontal = FmSpace.x3).padding(bottom = FmSpace.x2))
                 }
                 if (row.outside) {
@@ -458,7 +525,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                                 FmToneButton("Fix conflicts", onPressed = { if (!busy) act(ConflictResolution.FIX_SENT) { center.fixConflicts(row) } }, icon = "smart_toy_outlined", tone = FmTone.Accent)
                             }
                             if (row.repoName.isNotEmpty()) {
-                                FmOutlinedButton("Worktrees", onClick = { navigator.push(WorktreesScreen(row.repoOwner, row.repoName)) }, icon = "account_tree_outlined")
+                                FmOutlinedButton("Worktrees", onClick = { navigator.push(WorktreesScreen(row.repoOwner, row.repoName, row.desktopKey)) }, icon = "account_tree_outlined")
                             }
                             if (!row.outside) FmToneButton("Delete", onPressed = { if (!busy) requestDelete() }, icon = "delete_outline", tone = FmTone.Danger)
                         }
@@ -497,7 +564,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 }
                 if (row.isDesktop && row.localId > 0) {
                     AgentBranchDiffRow(row.branchName, row.baseBranch) {
-                        navigator.push(AgentDiffScreen(row.localId, row.title, canMerge = !active && !row.isActive, base = row.baseBranch, onMerged = merged))
+                        navigator.push(AgentDiffScreen(row.localId, row.title, canMerge = !active && !row.isActive, base = row.baseBranch, onMerged = merged, desktopKey = row.desktopKey))
                     }
                 } else if (row.hasBranchOps) {
                     AgentBranchDiffRow(row.branchName, row.baseBranch) {
@@ -534,7 +601,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
-                    TranscriptFollowBox(list, tail = text.length to blocks.size, modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-run-transcript") {
+                    TranscriptFollowBox(list, tail = Triple(text.length, blocks.size, questions.size), modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-run-transcript") {
                         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(horizontal = FmSpace.x3, vertical = FmSpace.x2)) {
                             if (blocks.isEmpty()) {
                                 item {
@@ -549,6 +616,10 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                                 Spacer(Modifier.height(FmSpace.x3))
                                 AgentAttachmentStrip(attachments)
                             }
+                            if (questions.isNotEmpty()) item {
+                                Spacer(Modifier.height(FmSpace.x3))
+                                AgentQuestionCards(questions, busy) { question, answer -> answerQuestion(question, answer) }
+                            }
                             transcriptEnd()
                         }
                     }
@@ -559,13 +630,18 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                         text = message,
                         onTextChange = { message = it },
                         draftSurface = PromptDraftStore.agentSurface("unified/${row.id}"),
-                        hint = row.composerHint,
+                        hint = if (questions.isEmpty()) row.composerHint else AgentQuestion.COMPOSER_HINT,
                         attachments = if (row.outside) emptyList() else photos,
                         onAttachmentsChanged = if (row.outside) null else ({ photos = it }),
                         onSend = {
                             val next = message.trim()
                             val sending = photos
-                            if (next.isNotEmpty() || sending.isNotEmpty()) {
+                            val asked = questions.firstOrNull()
+                            if (asked != null && next.isNotEmpty() && sending.isEmpty()) {
+                                sent++
+                                message = ""
+                                answerQuestion(asked, next, onFailure = { if (message.isEmpty()) message = next })
+                            } else if (next.isNotEmpty() || sending.isNotEmpty()) {
                                 sent++
                                 message = ""
                                 photos = emptyList()
@@ -618,12 +694,12 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
             }, onDismiss = { showDelete = false })
         }
         if (showMerge && row.isDesktop) {
-            MergeCleanupDialog(row.localId, row.baseBranch, onDone = { message ->
+            MergeCleanupDialog(row.localId, row.baseBranch, desktopKey = row.desktopKey, onDone = { message ->
                 afterMerge(message, center, navigator, scope)
             }, onDismiss = { showMerge = false })
         }
         if (showDelete && row.isDesktop && !row.outside) {
-            AgentDeleteDialog(row.localId, onDone = { message ->
+            AgentDeleteDialog(row.localId, desktopKey = row.desktopKey, onDone = { message ->
                 agentsNotice.show(message)
                 scope.launch { withContext(Dispatchers.IO) { center.refresh() } }
                 navigator.pop()

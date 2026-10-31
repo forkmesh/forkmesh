@@ -60,6 +60,9 @@ photos, downscaled to 2048 px with metadata stripped, within a 10 MB total.
 The Cloud section lists runs that mirrors are working; the relay's
 `cloud-agents` event topic refreshes it. A queued session shows its chain:
 prompt, mirror, branch, pull request, merge.
+Merging a mirror agent's branch straight onto its base is owner-only: the
+node's owner, or an owner of the organization. Anyone else gets `forbidden`
+and opens a pull request instead.
 
 ## Controlling a desktop on the LAN or through the relay
 
@@ -94,7 +97,7 @@ half-open relayed hellos to 16 with a 30-second expiry.
 | Attach photos | `agents.image.begin`, `agents.image.chunk` | Desktop checks size, type and SHA-256 |
 | Answer tool requests | `agentops.approvals`, `agentops.prepare`, `agentops.answer` | One-use desktop confirmation plus phone device authentication |
 | Review changes and images | `agentops.diff`, `agentops.file` | Read-only; credentials redacted; images up to 2 MiB |
-| Merge and clean up | `agentops.prepare`, `agentops.merge` | Agent must be idle |
+| Merge and clean up | `agentops.prepare`, `agentops.merge` | Agent must be idle; unstaged edits in the desktop checkout that clash with the merge can be set aside first (**Set aside and merge**, backed up on a `wip/` branch) |
 | Delete agent, worktree and branch | `agentops.prepare`, `agentops.delete` | Explicit confirmation; agent must be idle |
 
 An older desktop answers `unsupported` and the phone asks for an update.

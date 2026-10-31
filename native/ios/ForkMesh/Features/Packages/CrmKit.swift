@@ -128,7 +128,7 @@ struct CrmPillButton: View {
                 Image(systemName: icon).font(.body.weight(.semibold))
                 Text(title).font(.caption2.weight(.medium)).lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: CrmLayout.dense ? 44 : 54)
             .foregroundStyle(tint)
             .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }

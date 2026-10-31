@@ -280,7 +280,7 @@ def app_schema_groups():
     """The app's own idempotent DDL, in the order entry._apply_schema runs it.
 
     The fingerprint stamp makes the app skip that DDL, but schema.py still
-    creates tables no migration does (system_status_minute, ...). Production
+    creates tables no migration does (issue_bounty, ...). Production
     D1 has them from earlier full applies; a fresh cluster needs them once.
     """
     namespace: dict = {}

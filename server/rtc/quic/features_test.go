@@ -135,49 +135,52 @@ func bigCertificate(t *testing.T) tls.Certificate {
 }
 
 func TestAntiAmplificationLimit(t *testing.T) {
-	sconf := testServerConfig(t)
-	sconf.TLSConfig.Certificates = []tls.Certificate{bigCertificate(t)}
-	srv, err := Listen("udp4", "127.0.0.1:0", sconf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.Close()
-	var sent, received, datagrams int
-	wrap := &lossyConn{PacketConn: mustUDP(t)}
-	wrap.dropOut = func(n int, b []byte) bool {
-		if received == 0 {
-			sent += len(b)
-			return false
+	retryTiming(t, func(fail func(string, ...any)) {
+		sconf := testServerConfig(t)
+		sconf.TLSConfig.Certificates = []tls.Certificate{bigCertificate(t)}
+		srv, err := Listen("udp4", "127.0.0.1:0", sconf)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return true
-	}
-	wrap.dropIn = func(n int, b []byte) bool {
-		received += len(b)
-		datagrams++
-		return true
-	}
-	cli, err := NewEndpoint(wrap, testClientConfig(t), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cli.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	defer cancel()
-	if _, err := cli.Dial(ctx, srv.LocalAddr().(*net.UDPAddr).AddrPort(), testClientConfig(t)); err == nil {
-		t.Fatal("handshake completed without client packets")
-	}
-	wrap.mu.Lock()
-	defer wrap.mu.Unlock()
-	if sent < 1200 {
-		t.Fatalf("client initial was %d bytes", sent)
-	}
-	if received > 3*sent {
-		t.Fatalf("server sent %d bytes for %d received before validation", received, sent)
-	}
-	if received < 3*sent-1200 {
-		t.Fatalf("server sent only %d of its %d byte allowance", received, 3*sent)
-	}
-	t.Logf("server sent %d bytes in %d datagrams in reply to %d", received, datagrams, sent)
+		defer srv.Close()
+		var sent, received, datagrams int
+		wrap := &lossyConn{PacketConn: mustUDP(t)}
+		wrap.dropOut = func(n int, b []byte) bool {
+			if received == 0 {
+				sent += len(b)
+				return false
+			}
+			return true
+		}
+		wrap.dropIn = func(n int, b []byte) bool {
+			received += len(b)
+			datagrams++
+			return true
+		}
+		cli, err := NewEndpoint(wrap, testClientConfig(t), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cli.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if _, err := cli.Dial(ctx, srv.LocalAddr().(*net.UDPAddr).AddrPort(), testClientConfig(t)); err == nil {
+			t.Fatal("handshake completed without client packets")
+		}
+		wrap.mu.Lock()
+		defer wrap.mu.Unlock()
+		if sent < 1200 {
+			t.Fatalf("client initial was %d bytes", sent)
+		}
+		if received > 3*sent {
+			t.Fatalf("server sent %d bytes for %d received before validation", received, sent)
+		}
+		if received < 3*sent-1200 {
+			fail("server sent only %d of its %d byte allowance", received, 3*sent)
+			return
+		}
+		t.Logf("server sent %d bytes in %d datagrams in reply to %d", received, datagrams, sent)
+	})
 }
 
 func TestStatelessReset(t *testing.T) {

@@ -1,0 +1,9 @@
+{
+  "tag": "v1.5.0",
+  "builds": {
+    "android": 0,
+    "linux": 1,
+    "macos": 1,
+    "windows": 1
+  }
+}

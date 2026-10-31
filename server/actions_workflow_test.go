@@ -176,16 +176,6 @@ func TestParseWorkflowReadsThisRepositorysWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 		parsed, err := parseWorkflow(".forkmesh/"+filepath.Base(file), string(raw))
-		if filepath.Base(file) == "clean-machine-vm.yml" {
-			// Its `run: |` block holds a heredoc body at column 0, which ends
-			// a YAML block scalar. The desktop reader ends the block there
-			// too and skips the orphaned lines, silently truncating the
-			// script; this one refuses the file and says where.
-			if !errors.Is(err, errWorkflowSyntax) || !strings.Contains(err.Error(), "(line ") {
-				t.Fatalf("%s: want a located syntax error, got %v", file, err)
-			}
-			continue
-		}
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
@@ -198,6 +188,24 @@ func TestParseWorkflowReadsThisRepositorysWorkflows(t *testing.T) {
 			}
 		}
 		t.Logf("%-40s %-28q on=%v steps=%d", filepath.Base(file), parsed.Name, parsed.Events, len(parsed.Steps))
+	}
+}
+
+func TestParseWorkflowRefusesAFlushLeftLineInsideARunBlock(t *testing.T) {
+	content := `name: Boot
+on: push
+jobs:
+  boot:
+    steps:
+      - name: Summarize
+        run: |
+          python3 - <<'PY'
+import json, sys
+PY
+`
+	_, err := parseWorkflow(".forkmesh/boot.yml", content)
+	if !errors.Is(err, errWorkflowSyntax) || !strings.Contains(err.Error(), "(line ") {
+		t.Fatalf("want a located syntax error, got %v", err)
 	}
 }
 

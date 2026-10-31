@@ -130,10 +130,12 @@ public struct WorkflowSummary: Equatable, Sendable, Identifiable {
     public var lastRunAt: Int64
     public var lastStatus: String
     public var updatedAt: Int64
+    public var runsOnDesktop: Bool
 
     public init(json: JSONObject) {
         id = json.str("id")
         name = json.str("name", "Untitled workflow")
+        runsOnDesktop = json.str("runsOn") == "desktop"
         active = json.bool("active")
         trigger = json.str("trigger")
         steps = json["nodes"]?.arrayValue?.count ?? json.int("nodes")
@@ -377,6 +379,7 @@ public struct WorkflowStepResult: Equatable, Sendable, Identifiable {
 public enum WorkflowRunPlace: String, Equatable, Sendable {
     case phone
     case server
+    case desktop
 }
 
 public struct WorkflowRun: Equatable, Sendable, Identifiable {
@@ -392,8 +395,8 @@ public struct WorkflowRun: Equatable, Sendable, Identifiable {
 
     public init(json: JSONObject, place: WorkflowRunPlace, id: String? = nil, startedAt: Int64? = nil, finishedAt: Int64? = nil) {
         self.id = id ?? json.str("id")
-        self.place = place
         trigger = json.str("trigger", "manual")
+        self.place = trigger == "desktop" ? .desktop : place
         status = json.str("status")
         error = json.str("error")
         requests = json.int("requests")

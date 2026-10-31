@@ -32,6 +32,13 @@ platforms.
 - It can be dragged and thrown; the flight uses the phone's physics (gravity
   2,200 px/s², quadratic drag, throw capped at 4,200 px/s, floor and wall
   restitution, skidding), stepped at 120 Hz.
+- Only a spot the user chose is saved: `GenieSpiderWidget::placed` fires when a
+  drag or a throw from the desktop settles, and `genie/spot` (or
+  `genie/desktopSpot`) is written then, skipped when unchanged. `moved` fires
+  on every arrival, wander and hop included, and only re-places the coach.
+  Saving on `moved` rewrote `ForkMesh.conf` every 11 s (16 of 36 rewrites in a
+  3-minute watch for report #10), each one two `fdatasync` calls that the next
+  `QSettings` on the GUI thread paid for.
 - A plain click shows one 5–10 word line (`GenieCoaching::lines`) in a bubble
   for 5 s; a drag says nothing; a 0.55 s press opens the menu. The one line it
   says unasked announces a badge: when a fresh `badge` ping celebrates,

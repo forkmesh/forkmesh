@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -116,6 +117,7 @@ class OfficeChannelSettingsScreen(private val roomId: String) : Screen() {
                 for (member in members) {
                     FmListRow(
                         title = member,
+                        modifier = Modifier.openProfile(member),
                         showChevron = false,
                         trailing = {
                             FmIconButton(icon = "close", label = "Remove $member", onPressed = {

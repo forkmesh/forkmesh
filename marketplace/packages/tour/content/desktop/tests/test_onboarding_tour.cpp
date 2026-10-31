@@ -31,6 +31,16 @@ QPushButton *visibleButtonWithText(QWidget &root, const QString &text)
     return nullptr;
 }
 
+QPushButton *trackButton(QWidget &root, const QString &title)
+{
+    for (QPushButton *button : root.findChildren<QPushButton *>(
+             QStringLiteral("onboardingTrackButton"))) {
+        if (button->isVisibleTo(&root) && button->text().startsWith(title))
+            return button;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -64,16 +74,20 @@ int main(int argc, char **argv)
     steps.append({QStringLiteral("search"), QStringLiteral("CTRL+K"),
                   QStringLiteral("Search everywhere"),
                   QStringLiteral("Find every workspace from one box."),
-                  {QStringLiteral("Keyboard friendly")}, nullptr, {}});
+                  {QStringLiteral("Keyboard friendly")}, nullptr, {},
+                  forkmesh::ui::OnboardingTrack::Advanced});
     steps.append({QStringLiteral("ready"), QStringLiteral("YOU'RE READY"),
                   QStringLiteral("The mesh is yours"),
                   QStringLiteral("Start exploring."),
                   {QStringLiteral("Replay any time")}, &target, {}});
 
-    tour.startTourRequested = [&] {
+    forkmesh::ui::OnboardingTrack chosen = forkmesh::ui::OnboardingTrack::Essentials;
+    tour.startTourRequested = [&](forkmesh::ui::OnboardingTrack track) {
         ++startRequests;
-        tour.startTour(steps);
+        chosen = track;
+        tour.startTour(forkmesh::ui::OnboardingTour::stepsForTrack(steps, track));
     };
+    tour.setTrackSizes(steps);
     tour.welcomeDismissed = [&] { ++welcomeDismissals; };
     tour.tourClosed = [&](bool done) {
         ++closes;
@@ -97,18 +111,27 @@ int main(int argc, char **argv)
     check(card && tour.rect().contains(card->geometry()) &&
               tour.spotlightRect().isEmpty(),
           "the welcome card is centred inside the desktop without a spotlight");
-    check(visibleButtonWithText(tour, QStringLiteral("Take the tour  →")) &&
+    check(trackButton(tour, QStringLiteral("Essentials  ·  2 stops")) &&
+              trackButton(tour, QStringLiteral("Advanced  ·  3 stops")) &&
+              trackButton(tour, QStringLiteral("The whole shebang  ·  3 stops")) &&
+              tour.trackChoices() ==
+                  QStringList({QStringLiteral("Essentials"), QStringLiteral("Advanced"),
+                               QStringLiteral("The whole shebang")}) &&
               visibleButtonWithText(tour, QStringLiteral("Explore on my own")),
-          "first install offers both the guided tour and a direct exit");
+          "first install offers three tour depths with their sizes and a direct exit");
+    check(!visibleButtonWithText(tour, QStringLiteral("Next  →")) &&
+              !visibleButtonWithText(tour, QStringLiteral("Back")),
+          "the choice card hides the step controls");
 
-    visibleButtonWithText(tour, QStringLiteral("Take the tour  →"))->click();
+    trackButton(tour, QStringLiteral("The whole shebang"))->click();
     QApplication::processEvents();
     const QPoint targetCenter = tour.mapFromGlobal(
         target.mapToGlobal(target.rect().center()));
-    check(startRequests == 1 &&
+    check(startRequests == 1 && chosen == forkmesh::ui::OnboardingTrack::Everything &&
               tour.view() == forkmesh::ui::OnboardingTour::View::Tour &&
+              tour.trackChoices().isEmpty() &&
               tour.stepCount() == 3 && tour.currentStepId() == QLatin1String("agents"),
-          "Take the tour switches the same overlay into its guided steps");
+          "choosing the whole shebang switches the same overlay into every step");
     check(reveals == 1 && tour.spotlightRect().contains(targetCenter),
           "a step reveals and spotlights the actual control it explains");
     check(card && !card->geometry().intersects(tour.spotlightRect()),
@@ -160,6 +183,42 @@ int main(int argc, char **argv)
     QApplication::sendEvent(&tour, &escape);
     check(closes == 3 && !completed && closedOnStep == QLatin1String("agents"),
           "Escape skips a replayable tour without marking it complete");
+
+    tour.showChooser();
+    QApplication::processEvents();
+    check(tour.view() == forkmesh::ui::OnboardingTour::View::Choose && tour.isVisible() &&
+              title && title->text() == QStringLiteral("Take the tour") &&
+              tour.trackChoices().size() == 3 &&
+              visibleButtonWithText(tour, QStringLiteral("Not now")) &&
+              tour.findChildren<QFrame *>(QStringLiteral("onboardingFeatureCard"))
+                      .first()->isVisibleTo(&tour) == false,
+          "the replay chooser offers the three tracks without the first-run pillars");
+
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(&tour, &enter);
+    QApplication::processEvents();
+    check(chosen == forkmesh::ui::OnboardingTrack::Essentials &&
+              tour.stepIds() ==
+                  QStringList({QStringLiteral("agents"), QStringLiteral("ready")}),
+          "Return takes Essentials, which leaves out the advanced steps");
+    tour.dismiss();
+
+    tour.showChooser();
+    QApplication::processEvents();
+    QKeyEvent two(QEvent::KeyPress, Qt::Key_2, Qt::NoModifier);
+    QApplication::sendEvent(&tour, &two);
+    QApplication::processEvents();
+    check(chosen == forkmesh::ui::OnboardingTrack::Advanced && tour.stepCount() == 3,
+          "the number keys pick a track");
+    tour.dismiss();
+
+    const int closesBefore = closes;
+    tour.showChooser();
+    QApplication::processEvents();
+    visibleButtonWithText(tour, QStringLiteral("Not now"))->click();
+    check(!tour.isVisible() && closes == closesBefore && welcomeDismissals == 1 &&
+              tour.view() == forkmesh::ui::OnboardingTour::View::Hidden,
+          "closing the chooser neither completes nor skips anything");
 
     return failures == 0 ? 0 : 1;
 }

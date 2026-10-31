@@ -12,7 +12,10 @@ export const CALL_VIDEO_CONSTRAINTS = Object.freeze({
   frameRate: { ideal: 30, max: 30 },
 });
 export const CALL_VIDEO_MAX_BITRATE = 2_500_000;
-export const CALL_AUDIO_MAX_BITRATE = 96_000;
+export const CALL_AUDIO_MAX_BITRATE = 128_000;
+export const CALL_AUDIO_PRIORITY = "high";
+export const CALL_VIDEO_PRIORITY = "medium";
+export const CALL_AUDIO_CODEC_ORDER = Object.freeze(["audio/red", "audio/opus"]);
 export const CALL_TEST_CLIP_MS = 10_000;
 export const CALL_ROUTE_CHECK_MS = 4000;
 
@@ -39,6 +42,7 @@ const OPUS_FMTP = [
   ["stereo", "0"],
   ["maxplaybackrate", "48000"],
   ["maxaveragebitrate", String(CALL_AUDIO_MAX_BITRATE)],
+  ["sprop-maxcapturerate", "48000"],
 ];
 
 export function callMediaConstraints(media) {
@@ -57,8 +61,9 @@ export async function tuneCallSender(sender, kind) {
       encoding.maxBitrate = kind === "video" ? CALL_VIDEO_MAX_BITRATE : CALL_AUDIO_MAX_BITRATE;
       if (kind === "video") encoding.maxFramerate = 30;
       if (full) {
-        encoding.priority = "high";
-        encoding.networkPriority = "high";
+        const priority = kind === "video" ? CALL_VIDEO_PRIORITY : CALL_AUDIO_PRIORITY;
+        encoding.priority = priority;
+        encoding.networkPriority = priority;
       }
     }
     if (full && kind === "video") params.degradationPreference = "balanced";
@@ -81,6 +86,39 @@ export async function tuneCallSenders(pc) {
     const kind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind || "";
     if (kind === "audio" || kind === "video") await tuneCallSender(transceiver.sender, kind);
   }
+}
+
+export function orderCallAudioCodecs(codecs) {
+  const list = Array.isArray(codecs) ? codecs : [];
+  const rank = (codec) => {
+    const at = CALL_AUDIO_CODEC_ORDER.indexOf(String(codec?.mimeType || "").toLowerCase());
+    return at < 0 ? CALL_AUDIO_CODEC_ORDER.length : at;
+  };
+  if (!list.some((codec) => rank(codec) === 0)) return null;
+  return list.map((codec, index) => ({ codec, index }))
+    .sort((a, b) => rank(a.codec) - rank(b.codec) || a.index - b.index)
+    .map((entry) => entry.codec);
+}
+
+export function preferCallAudioCodecs(pc, RTCRtpSenderImpl = globalThis.RTCRtpSender) {
+  if (typeof RTCRtpSenderImpl?.getCapabilities !== "function") return false;
+  let ordered = null;
+  try {
+    ordered = orderCallAudioCodecs(RTCRtpSenderImpl.getCapabilities("audio")?.codecs);
+  } catch (_) {
+    return false;
+  }
+  if (!ordered) return false;
+  let applied = false;
+  for (const transceiver of pc?.getTransceivers?.() || []) {
+    const kind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind || "";
+    if (kind !== "audio" || typeof transceiver.setCodecPreferences !== "function") continue;
+    try {
+      transceiver.setCodecPreferences(ordered);
+      applied = true;
+    } catch (_) {}
+  }
+  return applied;
 }
 
 export function tuneCallSdp(description) {

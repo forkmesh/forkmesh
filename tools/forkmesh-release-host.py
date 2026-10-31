@@ -6,7 +6,7 @@ have neither the Android toolchain and upload keystore nor a Windows
 cross toolchain and Authenticode certificate. Every candidate it publishes
 therefore lacks the host-built assets:
 
-  forkmesh-linux-x86_64               Debian 12 container build (+ AppImage, .zsync)
+  forkmesh-linux-x86_64               Debian 12 container build (+ AppImage, .zsync, .deb)
   forkmesh-android-universal.apk      native Android app (native/android, Gradle),
                                       signed with the direct-distribution key
   forkmesh-windows-x86_64-setup.exe   MinGW cross build, NSIS, Authenticode
@@ -72,6 +72,7 @@ from pathlib import Path
 LINUX_ASSET = "forkmesh-linux-x86_64"
 APPIMAGE_ASSET = "forkmesh-linux-x86_64.AppImage"
 ZSYNC_ASSET = "forkmesh-linux-x86_64.AppImage.zsync"
+DEB_ASSET = "forkmesh-linux-x86_64.deb"
 LINUX_ASSETS = (LINUX_ASSET, APPIMAGE_ASSET)
 APK_ASSET = "forkmesh-android-universal.apk"
 APK_APPLICATION_ID = "com.forkmesh.forkmesh"
@@ -119,6 +120,7 @@ MACHO_THIN_64 = b"\xcf\xfa\xed\xfe"
 SCAN_OVERLAP = 256
 RELEASES = ".forkmesh/releases"
 BUILDS_FILE = f"{RELEASES}/builds.json"
+APT_DIR = f"{RELEASES}/apt"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import forkmesh_paths  # noqa: E402  (sibling module; tools run as scripts)
@@ -126,7 +128,7 @@ import forkmesh_safe_delete  # noqa: E402
 
 # Releases are cut from the ForkMesh home project, whichever project is open.
 LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
-FORKMESH_DATA = LAYOUT.data
+FORKMESH_DATA = LAYOUT.core
 INSTALLER_KEY_RE = re.compile(r"MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=")
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -195,13 +197,13 @@ def parse_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
-def android_version_code(tag: str, build: int = 1) -> int:
+def android_version_code(tag: str, build: int = 0) -> int:
     """Android versionCode for build N of a desktop release:
     (MAJOR*10000 + MINOR*100 + PATCH) * 100 + N.
 
     It only has to increase from build to build so each APK installs over
     the previous one; v1.2.8 shipped as 10208 before build numbers, and its
-    successor v1.2.9 build 1 is 1020901.
+    successor v1.5.0 starts at build 0, 1050000.
     """
     version = parse_version(tag)
     if version is None:
@@ -212,8 +214,8 @@ def android_version_code(tag: str, build: int = 1) -> int:
             f"release {tag} does not fit the MAJOR*10000+MINOR*100+PATCH "
             "versionCode scheme"
         )
-    if not 1 <= build <= MAX_BUILD:
-        raise CompletionError(f"build {build} is outside 1-{MAX_BUILD}")
+    if not 0 <= build <= MAX_BUILD:
+        raise CompletionError(f"build {build} is outside 0-{MAX_BUILD}")
     return (major * 10000 + minor * 100 + patch) * 100 + build
 
 
@@ -302,7 +304,7 @@ def pending_android_completion(
 
 
 def valid_build(value) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_BUILD
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_BUILD
 
 
 def parse_builds(text: str) -> dict:
@@ -316,28 +318,28 @@ def parse_builds(text: str) -> dict:
     raw = data.get("builds") if isinstance(data.get("builds"), dict) else {}
     return {
         "tag": tag if parse_version(tag) else "",
-        "builds": {platform: raw[platform] if valid_build(raw.get(platform)) else 1
+        "builds": {platform: raw[platform] if valid_build(raw.get(platform)) else 0
                    for platform in PLATFORM_ASSETS},
     }
 
 
 def render_builds(tag: str, builds: dict[str, int]) -> str:
     return json.dumps({"tag": tag,
-                       "builds": {platform: builds.get(platform, 1)
+                       "builds": {platform: builds.get(platform, 0)
                                   for platform in PLATFORM_ASSETS}}, indent=2) + "\n"
 
 
 def recorded_builds(text: str, tag: str) -> dict[str, int]:
     state = parse_builds(text)
     if state["tag"] != tag:
-        return {platform: 1 for platform in PLATFORM_ASSETS}
+        return {platform: 0 for platform in PLATFORM_ASSETS}
     return dict(state["builds"])
 
 
 def platform_build(manifest: dict | None, platform: str) -> int:
     builds = [asset.get("build") for asset in (manifest or {}).get("assets", [])
               if isinstance(asset, dict) and asset.get("name") in PLATFORM_ASSETS[platform]]
-    return max((build for build in builds if valid_build(build)), default=1)
+    return max((build for build in builds if valid_build(build)), default=0)
 
 
 def deploy_target(manifests: dict[str, dict], tag: str | None = None) -> tuple[str, dict]:
@@ -372,7 +374,7 @@ def promotion_blockers(latest: dict | None, candidate_names: frozenset[str],
 
 def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
                 main_commit: str, tag: str | None = None,
-                first_build: bool = False) -> dict:
+                first_build: bool = False, from_main: bool = False) -> dict:
     channel, candidate = deploy_target(manifests, tag)
     tag = str(candidate["tag"])
     names = PLATFORM_ASSETS[platform]
@@ -384,8 +386,11 @@ def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
     if published and first_build:
         return dict(plan, skip=True, build=current,
                     commit=str(candidate.get("build_commit", "")).lower())
+    if not published and not from_main:
+        return dict(plan, build=0, commit=str(candidate.get("build_commit", "")).lower())
     if not published:
-        return dict(plan, build=1, commit=str(candidate.get("build_commit", "")).lower())
+        current = max(recorded_builds(builds_text, tag)[platform], 0)
+        plan["rebuild"] = True
     if current >= MAX_BUILD:
         raise CompletionError(f"{PLATFORM_LABELS[platform]} {tag} already reached build "
                               f"{MAX_BUILD}; cut a new version instead")
@@ -683,6 +688,7 @@ def _fat_slices(buffer: bytes, at: int) -> list[tuple[int, int]] | None:
 def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
     fat, thin, slice_starts = [], {}, {}
     commit = build_commit.lower().encode("ascii")
+    commit_utf16 = build_commit.lower().encode("utf-16-le")
     carries_commit = False
     tail, tail_position = b"", None
 
@@ -702,7 +708,7 @@ def inspect_macos_dmg(path: Path, build_commit: str) -> dict:
                 if cpu in (MACHO_CPU_X86_64, MACHO_CPU_ARM64) and filetype in MACHO_LOADABLE:
                     thin[base + at] = cpu
             at = buffer.find(MACHO_THIN_64, at + 1)
-        if not carries_commit and commit and commit in buffer:
+        if not carries_commit and commit and (commit in buffer or commit_utf16 in buffer):
             carries_commit = True
 
     for position, data in udif_chunks(path):
@@ -1068,7 +1074,7 @@ printf '%s\n' "$2" > "src-$1.commit"
 MAC_DESKTOP_BUILD_SCRIPT = r"""
 set -euo pipefail
 cd desktop-release
-FORKMESH_BUILD_COMMIT="$2" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
+FORKMESH_BUILD_COMMIT="$2" FORKMESH_VERSION="$1" bash "src-$1/tools/package/macos_universal_on_mac.sh" "src-$1" .
 """
 
 MAC_IOS_FETCH_SCRIPT = r"""
@@ -1084,7 +1090,7 @@ git config remote.origin.url "$1"
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
-git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
+git sparse-checkout set --no-cone '/native/ios/' '/native/fixtures/' '/codemagic.yaml' '/conformance/' \
   '/changelog/' '/tools/changelog.py' '/app/src/apns.py' '/app/src/app_runtime.py' \
   '/app/public/assets/call-segmentation/' '/marketplace/packages/vault/tests/fixtures/' \
   '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
@@ -1295,17 +1301,62 @@ def fetch_homepage_manifest(url: str = HOMEPAGE_MANIFEST_URL) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def git_blob(repo: Path, spec: str) -> bytes | None:
+    shown = subprocess.run(["git", "-C", str(repo), "show", spec],
+                           capture_output=True, check=False)
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def manifest_signature_valid(manifest: bytes, signature: bytes | None,
+                             installer_key: str) -> bool:
+    if not signature or len(signature) != 64 or not installer_key:
+        return False
+    with tempfile.TemporaryDirectory(prefix="fm-release-sig-") as scratch:
+        scratch = Path(scratch)
+        key = scratch / "release-publisher.pem"
+        key.write_text(f"-----BEGIN PUBLIC KEY-----\n{installer_key}\n"
+                       "-----END PUBLIC KEY-----\n")
+        (scratch / "release.json").write_bytes(manifest)
+        (scratch / "release.json.sig").write_bytes(signature)
+        checked = run(["openssl", "pkeyutl", "-verify", "-pubin", "-rawin",
+                       "-inkey", key, "-in", scratch / "release.json",
+                       "-sigfile", scratch / "release.json.sig"], check=False)
+        return checked.returncode == 0
+
+
+def require_build_from_tag(repo: Path, channel: str, tag_commit: str,
+                           build_commit: str) -> None:
+    if build_commit == tag_commit:
+        return
+    ancestor = run(["git", "-C", repo, "merge-base", "--is-ancestor", tag_commit,
+                    build_commit], check=False)
+    if ancestor.returncode != 0:
+        raise CompletionError(f"{channel} build commit {build_commit[:12]} does not "
+                              f"descend from its tag commit {tag_commit[:12]}")
+
+
 def manifests_at(repo: Path, ref: str) -> dict[str, dict]:
     manifests = {}
+    installer = git_blob(repo, f"{ref}:www/public/install.sh")
+    try:
+        installer_key = installer_public_key(
+            installer.decode("utf-8", "replace") if installer else "")
+    except ConfigError as error:
+        log(f"cannot verify release manifests at {ref}: {error}")
+        return manifests
     listing = run(["git", "-C", repo, "ls-tree", "--name-only", f"{ref}:{RELEASES}"],
                   check=False)
     for name in listing.stdout.split():
-        shown = run(["git", "-C", repo, "show", f"{ref}:{RELEASES}/{name}/release.json"],
-                    check=False)
-        if shown.returncode != 0:
+        shown = git_blob(repo, f"{ref}:{RELEASES}/{name}/release.json")
+        if shown is None:
+            continue
+        signature = git_blob(repo, f"{ref}:{RELEASES}/{name}/release.json.sig")
+        if not manifest_signature_valid(shown, signature, installer_key):
+            log(f"{name}: release.json.sig does not verify against the installer's "
+                "release key; ignoring it")
             continue
         try:
-            manifest = json.loads(shown.stdout)
+            manifest = json.loads(shown)
         except ValueError:
             continue
         if isinstance(manifest, dict):
@@ -1563,7 +1614,8 @@ cmake --install "$build" --prefix "$build/install"
 [ -x "$build/install/bin/forkmesh.exe" ] || { echo "no forkmesh.exe was installed" >&2; exit 1; }
 # Windows binaries cannot run here, so prove the provenance stamp by content:
 # the header bakes the exact build commit into the executable as a literal.
-grep -q -a "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
+python3 -c 'import sys; c = sys.argv[1].lower(); d = open(sys.argv[2], "rb").read(); sys.exit(0 if c.encode() in d or c.encode("utf-16-le") in d else 1)' \
+  "$FORKMESH_WIN_BUILD_COMMIT" "$build/install/bin/forkmesh.exe" \
   || { echo "forkmesh.exe does not carry build commit $FORKMESH_WIN_BUILD_COMMIT" >&2; exit 1; }
 export FORKMESH_REQUIRE_NATIVE_SIGNING=1
 export FORKMESH_WIN_CXX="$FORKMESH_WIN_MINGW_ROOT/usr/bin/x86_64-w64-mingw32-g++-posix"
@@ -1648,13 +1700,13 @@ BUILD_LINUX_SCRIPT = r"""
 set -euo pipefail
 "$FORKMESH_LINUX_DRIVER" build --source . --out "$FORKMESH_LINUX_OUT" \
   --version "$FORKMESH_LINUX_VERSION" --commit "$FORKMESH_LINUX_COMMIT" \
-  --channel "$FORKMESH_LINUX_CHANNEL"
+  --channel "$FORKMESH_LINUX_CHANNEL" --build "$FORKMESH_LINUX_BUILD"
 "$FORKMESH_LINUX_DRIVER" smoke --out "$FORKMESH_LINUX_OUT" --version "$FORKMESH_LINUX_VERSION"
 """
 
 
 def build_linux_assets(repo: Path, work: Path, tag: str, commit: str,
-                       channel: str) -> dict[str, Path]:
+                       channel: str, build: int = 0) -> dict[str, Path]:
     tree = build_tree(repo, work, "linux", tag, commit)
     out = work / f"linux-out-{tag}"
     forkmesh_safe_delete.remove_tree(out, work, ignore_errors=True)
@@ -1673,9 +1725,10 @@ def build_linux_assets(repo: Path, work: Path, tag: str, commit: str,
         f"container; log: {build_log}")
     env.update(FORKMESH_LINUX_DRIVER=str(driver), FORKMESH_LINUX_OUT=str(out),
                FORKMESH_LINUX_VERSION=version, FORKMESH_LINUX_COMMIT=commit,
-               FORKMESH_LINUX_CHANNEL=channel)
+               FORKMESH_LINUX_CHANNEL=channel, FORKMESH_LINUX_BUILD=str(build))
     run_build(BUILD_LINUX_SCRIPT, tree, env, build_log, 4 * 60 * 60)
-    built = {name: out / name for name in (LINUX_ASSET, APPIMAGE_ASSET, ZSYNC_ASSET)}
+    built = {name: out / name
+             for name in (LINUX_ASSET, APPIMAGE_ASSET, ZSYNC_ASSET, DEB_ASSET)}
     for name, path in built.items():
         if not path.is_file() or path.stat().st_size == 0:
             raise CompletionError(f"{name} was not produced by the Linux baseline build")
@@ -2055,6 +2108,7 @@ def complete_release(args: argparse.Namespace) -> int:
     build_commit = str(candidate.get("build_commit", "")).lower()
     if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
         raise CompletionError(f"{channel} manifest has no exact tag/build commit")
+    require_build_from_tag(repo, channel, tag_commit, build_commit)
     parked_tag = parked_tag_target(repo, tag, tag_commit)
     marker = work / f"failed-{channel}"
     if not args.tag and failure_backoff_active(marker, time.time()):
@@ -2095,6 +2149,8 @@ def complete_release(args: argparse.Namespace) -> int:
                         built[name] = linux[name]
                 if APPIMAGE_ASSET in missing:
                     built[ZSYNC_ASSET] = linux[ZSYNC_ASSET]
+                if LINUX_ASSET in missing:
+                    built[DEB_ASSET] = linux[DEB_ASSET]
             if APK_ASSET in missing:
                 built[APK_ASSET] = build_apk(repo, work, tag, build_commit,
                                              android_version_code(tag), args.signer_sha256)
@@ -2263,8 +2319,8 @@ def check_homepage(args: argparse.Namespace, fetch=None, now=None) -> int:
 def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace) -> dict[str, Path]:
     platform, tag, commit, channel = plan["platform"], plan["tag"], plan["commit"], plan["channel"]
     if platform == "linux":
-        linux = build_linux_assets(repo, work, tag, commit, channel)
-        return {name: linux[name] for name in (*LINUX_ASSETS, ZSYNC_ASSET)}
+        linux = build_linux_assets(repo, work, tag, commit, channel, plan["build"])
+        return {name: linux[name] for name in (*LINUX_ASSETS, ZSYNC_ASSET, DEB_ASSET)}
     if platform == "android":
         return {APK_ASSET: build_apk(repo, work, tag, commit,
                                      android_version_code(tag, plan["build"]),
@@ -2298,6 +2354,11 @@ def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace)
     return {name: dmg for name in MACOS_ASSETS}
 
 
+def code_commit(repo: Path, ref: str) -> str:
+    return git(repo, "log", "-1", "--format=%H", ref, "--", ".",
+               f":(exclude){RELEASES}/**")
+
+
 def deploy_build(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     work = Path(args.work_dir).expanduser()
@@ -2311,7 +2372,8 @@ def deploy_build(args: argparse.Namespace) -> int:
     manifests = manifests_at(repo, "main")
     builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
     plan = plan_deploy(manifests, args.deploy_build, builds_text,
-                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build)
+                       code_commit(repo, "main"), args.tag, args.first_build,
+                       args.from_main)
     label = PLATFORM_LABELS[plan["platform"]]
     tag, channel = plan["tag"], plan["channel"]
     candidate = manifests[channel]
@@ -2319,7 +2381,7 @@ def deploy_build(args: argparse.Namespace) -> int:
         log(f"{label} {tag} already has build {plan['build']}; nothing to build")
         return 0
     built_names = frozenset(plan["assets"]) | (
-        frozenset({ZSYNC_ASSET}) if plan["platform"] == "linux" else frozenset())
+        frozenset({ZSYNC_ASSET, DEB_ASSET}) if plan["platform"] == "linux" else frozenset())
     blockers = promotion_blockers(manifests.get("latest"),
                                   asset_names(candidate) | built_names, required)
     if args.dry_run:
@@ -2330,6 +2392,8 @@ def deploy_build(args: argparse.Namespace) -> int:
     build_commit = str(candidate.get("build_commit", "")).lower()
     if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
         raise CompletionError(f"{channel} manifest has no exact tag/build commit")
+    if plan["rebuild"]:
+        require_build_from_tag(repo, channel, tag_commit, plan["commit"])
     installer_key = installer_public_key(git(repo, "show", "main:www/public/install.sh"))
     hosts = release_hosts(args)
     log(f"deploying {describe_plan(plan)}")
@@ -2378,8 +2442,8 @@ def reset_build_numbers(args: argparse.Namespace) -> int:
     _, candidate = deploy_target(manifests_at(repo, "main"), args.tag)
     tag = str(candidate["tag"])
     current = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
-    text = render_builds(tag, {platform: 1 for platform in PLATFORM_ASSETS})
-    summary = ", ".join(f"{PLATFORM_LABELS[p]} 1" for p in PLATFORM_ASSETS)
+    text = render_builds(tag, {platform: 0 for platform in PLATFORM_ASSETS})
+    summary = ", ".join(f"{PLATFORM_LABELS[p]} 0" for p in PLATFORM_ASSETS)
     if current == text:
         log(f"{tag} build numbers are already reset: {summary}")
         return 0
@@ -2396,10 +2460,10 @@ def reset_build_numbers(args: argparse.Namespace) -> int:
         (tree / BUILDS_FILE).write_text(text)
         git(tree, "add", "--", BUILDS_FILE)
         git(tree, "-c", "user.name=ForkMesh Actions", "-c", "user.email=actions@forkmesh.local",
-            "commit", "-q", "-m", f"release: reset {tag} build numbers to 1")
+            "commit", "-q", "-m", f"release: reset {tag} build numbers to 0")
     finally:
         remove_worktree(repo, tree)
-    land_on_main(repo, branch, f"Merge {branch}: reset {tag} build numbers to 1")
+    land_on_main(repo, branch, f"Merge {branch}: reset {tag} build numbers to 0")
     log(f"{tag} build numbers reset: {summary}")
     return 0
 
@@ -2555,6 +2619,47 @@ def run_step(step, args: argparse.Namespace) -> int:
         return 1
 
 
+def bring_release_onto_main(tree: Path, tag: str, tag_commit: str) -> bool:
+    if run(["git", "-C", tree, "merge-base", "--is-ancestor", tag_commit, "HEAD"],
+           check=False).returncode == 0:
+        return False
+    merged = run(["git", "-C", tree, "-c", "user.name=ForkMesh Actions",
+                  "-c", "user.email=actions@forkmesh.local", "merge", "--no-ff", "-m",
+                  f"release: {tag} reaches main as it is promoted", tag_commit], check=False)
+    if merged.returncode != 0:
+        run(["git", "-C", tree, "merge", "--abort"], check=False)
+        raise CompletionError(f"{tag}'s release commit {tag_commit[:12]} does not merge into "
+                              f"main: {(merged.stdout + merged.stderr).strip()[-500:]}")
+    log(f"{tag}: the release branch merges into main with the promotion")
+    return True
+
+
+def apt_signing_key() -> Path:
+    return Path(os.environ.get("FORKMESH_APT_SIGNING_KEY",
+                               FORKMESH_DATA / "release" / "apt-signing-key.asc")).expanduser()
+
+
+def refresh_apt_repository(tree: Path, cas: Path, latest: dict) -> bool:
+    digest = next((str(asset.get("blob_sha256", "")).lower()
+                   for asset in latest.get("assets", []) if asset.get("name") == DEB_ASSET), "")
+    if not digest:
+        return False
+    if not HASH_RE.match(digest):
+        raise CompletionError(f"latest names {DEB_ASSET} with an invalid hash")
+    key = apt_signing_key()
+    if not key.is_file():
+        log(f"no apt signing key at {key}; the apt repository keeps its previous release")
+        return False
+    blob = cas / "sha256" / digest[:2] / digest / "data"
+    if not blob.is_file():
+        raise CompletionError(f"{DEB_ASSET} {digest[:12]} is not in the release store {cas}")
+    run([sys.executable, tree / "tools" / "forkmesh-apt-repo.py", "publish", "--deb", blob,
+         "--sha256", digest, "--out", tree / APT_DIR, "--signing-key", key], cwd=tree)
+    git(tree, "add", "--", APT_DIR)
+    log(f"apt repository now serves {DEB_ASSET} {digest[:12]}")
+    return True
+
+
 def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         channel: str, tag: str, tag_commit: str, build_commit: str,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
@@ -2570,6 +2675,8 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False):
         git(repo, "branch", "-D", branch)
     git(repo, "worktree", "add", "-q", "-b", branch, str(promote_tree), "main")
+    if promote:
+        bring_release_onto_main(promote_tree, tag, tag_commit)
     with tempfile.TemporaryDirectory(dir=work, prefix="sign-") as secret_dir:
         os.chmod(secret_dir, 0o700)
         secrets = Path(secret_dir)
@@ -2621,6 +2728,7 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
             or any(assets.get(name) != digest for name, digest in digests.items())
             or hashlib.sha256(shasums).hexdigest() != latest.get("checksums_sha256")):
         raise CompletionError("the promoted latest manifest does not describe the built assets")
+    refresh_apt_repository(promote_tree, cas, latest)
     git(promote_tree, "add", "--", f"{RELEASES}/{channel}", f"{RELEASES}/latest")
     summary = "\n".join(f"{name} {digest[:12]}" for name, digest in sorted(digests.items()))
     git(promote_tree, "-c", "user.name=ForkMesh Actions",
@@ -2645,13 +2753,16 @@ def main(argv: list[str] | None = None) -> int:
     modes.add_argument("--check-build", choices=sorted(PLATFORM_ASSETS), metavar="PLATFORM",
                        help="wait until the homepage offers that platform's newest build")
     modes.add_argument("--reset-builds", action="store_true",
-                       help="reset every platform's build number to 1 for the newest "
+                       help="reset every platform's build number to 0 for the newest "
                             "candidate's version (or --tag)")
     modes.add_argument("--wait-candidate", action="store_true",
                        help="wait until main carries the --tag release's candidate manifest")
     parser.add_argument("--first-build", action="store_true",
                         help="with --deploy-build: build only when the platform has no "
                              "build of this version yet")
+    parser.add_argument("--from-main", action="store_true",
+                        help="with --deploy-build: build a platform the release's build "
+                             "commit cannot build from main as build 1, skipping build 0")
     parser.add_argument("--only", action="append", choices=HOST_ASSETS,
                         help="build only this host asset (repeatable)")
     parser.add_argument("--dry-run", action="store_true")
@@ -2707,6 +2818,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--wait-candidate needs --tag")
     if args.first_build and not args.deploy_build:
         parser.error("--first-build goes with --deploy-build")
+    if args.from_main and not args.deploy_build:
+        parser.error("--from-main goes with --deploy-build")
     if args.check_build:
         return run_step(check_build, args)
     if args.wait_candidate:

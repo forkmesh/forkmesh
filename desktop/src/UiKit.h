@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QList>
 #include <QPixmap>
+#include <QPushButton>
 #include <QString>
 #include <QStringList>
 #include <QWidget>
@@ -14,9 +15,9 @@
 class QBoxLayout;
 class QButtonGroup;
 class QComboBox;
+class QEnterEvent;
 class QHBoxLayout;
 class QLineEdit;
-class QPushButton;
 class QVBoxLayout;
 class QVariantAnimation;
 
@@ -99,6 +100,25 @@ public:
     explicit KeyHint(const QString &key, QWidget *parent = nullptr);
 };
 
+class CountdownCloseButton : public QPushButton
+{
+public:
+    explicit CountdownCloseButton(QWidget *parent = nullptr);
+
+    void setProgress(qreal progress);
+    qreal progress() const;
+    void setRingColor(const QColor &color);
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    qreal m_progress = -1.0;
+    QColor m_ringColor;
+};
+
 class InlineNotice : public QFrame
 {
 public:
@@ -112,12 +132,28 @@ public:
                            const QString &octicon = QString());
     QPushButton *addCloseButton();
     QList<QPushButton *> actions() const;
+    void startCountdown(int durationMs, int elapsedMs,
+                        std::function<void()> done);
+    void stopCountdown();
+    int countdownElapsed() const;
+    bool countdownRunning() const;
+    bool countdownPaused() const;
+
+protected:
+    void enterEvent(QEnterEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
 private:
+    QPushButton *placeAction(QPushButton *button, const QString &label,
+                             const QString &octicon);
+
     QHBoxLayout *m_layout = nullptr;
     QLabel *m_icon = nullptr;
     QLabel *m_text = nullptr;
     QList<QPushButton *> m_actions;
+    CountdownCloseButton *m_close = nullptr;
+    QVariantAnimation *m_countdown = nullptr;
+    std::function<void()> m_countdownDone;
     Tone m_tone = Tone::Neutral;
 };
 
@@ -175,6 +211,11 @@ QLabel *pageLede(const QString &text, QWidget *parent = nullptr);
 QWidget *labeledField(const QString &label, QWidget *field,
                       const QString &hint = QString(),
                       QWidget *parent = nullptr);
+void addPasswordReveal(QLineEdit *edit);
+
+inline constexpr int kCellDisplayChars = 512;
+inline constexpr int kDataTableFitRows = 100;
+QString cellDisplayText(const QString &text, int maxChars = kCellDisplayChars);
 
 void installStockPolish();
 void syncStockWidgets();

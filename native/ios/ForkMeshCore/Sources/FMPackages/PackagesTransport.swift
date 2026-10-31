@@ -144,7 +144,19 @@ public struct PackagesError: Error, Equatable, Sendable {
     public static func from(_ reply: PackagesReply) -> PackagesError {
         var fields: [String: String] = [:]
         for (key, value) in reply.json.obj("fields") { fields[key] = value.text }
+        let contact = reply.json.obj("contact")
+        if PackagesText.isHexId(contact.str("id")) {
+            fields["contactId"] = contact.str("id")
+            fields["contactName"] = contact.str("name")
+            fields["contactEmail"] = contact.str("email")
+        }
         return PackagesError(reply.json.str("error"), status: reply.status, fields: fields)
+    }
+
+    public static func isTransient(_ error: Error) -> Bool {
+        if let error = error as? PackagesError { return error.status == 408 || error.status == 425 || error.status >= 500 }
+        if let error = error as? HTTPError { return error != .cancelled }
+        return false
     }
 
     public static func describe(_ error: Error) -> String {

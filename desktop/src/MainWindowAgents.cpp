@@ -1241,6 +1241,21 @@ QWidget *MainWindow::buildAgentsTab()
     auto *topRow = new QVBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);
     topRow->setSpacing(4);
+    m_agentWorkflowLink = new QLabel;
+    m_agentWorkflowLink->setObjectName(QStringLiteral("agentWorkflowLink"));
+    m_agentWorkflowLink->setTextFormat(Qt::RichText);
+    m_agentWorkflowLink->setTextInteractionFlags(Qt::LinksAccessibleByMouse |
+                                                 Qt::LinksAccessibleByKeyboard);
+    m_agentWorkflowLink->setCursor(Qt::PointingHandCursor);
+    m_agentWorkflowLink->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_agentWorkflowLink->hide();
+    connect(m_agentWorkflowLink, &QLabel::linkActivated, this, [this] {
+        const QString repo = m_agentWorkflowLink->property("workflowRepo").toString();
+        const QString id = m_agentWorkflowLink->property("workflowId").toString();
+        if (!repo.isEmpty() && !id.isEmpty())
+            openWorkflowInPage(repo, id);
+    });
+    topRow->addWidget(m_agentWorkflowLink, 0, Qt::AlignLeft);
     auto *statusRow = new QHBoxLayout;
     statusRow->setContentsMargins(0, 0, 0, 0);
     statusRow->setSpacing(8);
@@ -1372,8 +1387,11 @@ QWidget *MainWindow::buildAgentsTab()
     m_agentCodeSplit->setChildrenCollapsible(false);
     m_agentCodeSplit->addWidget(m_agentOutputStack);
     m_agentCodeSplit->addWidget(m_agentCodePage);
+    m_agentCodeSplit->addWidget(buildAgentTowerPanels());
     m_agentCodeSplit->setStretchFactor(0, 1);
     m_agentCodeSplit->setStretchFactor(1, 1);
+    m_agentCodeSplit->setStretchFactor(2, 0);
+    m_agentCodeSplit->setCollapsible(2, true);
 
     m_agentCodePollTimer = new QTimer(this);
     m_agentCodePollTimer->setInterval(3000);
@@ -1398,7 +1416,6 @@ QWidget *MainWindow::buildAgentsTab()
     auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
     agentOutputLayout->setContentsMargins(0, 8, 0, 0);
     agentOutputLayout->setSpacing(6);
-    agentOutputLayout->addWidget(buildAgentSubSessionStrip());
     agentOutputLayout->addWidget(m_agentCodeSplit, 1);
 
     filesChangedPage->setParent(detailPane);
@@ -2732,6 +2749,8 @@ void MainWindow::buildAgentOutputViews(QWidget *detailPane)
             [this](const QString &answer) { sendPromptToSelectedAgent(answer); });
     connect(m_agentTranscript, &ClaudeTranscriptView::rawLogRequested, this,
             &MainWindow::showAgentRawLogEvent);
+    connect(m_agentTranscript, &ClaudeTranscriptView::coverageGapsActivated, this,
+            &MainWindow::startTranscriptCoverageAgent);
 
     m_agentOutputStack = new QStackedWidget;
     m_agentOutputStack->addWidget(m_agentLog);        // page 0: raw / piped log

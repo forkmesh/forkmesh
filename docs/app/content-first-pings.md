@@ -70,8 +70,8 @@ moves to the footer (`Sent to alice.`).
 ## Android
 
 The relay change reaches Android only through the inbox rows: `PingNotifier`
-builds its own title from the stored ping. The matching Android change is
-registered in `docs/native/SYNC.md`.
+builds its own title from the stored ping with `PingLead`, which leads with
+the actor and the content the same way.
 
 ## Dashboard CSS
 

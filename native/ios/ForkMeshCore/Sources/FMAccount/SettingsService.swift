@@ -12,6 +12,19 @@ public enum ThemeMode: String, CaseIterable, Sendable {
     case dark
 }
 
+public enum LayoutMode: String, CaseIterable, Sendable, Identifiable {
+    case controlTower
+    case focus
+
+    public var id: String { rawValue }
+
+    public var label: String { self == .controlTower ? "Control Tower" : "Focus" }
+
+    public var note: String {
+        self == .controlTower ? "Compact, every control in view" : "Roomier, one thing at a time"
+    }
+}
+
 /// The accent colour picked in Settings, stored by name
 /// (`appearance/accent`). `AccentChoice.rgb` holds the colours; `AppTheme` resolves them.
 public enum AccentChoice: String, CaseIterable, Sendable {
@@ -79,6 +92,7 @@ public final class SettingsService {
     nonisolated public static let bugButtonAnchorKey = "bugReport/anchor"
     nonisolated public static let bugButtonLeftKey = "bugReport/onLeft"
     nonisolated public static let themeModeKey = "appearance/themeMode"
+    nonisolated public static let layoutModeKey = "appearance/layoutMode"
     nonisolated public static let accentKey = "appearance/accent"
     nonisolated public static let accentCustomKey = "appearance/accentCustom"
     nonisolated public static let surfaceKey = "appearance/surface"
@@ -444,6 +458,13 @@ public final class SettingsService {
 
     public func setThemeMode(_ mode: ThemeMode) { set(SettingsService.themeModeKey, mode.rawValue) }
 
+    public var layoutMode: LayoutMode {
+        track()
+        return prefs.string(forKey: SettingsService.layoutModeKey).flatMap(LayoutMode.init(rawValue:)) ?? .controlTower
+    }
+
+    public func setLayoutMode(_ mode: LayoutMode) { set(SettingsService.layoutModeKey, mode.rawValue) }
+
     /// The accent colour picked in Settings. Defaults to blue.
     public var accent: AccentChoice {
         track()
@@ -658,6 +679,20 @@ public final class SettingsService {
 
     public func setStarterPack(_ name: String) {
         prefs.set(name, forKey: scope.key(SettingsService.starterPackKey))
+        notifyListeners()
+    }
+
+    public func settlePermissionPacing() {
+        PermissionPacing.settle(prefs, freshInstall: needsStarterPack)
+    }
+
+    public var needsPermissionsIntro: Bool {
+        track()
+        return PermissionPacing.needsIntro(prefs)
+    }
+
+    public func finishPermissionsIntro() {
+        PermissionPacing.finishIntro(prefs)
         notifyListeners()
     }
 
