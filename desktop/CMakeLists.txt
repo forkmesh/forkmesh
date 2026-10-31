@@ -4571,6 +4571,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_pull_refresh_responsiveness.py")
         add_test(
+            NAME forkmesh-mesh-converge-backoff
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_mesh_converge_backoff.py")
+        add_test(
             NAME forkmesh-release-version-stamp
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_version_stamp.py")

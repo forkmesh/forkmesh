@@ -1103,6 +1103,9 @@ void MainWindow::convergeSourceRepoFromMesh(int index, bool force)
     if (nowMs - m_sourceConvergeAttemptMs.value(key, 0) <
         (force ? kForcedConvergeFloorMs : kMirrorSyncIntervalMs))
         return;
+    const QString backoffChannel = QStringLiteral("mesh-converge:") + key;
+    if (!force && !m_pollBackoff.ready(backoffChannel, nowMs))
+        return;
     m_sourceConvergeAttemptMs.insert(key, nowMs);
     const QString meshUrl = repositoryNetworkCloneUrl(repo.owner, repo.name);
     const QString workTree = repo.localPath.trimmed();
@@ -1349,10 +1352,17 @@ void MainWindow::convergeSourceRepoFromMesh(int index, bool force)
         });
     connect(worker, &QThread::finished, this,
             [this, worker, index, key, mirrorMoved, checkoutSummary,
-             reconciliationFetched, reconciliationComplete] {
+             reconciliationFetched, reconciliationComplete, backoffChannel] {
                 worker->deleteLater();
                 m_syncingRepos.remove(index);
                 refreshRepositoryList();
+                constexpr qint64 kConvergeBackoffCapMs = 30LL * 60 * 1000;
+                if (*reconciliationFetched)
+                    m_pollBackoff.noteSuccess(backoffChannel);
+                else
+                    m_pollBackoff.noteFailure(
+                        backoffChannel, QDateTime::currentMSecsSinceEpoch(),
+                        kMirrorSyncIntervalMs, kConvergeBackoffCapMs);
                 if (!checkoutSummary->isEmpty())
                     logSystem(QStringLiteral("Mesh converge %1: %2")
                                   .arg(key, *checkoutSummary));
