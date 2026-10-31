@@ -51,10 +51,12 @@ def test_features_default_on_and_follow_the_org_alias():
                  aliases={("acme", "forkmesh"): "forkmesh"})
     off = asyncio.run(ns["_repo_features_get"](None, "Acme", "ForkMesh"))
     assert off == {"issues": False, "pulls": False, "discussions": False,
-                   "actions": True, "protectDefaultBranch": False}
+                   "actions": True, "protectDefaultBranch": False,
+                   "stalePulls": False, "stalePullsDeleteBranch": False}
     assert asyncio.run(ns["_repo_features_get"](None, "ada", "tools")) == {
         "issues": True, "pulls": True, "discussions": True, "actions": True,
-        "protectDefaultBranch": False}
+        "protectDefaultBranch": False, "stalePulls": False,
+        "stalePullsDeleteBranch": False}
     refused = asyncio.run(ns["_repo_feature_off"](None, "acme", "forkmesh", "pulls"))
     assert refused == {"data": {"error": "feature_disabled", "feature": "pulls"},
                        "status": 403}

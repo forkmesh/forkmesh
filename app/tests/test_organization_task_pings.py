@@ -155,10 +155,11 @@ def test_dashboard_ping_modal_lists_the_organization_task_fields():
     assert "organization_task_activity: \"clipboard-list\"" in dashboard
 
 
-def test_dashboard_preview_opens_the_selected_ping_detail():
+def test_pings_page_row_expands_to_the_ping_detail():
     dashboard = assembled_dashboard_js()
-    assert "setNotificationDropdownOpen(false);" in dashboard
-    assert "!event.target.closest(\"#notificationModal\")" in dashboard
+    assert "${expanded ? `<div id=\"ping-detail-${id}\" data-ping-row-detail" in dashboard
+    assert "${notificationDetailHtml(item)}" in dashboard
+    assert "pingsView.expanded.add(id);" in dashboard
 
 
 def test_comment_and_checkin_pings_read_as_sentences():

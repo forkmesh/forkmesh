@@ -234,9 +234,9 @@ def test_dashboard_uses_related_icons_on_every_ping_surface():
     for kind in _load_notification_helpers()["NOTIFICATION_KINDS"]:
         assert f"      {kind}:" in icon_map
     assert 'String(kind || "").trim().toLowerCase()' in icon_map
-    # Feed cards, the dropdown preview, the detail pane, and the full inbox
-    # list all render the category icon rather than only the selected ping.
-    assert dashboard.count("data-notification-kind-icon") == 4
+    # Home feed cards, the Pings page rows (avatar badge) and the expanded
+    # detail all render the category icon.
+    assert dashboard.count("data-notification-kind-icon") == 3
 
 
 def test_inbox_ping_rows_show_the_instance_logo_beside_or_under_the_icon():
@@ -245,15 +245,11 @@ def test_inbox_ping_rows_show_the_instance_logo_beside_or_under_the_icon():
         dashboard, "  function notificationInstanceLogoHtml() {", "\n  }\n")
     assert 'src="/assets/logo.svg"' in helper
     assert "platformName()" in helper
-    for start, end, icon in (
-        ("  function renderNotificationPreview() {",
-         "\n  function notificationLead", '<span class="relative">${avatar}'),
-        ("  function renderNotificationModal() {",
-         "\n  async function loadNotifications", "<i data-notification-kind-icon"),
-    ):
-        block = _source_block(dashboard, start, end)
-        assert "flex-col-reverse items-center gap-1 sm:flex-row" in block
-        assert block.index("${notificationInstanceLogoHtml()}") < block.index(icon)
+    block = _source_block(
+        dashboard, "  function notificationRowHtml(", "\n  function notificationLead")
+    assert "flex-col-reverse items-center gap-1 sm:flex-row" in block
+    assert block.index("${notificationInstanceLogoHtml()}") < block.index(
+        '<span class="relative">${notificationAvatarHtml(item, lead)}')
     row = _source_block(
         _read(ROOT.parent / "native" / "ios" / "ForkMesh" / "Features" /
               "Inbox" / "InboxScreen.swift"),
@@ -343,12 +339,13 @@ def test_dashboard_notifications_are_wired_to_real_api_not_mock_data():
     assert "Notifications disabled until notification data is wired" not in dashboard
     assert "const notifications = []" not in dashboard
     assert "notificationToggle" in dashboard
-    assert "notificationModal" in deferred_dialogs()
-    assert "data-notification-count" in dashboard
+    assert "notificationModal" not in deferred_dialogs()
+    assert "data-notification-badge" in dashboard
+    assert "data-notification-count" in assembled_dashboard_page("pings")
     assert "loadNotifications" in dashboard_js
     assert 'fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`)' in dashboard_js
-    assert "renderNotificationPreview" in dashboard_js
-    assert "renderNotificationModal" in dashboard_js
+    assert "renderNotificationBadge" in dashboard_js
+    assert "renderPingsPage" in dashboard_js
     for mock in (
         "alice-node",
         "relay-eu-1",
@@ -1333,15 +1330,16 @@ def test_pause_notifications_is_wired_through_worker_dashboard_and_desktop():
     assert '"notificationPauseUntil" in data' in profile_body
     assert '"notificationPauseUntil" in data' in heartbeat_body
 
-    # Dashboard: the presets the request named, offered twice on the settings
-    # page — once in the header bell every page carries, once in the Pings
-    # section — plus the custom deadline field beside each.
-    assert settings_page.count('data-ping-pause-preset="3600000"') == 2   # 1 hour
-    assert settings_page.count('data-ping-pause-preset="86400000"') == 2  # 1 day
-    assert settings_page.count('data-ping-pause-preset="604800000"') == 2 # 1 week
-    assert settings_page.count('data-ping-pause-custom type="datetime-local"') == 2
-    # The bell is reachable from every page, so its quick pause is too.
-    assert 'data-ping-pause-preset="3600000"' in assembled_dashboard_page("home")
+    # Dashboard: the presets the request named, on the settings page's Pings
+    # section and on the Pings page the bell opens, each with the custom
+    # deadline field beside them. The bell itself is a plain link.
+    pings_page = assembled_dashboard_page("pings")
+    for page in (settings_page, pings_page):
+        assert page.count('data-ping-pause-preset="3600000"') == 1   # 1 hour
+        assert page.count('data-ping-pause-preset="86400000"') == 1  # 1 day
+        assert page.count('data-ping-pause-preset="604800000"') == 1 # 1 week
+        assert page.count('data-ping-pause-custom type="datetime-local"') == 1
+    assert 'data-ping-pause-preset="3600000"' not in assembled_dashboard_page("home")
     assert "data-ping-pause-resume" in settings_page
     assert "renderPingPause" in dashboard_js
     assert "savePingPause" in dashboard_js
@@ -2095,13 +2093,14 @@ def test_one_pings_settings_page_covers_every_ping_switch_on_the_web():
     assert "statusMonitorAlerts: { [id]: { [channel]:" in dashboard_js
     assert 'card.hidden = !rows;' in dashboard_js
 
-    # Getting there from the pings: a "Ping settings" link in the bell (every
-    # page) and the pings modal header, a trailing gear column on each modal
-    # row, and "Turn off … pings" in the detail pane — all real links to the
-    # section, switched in place when already on the settings page.
-    assert home_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
-    assert deferred_dialogs().count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
-    assert "Ping settings" in home_page
+    # Getting there from the pings: a "Ping settings" link in the Pings page
+    # header, a trailing gear on each ping row, and "Turn off … pings" in the
+    # expanded detail — all real links to the section, switched in place when
+    # already on the settings page.
+    pings_page = assembled_dashboard_page("pings")
+    assert pings_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
+    assert "Ping settings" in pings_page
+    assert 'href="/dashboard/pings"' in home_page
     assert "/dashboard/settings/notifications#ping-kind-${encodeURIComponent(key)}" in dashboard_js
     assert "data-notification-row" in dashboard_js
     assert "Turn off “${escapeHtml(label)}” pings" in dashboard_js

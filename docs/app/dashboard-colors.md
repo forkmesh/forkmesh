@@ -78,8 +78,8 @@ from the input itself.
 
 ## Ping icons
 
-Ping kind icons (`data-notification-kind-icon`) in the bell dropdown, the
-full pings list, the detail pane and the home feed are grey. Unread pings in
+Ping kind icons (`data-notification-kind-icon`) on the Pings page rows, the
+expanded detail and the home feed are grey. Unread pings in
 the dropdown used `text-primary`, which made them green; read and unread are
 already told apart by the row's opacity. A `shell.html` rule lifts the icon to
 `foreground` while its row is hovered or focused.
