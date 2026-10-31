@@ -276,8 +276,14 @@ class PackagesClient(val transport: PackagesTransport) {
 
     fun crmOrganizations(): List<PackageOrganization> = PackageOrganization.list(call("GET", "/api/crm"))
 
-    fun crm(organization: String, since: String = "", offsetMinutes: Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000): CrmOrganizationData? {
-        val query = (if (since.isEmpty()) emptyList() else listOf("since" to since)) + ("tz" to offsetMinutes.toString())
+    fun crm(
+        organization: String,
+        since: String = "",
+        offsetMinutes: Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000,
+        contacts: Int = 0,
+    ): CrmOrganizationData? {
+        val query = (if (since.isEmpty()) emptyList() else listOf("since" to since)) + ("tz" to offsetMinutes.toString()) +
+            (if (contacts > 0) listOf("contacts" to contacts.toString()) else emptyList())
         val reply = call("GET", "/api/crm/" + segment(organization), query)
         if (reply.bool("unchanged")) return null
         return CrmOrganizationData.fromJson(reply)

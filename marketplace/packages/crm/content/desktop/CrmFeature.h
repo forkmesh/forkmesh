@@ -288,6 +288,8 @@ private:
     void cacheSummary(const QJsonObject &payload);
     void forgetCachedSummary(const QString &organization);
     void loadOrganization();
+    void loadRemainingContacts(const QString &organization, const QString &cursor,
+                               quint64 generation);
     void applyOrganization(const QJsonObject &payload);
     void updateZohoAction();
     void updateZohoBar();
@@ -780,6 +782,8 @@ private:
     bool m_canManageSettings = false;
     bool m_installed = false;
     bool m_loading = false;
+    quint64 m_contactsGeneration = 0;
+    QJsonObject m_pagedSummary;
     bool m_tootSyncRunning = false;
     bool m_rendering = false;
     // The summary revision last applied; a re-read sends it so an unchanged

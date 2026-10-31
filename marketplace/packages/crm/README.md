@@ -72,7 +72,13 @@ which cannot read sealed list memberships.
   the list, search, filters or sort returns to the first page. Selection,
   **Select all** and bulk actions still cover every filtered row, not only the
   page shown. The board and People layouts are not paged.
-- **Desktop and phones** still read the whole summary in one response.
+- **Desktop** asks for the first 250 contacts too (`kContactFirstPage`), then
+  reads the rest 1000 at a time (`CrmFeature::loadRemainingContacts`) and
+  re-applies the summary after each page, with "Loading contacts, N of M" in
+  the status line. It saves its on-disk copy only once every page is in, so a
+  saved copy is never partial; a newer load or another organization drops an
+  older one, and a failed page clears the revision. The desktop table is not
+  row-paged.
 - Added in 1.46.0.
 
 

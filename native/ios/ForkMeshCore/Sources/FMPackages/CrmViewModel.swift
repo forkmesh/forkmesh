@@ -10,6 +10,7 @@ public final class CrmModel {
     public private(set) var loading = false
     public private(set) var errorText = ""
     public private(set) var saving = false
+    public private(set) var contactsLoading = false
     public var notice = ""
     public var organization = ""
     public var flowId: String?
@@ -23,6 +24,8 @@ public final class CrmModel {
     @ObservationIgnored private let client: PackagesClient
     @ObservationIgnored private var memory: [String: CrmOrganizationData] = [:]
     @ObservationIgnored private var listViewsRecorded: [String: Date] = [:]
+    @ObservationIgnored private var contactsGeneration = 0
+    @ObservationIgnored public private(set) var contactsTask: Task<Void, Never>?
     @ObservationIgnored public var now: () -> Date = { Date() }
     @ObservationIgnored public var retryDelays: [UInt64] = [400_000_000, 1_500_000_000]
 
@@ -114,21 +117,73 @@ public final class CrmModel {
         await load()
     }
 
+    public var contactsStatus: String {
+        guard contactsLoading, let data else { return "" }
+        let loaded = data.contacts.count
+        return "Loading contacts, \(loaded.formatted()) of \(max(loaded, data.contactsTotal).formatted())"
+    }
+
+    private func stopContacts() -> Int {
+        contactsGeneration += 1
+        contactsTask?.cancel()
+        contactsTask = nil
+        contactsLoading = false
+        return contactsGeneration
+    }
+
     public func load() async {
+        let generation = stopContacts()
         guard PackagesText.isOrgName(organization) else {
             data = nil
             return
         }
-        let cached = memory[organization]
-        data = cached
+        let org = organization
+        let cached = memory[org]
+        if cached != nil || data?.organization != org { data = cached }
         do {
-            if let fresh = try await client.crm(organization, since: cached?.revision ?? "") {
-                memory[organization] = fresh
+            let fresh = try await client.crm(org, since: cached?.revision ?? "", contacts: PackagesClient.crmFirstContacts)
+            guard generation == contactsGeneration else { return }
+            if let fresh {
                 data = fresh
+                if fresh.contactsComplete {
+                    memory[org] = fresh
+                } else {
+                    loadRemainingContacts(org, cursor: fresh.contactsNext, generation: generation)
+                }
             }
             errorText = ""
         } catch {
+            guard generation == contactsGeneration else { return }
             errorText = PackagesError.describe(error)
+        }
+    }
+
+    private func loadRemainingContacts(_ org: String, cursor first: String, generation: Int) {
+        contactsLoading = true
+        contactsTask = Task {
+            var cursor = first
+            while !cursor.isEmpty {
+                do {
+                    let page = try await client.crmContactsPage(org, cursor: cursor)
+                    guard generation == contactsGeneration else { return }
+                    guard org == organization else {
+                        contactsLoading = false
+                        return
+                    }
+                    data?.appendContacts(page.contacts, next: page.next)
+                    cursor = page.next
+                } catch {
+                    guard generation == contactsGeneration else { return }
+                    contactsLoading = false
+                    data?.revision = ""
+                    memory[org]?.revision = ""
+                    errorText = "Some contacts did not load: \(PackagesError.describe(error))"
+                    return
+                }
+            }
+            guard generation == contactsGeneration else { return }
+            contactsLoading = false
+            if let data, org == organization { memory[org] = data }
         }
     }
 
@@ -139,7 +194,7 @@ public final class CrmModel {
     }
 
     private func remember() {
-        if let data { memory[organization] = data }
+        if let data, data.contactsComplete { memory[organization] = data }
     }
 
     private func perform<T>(_ work: () async throws -> T) async -> T? {
@@ -365,6 +420,7 @@ public final class CrmModel {
     }
 
     public func forget() {
+        _ = stopContacts()
         memory.removeAll()
         listViewsRecorded.removeAll()
         data = nil

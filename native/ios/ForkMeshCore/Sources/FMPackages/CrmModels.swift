@@ -483,6 +483,9 @@ public struct CrmOrganizationData: Equatable, Sendable {
     public var sharedViews: [CrmView]
     public var team: CrmTeamActivity
     public var decks: [CrmDeckLink]
+    public var contactsNext: String
+    public var contactsTotal: Int
+    public var countsCustomers: Bool
 
     public init(json: JSONObject) {
         organization = json.str("organization")
@@ -498,9 +501,13 @@ public struct CrmOrganizationData: Equatable, Sendable {
         }.filter { !$0.isEmpty }
         memberEmails = json.strings("memberEmails").filter { $0.contains("@") }
         let summary = json.obj("summary")
+        countsCustomers = summary["customers"] == nil && json["contactsTotal"] != nil
         counts = CrmSummaryCounts(
-            contacts: summary.int("contacts", contacts.count), customers: summary.int("customers"),
+            contacts: summary.int("contacts", contacts.count),
+            customers: countsCustomers ? Self.customers(in: contacts) : summary.int("customers"),
             sent: summary.int("sent"), failed: summary.int("failed"), mail: summary.int("mail"))
+        contactsNext = json.str("contactsNext")
+        contactsTotal = json.int("contactsTotal", contacts.count)
         revision = json.str("revision")
         mail = json.maps("mail").map(CrmMailMessage.init(json:)).filter { PackagesText.isHexId($0.id) }
         settings = CrmSettings(json: json.obj("settings"))
@@ -544,6 +551,21 @@ public struct CrmOrganizationData: Equatable, Sendable {
         } else {
             contacts.insert(contact, at: 0)
         }
+    }
+
+    public var contactsComplete: Bool { contactsNext.isEmpty }
+
+    static func customers(in contacts: [CrmContact]) -> Int {
+        contacts.reduce(0) { $0 + ($1.stage == "customer" ? 1 : 0) }
+    }
+
+    public mutating func appendContacts(_ page: [CrmContact], next: String) {
+        var known = Set(contacts.map(\.id))
+        for contact in page where PackagesText.isHexId(contact.id) && known.insert(contact.id).inserted {
+            contacts.append(contact)
+        }
+        contactsNext = next
+        if countsCustomers { counts.customers = Self.customers(in: contacts) }
     }
 
     public mutating func remove(_ contactId: String) {

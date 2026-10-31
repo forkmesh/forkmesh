@@ -1662,6 +1662,25 @@ cited iOS commit; wire and storage formats are unchanged.
   `CrmZohoCode.of(status)` prefills the client ID and data centre; the secret
   field reads "Saved secret (leave blank to keep)" and may stay empty while
   the client ID is the saved one (`usesSavedSecret`), as iOS `CrmZohoCode`.
+- **CRM contact paging (CRM 1.46.0).** Both phones open the CRM with
+  `GET /api/crm/<org>?contacts=250` (iOS `PackagesClient.crmFirstContacts`,
+  Android `CRM_FIRST_CONTACTS`), show those contacts, then read the rest
+  1000 at a time (`crmContactsPage`, following `next`) in the background and
+  append them, skipping ids already shown; the header reads "Loading
+  contacts, N of M" meanwhile. The summary leaves out `customers` when it
+  pages, so `CrmOrganizationData` counts stage `customer` itself
+  (`countsCustomers`). Every `load()` bumps a generation (iOS also cancels
+  `contactsTask`), so a refresh or an organization switch drops an older
+  load's pages. A failed page stops the load, shows "Some contacts did not
+  load" and clears the revision, because the summary's `since` would
+  otherwise answer unchanged while contacts are missing. The in-memory
+  organization cache is written only once every page is in. iOS runs the
+  pages in a main-actor `Task`; Android in a background thread
+  (`CrmModel.background`) that calls `onContactsChanged` after each page,
+  which the app posts to the main thread as `CrmRevision.bump()`. Callers
+  outside the CRM screen (Genie, the toolbox, navigator counts) still read
+  every contact in one summary. Tests: iOS `CrmPagingTests`, Android
+  `CrmPagingTest`.
 - **App Store Status desktop fallback (S035).** `AppStoreStatusLoader.load`
   in `C/market/AppStoreStatus.kt` is iOS `AppStoreStatusModel.load`: it asks
   the paired desktop (`stats.appStoreStatus`, 120 s, through
