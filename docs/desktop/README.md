@@ -686,6 +686,13 @@ measured and keep the plain branch icon.
   font carries. `tests/test_font_sizing.cpp` covers the helpers and
   `tests/validate_error_log_regressions.py` rejects a raw
   `setPointSizeF(x.pointSizeF() ...)`.
+- **The splash is finished inside the main window's first paint.**
+  `MainWindow::paintEvent` calls `noteHostPainted()` and then finishes the
+  startup splash, a child widget. `StartupSplash::pump()` queues the frame
+  with `update()` while the host is inside a paint event
+  (`Qt::WA_WState_InPaintEvent`); a synchronous `repaint()` there logged
+  "QWidget::repaint: Recursive repaint detected" on every launch.
+  `tests/test_startup_splash.cpp` fails on that warning.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
   `MainWindowInternal1-4.cpp` with only a declaration in the header. New shell
