@@ -1,6 +1,7 @@
 // The account's markdown notes (`/api/notes`), one note's editor, its history sheet and its share
 // sheet. State: FMTools' NotesListModel, NoteEditorModel, NoteHistoryModel and NoteShareModel.
 
+import FMAccount
 import FMApi
 import FMBase
 import FMNet
@@ -17,7 +18,7 @@ struct NotesScreen: View {
 
     init() {
         if let api = Services.get(ApiService.self) {
-            _model = State(initialValue: NotesListModel(api: api))
+            _model = State(initialValue: NotesListModel(api: api, me: Services.get(AuthService.self)?.session?.nodeName ?? ""))
         } else {
             _model = State(initialValue: nil)
         }
@@ -59,8 +60,148 @@ struct NotesScreen: View {
     }
 
     private func open(_ id: String?) {
+        if let id = id {
+            model?.markViewed(id)
+        }
         openedId = id
         editorOpen = true
+    }
+}
+
+private struct NoteListRow: View {
+    @Environment(\.fmPalette) private var fm
+    let row: NoteRow
+    let onTap: () -> Void
+
+    var body: some View {
+        FmListRow(
+            title: row.title,
+            titleView: titleLine.fmAny,
+            subtitleView: subtitleLine.fmAny,
+            leading: leading.fmAny,
+            trailing: trailing.fmAny,
+            onTap: onTap)
+            .accessibilityLabel(Text(accessibilityText))
+    }
+
+    private var titleLine: some View {
+        Text(row.title)
+            .fmText(.titleSmall, weight: row.unread ? .bold : nil)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private var subtitleLine: some View {
+        HStack(spacing: FmSpace.x2) {
+            Text(row.subtitle)
+                .fmText(.bodySmall, color: fm.textTertiary, height: FmType.leadingTight)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if row.openComments > 0 {
+                HStack(spacing: 2) {
+                    FmIcon("chat_bubble_outline", size: 12, color: fm.textTertiary)
+                    Text("\(row.openComments)")
+                        .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
+                }
+                .accessibilityLabel(Text(row.openComments == 1 ? "1 open comment" : "\(row.openComments) open comments"))
+            }
+        }
+    }
+
+    private var leading: some View {
+        FmIconTile(icon: row.icon)
+            .overlay(alignment: .topLeading) {
+                if row.unread {
+                    Circle()
+                        .fill(fm.accent)
+                        .frame(width: 10, height: 10)
+                        .overlay { Circle().strokeBorder(fm.canvas, lineWidth: 2) }
+                        .offset(x: -3, y: -3)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+
+    private var badgeColor: Color {
+        switch row.reach {
+        case .publicNote: return fm.accent
+        case .shared, .privateNote: return fm.textTertiary
+        }
+    }
+
+    private var trailing: some View {
+        VStack(alignment: .trailing, spacing: FmSpace.x1) {
+            FmStatusBadge(label: row.reach.label, color: badgeColor)
+            if !row.people.isEmpty {
+                HStack(spacing: -4) {
+                    ForEach(row.people) { (person: NoteAvatar) in
+                        NoteShareAvatar(avatar: person)
+                    }
+                    if row.morePeople > 0 {
+                        Text("+\(row.morePeople)")
+                            .fmText(.labelSmall, color: fm.textSecondary)
+                            .padding(.leading, FmSpace.x2)
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(peopleText))
+            }
+        }
+    }
+
+    private var peopleText: String {
+        let names: String = row.people.map(\.name).joined(separator: ", ")
+        return row.morePeople > 0 ? "Shared with \(names) and \(row.morePeople) more" : "Shared with \(names)"
+    }
+
+    private var accessibilityText: String {
+        var parts: [String] = []
+        if row.unread {
+            parts.append("Unread")
+        }
+        parts.append(row.title)
+        parts.append(row.reach.label)
+        if !row.subtitle.isEmpty {
+            parts.append(row.subtitle)
+        }
+        if row.openComments > 0 {
+            parts.append(row.openComments == 1 ? "1 open comment" : "\(row.openComments) open comments")
+        }
+        if !row.people.isEmpty {
+            parts.append(peopleText)
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct NoteOwnerActions: ViewModifier {
+    let isOwner: Bool
+    let onShare: () -> Void
+    let onDelete: () -> Void
+
+    func body(content: Content) -> some View {
+        if isOwner {
+            content
+                .accessibilityAction(named: Text("Share…"), onShare)
+                .accessibilityAction(named: Text("Delete"), onDelete)
+        } else {
+            content
+        }
+    }
+}
+
+private struct NoteShareAvatar: View {
+    @Environment(\.fmPalette) private var fm
+    let avatar: NoteAvatar
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: avatar.organization ? 5 : 11, style: .continuous)
+        Text(avatar.initials)
+            .fmText(.labelSmall, color: fm.textPrimary)
+            .frame(width: 22, height: 22)
+            .background(fm.bgRaised)
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(fm.border, lineWidth: 1) }
     }
 }
 
@@ -68,8 +209,108 @@ private struct NotesList: View {
     @Environment(\.fmPalette) private var fm
     @Bindable var model: NotesListModel
     let onOpen: (String?) -> Void
+    @State private var notice: FmNotice?
+    @State private var share: ToolsSheet<NoteShareModel>?
+    @State private var pendingDelete: String?
+    @State private var details: NoteRow?
 
     var body: some View {
+        content
+            .sheet(item: $share, onDismiss: {
+                Task { await model.load() }
+            }) { (box: ToolsSheet<NoteShareModel>) in
+                NoteShareSheet(model: box.value)
+            }
+            .confirmationDialog(
+                details?.title ?? "", isPresented: detailsShown, titleVisibility: .visible, presenting: details
+            ) { (row: NoteRow) in
+                menuItems(row)
+            } message: { (row: NoteRow) in
+                Text(model.accessLines(row.id).joined(separator: "\n"))
+            }
+            .fmDialog(isPresented: deleteShown) {
+                FmConfirmDialog(
+                    title: NoteEditorModel.deleteConfirmation.title, message: NoteEditorModel.deleteConfirmation.message,
+                    confirmLabel: NoteEditorModel.deleteConfirmation.confirm, destructive: true,
+                    onCancel: { pendingDelete = nil },
+                    onConfirm: {
+                        let id: String? = pendingDelete
+                        pendingDelete = nil
+                        if let id = id {
+                            Task {
+                                let outcome: ToolsOutcome = await model.delete(id)
+                                notice = outcome.notice.map { (next: ToolsNotice) -> FmNotice in FmNotice(next.message, isError: next.isError) }
+                            }
+                        }
+                    })
+            }
+    }
+
+    private var detailsShown: Binding<Bool> {
+        Binding<Bool>(get: { details != nil }, set: { (shown: Bool) in if !shown { details = nil } })
+    }
+
+    private var deleteShown: Binding<Bool> {
+        Binding<Bool>(get: { pendingDelete != nil }, set: { (shown: Bool) in if !shown { pendingDelete = nil } })
+    }
+
+    private func copyLink(_ id: String) {
+        guard let url = model.accessLink(id) else {
+            notice = FmNotice.error("The link is not available.")
+            return
+        }
+        UIPasteboard.general.string = url.absoluteString
+        notice = FmNotice(NoteEditorModel.linkCopied)
+    }
+
+    private func startShare(_ id: String) {
+        if let sheet = model.shareModel(id) {
+            share = ToolsSheet(sheet)
+        }
+    }
+
+    @ViewBuilder private func menuItems(_ row: NoteRow) -> some View {
+        Button {
+            onOpen(row.id)
+        } label: {
+            Label("Open", systemImage: "doc.text")
+        }
+        Button {
+            copyLink(row.id)
+        } label: {
+            Label("Copy link", systemImage: "link")
+        }
+        if row.isOwner {
+            Button {
+                startShare(row.id)
+            } label: {
+                Label("Share…", systemImage: "person.crop.circle.badge.plus")
+            }
+            Button(role: .destructive) {
+                pendingDelete = row.id
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private func preview(_ row: NoteRow) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x1) {
+            Text(row.title)
+                .fmText(.titleSmall)
+                .lineLimit(2)
+            ForEach(Array(model.accessLines(row.id).enumerated()), id: \.offset) { (pair: (offset: Int, element: String)) in
+                Text(pair.element)
+                    .fmText(.bodySmall, color: pair.offset == 0 ? fm.textPrimary : fm.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(FmSpace.x4)
+        .frame(width: 320, alignment: .leading)
+        .background(fm.bgRaised)
+    }
+
+    @ViewBuilder private var content: some View {
         if model.showsSpinner {
             FmSkeletonList()
         } else if model.showsError {
@@ -97,6 +338,10 @@ private struct NotesList: View {
                     model.filter = NotesFilter.allCases[index]
                 }
                 .accessibilityIdentifier("notes-filters")
+                if notice != nil {
+                    FmNoticeLine($notice)
+                        .padding(.horizontal, FmSpace.x4)
+                }
                 if model.rows.isEmpty {
                     Text(model.emptyFilterMessage)
                         .fmText(.bodyMedium, color: fm.textSecondary)
@@ -107,10 +352,17 @@ private struct NotesList: View {
                     if pair.offset > 0 {
                         FmRowDivider()
                     }
-                    FmListRow(
-                        title: pair.element.title, subtitle: pair.element.subtitle,
-                        leading: FmIconTile(icon: pair.element.icon).fmAny,
-                        onTap: { onOpen(pair.element.id) })
+                    NoteListRow(row: pair.element, onTap: { onOpen(pair.element.id) })
+                        .contextMenu {
+                            menuItems(pair.element)
+                        } preview: {
+                            preview(pair.element)
+                        }
+                        .accessibilityAction(named: Text("Copy link")) { copyLink(pair.element.id) }
+                        .accessibilityAction(named: Text("Note details and actions")) {
+                            details = pair.element
+                        }
+                        .modifier(NoteOwnerActions(isOwner: pair.element.isOwner, onShare: { startShare(pair.element.id) }, onDelete: { pendingDelete = pair.element.id }))
                         .accessibilityIdentifier("note-\(pair.element.id)")
                 }
             }
@@ -138,9 +390,11 @@ struct NoteEditorScreen: View {
     @State private var history: ToolsSheet<NoteHistoryModel>?
     @State private var share: ToolsSheet<NoteShareModel>?
 
-    init(noteId: String? = nil) {
+    init(noteId: String? = nil, openComment: String? = nil) {
         if let api = Services.get(ApiService.self) {
-            _model = State(initialValue: NoteEditorModel(noteId: noteId, api: api, connector: Services.get(WebSocketConnector.self)))
+            let me: String = Services.get(AuthService.self)?.session?.nodeName ?? ""
+            _model = State(initialValue: NoteEditorModel(
+                noteId: noteId, api: api, connector: Services.get(WebSocketConnector.self), me: me, openComment: openComment))
         } else {
             _model = State(initialValue: nil)
         }
@@ -156,7 +410,11 @@ struct NoteEditorScreen: View {
 
     private func editor(_ model: NoteEditorModel) -> some View {
         NoteEditorBody(model: model, notice: $notice, onCopy: copy)
-            .task { await model.load() }
+            .task {
+                await model.load()
+                await model.recordView()
+            }
+            .task(id: model.comments?.noteId) { await model.comments?.load() }
             .onChange(of: model.title) { (_: String, _: String) in model.edited() }
             .onChange(of: model.markdown) { (_: String, _: String) in model.edited() }
             .onDisappear {
@@ -193,6 +451,17 @@ struct NoteEditorScreen: View {
             }) { (box: ToolsSheet<NoteShareModel>) in
                 NoteShareSheet(model: box.value)
             }
+            .sheet(isPresented: commentsShown(model)) {
+                if let comments = model.comments {
+                    NoteCommentsSheet(editor: model, comments: comments)
+                }
+            }
+    }
+
+    private func commentsShown(_ model: NoteEditorModel) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { model.commentsOpen && model.comments != nil },
+            set: { (shown: Bool) in model.commentsOpen = shown })
     }
 
     @ToolbarContentBuilder
@@ -208,6 +477,9 @@ struct NoteEditorScreen: View {
                     Task { apply(await model.save()) }
                 } : nil)
                 .accessibilityIdentifier("note-save")
+            }
+            if let comments = model.comments {
+                NoteCommentsButton(comments: comments, onPressed: { model.commentsOpen = true })
             }
             if model.showsMenu {
                 menu(model)
@@ -323,7 +595,7 @@ private struct NoteEditorBody: View {
     }
 
     private var modeTabs: [FmSegmentTab] {
-        NoteMode.allCases.map { (mode: NoteMode) -> FmSegmentTab in FmSegmentTab(label: mode.label) }
+        NoteMode.allCases.map { (mode: NoteMode) -> FmSegmentTab in FmSegmentTab(label: mode.label(canEdit: model.canEdit)) }
     }
 
     private var fields: some View {
@@ -346,14 +618,16 @@ private struct NoteEditorBody: View {
             if let url = model.publicLink {
                 publicRow(url)
             }
-            if model.canEdit {
+            if model.canEdit || model.canComment {
                 FmSegmentTabBar(tabs: modeTabs, index: model.mode == .write ? 0 : 1) { (index: Int) in
                     model.mode = NoteMode.allCases[index]
                 }
                 .accessibilityIdentifier("note-mode")
             }
             if model.shownMode == .write {
-                formatBar
+                if model.canEdit || model.canComment {
+                    formatBar
+                }
                 editor
             } else {
                 preview
@@ -413,16 +687,24 @@ private struct NoteEditorBody: View {
     private var formatBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: FmSpace.x1) {
-                ForEach(NoteFormat.allCases) { (kind: NoteFormat) in
-                    Button {
-                        model.format(kind)
-                    } label: {
-                        Text(kind.glyph)
-                            .fmText(.labelLarge, color: fm.textSecondary)
-                            .frame(minWidth: 36, minHeight: 32)
+                if model.canEdit {
+                    ForEach(NoteFormat.allCases) { (kind: NoteFormat) in
+                        Button {
+                            model.format(kind)
+                        } label: {
+                            Text(kind.glyph)
+                                .fmText(.labelLarge, color: fm.textSecondary)
+                                .frame(minWidth: 36, minHeight: 32)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(kind.label))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(kind.label))
+                }
+                if model.canComment {
+                    FmTextButton("Comment", icon: "add_comment_outlined", minHeight: 32, onPressed: model.selectedQuote == nil ? nil : {
+                        model.commentOnSelection()
+                    })
+                    .accessibilityIdentifier("note-comment-selection")
                 }
             }
         }
@@ -431,12 +713,11 @@ private struct NoteEditorBody: View {
 
     private var editor: some View {
         ZStack(alignment: .topLeading) {
-            TextEditor(text: $model.markdown)
-                .fmMono(size: FmType.small)
-                .scrollContentBackground(.hidden)
-                .textInputAutocapitalization(.sentences)
-                .disabled(!model.canEdit)
-                .accessibilityIdentifier("note-markdown")
+            NoteTextView(
+                text: $model.markdown, editable: model.canEdit, highlight: model.highlightRange,
+                request: model.selectionRequest, canComment: model.canComment,
+                onSelect: { (range: Range<Int>) in model.selectionChanged(range) },
+                onComment: { model.commentOnSelection() })
             if model.markdown.isEmpty {
                 Text("Write in markdown…")
                     .fmMono(size: FmType.small, color: fm.textTertiary)
@@ -543,29 +824,6 @@ private struct NoteEditorBody: View {
         if let next = outcome.notice {
             notice = FmNotice(next.message, isError: next.isError)
         }
-    }
-}
-
-private struct NotePresenceLine: View {
-    @Environment(\.fmPalette) private var fm
-    let room: NoteRoomModel
-
-    var body: some View {
-        HStack(spacing: FmSpace.x1) {
-            ForEach(room.faces) { (peer: NotePeer) in
-                Text(peer.initials)
-                    .fmText(.labelSmall, color: fm.textPrimary)
-                    .frame(width: 24, height: 24)
-                    .background(fm.bgRaised)
-                    .clipShape(Circle())
-                    .overlay { Circle().strokeBorder(fm.border, lineWidth: 1) }
-                    .accessibilityLabel(Text("\(peer.name) is here"))
-            }
-            Text(room.label)
-                .fmText(.labelSmall, color: fm.textTertiary)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("note-presence")
     }
 }
 

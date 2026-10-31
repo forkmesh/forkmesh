@@ -66,6 +66,11 @@ let noteErrorMessages: [String: String] = [
     "owner_required": "Only the note's owner can do that.",
     "editor_required": "You need edit access to do that.",
     "note_not_found": "This note no longer exists, or you no longer have access to it.",
+    "invalid_comment": "Write a comment of at most 4000 characters.",
+    "comment_not_found": "That comment no longer exists.",
+    "too_many_comments": "This note already has 1000 comments, the most it can hold.",
+    "comment_author_required": "Only the comment's author can do that.",
+    "resolve_not_allowed": "Only the note's owner, an editor or the thread's author can resolve it.",
 ]
 
 public typealias ToolsSleep = @Sendable (_ millis: Int) async throws -> Void
@@ -107,6 +112,12 @@ public struct NoteRow: Equatable, Identifiable, Sendable {
     public let subtitle: String
     /// "public" or "sticky_note_2_outlined".
     public let icon: String
+    public var unread: Bool = false
+    public var reach: NoteReachBadge = .privateNote
+    public var people: [NoteAvatar] = []
+    public var morePeople: Int = 0
+    public var openComments: Int = 0
+    public var isOwner: Bool = true
 }
 
 @MainActor
@@ -137,14 +148,65 @@ public final class NotesListModel {
     public var query = ""
     public var filter: NotesFilter = .all
 
-    public init(call: @escaping ToolsApiCall, clock: Clock = SystemClock(), sleep: @escaping ToolsSleep = toolsTaskSleep) {
+    @ObservationIgnored private let me: String
+    @ObservationIgnored private let calendar: Calendar
+    @ObservationIgnored private let seen: NoteViewsSeen
+    @ObservationIgnored private let webLink: ToolsWebLink
+    public private(set) var seenGeneration = 0
+
+    public init(
+        call: @escaping ToolsApiCall, clock: Clock = SystemClock(), sleep: @escaping ToolsSleep = toolsTaskSleep,
+        me: String = "", calendar: Calendar = .current, seen: NoteViewsSeen = .shared,
+        webLink: @escaping ToolsWebLink = { _ in nil }
+    ) {
         self.call = call
         self.clock = clock
         self.sleep = sleep
+        self.me = me
+        self.calendar = calendar
+        self.seen = seen
+        self.webLink = webLink
     }
 
-    public convenience init(api: ApiService) {
-        self.init(call: { method, suffix, body in try await api.notesApi(method, suffix, body) })
+    public convenience init(api: ApiService, me: String = "") {
+        self.init(
+            call: { method, suffix, body in try await api.notesApi(method, suffix, body) }, me: me,
+            webLink: { path in api.webLink(path) })
+    }
+
+    func note(_ id: String) -> JSONObject? {
+        (serverMatches ?? []).first { ToolsJSON.show($0["id"]) == id } ?? notes.first { ToolsJSON.show($0["id"]) == id }
+    }
+
+    public func accessLines(_ id: String) -> [String] {
+        note(id).map { NoteAccessHeader.lines($0, me: me, calendar: calendar) } ?? []
+    }
+
+    public func accessPath(_ id: String) -> String { "/dashboard/notes?note=\(id)" }
+
+    public func accessLink(_ id: String) -> URL? { webLink(accessPath(id)) }
+
+    public func shareModel(_ id: String) -> NoteShareModel? {
+        guard let note = note(id), ToolsJSON.text(note["role"], "owner") == "owner" else { return nil }
+        return NoteShareModel(noteId: id, initial: ToolsJSON.maps(note["shares"]), call: call, sleep: sleep, webLink: webLink)
+    }
+
+    public func delete(_ id: String) async -> ToolsOutcome {
+        guard let note = note(id), ToolsJSON.text(note["role"], "owner") == "owner" else { return ToolsOutcome() }
+        do {
+            _ = try await call("DELETE", "/\(id)", nil)
+            notes.removeAll { ToolsJSON.show($0["id"]) == id }
+            serverMatches?.removeAll { ToolsJSON.show($0["id"]) == id }
+            return .done("Note deleted")
+        } catch {
+            return .failed(notesErrorText(error, "The note was not deleted."))
+        }
+    }
+
+    public func markViewed(_ id: String) {
+        guard let note = note(id) else { return }
+        seen.record(note)
+        seenGeneration += 1
     }
 
     public func load() async {
@@ -233,14 +295,21 @@ public final class NotesListModel {
     public var rows: [NoteRow] { visible.map(row) }
 
     public func row(_ note: JSONObject) -> NoteRow {
-        let role = ToolsJSON.text(note["role"], "owner")
-        var parts = ["Edited \(Format.relativeTime(ToolsJSON.epoch(note["updatedAt"]), nowMillis: clock.nowMillis))", noteReach(note)]
-        if role != "owner" { parts.append(role == "editor" ? "Can edit" : "Read only") }
+        _ = seenGeneration
+        let edited = NoteEditTime.line(
+            ToolsJSON.epoch(note["updatedAt"]), editedBy: ToolsJSON.text(note["lastEditedBy"], ""), me: me,
+            nowMillis: clock.nowMillis, calendar: calendar)
+        let avatars = NoteAvatar.of(note)
         return NoteRow(
             id: ToolsJSON.show(note["id"]),
             title: ToolsJSON.text(note["title"], "Untitled note"),
-            subtitle: parts.joined(separator: " · "),
-            icon: note["visibility"]?.stringValue == "public" ? "public" : "sticky_note_2_outlined")
+            subtitle: edited,
+            icon: note["visibility"]?.stringValue == "public" ? "public" : "sticky_note_2_outlined",
+            unread: seen.unread(note),
+            reach: NoteReachBadge.of(note),
+            people: avatars.shown, morePeople: avatars.more,
+            openComments: max(0, ToolsJSON.int(note["openComments"])),
+            isOwner: ToolsJSON.text(note["role"], "owner") == "owner")
     }
 }
 
@@ -273,6 +342,18 @@ public enum NoteMode: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
     public var label: String { self == .write ? "Write" : "Preview" }
+
+    public func label(canEdit: Bool) -> String { self == .write && !canEdit ? "Markdown" : label }
+}
+
+public struct NoteSelectionRequest: Equatable, Sendable {
+    public let range: Range<Int>
+    public let serial: Int
+
+    public init(range: Range<Int>, serial: Int) {
+        self.range = range
+        self.serial = serial
+    }
 }
 
 public enum NoteFormat: String, CaseIterable, Identifiable, Sendable {
@@ -441,6 +522,10 @@ public final class NoteEditorModel {
     @ObservationIgnored private let sleep: ToolsSleep
     @ObservationIgnored private let webLink: ToolsWebLink
     @ObservationIgnored private let openSocket: NoteSocketOpen?
+    @ObservationIgnored private let me: String
+    @ObservationIgnored private var openComment: String?
+    @ObservationIgnored private var viewRecorded = false
+    @ObservationIgnored private let seen: NoteViewsSeen
     @ObservationIgnored var autosaveTask: Task<Void, Never>?
     @ObservationIgnored private var autosaveGeneration = 0
     @ObservationIgnored private var saveQueued = false
@@ -454,6 +539,11 @@ public final class NoteEditorModel {
     public private(set) var saveFailure = ""
     public private(set) var linkBusy = false
     public private(set) var room: NoteRoomModel?
+    public private(set) var comments: NoteCommentsModel?
+    public private(set) var selectionRequest: NoteSelectionRequest?
+    @ObservationIgnored private var requestSerial = 0
+    public var commentsOpen = false
+    public var selection: Range<Int>?
     public var title = ""
     public var markdown = ""
     public var mode: NoteMode = .write
@@ -465,24 +555,30 @@ public final class NoteEditorModel {
     public init(
         noteId: String?, call: @escaping ToolsApiCall, clock: Clock = SystemClock(),
         sleep: @escaping ToolsSleep = toolsTaskSleep, webLink: @escaping ToolsWebLink = { _ in nil },
-        openSocket: NoteSocketOpen? = nil
+        openSocket: NoteSocketOpen? = nil, me: String = "", openComment: String? = nil, seen: NoteViewsSeen = .shared
     ) {
+        self.seen = seen
         self.noteId = noteId
         self.call = call
         self.clock = clock
         self.sleep = sleep
         self.webLink = webLink
         self.openSocket = openSocket
+        self.me = me
+        self.openComment = openComment.flatMap { $0.isEmpty ? nil : $0 }
         loading = noteId != nil
     }
 
-    public convenience init(noteId: String?, api: ApiService, connector: WebSocketConnector? = nil) {
+    public convenience init(
+        noteId: String?, api: ApiService, connector: WebSocketConnector? = nil, me: String = "", openComment: String? = nil
+    ) {
         self.init(
             noteId: noteId, call: { method, suffix, body in try await api.notesApi(method, suffix, body) },
             webLink: { path in api.webLink(path) },
             openSocket: connector.map { (sockets: WebSocketConnector) -> NoteSocketOpen in
                 { id in try await api.noteSocket(id, connector: sockets) }
-            })
+            },
+            me: me, openComment: openComment)
     }
 
     public var id: String? { note == nil ? noteId : ToolsJSON.show(note?["id"]) }
@@ -503,7 +599,7 @@ public final class NoteEditorModel {
     public var showsMenu: Bool { existing && note != nil }
     /// Leaving needs the discard confirmation.
     public var confirmsLeave: Bool { dirty && canEdit && (conflict != nil || !saveFailure.isEmpty) }
-    public var shownMode: NoteMode { canEdit ? mode : .preview }
+    public var shownMode: NoteMode { mode }
     public var showsLinks: Bool { existing && note != nil && (canEdit || !links.isEmpty) }
 
     public var saveState: String {
@@ -557,6 +653,8 @@ public final class NoteEditorModel {
         savedMarkdown = ToolsJSON.text(note["markdown"], "")
         title = savedTitle
         markdown = savedMarkdown
+        comments?.isOwner = isOwner
+        seen.record(note)
     }
 
     /// Takes a fresh copy of the note's metadata without replacing what was typed but not saved.
@@ -575,6 +673,14 @@ public final class NoteEditorModel {
         return .done("Version restored")
     }
 
+    public func recordView() async {
+        guard !viewRecorded, note != nil, error.isEmpty, let id else { return }
+        viewRecorded = true
+        note?["unread"] = false
+        if let note { seen.record(note) }
+        _ = try? await call("POST", "/\(id)/activity", ["kind": "view"])
+    }
+
     public func load() async {
         guard let noteId else { return }
         loading = true
@@ -585,6 +691,7 @@ public final class NoteEditorModel {
             if !canEdit { mode = .preview }
             loading = false
             joinRoom()
+            joinComments()
         } catch {
             loading = false
             self.error = notesErrorText(error, "This note could not be opened.")
@@ -646,6 +753,7 @@ public final class NoteEditorModel {
             }
             saving = false
             joinRoom()
+            joinComments()
             if saveQueued || dirty {
                 saveQueued = false
                 edited()
@@ -679,9 +787,60 @@ public final class NoteEditorModel {
         joined.start()
     }
 
+    private func joinComments() {
+        guard comments == nil, error.isEmpty, let id else { return }
+        let model = NoteCommentsModel(noteId: id, me: me, isOwner: isOwner, call: call, clock: clock, sleep: sleep)
+        comments = model
+        if let openComment {
+            self.openComment = nil
+            model.focus(openComment)
+            commentsOpen = true
+        }
+    }
+
     public func leave() {
         room?.stop()
         room = nil
+    }
+
+    public var highlightRange: Range<Int>? {
+        guard let comments, let id = comments.focusedThreadId else { return nil }
+        return comments.range(of: id, in: markdown)
+    }
+
+    private func requestSelection(_ range: Range<Int>) {
+        requestSerial += 1
+        selection = range
+        selectionRequest = NoteSelectionRequest(range: range, serial: requestSerial)
+    }
+
+    public func pick(_ thread: NoteThread) {
+        guard let comments else { return }
+        comments.focus(thread.id)
+        guard let range = thread.range else { return }
+        mode = .write
+        requestSelection(range)
+    }
+
+    public func selectionChanged(_ range: Range<Int>) {
+        selection = range
+        guard let shown = highlightRange else { return }
+        if range.lowerBound < shown.lowerBound || range.upperBound > shown.upperBound {
+            comments?.focus(nil)
+        }
+    }
+
+    public var selectedQuote: NoteQuote? {
+        guard let selection, !selection.isEmpty else { return nil }
+        return NoteAnchor.capture(markdown, selection: selection)
+    }
+
+    public var canComment: Bool { comments != nil }
+
+    public func commentOnSelection() {
+        guard let comments else { return }
+        comments.startComment(shownMode == .write ? selectedQuote : nil)
+        commentsOpen = true
     }
 
     func roomEvent(_ event: NoteRoomEvent) {
@@ -692,6 +851,8 @@ public final class NoteEditorModel {
             savedMarkdown = draftMarkdown
             title = draftTitle
             markdown = draftMarkdown
+        case .commentsChanged:
+            comments?.reloadSoon()
         case let .updated(newVersion):
             guard newVersion > version, !dirty, !saving else { return }
             Task { await reload() }
@@ -713,13 +874,14 @@ public final class NoteEditorModel {
     func reload() async {
         guard let id else { return }
         do {
+            let couldEdit = canEdit
             let data = try await call("GET", "/\(id)", nil)
             if dirty || saving {
                 applyMeta(data)
             } else {
                 apply(ToolsJSON.object(data["note"]))
             }
-            if !canEdit { mode = .preview }
+            if couldEdit && !canEdit { mode = .preview }
         } catch let refusal as OrgApiException {
             if refusal.code == "note_not_found" {
                 autosaveGeneration += 1
@@ -750,7 +912,9 @@ public final class NoteEditorModel {
     public func format(_ kind: NoteFormat) {
         guard canEdit else { return }
         let end = markdown.utf16.count
-        markdown = NoteFormatting.apply(kind, to: markdown, selection: end..<end).text
+        let result = NoteFormatting.apply(kind, to: markdown, selection: selection ?? end..<end)
+        markdown = result.text
+        if selection != nil { requestSelection(result.selection) }
         edited()
     }
 

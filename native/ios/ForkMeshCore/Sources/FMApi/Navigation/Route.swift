@@ -148,7 +148,7 @@ public enum Route: Codable, Hashable, Sendable {
     case search(query: String, scope: SearchScope)
     // Planning (WS15)
     case notes
-    case note(id: String)
+    case note(id: String, comment: String? = nil)
     case tasks(filter: String?)
     case task(id: String)
     case calendar(date: String?, mode: CalendarMode)
