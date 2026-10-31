@@ -12,6 +12,12 @@
  ],
  "notes": [
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions page now lists every session from the Claude app's Code tab and groups them the same way: pinned, your named groups, then one group per folder, with the Claude app's titles."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "When pings arrive in a burst, the desktop and your phone show the first three, then one summary at 10 and at 100 that lists each kind of ping and its numbers, instead of one notification per ping."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "The Quality agent's UI stall repair now starts in Auto mode, whatever the composer's mode is set to."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "Popups in the new interface, such as an agent's details, the reaction picker and the slash and mention menus, have a solid background again, so their text no longer sits on top of the page behind them."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "The session Context panel now shows colour-coded usage like Claude Code, and the Environment panel has a Remote control switch that shows your connected phone or explains how to connect one."},
+  {"date": "2026-10-31", "area": "Settings", "text": "The Settings header and the heading of the section you are reading now stay at the top as you scroll, on the desktop, the web and both phone apps."},
+  {"date": "2026-10-31", "area": "Other improvements", "text": "A button that is working on something now shows a spinning ring around its icon until it is done, and left-rail icons ring while their section has work running, such as agents or shortcuts, on the desktop, the website and the phone apps."},
   {"date": "2026-10-31", "area": "Desktop", "text": "Hovering a pull request in the list shows a button that opens its changes in Git in one click."},
   {"date": "2026-10-31", "area": "Desktop", "text": "Click a group heading in the left rail to fold that group away, and click it again to bring it back."},
   {"date": "2026-10-31", "area": "Projects", "text": "Repository tabs other than Code start right under the tab strip, every tab has a left rail, repository settings can be searched, and an instance can show a dev.to account's posts on Home."},

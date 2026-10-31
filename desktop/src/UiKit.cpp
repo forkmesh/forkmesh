@@ -1249,6 +1249,17 @@ void paintMessageCard(QMessageBox *box)
     box->style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, box);
 }
 
+void paintFloatingBackground(QWidget *widget)
+{
+    if (!widget->testAttribute(Qt::WA_TranslucentBackground) ||
+        !isNamedPopup(widget))
+        return;
+    QStyleOption option;
+    option.initFrom(widget);
+    QPainter painter(widget);
+    widget->style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, widget);
+}
+
 class StockPolish final : public QObject
 {
 public:
@@ -1278,6 +1289,8 @@ protected:
         case QEvent::Paint:
             if (QMessageBox *box = messageCard(watched))
                 paintMessageCard(box);
+            else if (watched->isWidgetType())
+                paintFloatingBackground(static_cast<QWidget *>(watched));
             break;
         case QEvent::ChildAdded:
             if (Theme::isNext())
