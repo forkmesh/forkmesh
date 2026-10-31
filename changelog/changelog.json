@@ -11,6 +11,15 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Android", "text": "Android's account menu is tidier, with lined-up rows, even buttons and a calmer slowness warning."},
+  {"date": "2026-10-31", "area": "Android", "text": "Android's bottom bar is a clearer pane of glass, with filled icons and a lens that slides to the open page."},
+  {"date": "2026-10-31", "area": "Android", "text": "Android's login and first-run screens have a new look, with an animated welcome, pill buttons and a swipeable starter pack picker."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "The account menu is tidier, with lined-up rows, even buttons and a calmer slowness warning."},
+  {"date": "2026-10-31", "area": "Android", "text": "The repository sort button is now just an icon, so all the filters fit on most phones."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "The repository filters are easier to see in the light theme, and the sort button is now just an icon, so they all fit on most phones."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "In the light theme the chat list no longer has a heavy grey shadow around its cards and text."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "The bottom bar is a clearer pane of glass, with filled icons and a lens that slides to the open page."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "Login and first-run screens have a new look, with an animated welcome, pill buttons and a swipeable starter pack picker."},
   {"date": "2026-10-30", "area": "iPhone", "text": "The desktop icons in the phone app's top bar turn green while the desktop is connected, on iPhone and Android."},
   {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
   {"date": "2026-10-30", "area": "Projects", "text": "Sending an approving quick reply on a pull request also adds the Thank you sticker to its description."},
