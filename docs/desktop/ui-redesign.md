@@ -208,7 +208,15 @@ application event filter applied in Next and undone in Classic):
   `WA_TranslucentBackground`, `FramelessWindowHint` and `NoDropShadowWindowHint`
   before their native window exists (menus on `Polish`, combo popups on
   `ChildAdded`). Property `floatingSurface` tells the sheet whether corners can
-  be rounded.
+  be rounded. Qt sets `WA_NoSystemBackground` along with
+  `WA_TranslucentBackground`, which skips the sheet's background on a
+  top-level widget. Menus paint their own panel, but the app's popups
+  (`#agentMetaPopup`, `#reactionPicker`, `#slashActionsPopup`, `#mentionPopup`,
+  `#globalSearchPopup`, all `QFrame` or `QListWidget`) painted nothing, so their
+  text sat on the page behind them. The filter now paints their `PE_Widget`
+  background on `Paint` (`paintFloatingBackground`), which keeps the rounded,
+  see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
+  and dark for an opaque inside and a transparent corner.
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
 - *Tables.* Default-centred headers become left aligned; tables with property

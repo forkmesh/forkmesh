@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Desktop", "text": "Popups in the new interface, such as an agent's details, the reaction picker and the slash and mention menus, have a solid background again, so their text no longer sits on top of the page behind them."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The session Context panel now shows colour-coded usage like Claude Code, and the Environment panel has a Remote control switch that shows your connected phone or explains how to connect one."},
   {"date": "2026-10-31", "area": "Settings", "text": "The Settings header and the heading of the section you are reading now stay at the top as you scroll, on the desktop, the web and both phone apps."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "A button that is working on something now shows a spinning ring around its icon until it is done, and left-rail icons ring while their section has work running, such as agents or shortcuts, on the desktop, the website and the phone apps."},
